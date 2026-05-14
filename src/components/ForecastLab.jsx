@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { budgetMonths } from "../data/constants.jsx";
 import { styles } from "../styles.js";
+import { getCurrentBudgetPeriod } from "../utils/date.js";
 import { buildLinePath, buildAreaPath, money, parseMoney, wholeDollars } from "../utils/format.js";
 import { buildSubscriptionOverview } from "../utils/subscriptions.js";
-import { buildTrueCashProjectionSchedule } from "../utils/trueCashProjection.js";
+import { buildForwardTrueCashProjection } from "../utils/trueCashProjection.js";
 
 const CHART_W = 940;
 const CHART_H = 280;
@@ -29,7 +30,9 @@ function buildProjection(
   budgetRows,
   projectionAdjustments,
   extraIncome,
-  savedSpending
+  savedSpending,
+  startMonth,
+  startYear
 ) {
   const modifiedStreams =
     extraIncome === 0
@@ -44,21 +47,18 @@ function buildProjection(
           budget: Math.max(0, Number(r.budget || 0) - savedSpending),
         }));
 
-  return buildTrueCashProjectionSchedule({
-    chart: {
-      supportsProjection: true,
-      date: "Jan 1, 2026",
-      values: [money(trueCash)],
-      value: money(trueCash),
-    },
+  return buildForwardTrueCashProjection({
+    openingBalance: trueCash,
     incomeStreams: modifiedStreams,
     budgetRows: modifiedRows,
     projectionAdjustments,
+    startMonth,
+    startYear,
   });
 }
 
-function chartRange(baseline, scenario) {
-  const all = [...baseline.map((p) => p.value), ...scenario.map((p) => p.value)];
+function chartRange(baseline, scenario, openingBalance) {
+  const all = [openingBalance, ...baseline.map((p) => p.value), ...scenario.map((p) => p.value)];
   const hi = Math.max(...all, 1);
   const lo = Math.min(...all, 0);
   const pad = (hi - lo) * 0.18;
@@ -96,6 +96,7 @@ export function ForecastLab({
   const [savedSpendingRaw, setSavedSpendingRaw] = useState("0");
   const [scenarioName, setScenarioName] = useState("My Scenario");
   const [hoveredMonth, setHoveredMonth] = useState(null);
+  const currentBudgetPeriod = getCurrentBudgetPeriod();
   const subscriptionOverview = buildSubscriptionOverview(subscriptions);
 
   const extraIncome = parseDollar(extraIncomeRaw);
@@ -108,7 +109,9 @@ export function ForecastLab({
     budgetRows,
     projectionAdjustments,
     0,
-    0
+    0,
+    currentBudgetPeriod.month,
+    currentBudgetPeriod.year
   );
   const scenario = buildProjection(
     trueCash,
@@ -116,20 +119,22 @@ export function ForecastLab({
     budgetRows,
     projectionAdjustments,
     extraIncome,
-    savedSpending
+    savedSpending,
+    currentBudgetPeriod.month,
+    currentBudgetPeriod.year
   );
 
   const baselineEnd = baseline.at(-1)?.value ?? trueCash;
   const scenarioEnd = scenario.at(-1)?.value ?? trueCash;
   const totalDiff = scenarioEnd - baselineEnd;
   const diffPct = baselineEnd ? (totalDiff / Math.abs(baselineEnd)) * 100 : 0;
-  const annualExtra = (extraIncome + savedSpending) * 12;
+  const projectionMonthsRemaining = baseline.length;
 
-  const { max, min } = chartRange(baseline, scenario);
+  const { max, min } = chartRange(baseline, scenario, trueCash);
   const labels = yLabels(max, min);
   const py = (v) => toY(v, max, min);
 
-  const startCoord = [MONTH_X.Jan, py(trueCash)];
+  const startCoord = [MONTH_X[currentBudgetPeriod.month], py(trueCash)];
 
   const bPoints = [
     startCoord,
@@ -289,8 +294,9 @@ export function ForecastLab({
           </button>
         </div>
         <div style={{ marginTop: 12, color: "#7294bb", fontSize: 12 }}>
-          Extra income and spending reduction are added to each month in your plan. Adjustments use
-          your existing Operations Board income streams and budget as the base.
+          Forecasts are anchored to your live Dashboard true-cash balance, then projected forward
+          through the remaining months in the year. Adjustments use your existing Operations Board
+          income streams and budget as the base.
         </div>
         {subscriptionOverview.activeCount > 0 ? (
           <div style={{ marginTop: 12, color: "#8feaff", fontSize: 12 }}>
@@ -327,7 +333,8 @@ export function ForecastLab({
           }}
         >
           {[
-            ["Baseline Year-End", wholeDollars(baselineEnd), "#00d8ff"],
+            ["Current True Cash", wholeDollars(trueCash), "#00d8ff"],
+            ["Baseline Year-End", wholeDollars(baselineEnd), "#8feaff"],
             [
               `${scenarioName} Year-End`,
               wholeDollars(scenarioEnd),
@@ -337,11 +344,6 @@ export function ForecastLab({
               "Year-End Difference",
               `${totalDiff >= 0 ? "+" : ""}${wholeDollars(totalDiff)}`,
               totalDiff >= 0 ? "#00f59b" : "#ff5d7a",
-            ],
-            [
-              "Annual Extra Profit",
-              `${annualExtra >= 0 ? "+" : ""}${wholeDollars(annualExtra)}`,
-              annualExtra >= 0 ? "#00f59b" : "#ff5d7a",
             ],
           ].map(([label, val, color]) => (
             <div
@@ -369,6 +371,11 @@ export function ForecastLab({
                   {diffPct >= 0 ? "+" : ""}
                   {diffPct.toFixed(1)}% vs baseline
                 </div>
+              ) : label === "Current True Cash" ? (
+                <div style={{ color: "#8fb1d9", fontSize: 12, marginTop: 6, fontWeight: 700 }}>
+                  Dashboard anchor for the remaining {projectionMonthsRemaining} month
+                  {projectionMonthsRemaining === 1 ? "" : "s"}
+                </div>
               ) : null}
             </div>
           ))}
@@ -386,7 +393,7 @@ export function ForecastLab({
           }}
         >
           <div style={{ color: "white", fontSize: 20, fontWeight: 800 }}>
-            True Cash Projection — 2026
+            True Cash Projection — Remaining {currentBudgetPeriod.year}
           </div>
           <div style={{ display: "flex", gap: 20, alignItems: "center", fontSize: 13 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -427,7 +434,12 @@ export function ForecastLab({
               onMouseMove={(e) => {
                 const rect = e.currentTarget.getBoundingClientRect();
                 const svgX = ((e.clientX - rect.left) / rect.width) * CHART_W;
-                const months = budgetMonths.filter((m) => MONTH_X[m] !== undefined);
+                const months = [
+                  currentBudgetPeriod.month,
+                  ...baseline.map((point) => point.month),
+                ].filter((month, index, allMonths) => {
+                  return MONTH_X[month] !== undefined && allMonths.indexOf(month) === index;
+                });
                 const closest = months.reduce(
                   (best, m) => {
                     const dist = Math.abs(MONTH_X[m] - svgX);
@@ -506,11 +518,14 @@ export function ForecastLab({
                 ? (() => {
                     const bRow = baseline.find((p) => p.month === hoveredMonth);
                     const sRow = scenario.find((p) => p.month === hoveredMonth);
-                    if (!bRow) return null;
+                    const isCurrentMonth = hoveredMonth === currentBudgetPeriod.month;
+                    const baselineValue = isCurrentMonth ? trueCash : bRow?.value;
+                    const scenarioValue = isCurrentMonth ? trueCash : sRow?.value;
+                    if (baselineValue === undefined) return null;
                     const hx = MONTH_X[hoveredMonth];
-                    const by = py(bRow.value);
-                    const sy = sRow ? py(sRow.value) : null;
-                    const diff = sRow ? sRow.value - bRow.value : 0;
+                    const by = py(baselineValue);
+                    const sy = scenarioValue !== undefined ? py(scenarioValue) : null;
+                    const diff = scenarioValue !== undefined ? scenarioValue - baselineValue : 0;
                     const tipX = hx > CHART_W * 0.7 ? hx - 178 : hx + 12;
                     const tipH = hasScenario ? 118 : 76;
                     const tipY = Math.min(by, sy ?? by) - tipH / 2;
@@ -567,7 +582,7 @@ export function ForecastLab({
                                 fontWeight: 700,
                               }}
                             >
-                              {hoveredMonth} 2026
+                              {hoveredMonth} {currentBudgetPeriod.year}
                             </div>
                             <div
                               style={{
@@ -578,10 +593,10 @@ export function ForecastLab({
                             >
                               <span style={{ color: "#8fb1d9" }}>Baseline</span>
                               <span style={{ color: "#138bff", fontWeight: 800 }}>
-                                {bRow.formattedValue}
+                                {isCurrentMonth ? wholeDollars(trueCash) : bRow?.formattedValue}
                               </span>
                             </div>
-                            {hasScenario && sRow ? (
+                            {hasScenario && scenarioValue !== undefined ? (
                               <>
                                 <div
                                   style={{
@@ -592,7 +607,7 @@ export function ForecastLab({
                                 >
                                   <span style={{ color: "#8fb1d9" }}>Scenario</span>
                                   <span style={{ color: "#00f59b", fontWeight: 800 }}>
-                                    {sRow.formattedValue}
+                                    {isCurrentMonth ? wholeDollars(trueCash) : sRow?.formattedValue}
                                   </span>
                                 </div>
                                 <div
@@ -666,6 +681,39 @@ export function ForecastLab({
         </div>
 
         <div style={{ maxHeight: "52vh", overflowY: "auto" }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: hasScenario ? "100px 1fr 1fr 1fr 1fr" : "100px 1fr 1fr 1fr",
+              alignItems: "center",
+              padding: "11px 16px",
+              borderBottom: "1px solid rgba(0,136,255,.08)",
+              background:
+                hoveredMonth === currentBudgetPeriod.month
+                  ? "rgba(0,136,255,.07)"
+                  : "rgba(255,255,255,.01)",
+              borderLeft:
+                hoveredMonth === currentBudgetPeriod.month
+                  ? "2px solid rgba(0,216,255,.4)"
+                  : "2px solid transparent",
+              transition: "background .12s",
+            }}
+            onMouseEnter={() => setHoveredMonth(currentBudgetPeriod.month)}
+            onMouseLeave={() => setHoveredMonth(null)}
+          >
+            <div style={{ color: "white", fontWeight: 700 }}>{currentBudgetPeriod.month} Start</div>
+            <div style={{ textAlign: "right", color: "#5e7da0", fontSize: 14 }}>—</div>
+            <div style={{ textAlign: "right", color: "#5e7da0", fontSize: 14 }}>—</div>
+            <div style={{ color: "#138bff", textAlign: "right", fontWeight: 800, fontSize: 15 }}>
+              {wholeDollars(trueCash)}
+            </div>
+            {hasScenario ? (
+              <div style={{ color: "#00f59b", textAlign: "right", fontWeight: 800, fontSize: 15 }}>
+                {wholeDollars(trueCash)}
+              </div>
+            ) : null}
+          </div>
+
           {baseline.map((bRow, i) => {
             const sRow = scenario[i];
             const diff = sRow ? sRow.value - bRow.value : 0;
@@ -690,7 +738,9 @@ export function ForecastLab({
                   transition: "background .12s",
                 }}
               >
-                <div style={{ color: "white", fontWeight: 700 }}>{bRow.month} 2026</div>
+                <div style={{ color: "white", fontWeight: 700 }}>
+                  {bRow.month} {currentBudgetPeriod.year}
+                </div>
                 <div
                   style={{
                     textAlign: "right",
