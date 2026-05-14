@@ -1,12 +1,10 @@
 import { useState } from "react";
 import { styles } from "../styles.js";
+import { buildBudgetMonthlySpendSeries } from "../utils/budgetReview.js";
 import { getCurrentBudgetPeriod } from "../utils/date.js";
 import { money, parseMoney, wholeDollars } from "../utils/format.js";
 import { budgetMonths, yearlyOpsData } from "../data/constants.jsx";
-import {
-  buildSubscriptionMonthlySeries,
-  buildSubscriptionOverview,
-} from "../utils/subscriptions.js";
+import { buildSubscriptionOverview } from "../utils/subscriptions.js";
 import { MonthCoverageEditor } from "./Common.jsx";
 import { buildForwardTrueCashProjection } from "../utils/trueCashProjection.js";
 
@@ -30,6 +28,7 @@ export function OperationsBoard({
   subscriptions,
   incomeStreams,
   setIncomeStreams,
+  transactions,
   trueCash,
   projectionAdjustments,
   setProjectionAdjustments,
@@ -38,6 +37,11 @@ export function OperationsBoard({
   const [hoveredCommandMonth, setHoveredCommandMonth] = useState(null);
   const currentBudgetPeriod = getCurrentBudgetPeriod();
   const currentBudgetMonthIndex = budgetMonths.indexOf(currentBudgetPeriod.month);
+  const monthlySpendSeries = buildBudgetMonthlySpendSeries(
+    transactions,
+    budgetRows,
+    currentBudgetPeriod.year
+  );
 
   const addIncomeStream = () => {
     setIncomeStreams((streams) => {
@@ -104,10 +108,13 @@ export function OperationsBoard({
       0
     );
 
+    const spent = monthlySpendSeries.find((entry) => entry.month === month.month)?.spent || 0;
+
     return {
       ...month,
       income,
       budget,
+      spent,
       baseBudget: budget,
       profit: income - budget,
       recurringIncome: income - oneTimeIncome,
@@ -118,10 +125,9 @@ export function OperationsBoard({
   const yearlyIncome = dynamicYearlyOpsData.reduce((sum, month) => sum + month.income, 0);
   const yearlyBudget = dynamicYearlyOpsData.reduce((sum, month) => sum + month.budget, 0);
   const yearlySurplus = yearlyIncome - yearlyBudget;
-  const subscriptionSeries = buildSubscriptionMonthlySeries(subscriptions);
   const subscriptionOverview = buildSubscriptionOverview(subscriptions);
   const maxValue = Math.max(
-    ...dynamicYearlyOpsData.flatMap((month) => [month.income, month.budget]),
+    ...dynamicYearlyOpsData.flatMap((month) => [month.income, month.budget, month.spent]),
     1
   );
   const incomeOutlookRows = incomeStreams.map((stream) => {
@@ -534,7 +540,8 @@ export function OperationsBoard({
                   Income Command Center
                 </div>
                 <div style={{ color: "#8ea8ca", marginTop: 8, fontSize: 16 }}>
-                  Income pulls from Monthly Income Streams. Budget pulls from Budget Command Center.
+                  Income pulls from Monthly Income Streams. Budget and spent pull from the same
+                  monthly transaction logic used in Budget Command Center.
                 </div>
               </div>
               <div
@@ -573,6 +580,19 @@ export function OperationsBoard({
                     }}
                   />
                   Budget
+                </span>
+                <span>
+                  <b
+                    style={{
+                      display: "inline-block",
+                      width: 10,
+                      height: 10,
+                      borderRadius: 99,
+                      background: "#ff8f3d",
+                      marginRight: 8,
+                    }}
+                  />
+                  Spent
                 </span>
               </div>
             </div>
@@ -625,6 +645,7 @@ export function OperationsBoard({
                   {[
                     ["Income", hoveredCommandMonth.data.income, "#00f59b"],
                     ["Budget", hoveredCommandMonth.data.budget, "#00d8ff"],
+                    ["Spent", hoveredCommandMonth.data.spent, "#ff8f3d"],
                     [
                       "Profit",
                       hoveredCommandMonth.data.income - hoveredCommandMonth.data.budget,
@@ -703,6 +724,16 @@ export function OperationsBoard({
                         borderRadius: "8px 8px 0 0",
                         background: "linear-gradient(180deg,#00f59b,#006d4a)",
                         boxShadow: "0 0 14px rgba(0,245,155,.35)",
+                      }}
+                    />
+                    <div
+                      title={`Spent ${money(month.spent)}`}
+                      style={{
+                        width: 14,
+                        height: `${(month.spent / maxValue) * 100}%`,
+                        borderRadius: "8px 8px 0 0",
+                        background: "linear-gradient(180deg,#ffb65d,#ff6b1c)",
+                        boxShadow: "0 0 14px rgba(255,159,28,.35)",
                       }}
                     />
                     <div
@@ -796,12 +827,6 @@ export function OperationsBoard({
                 color: "#00d8ff",
                 values: dynamicYearlyOpsData.map((month) => month.baseBudget),
                 total: dynamicYearlyOpsData.reduce((sum, month) => sum + month.baseBudget, 0),
-              },
-              {
-                label: "Subscriptions",
-                color: "#ffb65d",
-                values: subscriptionSeries.map((row) => row.total),
-                total: subscriptionSeries.reduce((sum, row) => sum + row.total, 0),
               },
             ].map((row) => (
               <div

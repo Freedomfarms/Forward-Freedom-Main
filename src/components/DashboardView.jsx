@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { APP_TABS, budgetMonthNames, budgetMonths, chartSets } from "../data/constants.jsx";
-import { getCurrentBudgetPeriod } from "../utils/date.js";
+import { APP_TABS, budgetMonthNames, chartSets } from "../data/constants.jsx";
+import { buildMonthlyBudgetReview } from "../utils/budgetReview.js";
 import { styles } from "../styles.js";
 import { buildAreaPath, buildLinePath, money, parseMoney, wholeDollars } from "../utils/format.js";
 import { buildSubscriptionOverview } from "../utils/subscriptions.js";
@@ -103,75 +103,6 @@ function parseSnapshotDate(dateKey) {
     .map(Number);
   if (!year || !month || !day) return null;
   return new Date(year, month - 1, day);
-}
-
-const monthNameToBudgetMonth = Object.fromEntries(
-  budgetMonths.map((month) => [budgetMonthNames[month], month])
-);
-
-function parseBudgetReviewDate(value) {
-  const match = /^([A-Za-z]+)\s+\d{1,2},\s+(\d{4})$/.exec(value || "");
-  if (!match) return null;
-
-  const [, monthName, year] = match;
-  const month = monthNameToBudgetMonth[monthName];
-  if (!month) return null;
-
-  return { month, year: Number(year) || 2026 };
-}
-
-function buildMonthlyBudgetReview(transactions, budgetRows) {
-  const currentBudgetPeriod = getCurrentBudgetPeriod();
-  const latestTransaction = transactions
-    .map((tx) => ({ tx, parsed: parseBudgetReviewDate(tx.date) }))
-    .filter((item) => item.parsed)
-    .sort((a, b) => {
-      const aIndex = budgetMonths.indexOf(a.parsed.month);
-      const bIndex = budgetMonths.indexOf(b.parsed.month);
-      return a.parsed.year === b.parsed.year ? bIndex - aIndex : b.parsed.year - a.parsed.year;
-    })[0];
-
-  const activeMonth = latestTransaction?.parsed?.month || currentBudgetPeriod.month;
-  const activeYear = latestTransaction?.parsed?.year || currentBudgetPeriod.year;
-  const matchedBudgetCategories = budgetRows
-    .filter((row) => row.name !== "Other")
-    .flatMap((row) => row.transactionCategories);
-
-  const activeTransactions = transactions.filter((tx) => {
-    const parsed = parseBudgetReviewDate(tx.date);
-    return parsed?.month === activeMonth && parsed?.year === activeYear;
-  });
-
-  const rows = budgetRows
-    .filter((row) => (row.months || budgetMonths).includes(activeMonth))
-    .map((row) => {
-      const spent = activeTransactions
-        .filter((tx) => {
-          if (tx.amount >= 0) return false;
-          if (row.name === "Other") return !matchedBudgetCategories.includes(tx.category);
-          return row.transactionCategories.includes(tx.category);
-        })
-        .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
-
-      return {
-        id: row.id,
-        name: row.name,
-        budget: Number(row.budget || 0),
-        spent,
-        remaining: Number(row.budget || 0) - spent,
-        color: row.color || "#00d8ff",
-      };
-    });
-
-  const monthlyBudget = rows.reduce((sum, row) => sum + row.budget, 0);
-  const monthlySpent = rows.reduce((sum, row) => sum + row.spent, 0);
-  return {
-    month: activeMonth,
-    year: activeYear,
-    monthlyBudget,
-    monthlySpent,
-    remaining: monthlyBudget - monthlySpent,
-  };
 }
 
 function buildNetWorthHistory(metricSnapshots, range) {

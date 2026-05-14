@@ -709,6 +709,7 @@ function ForwardFreedomDashboard() {
               subscriptions={subscriptions}
               incomeStreams={incomeStreams}
               setIncomeStreams={setIncomeStreams}
+              transactions={transactions}
               trueCash={trueCash}
               projectionAdjustments={projectionAdjustments}
               setProjectionAdjustments={setProjectionAdjustments}
