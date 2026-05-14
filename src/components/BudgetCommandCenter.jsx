@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { styles } from "../styles.js";
 import { money, cleanMoneyInput } from "../utils/format.js";
+import { getCurrentBudgetPeriod } from "../utils/date.js";
 import { budgetMonths, budgetMonthNames } from "../data/constants.jsx";
 import { MonthCoverageEditor } from "./Common.jsx";
 
@@ -17,8 +18,12 @@ function isTransactionInBudgetMonth(transaction, month, year) {
 }
 
 export function BudgetCommandCenter({ transactions, budgetRows, setBudgetRows }) {
+  const currentBudgetPeriod = getCurrentBudgetPeriod();
   const [deleteTarget, setDeleteTarget] = useState(null);
-  const [activeBudgetDate, setActiveBudgetDate] = useState({ monthIndex: 4, year: 2026 });
+  const [activeBudgetDate, setActiveBudgetDate] = useState(() => ({
+    monthIndex: currentBudgetPeriod.monthIndex,
+    year: currentBudgetPeriod.year,
+  }));
   const activeBudgetMonth = budgetMonths[activeBudgetDate.monthIndex];
   const activeBudgetLabel = `${budgetMonthNames[activeBudgetMonth]} ${activeBudgetDate.year}`;
   const changeBudgetMonth = (direction) => {
@@ -351,7 +356,10 @@ export function BudgetCommandCenter({ transactions, budgetRows, setBudgetRows })
                       onToggleMonth={(month) => toggleBudgetMonth(item.id, month)}
                       quickActions={[
                         { label: "All", onClick: () => setBudgetRowMonths(item.id, budgetMonths) },
-                        { label: `Only ${activeBudgetMonth}`, onClick: () => setBudgetRowMonths(item.id, [activeBudgetMonth]) },
+                        {
+                          label: `Only ${activeBudgetMonth}`,
+                          onClick: () => setBudgetRowMonths(item.id, [activeBudgetMonth]),
+                        },
                       ]}
                     />
                   </div>

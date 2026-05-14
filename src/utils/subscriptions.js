@@ -47,14 +47,17 @@ export function buildSubscriptionMonthlySeries(subscriptions) {
 }
 
 export function buildSubscriptionOverview(subscriptions) {
-  const activeSubscriptions = subscriptions.filter((subscription) => subscription.status === "Active");
+  const activeSubscriptions = subscriptions.filter(
+    (subscription) => subscription.status === "Active"
+  );
   const activeMonthly = activeSubscriptions.reduce(
     (sum, subscription) => sum + monthlyEquivalent(subscription.amount, subscription.frequency),
     0
   );
   const byAccount = activeSubscriptions.reduce((groups, subscription) => {
     const account = subscription.account || "Unassigned";
-    groups[account] = (groups[account] || 0) + monthlyEquivalent(subscription.amount, subscription.frequency);
+    groups[account] =
+      (groups[account] || 0) + monthlyEquivalent(subscription.amount, subscription.frequency);
     return groups;
   }, {});
 

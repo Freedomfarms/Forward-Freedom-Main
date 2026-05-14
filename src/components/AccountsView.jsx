@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { styles } from "../styles.js";
+import { getCurrentTimestamp } from "../utils/date.js";
 import { money } from "../utils/format.js";
 import {
   ACCOUNT_GROUPS,
@@ -84,23 +85,34 @@ function formatLastUpdated(value) {
 const QUICK_START_TEMPLATES = [
   {
     title: "Start with cash",
-    description: "Add a checking, savings, or manual cash account so True Cash can anchor the dashboard.",
+    description:
+      "Add a checking, savings, or manual cash account so True Cash can anchor the dashboard.",
     type: "Checking",
     accent: "#00d8ff",
   },
   {
     title: "Track what you owe",
-    description: "Add credit cards and mortgages/loans so liabilities flow into debt and equity calculations.",
+    description:
+      "Add credit cards and mortgages/loans so liabilities flow into debt and equity calculations.",
     type: "Mortgages / Loans",
     accent: "#ff8fa3",
   },
   {
     title: "Track what grows",
-    description: "Add investments, crypto, metals, and retirement accounts to build a true net worth view.",
+    description:
+      "Add investments, crypto, metals, and retirement accounts to build a true net worth view.",
     type: "Investment",
     accent: "#8feaff",
   },
 ];
+
+function shouldFetchMetalsQuoteForForm(form) {
+  return (
+    form.type === "Precious Metals" &&
+    form.valuationSource === "Live Spot" &&
+    form.metalType !== "Custom"
+  );
+}
 
 export function AccountsView({
   accounts,
@@ -123,13 +135,60 @@ export function AccountsView({
   const [isLoadingMetalsQuote, setIsLoadingMetalsQuote] = useState(false);
 
   const linkedBalance = accounts.reduce((sum, a) => sum + a.balance, 0);
-  const update = (field, value) => setForm((f) => ({ ...f, [field]: value }));
   const isCryptoAccount = form.type === "Crypto";
   const isPreciousMetalsAccount = form.type === "Precious Metals";
   const isRealEstateAccount = form.type === "Real Estate";
   const isLoanAccount = form.type === "Mortgages / Loans";
   const realEstateAccounts = accounts.filter((account) => account.type === "Real Estate");
   const loanAccounts = accounts.filter((account) => account.type === "Mortgages / Loans");
+  const { metalType, metalUnit, type, valuationSource } = form;
+  const resetCryptoState = () => {
+    setCryptoSearchQuery("");
+    setCryptoResults([]);
+    setSelectedCrypto(null);
+    setSelectedCryptoQuote(null);
+    setCryptoSearchError("");
+    setCryptoQuoteError("");
+    setIsSearchingCrypto(false);
+    setIsLoadingCryptoQuote(false);
+  };
+  const resetMetalsState = () => {
+    setMetalsQuote(null);
+    setMetalsQuoteError("");
+    setIsLoadingMetalsQuote(false);
+  };
+  const update = (field, value) => {
+    const nextForm = { ...form, [field]: value };
+
+    if (field === "type" && value !== "Crypto") {
+      resetCryptoState();
+    }
+
+    if (field === "type" && value === "Crypto") {
+      resetCryptoState();
+    }
+
+    if (field === "type" && value !== "Precious Metals") {
+      resetMetalsState();
+    }
+
+    if (field === "metalType" && value === "Custom" && nextForm.valuationSource === "Live Spot") {
+      nextForm.valuationSource = "Manual";
+    }
+
+    if (field === "valuationSource" && value === "Live Spot" && nextForm.metalType === "Custom") {
+      nextForm.valuationSource = "Manual";
+    }
+
+    if (["type", "metalType", "metalUnit", "valuationSource"].includes(field)) {
+      resetMetalsState();
+      if (shouldFetchMetalsQuoteForForm(nextForm)) {
+        setIsLoadingMetalsQuote(true);
+      }
+    }
+
+    setForm(nextForm);
+  };
 
   const parsedBalance = parseBalance(form.balance);
   const parsedQuantity = normalizeCryptoQuantity(form.quantity);
@@ -142,7 +201,9 @@ export function AccountsView({
     : 0;
   const derivedPreciousMetalsBalance = calculatePreciousMetalsBalance(
     parsedQuantity,
-    form.valuationSource === "Live Spot" && metalsQuote ? metalsQuote.pricePerUnit : parsedPricePerUnit
+    form.valuationSource === "Live Spot" && metalsQuote
+      ? metalsQuote.pricePerUnit
+      : parsedPricePerUnit
   );
   const canDeriveRealEstateEquity = Boolean(form.linkedLoanId) && parsedPropertyMarketValue > 0;
   const derivedRealEstateBalance = canDeriveRealEstateEquity
@@ -166,44 +227,20 @@ export function AccountsView({
             : form.pricePerUnit.trim().length > 0 &&
               Number.isFinite(parsedPricePerUnit) &&
               parsedPricePerUnit > 0)
-      : isRealEstateAccount
-        ? canDeriveRealEstateEquity || (form.balance.trim().length > 0 && Number.isFinite(parsedBalance))
-      : form.balance.trim().length > 0 && Number.isFinite(parsedBalance));
+        : isRealEstateAccount
+          ? canDeriveRealEstateEquity ||
+            (form.balance.trim().length > 0 && Number.isFinite(parsedBalance))
+          : form.balance.trim().length > 0 && Number.isFinite(parsedBalance));
 
   useEffect(() => {
-    if (isCryptoAccount) return;
-    setCryptoSearchQuery("");
-    setCryptoResults([]);
-    setSelectedCrypto(null);
-    setSelectedCryptoQuote(null);
-    setCryptoSearchError("");
-    setCryptoQuoteError("");
-    setIsSearchingCrypto(false);
-    setIsLoadingCryptoQuote(false);
-  }, [isCryptoAccount]);
-
-  useEffect(() => {
-    if (!isPreciousMetalsAccount) {
-      setMetalsQuote(null);
-      setMetalsQuoteError("");
-      setIsLoadingMetalsQuote(false);
-      return;
-    }
-
-    if (form.valuationSource !== "Live Spot" || form.metalType === "Custom") {
-      setMetalsQuote(null);
-      setMetalsQuoteError("");
-      setIsLoadingMetalsQuote(false);
+    if (type !== "Precious Metals" || valuationSource !== "Live Spot" || metalType === "Custom") {
       return;
     }
 
     const controller = new AbortController();
-    setIsLoadingMetalsQuote(true);
-    setMetalsQuoteError("");
-
     fetchPreciousMetalsSpotPrices({ signal: controller.signal })
       .then((quotes) => {
-        const quote = quotes[form.metalType];
+        const quote = quotes[metalType];
         if (!quote) {
           setMetalsQuote(null);
           setMetalsQuoteError("Live spot pricing is unavailable for the selected metal.");
@@ -212,10 +249,7 @@ export function AccountsView({
 
         setMetalsQuote({
           ...quote,
-          pricePerUnit: normalizePreciousMetalsPricePerUnit(
-            quote.pricePerTroyOunce,
-            form.metalUnit
-          ),
+          pricePerUnit: normalizePreciousMetalsPricePerUnit(quote.pricePerTroyOunce, metalUnit),
         });
       })
       .catch((error) => {
@@ -228,13 +262,7 @@ export function AccountsView({
       });
 
     return () => controller.abort();
-  }, [form.metalType, form.metalUnit, form.valuationSource, isPreciousMetalsAccount]);
-
-  useEffect(() => {
-    if (form.metalType === "Custom" && form.valuationSource === "Live Spot") {
-      setForm((current) => ({ ...current, valuationSource: "Manual" }));
-    }
-  }, [form.metalType, form.valuationSource]);
+  }, [metalType, metalUnit, type, valuationSource]);
 
   useEffect(() => {
     if (!isCryptoAccount) return;
@@ -242,23 +270,15 @@ export function AccountsView({
     const selectedLabel = selectedCrypto ? formatCryptoSearchLabel(selectedCrypto) : "";
 
     if (selectedCrypto && trimmedQuery === selectedLabel) {
-      setCryptoResults([]);
-      setCryptoSearchError("");
-      setIsSearchingCrypto(false);
       return;
     }
 
     if (trimmedQuery.length < 2) {
-      setCryptoResults([]);
-      setCryptoSearchError("");
-      setIsSearchingCrypto(false);
       return;
     }
 
     const controller = new AbortController();
     const timeoutId = window.setTimeout(async () => {
-      setIsSearchingCrypto(true);
-      setCryptoSearchError("");
       try {
         const results = await searchCryptoAssets(trimmedQuery, { signal: controller.signal });
         setCryptoResults(results);
@@ -284,9 +304,6 @@ export function AccountsView({
     if (!selectedCrypto?.id) return;
 
     const controller = new AbortController();
-    setIsLoadingCryptoQuote(true);
-    setCryptoQuoteError("");
-
     fetchCryptoQuotes([selectedCrypto.id], { signal: controller.signal })
       .then((quotes) => {
         const nextQuote = quotes[selectedCrypto.id];
@@ -311,24 +328,20 @@ export function AccountsView({
   }, [selectedCrypto]);
 
   const openModal = (overrides = {}) => {
-    setForm({ ...EMPTY_FORM, ...overrides });
-    setCryptoSearchQuery("");
-    setCryptoResults([]);
-    setSelectedCrypto(null);
-    setSelectedCryptoQuote(null);
-    setCryptoSearchError("");
-    setCryptoQuoteError("");
+    const nextForm = { ...EMPTY_FORM, ...overrides };
+    setForm(nextForm);
+    resetCryptoState();
+    resetMetalsState();
+    if (shouldFetchMetalsQuoteForForm(nextForm)) {
+      setIsLoadingMetalsQuote(true);
+    }
     setShowModal(true);
   };
 
   const closeModal = () => {
     setForm(EMPTY_FORM);
-    setCryptoSearchQuery("");
-    setCryptoResults([]);
-    setSelectedCrypto(null);
-    setSelectedCryptoQuote(null);
-    setCryptoSearchError("");
-    setCryptoQuoteError("");
+    resetCryptoState();
+    resetMetalsState();
     setShowModal(false);
   };
 
@@ -370,6 +383,7 @@ export function AccountsView({
     }
 
     if (isPreciousMetalsAccount) {
+      const currentTimestamp = getCurrentTimestamp();
       addManualAccount({
         name: form.name.trim(),
         type: form.type,
@@ -384,7 +398,7 @@ export function AccountsView({
             ? metalsQuote.pricePerUnit
             : parsedPricePerUnit,
         valuationSource: form.valuationSource,
-        lastValuedAt: metalsQuote?.updatedAt || Date.now(),
+        lastValuedAt: metalsQuote?.updatedAt || currentTimestamp,
       });
       closeModal();
       return;
@@ -394,7 +408,8 @@ export function AccountsView({
       name: form.name.trim(),
       type: form.type,
       institution: form.institution.trim() || form.type,
-      balance: isRealEstateAccount && canDeriveRealEstateEquity ? derivedRealEstateBalance : parsedBalance,
+      balance:
+        isRealEstateAccount && canDeriveRealEstateEquity ? derivedRealEstateBalance : parsedBalance,
       propertyAddress: form.propertyAddress.trim(),
       propertyType: form.propertyType,
       propertyMarketValue: parsedPropertyMarketValue,
@@ -411,12 +426,26 @@ export function AccountsView({
   const handleCryptoSearchChange = (value) => {
     setCryptoSearchQuery(value);
     setCryptoSearchError("");
+    setCryptoResults([]);
 
     if (selectedCrypto && value.trim() !== formatCryptoSearchLabel(selectedCrypto)) {
       setSelectedCrypto(null);
       setSelectedCryptoQuote(null);
       setCryptoQuoteError("");
+      setIsLoadingCryptoQuote(false);
     }
+
+    if (!isCryptoAccount || value.trim().length < 2) {
+      setIsSearchingCrypto(false);
+      return;
+    }
+
+    if (selectedCrypto && value.trim() === formatCryptoSearchLabel(selectedCrypto)) {
+      setIsSearchingCrypto(false);
+      return;
+    }
+
+    setIsSearchingCrypto(true);
   };
 
   const chooseCryptoAsset = (asset) => {
@@ -425,6 +454,8 @@ export function AccountsView({
     setCryptoQuoteError("");
     setCryptoResults([]);
     setCryptoSearchQuery(formatCryptoSearchLabel(asset));
+    setIsSearchingCrypto(false);
+    setIsLoadingCryptoQuote(true);
     setForm((current) => ({
       ...current,
       name: current.name.trim() ? current.name : `${asset.symbol} Holdings`,
@@ -468,7 +499,8 @@ export function AccountsView({
         <div>
           <h1 style={{ margin: 0, fontSize: 32, color: "white", fontWeight: 800 }}>Add Accounts</h1>
           <p style={{ marginTop: 8, color: "#8ea8ca" }}>
-            Connect bank accounts, credit cards, investments, crypto, metals, real estate, and loans.
+            Connect bank accounts, credit cards, investments, crypto, metals, real estate, and
+            loans.
           </p>
         </div>
         <div style={{ display: "flex", gap: 12 }}>
@@ -599,7 +631,9 @@ export function AccountsView({
               </div>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 16 }}>
+            <div
+              style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 16 }}
+            >
               {QUICK_START_TEMPLATES.map((template) => (
                 <button
                   key={template.title}
@@ -631,7 +665,9 @@ export function AccountsView({
                   <div style={{ color: "#8ea8ca", marginTop: 10, lineHeight: 1.55 }}>
                     {template.description}
                   </div>
-                  <div style={{ color: "#8feaff", marginTop: 16, fontWeight: 800 }}>Open setup →</div>
+                  <div style={{ color: "#8feaff", marginTop: 16, fontWeight: 800 }}>
+                    Open setup →
+                  </div>
                 </button>
               ))}
             </div>
@@ -706,7 +742,8 @@ export function AccountsView({
                                 ? account.metalCustomName
                                 : account.metalType}{" "}
                               @ {money(account.pricePerUnit || 0)} / {account.metalUnit} •{" "}
-                              {account.valuationSource || "Manual"} • {formatLastUpdated(account.lastValuedAt)}
+                              {account.valuationSource || "Manual"} •{" "}
+                              {formatLastUpdated(account.lastValuedAt)}
                             </div>
                           ) : null}
                           {account.type === "Real Estate" && account.propertyAddress ? (
@@ -716,15 +753,16 @@ export function AccountsView({
                           ) : null}
                           {account.type === "Real Estate" && account.propertyMarketValue ? (
                             <div style={{ color: "#7bc7ff", marginTop: 4, fontSize: 12 }}>
-                              {account.equitySource === "Derived" ? "Derived" : "Manual"} equity • Market{" "}
-                              {money(account.propertyMarketValue)}
+                              {account.equitySource === "Derived" ? "Derived" : "Manual"} equity •
+                              Market {money(account.propertyMarketValue)}
                             </div>
                           ) : null}
                           {account.type === "Real Estate" && account.linkedLoanId ? (
                             <div style={{ color: "#7bc7ff", marginTop: 4, fontSize: 12 }}>
                               Linked loan:{" "}
-                              {loanAccounts.find((loanAccount) => loanAccount.id === account.linkedLoanId)
-                                ?.name || "Saved link"}
+                              {loanAccounts.find(
+                                (loanAccount) => loanAccount.id === account.linkedLoanId
+                              )?.name || "Saved link"}
                             </div>
                           ) : null}
                           {account.type === "Mortgages / Loans" ? (
@@ -864,7 +902,7 @@ export function AccountsView({
                           ? "e.g. Main Home Equity, Lake House Equity"
                           : isLoanAccount
                             ? "e.g. Home Mortgage, Rental Loan, HELOC"
-                      : "e.g. Chase Checking, Home Safe, Cash Envelope"
+                            : "e.g. Chase Checking, Home Safe, Cash Envelope"
                   }
                   onChange={(e) => update("name", e.target.value)}
                   style={inputStyle}
@@ -929,7 +967,8 @@ export function AccountsView({
                       style={inputStyle}
                     />
                     <span style={{ color: "#7294bb", fontSize: 12 }}>
-                      Select the exact asset so the account can refresh against the correct price feed.
+                      Select the exact asset so the account can refresh against the correct price
+                      feed.
                     </span>
                   </label>
 
@@ -938,7 +977,9 @@ export function AccountsView({
                   ) : null}
 
                   {isSearchingCrypto ? (
-                    <div style={{ color: "#8feaff", fontSize: 12 }}>Searching live crypto market data…</div>
+                    <div style={{ color: "#8feaff", fontSize: 12 }}>
+                      Searching live crypto market data…
+                    </div>
                   ) : null}
 
                   {cryptoResults.length > 0 ? (
@@ -1006,10 +1047,14 @@ export function AccountsView({
                     >
                       <div style={{ display: "flex", justifyContent: "space-between", gap: 14 }}>
                         <div>
-                          <div style={{ color: "#8feaff", fontSize: 12, textTransform: "uppercase" }}>
+                          <div
+                            style={{ color: "#8feaff", fontSize: 12, textTransform: "uppercase" }}
+                          >
                             Selected Asset
                           </div>
-                          <div style={{ color: "white", fontSize: 20, fontWeight: 900, marginTop: 6 }}>
+                          <div
+                            style={{ color: "white", fontSize: 20, fontWeight: 900, marginTop: 6 }}
+                          >
                             {selectedCrypto.name} ({selectedCrypto.symbol})
                           </div>
                         </div>
@@ -1056,10 +1101,13 @@ export function AccountsView({
                             <br />
                             Current account value: <b>{money(derivedCryptoBalance)}</b>
                             <br />
-                            Last updated: <b>{formatLastUpdated(selectedCryptoQuote.lastUpdatedAt)}</b>
+                            Last updated:{" "}
+                            <b>{formatLastUpdated(selectedCryptoQuote.lastUpdatedAt)}</b>
                           </>
                         ) : (
-                          <span style={{ color: "#7294bb" }}>Pick an asset to load its current price.</span>
+                          <span style={{ color: "#7294bb" }}>
+                            Pick an asset to load its current price.
+                          </span>
                         )}
                       </div>
 
@@ -1171,8 +1219,10 @@ export function AccountsView({
                       <span style={{ color: "#8feaff" }}>Loading live spot price…</span>
                     ) : (
                       <>
-                        {form.valuationSource === "Live Spot" ? "Live spot valuation" : "Manual valuation"}:{" "}
-                        <b>{money(derivedPreciousMetalsBalance)}</b>
+                        {form.valuationSource === "Live Spot"
+                          ? "Live spot valuation"
+                          : "Manual valuation"}
+                        : <b>{money(derivedPreciousMetalsBalance)}</b>
                         {metalsQuote ? (
                           <>
                             <br />
@@ -1223,7 +1273,11 @@ export function AccountsView({
                           Not linked yet
                         </option>
                         {loanAccounts.map((account) => (
-                          <option key={account.id} value={account.id} style={{ background: "#061224" }}>
+                          <option
+                            key={account.id}
+                            value={account.id}
+                            style={{ background: "#061224" }}
+                          >
                             {account.name}
                           </option>
                         ))}
@@ -1262,7 +1316,9 @@ export function AccountsView({
                     <span style={labelCapStyle}>Current Equity</span>
                     <input
                       type="text"
-                      value={canDeriveRealEstateEquity ? money(derivedRealEstateBalance) : form.balance}
+                      value={
+                        canDeriveRealEstateEquity ? money(derivedRealEstateBalance) : form.balance
+                      }
                       placeholder="e.g. 185000"
                       onChange={(e) => update("balance", e.target.value)}
                       disabled={canDeriveRealEstateEquity}
@@ -1303,7 +1359,11 @@ export function AccountsView({
                           Not linked yet
                         </option>
                         {realEstateAccounts.map((account) => (
-                          <option key={account.id} value={account.id} style={{ background: "#061224" }}>
+                          <option
+                            key={account.id}
+                            value={account.id}
+                            style={{ background: "#061224" }}
+                          >
                             {account.name}
                           </option>
                         ))}

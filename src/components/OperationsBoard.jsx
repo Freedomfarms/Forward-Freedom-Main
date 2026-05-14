@@ -1,8 +1,12 @@
 import { useState } from "react";
 import { styles } from "../styles.js";
+import { getCurrentBudgetPeriod } from "../utils/date.js";
 import { money, parseMoney, wholeDollars } from "../utils/format.js";
 import { budgetMonths, chartSets, yearlyOpsData } from "../data/constants.jsx";
-import { buildSubscriptionMonthlySeries, buildSubscriptionOverview } from "../utils/subscriptions.js";
+import {
+  buildSubscriptionMonthlySeries,
+  buildSubscriptionOverview,
+} from "../utils/subscriptions.js";
 import { MonthCoverageEditor } from "./Common.jsx";
 import {
   buildSyncedTrueCashChart,
@@ -35,6 +39,7 @@ export function OperationsBoard({
 }) {
   const [incomeDeleteTarget, setIncomeDeleteTarget] = useState(null);
   const [hoveredCommandMonth, setHoveredCommandMonth] = useState(null);
+  const currentBudgetPeriod = getCurrentBudgetPeriod();
 
   const addIncomeStream = () => {
     setIncomeStreams((streams) => {
@@ -146,7 +151,9 @@ export function OperationsBoard({
   const projectedYearEndTrueCash =
     projectedTrueCashValues[projectedTrueCashValues.length - 1] || trueCash;
   const projectionBaseDate = syncedProjectionChart.dates?.[0] || syncedProjectionChart.date;
-  const projectionBaseValue = parseMoney(syncedProjectionChart.values?.[0] || syncedProjectionChart.value);
+  const projectionBaseValue = parseMoney(
+    syncedProjectionChart.values?.[0] || syncedProjectionChart.value
+  );
 
   return (
     <div>
@@ -452,7 +459,10 @@ export function OperationsBoard({
                         onToggleMonth={(month) => toggleIncomeMonth(index, month)}
                         quickActions={[
                           { label: "All", onClick: () => setIncomeMonths(index, budgetMonths) },
-                          { label: "Only May", onClick: () => setIncomeMonths(index, ["May"]) },
+                          {
+                            label: `Only ${currentBudgetPeriod.month}`,
+                            onClick: () => setIncomeMonths(index, [currentBudgetPeriod.month]),
+                          },
                         ]}
                       />
                     </div>

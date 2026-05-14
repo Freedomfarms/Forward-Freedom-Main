@@ -118,7 +118,12 @@ export function MetricCard({ metric }) {
   );
 }
 
-export function MonthCoverageEditor({ allMonths, selectedMonths, quickActions = [], onToggleMonth }) {
+export function MonthCoverageEditor({
+  allMonths,
+  selectedMonths,
+  quickActions = [],
+  onToggleMonth,
+}) {
   const activeMonths = selectedMonths?.length ? selectedMonths : allMonths;
   const allSelected = activeMonths.length === allMonths.length;
   const summaryLabel = allSelected
