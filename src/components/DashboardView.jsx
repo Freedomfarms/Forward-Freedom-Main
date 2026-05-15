@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { budgetMonthNames, budgetMonths, chartSets } from "../data/constants.jsx";
+import { APP_TABS, budgetMonthNames, chartSets } from "../data/constants.jsx";
+import { buildMonthlyBudgetReview } from "../utils/budgetReview.js";
 import { styles } from "../styles.js";
 import { buildAreaPath, buildLinePath, money, parseMoney, wholeDollars } from "../utils/format.js";
 import { buildSubscriptionOverview } from "../utils/subscriptions.js";
@@ -80,13 +81,14 @@ function buildFilledAreaPath(points, chartHeight) {
   const firstPoint = points[0];
   const lastPoint = points[points.length - 1];
   return (
-    buildLinePath(points) +
-    ` L ${lastPoint[0]} ${chartHeight} L ${firstPoint[0]} ${chartHeight} Z`
+    buildLinePath(points) + ` L ${lastPoint[0]} ${chartHeight} L ${firstPoint[0]} ${chartHeight} Z`
   );
 }
 
 function formatSnapshotLabel(dateKey) {
-  const [year, month, day] = String(dateKey || "").split("-").map(Number);
+  const [year, month, day] = String(dateKey || "")
+    .split("-")
+    .map(Number);
   if (!year || !month || !day) return dateKey;
 
   return new Date(year, month - 1, day).toLocaleDateString("en-US", {
@@ -96,77 +98,11 @@ function formatSnapshotLabel(dateKey) {
 }
 
 function parseSnapshotDate(dateKey) {
-  const [year, month, day] = String(dateKey || "").split("-").map(Number);
+  const [year, month, day] = String(dateKey || "")
+    .split("-")
+    .map(Number);
   if (!year || !month || !day) return null;
   return new Date(year, month - 1, day);
-}
-
-const monthNameToBudgetMonth = Object.fromEntries(
-  budgetMonths.map((month) => [budgetMonthNames[month], month])
-);
-
-function parseBudgetReviewDate(value) {
-  const match = /^([A-Za-z]+)\s+\d{1,2},\s+(\d{4})$/.exec(value || "");
-  if (!match) return null;
-
-  const [, monthName, year] = match;
-  const month = monthNameToBudgetMonth[monthName];
-  if (!month) return null;
-
-  return { month, year: Number(year) || 2026 };
-}
-
-function buildMonthlyBudgetReview(transactions, budgetRows) {
-  const latestTransaction = transactions
-    .map((tx) => ({ tx, parsed: parseBudgetReviewDate(tx.date) }))
-    .filter((item) => item.parsed)
-    .sort((a, b) => {
-      const aIndex = budgetMonths.indexOf(a.parsed.month);
-      const bIndex = budgetMonths.indexOf(b.parsed.month);
-      return a.parsed.year === b.parsed.year ? bIndex - aIndex : b.parsed.year - a.parsed.year;
-    })[0];
-
-  const activeMonth = latestTransaction?.parsed?.month || "May";
-  const activeYear = latestTransaction?.parsed?.year || 2026;
-  const matchedBudgetCategories = budgetRows
-    .filter((row) => row.name !== "Other")
-    .flatMap((row) => row.transactionCategories);
-
-  const activeTransactions = transactions.filter((tx) => {
-    const parsed = parseBudgetReviewDate(tx.date);
-    return parsed?.month === activeMonth && parsed?.year === activeYear;
-  });
-
-  const rows = budgetRows
-    .filter((row) => (row.months || budgetMonths).includes(activeMonth))
-    .map((row) => {
-      const spent = activeTransactions
-        .filter((tx) => {
-          if (tx.amount >= 0) return false;
-          if (row.name === "Other") return !matchedBudgetCategories.includes(tx.category);
-          return row.transactionCategories.includes(tx.category);
-        })
-        .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
-
-      return {
-        id: row.id,
-        name: row.name,
-        budget: Number(row.budget || 0),
-        spent,
-        remaining: Number(row.budget || 0) - spent,
-        color: row.color || "#00d8ff",
-      };
-    });
-
-  const monthlyBudget = rows.reduce((sum, row) => sum + row.budget, 0);
-  const monthlySpent = rows.reduce((sum, row) => sum + row.spent, 0);
-  return {
-    month: activeMonth,
-    year: activeYear,
-    monthlyBudget,
-    monthlySpent,
-    remaining: monthlyBudget - monthlySpent,
-  };
 }
 
 function buildNetWorthHistory(metricSnapshots, range) {
@@ -180,7 +116,8 @@ function buildNetWorthHistory(metricSnapshots, range) {
     .filter(([dateKey]) => {
       const date = parseSnapshotDate(dateKey);
       if (!date) return false;
-      if (range === "30D") return date >= new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29);
+      if (range === "30D")
+        return date >= new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29);
       if (range === "90D") return date >= rangeStart;
       if (range === "YTD") return date >= new Date(now.getFullYear(), 0, 1);
       if (range === "1Y") return date >= rangeStart;
@@ -210,7 +147,9 @@ function buildNetWorthHistory(metricSnapshots, range) {
 
   const points = entries.map(([, snapshot], index) => {
     const x =
-      entries.length === 1 ? NET_WORTH_HISTORY_W / 2 : (index / (entries.length - 1)) * NET_WORTH_HISTORY_W;
+      entries.length === 1
+        ? NET_WORTH_HISTORY_W / 2
+        : (index / (entries.length - 1)) * NET_WORTH_HISTORY_W;
     const value = Number(snapshot.totalNetWorth) || 0;
     const y = NET_WORTH_HISTORY_H - ((value - lower) / chartRange) * NET_WORTH_HISTORY_H;
     return [x, y];
@@ -887,7 +826,7 @@ export function DashboardView({
             </div>
             <div style={{ display: "flex", gap: 10 }}>
               <button
-                onClick={() => setActiveTab("Recurring Subscriptions")}
+                onClick={() => setActiveTab(APP_TABS.RECURRING_SUBSCRIPTIONS)}
                 style={{
                   background: "rgba(0,136,255,.08)",
                   border: "1px solid rgba(0,216,255,.18)",
@@ -902,7 +841,7 @@ export function DashboardView({
                 Open Subscriptions
               </button>
               <button
-                onClick={() => setActiveTab("Budget Command Center")}
+                onClick={() => setActiveTab(APP_TABS.BUDGET_COMMAND_CENTER)}
                 style={{
                   background: "rgba(0,136,255,.12)",
                   border: "1px solid rgba(0,216,255,.28)",
@@ -1102,7 +1041,9 @@ export function DashboardView({
                   onClick={() => setNetWorthHistoryRange(range)}
                   style={{
                     background:
-                      netWorthHistoryRange === range ? "rgba(0,136,255,.18)" : "rgba(0,136,255,.08)",
+                      netWorthHistoryRange === range
+                        ? "rgba(0,136,255,.18)"
+                        : "rgba(0,136,255,.08)",
                     border:
                       netWorthHistoryRange === range
                         ? "1px solid rgba(0,216,255,.42)"
@@ -1120,7 +1061,7 @@ export function DashboardView({
               ))}
             </div>
             <button
-              onClick={() => setActiveTab("Add Accounts")}
+              onClick={() => setActiveTab(APP_TABS.ADD_ACCOUNTS)}
               style={{
                 background: "rgba(0,136,255,.12)",
                 border: "1px solid rgba(0,216,255,.28)",

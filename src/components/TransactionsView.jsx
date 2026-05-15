@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
-import { transactionCategoryOptions } from "../data/constants.jsx";
+import { useMemo, useState } from "react";
+import { APP_TABS, transactionCategoryOptions } from "../data/constants.jsx";
 import { styles } from "../styles.js";
+import { getIsoDateInputValue } from "../utils/date.js";
 import { money } from "../utils/format.js";
 import { accountSupportsTransactions } from "../utils/accounts.js";
 
@@ -68,7 +69,10 @@ function buildAccountProfile(account, accounts) {
         ...baseProfile.highlights,
         { label: "Asset", value: `${account.cryptoName} (${account.cryptoSymbol})` },
         { label: "Quantity", value: `${account.quantity || 0}` },
-        { label: "Live Price", value: formatMoneyPerUnit(account.lastPriceUsd, account.cryptoSymbol) },
+        {
+          label: "Live Price",
+          value: formatMoneyPerUnit(account.lastPriceUsd, account.cryptoSymbol),
+        },
         { label: "Updated", value: formatDateTime(account.lastPriceUpdatedAt) },
       ],
       note: "Quantity-based account. Value is derived from holdings x live market price.",
@@ -170,14 +174,16 @@ export function TransactionsView({
   const selectedAccountRecord = selectedAccount
     ? accounts.find((account) => account.name === selectedAccount) || null
     : null;
-  const transactionCapableAccounts = accounts.filter((account) => accountSupportsTransactions(account));
+  const transactionCapableAccounts = accounts.filter((account) =>
+    accountSupportsTransactions(account)
+  );
+  const defaultTransactionalAccount = accountSupportsTransactions(selectedAccountRecord)
+    ? selectedAccount || transactionCapableAccounts[0]?.name || ""
+    : transactionCapableAccounts[0]?.name || "";
   const [manualForm, setManualForm] = useState({
-    date: "2026-05-13",
+    date: getIsoDateInputValue(),
     merchant: "",
-    account:
-      accountSupportsTransactions(selectedAccountRecord)
-        ? selectedAccount || transactionCapableAccounts[0]?.name || ""
-        : transactionCapableAccounts[0]?.name || "",
+    account: defaultTransactionalAccount,
     amount: "",
     category: "",
   });
@@ -190,6 +196,7 @@ export function TransactionsView({
     direction: "All",
     source: "All",
   });
+  const manualAccountValue = selectedAccount ? defaultTransactionalAccount : manualForm.account;
   const accountOptions = transactionCapableAccounts.map((account) => account.name);
   const categoryOptions = Array.from(
     new Set([
@@ -204,9 +211,10 @@ export function TransactionsView({
   ).sort();
   const filteredTransactions = useMemo(() => {
     const search = filters.search.trim().toLowerCase();
+    const activeFilterAccount = selectedAccount || filters.account;
     return visibleTransactions.filter((tx) => {
       if (filters.category !== "All" && tx.category !== filters.category) return false;
-      if (filters.account !== "All" && tx.account !== filters.account) return false;
+      if (activeFilterAccount !== "All" && tx.account !== activeFilterAccount) return false;
       if (filters.direction === "Outflow" && tx.amount >= 0) return false;
       if (filters.direction === "Inflow" && tx.amount <= 0) return false;
       if (filters.source === "Manual" && tx.source !== "manual") return false;
@@ -219,7 +227,7 @@ export function TransactionsView({
       }
       return true;
     });
-  }, [filters, visibleTransactions]);
+  }, [filters, selectedAccount, visibleTransactions]);
   const monthlySpend = filteredTransactions
     .filter((tx) => tx.amount < 0)
     .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
@@ -235,37 +243,10 @@ export function TransactionsView({
     !isSelectedNonTransactionalAccount &&
     manualForm.date &&
     manualForm.merchant.trim() &&
-    manualForm.account.trim() &&
-    accountOptions.includes(manualForm.account) &&
+    manualAccountValue.trim() &&
+    accountOptions.includes(manualAccountValue) &&
     Number.isFinite(parseManualAmount(manualForm.amount)) &&
     parseManualAmount(manualForm.amount) !== 0;
-
-  useEffect(() => {
-    if (isSelectedNonTransactionalAccount) return;
-
-    const nextDefaultAccount =
-      accountSupportsTransactions(selectedAccountRecord)
-        ? selectedAccountRecord?.name
-        : transactionCapableAccounts[0]?.name || "";
-
-    setManualForm((current) =>
-      current.account === nextDefaultAccount || (current.account && !selectedAccount)
-        ? current
-        : { ...current, account: nextDefaultAccount }
-    );
-  }, [
-    isSelectedNonTransactionalAccount,
-    selectedAccount,
-    selectedAccountRecord,
-    transactionCapableAccounts,
-  ]);
-
-  useEffect(() => {
-    setFilters((current) => ({
-      ...current,
-      account: selectedAccount || "All",
-    }));
-  }, [selectedAccount]);
 
   const updateManualForm = (field, value) => {
     setManualForm((current) => ({ ...current, [field]: value }));
@@ -293,7 +274,7 @@ export function TransactionsView({
       date: formatManualDate(manualForm.date),
       merchant: manualForm.merchant.trim(),
       category: selectedCategory,
-      account: manualForm.account.trim(),
+      account: manualAccountValue.trim(),
       amount: parseManualAmount(manualForm.amount),
     });
     if (!didAddTransaction) return;
@@ -301,7 +282,7 @@ export function TransactionsView({
     setManualForm((current) => ({
       date: current.date,
       merchant: "",
-      account: selectedAccount || current.account,
+      account: selectedAccount ? defaultTransactionalAccount : current.account,
       amount: "",
       category: current.category,
     }));
@@ -323,7 +304,9 @@ export function TransactionsView({
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    const accountSlug = selectedAccount ? selectedAccount.replace(/\s+/g, "-").toLowerCase() : "all-accounts";
+    const accountSlug = selectedAccount
+      ? selectedAccount.replace(/\s+/g, "-").toLowerCase()
+      : "all-accounts";
     link.href = url;
     link.download = `transactions-${accountSlug}.csv`;
     document.body.appendChild(link);
@@ -500,48 +483,48 @@ export function TransactionsView({
               alignItems: "center",
             }}
           >
-          {[
-            ["date", "Date", "date"],
-            ["merchant", "Merchant", "text"],
-            ["amount", "Amount", "text"],
-          ].map(([field, label, type]) => (
-            <label key={field} style={{ display: "grid", gap: 7, minWidth: 0 }}>
-              <span
-                style={{
-                  color: "#8fb1d9",
-                  fontSize: 11,
-                  textTransform: "uppercase",
-                  letterSpacing: 0.8,
-                  fontWeight: 900,
-                }}
-              >
-                {label}
-              </span>
-              <input
-                type={type}
-                value={manualForm[field]}
-                placeholder={
-                  field === "amount"
-                    ? "-45.00"
-                    : field === "merchant"
-                      ? "Merchant name"
-                      : undefined
-                }
-                onChange={(event) => updateManualForm(field, event.target.value)}
-                style={{
-                  color: "#eaf3ff",
-                  background: "rgba(0,136,255,.08)",
-                  border: "1px solid rgba(0,216,255,.18)",
-                  borderRadius: 8,
-                  padding: "10px 11px",
-                  outline: "none",
-                  fontWeight: 800,
-                  colorScheme: "dark",
-                  minWidth: 0,
-                }}
-              />
-            </label>
-          ))}
+            {[
+              ["date", "Date", "date"],
+              ["merchant", "Merchant", "text"],
+              ["amount", "Amount", "text"],
+            ].map(([field, label, type]) => (
+              <label key={field} style={{ display: "grid", gap: 7, minWidth: 0 }}>
+                <span
+                  style={{
+                    color: "#8fb1d9",
+                    fontSize: 11,
+                    textTransform: "uppercase",
+                    letterSpacing: 0.8,
+                    fontWeight: 900,
+                  }}
+                >
+                  {label}
+                </span>
+                <input
+                  type={type}
+                  value={manualForm[field]}
+                  placeholder={
+                    field === "amount"
+                      ? "-45.00"
+                      : field === "merchant"
+                        ? "Merchant name"
+                        : undefined
+                  }
+                  onChange={(event) => updateManualForm(field, event.target.value)}
+                  style={{
+                    color: "#eaf3ff",
+                    background: "rgba(0,136,255,.08)",
+                    border: "1px solid rgba(0,216,255,.18)",
+                    borderRadius: 8,
+                    padding: "10px 11px",
+                    outline: "none",
+                    fontWeight: 800,
+                    colorScheme: "dark",
+                    minWidth: 0,
+                  }}
+                />
+              </label>
+            ))}
 
             <label style={{ display: "grid", gap: 7, minWidth: 0 }}>
               <span
@@ -556,7 +539,7 @@ export function TransactionsView({
                 Account
               </span>
               <select
-                value={manualForm.account}
+                value={manualAccountValue}
                 onChange={(event) => updateManualForm("account", event.target.value)}
                 disabled={Boolean(selectedAccount)}
                 style={{
@@ -579,43 +562,43 @@ export function TransactionsView({
               </select>
             </label>
 
-          <label style={{ display: "grid", gap: 7, minWidth: 0 }}>
-            <span
-              style={{
-                color: "#8fb1d9",
-                fontSize: 11,
-                textTransform: "uppercase",
-                letterSpacing: 0.8,
-                fontWeight: 900,
-              }}
-            >
-              Category
-            </span>
-            <select
-              value={selectedCategory}
-              onChange={(event) => updateManualForm("category", event.target.value)}
-              style={{
-                color: "#eaf3ff",
-                background: "rgba(0,136,255,.08)",
-                border: "1px solid rgba(0,216,255,.18)",
-                borderRadius: 8,
-                padding: "10px 11px",
-                outline: "none",
-                fontWeight: 800,
-                minWidth: 0,
-              }}
-            >
-              {categoryOptions.map((category) => (
-                <option key={category} value={category} style={{ background: "#061224" }}>
-                  {category}
-                </option>
-              ))}
-            </select>
-          </label>
+            <label style={{ display: "grid", gap: 7, minWidth: 0 }}>
+              <span
+                style={{
+                  color: "#8fb1d9",
+                  fontSize: 11,
+                  textTransform: "uppercase",
+                  letterSpacing: 0.8,
+                  fontWeight: 900,
+                }}
+              >
+                Category
+              </span>
+              <select
+                value={selectedCategory}
+                onChange={(event) => updateManualForm("category", event.target.value)}
+                style={{
+                  color: "#eaf3ff",
+                  background: "rgba(0,136,255,.08)",
+                  border: "1px solid rgba(0,216,255,.18)",
+                  borderRadius: 8,
+                  padding: "10px 11px",
+                  outline: "none",
+                  fontWeight: 800,
+                  minWidth: 0,
+                }}
+              >
+                {categoryOptions.map((category) => (
+                  <option key={category} value={category} style={{ background: "#061224" }}>
+                    {category}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
           <div style={{ color: "#8ea8ca", fontSize: 12, marginTop: 12 }}>
-            Use negative amounts for purchases/outflows and positive amounts for deposits, credits, or
-            reimbursements. Manual entries post directly into the selected account balance.
+            Use negative amounts for purchases/outflows and positive amounts for deposits, credits,
+            or reimbursements. Manual entries post directly into the selected account balance.
           </div>
         </form>
       )}
@@ -651,7 +634,7 @@ export function TransactionsView({
               <button
                 onClick={() => {
                   setSelectedAccount(null);
-                  setActiveTab("Add Accounts");
+                  setActiveTab(APP_TABS.ADD_ACCOUNTS);
                 }}
                 style={{
                   background: "rgba(0,136,255,.12)",
@@ -739,7 +722,9 @@ export function TransactionsView({
                       >
                         {item.label}
                       </div>
-                      <div style={{ color: "white", fontSize: 15, fontWeight: 800 }}>{item.value}</div>
+                      <div style={{ color: "white", fontSize: 15, fontWeight: 800 }}>
+                        {item.value}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -807,7 +792,15 @@ export function TransactionsView({
             }}
           >
             <label style={{ display: "grid", gap: 7 }}>
-              <span style={{ color: "#8fb1d9", fontSize: 11, textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 900 }}>
+              <span
+                style={{
+                  color: "#8fb1d9",
+                  fontSize: 11,
+                  textTransform: "uppercase",
+                  letterSpacing: 0.8,
+                  fontWeight: 900,
+                }}
+              >
                 Search
               </span>
               <input
@@ -827,7 +820,15 @@ export function TransactionsView({
               />
             </label>
             <label style={{ display: "grid", gap: 7 }}>
-              <span style={{ color: "#8fb1d9", fontSize: 11, textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 900 }}>
+              <span
+                style={{
+                  color: "#8fb1d9",
+                  fontSize: 11,
+                  textTransform: "uppercase",
+                  letterSpacing: 0.8,
+                  fontWeight: 900,
+                }}
+              >
                 Category
               </span>
               <select
@@ -843,7 +844,9 @@ export function TransactionsView({
                   fontWeight: 700,
                 }}
               >
-                <option value="All" style={{ background: "#061224" }}>All</option>
+                <option value="All" style={{ background: "#061224" }}>
+                  All
+                </option>
                 {categoryOptions.map((category) => (
                   <option key={category} value={category} style={{ background: "#061224" }}>
                     {category}
@@ -852,11 +855,19 @@ export function TransactionsView({
               </select>
             </label>
             <label style={{ display: "grid", gap: 7 }}>
-              <span style={{ color: "#8fb1d9", fontSize: 11, textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 900 }}>
+              <span
+                style={{
+                  color: "#8fb1d9",
+                  fontSize: 11,
+                  textTransform: "uppercase",
+                  letterSpacing: 0.8,
+                  fontWeight: 900,
+                }}
+              >
                 Account
               </span>
               <select
-                value={filters.account}
+                value={selectedAccount || filters.account}
                 onChange={(event) => updateFilters("account", event.target.value)}
                 disabled={Boolean(selectedAccount)}
                 style={{
@@ -870,7 +881,9 @@ export function TransactionsView({
                   opacity: selectedAccount ? 0.82 : 1,
                 }}
               >
-                <option value="All" style={{ background: "#061224" }}>All</option>
+                <option value="All" style={{ background: "#061224" }}>
+                  All
+                </option>
                 {filterAccountOptions.map((accountName) => (
                   <option key={accountName} value={accountName} style={{ background: "#061224" }}>
                     {accountName}
@@ -879,7 +892,15 @@ export function TransactionsView({
               </select>
             </label>
             <label style={{ display: "grid", gap: 7 }}>
-              <span style={{ color: "#8fb1d9", fontSize: 11, textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 900 }}>
+              <span
+                style={{
+                  color: "#8fb1d9",
+                  fontSize: 11,
+                  textTransform: "uppercase",
+                  letterSpacing: 0.8,
+                  fontWeight: 900,
+                }}
+              >
                 Direction
               </span>
               <select
@@ -903,7 +924,15 @@ export function TransactionsView({
               </select>
             </label>
             <label style={{ display: "grid", gap: 7 }}>
-              <span style={{ color: "#8fb1d9", fontSize: 11, textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 900 }}>
+              <span
+                style={{
+                  color: "#8fb1d9",
+                  fontSize: 11,
+                  textTransform: "uppercase",
+                  letterSpacing: 0.8,
+                  fontWeight: 900,
+                }}
+              >
                 Source
               </span>
               <select
@@ -1050,10 +1079,18 @@ export function TransactionsView({
               {selectedAccount
                 ? isSelectedNonTransactionalAccount
                   ? `${selectedAccount} is a valuation-based account, so it does not keep a spending ledger here. Manage its value from Add Accounts.`
-                  : filters.search || filters.category !== "All" || filters.account !== (selectedAccount || "All") || filters.direction !== "All" || filters.source !== "All"
+                  : filters.search ||
+                      filters.category !== "All" ||
+                      filters.account !== (selectedAccount || "All") ||
+                      filters.direction !== "All" ||
+                      filters.source !== "All"
                     ? `No transactions in ${selectedAccount} match the current filters.`
                     : `No transactions have posted to ${selectedAccount} yet. Add one manually or sync the account to keep balances and budgets in sync.`
-                : filters.search || filters.category !== "All" || filters.account !== "All" || filters.direction !== "All" || filters.source !== "All"
+                : filters.search ||
+                    filters.category !== "All" ||
+                    filters.account !== "All" ||
+                    filters.direction !== "All" ||
+                    filters.source !== "All"
                   ? "No transactions match the current filters."
                   : "No transactions are available yet. Add a transactional account or connect Plaid to begin building the live ledger."}
             </div>

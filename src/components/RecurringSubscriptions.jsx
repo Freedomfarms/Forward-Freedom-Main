@@ -564,7 +564,9 @@ export function RecurringSubscriptions({ accounts, subscriptions, setSubscriptio
                       Next Bill
                     </div>
                     <div style={{ color: "#b8d3f3", fontWeight: 700, marginTop: 3 }}>
-                      {sub.status === "Cancelled" ? "—" : nextBillingDate(sub.billing, sub.frequency)}
+                      {sub.status === "Cancelled"
+                        ? "—"
+                        : nextBillingDate(sub.billing, sub.frequency)}
                     </div>
                   </div>
                   <div>

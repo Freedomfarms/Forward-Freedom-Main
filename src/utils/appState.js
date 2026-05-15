@@ -1,4 +1,6 @@
 import {
+  APP_TAB_VALUES,
+  APP_TABS,
   incomeStreamSeed,
   initialAccounts,
   initialBudgetCategories,
@@ -34,7 +36,7 @@ function buildDefaultAppState() {
     incomeStreams: cloneSeed(incomeStreamSeed),
     projectionAdjustments: {},
     subscriptions: cloneSeed(initialSubscriptions),
-    activeTab: "Dashboard",
+    activeTab: APP_TABS.DASHBOARD,
     activeRange: "ALL",
     metricSnapshots: {},
   };
@@ -58,7 +60,9 @@ export function loadPersistedAppState() {
       accounts: Array.isArray(parsed?.accounts)
         ? parsed.accounts.map((account, index) => normalizeAccount(account, index))
         : defaults.accounts,
-      transactions: Array.isArray(parsed?.transactions) ? parsed.transactions : defaults.transactions,
+      transactions: Array.isArray(parsed?.transactions)
+        ? parsed.transactions
+        : defaults.transactions,
       budgetRows: Array.isArray(parsed?.budgetRows) ? parsed.budgetRows : defaults.budgetRows,
       incomeStreams: Array.isArray(parsed?.incomeStreams)
         ? parsed.incomeStreams
@@ -70,7 +74,10 @@ export function loadPersistedAppState() {
       subscriptions: Array.isArray(parsed?.subscriptions)
         ? parsed.subscriptions
         : defaults.subscriptions,
-      activeTab: typeof parsed?.activeTab === "string" ? parsed.activeTab : defaults.activeTab,
+      activeTab:
+        typeof parsed?.activeTab === "string" && APP_TAB_VALUES.includes(parsed.activeTab)
+          ? parsed.activeTab
+          : defaults.activeTab,
       activeRange:
         typeof parsed?.activeRange === "string" ? parsed.activeRange : defaults.activeRange,
       metricSnapshots:

@@ -1,4 +1,5 @@
 import { budgetMonthNames, budgetMonths } from "../data/constants.jsx";
+import { getCurrentBudgetPeriod } from "./date.js";
 import { money, parseMoney, wholeDollars } from "./format.js";
 
 const FALLBACK_OPEN_YEAR = 2026;
@@ -70,6 +71,44 @@ export function buildTrueCashProjectionSchedule({
       month,
       year: projectionYear,
       date: `${month} ${projectionYear} Projection`,
+      value: projectedValue,
+      formattedValue: wholeDollars(projectedValue),
+      profit,
+      adjustment,
+      type: "projected",
+    };
+  });
+}
+
+export function buildForwardTrueCashProjection({
+  openingBalance,
+  incomeStreams,
+  budgetRows,
+  projectionAdjustments = {},
+  startMonth = getCurrentBudgetPeriod().month,
+  startYear = getCurrentBudgetPeriod().year,
+}) {
+  const startMonthIndex = budgetMonths.indexOf(startMonth);
+  const projectionMonths =
+    startMonthIndex >= 0 ? budgetMonths.slice(startMonthIndex + 1) : budgetMonths;
+  let projectedValue = Number(openingBalance) || 0;
+
+  return projectionMonths.map((month) => {
+    const activeStreams = incomeStreams.filter((stream) =>
+      (stream.months || budgetMonths).includes(month)
+    );
+    const income = activeStreams.reduce((sum, stream) => sum + parseMoney(stream.amount), 0);
+    const budget = budgetRows
+      .filter((category) => (category.months || budgetMonths).includes(month))
+      .reduce((sum, category) => sum + Number(category.budget || 0), 0);
+    const profit = income - budget;
+    const adjustment = parseMoney(projectionAdjustments[month]);
+    projectedValue += profit + adjustment;
+
+    return {
+      month,
+      year: startYear,
+      date: `${month} ${startYear} Projection`,
       value: projectedValue,
       formattedValue: wholeDollars(projectedValue),
       profit,

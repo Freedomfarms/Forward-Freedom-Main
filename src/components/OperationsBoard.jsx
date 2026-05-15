@@ -1,13 +1,12 @@
 import { useState } from "react";
 import { styles } from "../styles.js";
+import { buildBudgetMonthlySpendSeries } from "../utils/budgetReview.js";
+import { getCurrentBudgetPeriod } from "../utils/date.js";
 import { money, parseMoney, wholeDollars } from "../utils/format.js";
-import { budgetMonths, chartSets, yearlyOpsData } from "../data/constants.jsx";
-import { buildSubscriptionMonthlySeries, buildSubscriptionOverview } from "../utils/subscriptions.js";
+import { budgetMonths, yearlyOpsData } from "../data/constants.jsx";
+import { buildSubscriptionOverview } from "../utils/subscriptions.js";
 import { MonthCoverageEditor } from "./Common.jsx";
-import {
-  buildSyncedTrueCashChart,
-  buildTrueCashProjectionSchedule,
-} from "../utils/trueCashProjection.js";
+import { buildForwardTrueCashProjection } from "../utils/trueCashProjection.js";
 
 function formatAdjustmentValue(value) {
   return String(Math.round(Number(value) || 0));
@@ -29,12 +28,20 @@ export function OperationsBoard({
   subscriptions,
   incomeStreams,
   setIncomeStreams,
+  transactions,
   trueCash,
   projectionAdjustments,
   setProjectionAdjustments,
 }) {
   const [incomeDeleteTarget, setIncomeDeleteTarget] = useState(null);
   const [hoveredCommandMonth, setHoveredCommandMonth] = useState(null);
+  const currentBudgetPeriod = getCurrentBudgetPeriod();
+  const currentBudgetMonthIndex = budgetMonths.indexOf(currentBudgetPeriod.month);
+  const monthlySpendSeries = buildBudgetMonthlySpendSeries(
+    transactions,
+    budgetRows,
+    currentBudgetPeriod.year
+  );
 
   const addIncomeStream = () => {
     setIncomeStreams((streams) => {
@@ -101,10 +108,13 @@ export function OperationsBoard({
       0
     );
 
+    const spent = monthlySpendSeries.find((entry) => entry.month === month.month)?.spent || 0;
+
     return {
       ...month,
       income,
       budget,
+      spent,
       baseBudget: budget,
       profit: income - budget,
       recurringIncome: income - oneTimeIncome,
@@ -115,10 +125,9 @@ export function OperationsBoard({
   const yearlyIncome = dynamicYearlyOpsData.reduce((sum, month) => sum + month.income, 0);
   const yearlyBudget = dynamicYearlyOpsData.reduce((sum, month) => sum + month.budget, 0);
   const yearlySurplus = yearlyIncome - yearlyBudget;
-  const subscriptionSeries = buildSubscriptionMonthlySeries(subscriptions);
   const subscriptionOverview = buildSubscriptionOverview(subscriptions);
   const maxValue = Math.max(
-    ...dynamicYearlyOpsData.flatMap((month) => [month.income, month.budget]),
+    ...dynamicYearlyOpsData.flatMap((month) => [month.income, month.budget, month.spent]),
     1
   );
   const incomeOutlookRows = incomeStreams.map((stream) => {
@@ -132,21 +141,21 @@ export function OperationsBoard({
       total: monthlyValues.reduce((sum, value) => sum + value, 0),
     };
   });
-  const syncedProjectionChart = buildSyncedTrueCashChart(chartSets.ALL, trueCash);
-  const trueCashProjectionSchedule = buildTrueCashProjectionSchedule({
-    chart: syncedProjectionChart,
+  const trueCashProjectionSchedule = buildForwardTrueCashProjection({
+    openingBalance: trueCash,
     incomeStreams,
     budgetRows,
     projectionAdjustments,
+    startMonth: currentBudgetPeriod.month,
+    startYear: currentBudgetPeriod.year,
   });
   const adjustmentValues = budgetMonths.map((month) => parseMoney(projectionAdjustments[month]));
-  const projectedTrueCashValues = budgetMonths.map(
-    (month) => trueCashProjectionSchedule.find((point) => point.month === month)?.value || 0
-  );
-  const projectedYearEndTrueCash =
-    projectedTrueCashValues[projectedTrueCashValues.length - 1] || trueCash;
-  const projectionBaseDate = syncedProjectionChart.dates?.[0] || syncedProjectionChart.date;
-  const projectionBaseValue = parseMoney(syncedProjectionChart.values?.[0] || syncedProjectionChart.value);
+  const projectedTrueCashValues = budgetMonths.map((month, index) => {
+    if (index < currentBudgetMonthIndex) return null;
+    if (index === currentBudgetMonthIndex) return trueCash;
+    return trueCashProjectionSchedule.find((point) => point.month === month)?.value ?? null;
+  });
+  const projectedYearEndTrueCash = projectedTrueCashValues.at(-1) ?? trueCash;
 
   return (
     <div>
@@ -230,7 +239,7 @@ export function OperationsBoard({
           <div
             style={{ color: "#8fb1d9", fontSize: 12, textTransform: "uppercase", letterSpacing: 1 }}
           >
-            Projection Base
+            Current True Cash
           </div>
 
           <div
@@ -247,7 +256,7 @@ export function OperationsBoard({
                 fontWeight: 900,
               }}
             >
-              {wholeDollars(projectionBaseValue)}
+              {wholeDollars(trueCash)}
             </div>
             <div
               style={{
@@ -261,11 +270,11 @@ export function OperationsBoard({
                 boxShadow: "0 0 18px rgba(0,216,255,.12)",
               }}
             >
-              Anchored to {projectionBaseDate}
+              Anchored to the live dashboard baseline
             </div>
             <div style={{ color: "#8ea8ca", fontSize: 12, lineHeight: 1.5 }}>
-              Uses the same shared true-cash baseline that powers the dashboard and forecast
-              projection schedule.
+              Uses the same live true-cash balance that powers Dashboard and Forecast Lab before
+              projecting the remaining months in the year.
             </div>
           </div>
         </div>
@@ -452,7 +461,10 @@ export function OperationsBoard({
                         onToggleMonth={(month) => toggleIncomeMonth(index, month)}
                         quickActions={[
                           { label: "All", onClick: () => setIncomeMonths(index, budgetMonths) },
-                          { label: "Only May", onClick: () => setIncomeMonths(index, ["May"]) },
+                          {
+                            label: `Only ${currentBudgetPeriod.month}`,
+                            onClick: () => setIncomeMonths(index, [currentBudgetPeriod.month]),
+                          },
                         ]}
                       />
                     </div>
@@ -528,7 +540,8 @@ export function OperationsBoard({
                   Income Command Center
                 </div>
                 <div style={{ color: "#8ea8ca", marginTop: 8, fontSize: 16 }}>
-                  Income pulls from Monthly Income Streams. Budget pulls from Budget Command Center.
+                  Income pulls from Monthly Income Streams. Budget and spent pull from the same
+                  monthly transaction logic used in Budget Command Center.
                 </div>
               </div>
               <div
@@ -567,6 +580,19 @@ export function OperationsBoard({
                     }}
                   />
                   Budget
+                </span>
+                <span>
+                  <b
+                    style={{
+                      display: "inline-block",
+                      width: 10,
+                      height: 10,
+                      borderRadius: 99,
+                      background: "#ff8f3d",
+                      marginRight: 8,
+                    }}
+                  />
+                  Spent
                 </span>
               </div>
             </div>
@@ -619,6 +645,7 @@ export function OperationsBoard({
                   {[
                     ["Income", hoveredCommandMonth.data.income, "#00f59b"],
                     ["Budget", hoveredCommandMonth.data.budget, "#00d8ff"],
+                    ["Spent", hoveredCommandMonth.data.spent, "#ff8f3d"],
                     [
                       "Profit",
                       hoveredCommandMonth.data.income - hoveredCommandMonth.data.budget,
@@ -652,11 +679,13 @@ export function OperationsBoard({
                       <span style={{ color: "#8fb1d9" }}>{label}</span>
                       <span style={{ color }}>
                         {(label === "Profit" || label === "Adjustments") && value >= 0 ? "+" : ""}
-                        {label === "Adjustments"
-                          ? formatAdjustmentValue(value)
-                          : label === "Projected Cash"
-                            ? wholeDollars(value)
-                            : money(value)}
+                        {label === "Projected Cash" && value === null
+                          ? "—"
+                          : label === "Adjustments"
+                            ? formatAdjustmentValue(value)
+                            : label === "Projected Cash"
+                              ? wholeDollars(value)
+                              : money(value)}
                       </span>
                     </div>
                   ))}
@@ -695,6 +724,16 @@ export function OperationsBoard({
                         borderRadius: "8px 8px 0 0",
                         background: "linear-gradient(180deg,#00f59b,#006d4a)",
                         boxShadow: "0 0 14px rgba(0,245,155,.35)",
+                      }}
+                    />
+                    <div
+                      title={`Spent ${money(month.spent)}`}
+                      style={{
+                        width: 14,
+                        height: `${(month.spent / maxValue) * 100}%`,
+                        borderRadius: "8px 8px 0 0",
+                        background: "linear-gradient(180deg,#ffb65d,#ff6b1c)",
+                        boxShadow: "0 0 14px rgba(255,159,28,.35)",
                       }}
                     />
                     <div
@@ -788,12 +827,6 @@ export function OperationsBoard({
                 color: "#00d8ff",
                 values: dynamicYearlyOpsData.map((month) => month.baseBudget),
                 total: dynamicYearlyOpsData.reduce((sum, month) => sum + month.baseBudget, 0),
-              },
-              {
-                label: "Subscriptions",
-                color: "#ffb65d",
-                values: subscriptionSeries.map((row) => row.total),
-                total: subscriptionSeries.reduce((sum, row) => sum + row.total, 0),
               },
             ].map((row) => (
               <div
@@ -948,14 +981,19 @@ export function OperationsBoard({
                 <div
                   key={budgetMonths[index]}
                   style={{
-                    color: "#ffd08a",
+                    color:
+                      value === null
+                        ? "#5e7da0"
+                        : index === currentBudgetMonthIndex
+                          ? "#ff9f1c"
+                          : "#ffd08a",
                     textAlign: "right",
                     fontSize: 14,
                     fontWeight: 900,
-                    textShadow: "0 0 10px rgba(255,159,28,.32)",
+                    textShadow: value === null ? "none" : "0 0 10px rgba(255,159,28,.32)",
                   }}
                 >
-                  {wholeDollars(value)}
+                  {value === null ? "—" : wholeDollars(value)}
                 </div>
               ))}
               <div

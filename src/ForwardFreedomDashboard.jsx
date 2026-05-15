@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
-import { budgetMonths } from "./data/constants.jsx";
+import { useEffect, useMemo, useState } from "react";
+import { APP_TABS, budgetMonths } from "./data/constants.jsx";
 import { styles } from "./styles.js";
+import { getBudgetPeriodAtOffset, getCurrentTimestamp } from "./utils/date.js";
 import { money, parseMoney } from "./utils/format.js";
 import {
   accountSupportsTransactions,
@@ -62,9 +63,7 @@ function buildTrackedMetricMeta(snapshots, metricKey, currentValue, increaseIsGo
     .reverse()
     .find(
       (key) =>
-        key <= thresholdKey &&
-        snapshots[key] &&
-        typeof snapshots[key][metricKey] === "number"
+        key <= thresholdKey && snapshots[key] && typeof snapshots[key][metricKey] === "number"
     );
 
   if (!comparisonKey) {
@@ -100,6 +99,55 @@ function buildTrackedMetricMeta(snapshots, metricKey, currentValue, increaseIsGo
   };
 }
 
+function syncDerivedAccountValues(accounts) {
+  return accounts.map((account) => {
+    if (account.type !== "Real Estate") return account;
+    if (!account.linkedLoanId || !account.propertyMarketValue) return account;
+
+    const linkedLoan = accounts.find((candidate) => candidate.id === account.linkedLoanId);
+    if (!linkedLoan) return account;
+
+    const nextEquity = calculateRealEstateEquity(account.propertyMarketValue, linkedLoan.balance);
+    if (account.balance === nextEquity && account.equitySource === "Derived") {
+      return account;
+    }
+
+    return {
+      ...account,
+      balance: nextEquity,
+      equitySource: "Derived",
+      lastValuedAt: account.lastValuedAt || null,
+    };
+  });
+}
+
+function buildTodayMetricSnapshot(liquidCash, creditCardDebt, totalNetWorth) {
+  return {
+    liquidCash: roundCurrency(liquidCash),
+    creditCardDebt: roundCurrency(creditCardDebt),
+    totalNetWorth: roundCurrency(totalNetWorth),
+  };
+}
+
+function ensureTodayMetricSnapshot(metricSnapshots, nextSnapshot) {
+  const todayKey = getLocalDateKey();
+  const existing = metricSnapshots[todayKey];
+
+  if (
+    existing &&
+    existing.liquidCash === nextSnapshot.liquidCash &&
+    existing.creditCardDebt === nextSnapshot.creditCardDebt &&
+    existing.totalNetWorth === nextSnapshot.totalNetWorth
+  ) {
+    return metricSnapshots;
+  }
+
+  return trimMetricSnapshots({
+    ...metricSnapshots,
+    [todayKey]: nextSnapshot,
+  });
+}
+
 function ForwardFreedomDashboard() {
   const [initialAppState] = useState(() => loadPersistedAppState());
   const [currentView, setCurrentView] = useState("landing");
@@ -114,43 +162,43 @@ function ForwardFreedomDashboard() {
   const [subscriptions, setSubscriptions] = useState(initialAppState.subscriptions);
   const [activeTab, setActiveTab] = useState(initialAppState.activeTab);
   const [activeRange, setActiveRange] = useState(initialAppState.activeRange);
-  const [metricSnapshots, setMetricSnapshots] = useState(initialAppState.metricSnapshots);
+  const [metricSnapshots] = useState(initialAppState.metricSnapshots);
+  const syncedAccounts = useMemo(() => syncDerivedAccountValues(accounts), [accounts]);
 
-  const liquidCash = accounts
+  const liquidCash = syncedAccounts
     .filter((account) => LIQUID_ACCOUNT_TYPES.has(account.type))
     .reduce((sum, account) => sum + account.balance, 0);
 
   const creditCardDebt = Math.abs(
-    accounts
+    syncedAccounts
       .filter((account) => account.type === "Credit Card")
       .reduce((sum, account) => sum + account.balance, 0)
   );
 
   const trueCash = liquidCash - creditCardDebt;
 
-  const investmentTotal = accounts
+  const investmentTotal = syncedAccounts
     .filter((account) => account.type === "Investment")
     .reduce((sum, account) => sum + account.balance, 0);
 
-  const cryptoTotal = accounts
+  const cryptoTotal = syncedAccounts
     .filter((account) => account.type === "Crypto")
     .reduce((sum, account) => sum + account.balance, 0);
 
-  const preciousMetalsTotal = accounts
+  const preciousMetalsTotal = syncedAccounts
     .filter((account) => account.type === "Precious Metals")
     .reduce((sum, account) => sum + account.balance, 0);
 
-  const realEstateTotal = accounts
+  const realEstateTotal = syncedAccounts
     .filter((account) => account.type === "Real Estate")
     .reduce((sum, account) => sum + account.balance, 0);
 
-  const retirementTotal = accounts
+  const retirementTotal = syncedAccounts
     .filter((account) => account.type === "Retirement")
     .reduce((sum, account) => sum + account.balance, 0);
 
-  const currentMonth = "May";
-  const currentMonthIndex = budgetMonths.indexOf(currentMonth);
-  const nextMonth = budgetMonths[(currentMonthIndex + 1) % budgetMonths.length] || "Jun";
+  const currentMonth = getBudgetPeriodAtOffset(0).month;
+  const nextMonth = getBudgetPeriodAtOffset(1).month;
   const currentMonthIncome = incomeStreams
     .filter((s) => (s.months || budgetMonths).includes(currentMonth))
     .reduce((sum, s) => sum + parseMoney(s.amount), 0);
@@ -167,10 +215,23 @@ function ForwardFreedomDashboard() {
   const nextMonthFlow = nextMonthIncome - nextMonthBudget;
 
   const totalNetWorth = Math.max(
-    trueCash + investmentTotal + cryptoTotal + preciousMetalsTotal + realEstateTotal + retirementTotal,
+    trueCash +
+      investmentTotal +
+      cryptoTotal +
+      preciousMetalsTotal +
+      realEstateTotal +
+      retirementTotal,
     1
   );
   const pct = (v) => `${((v / totalNetWorth) * 100).toFixed(1)}%`;
+  const trackedMetricSnapshots = useMemo(
+    () =>
+      ensureTodayMetricSnapshot(
+        metricSnapshots,
+        buildTodayMetricSnapshot(liquidCash, creditCardDebt, totalNetWorth)
+      ),
+    [creditCardDebt, liquidCash, metricSnapshots, totalNetWorth]
+  );
 
   const dynamicAllocations = [
     {
@@ -218,34 +279,8 @@ function ForwardFreedomDashboard() {
   ];
 
   useEffect(() => {
-    const todayKey = getLocalDateKey();
-    const todaysSnapshot = {
-      liquidCash: roundCurrency(liquidCash),
-      creditCardDebt: roundCurrency(creditCardDebt),
-      totalNetWorth: roundCurrency(totalNetWorth),
-    };
-
-    setMetricSnapshots((current) => {
-      const existing = current[todayKey];
-      if (
-        existing &&
-        existing.liquidCash === todaysSnapshot.liquidCash &&
-        existing.creditCardDebt === todaysSnapshot.creditCardDebt &&
-        existing.totalNetWorth === todaysSnapshot.totalNetWorth
-      ) {
-        return current;
-      }
-
-      return trimMetricSnapshots({
-        ...current,
-        [todayKey]: todaysSnapshot,
-      });
-    });
-  }, [creditCardDebt, liquidCash, totalNetWorth]);
-
-  useEffect(() => {
     persistAppState({
-      accounts,
+      accounts: syncedAccounts,
       transactions,
       budgetRows,
       incomeStreams,
@@ -253,10 +288,9 @@ function ForwardFreedomDashboard() {
       subscriptions,
       activeTab,
       activeRange,
-      metricSnapshots,
+      metricSnapshots: trackedMetricSnapshots,
     });
   }, [
-    accounts,
     transactions,
     budgetRows,
     incomeStreams,
@@ -264,7 +298,8 @@ function ForwardFreedomDashboard() {
     subscriptions,
     activeTab,
     activeRange,
-    metricSnapshots,
+    syncedAccounts,
+    trackedMetricSnapshots,
   ]);
 
   const dynamicMetrics = [
@@ -272,15 +307,15 @@ function ForwardFreedomDashboard() {
       icon: "▱",
       title: "LIQUID CASH",
       value: money(liquidCash),
-      ...buildTrackedMetricMeta(metricSnapshots, "liquidCash", liquidCash, true),
-      onClick: () => setActiveTab("Add Accounts"),
+      ...buildTrackedMetricMeta(trackedMetricSnapshots, "liquidCash", liquidCash, true),
+      onClick: () => setActiveTab(APP_TABS.ADD_ACCOUNTS),
     },
     {
       icon: "▭",
       title: "CREDIT CARD DEBT",
       value: money(creditCardDebt),
-      ...buildTrackedMetricMeta(metricSnapshots, "creditCardDebt", creditCardDebt, false),
-      onClick: () => setActiveTab("Add Accounts"),
+      ...buildTrackedMetricMeta(trackedMetricSnapshots, "creditCardDebt", creditCardDebt, false),
+      onClick: () => setActiveTab(APP_TABS.ADD_ACCOUNTS),
     },
     {
       icon: "⌁",
@@ -290,7 +325,7 @@ function ForwardFreedomDashboard() {
       changeColor: monthlyFlow >= 0 ? "#00f59b" : "#ff355d",
       changeIcon: monthlyFlow >= 0 ? "↑" : "↓",
       subLabel: "current month plan",
-      onClick: () => setActiveTab("Budget Command Center"),
+      onClick: () => setActiveTab(APP_TABS.BUDGET_COMMAND_CENTER),
     },
     {
       icon: "▰",
@@ -300,42 +335,9 @@ function ForwardFreedomDashboard() {
       changeColor: nextMonthFlow >= 0 ? "#00f59b" : "#ff355d",
       changeIcon: nextMonthFlow >= 0 ? "↑" : "↓",
       subLabel: `${nextMonth} plan`,
-      onClick: () => setActiveTab("Budget Command Center"),
+      onClick: () => setActiveTab(APP_TABS.BUDGET_COMMAND_CENTER),
     },
   ];
-
-  useEffect(() => {
-    setAccounts((current) => {
-      let changed = false;
-
-      const nextAccounts = current.map((account) => {
-        if (account.type !== "Real Estate") return account;
-        if (!account.linkedLoanId || !account.propertyMarketValue) return account;
-
-        const linkedLoan = current.find((candidate) => candidate.id === account.linkedLoanId);
-        if (!linkedLoan) return account;
-
-        const nextEquity = calculateRealEstateEquity(
-          account.propertyMarketValue,
-          linkedLoan.balance
-        );
-
-        if (account.balance === nextEquity && account.equitySource === "Derived") {
-          return account;
-        }
-
-        changed = true;
-        return {
-          ...account,
-          balance: nextEquity,
-          equitySource: "Derived",
-          lastValuedAt: Date.now(),
-        };
-      });
-
-      return changed ? nextAccounts : current;
-    });
-  }, [accounts]);
 
   useEffect(() => {
     const liveMetalsAccounts = accounts.filter(
@@ -411,7 +413,9 @@ function ForwardFreedomDashboard() {
     if (staleCryptoAccounts.length === 0) return;
 
     let cancelled = false;
-    const uniqueAssetIds = [...new Set(staleCryptoAccounts.map((account) => account.cryptoAssetId))];
+    const uniqueAssetIds = [
+      ...new Set(staleCryptoAccounts.map((account) => account.cryptoAssetId)),
+    ];
 
     fetchCryptoQuotes(uniqueAssetIds)
       .then((quotes) => {
@@ -493,7 +497,7 @@ function ForwardFreedomDashboard() {
 
     setAccounts((current) => [...current, normalizeAccount(newAccount, current.length)]);
     setTransactions((current) => [...newTransactions, ...current]);
-    setActiveTab("Transactions");
+    setActiveTab(APP_TABS.TRANSACTIONS);
   };
 
   const addManualAccount = ({
@@ -525,6 +529,7 @@ function ForwardFreedomDashboard() {
     lastPriceUpdatedAt,
     priceSource,
   }) => {
+    const currentTimestamp = getCurrentTimestamp();
     const newAccount = {
       name,
       type,
@@ -535,7 +540,7 @@ function ForwardFreedomDashboard() {
       propertyType: propertyType || "",
       propertyMarketValue: Number(propertyMarketValue) || 0,
       equitySource: equitySource || "Manual",
-      lastValuedAt: Date.now(),
+      lastValuedAt: currentTimestamp,
       linkedLoanId: linkedLoanId || "",
       linkedPropertyId: linkedPropertyId || "",
       loanCategory: loanCategory || "",
@@ -551,7 +556,7 @@ function ForwardFreedomDashboard() {
         cryptoSymbol,
         cryptoThumb,
         lastPriceUsd: normalizeCryptoPrice(lastPriceUsd),
-        lastPriceUpdatedAt: Number(lastPriceUpdatedAt) || Date.now(),
+        lastPriceUpdatedAt: Number(lastPriceUpdatedAt) || currentTimestamp,
         priceSource: priceSource || CRYPTO_PRICE_SOURCE,
       });
     }
@@ -564,7 +569,7 @@ function ForwardFreedomDashboard() {
         metalUnit: metalUnit || "oz",
         pricePerUnit: Number(pricePerUnit) || 0,
         valuationSource: valuationSource || "Manual",
-        lastValuedAt: Number(lastValuedAt) || Date.now(),
+        lastValuedAt: Number(lastValuedAt) || currentTimestamp,
       });
     }
 
@@ -580,7 +585,7 @@ function ForwardFreedomDashboard() {
 
   const openAccountTransactions = (accountName) => {
     setSelectedAccount(accountName);
-    setActiveTab("Transactions");
+    setActiveTab(APP_TABS.TRANSACTIONS);
   };
 
   const addManualTransaction = (transaction) => {
@@ -596,7 +601,7 @@ function ForwardFreedomDashboard() {
         ...transaction,
         account: targetAccountName,
         amount,
-        id: `manual-tx-${Date.now()}-${current.length + 1}`,
+        id: `manual-tx-${getCurrentTimestamp()}-${current.length + 1}`,
         source: "manual",
       },
       ...current,
@@ -636,7 +641,6 @@ function ForwardFreedomDashboard() {
   };
 
   const updateTransactionCategory = (transactionToUpdate, nextCategory) => {
-
     if (!transactionToUpdate) return;
 
     setTransactions((current) => {
@@ -678,7 +682,7 @@ function ForwardFreedomDashboard() {
         />
 
         <main style={styles.main}>
-          {activeTab === "Dashboard" ? (
+          {activeTab === APP_TABS.DASHBOARD ? (
             <DashboardView
               activeRange={activeRange}
               setActiveRange={setActiveRange}
@@ -691,34 +695,35 @@ function ForwardFreedomDashboard() {
               projectionAdjustments={projectionAdjustments}
               dynamicMetrics={dynamicMetrics}
               dynamicAllocations={dynamicAllocations}
-              metricSnapshots={metricSnapshots}
+              metricSnapshots={trackedMetricSnapshots}
             />
-          ) : activeTab === "Budget Command Center" ? (
+          ) : activeTab === APP_TABS.BUDGET_COMMAND_CENTER ? (
             <BudgetCommandCenter
               transactions={transactions}
               budgetRows={budgetRows}
               setBudgetRows={setBudgetRows}
             />
-          ) : activeTab === "Operations Board" ? (
+          ) : activeTab === APP_TABS.OPERATIONS_BOARD ? (
             <OperationsBoard
               budgetRows={budgetRows}
               subscriptions={subscriptions}
               incomeStreams={incomeStreams}
               setIncomeStreams={setIncomeStreams}
+              transactions={transactions}
               trueCash={trueCash}
               projectionAdjustments={projectionAdjustments}
               setProjectionAdjustments={setProjectionAdjustments}
             />
-          ) : activeTab === "Add Accounts" ? (
+          ) : activeTab === APP_TABS.ADD_ACCOUNTS ? (
             <AccountsView
-              accounts={accounts}
+              accounts={syncedAccounts}
               addManualAccount={addManualAccount}
               connectMockPlaidAccount={connectMockPlaidAccount}
               openAccountTransactions={openAccountTransactions}
             />
-          ) : activeTab === "Transactions" ? (
+          ) : activeTab === APP_TABS.TRANSACTIONS ? (
             <TransactionsView
-              accounts={accounts}
+              accounts={syncedAccounts}
               budgetRows={budgetRows}
               selectedAccount={selectedAccount}
               visibleTransactions={visibleTransactions}
@@ -729,7 +734,7 @@ function ForwardFreedomDashboard() {
               deleteManualTransaction={deleteManualTransaction}
               updateTransactionCategory={updateTransactionCategory}
             />
-          ) : activeTab === "Forecast Lab" ? (
+          ) : activeTab === APP_TABS.FORECAST_LAB ? (
             <ForecastLab
               trueCash={trueCash}
               subscriptions={subscriptions}
@@ -737,9 +742,9 @@ function ForwardFreedomDashboard() {
               budgetRows={budgetRows}
               projectionAdjustments={projectionAdjustments}
             />
-          ) : activeTab === "Recurring Subscriptions" ? (
+          ) : activeTab === APP_TABS.RECURRING_SUBSCRIPTIONS ? (
             <RecurringSubscriptions
-              accounts={accounts}
+              accounts={syncedAccounts}
               subscriptions={subscriptions}
               setSubscriptions={setSubscriptions}
             />
