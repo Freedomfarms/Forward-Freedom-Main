@@ -69,6 +69,7 @@ export function accountSupportsTransactions(account) {
 
 export function normalizeAccount(account, index = 0) {
   const baseAccount = {
+    ...account,
     id: account.id || `account-${slugify(account.name || account.type || "item")}-${index}`,
     name: account.name || `Account ${index + 1}`,
     type: account.type || "Checking",

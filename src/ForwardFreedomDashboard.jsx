@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { usePlaidLink } from "react-plaid-link";
 import { APP_TABS, budgetMonths } from "./data/constants.jsx";
 import { styles } from "./styles.js";
 import { getBudgetPeriodAtOffset, getCurrentTimestamp } from "./utils/date.js";
@@ -13,6 +14,12 @@ import {
   loadPersistedAppState,
   persistAppState,
 } from "./utils/appState.js";
+import {
+  createPlaidLinkToken,
+  exchangePlaidPublicToken,
+  getPlaidStatus,
+  syncPlaidUser,
+} from "./utils/plaid.js";
 import {
   calculateCryptoBalance,
   fetchCryptoQuotes,
@@ -55,6 +62,8 @@ const EMPTY_USER_STATE = Object.freeze({
   incomeStreams: [],
   projectionAdjustments: {},
   subscriptions: [],
+  plaidItems: [],
+  lastPlaidSyncAt: null,
   activeTab: APP_TABS.DASHBOARD,
   activeRange: "ALL",
   metricSnapshots: {},
@@ -170,6 +179,47 @@ function getDisplayUserName(user, index = 0) {
   return user?.name?.trim() || `User ${index + 1}`;
 }
 
+function sortTransactionsByDate(transactions) {
+  return [...transactions].sort((a, b) => new Date(b.date) - new Date(a.date));
+}
+
+function mergePlaidSyncIntoUser(user, syncPayload) {
+  const hasLivePlaidItems = Array.isArray(user.plaidItems) && user.plaidItems.length > 0;
+  const shouldReplaceDemoSyncedData = !hasLivePlaidItems;
+  const syncedAccounts = (syncPayload.accounts || []).map((account, index) =>
+    normalizeAccount(account, index)
+  );
+  const existingPlaidTransactions = new Map(
+    user.transactions
+      .filter((transaction) => transaction.source === "plaid")
+      .map((transaction) => [transaction.id, transaction])
+  );
+  const syncedTransactions = (syncPayload.transactions || []).map((transaction) => {
+    const existing = existingPlaidTransactions.get(transaction.id);
+    return existing?.category && existing.category !== transaction.category
+      ? { ...transaction, category: existing.category }
+      : transaction;
+  });
+  const retainedAccounts = user.accounts.filter((account) => {
+    if (account.syncSource === "Plaid" || account.plaidAccountId) return false;
+    if (shouldReplaceDemoSyncedData && account.status === "Synced") return false;
+    return true;
+  });
+  const retainedTransactions = user.transactions.filter((transaction) => {
+    if (transaction.source === "plaid") return false;
+    if (shouldReplaceDemoSyncedData && transaction.source !== "manual") return false;
+    return true;
+  });
+
+  return {
+    ...user,
+    accounts: [...retainedAccounts, ...syncedAccounts],
+    transactions: sortTransactionsByDate([...syncedTransactions, ...retainedTransactions]),
+    plaidItems: syncPayload.plaidItems || user.plaidItems,
+    lastPlaidSyncAt: syncPayload.lastSyncAt || user.lastPlaidSyncAt,
+  };
+}
+
 function ForwardFreedomDashboard() {
   const [initialAppState] = useState(() => loadPersistedAppState());
   const [currentView, setCurrentView] = useState("landing");
@@ -177,6 +227,16 @@ function ForwardFreedomDashboard() {
   const [activeUserId, setActiveUserId] = useState(initialAppState.activeUserId);
   const [editingUserId, setEditingUserId] = useState(null);
   const [draftUserName, setDraftUserName] = useState("");
+  const [plaidStatus, setPlaidStatus] = useState({
+    configured: false,
+    environment: "sandbox",
+    notes: [],
+  });
+  const [plaidLinkToken, setPlaidLinkToken] = useState(null);
+  const [plaidShouldOpen, setPlaidShouldOpen] = useState(false);
+  const [plaidTargetUserId, setPlaidTargetUserId] = useState(null);
+  const [plaidError, setPlaidError] = useState("");
+  const [isPlaidSyncing, setIsPlaidSyncing] = useState(false);
   const activeUser = users.find((user) => user.id === activeUserId) || users[0] || EMPTY_USER_STATE;
   const accounts = activeUser.accounts;
   const transactions = activeUser.transactions;
@@ -185,6 +245,8 @@ function ForwardFreedomDashboard() {
   const incomeStreams = activeUser.incomeStreams;
   const projectionAdjustments = activeUser.projectionAdjustments;
   const subscriptions = activeUser.subscriptions;
+  const plaidItems = activeUser.plaidItems;
+  const lastPlaidSyncAt = activeUser.lastPlaidSyncAt;
   const activeTab = activeUser.activeTab;
   const activeRange = activeUser.activeRange;
   const metricSnapshots = activeUser.metricSnapshots;
@@ -342,6 +404,130 @@ function ForwardFreedomDashboard() {
       activeUserId: activeUser?.id || persistedUsers[0]?.id || null,
     });
   }, [activeUser?.id, persistedUsers]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    getPlaidStatus()
+      .then((status) => {
+        if (!cancelled) setPlaidStatus(status);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setPlaidStatus({
+            configured: false,
+            environment: "sandbox",
+            notes: [],
+          });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const applyPlaidSyncPayload = (userId, syncPayload) => {
+    setUsers((currentUsers) =>
+      currentUsers.map((user) =>
+        user.id === userId ? mergePlaidSyncIntoUser(user, syncPayload) : user
+      )
+    );
+  };
+
+  const syncLinkedPlaidAccounts = useCallback(
+    async (userId = activeUser.id, { silent = false } = {}) => {
+      if (!userId || !plaidStatus.configured) return null;
+
+      if (!silent) setPlaidError("");
+      setIsPlaidSyncing(true);
+
+      try {
+        const payload = await syncPlaidUser(userId);
+        applyPlaidSyncPayload(userId, payload);
+        return payload;
+      } catch (error) {
+        if (!silent) {
+          setPlaidError(error.message || "Unable to sync Plaid data right now.");
+        }
+        return null;
+      } finally {
+        setIsPlaidSyncing(false);
+      }
+    },
+    [activeUser.id, plaidStatus.configured]
+  );
+
+  useEffect(() => {
+    if (!plaidStatus.configured || !activeUser?.id || plaidItems.length === 0) return;
+
+    const timeoutId = window.setTimeout(() => {
+      syncLinkedPlaidAccounts(activeUser.id, { silent: true });
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [activeUser?.id, plaidItems.length, plaidStatus.configured, syncLinkedPlaidAccounts]);
+
+  useEffect(() => {
+    if (!plaidStatus.configured || !activeUser?.id || plaidItems.length === 0) return;
+
+    const intervalId = window.setInterval(
+      () => {
+        void syncLinkedPlaidAccounts(activeUser.id, { silent: true });
+      },
+      30 * 60 * 1000
+    );
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [activeUser?.id, plaidItems.length, plaidStatus.configured, syncLinkedPlaidAccounts]);
+
+  const { open: openPlaidLink, ready: isPlaidReady } = usePlaidLink({
+    token: plaidLinkToken,
+    onSuccess: async (publicToken) => {
+      const targetUserId = plaidTargetUserId || activeUser.id;
+      setPlaidError("");
+      setIsPlaidSyncing(true);
+
+      try {
+        const payload = await exchangePlaidPublicToken({
+          userId: targetUserId,
+          publicToken,
+        });
+        applyPlaidSyncPayload(targetUserId, payload);
+        if (targetUserId === activeUser.id) {
+          setActiveTab(APP_TABS.TRANSACTIONS);
+        }
+      } catch (error) {
+        setPlaidError(error.message || "Unable to connect the Plaid item.");
+      } finally {
+        setIsPlaidSyncing(false);
+        setPlaidLinkToken(null);
+        setPlaidTargetUserId(null);
+      }
+    },
+    onExit: () => {
+      setPlaidShouldOpen(false);
+      setPlaidLinkToken(null);
+      setPlaidTargetUserId(null);
+    },
+  });
+
+  useEffect(() => {
+    if (plaidShouldOpen && isPlaidReady) {
+      const timeoutId = window.setTimeout(() => {
+        openPlaidLink();
+        setPlaidShouldOpen(false);
+      }, 0);
+
+      return () => {
+        window.clearTimeout(timeoutId);
+      };
+    }
+  }, [plaidShouldOpen, isPlaidReady, openPlaidLink]);
 
   const dynamicMetrics = [
     {
@@ -509,42 +695,35 @@ function ForwardFreedomDashboard() {
     };
   }, [accounts, activeUser.id]);
 
-  const connectMockPlaidAccount = () => {
-    const newAccountNumber = accounts.length + 1;
-    const newAccount = {
-      name: `Plaid Linked Account ${newAccountNumber}`,
-      type: "Checking",
-      institution: "Plaid Secure Link",
-      balance: 6250 + newAccountNumber * 725,
-      status: "Synced",
-    };
-    const newTransactions = [
-      {
-        date: "May 13, 2026",
-        merchant: "Plaid Sync Deposit",
-        category: "Income",
-        account: newAccount.name,
-        amount: 1250.0,
-      },
-      {
-        date: "May 13, 2026",
-        merchant: "Whole Foods",
-        category: "Groceries",
-        account: newAccount.name,
-        amount: -86.42,
-      },
-      {
-        date: "May 13, 2026",
-        merchant: "Electric Utility",
-        category: "Utilities",
-        account: newAccount.name,
-        amount: -142.18,
-      },
-    ];
+  const connectPlaidAccount = async () => {
+    if (!activeUser?.id) return;
 
-    setAccounts((current) => [...current, normalizeAccount(newAccount, current.length)]);
-    setTransactions((current) => [...newTransactions, ...current]);
-    setActiveTab(APP_TABS.TRANSACTIONS);
+    if (!plaidStatus.configured) {
+      setPlaidError(
+        "Plaid is not configured yet. Add PLAID_CLIENT_ID and PLAID_SECRET to enable live account linking."
+      );
+      return;
+    }
+
+    setPlaidError("");
+    setIsPlaidSyncing(true);
+
+    try {
+      const { linkToken } = await createPlaidLinkToken({
+        userId: activeUser.id,
+        userName: getDisplayUserName(
+          activeUser,
+          users.findIndex((user) => user.id === activeUser.id)
+        ),
+      });
+      setPlaidLinkToken(linkToken);
+      setPlaidTargetUserId(activeUser.id);
+      setPlaidShouldOpen(true);
+    } catch (error) {
+      setPlaidError(error.message || "Unable to start the Plaid Link flow.");
+    } finally {
+      setIsPlaidSyncing(false);
+    }
   };
 
   const addManualAccount = ({
@@ -759,6 +938,18 @@ function ForwardFreedomDashboard() {
     setEditingUserId(newUser.id);
     setDraftUserName(newUser.name);
   };
+  const plaidIntegration = useMemo(
+    () => ({
+      configured: plaidStatus.configured,
+      environment: plaidStatus.environment,
+      notes: plaidStatus.notes || [],
+      isSyncing: isPlaidSyncing,
+      error: plaidError,
+      lastSyncAt: lastPlaidSyncAt,
+      connectedItemCount: plaidItems.length,
+    }),
+    [isPlaidSyncing, lastPlaidSyncAt, plaidError, plaidItems.length, plaidStatus]
+  );
   const householdProfilesProps = {
     users,
     activeUserId,
@@ -830,9 +1021,10 @@ function ForwardFreedomDashboard() {
             <AccountsView
               accounts={syncedAccounts}
               addManualAccount={addManualAccount}
-              connectMockPlaidAccount={connectMockPlaidAccount}
+              connectMockPlaidAccount={connectPlaidAccount}
               openAccountTransactions={openAccountTransactions}
               householdProfilesProps={householdProfilesProps}
+              plaidIntegration={plaidIntegration}
             />
           ) : activeTab === APP_TABS.TRANSACTIONS ? (
             <TransactionsView
@@ -842,11 +1034,12 @@ function ForwardFreedomDashboard() {
               visibleTransactions={visibleTransactions}
               setActiveTab={setActiveTab}
               setSelectedAccount={setSelectedAccount}
-              connectMockPlaidAccount={connectMockPlaidAccount}
+              connectMockPlaidAccount={connectPlaidAccount}
               addManualTransaction={addManualTransaction}
               deleteManualTransaction={deleteManualTransaction}
               updateTransactionCategory={updateTransactionCategory}
               householdProfilesProps={householdProfilesProps}
+              plaidIntegration={plaidIntegration}
             />
           ) : activeTab === APP_TABS.FORECAST_LAB ? (
             <ForecastLab

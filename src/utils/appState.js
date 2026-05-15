@@ -51,6 +51,8 @@ function buildUserState({
     incomeStreams: useSeedData ? cloneSeed(incomeStreamSeed) : [],
     projectionAdjustments: {},
     subscriptions: useSeedData ? cloneSeed(initialSubscriptions) : [],
+    plaidItems: [],
+    lastPlaidSyncAt: null,
     activeTab: APP_TABS.DASHBOARD,
     activeRange: DEFAULT_ACTIVE_RANGE,
     metricSnapshots: {},
@@ -86,6 +88,11 @@ function normalizeUserState(rawUser, fallbackName, useSeedData = true) {
     subscriptions: Array.isArray(rawUser?.subscriptions)
       ? rawUser.subscriptions
       : defaults.subscriptions,
+    plaidItems: Array.isArray(rawUser?.plaidItems) ? rawUser.plaidItems : defaults.plaidItems,
+    lastPlaidSyncAt:
+      typeof rawUser?.lastPlaidSyncAt === "string"
+        ? rawUser.lastPlaidSyncAt
+        : defaults.lastPlaidSyncAt,
     activeTab:
       typeof rawUser?.activeTab === "string" && APP_TAB_VALUES.includes(rawUser.activeTab)
         ? rawUser.activeTab

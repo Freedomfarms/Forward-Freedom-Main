@@ -172,6 +172,7 @@ export function TransactionsView({
   deleteManualTransaction,
   updateTransactionCategory,
   householdProfilesProps,
+  plaidIntegration,
 }) {
   const selectedAccountRecord = selectedAccount
     ? accounts.find((account) => account.name === selectedAccount) || null
@@ -330,6 +331,7 @@ export function TransactionsView({
           <HouseholdProfilesControl {...householdProfilesProps} />
           <button
             onClick={connectMockPlaidAccount}
+            disabled={plaidIntegration?.isSyncing}
             style={{
               background: "linear-gradient(90deg,#00aaff,#0077ff)",
               border: "1px solid rgba(120,220,255,.45)",
@@ -339,9 +341,10 @@ export function TransactionsView({
               fontWeight: 800,
               boxShadow: "0 0 28px rgba(0,136,255,.35)",
               cursor: "pointer",
+              opacity: plaidIntegration?.isSyncing ? 0.72 : 1,
             }}
           >
-            ⊕ Connect with Plaid
+            {plaidIntegration?.isSyncing ? "Syncing Plaid..." : "⊕ Connect with Plaid"}
           </button>
         </div>
       </header>
@@ -371,11 +374,31 @@ export function TransactionsView({
             gap: 18,
           }}
         >
+          {plaidIntegration?.error ? (
+            <div
+              style={{
+                gridColumn: "1 / -1",
+                color: "#ff9a76",
+                border: "1px solid rgba(255,154,118,.2)",
+                background: "rgba(60,16,7,.26)",
+                borderRadius: 12,
+                padding: "12px 14px",
+                marginBottom: 2,
+              }}
+            >
+              {plaidIntegration.error}
+            </div>
+          ) : null}
           {[
             ["Connected Accounts", String(accounts.length)],
             ["Monthly Spend", money(monthlySpend)],
             ["Visible Transactions", String(filteredTransactions.length)],
-            ["Cash Inflow", money(cashInflow)],
+            [
+              plaidIntegration?.lastSyncAt ? "Last Plaid Sync" : "Cash Inflow",
+              plaidIntegration?.lastSyncAt
+                ? new Date(plaidIntegration.lastSyncAt).toLocaleDateString()
+                : money(cashInflow),
+            ],
           ].map((item) => (
             <div
               key={item[0]}
