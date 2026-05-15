@@ -281,7 +281,8 @@ export function OperationsBoard({
           padding: 22,
           marginBottom: 18,
           position: "relative",
-          overflow: "hidden",
+          overflow: "visible",
+          zIndex: 2,
         }}
       >
         <div
@@ -310,6 +311,8 @@ export function OperationsBoard({
               padding: 22,
               display: "flex",
               flexDirection: "column",
+              position: "relative",
+              zIndex: 3,
             }}
           >
             <div

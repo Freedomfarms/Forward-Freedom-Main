@@ -232,7 +232,7 @@ export function MonthCoverageEditor({
       : `${activeMonths.length} months`;
 
   return (
-    <details style={{ position: "relative", marginTop: 10 }}>
+    <details style={{ position: "relative", marginTop: 10, zIndex: 40 }}>
       <summary
         style={{
           listStyle: "none",
@@ -264,7 +264,7 @@ export function MonthCoverageEditor({
           position: "absolute",
           top: "calc(100% + 8px)",
           left: 0,
-          zIndex: 5,
+          zIndex: 60,
           minWidth: 280,
           padding: 14,
           borderRadius: 14,
