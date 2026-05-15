@@ -4,6 +4,7 @@ import { styles } from "../styles.js";
 import { getIsoDateInputValue } from "../utils/date.js";
 import { money } from "../utils/format.js";
 import { accountSupportsTransactions } from "../utils/accounts.js";
+import { HouseholdProfilesControl } from "./Common.jsx";
 
 function formatManualDate(value) {
   if (!value) return "";
@@ -170,6 +171,7 @@ export function TransactionsView({
   addManualTransaction,
   deleteManualTransaction,
   updateTransactionCategory,
+  householdProfilesProps,
 }) {
   const selectedAccountRecord = selectedAccount
     ? accounts.find((account) => account.name === selectedAccount) || null
@@ -317,35 +319,31 @@ export function TransactionsView({
 
   return (
     <div>
-      <header
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          marginBottom: 24,
-        }}
-      >
+      <header style={styles.pageHeader}>
         <div>
-          <h1 style={{ margin: 0, fontSize: 32, color: "white", fontWeight: 800 }}>Transactions</h1>
-          <p style={{ marginTop: 8, color: "#8ea8ca" }}>
+          <h1 style={styles.pageTitle}>Transactions</h1>
+          <p style={styles.pageSubtitle}>
             Connected accounts, live spending intelligence, and synced Plaid transaction feeds.
           </p>
         </div>
-        <button
-          onClick={connectMockPlaidAccount}
-          style={{
-            background: "linear-gradient(90deg,#00aaff,#0077ff)",
-            border: "1px solid rgba(120,220,255,.45)",
-            borderRadius: 10,
-            color: "white",
-            padding: "14px 24px",
-            fontWeight: 800,
-            boxShadow: "0 0 28px rgba(0,136,255,.35)",
-            cursor: "pointer",
-          }}
-        >
-          ⊕ Connect with Plaid
-        </button>
+        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+          <HouseholdProfilesControl {...householdProfilesProps} />
+          <button
+            onClick={connectMockPlaidAccount}
+            style={{
+              background: "linear-gradient(90deg,#00aaff,#0077ff)",
+              border: "1px solid rgba(120,220,255,.45)",
+              borderRadius: 10,
+              color: "white",
+              padding: "14px 24px",
+              fontWeight: 800,
+              boxShadow: "0 0 28px rgba(0,136,255,.35)",
+              cursor: "pointer",
+            }}
+          >
+            ⊕ Connect with Plaid
+          </button>
+        </div>
       </header>
 
       <div

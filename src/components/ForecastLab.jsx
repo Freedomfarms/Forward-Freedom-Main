@@ -5,6 +5,7 @@ import { getCurrentBudgetPeriod } from "../utils/date.js";
 import { buildLinePath, buildAreaPath, money, parseMoney, wholeDollars } from "../utils/format.js";
 import { buildSubscriptionOverview } from "../utils/subscriptions.js";
 import { buildForwardTrueCashProjection } from "../utils/trueCashProjection.js";
+import { HouseholdProfilesControl } from "./Common.jsx";
 
 const CHART_W = 940;
 const CHART_H = 280;
@@ -91,6 +92,7 @@ export function ForecastLab({
   incomeStreams,
   budgetRows,
   projectionAdjustments,
+  householdProfilesProps,
 }) {
   const [extraIncomeRaw, setExtraIncomeRaw] = useState("0");
   const [savedSpendingRaw, setSavedSpendingRaw] = useState("0");
@@ -168,21 +170,15 @@ export function ForecastLab({
 
   return (
     <div>
-      <header
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          marginBottom: 24,
-        }}
-      >
+      <header style={styles.pageHeader}>
         <div>
-          <h1 style={{ margin: 0, fontSize: 32, color: "white", fontWeight: 800 }}>Forecast Lab</h1>
-          <p style={{ marginTop: 8, color: "#8ea8ca" }}>
+          <h1 style={styles.pageTitle}>Forecast Lab</h1>
+          <p style={styles.pageSubtitle}>
             Model &ldquo;what-if&rdquo; scenarios to project the long-range impact of income or
             spending changes.
           </p>
         </div>
+        <HouseholdProfilesControl {...householdProfilesProps} />
       </header>
 
       {/* Controls */}

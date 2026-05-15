@@ -18,6 +18,25 @@ export const styles = {
     padding: "24px 16px",
   },
   main: { flex: 1, padding: "20px 24px", width: "100%", overflowX: "auto" },
+  pageHeader: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 24,
+    gap: 20,
+    flexWrap: "wrap",
+  },
+  pageTitle: {
+    margin: 0,
+    fontSize: 30,
+    lineHeight: 1.1,
+    color: "white",
+    fontWeight: 700,
+  },
+  pageSubtitle: {
+    margin: "6px 0 0",
+    color: "#9fb0c9",
+  },
   panel: {
     border: "1px solid rgba(30,144,255,.32)",
     background: "rgba(3,17,32,.82)",

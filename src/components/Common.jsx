@@ -49,6 +49,105 @@ export function SideItem({ item, activeTab, setActiveTab }) {
   );
 }
 
+export function HouseholdProfilesControl({
+  users,
+  activeUserId,
+  editingUserId,
+  draftUserName,
+  setDraftUserName,
+  onSelectUser,
+  onStartEditingUser,
+  onSaveUserName,
+  onCancelUserRename,
+  onAddUser,
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        flexWrap: "wrap",
+        justifyContent: "flex-end",
+      }}
+    >
+      {users.map((user, index) => {
+        const label = user?.name?.trim() || `User ${index + 1}`;
+        const isActive = user.id === activeUserId;
+        const isEditing = editingUserId === user.id;
+
+        if (isEditing) {
+          return (
+            <input
+              key={user.id}
+              value={draftUserName}
+              onChange={(event) => setDraftUserName(event.target.value)}
+              onBlur={() => onSaveUserName(user.id)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") onSaveUserName(user.id);
+                if (event.key === "Escape") onCancelUserRename();
+              }}
+              autoFocus
+              style={{
+                color: "#eaf3ff",
+                background: "rgba(0,136,255,.14)",
+                border: "1px solid rgba(0,216,255,.38)",
+                borderRadius: 999,
+                padding: "9px 14px",
+                minWidth: 120,
+                outline: "none",
+                fontWeight: 800,
+                fontSize: 13,
+              }}
+            />
+          );
+        }
+
+        return (
+          <button
+            key={user.id}
+            onClick={() => onSelectUser(user.id)}
+            onDoubleClick={() => onStartEditingUser(user.id)}
+            title="Double-click to rename"
+            style={{
+              color: isActive ? "#f4fbff" : "#9fb0c9",
+              background: isActive ? "rgba(0,136,255,.18)" : "rgba(0,136,255,.06)",
+              border: isActive ? "1px solid rgba(0,216,255,.42)" : "1px solid rgba(0,216,255,.18)",
+              borderRadius: 999,
+              padding: "9px 14px",
+              cursor: "pointer",
+              fontWeight: 800,
+              fontSize: 13,
+              boxShadow: isActive ? "0 0 18px rgba(0,136,255,.18)" : "none",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {label}
+          </button>
+        );
+      })}
+
+      <button
+        onClick={onAddUser}
+        style={{
+          background: "linear-gradient(90deg,#0077ff,#00d8ff)",
+          border: "1px solid rgba(120,220,255,.45)",
+          borderRadius: 999,
+          color: "white",
+          padding: "9px 14px",
+          cursor: "pointer",
+          fontWeight: 800,
+          fontSize: 13,
+          boxShadow: "0 0 18px rgba(0,136,255,.2)",
+          whiteSpace: "nowrap",
+        }}
+      >
+        + Add User
+      </button>
+    </div>
+  );
+}
+
 export function MetricCard({ metric }) {
   const changeColor = metric.changeColor || (metric.red ? "#ff355d" : "#00f59b");
   const changeIcon = metric.changeIcon || (metric.red ? "↓" : "↑");

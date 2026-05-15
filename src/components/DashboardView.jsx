@@ -8,7 +8,7 @@ import {
   buildSyncedTrueCashChart,
   buildTrueCashProjectionSchedule,
 } from "../utils/trueCashProjection.js";
-import { InfoDot, MetricCard } from "./Common.jsx";
+import { HouseholdProfilesControl, InfoDot, MetricCard } from "./Common.jsx";
 
 const CHART_HEIGHT = 300;
 const NET_WORTH_HISTORY_W = 620;
@@ -187,6 +187,7 @@ export function DashboardView({
   dynamicMetrics,
   dynamicAllocations,
   metricSnapshots,
+  householdProfilesProps,
 }) {
   const [hoverState, setHoverState] = useState(null);
   const [netWorthHistoryRange, setNetWorthHistoryRange] = useState("30D");
@@ -281,52 +282,44 @@ export function DashboardView({
 
   return (
     <>
-      <header
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          marginBottom: 20,
-        }}
-      >
+      <header style={{ ...styles.pageHeader, marginBottom: 20 }}>
         <div>
-          <h1 style={{ margin: 0, fontSize: 30, lineHeight: 1.1, color: "white", fontWeight: 700 }}>
-            Dashboard
-          </h1>
-          <p style={{ margin: "6px 0 0", color: "#9fb0c9" }}>
-            Real-time overview of your financial position
-          </p>
+          <h1 style={styles.pageTitle}>Dashboard</h1>
+          <p style={styles.pageSubtitle}>Real-time overview of your financial position</p>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 28, fontSize: 20 }}>
-          <span>⌕</span>
-          <span>♧</span>
-          <div
-            style={{
-              position: "relative",
-              width: 48,
-              height: 48,
-              borderRadius: 999,
-              border: "1px solid #148cff",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              color: "#19d5ff",
-              fontSize: 16,
-              boxShadow: "0 0 22px rgba(0,120,255,.45)",
-            }}
-          >
-            KP
-            <span
+        <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+          <HouseholdProfilesControl {...householdProfilesProps} />
+          <div style={{ display: "flex", alignItems: "center", gap: 28, fontSize: 20 }}>
+            <span>⌕</span>
+            <span>♧</span>
+            <div
               style={{
-                position: "absolute",
-                right: 0,
-                bottom: 0,
-                width: 11,
-                height: 11,
-                borderRadius: 99,
-                background: "#00de86",
+                position: "relative",
+                width: 48,
+                height: 48,
+                borderRadius: 999,
+                border: "1px solid #148cff",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "#19d5ff",
+                fontSize: 16,
+                boxShadow: "0 0 22px rgba(0,120,255,.45)",
               }}
-            />
+            >
+              KP
+              <span
+                style={{
+                  position: "absolute",
+                  right: 0,
+                  bottom: 0,
+                  width: 11,
+                  height: 11,
+                  borderRadius: 99,
+                  background: "#00de86",
+                }}
+              />
+            </div>
           </div>
         </div>
       </header>

@@ -19,6 +19,7 @@ import {
   fetchPreciousMetalsSpotPrices,
   normalizePreciousMetalsPricePerUnit,
 } from "../utils/preciousMetalsPricing.js";
+import { HouseholdProfilesControl } from "./Common.jsx";
 
 const EMPTY_FORM = {
   name: "",
@@ -119,6 +120,7 @@ export function AccountsView({
   addManualAccount,
   connectMockPlaidAccount,
   openAccountTransactions,
+  householdProfilesProps,
 }) {
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -488,22 +490,16 @@ export function AccountsView({
   return (
     <div>
       {/* Header */}
-      <header
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          marginBottom: 24,
-        }}
-      >
+      <header style={styles.pageHeader}>
         <div>
-          <h1 style={{ margin: 0, fontSize: 32, color: "white", fontWeight: 800 }}>Add Accounts</h1>
-          <p style={{ marginTop: 8, color: "#8ea8ca" }}>
+          <h1 style={styles.pageTitle}>Add Accounts</h1>
+          <p style={styles.pageSubtitle}>
             Connect bank accounts, credit cards, investments, crypto, metals, real estate, and
             loans.
           </p>
         </div>
-        <div style={{ display: "flex", gap: 12 }}>
+        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+          <HouseholdProfilesControl {...householdProfilesProps} />
           <button
             onClick={openModal}
             style={{

@@ -178,8 +178,6 @@ function ForwardFreedomDashboard() {
   const [editingUserId, setEditingUserId] = useState(null);
   const [draftUserName, setDraftUserName] = useState("");
   const activeUser = users.find((user) => user.id === activeUserId) || users[0] || EMPTY_USER_STATE;
-  const activeUserIndex = users.findIndex((user) => user.id === activeUser?.id);
-  const activeUserName = getDisplayUserName(activeUser, activeUserIndex >= 0 ? activeUserIndex : 0);
   const accounts = activeUser.accounts;
   const transactions = activeUser.transactions;
   const selectedAccount = activeUser.selectedAccount;
@@ -717,10 +715,14 @@ function ForwardFreedomDashboard() {
     });
   };
 
-  const startEditingActiveUser = () => {
-    if (!activeUser?.id) return;
-    setEditingUserId(activeUser.id);
-    setDraftUserName(activeUserName);
+  const startEditingUser = (userId) => {
+    const targetUser = users.find((user) => user.id === userId);
+    const targetIndex = users.findIndex((user) => user.id === userId);
+    if (!targetUser) return;
+
+    setActiveUserId(userId);
+    setEditingUserId(userId);
+    setDraftUserName(getDisplayUserName(targetUser, targetIndex >= 0 ? targetIndex : 0));
   };
 
   const saveUserName = (userId) => {
@@ -757,6 +759,23 @@ function ForwardFreedomDashboard() {
     setEditingUserId(newUser.id);
     setDraftUserName(newUser.name);
   };
+  const householdProfilesProps = {
+    users,
+    activeUserId,
+    editingUserId,
+    draftUserName,
+    setDraftUserName,
+    onSelectUser: (userId) => {
+      setActiveUserId(userId);
+      if (editingUserId && editingUserId !== userId) {
+        cancelUserRename();
+      }
+    },
+    onStartEditingUser: startEditingUser,
+    onSaveUserName: saveUserName,
+    onCancelUserRename: cancelUserRename,
+    onAddUser: addUserProfile,
+  };
 
   if (currentView === "landing") {
     return <LandingPage enterApp={() => setCurrentView("app")} />;
@@ -772,128 +791,6 @@ function ForwardFreedomDashboard() {
         />
 
         <main style={styles.main}>
-          <div
-            style={{
-              ...styles.panel,
-              padding: 18,
-              marginBottom: 18,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 18,
-              flexWrap: "wrap",
-            }}
-          >
-            <div style={{ minWidth: 0 }}>
-              <div
-                style={{
-                  color: "#8feaff",
-                  fontSize: 12,
-                  textTransform: "uppercase",
-                  letterSpacing: 1.1,
-                }}
-              >
-                Household Profiles
-              </div>
-              <div style={{ color: "#c8d7ea", fontSize: 13, marginTop: 6 }}>
-                Each user keeps separate accounts, transactions, budgets, subscriptions, and
-                forecasts.
-              </div>
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 14 }}>
-                {users.map((user, index) => {
-                  const isActive = user.id === activeUser?.id;
-                  const isEditing = editingUserId === user.id && isActive;
-
-                  if (isEditing) {
-                    return (
-                      <input
-                        key={user.id}
-                        value={draftUserName}
-                        onChange={(event) => setDraftUserName(event.target.value)}
-                        onBlur={() => saveUserName(user.id)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter") saveUserName(user.id);
-                          if (event.key === "Escape") cancelUserRename();
-                        }}
-                        autoFocus
-                        style={{
-                          color: "#eaf3ff",
-                          background: "rgba(0,136,255,.14)",
-                          border: "1px solid rgba(0,216,255,.38)",
-                          borderRadius: 999,
-                          padding: "10px 16px",
-                          minWidth: 140,
-                          outline: "none",
-                          fontWeight: 800,
-                        }}
-                      />
-                    );
-                  }
-
-                  return (
-                    <button
-                      key={user.id}
-                      onClick={() => {
-                        setActiveUserId(user.id);
-                        cancelUserRename();
-                      }}
-                      style={{
-                        color: isActive ? "#f4fbff" : "#9fb0c9",
-                        background: isActive ? "rgba(0,136,255,.18)" : "rgba(0,136,255,.06)",
-                        border: isActive
-                          ? "1px solid rgba(0,216,255,.42)"
-                          : "1px solid rgba(0,216,255,.18)",
-                        borderRadius: 999,
-                        padding: "10px 16px",
-                        cursor: "pointer",
-                        fontWeight: 800,
-                        boxShadow: isActive ? "0 0 18px rgba(0,136,255,.18)" : "none",
-                      }}
-                    >
-                      {getDisplayUserName(user, index)}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-              <button
-                onClick={() =>
-                  editingUserId === activeUser?.id
-                    ? saveUserName(activeUser.id)
-                    : startEditingActiveUser()
-                }
-                style={{
-                  background: "rgba(0,136,255,.10)",
-                  border: "1px solid rgba(0,216,255,.24)",
-                  borderRadius: 10,
-                  color: "#d7ebff",
-                  padding: "11px 16px",
-                  cursor: "pointer",
-                  fontWeight: 800,
-                }}
-              >
-                {editingUserId === activeUser?.id ? "Save" : "Edit"}
-              </button>
-              <button
-                onClick={addUserProfile}
-                style={{
-                  background: "linear-gradient(90deg,#0077ff,#00d8ff)",
-                  border: "1px solid rgba(120,220,255,.45)",
-                  borderRadius: 10,
-                  color: "white",
-                  padding: "11px 18px",
-                  cursor: "pointer",
-                  fontWeight: 800,
-                  boxShadow: "0 0 22px rgba(0,136,255,.24)",
-                }}
-              >
-                + Add User
-              </button>
-            </div>
-          </div>
-
           {activeTab === APP_TABS.DASHBOARD ? (
             <DashboardView
               activeRange={activeRange}
@@ -908,12 +805,14 @@ function ForwardFreedomDashboard() {
               dynamicMetrics={dynamicMetrics}
               dynamicAllocations={dynamicAllocations}
               metricSnapshots={trackedMetricSnapshots}
+              householdProfilesProps={householdProfilesProps}
             />
           ) : activeTab === APP_TABS.BUDGET_COMMAND_CENTER ? (
             <BudgetCommandCenter
               transactions={transactions}
               budgetRows={budgetRows}
               setBudgetRows={setBudgetRows}
+              householdProfilesProps={householdProfilesProps}
             />
           ) : activeTab === APP_TABS.OPERATIONS_BOARD ? (
             <OperationsBoard
@@ -925,6 +824,7 @@ function ForwardFreedomDashboard() {
               trueCash={trueCash}
               projectionAdjustments={projectionAdjustments}
               setProjectionAdjustments={setProjectionAdjustments}
+              householdProfilesProps={householdProfilesProps}
             />
           ) : activeTab === APP_TABS.ADD_ACCOUNTS ? (
             <AccountsView
@@ -932,6 +832,7 @@ function ForwardFreedomDashboard() {
               addManualAccount={addManualAccount}
               connectMockPlaidAccount={connectMockPlaidAccount}
               openAccountTransactions={openAccountTransactions}
+              householdProfilesProps={householdProfilesProps}
             />
           ) : activeTab === APP_TABS.TRANSACTIONS ? (
             <TransactionsView
@@ -945,6 +846,7 @@ function ForwardFreedomDashboard() {
               addManualTransaction={addManualTransaction}
               deleteManualTransaction={deleteManualTransaction}
               updateTransactionCategory={updateTransactionCategory}
+              householdProfilesProps={householdProfilesProps}
             />
           ) : activeTab === APP_TABS.FORECAST_LAB ? (
             <ForecastLab
@@ -953,15 +855,20 @@ function ForwardFreedomDashboard() {
               incomeStreams={incomeStreams}
               budgetRows={budgetRows}
               projectionAdjustments={projectionAdjustments}
+              householdProfilesProps={householdProfilesProps}
             />
           ) : activeTab === APP_TABS.RECURRING_SUBSCRIPTIONS ? (
             <RecurringSubscriptions
               accounts={syncedAccounts}
               subscriptions={subscriptions}
               setSubscriptions={setSubscriptions}
+              householdProfilesProps={householdProfilesProps}
             />
           ) : (
-            <ModulePlaceholder activeTab={activeTab} />
+            <ModulePlaceholder
+              activeTab={activeTab}
+              householdProfilesProps={householdProfilesProps}
+            />
           )}
         </main>
       </div>

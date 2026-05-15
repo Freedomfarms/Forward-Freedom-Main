@@ -8,6 +8,7 @@ import {
   SUBSCRIPTION_FREQUENCIES,
   SUBSCRIPTION_STATUSES,
 } from "../utils/subscriptions.js";
+import { HouseholdProfilesControl } from "./Common.jsx";
 
 const STATUS_COLORS = {
   Active: "#00f59b",
@@ -69,7 +70,12 @@ const EMPTY_FORM = {
   status: "Active",
 };
 
-export function RecurringSubscriptions({ accounts, subscriptions, setSubscriptions }) {
+export function RecurringSubscriptions({
+  accounts,
+  subscriptions,
+  setSubscriptions,
+  householdProfilesProps,
+}) {
   const [showAddForm, setShowAddForm] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -146,39 +152,33 @@ export function RecurringSubscriptions({ accounts, subscriptions, setSubscriptio
 
   return (
     <div>
-      <header
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          marginBottom: 24,
-        }}
-      >
+      <header style={styles.pageHeader}>
         <div>
-          <h1 style={{ margin: 0, fontSize: 32, color: "white", fontWeight: 800 }}>
-            Recurring Subscriptions
-          </h1>
-          <p style={{ marginTop: 8, color: "#8ea8ca" }}>
+          <h1 style={styles.pageTitle}>Recurring Subscriptions</h1>
+          <p style={styles.pageSubtitle}>
             Track recurring bills, subscriptions, and auto-pay commitments.
           </p>
         </div>
-        <button
-          onClick={() => setShowAddForm((v) => !v)}
-          style={{
-            background: showAddForm
-              ? "rgba(0,136,255,.14)"
-              : "linear-gradient(90deg,#0077ff,#00d8ff)",
-            border: "1px solid rgba(0,216,255,.45)",
-            borderRadius: 10,
-            color: "white",
-            padding: "14px 24px",
-            fontWeight: 800,
-            boxShadow: showAddForm ? "none" : "0 0 28px rgba(0,136,255,.35)",
-            cursor: "pointer",
-          }}
-        >
-          {showAddForm ? "✕ Cancel" : "+ Add Subscription"}
-        </button>
+        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+          <HouseholdProfilesControl {...householdProfilesProps} />
+          <button
+            onClick={() => setShowAddForm((v) => !v)}
+            style={{
+              background: showAddForm
+                ? "rgba(0,136,255,.14)"
+                : "linear-gradient(90deg,#0077ff,#00d8ff)",
+              border: "1px solid rgba(0,216,255,.45)",
+              borderRadius: 10,
+              color: "white",
+              padding: "14px 24px",
+              fontWeight: 800,
+              boxShadow: showAddForm ? "none" : "0 0 28px rgba(0,136,255,.35)",
+              cursor: "pointer",
+            }}
+          >
+            {showAddForm ? "✕ Cancel" : "+ Add Subscription"}
+          </button>
+        </div>
       </header>
 
       {/* Summary Tiles */}

@@ -4,9 +4,14 @@ import { money, cleanMoneyInput } from "../utils/format.js";
 import { buildBudgetRowsWithSpend } from "../utils/budgetReview.js";
 import { getCurrentBudgetPeriod } from "../utils/date.js";
 import { budgetMonths, budgetMonthNames } from "../data/constants.jsx";
-import { MonthCoverageEditor } from "./Common.jsx";
+import { HouseholdProfilesControl, MonthCoverageEditor } from "./Common.jsx";
 
-export function BudgetCommandCenter({ transactions, budgetRows, setBudgetRows }) {
+export function BudgetCommandCenter({
+  transactions,
+  budgetRows,
+  setBudgetRows,
+  householdProfilesProps,
+}) {
   const currentBudgetPeriod = getCurrentBudgetPeriod();
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [activeBudgetDate, setActiveBudgetDate] = useState(() => ({
@@ -90,23 +95,15 @@ export function BudgetCommandCenter({ transactions, budgetRows, setBudgetRows })
 
   return (
     <>
-      <header
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          marginBottom: 20,
-        }}
-      >
+      <header style={{ ...styles.pageHeader, marginBottom: 20 }}>
         <div>
-          <h1 style={{ margin: 0, fontSize: 30, lineHeight: 1.1, color: "white", fontWeight: 700 }}>
-            Budget Command Center
-          </h1>
-          <p style={{ margin: "6px 0 0", color: "#9fb0c9" }}>
+          <h1 style={styles.pageTitle}>Budget Command Center</h1>
+          <p style={styles.pageSubtitle}>
             Mission-control view of monthly spending, budget pressure, and category risk.
           </p>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <HouseholdProfilesControl {...householdProfilesProps} />
           <button
             onClick={() => changeBudgetMonth(-1)}
             style={{

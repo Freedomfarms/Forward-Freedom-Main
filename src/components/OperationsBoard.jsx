@@ -5,7 +5,7 @@ import { getCurrentBudgetPeriod } from "../utils/date.js";
 import { money, parseMoney, wholeDollars } from "../utils/format.js";
 import { budgetMonths, yearlyOpsData } from "../data/constants.jsx";
 import { buildSubscriptionOverview } from "../utils/subscriptions.js";
-import { MonthCoverageEditor } from "./Common.jsx";
+import { HouseholdProfilesControl, MonthCoverageEditor } from "./Common.jsx";
 import { buildForwardTrueCashProjection } from "../utils/trueCashProjection.js";
 
 function formatAdjustmentValue(value) {
@@ -32,6 +32,7 @@ export function OperationsBoard({
   trueCash,
   projectionAdjustments,
   setProjectionAdjustments,
+  householdProfilesProps,
 }) {
   const [incomeDeleteTarget, setIncomeDeleteTarget] = useState(null);
   const [hoveredCommandMonth, setHoveredCommandMonth] = useState(null);
@@ -159,33 +160,27 @@ export function OperationsBoard({
 
   return (
     <div>
-      <header
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          marginBottom: 24,
-        }}
-      >
+      <header style={styles.pageHeader}>
         <div>
-          <h1 style={{ margin: 0, fontSize: 32, color: "white", fontWeight: 800 }}>
-            Operations Board
-          </h1>
-          <p style={{ marginTop: 8, color: "#8ea8ca" }}>
+          <h1 style={styles.pageTitle}>Operations Board</h1>
+          <p style={styles.pageSubtitle}>
             Yearly command view of income streams, budget plan, and projected profit.
           </p>
         </div>
-        <button
-          style={{
-            color: "#f2f7ff",
-            background: "rgba(1,10,24,.55)",
-            border: "1px solid rgba(54,126,220,.38)",
-            borderRadius: 7,
-            padding: "10px 16px",
-          }}
-        >
-          2026
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <HouseholdProfilesControl {...householdProfilesProps} />
+          <button
+            style={{
+              color: "#f2f7ff",
+              background: "rgba(1,10,24,.55)",
+              border: "1px solid rgba(54,126,220,.38)",
+              borderRadius: 7,
+              padding: "10px 16px",
+            }}
+          >
+            2026
+          </button>
+        </div>
       </header>
 
       <section
