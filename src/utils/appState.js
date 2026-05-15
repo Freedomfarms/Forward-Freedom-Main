@@ -8,6 +8,8 @@ import {
   mockTransactions,
 } from "../data/constants.jsx";
 import { normalizeAccount } from "./accounts.js";
+import { getCurrentBudgetPeriod } from "./date.js";
+import { buildPlanYearData, normalizePlansByYear } from "./planning.js";
 
 export const APP_STATE_STORAGE_KEY = "fff-app-state-v1";
 export const LEGACY_METRIC_SNAPSHOT_STORAGE_KEY = "fff-dashboard-metric-snapshots-v1";
@@ -39,6 +41,13 @@ function buildUserState({
   selectedAccount = null,
   useSeedData = true,
 } = {}) {
+  const currentYear = getCurrentBudgetPeriod().year;
+  const currentPlanData = buildPlanYearData({
+    budgetRows: cloneSeed(initialBudgetCategories),
+    incomeStreams: useSeedData ? cloneSeed(incomeStreamSeed) : [],
+    projectionAdjustments: {},
+  });
+
   return {
     id,
     name,
@@ -47,9 +56,12 @@ function buildUserState({
       ? cloneSeed(initialAccounts).map((account, index) => normalizeAccount(account, index))
       : [],
     transactions: useSeedData ? cloneSeed(mockTransactions) : [],
-    budgetRows: cloneSeed(initialBudgetCategories),
-    incomeStreams: useSeedData ? cloneSeed(incomeStreamSeed) : [],
-    projectionAdjustments: {},
+    budgetRows: currentPlanData.budgetRows,
+    incomeStreams: currentPlanData.incomeStreams,
+    projectionAdjustments: currentPlanData.projectionAdjustments,
+    plansByYear: {
+      [String(currentYear)]: currentPlanData,
+    },
     subscriptions: useSeedData ? cloneSeed(initialSubscriptions) : [],
     plaidItems: [],
     lastPlaidSyncAt: null,
@@ -86,6 +98,16 @@ function normalizeUserState(rawUser, fallbackName, useSeedData = true) {
       rawUser?.projectionAdjustments && typeof rawUser.projectionAdjustments === "object"
         ? rawUser.projectionAdjustments
         : defaults.projectionAdjustments,
+    plansByYear: normalizePlansByYear(rawUser?.plansByYear, {
+      budgetRows: Array.isArray(rawUser?.budgetRows) ? rawUser.budgetRows : defaults.budgetRows,
+      incomeStreams: Array.isArray(rawUser?.incomeStreams)
+        ? rawUser.incomeStreams
+        : defaults.incomeStreams,
+      projectionAdjustments:
+        rawUser?.projectionAdjustments && typeof rawUser.projectionAdjustments === "object"
+          ? rawUser.projectionAdjustments
+          : defaults.projectionAdjustments,
+    }),
     subscriptions: Array.isArray(rawUser?.subscriptions)
       ? rawUser.subscriptions
       : defaults.subscriptions,

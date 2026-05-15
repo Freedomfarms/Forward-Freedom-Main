@@ -19,6 +19,12 @@ import {
   categorizeTransactions,
 } from "./utils/transactionCategorization.js";
 import {
+  buildPlanningYearOptions,
+  buildPlanYearData,
+  ensurePlanYearData,
+  normalizePlansByYear,
+} from "./utils/planning.js";
+import {
   createPlaidLinkToken,
   exchangePlaidPublicToken,
   getPlaidStatus,
@@ -266,6 +272,17 @@ function ForwardFreedomDashboard() {
   const activeTab = activeUser.activeTab;
   const activeRange = activeUser.activeRange;
   const metricSnapshots = activeUser.metricSnapshots;
+  const currentPlanYear = getBudgetPeriodAtOffset(0).year;
+  const baseCurrentPlanData = buildPlanYearData({
+    budgetRows: activeUser.budgetRows,
+    incomeStreams: activeUser.incomeStreams,
+    projectionAdjustments: activeUser.projectionAdjustments,
+  });
+  const plansByYear = ensurePlanYearData(
+    normalizePlansByYear(activeUser.plansByYear, baseCurrentPlanData),
+    currentPlanYear,
+    baseCurrentPlanData
+  );
   const setActiveUserField = (field, valueOrUpdater) => {
     if (!activeUser?.id) return;
 
@@ -297,6 +314,7 @@ function ForwardFreedomDashboard() {
     budgetRows,
     merchantCategoryRules,
   });
+  const availablePlanningYears = buildPlanningYearOptions(plansByYear, currentPlanYear);
 
   const liquidCash = syncedAccounts
     .filter((account) => LIQUID_ACCOUNT_TYPES.has(account.type))
@@ -361,6 +379,104 @@ function ForwardFreedomDashboard() {
     metricSnapshots,
     buildTodayMetricSnapshot(liquidCash, creditCardDebt, totalNetWorth)
   );
+  const ensurePlanningYear = (targetYear) => {
+    setActiveUserField("plansByYear", (currentPlansByYear) =>
+      ensurePlanYearData(currentPlansByYear, targetYear, baseCurrentPlanData)
+    );
+  };
+  const getBudgetRowsForYear = (targetYear) =>
+    targetYear === currentPlanYear
+      ? budgetRows
+      : ensurePlanYearData(plansByYear, targetYear, baseCurrentPlanData)[String(targetYear)]
+          ?.budgetRows || [];
+  const getIncomeStreamsForYear = (targetYear) =>
+    targetYear === currentPlanYear
+      ? incomeStreams
+      : ensurePlanYearData(plansByYear, targetYear, baseCurrentPlanData)[String(targetYear)]
+          ?.incomeStreams || [];
+  const getProjectionAdjustmentsForYear = (targetYear) =>
+    targetYear === currentPlanYear
+      ? projectionAdjustments
+      : ensurePlanYearData(plansByYear, targetYear, baseCurrentPlanData)[String(targetYear)]
+          ?.projectionAdjustments || {};
+  const setBudgetRowsForYear = (targetYear, valueOrUpdater) => {
+    if (targetYear === currentPlanYear) {
+      setBudgetRows(valueOrUpdater);
+      return;
+    }
+
+    setActiveUserField("plansByYear", (currentPlansByYear) => {
+      const nextPlansByYear = ensurePlanYearData(
+        currentPlansByYear,
+        targetYear,
+        baseCurrentPlanData
+      );
+      const yearKey = String(targetYear);
+      const currentValue = nextPlansByYear[yearKey]?.budgetRows || [];
+      const nextValue =
+        typeof valueOrUpdater === "function" ? valueOrUpdater(currentValue) : valueOrUpdater;
+
+      return {
+        ...nextPlansByYear,
+        [yearKey]: {
+          ...nextPlansByYear[yearKey],
+          budgetRows: nextValue,
+        },
+      };
+    });
+  };
+  const setIncomeStreamsForYear = (targetYear, valueOrUpdater) => {
+    if (targetYear === currentPlanYear) {
+      setIncomeStreams(valueOrUpdater);
+      return;
+    }
+
+    setActiveUserField("plansByYear", (currentPlansByYear) => {
+      const nextPlansByYear = ensurePlanYearData(
+        currentPlansByYear,
+        targetYear,
+        baseCurrentPlanData
+      );
+      const yearKey = String(targetYear);
+      const currentValue = nextPlansByYear[yearKey]?.incomeStreams || [];
+      const nextValue =
+        typeof valueOrUpdater === "function" ? valueOrUpdater(currentValue) : valueOrUpdater;
+
+      return {
+        ...nextPlansByYear,
+        [yearKey]: {
+          ...nextPlansByYear[yearKey],
+          incomeStreams: nextValue,
+        },
+      };
+    });
+  };
+  const setProjectionAdjustmentsForYear = (targetYear, valueOrUpdater) => {
+    if (targetYear === currentPlanYear) {
+      setProjectionAdjustments(valueOrUpdater);
+      return;
+    }
+
+    setActiveUserField("plansByYear", (currentPlansByYear) => {
+      const nextPlansByYear = ensurePlanYearData(
+        currentPlansByYear,
+        targetYear,
+        baseCurrentPlanData
+      );
+      const yearKey = String(targetYear);
+      const currentValue = nextPlansByYear[yearKey]?.projectionAdjustments || {};
+      const nextValue =
+        typeof valueOrUpdater === "function" ? valueOrUpdater(currentValue) : valueOrUpdater;
+
+      return {
+        ...nextPlansByYear,
+        [yearKey]: {
+          ...nextPlansByYear[yearKey],
+          projectionAdjustments: nextValue,
+        },
+      };
+    });
+  };
   const persistedUsers = users.map((user, index) =>
     user.id === activeUser?.id
       ? {
@@ -369,6 +485,14 @@ function ForwardFreedomDashboard() {
           accounts: syncedAccounts,
           transactions: categorizedTransactions,
           merchantCategoryRules,
+          plansByYear: {
+            ...plansByYear,
+            [String(currentPlanYear)]: buildPlanYearData({
+              budgetRows,
+              incomeStreams,
+              projectionAdjustments,
+            }),
+          },
           metricSnapshots: trackedMetricSnapshots,
         }
       : {
@@ -1051,6 +1175,11 @@ function ForwardFreedomDashboard() {
               budgetRows={budgetRows}
               setBudgetRows={setBudgetRows}
               householdProfilesProps={householdProfilesProps}
+              currentPlanYear={currentPlanYear}
+              availablePlanningYears={availablePlanningYears}
+              getBudgetRowsForYear={getBudgetRowsForYear}
+              setBudgetRowsForYear={setBudgetRowsForYear}
+              ensurePlanningYear={ensurePlanningYear}
             />
           ) : activeTab === APP_TABS.OPERATIONS_BOARD ? (
             <OperationsBoard
@@ -1063,6 +1192,14 @@ function ForwardFreedomDashboard() {
               projectionAdjustments={projectionAdjustments}
               setProjectionAdjustments={setProjectionAdjustments}
               householdProfilesProps={householdProfilesProps}
+              currentPlanYear={currentPlanYear}
+              availablePlanningYears={availablePlanningYears}
+              getBudgetRowsForYear={getBudgetRowsForYear}
+              getIncomeStreamsForYear={getIncomeStreamsForYear}
+              getProjectionAdjustmentsForYear={getProjectionAdjustmentsForYear}
+              setIncomeStreamsForYear={setIncomeStreamsForYear}
+              setProjectionAdjustmentsForYear={setProjectionAdjustmentsForYear}
+              ensurePlanningYear={ensurePlanningYear}
             />
           ) : activeTab === APP_TABS.ADD_ACCOUNTS ? (
             <AccountsView

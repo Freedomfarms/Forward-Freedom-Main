@@ -8,30 +8,37 @@ import { HouseholdProfilesControl, MonthCoverageEditor } from "./Common.jsx";
 
 export function BudgetCommandCenter({
   transactions,
-  budgetRows,
-  setBudgetRows,
   householdProfilesProps,
+  currentPlanYear,
+  availablePlanningYears,
+  getBudgetRowsForYear,
+  setBudgetRowsForYear,
+  ensurePlanningYear,
 }) {
   const currentBudgetPeriod = getCurrentBudgetPeriod();
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [activeBudgetDate, setActiveBudgetDate] = useState(() => ({
     monthIndex: currentBudgetPeriod.monthIndex,
-    year: currentBudgetPeriod.year,
+    year: currentPlanYear,
   }));
   const activeBudgetMonth = budgetMonths[activeBudgetDate.monthIndex];
   const activeBudgetLabel = `${budgetMonthNames[activeBudgetMonth]} ${activeBudgetDate.year}`;
-  const changeBudgetMonth = (direction) => {
-    setActiveBudgetDate((current) => {
-      const rawMonth = current.monthIndex + direction;
-      if (rawMonth < 0) return { monthIndex: 11, year: current.year - 1 };
-      if (rawMonth > 11) return { monthIndex: 0, year: current.year + 1 };
-      return { ...current, monthIndex: rawMonth };
-    });
+  const planningBudgetRows = getBudgetRowsForYear(activeBudgetDate.year);
+  const updateBudgetDate = (field, value) => {
+    const nextValue = Number(value);
+    if (field === "year") {
+      ensurePlanningYear(nextValue);
+    }
+
+    setActiveBudgetDate((current) => ({
+      ...current,
+      [field]: nextValue,
+    }));
   };
 
   const budgetRowsWithSpend = buildBudgetRowsWithSpend(
     transactions,
-    budgetRows,
+    planningBudgetRows,
     activeBudgetMonth,
     activeBudgetDate.year
   );
@@ -39,7 +46,7 @@ export function BudgetCommandCenter({
   const spentTotal = budgetRowsWithSpend.reduce((sum, item) => sum + item.spent, 0);
   const budgetTotal = budgetRowsWithSpend.reduce((sum, item) => sum + item.budget, 0);
   const updateBudgetRow = (id, field, value) => {
-    setBudgetRows((rows) =>
+    setBudgetRowsForYear(activeBudgetDate.year, (rows) =>
       rows.map((row) => {
         if (row.id !== id) return row;
         if (field === "name") {
@@ -54,13 +61,13 @@ export function BudgetCommandCenter({
     const normalizedMonths = budgetMonths.filter((month) => nextMonths.includes(month));
     const safeMonths = normalizedMonths.length ? normalizedMonths : [activeBudgetMonth];
 
-    setBudgetRows((rows) =>
+    setBudgetRowsForYear(activeBudgetDate.year, (rows) =>
       rows.map((row) => (row.id === id ? { ...row, months: safeMonths } : row))
     );
   };
 
   const toggleBudgetMonth = (id, month) => {
-    setBudgetRows((rows) =>
+    setBudgetRowsForYear(activeBudgetDate.year, (rows) =>
       rows.map((row) => {
         if (row.id !== id) return row;
         const currentMonths = row.months || budgetMonths;
@@ -73,7 +80,7 @@ export function BudgetCommandCenter({
   };
 
   const addBudgetCategory = () => {
-    setBudgetRows((rows) => {
+    setBudgetRowsForYear(activeBudgetDate.year, (rows) => {
       const nextNumber = rows.length + 1;
       const newName = `New Category ${nextNumber}`;
       const newId = `budget-custom-${Date.now()}-${nextNumber}`;
@@ -104,53 +111,48 @@ export function BudgetCommandCenter({
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <HouseholdProfilesControl {...householdProfilesProps} />
-          <button
-            onClick={() => changeBudgetMonth(-1)}
+          <select
+            value={activeBudgetDate.monthIndex}
+            onChange={(event) => updateBudgetDate("monthIndex", event.target.value)}
             style={{
               color: "#c9d8ee",
               background: "rgba(1,10,24,.55)",
               border: "1px solid rgba(54,126,220,.28)",
               borderRadius: 7,
-              padding: "10px 13px",
+              padding: "10px 12px",
               cursor: "pointer",
               fontWeight: 900,
               boxShadow: "0 0 14px rgba(0,136,255,.12)",
+              minWidth: 124,
             }}
           >
-            ←
-          </button>
-
-          <div
+            {budgetMonths.map((month, index) => (
+              <option key={month} value={index} style={{ background: "#061224" }}>
+                {budgetMonthNames[month]}
+              </option>
+            ))}
+          </select>
+          <select
+            value={activeBudgetDate.year}
+            onChange={(event) => updateBudgetDate("year", event.target.value)}
             style={{
-              minWidth: 180,
-              textAlign: "center",
               color: "#00d8ff",
               background: "rgba(0,104,255,.18)",
               border: "1px solid rgba(0,216,255,.55)",
               borderRadius: 7,
-              padding: "10px 16px",
-              fontWeight: 900,
-              boxShadow: "0 0 18px rgba(0,136,255,.22)",
-            }}
-          >
-            {activeBudgetLabel}
-          </div>
-
-          <button
-            onClick={() => changeBudgetMonth(1)}
-            style={{
-              color: "#c9d8ee",
-              background: "rgba(1,10,24,.55)",
-              border: "1px solid rgba(54,126,220,.28)",
-              borderRadius: 7,
-              padding: "10px 13px",
+              padding: "10px 12px",
               cursor: "pointer",
               fontWeight: 900,
-              boxShadow: "0 0 14px rgba(0,136,255,.12)",
+              boxShadow: "0 0 18px rgba(0,136,255,.22)",
+              minWidth: 96,
             }}
           >
-            →
-          </button>
+            {availablePlanningYears.map((year) => (
+              <option key={year} value={year} style={{ background: "#061224", color: "#eaf3ff" }}>
+                {year}
+              </option>
+            ))}
+          </select>
         </div>
       </header>
 
@@ -169,7 +171,7 @@ export function BudgetCommandCenter({
         <div style={{ textAlign: "center" }}>
           <div style={{ color: "#e9f3ff", fontSize: 38, fontWeight: 800 }}>{money(spentTotal)}</div>
           <div style={{ color: "#668ab9", fontSize: 26, fontWeight: 700, marginTop: 16 }}>
-            spent in {activeBudgetMonth}
+            spent in {activeBudgetLabel}
           </div>
         </div>
         <div style={{ display: "flex", justifyContent: "center" }}>
@@ -488,7 +490,9 @@ export function BudgetCommandCenter({
               </button>
               <button
                 onClick={() => {
-                  setBudgetRows((rows) => rows.filter((row) => row.id !== deleteTarget.id));
+                  setBudgetRowsForYear(activeBudgetDate.year, (rows) =>
+                    rows.filter((row) => row.id !== deleteTarget.id)
+                  );
                   setDeleteTarget(null);
                 }}
                 style={{

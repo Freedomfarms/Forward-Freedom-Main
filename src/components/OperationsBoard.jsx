@@ -24,28 +24,50 @@ function normalizeAdjustmentInput(value) {
 }
 
 export function OperationsBoard({
-  budgetRows,
   subscriptions,
-  incomeStreams,
-  setIncomeStreams,
   transactions,
   trueCash,
-  projectionAdjustments,
-  setProjectionAdjustments,
   householdProfilesProps,
+  currentPlanYear,
+  availablePlanningYears,
+  getBudgetRowsForYear,
+  getIncomeStreamsForYear,
+  getProjectionAdjustmentsForYear,
+  setIncomeStreamsForYear,
+  setProjectionAdjustmentsForYear,
+  ensurePlanningYear,
 }) {
   const [incomeDeleteTarget, setIncomeDeleteTarget] = useState(null);
   const [hoveredCommandMonth, setHoveredCommandMonth] = useState(null);
   const currentBudgetPeriod = getCurrentBudgetPeriod();
-  const currentBudgetMonthIndex = budgetMonths.indexOf(currentBudgetPeriod.month);
+  const [activePlanningDate, setActivePlanningDate] = useState(() => ({
+    monthIndex: currentBudgetPeriod.monthIndex,
+    year: currentPlanYear,
+  }));
+  const activePlanningMonth = budgetMonths[activePlanningDate.monthIndex];
+  const currentBudgetMonthIndex = activePlanningDate.monthIndex;
+  const planningBudgetRows = getBudgetRowsForYear(activePlanningDate.year);
+  const planningIncomeStreams = getIncomeStreamsForYear(activePlanningDate.year);
+  const planningProjectionAdjustments = getProjectionAdjustmentsForYear(activePlanningDate.year);
   const monthlySpendSeries = buildBudgetMonthlySpendSeries(
     transactions,
-    budgetRows,
-    currentBudgetPeriod.year
+    planningBudgetRows,
+    activePlanningDate.year
   );
+  const updatePlanningDate = (field, value) => {
+    const nextValue = Number(value);
+    if (field === "year") {
+      ensurePlanningYear(nextValue);
+    }
+
+    setActivePlanningDate((current) => ({
+      ...current,
+      [field]: nextValue,
+    }));
+  };
 
   const addIncomeStream = () => {
-    setIncomeStreams((streams) => {
+    setIncomeStreamsForYear(activePlanningDate.year, (streams) => {
       const nextNumber = streams.length + 1;
       return [
         ...streams,
@@ -64,7 +86,7 @@ export function OperationsBoard({
   };
 
   const toggleIncomeMonth = (index, month) => {
-    setIncomeStreams((streams) =>
+    setIncomeStreamsForYear(activePlanningDate.year, (streams) =>
       streams.map((stream, streamIndex) => {
         if (streamIndex !== index) return stream;
 
@@ -83,16 +105,16 @@ export function OperationsBoard({
 
   const setIncomeMonths = (index, nextMonths) => {
     const normalizedMonths = budgetMonths.filter((month) => nextMonths.includes(month));
-    const safeMonths = normalizedMonths.length ? normalizedMonths : [budgetMonths[4]];
+    const safeMonths = normalizedMonths.length ? normalizedMonths : [activePlanningMonth];
 
-    setIncomeStreams((streams) =>
+    setIncomeStreamsForYear(activePlanningDate.year, (streams) =>
       streams.map((stream, streamIndex) =>
         streamIndex === index ? { ...stream, months: safeMonths } : stream
       )
     );
   };
   const dynamicYearlyOpsData = yearlyOpsData.map((month) => {
-    const activeStreams = incomeStreams.filter((stream) =>
+    const activeStreams = planningIncomeStreams.filter((stream) =>
       (stream.months || budgetMonths).includes(month.month)
     );
     const income = activeStreams.reduce((sum, stream) => sum + parseMoney(stream.amount), 0);
@@ -100,7 +122,7 @@ export function OperationsBoard({
       .filter((stream) => stream.type === "One-Time")
       .reduce((sum, stream) => sum + parseMoney(stream.amount), 0);
 
-    const activeBudgetCategories = budgetRows.filter((category) =>
+    const activeBudgetCategories = planningBudgetRows.filter((category) =>
       (category.months || budgetMonths).includes(month.month)
     );
 
@@ -131,7 +153,7 @@ export function OperationsBoard({
     ...dynamicYearlyOpsData.flatMap((month) => [month.income, month.budget, month.spent]),
     1
   );
-  const incomeOutlookRows = incomeStreams.map((stream) => {
+  const incomeOutlookRows = planningIncomeStreams.map((stream) => {
     const monthlyValues = budgetMonths.map((month) =>
       (stream.months || budgetMonths).includes(month) ? parseMoney(stream.amount) : 0
     );
@@ -144,13 +166,15 @@ export function OperationsBoard({
   });
   const trueCashProjectionSchedule = buildForwardTrueCashProjection({
     openingBalance: trueCash,
-    incomeStreams,
-    budgetRows,
-    projectionAdjustments,
-    startMonth: currentBudgetPeriod.month,
-    startYear: currentBudgetPeriod.year,
+    incomeStreams: planningIncomeStreams,
+    budgetRows: planningBudgetRows,
+    projectionAdjustments: planningProjectionAdjustments,
+    startMonth: activePlanningMonth,
+    startYear: activePlanningDate.year,
   });
-  const adjustmentValues = budgetMonths.map((month) => parseMoney(projectionAdjustments[month]));
+  const adjustmentValues = budgetMonths.map((month) =>
+    parseMoney(planningProjectionAdjustments[month])
+  );
   const projectedTrueCashValues = budgetMonths.map((month, index) => {
     if (index < currentBudgetMonthIndex) return null;
     if (index === currentBudgetMonthIndex) return trueCash;
@@ -169,17 +193,44 @@ export function OperationsBoard({
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <HouseholdProfilesControl {...householdProfilesProps} />
-          <button
+          <select
+            value={activePlanningDate.monthIndex}
+            onChange={(event) => updatePlanningDate("monthIndex", event.target.value)}
             style={{
               color: "#f2f7ff",
               background: "rgba(1,10,24,.55)",
               border: "1px solid rgba(54,126,220,.38)",
               borderRadius: 7,
-              padding: "10px 16px",
+              padding: "10px 12px",
+              minWidth: 124,
             }}
           >
-            2026
-          </button>
+            {budgetMonths.map((month, index) => (
+              <option key={month} value={index} style={{ background: "#061224" }}>
+                {month}
+              </option>
+            ))}
+          </select>
+          <select
+            value={activePlanningDate.year}
+            onChange={(event) => updatePlanningDate("year", event.target.value)}
+            style={{
+              color: "#00d8ff",
+              background: "rgba(0,104,255,.18)",
+              border: "1px solid rgba(0,216,255,.55)",
+              borderRadius: 7,
+              padding: "10px 12px",
+              minWidth: 96,
+              fontWeight: 900,
+              boxShadow: "0 0 18px rgba(0,136,255,.22)",
+            }}
+          >
+            {availablePlanningYears.map((year) => (
+              <option key={year} value={year} style={{ background: "#061224", color: "#eaf3ff" }}>
+                {year}
+              </option>
+            ))}
+          </select>
         </div>
       </header>
 
@@ -269,7 +320,8 @@ export function OperationsBoard({
             </div>
             <div style={{ color: "#8ea8ca", fontSize: 12, lineHeight: 1.5 }}>
               Uses the same live true-cash balance that powers Dashboard and Forecast Lab before
-              projecting the remaining months in the year.
+              projecting the remaining months in the selected planning period ({activePlanningMonth}{" "}
+              {activePlanningDate.year} onward).
             </div>
           </div>
         </div>
@@ -337,7 +389,7 @@ export function OperationsBoard({
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 18, marginTop: 4 }}>
-              {incomeStreams.map((income, index) => (
+              {planningIncomeStreams.map((income, index) => (
                 <div
                   key={income.id}
                   style={{
@@ -383,7 +435,7 @@ export function OperationsBoard({
                       <input
                         value={income.name}
                         onChange={(event) =>
-                          setIncomeStreams((streams) =>
+                          setIncomeStreamsForYear(activePlanningDate.year, (streams) =>
                             streams.map((stream, streamIndex) =>
                               streamIndex === index
                                 ? { ...stream, name: event.target.value }
@@ -414,7 +466,7 @@ export function OperationsBoard({
                       <input
                         value={income.description}
                         onChange={(event) =>
-                          setIncomeStreams((streams) =>
+                          setIncomeStreamsForYear(activePlanningDate.year, (streams) =>
                             streams.map((stream, streamIndex) =>
                               streamIndex === index
                                 ? { ...stream, description: event.target.value }
@@ -460,8 +512,8 @@ export function OperationsBoard({
                         quickActions={[
                           { label: "All", onClick: () => setIncomeMonths(index, budgetMonths) },
                           {
-                            label: `Only ${currentBudgetPeriod.month}`,
-                            onClick: () => setIncomeMonths(index, [currentBudgetPeriod.month]),
+                            label: `Only ${activePlanningMonth}`,
+                            onClick: () => setIncomeMonths(index, [activePlanningMonth]),
                           },
                         ]}
                       />
@@ -471,7 +523,7 @@ export function OperationsBoard({
                   <input
                     value={income.amount}
                     onChange={(event) =>
-                      setIncomeStreams((streams) =>
+                      setIncomeStreamsForYear(activePlanningDate.year, (streams) =>
                         streams.map((stream, streamIndex) =>
                           streamIndex === index ? { ...stream, amount: event.target.value } : stream
                         )
@@ -914,13 +966,13 @@ export function OperationsBoard({
                 <input
                   key={month}
                   value={
-                    projectionAdjustments[month] === undefined
+                    planningProjectionAdjustments[month] === undefined
                       ? "0"
-                      : String(projectionAdjustments[month])
+                      : String(planningProjectionAdjustments[month])
                   }
                   onChange={(event) => {
                     const nextValue = normalizeAdjustmentInput(event.target.value);
-                    setProjectionAdjustments((current) => ({
+                    setProjectionAdjustmentsForYear(activePlanningDate.year, (current) => ({
                       ...current,
                       [month]: nextValue,
                     }));
@@ -1065,7 +1117,7 @@ export function OperationsBoard({
               </button>
               <button
                 onClick={() => {
-                  setIncomeStreams((streams) =>
+                  setIncomeStreamsForYear(activePlanningDate.year, (streams) =>
                     streams.filter((stream) => stream.id !== incomeDeleteTarget.id)
                   );
                   setIncomeDeleteTarget(null);
