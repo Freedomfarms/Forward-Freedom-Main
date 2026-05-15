@@ -53,6 +53,7 @@ function buildUserState({
     subscriptions: useSeedData ? cloneSeed(initialSubscriptions) : [],
     plaidItems: [],
     lastPlaidSyncAt: null,
+    merchantCategoryRules: {},
     activeTab: APP_TABS.DASHBOARD,
     activeRange: DEFAULT_ACTIVE_RANGE,
     metricSnapshots: {},
@@ -93,6 +94,10 @@ function normalizeUserState(rawUser, fallbackName, useSeedData = true) {
       typeof rawUser?.lastPlaidSyncAt === "string"
         ? rawUser.lastPlaidSyncAt
         : defaults.lastPlaidSyncAt,
+    merchantCategoryRules:
+      rawUser?.merchantCategoryRules && typeof rawUser.merchantCategoryRules === "object"
+        ? rawUser.merchantCategoryRules
+        : defaults.merchantCategoryRules,
     activeTab:
       typeof rawUser?.activeTab === "string" && APP_TAB_VALUES.includes(rawUser.activeTab)
         ? rawUser.activeTab

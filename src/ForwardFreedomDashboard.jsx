@@ -15,6 +15,10 @@ import {
   persistAppState,
 } from "./utils/appState.js";
 import {
+  buildMerchantCategoryRules,
+  categorizeTransactions,
+} from "./utils/transactionCategorization.js";
+import {
   createPlaidLinkToken,
   exchangePlaidPublicToken,
   getPlaidStatus,
@@ -64,6 +68,7 @@ const EMPTY_USER_STATE = Object.freeze({
   subscriptions: [],
   plaidItems: [],
   lastPlaidSyncAt: null,
+  merchantCategoryRules: {},
   activeTab: APP_TABS.DASHBOARD,
   activeRange: "ALL",
   metricSnapshots: {},
@@ -196,9 +201,19 @@ function mergePlaidSyncIntoUser(user, syncPayload) {
   );
   const syncedTransactions = (syncPayload.transactions || []).map((transaction) => {
     const existing = existingPlaidTransactions.get(transaction.id);
-    return existing?.category && existing.category !== transaction.category
-      ? { ...transaction, category: existing.category }
-      : transaction;
+    if (!existing) return transaction;
+
+    if (existing.categorySource === "user" || existing.categorySource === "manual") {
+      return {
+        ...transaction,
+        category: existing.category,
+        categorySource: existing.categorySource,
+        categoryConfidence: existing.categoryConfidence,
+        needsReview: existing.needsReview,
+      };
+    }
+
+    return transaction;
   });
   const retainedAccounts = user.accounts.filter((account) => {
     if (account.syncSource === "Plaid" || account.plaidAccountId) return false;
@@ -247,6 +262,7 @@ function ForwardFreedomDashboard() {
   const subscriptions = activeUser.subscriptions;
   const plaidItems = activeUser.plaidItems;
   const lastPlaidSyncAt = activeUser.lastPlaidSyncAt;
+  const merchantCategoryRules = activeUser.merchantCategoryRules || {};
   const activeTab = activeUser.activeTab;
   const activeRange = activeUser.activeRange;
   const metricSnapshots = activeUser.metricSnapshots;
@@ -272,9 +288,15 @@ function ForwardFreedomDashboard() {
   const setProjectionAdjustments = (valueOrUpdater) =>
     setActiveUserField("projectionAdjustments", valueOrUpdater);
   const setSubscriptions = (valueOrUpdater) => setActiveUserField("subscriptions", valueOrUpdater);
+  const setMerchantCategoryRules = (valueOrUpdater) =>
+    setActiveUserField("merchantCategoryRules", valueOrUpdater);
   const setActiveTab = (valueOrUpdater) => setActiveUserField("activeTab", valueOrUpdater);
   const setActiveRange = (valueOrUpdater) => setActiveUserField("activeRange", valueOrUpdater);
   const syncedAccounts = syncDerivedAccountValues(accounts);
+  const categorizedTransactions = categorizeTransactions(transactions, {
+    budgetRows,
+    merchantCategoryRules,
+  });
 
   const liquidCash = syncedAccounts
     .filter((account) => LIQUID_ACCOUNT_TYPES.has(account.type))
@@ -345,6 +367,8 @@ function ForwardFreedomDashboard() {
           ...user,
           name: getDisplayUserName(user, index),
           accounts: syncedAccounts,
+          transactions: categorizedTransactions,
+          merchantCategoryRules,
           metricSnapshots: trackedMetricSnapshots,
         }
       : {
@@ -804,10 +828,10 @@ function ForwardFreedomDashboard() {
   };
 
   const selectedTransactions = selectedAccount
-    ? transactions.filter((tx) => tx.account === selectedAccount)
+    ? categorizedTransactions.filter((tx) => tx.account === selectedAccount)
     : [];
 
-  const visibleTransactions = selectedAccount ? selectedTransactions : transactions;
+  const visibleTransactions = selectedAccount ? selectedTransactions : categorizedTransactions;
 
   const openAccountTransactions = (accountName) => {
     setSelectedAccount(accountName);
@@ -829,6 +853,9 @@ function ForwardFreedomDashboard() {
         amount,
         id: `manual-tx-${getCurrentTimestamp()}-${current.length + 1}`,
         source: "manual",
+        categorySource: transaction.category ? "manual" : undefined,
+        categoryConfidence: transaction.category ? 100 : undefined,
+        needsReview: transaction.category ? false : undefined,
       },
       ...current,
     ]);
@@ -869,10 +896,22 @@ function ForwardFreedomDashboard() {
   const updateTransactionCategory = (transactionToUpdate, nextCategory) => {
     if (!transactionToUpdate) return;
 
+    setMerchantCategoryRules((current) =>
+      buildMerchantCategoryRules(current, transactionToUpdate.merchant, nextCategory)
+    );
+
     setTransactions((current) => {
       if (transactionToUpdate.id) {
         return current.map((tx) =>
-          tx.id === transactionToUpdate.id ? { ...tx, category: nextCategory } : tx
+          tx.id === transactionToUpdate.id
+            ? {
+                ...tx,
+                category: nextCategory,
+                categorySource: "user",
+                categoryConfidence: 100,
+                needsReview: false,
+              }
+            : tx
         );
       }
 
@@ -886,7 +925,15 @@ function ForwardFreedomDashboard() {
 
       if (existingIndex >= 0) {
         return current.map((tx, index) =>
-          index === existingIndex ? { ...tx, category: nextCategory } : tx
+          index === existingIndex
+            ? {
+                ...tx,
+                category: nextCategory,
+                categorySource: "user",
+                categoryConfidence: 100,
+                needsReview: false,
+              }
+            : tx
         );
       }
 
@@ -988,7 +1035,7 @@ function ForwardFreedomDashboard() {
               setActiveRange={setActiveRange}
               setActiveTab={setActiveTab}
               trueCash={trueCash}
-              transactions={transactions}
+              transactions={categorizedTransactions}
               subscriptions={subscriptions}
               incomeStreams={incomeStreams}
               budgetRows={budgetRows}
@@ -1000,7 +1047,7 @@ function ForwardFreedomDashboard() {
             />
           ) : activeTab === APP_TABS.BUDGET_COMMAND_CENTER ? (
             <BudgetCommandCenter
-              transactions={transactions}
+              transactions={categorizedTransactions}
               budgetRows={budgetRows}
               setBudgetRows={setBudgetRows}
               householdProfilesProps={householdProfilesProps}
@@ -1011,7 +1058,7 @@ function ForwardFreedomDashboard() {
               subscriptions={subscriptions}
               incomeStreams={incomeStreams}
               setIncomeStreams={setIncomeStreams}
-              transactions={transactions}
+              transactions={categorizedTransactions}
               trueCash={trueCash}
               projectionAdjustments={projectionAdjustments}
               setProjectionAdjustments={setProjectionAdjustments}
