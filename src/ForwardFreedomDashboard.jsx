@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { APP_TABS, budgetMonths } from "./data/constants.jsx";
 import { styles } from "./styles.js";
 import { getBudgetPeriodAtOffset, getCurrentTimestamp } from "./utils/date.js";
@@ -8,7 +8,11 @@ import {
   calculateRealEstateEquity,
   normalizeAccount,
 } from "./utils/accounts.js";
-import { loadPersistedAppState, persistAppState } from "./utils/appState.js";
+import {
+  createEmptyUserProfile,
+  loadPersistedAppState,
+  persistAppState,
+} from "./utils/appState.js";
 import {
   calculateCryptoBalance,
   fetchCryptoQuotes,
@@ -41,6 +45,20 @@ const LIQUID_ACCOUNT_TYPES = new Set(["Checking", "Savings", "Manual Cash"]);
 const CRYPTO_PRICE_SOURCE = "CoinGecko";
 const THIRTY_DAY_WINDOW = 30;
 const SNAPSHOT_RETENTION_DAYS = 400;
+const EMPTY_USER_STATE = Object.freeze({
+  id: null,
+  name: "",
+  selectedAccount: null,
+  accounts: [],
+  transactions: [],
+  budgetRows: [],
+  incomeStreams: [],
+  projectionAdjustments: {},
+  subscriptions: [],
+  activeTab: APP_TABS.DASHBOARD,
+  activeRange: "ALL",
+  metricSnapshots: {},
+});
 
 function getLocalDateKey(date = new Date()) {
   const year = date.getFullYear();
@@ -148,22 +166,55 @@ function ensureTodayMetricSnapshot(metricSnapshots, nextSnapshot) {
   });
 }
 
+function getDisplayUserName(user, index = 0) {
+  return user?.name?.trim() || `User ${index + 1}`;
+}
+
 function ForwardFreedomDashboard() {
   const [initialAppState] = useState(() => loadPersistedAppState());
   const [currentView, setCurrentView] = useState("landing");
-  const [accounts, setAccounts] = useState(initialAppState.accounts);
-  const [transactions, setTransactions] = useState(initialAppState.transactions);
-  const [selectedAccount, setSelectedAccount] = useState(null);
-  const [budgetRows, setBudgetRows] = useState(initialAppState.budgetRows);
-  const [incomeStreams, setIncomeStreams] = useState(initialAppState.incomeStreams);
-  const [projectionAdjustments, setProjectionAdjustments] = useState(
-    initialAppState.projectionAdjustments
-  );
-  const [subscriptions, setSubscriptions] = useState(initialAppState.subscriptions);
-  const [activeTab, setActiveTab] = useState(initialAppState.activeTab);
-  const [activeRange, setActiveRange] = useState(initialAppState.activeRange);
-  const [metricSnapshots] = useState(initialAppState.metricSnapshots);
-  const syncedAccounts = useMemo(() => syncDerivedAccountValues(accounts), [accounts]);
+  const [users, setUsers] = useState(initialAppState.users);
+  const [activeUserId, setActiveUserId] = useState(initialAppState.activeUserId);
+  const [editingUserId, setEditingUserId] = useState(null);
+  const [draftUserName, setDraftUserName] = useState("");
+  const activeUser = users.find((user) => user.id === activeUserId) || users[0] || EMPTY_USER_STATE;
+  const activeUserIndex = users.findIndex((user) => user.id === activeUser?.id);
+  const activeUserName = getDisplayUserName(activeUser, activeUserIndex >= 0 ? activeUserIndex : 0);
+  const accounts = activeUser.accounts;
+  const transactions = activeUser.transactions;
+  const selectedAccount = activeUser.selectedAccount;
+  const budgetRows = activeUser.budgetRows;
+  const incomeStreams = activeUser.incomeStreams;
+  const projectionAdjustments = activeUser.projectionAdjustments;
+  const subscriptions = activeUser.subscriptions;
+  const activeTab = activeUser.activeTab;
+  const activeRange = activeUser.activeRange;
+  const metricSnapshots = activeUser.metricSnapshots;
+  const setActiveUserField = (field, valueOrUpdater) => {
+    if (!activeUser?.id) return;
+
+    setUsers((currentUsers) =>
+      currentUsers.map((user) => {
+        if (user.id !== activeUser.id) return user;
+
+        const nextValue =
+          typeof valueOrUpdater === "function" ? valueOrUpdater(user[field]) : valueOrUpdater;
+        return user[field] === nextValue ? user : { ...user, [field]: nextValue };
+      })
+    );
+  };
+  const setAccounts = (valueOrUpdater) => setActiveUserField("accounts", valueOrUpdater);
+  const setTransactions = (valueOrUpdater) => setActiveUserField("transactions", valueOrUpdater);
+  const setSelectedAccount = (valueOrUpdater) =>
+    setActiveUserField("selectedAccount", valueOrUpdater);
+  const setBudgetRows = (valueOrUpdater) => setActiveUserField("budgetRows", valueOrUpdater);
+  const setIncomeStreams = (valueOrUpdater) => setActiveUserField("incomeStreams", valueOrUpdater);
+  const setProjectionAdjustments = (valueOrUpdater) =>
+    setActiveUserField("projectionAdjustments", valueOrUpdater);
+  const setSubscriptions = (valueOrUpdater) => setActiveUserField("subscriptions", valueOrUpdater);
+  const setActiveTab = (valueOrUpdater) => setActiveUserField("activeTab", valueOrUpdater);
+  const setActiveRange = (valueOrUpdater) => setActiveUserField("activeRange", valueOrUpdater);
+  const syncedAccounts = syncDerivedAccountValues(accounts);
 
   const liquidCash = syncedAccounts
     .filter((account) => LIQUID_ACCOUNT_TYPES.has(account.type))
@@ -224,13 +275,22 @@ function ForwardFreedomDashboard() {
     1
   );
   const pct = (v) => `${((v / totalNetWorth) * 100).toFixed(1)}%`;
-  const trackedMetricSnapshots = useMemo(
-    () =>
-      ensureTodayMetricSnapshot(
-        metricSnapshots,
-        buildTodayMetricSnapshot(liquidCash, creditCardDebt, totalNetWorth)
-      ),
-    [creditCardDebt, liquidCash, metricSnapshots, totalNetWorth]
+  const trackedMetricSnapshots = ensureTodayMetricSnapshot(
+    metricSnapshots,
+    buildTodayMetricSnapshot(liquidCash, creditCardDebt, totalNetWorth)
+  );
+  const persistedUsers = users.map((user, index) =>
+    user.id === activeUser?.id
+      ? {
+          ...user,
+          name: getDisplayUserName(user, index),
+          accounts: syncedAccounts,
+          metricSnapshots: trackedMetricSnapshots,
+        }
+      : {
+          ...user,
+          name: getDisplayUserName(user, index),
+        }
   );
 
   const dynamicAllocations = [
@@ -280,27 +340,10 @@ function ForwardFreedomDashboard() {
 
   useEffect(() => {
     persistAppState({
-      accounts: syncedAccounts,
-      transactions,
-      budgetRows,
-      incomeStreams,
-      projectionAdjustments,
-      subscriptions,
-      activeTab,
-      activeRange,
-      metricSnapshots: trackedMetricSnapshots,
+      users: persistedUsers,
+      activeUserId: activeUser?.id || persistedUsers[0]?.id || null,
     });
-  }, [
-    transactions,
-    budgetRows,
-    incomeStreams,
-    projectionAdjustments,
-    subscriptions,
-    activeTab,
-    activeRange,
-    syncedAccounts,
-    trackedMetricSnapshots,
-  ]);
+  }, [activeUser?.id, persistedUsers]);
 
   const dynamicMetrics = [
     {
@@ -355,52 +398,55 @@ function ForwardFreedomDashboard() {
       .then((quotes) => {
         if (cancelled || Object.keys(quotes).length === 0) return;
 
-        setAccounts((current) => {
-          let changed = false;
+        setUsers((currentUsers) =>
+          currentUsers.map((user) => {
+            if (user.id !== activeUser.id) return user;
 
-          const nextAccounts = current.map((account) => {
-            if (
-              account.type !== "Precious Metals" ||
-              account.valuationSource !== "Live Spot" ||
-              account.metalType === "Custom"
-            ) {
-              return account;
-            }
+            let changed = false;
+            const nextAccounts = user.accounts.map((account) => {
+              if (
+                account.type !== "Precious Metals" ||
+                account.valuationSource !== "Live Spot" ||
+                account.metalType === "Custom"
+              ) {
+                return account;
+              }
 
-            const quote = quotes[account.metalType];
-            if (!quote) return account;
+              const quote = quotes[account.metalType];
+              if (!quote) return account;
 
-            const pricePerUnit = normalizePreciousMetalsPricePerUnit(
-              quote.pricePerTroyOunce,
-              account.metalUnit
-            );
-            const nextBalance = roundCurrency((Number(account.quantity) || 0) * pricePerUnit);
-            if (
-              account.pricePerUnit === pricePerUnit &&
-              account.balance === nextBalance &&
-              account.lastValuedAt === quote.updatedAt
-            ) {
-              return account;
-            }
+              const pricePerUnit = normalizePreciousMetalsPricePerUnit(
+                quote.pricePerTroyOunce,
+                account.metalUnit
+              );
+              const nextBalance = roundCurrency((Number(account.quantity) || 0) * pricePerUnit);
+              if (
+                account.pricePerUnit === pricePerUnit &&
+                account.balance === nextBalance &&
+                account.lastValuedAt === quote.updatedAt
+              ) {
+                return account;
+              }
 
-            changed = true;
-            return {
-              ...account,
-              pricePerUnit,
-              balance: nextBalance,
-              lastValuedAt: quote.updatedAt,
-            };
-          });
+              changed = true;
+              return {
+                ...account,
+                pricePerUnit,
+                balance: nextBalance,
+                lastValuedAt: quote.updatedAt,
+              };
+            });
 
-          return changed ? nextAccounts : current;
-        });
+            return changed ? { ...user, accounts: nextAccounts } : user;
+          })
+        );
       })
       .catch(() => {});
 
     return () => {
       cancelled = true;
     };
-  }, [accounts]);
+  }, [accounts, activeUser.id]);
 
   useEffect(() => {
     const staleCryptoAccounts = accounts.filter(
@@ -421,46 +467,49 @@ function ForwardFreedomDashboard() {
       .then((quotes) => {
         if (cancelled || Object.keys(quotes).length === 0) return;
 
-        setAccounts((current) => {
-          let changed = false;
+        setUsers((currentUsers) =>
+          currentUsers.map((user) => {
+            if (user.id !== activeUser.id) return user;
 
-          const nextAccounts = current.map((account) => {
-            if (account.type !== "Crypto" || !account.cryptoAssetId) return account;
+            let changed = false;
+            const nextAccounts = user.accounts.map((account) => {
+              if (account.type !== "Crypto" || !account.cryptoAssetId) return account;
 
-            const quote = quotes[account.cryptoAssetId];
-            if (!quote) return account;
+              const quote = quotes[account.cryptoAssetId];
+              if (!quote) return account;
 
-            const nextPriceUsd = normalizeCryptoPrice(quote.priceUsd);
-            const nextBalance = calculateCryptoBalance(account.quantity, nextPriceUsd);
-            const nextUpdatedAt = quote.lastUpdatedAt;
+              const nextPriceUsd = normalizeCryptoPrice(quote.priceUsd);
+              const nextBalance = calculateCryptoBalance(account.quantity, nextPriceUsd);
+              const nextUpdatedAt = quote.lastUpdatedAt;
 
-            if (
-              account.lastPriceUsd === nextPriceUsd &&
-              account.balance === nextBalance &&
-              account.lastPriceUpdatedAt === nextUpdatedAt
-            ) {
-              return account;
-            }
+              if (
+                account.lastPriceUsd === nextPriceUsd &&
+                account.balance === nextBalance &&
+                account.lastPriceUpdatedAt === nextUpdatedAt
+              ) {
+                return account;
+              }
 
-            changed = true;
-            return {
-              ...account,
-              lastPriceUsd: nextPriceUsd,
-              lastPriceUpdatedAt: nextUpdatedAt,
-              balance: nextBalance,
-              priceSource: CRYPTO_PRICE_SOURCE,
-            };
-          });
+              changed = true;
+              return {
+                ...account,
+                lastPriceUsd: nextPriceUsd,
+                lastPriceUpdatedAt: nextUpdatedAt,
+                balance: nextBalance,
+                priceSource: CRYPTO_PRICE_SOURCE,
+              };
+            });
 
-          return changed ? nextAccounts : current;
-        });
+            return changed ? { ...user, accounts: nextAccounts } : user;
+          })
+        );
       })
       .catch(() => {});
 
     return () => {
       cancelled = true;
     };
-  }, [accounts]);
+  }, [accounts, activeUser.id]);
 
   const connectMockPlaidAccount = () => {
     const newAccountNumber = accounts.length + 1;
@@ -668,6 +717,47 @@ function ForwardFreedomDashboard() {
     });
   };
 
+  const startEditingActiveUser = () => {
+    if (!activeUser?.id) return;
+    setEditingUserId(activeUser.id);
+    setDraftUserName(activeUserName);
+  };
+
+  const saveUserName = (userId) => {
+    const targetIndex = users.findIndex((user) => user.id === userId);
+    if (targetIndex < 0) {
+      setEditingUserId(null);
+      setDraftUserName("");
+      return;
+    }
+
+    const nextName = draftUserName.trim() || `User ${targetIndex + 1}`;
+    setUsers((currentUsers) =>
+      currentUsers.map((user, index) =>
+        user.id === userId ? { ...user, name: nextName || `User ${index + 1}` } : user
+      )
+    );
+    setEditingUserId(null);
+    setDraftUserName("");
+  };
+
+  const cancelUserRename = () => {
+    setEditingUserId(null);
+    setDraftUserName("");
+  };
+
+  const addUserProfile = () => {
+    const nextNumber = users.length + 1;
+    const newUser = createEmptyUserProfile({
+      name: `User ${nextNumber}`,
+    });
+
+    setUsers((currentUsers) => [...currentUsers, newUser]);
+    setActiveUserId(newUser.id);
+    setEditingUserId(newUser.id);
+    setDraftUserName(newUser.name);
+  };
+
   if (currentView === "landing") {
     return <LandingPage enterApp={() => setCurrentView("app")} />;
   }
@@ -682,6 +772,128 @@ function ForwardFreedomDashboard() {
         />
 
         <main style={styles.main}>
+          <div
+            style={{
+              ...styles.panel,
+              padding: 18,
+              marginBottom: 18,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 18,
+              flexWrap: "wrap",
+            }}
+          >
+            <div style={{ minWidth: 0 }}>
+              <div
+                style={{
+                  color: "#8feaff",
+                  fontSize: 12,
+                  textTransform: "uppercase",
+                  letterSpacing: 1.1,
+                }}
+              >
+                Household Profiles
+              </div>
+              <div style={{ color: "#c8d7ea", fontSize: 13, marginTop: 6 }}>
+                Each user keeps separate accounts, transactions, budgets, subscriptions, and
+                forecasts.
+              </div>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 14 }}>
+                {users.map((user, index) => {
+                  const isActive = user.id === activeUser?.id;
+                  const isEditing = editingUserId === user.id && isActive;
+
+                  if (isEditing) {
+                    return (
+                      <input
+                        key={user.id}
+                        value={draftUserName}
+                        onChange={(event) => setDraftUserName(event.target.value)}
+                        onBlur={() => saveUserName(user.id)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") saveUserName(user.id);
+                          if (event.key === "Escape") cancelUserRename();
+                        }}
+                        autoFocus
+                        style={{
+                          color: "#eaf3ff",
+                          background: "rgba(0,136,255,.14)",
+                          border: "1px solid rgba(0,216,255,.38)",
+                          borderRadius: 999,
+                          padding: "10px 16px",
+                          minWidth: 140,
+                          outline: "none",
+                          fontWeight: 800,
+                        }}
+                      />
+                    );
+                  }
+
+                  return (
+                    <button
+                      key={user.id}
+                      onClick={() => {
+                        setActiveUserId(user.id);
+                        cancelUserRename();
+                      }}
+                      style={{
+                        color: isActive ? "#f4fbff" : "#9fb0c9",
+                        background: isActive ? "rgba(0,136,255,.18)" : "rgba(0,136,255,.06)",
+                        border: isActive
+                          ? "1px solid rgba(0,216,255,.42)"
+                          : "1px solid rgba(0,216,255,.18)",
+                        borderRadius: 999,
+                        padding: "10px 16px",
+                        cursor: "pointer",
+                        fontWeight: 800,
+                        boxShadow: isActive ? "0 0 18px rgba(0,136,255,.18)" : "none",
+                      }}
+                    >
+                      {getDisplayUserName(user, index)}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+              <button
+                onClick={() =>
+                  editingUserId === activeUser?.id
+                    ? saveUserName(activeUser.id)
+                    : startEditingActiveUser()
+                }
+                style={{
+                  background: "rgba(0,136,255,.10)",
+                  border: "1px solid rgba(0,216,255,.24)",
+                  borderRadius: 10,
+                  color: "#d7ebff",
+                  padding: "11px 16px",
+                  cursor: "pointer",
+                  fontWeight: 800,
+                }}
+              >
+                {editingUserId === activeUser?.id ? "Save" : "Edit"}
+              </button>
+              <button
+                onClick={addUserProfile}
+                style={{
+                  background: "linear-gradient(90deg,#0077ff,#00d8ff)",
+                  border: "1px solid rgba(120,220,255,.45)",
+                  borderRadius: 10,
+                  color: "white",
+                  padding: "11px 18px",
+                  cursor: "pointer",
+                  fontWeight: 800,
+                  boxShadow: "0 0 22px rgba(0,136,255,.24)",
+                }}
+              >
+                + Add User
+              </button>
+            </div>
+          </div>
+
           {activeTab === APP_TABS.DASHBOARD ? (
             <DashboardView
               activeRange={activeRange}
