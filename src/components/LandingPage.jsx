@@ -232,19 +232,21 @@ export function LandingPage({ enterApp }) {
         <nav
           style={{
             display: "grid",
-            gridTemplateColumns: "280px 1fr auto",
+            gridTemplateColumns: "minmax(220px, 280px) 1fr auto",
             alignItems: "center",
             marginBottom: 108,
             gap: 24,
           }}
         >
-          <div style={{ display: "flex", alignItems: "center" }}>
+          <div style={{ display: "flex", alignItems: "center", minHeight: 118 }}>
             <img
               src={forwardFreedomLogo}
               alt="Forward Freedom Financial logo"
               style={{
-                width: 214,
+                width: 228,
                 maxWidth: "100%",
+                display: "block",
+                objectFit: "contain",
                 filter: "drop-shadow(0 0 18px rgba(0,136,255,.28))",
               }}
             />
@@ -293,10 +295,10 @@ export function LandingPage({ enterApp }) {
           id="home"
           style={{
             display: "grid",
-            gridTemplateColumns: "minmax(0, 1fr) minmax(360px, 460px)",
-            gap: 36,
-            alignItems: "start",
-            marginBottom: 42,
+            gridTemplateColumns: "minmax(0, 1fr) minmax(400px, 560px)",
+            gap: 48,
+            alignItems: "center",
+            marginBottom: 52,
           }}
         >
           <div style={{ maxWidth: 700 }}>
@@ -363,20 +365,35 @@ export function LandingPage({ enterApp }) {
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              minHeight: 430,
-              padding: 8,
+              justifySelf: "center",
+              width: "100%",
+              minHeight: 560,
+              padding: "18px 0",
             }}
           >
-            <img
-              src={forwardFreedomLogo}
-              alt="Forward Freedom Financial logo"
+            <div
               style={{
                 width: "100%",
-                maxWidth: 500,
-                filter:
-                  "drop-shadow(0 0 18px rgba(0,136,255,.36)) drop-shadow(0 0 42px rgba(0,98,255,.2))",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
               }}
-            />
+            >
+              <img
+                src={forwardFreedomLogo}
+                alt="Forward Freedom Financial logo"
+                style={{
+                  width: "min(100%, 560px)",
+                  maxWidth: "100%",
+                  display: "block",
+                  margin: "0 auto",
+                  objectFit: "contain",
+                  objectPosition: "center",
+                  filter:
+                    "drop-shadow(0 0 20px rgba(0,136,255,.38)) drop-shadow(0 0 48px rgba(0,98,255,.22))",
+                }}
+              />
+            </div>
           </div>
         </section>
 
