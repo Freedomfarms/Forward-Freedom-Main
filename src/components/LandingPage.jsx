@@ -217,77 +217,16 @@ export function LandingPage({ enterApp }) {
       <div
         style={{
           position: "absolute",
-          left: "43%",
-          right: "-2%",
-          top: 80,
-          height: 560,
-          opacity: 0.98,
+          right: 72,
+          top: 112,
+          width: 540,
+          height: 540,
+          borderRadius: "50%",
+          background: "radial-gradient(circle at center, rgba(22,110,255,.22), rgba(2,7,17,0) 62%)",
+          filter: "blur(8px)",
+          opacity: 0.82,
         }}
-      >
-        <div
-          style={{
-            position: "absolute",
-            left: "0%",
-            right: "0%",
-            bottom: 100,
-            height: 2,
-            background:
-              "linear-gradient(90deg, transparent, #008cff 18%, #00d8ff 48%, #008cff 76%, transparent)",
-            boxShadow: "0 0 32px rgba(0,216,255,1)",
-          }}
-        />
-        <div
-          style={{
-            position: "absolute",
-            left: "4%",
-            right: "0%",
-            bottom: -18,
-            height: 210,
-            background:
-              "repeating-linear-gradient(90deg, rgba(0,136,255,.32) 0, rgba(0,136,255,.32) 1px, transparent 1px, transparent 44px), repeating-linear-gradient(0deg, rgba(0,136,255,.23) 0, rgba(0,136,255,.23) 1px, transparent 1px, transparent 22px)",
-            transform: "perspective(760px) rotateX(62deg)",
-            transformOrigin: "bottom",
-            opacity: 0.7,
-          }}
-        />
-        {["2%", "8%", "15%", "21%", "74%", "80%", "87%", "94%"].map((left, i) => (
-          <div
-            key={left}
-            style={{
-              position: "absolute",
-              left,
-              bottom: 101,
-              width: [18, 28, 20, 34, 28, 36, 22, 26][i],
-              height: [95, 190, 135, 250, 180, 290, 150, 205][i],
-              border: "1px solid rgba(0,174,255,.48)",
-              background: "linear-gradient(180deg, rgba(0,174,255,.16), rgba(0,12,26,.5))",
-              boxShadow: "0 0 28px rgba(0,136,255,.24)",
-            }}
-          >
-            <div
-              style={{
-                height: "100%",
-                background:
-                  "repeating-linear-gradient(180deg, transparent 0, transparent 15px, rgba(0,216,255,.46) 16px)",
-              }}
-            />
-          </div>
-        ))}
-        <div
-          style={{
-            position: "absolute",
-            left: "20%",
-            top: 46,
-            width: 520,
-            height: 520,
-            borderRadius: "50%",
-            background:
-              "radial-gradient(circle at center, rgba(18,104,255,.22), rgba(0,0,0,0) 72%)",
-            filter: "blur(10px)",
-            opacity: 0.82,
-          }}
-        />
-      </div>
+      />
 
       <div style={{ position: "relative", zIndex: 2 }}>
         <nav
@@ -421,46 +360,23 @@ export function LandingPage({ enterApp }) {
 
           <div
             style={{
-              border: "1px solid rgba(0,136,255,.24)",
-              borderRadius: 16,
-              background:
-                "radial-gradient(circle at top right, rgba(0,160,255,.18), transparent 28%), linear-gradient(180deg, rgba(4,18,36,.96), rgba(4,12,22,.88))",
-              padding: 26,
-              boxShadow: "0 0 42px rgba(0,136,255,.18)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               minHeight: 430,
+              padding: 8,
             }}
           >
-            <div
+            <img
+              src={forwardFreedomLogo}
+              alt="Forward Freedom Financial logo"
               style={{
-                position: "relative",
-                display: "grid",
-                placeItems: "center",
                 width: "100%",
+                maxWidth: 500,
+                filter:
+                  "drop-shadow(0 0 18px rgba(0,136,255,.36)) drop-shadow(0 0 42px rgba(0,98,255,.2))",
               }}
-            >
-              <div
-                style={{
-                  position: "absolute",
-                  inset: "10% 12%",
-                  borderRadius: "50%",
-                  border: "1px solid rgba(0,196,255,.22)",
-                  boxShadow: "0 0 54px rgba(0,136,255,.16)",
-                }}
-              />
-              <img
-                src={forwardFreedomLogo}
-                alt="Forward Freedom Financial logo"
-                style={{
-                  width: "100%",
-                  maxWidth: 420,
-                  filter:
-                    "drop-shadow(0 0 22px rgba(0,136,255,.4)) drop-shadow(0 0 60px rgba(0,98,255,.22))",
-                }}
-              />
-            </div>
+            />
           </div>
         </section>
 
@@ -469,60 +385,49 @@ export function LandingPage({ enterApp }) {
             border: "1px solid rgba(0,136,255,.28)",
             background: "rgba(3,17,32,.68)",
             borderRadius: 10,
-            display: "grid",
-            gridTemplateColumns: "repeat(4,1fr)",
-            padding: "30px 36px",
-            gap: 24,
+            padding: "30px 36px 34px",
             boxShadow: "inset 0 0 42px rgba(0,70,150,.11)",
             marginBottom: 30,
           }}
         >
-          {[
-            ["◷", "Create Access", "Launch a private client workspace and start planning."],
-            ["▣", "Review Policies", "Read account terms, privacy, and data handling guidance."],
-            [
-              "$",
-              "Plan Confidently",
-              "Budget, forecast, and track household decisions in one place.",
-            ],
-            ["⚑", "Return Quickly", "Existing clients can jump directly into their workspace."],
-          ].map((item, index) => (
-            <div
-              key={item[1]}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 22,
-                borderRight: index < 3 ? "1px solid rgba(0,136,255,.22)" : "none",
-              }}
-            >
-              <div
-                style={{
-                  color: "#008cff",
-                  fontSize: 56,
-                  width: 80,
-                  textAlign: "center",
-                  textShadow: "0 0 22px rgba(0,136,255,.55)",
-                }}
-              >
-                {item[0]}
-              </div>
-              <div>
-                <div
-                  style={{
-                    color: "white",
-                    fontWeight: 900,
-                    textTransform: "uppercase",
-                    fontSize: 17,
-                    marginBottom: 10,
-                  }}
-                >
-                  {item[1]}
-                </div>
-                <div style={{ color: "#c6d2e1", fontSize: 16, lineHeight: 1.45 }}>{item[2]}</div>
-              </div>
-            </div>
-          ))}
+          <div
+            style={{
+              color: "#8feaff",
+              textTransform: "uppercase",
+              letterSpacing: 1.8,
+              fontSize: 12,
+              fontWeight: 900,
+              marginBottom: 16,
+            }}
+          >
+            Our Mission
+          </div>
+          <div style={{ color: "white", fontSize: 34, lineHeight: 1.18, fontWeight: 800 }}>
+            Moving Forward with <span style={{ color: "#00aaff" }}>Financial Freedom</span>
+          </div>
+          <div
+            style={{
+              maxWidth: 1080,
+              color: "#d6e2f0",
+              fontSize: 17,
+              lineHeight: 1.85,
+              marginTop: 18,
+            }}
+          >
+            <p style={{ margin: 0 }}>
+              Forward Freedom Financial exists to help people build unshakable financial foundations
+              through discipline, wisdom, and action.
+            </p>
+            <p style={{ margin: "18px 0 0" }}>
+              We believe financial leadership requires a wartime mindset: scanning the battlefield,
+              taking ownership, protecting and providing your family, and advancing with purpose no
+              matter the economic battlefield.
+            </p>
+            <p style={{ margin: "18px 0 0" }}>
+              Our mission is to turn fear into strategy, debt into freedom, and money into a tool
+              that empowers people to live boldly, give generously, and lead with conviction.
+            </p>
+          </div>
         </section>
 
         <section

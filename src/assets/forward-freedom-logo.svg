@@ -17,7 +17,7 @@
       <stop offset="1" stop-color="#10D7FF" />
     </linearGradient>
     <filter id="outerGlow" x="0" y="0" width="1200" height="1200" filterUnits="userSpaceOnUse">
-      <feGaussianBlur stdDeviation="18" result="blur" />
+      <feGaussianBlur stdDeviation="10" result="blur" />
       <feMerge>
         <feMergeNode in="blur" />
         <feMergeNode in="SourceGraphic" />
@@ -25,15 +25,15 @@
     </filter>
   </defs>
 
-  <circle cx="600" cy="520" r="410" stroke="url(#ringGlow)" stroke-width="12" opacity="0.28" />
-  <path d="M174 350C236 274 334 214 446 184" stroke="url(#ringGlow)" stroke-width="18" stroke-linecap="round" opacity="0.9" />
-  <path d="M756 160C864 182 962 244 1028 324" stroke="url(#ringGlow)" stroke-width="18" stroke-linecap="round" opacity="0.9" />
-  <path d="M1032 330C1074 396 1094 474 1094 556C1094 642 1072 722 1028 790" stroke="url(#ringGlow)" stroke-width="16" stroke-linecap="round" opacity="0.78" />
-  <path d="M902 930C812 984 708 1012 600 1012C502 1012 410 988 330 944" stroke="url(#ringGlow)" stroke-width="14" stroke-linecap="round" opacity="0.62" />
+  <circle cx="600" cy="520" r="410" stroke="url(#ringGlow)" stroke-width="10" opacity="0.18" />
+  <path d="M174 350C236 274 334 214 446 184" stroke="url(#ringGlow)" stroke-width="16" stroke-linecap="round" opacity="0.7" />
+  <path d="M756 160C864 182 962 244 1028 324" stroke="url(#ringGlow)" stroke-width="16" stroke-linecap="round" opacity="0.72" />
+  <path d="M1032 330C1074 396 1094 474 1094 556C1094 642 1072 722 1028 790" stroke="url(#ringGlow)" stroke-width="14" stroke-linecap="round" opacity="0.54" />
+  <path d="M902 930C812 984 708 1012 600 1012C502 1012 410 988 330 944" stroke="url(#ringGlow)" stroke-width="12" stroke-linecap="round" opacity="0.42" />
 
-  <path d="M210 340H400L282 406L210 340Z" fill="url(#blueGlow)" filter="url(#outerGlow)" opacity="0.85" />
-  <path d="M172 398H364L246 462L172 398Z" fill="url(#blueGlow)" filter="url(#outerGlow)" opacity="0.75" />
-  <path d="M134 454H328L214 516L134 454Z" fill="url(#blueGlow)" filter="url(#outerGlow)" opacity="0.62" />
+  <path d="M210 340H400L282 406L210 340Z" fill="url(#blueGlow)" filter="url(#outerGlow)" opacity="0.72" />
+  <path d="M172 398H364L246 462L172 398Z" fill="url(#blueGlow)" filter="url(#outerGlow)" opacity="0.58" />
+  <path d="M134 454H328L214 516L134 454Z" fill="url(#blueGlow)" filter="url(#outerGlow)" opacity="0.46" />
 
   <path
     d="M364 228H856L734 350H520L396 592L214 700L364 404C394 346 420 296 442 256L364 228Z"
