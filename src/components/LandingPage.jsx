@@ -244,11 +244,11 @@ export function LandingPage({ enterApp }) {
               src={forwardFreedomMark}
               alt="Forward Freedom Financial logo"
               style={{
-                width: 148,
+                width: 140,
                 maxWidth: "100%",
                 display: "block",
                 objectFit: "contain",
-                filter: "drop-shadow(0 0 10px rgba(0,136,255,.12))",
+                filter: "drop-shadow(0 0 6px rgba(0,136,255,.08))",
               }}
             />
           </div>
@@ -384,13 +384,13 @@ export function LandingPage({ enterApp }) {
                 src={forwardFreedomLogo}
                 alt="Forward Freedom Financial logo"
                 style={{
-                  width: "min(100%, 600px)",
+                  width: "min(100%, 560px)",
                   maxWidth: "100%",
                   display: "block",
                   margin: "0 auto",
                   objectFit: "contain",
                   objectPosition: "center",
-                  filter: "drop-shadow(0 0 12px rgba(0,136,255,.1))",
+                  filter: "drop-shadow(0 0 8px rgba(0,136,255,.06))",
                 }}
               />
             </div>

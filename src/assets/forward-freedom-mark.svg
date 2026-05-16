@@ -7,55 +7,51 @@
   shape-rendering="geometricPrecision"
 >
   <defs>
-    <linearGradient id="mark-blue" x1="88" y1="78" x2="438" y2="420" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#33F1FF" />
-      <stop offset="0.34" stop-color="#1A9CFF" />
-      <stop offset="0.72" stop-color="#2250FF" />
-      <stop offset="1" stop-color="#22F0FF" />
+    <linearGradient id="mark-blue" x1="110" y1="86" x2="420" y2="400" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#33F0FF" />
+      <stop offset="0.38" stop-color="#1E9EFF" />
+      <stop offset="0.76" stop-color="#2551FF" />
+      <stop offset="1" stop-color="#25EBFF" />
     </linearGradient>
-    <linearGradient id="mark-blue-hi" x1="228" y1="174" x2="398" y2="272" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#D9FFFF" />
-      <stop offset="0.5" stop-color="#72E2FF" />
-      <stop offset="1" stop-color="#16C7FF" />
+    <linearGradient id="mark-blue-cut" x1="238" y1="184" x2="380" y2="250" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#D8FFFF" />
+      <stop offset="0.52" stop-color="#7CE4FF" />
+      <stop offset="1" stop-color="#18CBFF" />
     </linearGradient>
-    <linearGradient id="mark-chrome" x1="118" y1="86" x2="314" y2="248" gradientUnits="userSpaceOnUse">
+    <linearGradient id="mark-chrome" x1="120" y1="84" x2="300" y2="230" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#FFFFFF" />
       <stop offset="0.18" stop-color="#F6FBFF" />
-      <stop offset="0.42" stop-color="#B9C5D5" />
-      <stop offset="0.62" stop-color="#8794A8" />
-      <stop offset="0.8" stop-color="#F9FCFF" />
-      <stop offset="1" stop-color="#D9E1EC" />
+      <stop offset="0.44" stop-color="#BAC6D6" />
+      <stop offset="0.66" stop-color="#8693A7" />
+      <stop offset="0.82" stop-color="#FAFCFF" />
+      <stop offset="1" stop-color="#DAE2ED" />
     </linearGradient>
   </defs>
 
-  <path d="M78 168C112 122 166 88 230 72" stroke="url(#mark-blue)" stroke-width="8" stroke-linecap="round" />
-  <path d="M324 74C366 82 404 100 436 128" stroke="#F4F8FF" stroke-width="7" stroke-linecap="round" />
-  <path d="M418 112C447 142 469 180 482 224" stroke="url(#mark-blue)" stroke-width="8" stroke-linecap="round" />
-  <path d="M92 168H168" stroke="url(#mark-blue)" stroke-width="5" stroke-linecap="round" />
-  <path d="M72 194H182" stroke="url(#mark-blue)" stroke-width="4" stroke-linecap="round" opacity="0.62" />
+  <path d="M84 174C116 128 168 94 230 80" stroke="url(#mark-blue)" stroke-width="7" stroke-linecap="round" />
+  <path d="M320 84C364 92 402 112 432 142" stroke="#F2F8FF" stroke-width="6" stroke-linecap="round" />
 
-  <path d="M170 108H348L287 171H216C204 171 192 177 186 188L111 338L74 364L150 206C158 190 165 174 172 156L170 108Z" fill="#07111D" />
+  <path d="M166 100H356L296 163H218C205 163 194 169 187 180L110 330L60 354L138 196C147 178 156 160 164 140L166 100Z" fill="#07111D" />
   <path
-    d="M160 96H360L296 162H214C201 162 188 169 181 181L107 327L54 354L136 194C145 177 153 160 160 142V96Z"
+    d="M158 92H354L294 154H218C204 154 192 160 185 172L110 320L54 346L136 190C145 172 152 154 158 136V92Z"
     fill="url(#mark-chrome)"
     stroke="#FFFFFF"
-    stroke-width="4"
+    stroke-width="3.5"
     stroke-linejoin="miter"
   />
-  <path d="M185 117H324L283 158H225C208 158 192 166 184 182L135 277L101 292L152 191C160 176 168 160 175 143L185 117Z" fill="#FFFFFF" opacity="0.74" />
+  <path d="M182 112H318L280 150H226C210 150 196 158 188 172L136 270L100 284L154 186C162 170 170 154 177 136L182 112Z" fill="#FFFFFF" opacity="0.72" />
 
-  <path d="M246 194H454L387 262H304L271 304H380L313 366H160L246 194Z" fill="#08131F" />
+  <path d="M242 188H442L378 252H298L266 292H372L308 352H154L242 188Z" fill="#08131F" />
   <path
-    d="M236 184H444L377 252H294L261 294H370L303 356H150L236 184Z"
+    d="M232 180H438L374 244H296L264 284H368L304 344H146L232 180Z"
     fill="url(#mark-blue)"
     stroke="#ECFFFF"
-    stroke-width="4"
+    stroke-width="3.5"
     stroke-linejoin="miter"
   />
-  <path d="M270 204H403L360 247H295L273 269H342L309 304H240L270 204Z" fill="url(#mark-blue-hi)" />
-  <path d="M187 284H318L278 326H170L187 284Z" fill="#1231AA" />
-  <path d="M197 294H302L266 321H181L197 294Z" fill="url(#mark-blue-hi)" />
-  <path d="M167 334H278L233 370H126L167 334Z" fill="#2148FF" />
-  <path d="M179 344H257L228 365H151L179 344Z" fill="url(#mark-blue-hi)" />
-  <path d="M388 232H484" stroke="url(#mark-blue)" stroke-width="5" stroke-linecap="round" />
+  <path d="M266 198H390L352 236H294L274 258H336L306 290H236L266 198Z" fill="url(#mark-blue-cut)" />
+  <path d="M186 274H314L274 314H168L186 274Z" fill="#1130A9" />
+  <path d="M196 284H298L264 309H180L196 284Z" fill="url(#mark-blue-cut)" />
+  <path d="M166 322H276L232 358H124L166 322Z" fill="#2148FF" />
+  <path d="M178 332H254L226 353H150L178 332Z" fill="url(#mark-blue-cut)" />
 </svg>

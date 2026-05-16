@@ -8,174 +8,140 @@
   text-rendering="geometricPrecision"
 >
   <defs>
-    <linearGradient id="chrome" x1="232" y1="184" x2="842" y2="664" gradientUnits="userSpaceOnUse">
+    <linearGradient id="chrome" x1="236" y1="190" x2="804" y2="616" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#FFFFFF" />
-      <stop offset="0.14" stop-color="#F7FBFF" />
-      <stop offset="0.3" stop-color="#DDE6F1" />
-      <stop offset="0.48" stop-color="#909DB0" />
-      <stop offset="0.64" stop-color="#FDFEFF" />
-      <stop offset="0.84" stop-color="#B5C0D0" />
+      <stop offset="0.12" stop-color="#F6FAFF" />
+      <stop offset="0.28" stop-color="#D6E0EA" />
+      <stop offset="0.46" stop-color="#8B99AB" />
+      <stop offset="0.62" stop-color="#F8FBFF" />
+      <stop offset="0.82" stop-color="#B5C0D0" />
       <stop offset="1" stop-color="#FFFFFF" />
     </linearGradient>
-    <linearGradient id="chrome-highlight" x1="326" y1="238" x2="742" y2="392" gradientUnits="userSpaceOnUse">
+    <linearGradient id="chrome-cut" x1="366" y1="240" x2="728" y2="362" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#FFFFFF" />
-      <stop offset="0.48" stop-color="#F4F9FF" />
-      <stop offset="1" stop-color="#D4E0EE" />
+      <stop offset="0.44" stop-color="#ECF3FB" />
+      <stop offset="1" stop-color="#D5DFEB" />
     </linearGradient>
-    <linearGradient id="lux-blue" x1="372" y1="376" x2="982" y2="748" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#3CF1FF" />
-      <stop offset="0.34" stop-color="#189BFF" />
-      <stop offset="0.72" stop-color="#214DFF" />
-      <stop offset="1" stop-color="#27EFFF" />
+    <linearGradient id="lux-blue" x1="474" y1="356" x2="948" y2="706" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#36F0FF" />
+      <stop offset="0.36" stop-color="#1E9EFF" />
+      <stop offset="0.74" stop-color="#2550FF" />
+      <stop offset="1" stop-color="#26E9FF" />
     </linearGradient>
-    <linearGradient id="lux-blue-highlight" x1="522" y1="438" x2="882" y2="582" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#C8FFFF" />
-      <stop offset="0.44" stop-color="#67DAFF" />
-      <stop offset="1" stop-color="#0CC8FF" />
+    <linearGradient id="lux-blue-cut" x1="560" y1="420" x2="846" y2="526" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#D6FFFF" />
+      <stop offset="0.46" stop-color="#7BE4FF" />
+      <stop offset="1" stop-color="#16C9FF" />
     </linearGradient>
-    <linearGradient id="ring-blue" x1="180" y1="192" x2="1036" y2="968" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#25EAFF" />
-      <stop offset="0.44" stop-color="#148BFF" />
-      <stop offset="0.78" stop-color="#1B44E9" />
-      <stop offset="1" stop-color="#20F0FF" />
+    <linearGradient id="ring-blue" x1="164" y1="194" x2="1038" y2="966" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2EEBFF" />
+      <stop offset="0.46" stop-color="#1C90FF" />
+      <stop offset="0.82" stop-color="#214BFF" />
+      <stop offset="1" stop-color="#26EFFF" />
     </linearGradient>
-    <linearGradient id="text-silver" x1="116" y1="736" x2="944" y2="932" gradientUnits="userSpaceOnUse">
+    <linearGradient id="text-silver" x1="132" y1="730" x2="918" y2="920" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#FFFFFF" />
-      <stop offset="0.22" stop-color="#F4F8FD" />
-      <stop offset="0.48" stop-color="#BCC8D7" />
-      <stop offset="0.66" stop-color="#7E8CA0" />
-      <stop offset="0.82" stop-color="#F8FBFF" />
-      <stop offset="1" stop-color="#D9E2EE" />
+      <stop offset="0.18" stop-color="#F5F9FE" />
+      <stop offset="0.46" stop-color="#BAC5D4" />
+      <stop offset="0.68" stop-color="#818EA1" />
+      <stop offset="0.84" stop-color="#F8FBFF" />
+      <stop offset="1" stop-color="#DCE4EF" />
     </linearGradient>
-    <linearGradient id="text-blue" x1="132" y1="858" x2="1076" y2="978" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#33F0FF" />
-      <stop offset="0.34" stop-color="#1BA0FF" />
-      <stop offset="0.72" stop-color="#2854FF" />
-      <stop offset="1" stop-color="#22F0FF" />
+    <linearGradient id="text-blue" x1="150" y1="848" x2="1050" y2="964" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#34F0FF" />
+      <stop offset="0.38" stop-color="#1D9FFF" />
+      <stop offset="0.74" stop-color="#2654FF" />
+      <stop offset="1" stop-color="#23EEFF" />
     </linearGradient>
   </defs>
 
-  <path d="M178 370C252 267 370 195 516 160" stroke="url(#ring-blue)" stroke-width="14" stroke-linecap="round" />
-  <path d="M242 316C330 234 445 183 570 168" stroke="url(#ring-blue)" stroke-width="4" stroke-linecap="round" opacity="0.32" />
-  <path d="M760 168C856 180 946 222 1018 288" stroke="#EEF5FF" stroke-width="12" stroke-linecap="round" />
-  <path d="M972 254C1032 312 1074 389 1094 476" stroke="url(#ring-blue)" stroke-width="12" stroke-linecap="round" />
-  <path d="M1092 506C1102 604 1078 700 1028 786" stroke="url(#ring-blue)" stroke-width="8" stroke-linecap="round" opacity="0.82" />
-  <path d="M266 1016C363 1064 478 1090 600 1090C717 1090 829 1066 922 1020" stroke="url(#ring-blue)" stroke-width="8" stroke-linecap="round" opacity="0.82" />
-  <path d="M140 360H346" stroke="url(#ring-blue)" stroke-width="8" stroke-linecap="round" />
-  <path d="M96 398H356" stroke="url(#ring-blue)" stroke-width="6" stroke-linecap="round" opacity="0.72" />
-  <path d="M58 434H320" stroke="url(#ring-blue)" stroke-width="5" stroke-linecap="round" opacity="0.46" />
+  <path d="M188 382C266 274 388 198 534 166" stroke="url(#ring-blue)" stroke-width="12" stroke-linecap="round" />
+  <path d="M772 168C860 184 942 230 1004 300" stroke="#EFF5FF" stroke-width="10" stroke-linecap="round" />
+  <path d="M1010 312C1054 374 1080 448 1086 526" stroke="url(#ring-blue)" stroke-width="8" stroke-linecap="round" opacity="0.86" />
+  <path d="M304 1032C396 1068 497 1088 604 1088C718 1088 825 1064 918 1018" stroke="url(#ring-blue)" stroke-width="7" stroke-linecap="round" opacity="0.78" />
 
   <path
-    d="M404 260H848L736 376H548C528 376 509 386 500 405L374 654L230 724L364 454C381 420 396 388 415 350L404 260Z"
-    fill="#06111D"
+    d="M394 238H846L744 344H554C531 344 509 355 496 375L364 634L220 706L352 438C369 404 387 370 402 326L394 238Z"
+    fill="#05111D"
   />
   <path
-    d="M390 242H836L724 356H548C526 356 505 366 494 386L368 632L216 702L352 425C369 392 386 358 404 316L390 242Z"
+    d="M382 224H830L724 334H554C531 334 510 345 498 364L368 622L212 694L344 430C361 396 378 362 392 314L382 224Z"
     fill="url(#chrome)"
     stroke="#FFFFFF"
-    stroke-width="6"
+    stroke-width="5"
     stroke-linejoin="miter"
   />
   <path
-    d="M426 274H778L712 342H564C534 342 506 358 492 386L413 542L312 592L400 410C417 376 432 344 448 302L426 274Z"
-    fill="url(#chrome-highlight)"
-    opacity="0.96"
+    d="M410 254H758L694 320H566C541 320 518 331 506 350L422 512L330 552L410 396C424 367 438 338 450 294L410 254Z"
+    fill="url(#chrome-cut)"
+    opacity="0.92"
   />
   <path
-    d="M576 416H1000L862 554H694L628 638H848L706 752H418L576 416Z"
-    fill="#061420"
+    d="M560 394H996L860 528H688L624 612H842L700 724H410L560 394Z"
+    fill="#06131F"
   />
   <path
-    d="M560 398H986L848 536H680L614 620H834L692 734H404L560 398Z"
+    d="M548 382H982L848 516H680L616 600H830L690 712H396L548 382Z"
     fill="url(#lux-blue)"
     stroke="#E2FFFF"
-    stroke-width="6"
+    stroke-width="5"
     stroke-linejoin="miter"
   />
   <path
-    d="M610 432H904L818 518H680L636 562H784L716 628H546L610 432Z"
-    fill="url(#lux-blue-highlight)"
-    opacity="0.94"
+    d="M594 412H898L818 492H682L640 536H780L716 596H554L594 412Z"
+    fill="url(#lux-blue-cut)"
+    opacity="0.92"
   />
-  <path d="M446 564H758L658 664H394L446 564Z" fill="#0E2EA6" />
-  <path d="M462 580H732L646 650H420L462 580Z" fill="url(#lux-blue-highlight)" />
-  <path d="M392 666H664L554 754H314L392 666Z" fill="#1E46FF" />
-  <path d="M410 682H640L540 742H344L410 682Z" fill="url(#lux-blue-highlight)" />
-  <path d="M842 456L934 468L848 552L820 500L842 456Z" fill="#FFFFFF" />
-  <path d="M874 470H1092" stroke="url(#ring-blue)" stroke-width="8" stroke-linecap="round" />
+  <path d="M442 548H758L658 646H392L442 548Z" fill="#1230A6" />
+  <path d="M456 562H734L648 630H416L456 562Z" fill="url(#lux-blue-cut)" />
+  <path d="M392 650H670L556 740H310L392 650Z" fill="#2148FF" />
+  <path d="M406 666H644L540 726H338L406 666Z" fill="url(#lux-blue-cut)" />
+  <path d="M838 446L916 458L842 528L820 486L838 446Z" fill="#FFFFFF" />
 
   <g transform="translate(0 10)">
     <text
-      x="612"
-      y="808"
-      text-anchor="middle"
-      font-family="Arial Black, Arial, sans-serif"
-      font-size="124"
-      font-weight="900"
-      font-style="italic"
-      letter-spacing="3"
-      fill="#04101B"
-    >
-      FORWARD
-    </text>
-    <text
       x="600"
-      y="796"
+      y="798"
       text-anchor="middle"
       font-family="Arial Black, Arial, sans-serif"
-      font-size="124"
+      font-size="120"
       font-weight="900"
       font-style="italic"
-      letter-spacing="3"
+      letter-spacing="3.5"
       fill="url(#text-silver)"
       stroke="#FFFFFF"
-      stroke-width="2.5"
+      stroke-width="2"
       paint-order="stroke fill"
     >
       FORWARD
     </text>
-    <path d="M244 720H956" stroke="#9CA9BD" stroke-width="2" opacity="0.18" />
-
-    <text
-      x="614"
-      y="954"
-      text-anchor="middle"
-      font-family="Arial Black, Arial, sans-serif"
-      font-size="150"
-      font-weight="900"
-      font-style="italic"
-      letter-spacing="3"
-      fill="#04101B"
-    >
-      FREEDOM
-    </text>
     <text
       x="600"
-      y="938"
+      y="936"
       text-anchor="middle"
       font-family="Arial Black, Arial, sans-serif"
-      font-size="150"
+      font-size="144"
       font-weight="900"
       font-style="italic"
-      letter-spacing="3"
+      letter-spacing="3.5"
       fill="url(#text-blue)"
       stroke="#F2FFFF"
-      stroke-width="2.5"
+      stroke-width="2"
       paint-order="stroke fill"
     >
       FREEDOM
     </text>
 
-    <path d="M136 998H314" stroke="url(#ring-blue)" stroke-width="7" stroke-linecap="round" />
-    <path d="M886 998H1064" stroke="url(#ring-blue)" stroke-width="7" stroke-linecap="round" />
+    <path d="M166 994H324" stroke="url(#ring-blue)" stroke-width="5" stroke-linecap="round" />
+    <path d="M876 994H1034" stroke="url(#ring-blue)" stroke-width="5" stroke-linecap="round" />
     <text
       x="600"
-      y="1018"
+      y="1012"
       text-anchor="middle"
       font-family="Arial, sans-serif"
-      font-size="58"
+      font-size="54"
       font-weight="800"
-      letter-spacing="18"
+      letter-spacing="16"
       fill="#F9FCFF"
     >
       FINANCIAL
