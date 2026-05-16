@@ -8,153 +8,105 @@
   text-rendering="geometricPrecision"
 >
   <defs>
-    <linearGradient id="ff-blue" x1="192" y1="204" x2="1012" y2="980" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#2CF1FF" />
-      <stop offset="0.42" stop-color="#1496FF" />
-      <stop offset="0.78" stop-color="#234EFF" />
-      <stop offset="1" stop-color="#1BE8FF" />
-    </linearGradient>
-    <linearGradient id="ff-silver" x1="214" y1="188" x2="760" y2="622" gradientUnits="userSpaceOnUse">
+    <linearGradient id="chrome" x1="232" y1="184" x2="842" y2="664" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#FFFFFF" />
-      <stop offset="0.24" stop-color="#EEF5FD" />
-      <stop offset="0.56" stop-color="#BCC8D8" />
-      <stop offset="0.82" stop-color="#98A7BC" />
-      <stop offset="1" stop-color="#F7FBFF" />
-    </linearGradient>
-    <linearGradient id="ff-silver-text" x1="114" y1="720" x2="932" y2="934" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#FFFFFF" />
-      <stop offset="0.34" stop-color="#E7EEF7" />
-      <stop offset="0.72" stop-color="#AAB8CB" />
+      <stop offset="0.14" stop-color="#F7FBFF" />
+      <stop offset="0.3" stop-color="#DDE6F1" />
+      <stop offset="0.48" stop-color="#909DB0" />
+      <stop offset="0.64" stop-color="#FDFEFF" />
+      <stop offset="0.84" stop-color="#B5C0D0" />
       <stop offset="1" stop-color="#FFFFFF" />
     </linearGradient>
-    <linearGradient id="ff-blue-text" x1="126" y1="850" x2="1068" y2="978" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#30EDFF" />
-      <stop offset="0.36" stop-color="#1B9FFF" />
-      <stop offset="0.72" stop-color="#2B58FF" />
-      <stop offset="1" stop-color="#20F2FF" />
+    <linearGradient id="chrome-highlight" x1="326" y1="238" x2="742" y2="392" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" />
+      <stop offset="0.48" stop-color="#F4F9FF" />
+      <stop offset="1" stop-color="#D4E0EE" />
+    </linearGradient>
+    <linearGradient id="lux-blue" x1="372" y1="376" x2="982" y2="748" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3CF1FF" />
+      <stop offset="0.34" stop-color="#189BFF" />
+      <stop offset="0.72" stop-color="#214DFF" />
+      <stop offset="1" stop-color="#27EFFF" />
+    </linearGradient>
+    <linearGradient id="lux-blue-highlight" x1="522" y1="438" x2="882" y2="582" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#C8FFFF" />
+      <stop offset="0.44" stop-color="#67DAFF" />
+      <stop offset="1" stop-color="#0CC8FF" />
+    </linearGradient>
+    <linearGradient id="ring-blue" x1="180" y1="192" x2="1036" y2="968" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#25EAFF" />
+      <stop offset="0.44" stop-color="#148BFF" />
+      <stop offset="0.78" stop-color="#1B44E9" />
+      <stop offset="1" stop-color="#20F0FF" />
+    </linearGradient>
+    <linearGradient id="text-silver" x1="116" y1="736" x2="944" y2="932" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" />
+      <stop offset="0.22" stop-color="#F4F8FD" />
+      <stop offset="0.48" stop-color="#BCC8D7" />
+      <stop offset="0.66" stop-color="#7E8CA0" />
+      <stop offset="0.82" stop-color="#F8FBFF" />
+      <stop offset="1" stop-color="#D9E2EE" />
+    </linearGradient>
+    <linearGradient id="text-blue" x1="132" y1="858" x2="1076" y2="978" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#33F0FF" />
+      <stop offset="0.34" stop-color="#1BA0FF" />
+      <stop offset="0.72" stop-color="#2854FF" />
+      <stop offset="1" stop-color="#22F0FF" />
     </linearGradient>
   </defs>
 
-  <path
-    d="M174 370C246 269 363 195 508 161"
-    stroke="url(#ff-blue)"
-    stroke-width="16"
-    stroke-linecap="round"
-  />
-  <path
-    d="M234 312C326 229 445 177 576 161"
-    stroke="url(#ff-blue)"
-    stroke-opacity="0.34"
-    stroke-width="6"
-    stroke-linecap="round"
-  />
-  <path
-    d="M764 165C858 176 946 218 1018 286"
-    stroke="#F4F8FF"
-    stroke-width="12"
-    stroke-linecap="round"
-    opacity="0.94"
-  />
-  <path
-    d="M970 250C1030 307 1072 383 1094 470"
-    stroke="url(#ff-blue)"
-    stroke-width="14"
-    stroke-linecap="round"
-  />
-  <path
-    d="M1093 505C1104 602 1081 701 1029 785"
-    stroke="url(#ff-blue)"
-    stroke-width="10"
-    stroke-linecap="round"
-    opacity="0.8"
-  />
-  <path
-    d="M264 1014C361 1062 477 1088 600 1088C718 1088 832 1064 926 1018"
-    stroke="url(#ff-blue)"
-    stroke-width="10"
-    stroke-linecap="round"
-    opacity="0.78"
-  />
-  <path
-    d="M144 360H344"
-    stroke="url(#ff-blue)"
-    stroke-width="8"
-    stroke-linecap="round"
-    opacity="0.95"
-  />
-  <path
-    d="M98 398H354"
-    stroke="url(#ff-blue)"
-    stroke-width="7"
-    stroke-linecap="round"
-    opacity="0.72"
-  />
-  <path
-    d="M58 434H320"
-    stroke="url(#ff-blue)"
-    stroke-width="6"
-    stroke-linecap="round"
-    opacity="0.54"
-  />
+  <path d="M178 370C252 267 370 195 516 160" stroke="url(#ring-blue)" stroke-width="14" stroke-linecap="round" />
+  <path d="M242 316C330 234 445 183 570 168" stroke="url(#ring-blue)" stroke-width="4" stroke-linecap="round" opacity="0.32" />
+  <path d="M760 168C856 180 946 222 1018 288" stroke="#EEF5FF" stroke-width="12" stroke-linecap="round" />
+  <path d="M972 254C1032 312 1074 389 1094 476" stroke="url(#ring-blue)" stroke-width="12" stroke-linecap="round" />
+  <path d="M1092 506C1102 604 1078 700 1028 786" stroke="url(#ring-blue)" stroke-width="8" stroke-linecap="round" opacity="0.82" />
+  <path d="M266 1016C363 1064 478 1090 600 1090C717 1090 829 1066 922 1020" stroke="url(#ring-blue)" stroke-width="8" stroke-linecap="round" opacity="0.82" />
+  <path d="M140 360H346" stroke="url(#ring-blue)" stroke-width="8" stroke-linecap="round" />
+  <path d="M96 398H356" stroke="url(#ring-blue)" stroke-width="6" stroke-linecap="round" opacity="0.72" />
+  <path d="M58 434H320" stroke="url(#ring-blue)" stroke-width="5" stroke-linecap="round" opacity="0.46" />
 
   <path
-    d="M378 232H850L746 342H548C526 342 506 354 495 373L376 620L216 688L356 389C368 363 382 337 396 313L378 232Z"
-    fill="#07101E"
+    d="M404 260H848L736 376H548C528 376 509 386 500 405L374 654L230 724L364 454C381 420 396 388 415 350L404 260Z"
+    fill="#06111D"
   />
   <path
-    d="M392 246H836L733 350H555C529 350 505 365 493 388L373 625L235 682L367 394C381 365 397 336 410 307L392 246Z"
-    fill="url(#ff-silver)"
+    d="M390 242H836L724 356H548C526 356 505 366 494 386L368 632L216 702L352 425C369 392 386 358 404 316L390 242Z"
+    fill="url(#chrome)"
     stroke="#FFFFFF"
-    stroke-opacity="0.72"
     stroke-width="6"
-    stroke-linejoin="round"
+    stroke-linejoin="miter"
   />
   <path
-    d="M548 390H992L860 524H677L620 608H842L708 726H388L548 390Z"
-    fill="#061320"
-  />
-  <path
-    d="M563 404H972L850 528H668L612 612H826L695 712H415L563 404Z"
-    fill="url(#ff-blue)"
-    stroke="#B9FAFF"
-    stroke-opacity="0.84"
-    stroke-width="6"
-    stroke-linejoin="round"
-  />
-  <path
-    d="M452 560H748L657 652H398L452 560Z"
-    fill="#0C2A96"
-  />
-  <path
-    d="M464 574H723L641 639H426L464 574Z"
-    fill="url(#ff-blue)"
-    opacity="0.84"
-  />
-  <path
-    d="M390 660H650L548 744H308L390 660Z"
-    fill="#173FFF"
-  />
-  <path
-    d="M404 674H625L534 730H346L404 674Z"
-    fill="url(#ff-blue)"
-    opacity="0.86"
-  />
-  <path
-    d="M840 458L927 468L848 548L823 494L840 458Z"
-    fill="#FFFFFF"
-    opacity="0.92"
-  />
-  <path
-    d="M872 470H1088"
-    stroke="url(#ff-blue)"
-    stroke-width="9"
-    stroke-linecap="round"
+    d="M426 274H778L712 342H564C534 342 506 358 492 386L413 542L312 592L400 410C417 376 432 344 448 302L426 274Z"
+    fill="url(#chrome-highlight)"
     opacity="0.96"
   />
+  <path
+    d="M576 416H1000L862 554H694L628 638H848L706 752H418L576 416Z"
+    fill="#061420"
+  />
+  <path
+    d="M560 398H986L848 536H680L614 620H834L692 734H404L560 398Z"
+    fill="url(#lux-blue)"
+    stroke="#E2FFFF"
+    stroke-width="6"
+    stroke-linejoin="miter"
+  />
+  <path
+    d="M610 432H904L818 518H680L636 562H784L716 628H546L610 432Z"
+    fill="url(#lux-blue-highlight)"
+    opacity="0.94"
+  />
+  <path d="M446 564H758L658 664H394L446 564Z" fill="#0E2EA6" />
+  <path d="M462 580H732L646 650H420L462 580Z" fill="url(#lux-blue-highlight)" />
+  <path d="M392 666H664L554 754H314L392 666Z" fill="#1E46FF" />
+  <path d="M410 682H640L540 742H344L410 682Z" fill="url(#lux-blue-highlight)" />
+  <path d="M842 456L934 468L848 552L820 500L842 456Z" fill="#FFFFFF" />
+  <path d="M874 470H1092" stroke="url(#ring-blue)" stroke-width="8" stroke-linecap="round" />
 
-  <g transform="translate(0 12)">
+  <g transform="translate(0 10)">
     <text
-      x="608"
+      x="612"
       y="808"
       text-anchor="middle"
       font-family="Arial Black, Arial, sans-serif"
@@ -162,61 +114,60 @@
       font-weight="900"
       font-style="italic"
       letter-spacing="3"
-      fill="#07111F"
-      opacity="0.82"
+      fill="#04101B"
     >
       FORWARD
     </text>
     <text
       x="600"
-      y="798"
+      y="796"
       text-anchor="middle"
       font-family="Arial Black, Arial, sans-serif"
       font-size="124"
       font-weight="900"
       font-style="italic"
       letter-spacing="3"
-      fill="url(#ff-silver-text)"
-      stroke="#F6FBFF"
-      stroke-width="3"
+      fill="url(#text-silver)"
+      stroke="#FFFFFF"
+      stroke-width="2.5"
       paint-order="stroke fill"
     >
       FORWARD
     </text>
+    <path d="M244 720H956" stroke="#9CA9BD" stroke-width="2" opacity="0.18" />
 
     <text
-      x="610"
-      y="952"
+      x="614"
+      y="954"
       text-anchor="middle"
       font-family="Arial Black, Arial, sans-serif"
       font-size="150"
       font-weight="900"
       font-style="italic"
       letter-spacing="3"
-      fill="#07111F"
-      opacity="0.84"
+      fill="#04101B"
     >
       FREEDOM
     </text>
     <text
       x="600"
-      y="940"
+      y="938"
       text-anchor="middle"
       font-family="Arial Black, Arial, sans-serif"
       font-size="150"
       font-weight="900"
       font-style="italic"
       letter-spacing="3"
-      fill="url(#ff-blue-text)"
-      stroke="#D5FFFF"
-      stroke-width="3"
+      fill="url(#text-blue)"
+      stroke="#F2FFFF"
+      stroke-width="2.5"
       paint-order="stroke fill"
     >
       FREEDOM
     </text>
 
-    <path d="M140 996H314" stroke="url(#ff-blue)" stroke-width="8" stroke-linecap="round" />
-    <path d="M886 996H1060" stroke="url(#ff-blue)" stroke-width="8" stroke-linecap="round" />
+    <path d="M136 998H314" stroke="url(#ring-blue)" stroke-width="7" stroke-linecap="round" />
+    <path d="M886 998H1064" stroke="url(#ring-blue)" stroke-width="7" stroke-linecap="round" />
     <text
       x="600"
       y="1018"

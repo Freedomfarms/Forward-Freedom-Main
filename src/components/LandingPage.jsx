@@ -248,7 +248,7 @@ export function LandingPage({ enterApp }) {
                 maxWidth: "100%",
                 display: "block",
                 objectFit: "contain",
-                filter: "drop-shadow(0 0 14px rgba(0,136,255,.22))",
+                filter: "drop-shadow(0 0 10px rgba(0,136,255,.12))",
               }}
             />
           </div>
@@ -390,8 +390,7 @@ export function LandingPage({ enterApp }) {
                   margin: "0 auto",
                   objectFit: "contain",
                   objectPosition: "center",
-                  filter:
-                    "drop-shadow(0 0 16px rgba(0,136,255,.18)) drop-shadow(0 0 34px rgba(0,98,255,.16))",
+                  filter: "drop-shadow(0 0 12px rgba(0,136,255,.1))",
                 }}
               />
             </div>
