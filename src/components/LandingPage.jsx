@@ -1,4 +1,5 @@
 import { useState } from "react";
+import forwardFreedomLogo from "../assets/forward-freedom-logo.svg";
 
 const LEGAL_CONTENT = {
   terms: {
@@ -275,71 +276,15 @@ export function LandingPage({ enterApp }) {
         <div
           style={{
             position: "absolute",
-            left: "12%",
-            top: 8,
-            fontSize: 330,
-            fontWeight: 950,
-            fontStyle: "italic",
-            letterSpacing: -28,
-            lineHeight: 0.8,
+            left: "20%",
+            top: 46,
+            width: 520,
+            height: 520,
+            borderRadius: "50%",
             background:
-              "linear-gradient(135deg,#ffffff 0%,#b8d8ff 12%,#101927 28%,#0b1826 38%,#0077ff 56%,#00d8ff 78%,#ffffff 100%)",
-            WebkitBackgroundClip: "text",
-            WebkitTextFillColor: "transparent",
-            textShadow: "0 0 28px rgba(0,140,255,.65), 0 0 90px rgba(0,217,255,.28)",
-            filter: "drop-shadow(0 0 22px rgba(0,162,255,.75))",
-            transform: "skewX(-13deg)",
-          }}
-        >
-          FF
-        </div>
-        <div
-          style={{
-            position: "absolute",
-            left: "25%",
-            top: 52,
-            width: 460,
-            height: 4,
-            background: "linear-gradient(90deg,#ffffff,#00d8ff,#0077ff)",
-            boxShadow: "0 0 28px rgba(0,216,255,1)",
-            transform: "rotate(-13deg)",
-          }}
-        />
-        <div
-          style={{
-            position: "absolute",
-            left: "29%",
-            top: 265,
-            width: 438,
-            height: 4,
-            background: "linear-gradient(90deg,#ffffff,#00d8ff,#0077ff)",
-            boxShadow: "0 0 28px rgba(0,216,255,1)",
-            transform: "rotate(-13deg)",
-          }}
-        />
-        <div
-          style={{
-            position: "absolute",
-            left: "26%",
-            top: 374,
-            width: 430,
-            height: 4,
-            background: "linear-gradient(90deg,#ffffff,#00aaff,transparent)",
-            boxShadow: "0 0 18px rgba(0,136,255,.9)",
-            transform: "rotate(-13deg)",
-          }}
-        />
-        <div
-          style={{
-            position: "absolute",
-            left: "35%",
-            top: 354,
-            width: 350,
-            height: 78,
-            borderTop: "5px solid #eaf6ff",
-            borderRight: "5px solid #eaf6ff",
-            transform: "skewX(-24deg)",
-            filter: "drop-shadow(0 0 15px rgba(0,174,255,.9))",
+              "radial-gradient(circle at center, rgba(18,104,255,.22), rgba(0,0,0,0) 72%)",
+            filter: "blur(10px)",
+            opacity: 0.82,
           }}
         />
       </div>
@@ -354,29 +299,16 @@ export function LandingPage({ enterApp }) {
             gap: 24,
           }}
         >
-          <div
-            style={{ display: "flex", alignItems: "center", gap: 12, textTransform: "uppercase" }}
-          >
-            <div
+          <div style={{ display: "flex", alignItems: "center" }}>
+            <img
+              src={forwardFreedomLogo}
+              alt="Forward Freedom Financial logo"
               style={{
-                fontSize: 46,
-                fontWeight: 950,
-                fontStyle: "italic",
-                letterSpacing: -4,
-                background: "linear-gradient(135deg,#fff,#008cff,#00d8ff)",
-                WebkitBackgroundClip: "text",
-                WebkitTextFillColor: "transparent",
-                filter: "drop-shadow(0 0 12px rgba(0,136,255,.8))",
-                transform: "skewX(-12deg)",
+                width: 214,
+                maxWidth: "100%",
+                filter: "drop-shadow(0 0 18px rgba(0,136,255,.28))",
               }}
-            >
-              FF
-            </div>
-            <div style={{ letterSpacing: 5, lineHeight: 1.08 }}>
-              <div style={{ color: "#f4f8ff", fontSize: 15, fontWeight: 900 }}>Forward</div>
-              <div style={{ color: "#00aaff", fontSize: 15, fontWeight: 900 }}>Freedom</div>
-              <div style={{ color: "#f4f8ff", fontSize: 15, fontWeight: 900 }}>Financial</div>
-            </div>
+            />
           </div>
 
           <div
@@ -491,48 +423,43 @@ export function LandingPage({ enterApp }) {
             style={{
               border: "1px solid rgba(0,136,255,.24)",
               borderRadius: 16,
-              background: "linear-gradient(180deg, rgba(4,18,36,.96), rgba(4,12,22,.88))",
-              padding: 24,
-              boxShadow: "0 0 36px rgba(0,136,255,.14)",
+              background:
+                "radial-gradient(circle at top right, rgba(0,160,255,.18), transparent 28%), linear-gradient(180deg, rgba(4,18,36,.96), rgba(4,12,22,.88))",
+              padding: 26,
+              boxShadow: "0 0 42px rgba(0,136,255,.18)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              minHeight: 430,
             }}
           >
             <div
               style={{
-                color: "#8feaff",
-                textTransform: "uppercase",
-                letterSpacing: 1.2,
-                fontWeight: 900,
-                fontSize: 12,
+                position: "relative",
+                display: "grid",
+                placeItems: "center",
+                width: "100%",
               }}
             >
-              Client access
-            </div>
-            <div style={{ color: "white", fontSize: 28, fontWeight: 900, marginTop: 10 }}>
-              Secure planning workspace
-            </div>
-            <div style={{ color: "#bcd1e8", marginTop: 12, lineHeight: 1.65 }}>
-              Create a workspace for your household planning, budgeting, forecasting, and account
-              review. Returning clients can continue into their saved local workspace.
-            </div>
-            <div style={{ display: "grid", gap: 12, marginTop: 22 }}>
-              {[
-                "Separate user profiles for spouses or household members",
-                "Connected account support with Plaid-ready foundations",
-                "Budget, operations, and forecast planning in one place",
-              ].map((item) => (
-                <div
-                  key={item}
-                  style={{
-                    border: "1px solid rgba(0,136,255,.16)",
-                    borderRadius: 12,
-                    background: "rgba(3,17,32,.62)",
-                    padding: "12px 14px",
-                    color: "#d8e7f7",
-                  }}
-                >
-                  {item}
-                </div>
-              ))}
+              <div
+                style={{
+                  position: "absolute",
+                  inset: "10% 12%",
+                  borderRadius: "50%",
+                  border: "1px solid rgba(0,196,255,.22)",
+                  boxShadow: "0 0 54px rgba(0,136,255,.16)",
+                }}
+              />
+              <img
+                src={forwardFreedomLogo}
+                alt="Forward Freedom Financial logo"
+                style={{
+                  width: "100%",
+                  maxWidth: 420,
+                  filter:
+                    "drop-shadow(0 0 22px rgba(0,136,255,.4)) drop-shadow(0 0 60px rgba(0,98,255,.22))",
+                }}
+              />
             </div>
           </div>
         </section>

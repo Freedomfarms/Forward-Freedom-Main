@@ -1,0 +1,98 @@
+<svg width="1200" height="1200" viewBox="0 0 1200 1200" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="ringGlow" x1="140" y1="130" x2="1060" y2="1070" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#26C8FF" />
+      <stop offset="0.45" stop-color="#1F7DFF" />
+      <stop offset="1" stop-color="#7BE7FF" />
+    </linearGradient>
+    <linearGradient id="steel" x1="280" y1="180" x2="740" y2="640" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FAFDFF" />
+      <stop offset="0.28" stop-color="#DCE7F4" />
+      <stop offset="0.6" stop-color="#AEBFD4" />
+      <stop offset="1" stop-color="#F5FBFF" />
+    </linearGradient>
+    <linearGradient id="blueGlow" x1="330" y1="390" x2="930" y2="770" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1CE6FF" />
+      <stop offset="0.4" stop-color="#2584FF" />
+      <stop offset="1" stop-color="#10D7FF" />
+    </linearGradient>
+    <filter id="outerGlow" x="0" y="0" width="1200" height="1200" filterUnits="userSpaceOnUse">
+      <feGaussianBlur stdDeviation="18" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <circle cx="600" cy="520" r="410" stroke="url(#ringGlow)" stroke-width="12" opacity="0.28" />
+  <path d="M174 350C236 274 334 214 446 184" stroke="url(#ringGlow)" stroke-width="18" stroke-linecap="round" opacity="0.9" />
+  <path d="M756 160C864 182 962 244 1028 324" stroke="url(#ringGlow)" stroke-width="18" stroke-linecap="round" opacity="0.9" />
+  <path d="M1032 330C1074 396 1094 474 1094 556C1094 642 1072 722 1028 790" stroke="url(#ringGlow)" stroke-width="16" stroke-linecap="round" opacity="0.78" />
+  <path d="M902 930C812 984 708 1012 600 1012C502 1012 410 988 330 944" stroke="url(#ringGlow)" stroke-width="14" stroke-linecap="round" opacity="0.62" />
+
+  <path d="M210 340H400L282 406L210 340Z" fill="url(#blueGlow)" filter="url(#outerGlow)" opacity="0.85" />
+  <path d="M172 398H364L246 462L172 398Z" fill="url(#blueGlow)" filter="url(#outerGlow)" opacity="0.75" />
+  <path d="M134 454H328L214 516L134 454Z" fill="url(#blueGlow)" filter="url(#outerGlow)" opacity="0.62" />
+
+  <path
+    d="M364 228H856L734 350H520L396 592L214 700L364 404C394 346 420 296 442 256L364 228Z"
+    fill="url(#steel)"
+    stroke="#F4FAFF"
+    stroke-opacity="0.26"
+    stroke-width="4"
+  />
+  <path
+    d="M560 408H1010L862 546L662 546L590 650H818L696 758H398L560 408Z"
+    fill="url(#blueGlow)"
+    stroke="#6EE8FF"
+    stroke-opacity="0.35"
+    stroke-width="4"
+    filter="url(#outerGlow)"
+  />
+  <path
+    d="M454 564H732L646 646H408L454 564Z"
+    fill="#1549FF"
+    fill-opacity="0.72"
+    filter="url(#outerGlow)"
+  />
+
+  <text
+    x="600"
+    y="820"
+    text-anchor="middle"
+    font-family="Inter, Arial, sans-serif"
+    font-size="124"
+    font-weight="900"
+    letter-spacing="6"
+    fill="url(#steel)"
+  >
+    FORWARD
+  </text>
+  <text
+    x="600"
+    y="948"
+    text-anchor="middle"
+    font-family="Inter, Arial, sans-serif"
+    font-size="148"
+    font-weight="900"
+    letter-spacing="6"
+    fill="url(#blueGlow)"
+    filter="url(#outerGlow)"
+  >
+    FREEDOM
+  </text>
+  <text
+    x="600"
+    y="1030"
+    text-anchor="middle"
+    font-family="Inter, Arial, sans-serif"
+    font-size="54"
+    font-weight="800"
+    letter-spacing="18"
+    fill="#F7FBFF"
+    opacity="0.92"
+  >
+    FINANCIAL
+  </text>
+</svg>
