@@ -1,5 +1,6 @@
 import { useState } from "react";
 import forwardFreedomLogo from "../assets/forward-freedom-logo.svg";
+import forwardFreedomMark from "../assets/forward-freedom-mark.svg";
 
 const LEGAL_CONTENT = {
   terms: {
@@ -240,14 +241,14 @@ export function LandingPage({ enterApp }) {
         >
           <div style={{ display: "flex", alignItems: "center", minHeight: 118 }}>
             <img
-              src={forwardFreedomLogo}
+              src={forwardFreedomMark}
               alt="Forward Freedom Financial logo"
               style={{
-                width: 228,
+                width: 148,
                 maxWidth: "100%",
                 display: "block",
                 objectFit: "contain",
-                filter: "drop-shadow(0 0 18px rgba(0,136,255,.28))",
+                filter: "drop-shadow(0 0 14px rgba(0,136,255,.22))",
               }}
             />
           </div>
@@ -383,14 +384,14 @@ export function LandingPage({ enterApp }) {
                 src={forwardFreedomLogo}
                 alt="Forward Freedom Financial logo"
                 style={{
-                  width: "min(100%, 560px)",
+                  width: "min(100%, 600px)",
                   maxWidth: "100%",
                   display: "block",
                   margin: "0 auto",
                   objectFit: "contain",
                   objectPosition: "center",
                   filter:
-                    "drop-shadow(0 0 20px rgba(0,136,255,.38)) drop-shadow(0 0 48px rgba(0,98,255,.22))",
+                    "drop-shadow(0 0 16px rgba(0,136,255,.18)) drop-shadow(0 0 34px rgba(0,98,255,.16))",
                 }}
               />
             </div>
