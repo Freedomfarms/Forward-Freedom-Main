@@ -56,11 +56,11 @@ function buildUserState({
       ? cloneSeed(initialAccounts).map((account, index) => normalizeAccount(account, index))
       : [],
     transactions: useSeedData ? cloneSeed(mockTransactions) : [],
-    budgetRows: currentPlanData.budgetRows,
-    incomeStreams: currentPlanData.incomeStreams,
-    projectionAdjustments: currentPlanData.projectionAdjustments,
+    budgetRows: cloneSeed(currentPlanData.budgetRows),
+    incomeStreams: cloneSeed(currentPlanData.incomeStreams),
+    projectionAdjustments: cloneSeed(currentPlanData.projectionAdjustments),
     plansByYear: {
-      [String(currentYear)]: currentPlanData,
+      [String(currentYear)]: buildPlanYearData(currentPlanData),
     },
     subscriptions: useSeedData ? cloneSeed(initialSubscriptions) : [],
     plaidItems: [],

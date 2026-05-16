@@ -4,9 +4,9 @@ import { buildBudgetMonthlySpendSeries } from "../utils/budgetReview.js";
 import { getCurrentBudgetPeriod } from "../utils/date.js";
 import { money, parseMoney, wholeDollars } from "../utils/format.js";
 import { budgetMonths, yearlyOpsData } from "../data/constants.jsx";
+import { buildFullYearProjectionSeries } from "../utils/planning.js";
 import { buildSubscriptionOverview } from "../utils/subscriptions.js";
 import { HouseholdProfilesControl, MonthCoverageEditor } from "./Common.jsx";
-import { buildForwardTrueCashProjection } from "../utils/trueCashProjection.js";
 
 function formatAdjustmentValue(value) {
   return String(Math.round(Number(value) || 0));
@@ -36,6 +36,8 @@ export function OperationsBoard({
   setIncomeStreamsForYear,
   setProjectionAdjustmentsForYear,
   ensurePlanningYear,
+  plansByYear,
+  currentPlanBaseData,
 }) {
   const [incomeDeleteTarget, setIncomeDeleteTarget] = useState(null);
   const [hoveredCommandMonth, setHoveredCommandMonth] = useState(null);
@@ -45,7 +47,6 @@ export function OperationsBoard({
     year: currentPlanYear,
   }));
   const activePlanningMonth = budgetMonths[activePlanningDate.monthIndex];
-  const currentBudgetMonthIndex = activePlanningDate.monthIndex;
   const planningBudgetRows = getBudgetRowsForYear(activePlanningDate.year);
   const planningIncomeStreams = getIncomeStreamsForYear(activePlanningDate.year);
   const planningProjectionAdjustments = getProjectionAdjustmentsForYear(activePlanningDate.year);
@@ -164,22 +165,17 @@ export function OperationsBoard({
       total: monthlyValues.reduce((sum, value) => sum + value, 0),
     };
   });
-  const trueCashProjectionSchedule = buildForwardTrueCashProjection({
-    openingBalance: trueCash,
-    incomeStreams: planningIncomeStreams,
-    budgetRows: planningBudgetRows,
-    projectionAdjustments: planningProjectionAdjustments,
-    startMonth: activePlanningMonth,
-    startYear: activePlanningDate.year,
-  });
   const adjustmentValues = budgetMonths.map((month) =>
     parseMoney(planningProjectionAdjustments[month])
   );
-  const projectedTrueCashValues = budgetMonths.map((month, index) => {
-    if (index < currentBudgetMonthIndex) return null;
-    if (index === currentBudgetMonthIndex) return trueCash;
-    return trueCashProjectionSchedule.find((point) => point.month === month)?.value ?? null;
-  });
+  const projectedTrueCashValues = buildFullYearProjectionSeries({
+    targetYear: activePlanningDate.year,
+    currentYear: currentPlanYear,
+    currentMonthIndex: currentBudgetPeriod.monthIndex,
+    currentTrueCash: trueCash,
+    plansByYear,
+    fallbackPlanData: currentPlanBaseData,
+  }).map((entry) => entry.value);
   const projectedYearEndTrueCash = projectedTrueCashValues.at(-1) ?? trueCash;
 
   return (
@@ -1031,19 +1027,14 @@ export function OperationsBoard({
                 <div
                   key={budgetMonths[index]}
                   style={{
-                    color:
-                      value === null
-                        ? "#5e7da0"
-                        : index === currentBudgetMonthIndex
-                          ? "#ff9f1c"
-                          : "#ffd08a",
+                    color: index === activePlanningDate.monthIndex ? "#ff9f1c" : "#ffd08a",
                     textAlign: "right",
                     fontSize: 14,
                     fontWeight: 900,
-                    textShadow: value === null ? "none" : "0 0 10px rgba(255,159,28,.32)",
+                    textShadow: "0 0 10px rgba(255,159,28,.32)",
                   }}
                 >
-                  {value === null ? "—" : wholeDollars(value)}
+                  {wholeDollars(value)}
                 </div>
               ))}
               <div
