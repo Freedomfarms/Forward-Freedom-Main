@@ -1138,9 +1138,23 @@ function ForwardFreedomDashboard() {
     onCancelUserRename: cancelUserRename,
     onAddUser: addUserProfile,
   };
+  const handleEnterApp = (payload = {}) => {
+    if (payload?.mode === "create-account") {
+      const newUser = createEmptyUserProfile({
+        name: payload.primaryUserName || "User 1",
+      });
+      setUsers([newUser]);
+      setActiveUserId(newUser.id);
+      setEditingUserId(null);
+      setDraftUserName("");
+      setPlaidError("");
+    }
+
+    setCurrentView("app");
+  };
 
   if (currentView === "landing") {
-    return <LandingPage enterApp={() => setCurrentView("app")} />;
+    return <LandingPage enterApp={handleEnterApp} />;
   }
 
   return (
