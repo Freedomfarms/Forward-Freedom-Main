@@ -2,7 +2,7 @@ import { useState } from "react";
 import { styles } from "../styles.js";
 import { buildBudgetMonthlySpendSeries } from "../utils/budgetReview.js";
 import { getCurrentBudgetPeriod } from "../utils/date.js";
-import { money, parseMoney, wholeDollars } from "../utils/format.js";
+import { cleanMoneyInput, money, parseMoney, wholeDollars } from "../utils/format.js";
 import { budgetMonths, yearlyOpsData } from "../data/constants.jsx";
 import { buildFullYearProjectionSeries } from "../utils/planning.js";
 import { buildSubscriptionOverview } from "../utils/subscriptions.js";
@@ -38,6 +38,8 @@ export function OperationsBoard({
   ensurePlanningYear,
   plansByYear,
   currentPlanBaseData,
+  getPlanningAnchorForYear,
+  setPlanningAnchorForYear,
 }) {
   const [incomeDeleteTarget, setIncomeDeleteTarget] = useState(null);
   const [hoveredCommandMonth, setHoveredCommandMonth] = useState(null);
@@ -50,6 +52,7 @@ export function OperationsBoard({
   const planningBudgetRows = getBudgetRowsForYear(activePlanningDate.year);
   const planningIncomeStreams = getIncomeStreamsForYear(activePlanningDate.year);
   const planningProjectionAdjustments = getProjectionAdjustmentsForYear(activePlanningDate.year);
+  const planningAnchor = getPlanningAnchorForYear(activePlanningDate.year);
   const monthlySpendSeries = buildBudgetMonthlySpendSeries(
     transactions,
     planningBudgetRows,
@@ -65,6 +68,12 @@ export function OperationsBoard({
       ...current,
       [field]: nextValue,
     }));
+  };
+  const updatePlanningAnchor = (field, value) => {
+    const nextValue = field === "startingTrueCash" ? cleanMoneyInput(value) : value;
+    setPlanningAnchorForYear(activePlanningDate.year, {
+      [field]: nextValue,
+    });
   };
 
   const addIncomeStream = () => {
@@ -170,9 +179,6 @@ export function OperationsBoard({
   );
   const projectedTrueCashValues = buildFullYearProjectionSeries({
     targetYear: activePlanningDate.year,
-    currentYear: currentPlanYear,
-    currentMonthIndex: currentBudgetPeriod.monthIndex,
-    currentTrueCash: trueCash,
     plansByYear,
     fallbackPlanData: currentPlanBaseData,
   }).map((entry) => entry.value);
@@ -281,43 +287,62 @@ export function OperationsBoard({
           <div
             style={{ color: "#8fb1d9", fontSize: 12, textTransform: "uppercase", letterSpacing: 1 }}
           >
-            Current True Cash
+            Planning Anchor
           </div>
 
           <div
             style={{
               marginTop: 12,
               display: "grid",
-              gap: 12,
+              gap: 10,
             }}
           >
-            <div
-              style={{
-                color: "#eaf3ff",
-                fontSize: 30,
-                fontWeight: 900,
-              }}
-            >
-              {wholeDollars(trueCash)}
-            </div>
-            <div
-              style={{
-                background: "rgba(0,136,255,.08)",
-                border: "1px solid rgba(0,216,255,.22)",
-                borderRadius: 10,
-                padding: "10px 14px",
-                color: "#cfe7ff",
-                fontSize: 13,
-                fontWeight: 800,
-                boxShadow: "0 0 18px rgba(0,216,255,.12)",
-              }}
-            >
-              Anchored to the live dashboard baseline
-            </div>
-            <div style={{ color: "#8ea8ca", fontSize: 12, lineHeight: 1.5 }}>
-              Uses the same live true-cash balance that powers Dashboard and Forecast Lab before
-              projecting the remaining months in the selected planning period ({activePlanningMonth}{" "}
-              {activePlanningDate.year} onward).
+            <label style={{ display: "grid", gap: 6 }}>
+              <span style={{ color: "#8fb1d9", fontSize: 11, textTransform: "uppercase" }}>
+                Starting Month
+              </span>
+              <select
+                value={planningAnchor.startingMonth || activePlanningMonth}
+                onChange={(event) => updatePlanningAnchor("startingMonth", event.target.value)}
+                style={{
+                  color: "#eaf3ff",
+                  background: "rgba(0,136,255,.08)",
+                  border: "1px solid rgba(0,216,255,.22)",
+                  borderRadius: 9,
+                  padding: "10px 12px",
+                  fontWeight: 800,
+                  outline: "none",
+                }}
+              >
+                {budgetMonths.map((month) => (
+                  <option key={month} value={month} style={{ background: "#061224" }}>
+                    {month}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label style={{ display: "grid", gap: 6 }}>
+              <span style={{ color: "#8fb1d9", fontSize: 11, textTransform: "uppercase" }}>
+                Starting True Cash
+              </span>
+              <input
+                value={money(planningAnchor.startingTrueCash ?? trueCash)}
+                onChange={(event) => updatePlanningAnchor("startingTrueCash", event.target.value)}
+                style={{
+                  color: "#eaf3ff",
+                  background: "rgba(0,136,255,.08)",
+                  border: "1px solid rgba(0,216,255,.22)",
+                  borderRadius: 9,
+                  padding: "10px 12px",
+                  fontWeight: 900,
+                  outline: "none",
+                }}
+              />
+            </label>
+            <div style={{ color: "#8ea8ca", fontSize: 12, lineHeight: 1.5, marginTop: 2 }}>
+              Auto-filled to help the selected year get started. You can keep the current month and
+              current true cash, or set an earlier starting month and value for more accurate yearly
+              planning.
             </div>
           </div>
         </div>

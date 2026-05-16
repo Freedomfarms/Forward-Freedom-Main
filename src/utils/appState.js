@@ -35,6 +35,21 @@ function generateUserProfileId(index = 0) {
   return `user-profile-${Date.now()}-${index + 1}`;
 }
 
+function calculateSeedTrueCash() {
+  if (!initialAccounts.length) return 0;
+
+  const liquidCash = initialAccounts
+    .filter((account) => ["Checking", "Savings", "Manual Cash"].includes(account.type))
+    .reduce((sum, account) => sum + Number(account.balance || 0), 0);
+  const creditCardDebt = Math.abs(
+    initialAccounts
+      .filter((account) => account.type === "Credit Card")
+      .reduce((sum, account) => sum + Number(account.balance || 0), 0)
+  );
+
+  return liquidCash - creditCardDebt;
+}
+
 function buildUserState({
   id = generateUserProfileId(),
   name = "User 1",
@@ -46,6 +61,8 @@ function buildUserState({
     budgetRows: cloneSeed(initialBudgetCategories),
     incomeStreams: useSeedData ? cloneSeed(incomeStreamSeed) : [],
     projectionAdjustments: {},
+    startingMonth: getCurrentBudgetPeriod().month,
+    startingTrueCash: useSeedData ? calculateSeedTrueCash() : 0,
   });
 
   return {

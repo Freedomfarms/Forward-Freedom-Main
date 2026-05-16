@@ -10,11 +10,15 @@ export function buildPlanYearData({
   budgetRows = [],
   incomeStreams = [],
   projectionAdjustments = {},
+  startingMonth = getCurrentBudgetPeriod().month,
+  startingTrueCash = 0,
 } = {}) {
   return {
     budgetRows: cloneValue(budgetRows),
     incomeStreams: cloneValue(incomeStreams),
     projectionAdjustments: cloneValue(projectionAdjustments),
+    startingMonth,
+    startingTrueCash: Number(startingTrueCash) || 0,
   };
 }
 
@@ -55,10 +59,17 @@ export function ensurePlanYearData(plansByYear, targetYear, fallbackPlanData) {
     availableYears[availableYears.length - 1];
   const referencePlan =
     normalizedPlans[String(referenceYear)] || buildPlanYearData(fallbackPlanData);
+  const fallback = buildPlanYearData(fallbackPlanData);
+  const defaultStartingMonth = targetYear === currentYear ? fallback.startingMonth : "Jan";
+  const defaultStartingTrueCash = fallback.startingTrueCash;
 
   return {
     ...normalizedPlans,
-    [targetKey]: buildPlanYearData(referencePlan),
+    [targetKey]: buildPlanYearData({
+      ...referencePlan,
+      startingMonth: defaultStartingMonth,
+      startingTrueCash: defaultStartingTrueCash,
+    }),
   };
 }
 
@@ -98,55 +109,23 @@ function buildMonthlyNetForYear(planData, month) {
 
 export function buildFullYearProjectionSeries({
   targetYear,
-  currentYear = getCurrentBudgetPeriod().year,
-  currentMonthIndex = getCurrentBudgetPeriod().monthIndex,
-  currentTrueCash = 0,
   plansByYear = {},
   fallbackPlanData = {},
 }) {
-  const normalizedPlans = ensurePlanYearData(plansByYear, currentYear, fallbackPlanData);
-
-  const getPlanData = (year) =>
-    ensurePlanYearData(normalizedPlans, year, fallbackPlanData)[String(year)] ||
+  const targetPlan =
+    ensurePlanYearData(plansByYear, targetYear, fallbackPlanData)[String(targetYear)] ||
     buildPlanYearData(fallbackPlanData);
-
-  const getOpeningBalanceForYear = (year) => {
-    if (year === currentYear) {
-      const completedMonths = budgetMonths.slice(0, currentMonthIndex);
-      const completedDelta = completedMonths.reduce(
-        (sum, month) => sum + buildMonthlyNetForYear(getPlanData(year), month),
-        0
-      );
-      return currentTrueCash - completedDelta;
-    }
-
-    if (year > currentYear) {
-      const previousSeries = buildFullYearProjectionSeries({
-        targetYear: year - 1,
-        currentYear,
-        currentMonthIndex,
-        currentTrueCash,
-        plansByYear: normalizedPlans,
-        fallbackPlanData,
-      });
-
-      return previousSeries.at(-1)?.value ?? currentTrueCash;
-    }
-
-    const nextYearOpening = getOpeningBalanceForYear(year + 1);
-    const fullYearDelta = budgetMonths.reduce(
-      (sum, month) => sum + buildMonthlyNetForYear(getPlanData(year), month),
-      0
-    );
-
-    return nextYearOpening - fullYearDelta;
-  };
-
-  let runningBalance = getOpeningBalanceForYear(targetYear);
-  const targetPlan = getPlanData(targetYear);
+  const startMonthIndex = Math.max(
+    0,
+    budgetMonths.indexOf(targetPlan.startingMonth || getCurrentBudgetPeriod().month)
+  );
+  let runningBalance = Number(targetPlan.startingTrueCash) || 0;
 
   return budgetMonths.map((month) => {
-    runningBalance += buildMonthlyNetForYear(targetPlan, month);
+    const monthIndex = budgetMonths.indexOf(month);
+    if (monthIndex >= startMonthIndex) {
+      runningBalance += buildMonthlyNetForYear(targetPlan, month);
+    }
 
     return {
       month,

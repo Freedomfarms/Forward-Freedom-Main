@@ -273,16 +273,6 @@ function ForwardFreedomDashboard() {
   const activeRange = activeUser.activeRange;
   const metricSnapshots = activeUser.metricSnapshots;
   const currentPlanYear = getBudgetPeriodAtOffset(0).year;
-  const baseCurrentPlanData = buildPlanYearData({
-    budgetRows: activeUser.budgetRows,
-    incomeStreams: activeUser.incomeStreams,
-    projectionAdjustments: activeUser.projectionAdjustments,
-  });
-  const plansByYear = ensurePlanYearData(
-    normalizePlansByYear(activeUser.plansByYear, baseCurrentPlanData),
-    currentPlanYear,
-    baseCurrentPlanData
-  );
   const setActiveUserField = (field, valueOrUpdater) => {
     if (!activeUser?.id) return;
 
@@ -314,7 +304,6 @@ function ForwardFreedomDashboard() {
     budgetRows,
     merchantCategoryRules,
   });
-  const availablePlanningYears = buildPlanningYearOptions(plansByYear, currentPlanYear);
 
   const liquidCash = syncedAccounts
     .filter((account) => LIQUID_ACCOUNT_TYPES.has(account.type))
@@ -364,6 +353,23 @@ function ForwardFreedomDashboard() {
     .filter((r) => (r.months || budgetMonths).includes(nextMonth))
     .reduce((sum, r) => sum + Number(r.budget || 0), 0);
   const nextMonthFlow = nextMonthIncome - nextMonthBudget;
+  const currentYearPlanState = activeUser.plansByYear?.[String(currentPlanYear)];
+  const baseCurrentPlanData = buildPlanYearData({
+    budgetRows: activeUser.budgetRows,
+    incomeStreams: activeUser.incomeStreams,
+    projectionAdjustments: activeUser.projectionAdjustments,
+    startingMonth: currentYearPlanState?.startingMonth || currentMonth,
+    startingTrueCash:
+      currentYearPlanState?.startingTrueCash && currentYearPlanState.startingTrueCash !== 0
+        ? currentYearPlanState.startingTrueCash
+        : trueCash,
+  });
+  const plansByYear = ensurePlanYearData(
+    normalizePlansByYear(activeUser.plansByYear, baseCurrentPlanData),
+    currentPlanYear,
+    baseCurrentPlanData
+  );
+  const availablePlanningYears = buildPlanningYearOptions(plansByYear, currentPlanYear);
 
   const totalNetWorth = Math.max(
     trueCash +
@@ -399,6 +405,8 @@ function ForwardFreedomDashboard() {
       ? projectionAdjustments
       : ensurePlanYearData(plansByYear, targetYear, baseCurrentPlanData)[String(targetYear)]
           ?.projectionAdjustments || {};
+  const getPlanningAnchorForYear = (targetYear) =>
+    ensurePlanYearData(plansByYear, targetYear, baseCurrentPlanData)[String(targetYear)] || {};
   const setBudgetRowsForYear = (targetYear, valueOrUpdater) => {
     if (targetYear === currentPlanYear) {
       setBudgetRows(valueOrUpdater);
@@ -477,6 +485,25 @@ function ForwardFreedomDashboard() {
       };
     });
   };
+  const setPlanningAnchorForYear = (targetYear, nextAnchor) => {
+    setActiveUserField("plansByYear", (currentPlansByYear) => {
+      const nextPlansByYear = ensurePlanYearData(
+        currentPlansByYear,
+        targetYear,
+        baseCurrentPlanData
+      );
+      const yearKey = String(targetYear);
+      const currentPlan = nextPlansByYear[yearKey] || buildPlanYearData(baseCurrentPlanData);
+
+      return {
+        ...nextPlansByYear,
+        [yearKey]: {
+          ...currentPlan,
+          ...nextAnchor,
+        },
+      };
+    });
+  };
   const persistedUsers = users.map((user, index) =>
     user.id === activeUser?.id
       ? {
@@ -491,6 +518,8 @@ function ForwardFreedomDashboard() {
               budgetRows,
               incomeStreams,
               projectionAdjustments,
+              startingMonth: baseCurrentPlanData.startingMonth,
+              startingTrueCash: baseCurrentPlanData.startingTrueCash,
             }),
           },
           metricSnapshots: trackedMetricSnapshots,
@@ -1216,6 +1245,8 @@ function ForwardFreedomDashboard() {
               ensurePlanningYear={ensurePlanningYear}
               plansByYear={plansByYear}
               currentPlanBaseData={baseCurrentPlanData}
+              getPlanningAnchorForYear={getPlanningAnchorForYear}
+              setPlanningAnchorForYear={setPlanningAnchorForYear}
             />
           ) : activeTab === APP_TABS.ADD_ACCOUNTS ? (
             <AccountsView
