@@ -9,10 +9,19 @@ export default [
   },
   js.configs.recommended,
   {
+    files: ["server/**/*.js"],
+    languageOptions: {
+      globals: globals.node,
+    },
+  },
+  {
     files: ["**/*.{js,jsx}"],
     languageOptions: {
       ecmaVersion: "latest",
-      globals: globals.browser,
+      globals: {
+        ...globals.browser,
+        ...globals.node,
+      },
       parserOptions: {
         ecmaFeatures: {
           jsx: true,

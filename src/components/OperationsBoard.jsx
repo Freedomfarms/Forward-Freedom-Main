@@ -2,11 +2,11 @@ import { useState } from "react";
 import { styles } from "../styles.js";
 import { buildBudgetMonthlySpendSeries } from "../utils/budgetReview.js";
 import { getCurrentBudgetPeriod } from "../utils/date.js";
-import { money, parseMoney, wholeDollars } from "../utils/format.js";
+import { cleanMoneyInput, money, parseMoney, wholeDollars } from "../utils/format.js";
 import { budgetMonths, yearlyOpsData } from "../data/constants.jsx";
+import { buildFullYearProjectionSeries } from "../utils/planning.js";
 import { buildSubscriptionOverview } from "../utils/subscriptions.js";
-import { MonthCoverageEditor } from "./Common.jsx";
-import { buildForwardTrueCashProjection } from "../utils/trueCashProjection.js";
+import { HouseholdProfilesControl, MonthCoverageEditor } from "./Common.jsx";
 
 function formatAdjustmentValue(value) {
   return String(Math.round(Number(value) || 0));
@@ -24,27 +24,60 @@ function normalizeAdjustmentInput(value) {
 }
 
 export function OperationsBoard({
-  budgetRows,
   subscriptions,
-  incomeStreams,
-  setIncomeStreams,
   transactions,
   trueCash,
-  projectionAdjustments,
-  setProjectionAdjustments,
+  householdProfilesProps,
+  currentPlanYear,
+  availablePlanningYears,
+  getBudgetRowsForYear,
+  getIncomeStreamsForYear,
+  getProjectionAdjustmentsForYear,
+  setIncomeStreamsForYear,
+  setProjectionAdjustmentsForYear,
+  ensurePlanningYear,
+  plansByYear,
+  currentPlanBaseData,
+  getPlanningAnchorForYear,
+  setPlanningAnchorForYear,
 }) {
   const [incomeDeleteTarget, setIncomeDeleteTarget] = useState(null);
   const [hoveredCommandMonth, setHoveredCommandMonth] = useState(null);
   const currentBudgetPeriod = getCurrentBudgetPeriod();
-  const currentBudgetMonthIndex = budgetMonths.indexOf(currentBudgetPeriod.month);
+  const [activePlanningDate, setActivePlanningDate] = useState(() => ({
+    monthIndex: currentBudgetPeriod.monthIndex,
+    year: currentPlanYear,
+  }));
+  const activePlanningMonth = budgetMonths[activePlanningDate.monthIndex];
+  const planningBudgetRows = getBudgetRowsForYear(activePlanningDate.year);
+  const planningIncomeStreams = getIncomeStreamsForYear(activePlanningDate.year);
+  const planningProjectionAdjustments = getProjectionAdjustmentsForYear(activePlanningDate.year);
+  const planningAnchor = getPlanningAnchorForYear(activePlanningDate.year);
   const monthlySpendSeries = buildBudgetMonthlySpendSeries(
     transactions,
-    budgetRows,
-    currentBudgetPeriod.year
+    planningBudgetRows,
+    activePlanningDate.year
   );
+  const updatePlanningDate = (field, value) => {
+    const nextValue = Number(value);
+    if (field === "year") {
+      ensurePlanningYear(nextValue);
+    }
+
+    setActivePlanningDate((current) => ({
+      ...current,
+      [field]: nextValue,
+    }));
+  };
+  const updatePlanningAnchor = (field, value) => {
+    const nextValue = field === "startingTrueCash" ? cleanMoneyInput(value) : value;
+    setPlanningAnchorForYear(activePlanningDate.year, {
+      [field]: nextValue,
+    });
+  };
 
   const addIncomeStream = () => {
-    setIncomeStreams((streams) => {
+    setIncomeStreamsForYear(activePlanningDate.year, (streams) => {
       const nextNumber = streams.length + 1;
       return [
         ...streams,
@@ -63,7 +96,7 @@ export function OperationsBoard({
   };
 
   const toggleIncomeMonth = (index, month) => {
-    setIncomeStreams((streams) =>
+    setIncomeStreamsForYear(activePlanningDate.year, (streams) =>
       streams.map((stream, streamIndex) => {
         if (streamIndex !== index) return stream;
 
@@ -82,16 +115,16 @@ export function OperationsBoard({
 
   const setIncomeMonths = (index, nextMonths) => {
     const normalizedMonths = budgetMonths.filter((month) => nextMonths.includes(month));
-    const safeMonths = normalizedMonths.length ? normalizedMonths : [budgetMonths[4]];
+    const safeMonths = normalizedMonths.length ? normalizedMonths : [activePlanningMonth];
 
-    setIncomeStreams((streams) =>
+    setIncomeStreamsForYear(activePlanningDate.year, (streams) =>
       streams.map((stream, streamIndex) =>
         streamIndex === index ? { ...stream, months: safeMonths } : stream
       )
     );
   };
   const dynamicYearlyOpsData = yearlyOpsData.map((month) => {
-    const activeStreams = incomeStreams.filter((stream) =>
+    const activeStreams = planningIncomeStreams.filter((stream) =>
       (stream.months || budgetMonths).includes(month.month)
     );
     const income = activeStreams.reduce((sum, stream) => sum + parseMoney(stream.amount), 0);
@@ -99,7 +132,7 @@ export function OperationsBoard({
       .filter((stream) => stream.type === "One-Time")
       .reduce((sum, stream) => sum + parseMoney(stream.amount), 0);
 
-    const activeBudgetCategories = budgetRows.filter((category) =>
+    const activeBudgetCategories = planningBudgetRows.filter((category) =>
       (category.months || budgetMonths).includes(month.month)
     );
 
@@ -130,7 +163,7 @@ export function OperationsBoard({
     ...dynamicYearlyOpsData.flatMap((month) => [month.income, month.budget, month.spent]),
     1
   );
-  const incomeOutlookRows = incomeStreams.map((stream) => {
+  const incomeOutlookRows = planningIncomeStreams.map((stream) => {
     const monthlyValues = budgetMonths.map((month) =>
       (stream.months || budgetMonths).includes(month) ? parseMoney(stream.amount) : 0
     );
@@ -141,51 +174,66 @@ export function OperationsBoard({
       total: monthlyValues.reduce((sum, value) => sum + value, 0),
     };
   });
-  const trueCashProjectionSchedule = buildForwardTrueCashProjection({
-    openingBalance: trueCash,
-    incomeStreams,
-    budgetRows,
-    projectionAdjustments,
-    startMonth: currentBudgetPeriod.month,
-    startYear: currentBudgetPeriod.year,
-  });
-  const adjustmentValues = budgetMonths.map((month) => parseMoney(projectionAdjustments[month]));
-  const projectedTrueCashValues = budgetMonths.map((month, index) => {
-    if (index < currentBudgetMonthIndex) return null;
-    if (index === currentBudgetMonthIndex) return trueCash;
-    return trueCashProjectionSchedule.find((point) => point.month === month)?.value ?? null;
-  });
+  const adjustmentValues = budgetMonths.map((month) =>
+    parseMoney(planningProjectionAdjustments[month])
+  );
+  const projectedTrueCashValues = buildFullYearProjectionSeries({
+    targetYear: activePlanningDate.year,
+    plansByYear,
+    fallbackPlanData: currentPlanBaseData,
+  }).map((entry) => entry.value);
   const projectedYearEndTrueCash = projectedTrueCashValues.at(-1) ?? trueCash;
 
   return (
     <div>
-      <header
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          marginBottom: 24,
-        }}
-      >
+      <header style={styles.pageHeader}>
         <div>
-          <h1 style={{ margin: 0, fontSize: 32, color: "white", fontWeight: 800 }}>
-            Operations Board
-          </h1>
-          <p style={{ marginTop: 8, color: "#8ea8ca" }}>
+          <h1 style={styles.pageTitle}>Operations Board</h1>
+          <p style={styles.pageSubtitle}>
             Yearly command view of income streams, budget plan, and projected profit.
           </p>
         </div>
-        <button
-          style={{
-            color: "#f2f7ff",
-            background: "rgba(1,10,24,.55)",
-            border: "1px solid rgba(54,126,220,.38)",
-            borderRadius: 7,
-            padding: "10px 16px",
-          }}
-        >
-          2026
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <HouseholdProfilesControl {...householdProfilesProps} />
+          <select
+            value={activePlanningDate.monthIndex}
+            onChange={(event) => updatePlanningDate("monthIndex", event.target.value)}
+            style={{
+              color: "#f2f7ff",
+              background: "rgba(1,10,24,.55)",
+              border: "1px solid rgba(54,126,220,.38)",
+              borderRadius: 7,
+              padding: "10px 12px",
+              minWidth: 124,
+            }}
+          >
+            {budgetMonths.map((month, index) => (
+              <option key={month} value={index} style={{ background: "#061224" }}>
+                {month}
+              </option>
+            ))}
+          </select>
+          <select
+            value={activePlanningDate.year}
+            onChange={(event) => updatePlanningDate("year", event.target.value)}
+            style={{
+              color: "#00d8ff",
+              background: "rgba(0,104,255,.18)",
+              border: "1px solid rgba(0,216,255,.55)",
+              borderRadius: 7,
+              padding: "10px 12px",
+              minWidth: 96,
+              fontWeight: 900,
+              boxShadow: "0 0 18px rgba(0,136,255,.22)",
+            }}
+          >
+            {availablePlanningYears.map((year) => (
+              <option key={year} value={year} style={{ background: "#061224", color: "#eaf3ff" }}>
+                {year}
+              </option>
+            ))}
+          </select>
+        </div>
       </header>
 
       <section
@@ -239,42 +287,62 @@ export function OperationsBoard({
           <div
             style={{ color: "#8fb1d9", fontSize: 12, textTransform: "uppercase", letterSpacing: 1 }}
           >
-            Current True Cash
+            Planning Anchor
           </div>
 
           <div
             style={{
               marginTop: 12,
               display: "grid",
-              gap: 12,
+              gap: 10,
             }}
           >
-            <div
-              style={{
-                color: "#eaf3ff",
-                fontSize: 30,
-                fontWeight: 900,
-              }}
-            >
-              {wholeDollars(trueCash)}
-            </div>
-            <div
-              style={{
-                background: "rgba(0,136,255,.08)",
-                border: "1px solid rgba(0,216,255,.22)",
-                borderRadius: 10,
-                padding: "10px 14px",
-                color: "#cfe7ff",
-                fontSize: 13,
-                fontWeight: 800,
-                boxShadow: "0 0 18px rgba(0,216,255,.12)",
-              }}
-            >
-              Anchored to the live dashboard baseline
-            </div>
-            <div style={{ color: "#8ea8ca", fontSize: 12, lineHeight: 1.5 }}>
-              Uses the same live true-cash balance that powers Dashboard and Forecast Lab before
-              projecting the remaining months in the year.
+            <label style={{ display: "grid", gap: 6 }}>
+              <span style={{ color: "#8fb1d9", fontSize: 11, textTransform: "uppercase" }}>
+                Starting Month
+              </span>
+              <select
+                value={planningAnchor.startingMonth || activePlanningMonth}
+                onChange={(event) => updatePlanningAnchor("startingMonth", event.target.value)}
+                style={{
+                  color: "#eaf3ff",
+                  background: "rgba(0,136,255,.08)",
+                  border: "1px solid rgba(0,216,255,.22)",
+                  borderRadius: 9,
+                  padding: "10px 12px",
+                  fontWeight: 800,
+                  outline: "none",
+                }}
+              >
+                {budgetMonths.map((month) => (
+                  <option key={month} value={month} style={{ background: "#061224" }}>
+                    {month}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label style={{ display: "grid", gap: 6 }}>
+              <span style={{ color: "#8fb1d9", fontSize: 11, textTransform: "uppercase" }}>
+                Starting True Cash
+              </span>
+              <input
+                value={money(planningAnchor.startingTrueCash ?? trueCash)}
+                onChange={(event) => updatePlanningAnchor("startingTrueCash", event.target.value)}
+                style={{
+                  color: "#eaf3ff",
+                  background: "rgba(0,136,255,.08)",
+                  border: "1px solid rgba(0,216,255,.22)",
+                  borderRadius: 9,
+                  padding: "10px 12px",
+                  fontWeight: 900,
+                  outline: "none",
+                }}
+              />
+            </label>
+            <div style={{ color: "#8ea8ca", fontSize: 12, lineHeight: 1.5, marginTop: 2 }}>
+              Auto-filled to help the selected year get started. You can keep the current month and
+              current true cash, or set an earlier starting month and value for more accurate yearly
+              planning.
             </div>
           </div>
         </div>
@@ -286,7 +354,8 @@ export function OperationsBoard({
           padding: 22,
           marginBottom: 18,
           position: "relative",
-          overflow: "hidden",
+          overflow: "visible",
+          zIndex: 2,
         }}
       >
         <div
@@ -315,6 +384,8 @@ export function OperationsBoard({
               padding: 22,
               display: "flex",
               flexDirection: "column",
+              position: "relative",
+              zIndex: 3,
             }}
           >
             <div
@@ -339,7 +410,7 @@ export function OperationsBoard({
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 18, marginTop: 4 }}>
-              {incomeStreams.map((income, index) => (
+              {planningIncomeStreams.map((income, index) => (
                 <div
                   key={income.id}
                   style={{
@@ -385,7 +456,7 @@ export function OperationsBoard({
                       <input
                         value={income.name}
                         onChange={(event) =>
-                          setIncomeStreams((streams) =>
+                          setIncomeStreamsForYear(activePlanningDate.year, (streams) =>
                             streams.map((stream, streamIndex) =>
                               streamIndex === index
                                 ? { ...stream, name: event.target.value }
@@ -416,7 +487,7 @@ export function OperationsBoard({
                       <input
                         value={income.description}
                         onChange={(event) =>
-                          setIncomeStreams((streams) =>
+                          setIncomeStreamsForYear(activePlanningDate.year, (streams) =>
                             streams.map((stream, streamIndex) =>
                               streamIndex === index
                                 ? { ...stream, description: event.target.value }
@@ -462,8 +533,8 @@ export function OperationsBoard({
                         quickActions={[
                           { label: "All", onClick: () => setIncomeMonths(index, budgetMonths) },
                           {
-                            label: `Only ${currentBudgetPeriod.month}`,
-                            onClick: () => setIncomeMonths(index, [currentBudgetPeriod.month]),
+                            label: `Only ${activePlanningMonth}`,
+                            onClick: () => setIncomeMonths(index, [activePlanningMonth]),
                           },
                         ]}
                       />
@@ -473,7 +544,7 @@ export function OperationsBoard({
                   <input
                     value={income.amount}
                     onChange={(event) =>
-                      setIncomeStreams((streams) =>
+                      setIncomeStreamsForYear(activePlanningDate.year, (streams) =>
                         streams.map((stream, streamIndex) =>
                           streamIndex === index ? { ...stream, amount: event.target.value } : stream
                         )
@@ -916,13 +987,13 @@ export function OperationsBoard({
                 <input
                   key={month}
                   value={
-                    projectionAdjustments[month] === undefined
+                    planningProjectionAdjustments[month] === undefined
                       ? "0"
-                      : String(projectionAdjustments[month])
+                      : String(planningProjectionAdjustments[month])
                   }
                   onChange={(event) => {
                     const nextValue = normalizeAdjustmentInput(event.target.value);
-                    setProjectionAdjustments((current) => ({
+                    setProjectionAdjustmentsForYear(activePlanningDate.year, (current) => ({
                       ...current,
                       [month]: nextValue,
                     }));
@@ -981,19 +1052,14 @@ export function OperationsBoard({
                 <div
                   key={budgetMonths[index]}
                   style={{
-                    color:
-                      value === null
-                        ? "#5e7da0"
-                        : index === currentBudgetMonthIndex
-                          ? "#ff9f1c"
-                          : "#ffd08a",
+                    color: index === activePlanningDate.monthIndex ? "#ff9f1c" : "#ffd08a",
                     textAlign: "right",
                     fontSize: 14,
                     fontWeight: 900,
-                    textShadow: value === null ? "none" : "0 0 10px rgba(255,159,28,.32)",
+                    textShadow: "0 0 10px rgba(255,159,28,.32)",
                   }}
                 >
-                  {value === null ? "—" : wholeDollars(value)}
+                  {wholeDollars(value)}
                 </div>
               ))}
               <div
@@ -1067,7 +1133,7 @@ export function OperationsBoard({
               </button>
               <button
                 onClick={() => {
-                  setIncomeStreams((streams) =>
+                  setIncomeStreamsForYear(activePlanningDate.year, (streams) =>
                     streams.filter((stream) => stream.id !== incomeDeleteTarget.id)
                   );
                   setIncomeDeleteTarget(null);

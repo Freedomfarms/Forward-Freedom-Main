@@ -1,6 +1,6 @@
 import { navMain, navTools } from "../data/constants.jsx";
 import { styles } from "../styles.js";
-import { SideItem } from "./Common.jsx";
+import { HouseholdProfilesControl, SideItem } from "./Common.jsx";
 
 export function AppSidebar({ activeTab, setActiveTab, onBackHome }) {
   return (
@@ -149,7 +149,7 @@ export function AppSidebar({ activeTab, setActiveTab, onBackHome }) {
   );
 }
 
-export function ModulePlaceholder({ activeTab }) {
+export function ModulePlaceholder({ activeTab, householdProfilesProps }) {
   return (
     <div
       style={{
@@ -157,10 +157,9 @@ export function ModulePlaceholder({ activeTab }) {
         minHeight: "78vh",
         display: "flex",
         flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
         position: "relative",
         overflow: "hidden",
+        padding: 24,
       }}
     >
       <div
@@ -170,7 +169,25 @@ export function ModulePlaceholder({ activeTab }) {
           background: "radial-gradient(circle at center, rgba(0,136,255,.12), transparent 55%)",
         }}
       />
-      <div style={{ position: "relative", textAlign: "center" }}>
+      <div style={{ ...styles.pageHeader, position: "relative", zIndex: 1 }}>
+        <div>
+          <h1 style={styles.pageTitle}>{activeTab}</h1>
+          <p style={styles.pageSubtitle}>Module initializing...</p>
+        </div>
+        <HouseholdProfilesControl {...householdProfilesProps} />
+      </div>
+
+      <div
+        style={{
+          position: "relative",
+          textAlign: "center",
+          flex: 1,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
         <div
           style={{
             fontSize: 72,
@@ -181,7 +198,7 @@ export function ModulePlaceholder({ activeTab }) {
         >
           ◈
         </div>
-        <div style={{ fontSize: 34, fontWeight: 700, color: "white", letterSpacing: 1 }}>
+        <div style={{ fontSize: 24, fontWeight: 700, color: "white", letterSpacing: 0.4 }}>
           {activeTab}
         </div>
         <div style={{ marginTop: 14, color: "#8faecc", fontSize: 16 }}>Module initializing...</div>

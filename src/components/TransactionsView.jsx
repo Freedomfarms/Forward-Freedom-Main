@@ -4,6 +4,7 @@ import { styles } from "../styles.js";
 import { getIsoDateInputValue } from "../utils/date.js";
 import { money } from "../utils/format.js";
 import { accountSupportsTransactions } from "../utils/accounts.js";
+import { HouseholdProfilesControl } from "./Common.jsx";
 
 function formatManualDate(value) {
   if (!value) return "";
@@ -44,6 +45,27 @@ function formatDateTime(value) {
 
 function formatMoneyPerUnit(value, unitLabel) {
   return `${money(value)}${unitLabel ? ` / ${unitLabel}` : ""}`;
+}
+
+function formatCategorySourceLabel(transaction) {
+  const source = transaction.categorySource || transaction.source || "ai";
+  const confidence =
+    typeof transaction.categoryConfidence === "number"
+      ? `${transaction.categoryConfidence}%`
+      : null;
+
+  const label =
+    source === "user"
+      ? "User confirmed"
+      : source === "manual"
+        ? "Manual category"
+        : source === "learned"
+          ? "Learned merchant"
+          : source === "plaid"
+            ? "Plaid category"
+            : "AI guess";
+
+  return confidence ? `${label} · ${confidence}` : label;
 }
 
 function buildAccountProfile(account, accounts) {
@@ -170,6 +192,8 @@ export function TransactionsView({
   addManualTransaction,
   deleteManualTransaction,
   updateTransactionCategory,
+  householdProfilesProps,
+  plaidIntegration,
 }) {
   const selectedAccountRecord = selectedAccount
     ? accounts.find((account) => account.name === selectedAccount) || null
@@ -195,6 +219,7 @@ export function TransactionsView({
     account: selectedAccount || "All",
     direction: "All",
     source: "All",
+    review: "All",
   });
   const manualAccountValue = selectedAccount ? defaultTransactionalAccount : manualForm.account;
   const accountOptions = transactionCapableAccounts.map((account) => account.name);
@@ -219,6 +244,8 @@ export function TransactionsView({
       if (filters.direction === "Inflow" && tx.amount <= 0) return false;
       if (filters.source === "Manual" && tx.source !== "manual") return false;
       if (filters.source === "Synced" && tx.source === "manual") return false;
+      if (filters.review === "Needs Review" && !tx.needsReview) return false;
+      if (filters.review === "Reviewed" && tx.needsReview) return false;
       if (
         search &&
         !`${tx.date} ${tx.merchant} ${tx.category} ${tx.account}`.toLowerCase().includes(search)
@@ -234,7 +261,8 @@ export function TransactionsView({
   const cashInflow = filteredTransactions
     .filter((tx) => tx.amount > 0)
     .reduce((sum, tx) => sum + tx.amount, 0);
-  const selectedCategory = manualForm.category || categoryOptions[0] || "Other";
+  const reviewQueueCount = visibleTransactions.filter((tx) => tx.needsReview).length;
+  const selectedCategory = manualForm.category;
   const accountProfile = buildAccountProfile(selectedAccountRecord, accounts);
   const isSelectedNonTransactionalAccount = selectedAccountRecord
     ? !accountSupportsTransactions(selectedAccountRecord)
@@ -263,6 +291,7 @@ export function TransactionsView({
       account: selectedAccount || "All",
       direction: "All",
       source: "All",
+      review: "All",
     });
   };
 
@@ -273,7 +302,7 @@ export function TransactionsView({
     const didAddTransaction = addManualTransaction({
       date: formatManualDate(manualForm.date),
       merchant: manualForm.merchant.trim(),
-      category: selectedCategory,
+      category: selectedCategory || undefined,
       account: manualAccountValue.trim(),
       amount: parseManualAmount(manualForm.amount),
     });
@@ -317,35 +346,33 @@ export function TransactionsView({
 
   return (
     <div>
-      <header
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          marginBottom: 24,
-        }}
-      >
+      <header style={styles.pageHeader}>
         <div>
-          <h1 style={{ margin: 0, fontSize: 32, color: "white", fontWeight: 800 }}>Transactions</h1>
-          <p style={{ marginTop: 8, color: "#8ea8ca" }}>
+          <h1 style={styles.pageTitle}>Transactions</h1>
+          <p style={styles.pageSubtitle}>
             Connected accounts, live spending intelligence, and synced Plaid transaction feeds.
           </p>
         </div>
-        <button
-          onClick={connectMockPlaidAccount}
-          style={{
-            background: "linear-gradient(90deg,#00aaff,#0077ff)",
-            border: "1px solid rgba(120,220,255,.45)",
-            borderRadius: 10,
-            color: "white",
-            padding: "14px 24px",
-            fontWeight: 800,
-            boxShadow: "0 0 28px rgba(0,136,255,.35)",
-            cursor: "pointer",
-          }}
-        >
-          ⊕ Connect with Plaid
-        </button>
+        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+          <HouseholdProfilesControl {...householdProfilesProps} />
+          <button
+            onClick={connectMockPlaidAccount}
+            disabled={plaidIntegration?.isSyncing}
+            style={{
+              background: "linear-gradient(90deg,#00aaff,#0077ff)",
+              border: "1px solid rgba(120,220,255,.45)",
+              borderRadius: 10,
+              color: "white",
+              padding: "14px 24px",
+              fontWeight: 800,
+              boxShadow: "0 0 28px rgba(0,136,255,.35)",
+              cursor: "pointer",
+              opacity: plaidIntegration?.isSyncing ? 0.72 : 1,
+            }}
+          >
+            {plaidIntegration?.isSyncing ? "Syncing Plaid..." : "⊕ Connect with Plaid"}
+          </button>
+        </div>
       </header>
 
       <div
@@ -369,15 +396,36 @@ export function TransactionsView({
           style={{
             position: "relative",
             display: "grid",
-            gridTemplateColumns: "repeat(4,1fr)",
+            gridTemplateColumns: "repeat(5,1fr)",
             gap: 18,
           }}
         >
+          {plaidIntegration?.error ? (
+            <div
+              style={{
+                gridColumn: "1 / -1",
+                color: "#ff9a76",
+                border: "1px solid rgba(255,154,118,.2)",
+                background: "rgba(60,16,7,.26)",
+                borderRadius: 12,
+                padding: "12px 14px",
+                marginBottom: 2,
+              }}
+            >
+              {plaidIntegration.error}
+            </div>
+          ) : null}
           {[
             ["Connected Accounts", String(accounts.length)],
             ["Monthly Spend", money(monthlySpend)],
             ["Visible Transactions", String(filteredTransactions.length)],
-            ["Cash Inflow", money(cashInflow)],
+            ["Needs Review", String(reviewQueueCount)],
+            [
+              plaidIntegration?.lastSyncAt ? "Last Plaid Sync" : "Cash Inflow",
+              plaidIntegration?.lastSyncAt
+                ? new Date(plaidIntegration.lastSyncAt).toLocaleDateString()
+                : money(cashInflow),
+            ],
           ].map((item) => (
             <div
               key={item[0]}
@@ -588,6 +636,9 @@ export function TransactionsView({
                   minWidth: 0,
                 }}
               >
+                <option value="" style={{ background: "#061224" }}>
+                  AI Best Guess
+                </option>
                 {categoryOptions.map((category) => (
                   <option key={category} value={category} style={{ background: "#061224" }}>
                     {category}
@@ -598,7 +649,8 @@ export function TransactionsView({
           </div>
           <div style={{ color: "#8ea8ca", fontSize: 12, marginTop: 12 }}>
             Use negative amounts for purchases/outflows and positive amounts for deposits, credits,
-            or reimbursements. Manual entries post directly into the selected account balance.
+            or reimbursements. Leave category on AI Best Guess to let the app auto-categorize and
+            learn from later edits.
           </div>
         </form>
       )}
@@ -781,7 +833,7 @@ export function TransactionsView({
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "1.4fr 1fr 1fr 1fr 1fr auto",
+              gridTemplateColumns: "1.4fr 1fr 1fr 1fr 1fr 1fr auto",
               gap: 10,
               marginBottom: 18,
               padding: 16,
@@ -955,6 +1007,38 @@ export function TransactionsView({
                 ))}
               </select>
             </label>
+            <label style={{ display: "grid", gap: 7 }}>
+              <span
+                style={{
+                  color: "#8fb1d9",
+                  fontSize: 11,
+                  textTransform: "uppercase",
+                  letterSpacing: 0.8,
+                  fontWeight: 900,
+                }}
+              >
+                Review
+              </span>
+              <select
+                value={filters.review}
+                onChange={(event) => updateFilters("review", event.target.value)}
+                style={{
+                  color: "#eaf3ff",
+                  background: "rgba(0,136,255,.08)",
+                  border: "1px solid rgba(0,216,255,.18)",
+                  borderRadius: 8,
+                  padding: "10px 11px",
+                  outline: "none",
+                  fontWeight: 700,
+                }}
+              >
+                {["All", "Needs Review", "Reviewed"].map((option) => (
+                  <option key={option} value={option} style={{ background: "#061224" }}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
             <button
               type="button"
               onClick={clearFilters}
@@ -1003,7 +1087,14 @@ export function TransactionsView({
                   alignItems: "center",
                   padding: "12px 16px",
                   borderBottom: "1px solid rgba(0,136,255,.08)",
-                  background: index % 2 === 0 ? "rgba(255,255,255,.01)" : "transparent",
+                  background: tx.needsReview
+                    ? "rgba(255,159,28,.06)"
+                    : index % 2 === 0
+                      ? "rgba(255,255,255,.01)"
+                      : "transparent",
+                  borderLeft: tx.needsReview
+                    ? "2px solid rgba(255,159,28,.45)"
+                    : "2px solid transparent",
                 }}
               >
                 <div
@@ -1023,36 +1114,45 @@ export function TransactionsView({
                   {tx.date}
                 </div>
                 <div style={{ color: "white", fontWeight: 700 }}>{tx.merchant}</div>
-                <select
-                  value={tx.category}
-                  onChange={(event) => updateTransactionCategory(tx, event.target.value)}
-                  style={{
-                    color: "#b8d3f3",
-                    background: "rgba(0,136,255,.08)",
-                    border: "1px solid rgba(0,216,255,.18)",
-                    borderRadius: 8,
-                    padding: "8px 10px",
-                    outline: "none",
-                    width: "92%",
-                    cursor: "pointer",
-                    boxShadow: "inset 0 0 14px rgba(0,136,255,.08)",
-                  }}
-                >
-                  {categoryOptions.map((category) => (
-                    <option
-                      key={category}
-                      value={category}
-                      style={{ background: "#061224", color: "#eaf3ff" }}
-                    >
-                      {category}
-                    </option>
-                  ))}
-                  {!categoryOptions.includes(tx.category) ? (
-                    <option value={tx.category} style={{ background: "#061224", color: "#eaf3ff" }}>
-                      {tx.category}
-                    </option>
-                  ) : null}
-                </select>
+                <div style={{ display: "grid", gap: 6 }}>
+                  <select
+                    value={tx.category}
+                    onChange={(event) => updateTransactionCategory(tx, event.target.value)}
+                    style={{
+                      color: "#b8d3f3",
+                      background: "rgba(0,136,255,.08)",
+                      border: "1px solid rgba(0,216,255,.18)",
+                      borderRadius: 8,
+                      padding: "8px 10px",
+                      outline: "none",
+                      width: "92%",
+                      cursor: "pointer",
+                      boxShadow: "inset 0 0 14px rgba(0,136,255,.08)",
+                    }}
+                  >
+                    {categoryOptions.map((category) => (
+                      <option
+                        key={category}
+                        value={category}
+                        style={{ background: "#061224", color: "#eaf3ff" }}
+                      >
+                        {category}
+                      </option>
+                    ))}
+                    {!categoryOptions.includes(tx.category) ? (
+                      <option
+                        value={tx.category}
+                        style={{ background: "#061224", color: "#eaf3ff" }}
+                      >
+                        {tx.category}
+                      </option>
+                    ) : null}
+                  </select>
+                  <div style={{ color: tx.needsReview ? "#ffb65d" : "#7294bb", fontSize: 11 }}>
+                    {formatCategorySourceLabel(tx)}
+                    {tx.needsReview ? " • Needs review" : ""}
+                  </div>
+                </div>
                 <div style={{ color: "#7ebeff" }}>{tx.account}</div>
                 <div
                   style={{
@@ -1083,14 +1183,16 @@ export function TransactionsView({
                       filters.category !== "All" ||
                       filters.account !== (selectedAccount || "All") ||
                       filters.direction !== "All" ||
-                      filters.source !== "All"
+                      filters.source !== "All" ||
+                      filters.review !== "All"
                     ? `No transactions in ${selectedAccount} match the current filters.`
                     : `No transactions have posted to ${selectedAccount} yet. Add one manually or sync the account to keep balances and budgets in sync.`
                 : filters.search ||
                     filters.category !== "All" ||
                     filters.account !== "All" ||
                     filters.direction !== "All" ||
-                    filters.source !== "All"
+                    filters.source !== "All" ||
+                    filters.review !== "All"
                   ? "No transactions match the current filters."
                   : "No transactions are available yet. Add a transactional account or connect Plaid to begin building the live ledger."}
             </div>

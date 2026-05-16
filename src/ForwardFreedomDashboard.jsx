@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { usePlaidLink } from "react-plaid-link";
 import { APP_TABS, budgetMonths } from "./data/constants.jsx";
 import { styles } from "./styles.js";
 import { getBudgetPeriodAtOffset, getCurrentTimestamp } from "./utils/date.js";
@@ -8,7 +9,27 @@ import {
   calculateRealEstateEquity,
   normalizeAccount,
 } from "./utils/accounts.js";
-import { loadPersistedAppState, persistAppState } from "./utils/appState.js";
+import {
+  createEmptyUserProfile,
+  loadPersistedAppState,
+  persistAppState,
+} from "./utils/appState.js";
+import {
+  buildMerchantCategoryRules,
+  categorizeTransactions,
+} from "./utils/transactionCategorization.js";
+import {
+  buildPlanningYearOptions,
+  buildPlanYearData,
+  ensurePlanYearData,
+  normalizePlansByYear,
+} from "./utils/planning.js";
+import {
+  createPlaidLinkToken,
+  exchangePlaidPublicToken,
+  getPlaidStatus,
+  syncPlaidUser,
+} from "./utils/plaid.js";
 import {
   calculateCryptoBalance,
   fetchCryptoQuotes,
@@ -41,6 +62,23 @@ const LIQUID_ACCOUNT_TYPES = new Set(["Checking", "Savings", "Manual Cash"]);
 const CRYPTO_PRICE_SOURCE = "CoinGecko";
 const THIRTY_DAY_WINDOW = 30;
 const SNAPSHOT_RETENTION_DAYS = 400;
+const EMPTY_USER_STATE = Object.freeze({
+  id: null,
+  name: "",
+  selectedAccount: null,
+  accounts: [],
+  transactions: [],
+  budgetRows: [],
+  incomeStreams: [],
+  projectionAdjustments: {},
+  subscriptions: [],
+  plaidItems: [],
+  lastPlaidSyncAt: null,
+  merchantCategoryRules: {},
+  activeTab: APP_TABS.DASHBOARD,
+  activeRange: "ALL",
+  metricSnapshots: {},
+});
 
 function getLocalDateKey(date = new Date()) {
   const year = date.getFullYear();
@@ -148,22 +186,124 @@ function ensureTodayMetricSnapshot(metricSnapshots, nextSnapshot) {
   });
 }
 
+function getDisplayUserName(user, index = 0) {
+  return user?.name?.trim() || `User ${index + 1}`;
+}
+
+function sortTransactionsByDate(transactions) {
+  return [...transactions].sort((a, b) => new Date(b.date) - new Date(a.date));
+}
+
+function mergePlaidSyncIntoUser(user, syncPayload) {
+  const hasLivePlaidItems = Array.isArray(user.plaidItems) && user.plaidItems.length > 0;
+  const shouldReplaceDemoSyncedData = !hasLivePlaidItems;
+  const syncedAccounts = (syncPayload.accounts || []).map((account, index) =>
+    normalizeAccount(account, index)
+  );
+  const existingPlaidTransactions = new Map(
+    user.transactions
+      .filter((transaction) => transaction.source === "plaid")
+      .map((transaction) => [transaction.id, transaction])
+  );
+  const syncedTransactions = (syncPayload.transactions || []).map((transaction) => {
+    const existing = existingPlaidTransactions.get(transaction.id);
+    if (!existing) return transaction;
+
+    if (existing.categorySource === "user" || existing.categorySource === "manual") {
+      return {
+        ...transaction,
+        category: existing.category,
+        categorySource: existing.categorySource,
+        categoryConfidence: existing.categoryConfidence,
+        needsReview: existing.needsReview,
+      };
+    }
+
+    return transaction;
+  });
+  const retainedAccounts = user.accounts.filter((account) => {
+    if (account.syncSource === "Plaid" || account.plaidAccountId) return false;
+    if (shouldReplaceDemoSyncedData && account.status === "Synced") return false;
+    return true;
+  });
+  const retainedTransactions = user.transactions.filter((transaction) => {
+    if (transaction.source === "plaid") return false;
+    if (shouldReplaceDemoSyncedData && transaction.source !== "manual") return false;
+    return true;
+  });
+
+  return {
+    ...user,
+    accounts: [...retainedAccounts, ...syncedAccounts],
+    transactions: sortTransactionsByDate([...syncedTransactions, ...retainedTransactions]),
+    plaidItems: syncPayload.plaidItems || user.plaidItems,
+    lastPlaidSyncAt: syncPayload.lastSyncAt || user.lastPlaidSyncAt,
+  };
+}
+
 function ForwardFreedomDashboard() {
   const [initialAppState] = useState(() => loadPersistedAppState());
   const [currentView, setCurrentView] = useState("landing");
-  const [accounts, setAccounts] = useState(initialAppState.accounts);
-  const [transactions, setTransactions] = useState(initialAppState.transactions);
-  const [selectedAccount, setSelectedAccount] = useState(null);
-  const [budgetRows, setBudgetRows] = useState(initialAppState.budgetRows);
-  const [incomeStreams, setIncomeStreams] = useState(initialAppState.incomeStreams);
-  const [projectionAdjustments, setProjectionAdjustments] = useState(
-    initialAppState.projectionAdjustments
-  );
-  const [subscriptions, setSubscriptions] = useState(initialAppState.subscriptions);
-  const [activeTab, setActiveTab] = useState(initialAppState.activeTab);
-  const [activeRange, setActiveRange] = useState(initialAppState.activeRange);
-  const [metricSnapshots] = useState(initialAppState.metricSnapshots);
-  const syncedAccounts = useMemo(() => syncDerivedAccountValues(accounts), [accounts]);
+  const [users, setUsers] = useState(initialAppState.users);
+  const [activeUserId, setActiveUserId] = useState(initialAppState.activeUserId);
+  const [editingUserId, setEditingUserId] = useState(null);
+  const [draftUserName, setDraftUserName] = useState("");
+  const [plaidStatus, setPlaidStatus] = useState({
+    configured: false,
+    environment: "sandbox",
+    notes: [],
+  });
+  const [plaidLinkToken, setPlaidLinkToken] = useState(null);
+  const [plaidShouldOpen, setPlaidShouldOpen] = useState(false);
+  const [plaidTargetUserId, setPlaidTargetUserId] = useState(null);
+  const [plaidError, setPlaidError] = useState("");
+  const [isPlaidSyncing, setIsPlaidSyncing] = useState(false);
+  const activeUser = users.find((user) => user.id === activeUserId) || users[0] || EMPTY_USER_STATE;
+  const accounts = activeUser.accounts;
+  const transactions = activeUser.transactions;
+  const selectedAccount = activeUser.selectedAccount;
+  const budgetRows = activeUser.budgetRows;
+  const incomeStreams = activeUser.incomeStreams;
+  const projectionAdjustments = activeUser.projectionAdjustments;
+  const subscriptions = activeUser.subscriptions;
+  const plaidItems = activeUser.plaidItems;
+  const lastPlaidSyncAt = activeUser.lastPlaidSyncAt;
+  const merchantCategoryRules = activeUser.merchantCategoryRules || {};
+  const activeTab = activeUser.activeTab;
+  const activeRange = activeUser.activeRange;
+  const metricSnapshots = activeUser.metricSnapshots;
+  const currentPlanYear = getBudgetPeriodAtOffset(0).year;
+  const setActiveUserField = (field, valueOrUpdater) => {
+    if (!activeUser?.id) return;
+
+    setUsers((currentUsers) =>
+      currentUsers.map((user) => {
+        if (user.id !== activeUser.id) return user;
+
+        const nextValue =
+          typeof valueOrUpdater === "function" ? valueOrUpdater(user[field]) : valueOrUpdater;
+        return user[field] === nextValue ? user : { ...user, [field]: nextValue };
+      })
+    );
+  };
+  const setAccounts = (valueOrUpdater) => setActiveUserField("accounts", valueOrUpdater);
+  const setTransactions = (valueOrUpdater) => setActiveUserField("transactions", valueOrUpdater);
+  const setSelectedAccount = (valueOrUpdater) =>
+    setActiveUserField("selectedAccount", valueOrUpdater);
+  const setBudgetRows = (valueOrUpdater) => setActiveUserField("budgetRows", valueOrUpdater);
+  const setIncomeStreams = (valueOrUpdater) => setActiveUserField("incomeStreams", valueOrUpdater);
+  const setProjectionAdjustments = (valueOrUpdater) =>
+    setActiveUserField("projectionAdjustments", valueOrUpdater);
+  const setSubscriptions = (valueOrUpdater) => setActiveUserField("subscriptions", valueOrUpdater);
+  const setMerchantCategoryRules = (valueOrUpdater) =>
+    setActiveUserField("merchantCategoryRules", valueOrUpdater);
+  const setActiveTab = (valueOrUpdater) => setActiveUserField("activeTab", valueOrUpdater);
+  const setActiveRange = (valueOrUpdater) => setActiveUserField("activeRange", valueOrUpdater);
+  const syncedAccounts = syncDerivedAccountValues(accounts);
+  const categorizedTransactions = categorizeTransactions(transactions, {
+    budgetRows,
+    merchantCategoryRules,
+  });
 
   const liquidCash = syncedAccounts
     .filter((account) => LIQUID_ACCOUNT_TYPES.has(account.type))
@@ -213,6 +353,23 @@ function ForwardFreedomDashboard() {
     .filter((r) => (r.months || budgetMonths).includes(nextMonth))
     .reduce((sum, r) => sum + Number(r.budget || 0), 0);
   const nextMonthFlow = nextMonthIncome - nextMonthBudget;
+  const currentYearPlanState = activeUser.plansByYear?.[String(currentPlanYear)];
+  const baseCurrentPlanData = buildPlanYearData({
+    budgetRows: activeUser.budgetRows,
+    incomeStreams: activeUser.incomeStreams,
+    projectionAdjustments: activeUser.projectionAdjustments,
+    startingMonth: currentYearPlanState?.startingMonth || currentMonth,
+    startingTrueCash:
+      currentYearPlanState?.startingTrueCash && currentYearPlanState.startingTrueCash !== 0
+        ? currentYearPlanState.startingTrueCash
+        : trueCash,
+  });
+  const plansByYear = ensurePlanYearData(
+    normalizePlansByYear(activeUser.plansByYear, baseCurrentPlanData),
+    currentPlanYear,
+    baseCurrentPlanData
+  );
+  const availablePlanningYears = buildPlanningYearOptions(plansByYear, currentPlanYear);
 
   const totalNetWorth = Math.max(
     trueCash +
@@ -224,13 +381,153 @@ function ForwardFreedomDashboard() {
     1
   );
   const pct = (v) => `${((v / totalNetWorth) * 100).toFixed(1)}%`;
-  const trackedMetricSnapshots = useMemo(
-    () =>
-      ensureTodayMetricSnapshot(
-        metricSnapshots,
-        buildTodayMetricSnapshot(liquidCash, creditCardDebt, totalNetWorth)
-      ),
-    [creditCardDebt, liquidCash, metricSnapshots, totalNetWorth]
+  const trackedMetricSnapshots = ensureTodayMetricSnapshot(
+    metricSnapshots,
+    buildTodayMetricSnapshot(liquidCash, creditCardDebt, totalNetWorth)
+  );
+  const ensurePlanningYear = (targetYear) => {
+    setActiveUserField("plansByYear", (currentPlansByYear) =>
+      ensurePlanYearData(currentPlansByYear, targetYear, baseCurrentPlanData)
+    );
+  };
+  const getBudgetRowsForYear = (targetYear) =>
+    targetYear === currentPlanYear
+      ? budgetRows
+      : ensurePlanYearData(plansByYear, targetYear, baseCurrentPlanData)[String(targetYear)]
+          ?.budgetRows || [];
+  const getIncomeStreamsForYear = (targetYear) =>
+    targetYear === currentPlanYear
+      ? incomeStreams
+      : ensurePlanYearData(plansByYear, targetYear, baseCurrentPlanData)[String(targetYear)]
+          ?.incomeStreams || [];
+  const getProjectionAdjustmentsForYear = (targetYear) =>
+    targetYear === currentPlanYear
+      ? projectionAdjustments
+      : ensurePlanYearData(plansByYear, targetYear, baseCurrentPlanData)[String(targetYear)]
+          ?.projectionAdjustments || {};
+  const getPlanningAnchorForYear = (targetYear) =>
+    ensurePlanYearData(plansByYear, targetYear, baseCurrentPlanData)[String(targetYear)] || {};
+  const setBudgetRowsForYear = (targetYear, valueOrUpdater) => {
+    if (targetYear === currentPlanYear) {
+      setBudgetRows(valueOrUpdater);
+      return;
+    }
+
+    setActiveUserField("plansByYear", (currentPlansByYear) => {
+      const nextPlansByYear = ensurePlanYearData(
+        currentPlansByYear,
+        targetYear,
+        baseCurrentPlanData
+      );
+      const yearKey = String(targetYear);
+      const currentValue = nextPlansByYear[yearKey]?.budgetRows || [];
+      const nextValue =
+        typeof valueOrUpdater === "function" ? valueOrUpdater(currentValue) : valueOrUpdater;
+
+      return {
+        ...nextPlansByYear,
+        [yearKey]: {
+          ...nextPlansByYear[yearKey],
+          budgetRows: nextValue,
+        },
+      };
+    });
+  };
+  const setIncomeStreamsForYear = (targetYear, valueOrUpdater) => {
+    if (targetYear === currentPlanYear) {
+      setIncomeStreams(valueOrUpdater);
+      return;
+    }
+
+    setActiveUserField("plansByYear", (currentPlansByYear) => {
+      const nextPlansByYear = ensurePlanYearData(
+        currentPlansByYear,
+        targetYear,
+        baseCurrentPlanData
+      );
+      const yearKey = String(targetYear);
+      const currentValue = nextPlansByYear[yearKey]?.incomeStreams || [];
+      const nextValue =
+        typeof valueOrUpdater === "function" ? valueOrUpdater(currentValue) : valueOrUpdater;
+
+      return {
+        ...nextPlansByYear,
+        [yearKey]: {
+          ...nextPlansByYear[yearKey],
+          incomeStreams: nextValue,
+        },
+      };
+    });
+  };
+  const setProjectionAdjustmentsForYear = (targetYear, valueOrUpdater) => {
+    if (targetYear === currentPlanYear) {
+      setProjectionAdjustments(valueOrUpdater);
+      return;
+    }
+
+    setActiveUserField("plansByYear", (currentPlansByYear) => {
+      const nextPlansByYear = ensurePlanYearData(
+        currentPlansByYear,
+        targetYear,
+        baseCurrentPlanData
+      );
+      const yearKey = String(targetYear);
+      const currentValue = nextPlansByYear[yearKey]?.projectionAdjustments || {};
+      const nextValue =
+        typeof valueOrUpdater === "function" ? valueOrUpdater(currentValue) : valueOrUpdater;
+
+      return {
+        ...nextPlansByYear,
+        [yearKey]: {
+          ...nextPlansByYear[yearKey],
+          projectionAdjustments: nextValue,
+        },
+      };
+    });
+  };
+  const setPlanningAnchorForYear = (targetYear, nextAnchor) => {
+    setActiveUserField("plansByYear", (currentPlansByYear) => {
+      const nextPlansByYear = ensurePlanYearData(
+        currentPlansByYear,
+        targetYear,
+        baseCurrentPlanData
+      );
+      const yearKey = String(targetYear);
+      const currentPlan = nextPlansByYear[yearKey] || buildPlanYearData(baseCurrentPlanData);
+
+      return {
+        ...nextPlansByYear,
+        [yearKey]: {
+          ...currentPlan,
+          ...nextAnchor,
+        },
+      };
+    });
+  };
+  const persistedUsers = users.map((user, index) =>
+    user.id === activeUser?.id
+      ? {
+          ...user,
+          name: getDisplayUserName(user, index),
+          accounts: syncedAccounts,
+          transactions: categorizedTransactions,
+          merchantCategoryRules,
+          plansByYear: {
+            ...plansByYear,
+            [String(currentPlanYear)]: buildPlanYearData({
+              budgetRows,
+              incomeStreams,
+              projectionAdjustments,
+              startingMonth: baseCurrentPlanData.startingMonth,
+              startingTrueCash: baseCurrentPlanData.startingTrueCash,
+            }),
+          },
+          metricSnapshots: trackedMetricSnapshots,
+        }
+      : {
+          ...user,
+          name: getDisplayUserName(user, index),
+        }
   );
 
   const dynamicAllocations = [
@@ -280,27 +577,134 @@ function ForwardFreedomDashboard() {
 
   useEffect(() => {
     persistAppState({
-      accounts: syncedAccounts,
-      transactions,
-      budgetRows,
-      incomeStreams,
-      projectionAdjustments,
-      subscriptions,
-      activeTab,
-      activeRange,
-      metricSnapshots: trackedMetricSnapshots,
+      users: persistedUsers,
+      activeUserId: activeUser?.id || persistedUsers[0]?.id || null,
     });
-  }, [
-    transactions,
-    budgetRows,
-    incomeStreams,
-    projectionAdjustments,
-    subscriptions,
-    activeTab,
-    activeRange,
-    syncedAccounts,
-    trackedMetricSnapshots,
-  ]);
+  }, [activeUser?.id, persistedUsers]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    getPlaidStatus()
+      .then((status) => {
+        if (!cancelled) setPlaidStatus(status);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setPlaidStatus({
+            configured: false,
+            environment: "sandbox",
+            notes: [],
+          });
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const applyPlaidSyncPayload = (userId, syncPayload) => {
+    setUsers((currentUsers) =>
+      currentUsers.map((user) =>
+        user.id === userId ? mergePlaidSyncIntoUser(user, syncPayload) : user
+      )
+    );
+  };
+
+  const syncLinkedPlaidAccounts = useCallback(
+    async (userId = activeUser.id, { silent = false } = {}) => {
+      if (!userId || !plaidStatus.configured) return null;
+
+      if (!silent) setPlaidError("");
+      setIsPlaidSyncing(true);
+
+      try {
+        const payload = await syncPlaidUser(userId);
+        applyPlaidSyncPayload(userId, payload);
+        return payload;
+      } catch (error) {
+        if (!silent) {
+          setPlaidError(error.message || "Unable to sync Plaid data right now.");
+        }
+        return null;
+      } finally {
+        setIsPlaidSyncing(false);
+      }
+    },
+    [activeUser.id, plaidStatus.configured]
+  );
+
+  useEffect(() => {
+    if (!plaidStatus.configured || !activeUser?.id || plaidItems.length === 0) return;
+
+    const timeoutId = window.setTimeout(() => {
+      syncLinkedPlaidAccounts(activeUser.id, { silent: true });
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [activeUser?.id, plaidItems.length, plaidStatus.configured, syncLinkedPlaidAccounts]);
+
+  useEffect(() => {
+    if (!plaidStatus.configured || !activeUser?.id || plaidItems.length === 0) return;
+
+    const intervalId = window.setInterval(
+      () => {
+        void syncLinkedPlaidAccounts(activeUser.id, { silent: true });
+      },
+      30 * 60 * 1000
+    );
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [activeUser?.id, plaidItems.length, plaidStatus.configured, syncLinkedPlaidAccounts]);
+
+  const { open: openPlaidLink, ready: isPlaidReady } = usePlaidLink({
+    token: plaidLinkToken,
+    onSuccess: async (publicToken) => {
+      const targetUserId = plaidTargetUserId || activeUser.id;
+      setPlaidError("");
+      setIsPlaidSyncing(true);
+
+      try {
+        const payload = await exchangePlaidPublicToken({
+          userId: targetUserId,
+          publicToken,
+        });
+        applyPlaidSyncPayload(targetUserId, payload);
+        if (targetUserId === activeUser.id) {
+          setActiveTab(APP_TABS.TRANSACTIONS);
+        }
+      } catch (error) {
+        setPlaidError(error.message || "Unable to connect the Plaid item.");
+      } finally {
+        setIsPlaidSyncing(false);
+        setPlaidLinkToken(null);
+        setPlaidTargetUserId(null);
+      }
+    },
+    onExit: () => {
+      setPlaidShouldOpen(false);
+      setPlaidLinkToken(null);
+      setPlaidTargetUserId(null);
+    },
+  });
+
+  useEffect(() => {
+    if (plaidShouldOpen && isPlaidReady) {
+      const timeoutId = window.setTimeout(() => {
+        openPlaidLink();
+        setPlaidShouldOpen(false);
+      }, 0);
+
+      return () => {
+        window.clearTimeout(timeoutId);
+      };
+    }
+  }, [plaidShouldOpen, isPlaidReady, openPlaidLink]);
 
   const dynamicMetrics = [
     {
@@ -355,52 +759,55 @@ function ForwardFreedomDashboard() {
       .then((quotes) => {
         if (cancelled || Object.keys(quotes).length === 0) return;
 
-        setAccounts((current) => {
-          let changed = false;
+        setUsers((currentUsers) =>
+          currentUsers.map((user) => {
+            if (user.id !== activeUser.id) return user;
 
-          const nextAccounts = current.map((account) => {
-            if (
-              account.type !== "Precious Metals" ||
-              account.valuationSource !== "Live Spot" ||
-              account.metalType === "Custom"
-            ) {
-              return account;
-            }
+            let changed = false;
+            const nextAccounts = user.accounts.map((account) => {
+              if (
+                account.type !== "Precious Metals" ||
+                account.valuationSource !== "Live Spot" ||
+                account.metalType === "Custom"
+              ) {
+                return account;
+              }
 
-            const quote = quotes[account.metalType];
-            if (!quote) return account;
+              const quote = quotes[account.metalType];
+              if (!quote) return account;
 
-            const pricePerUnit = normalizePreciousMetalsPricePerUnit(
-              quote.pricePerTroyOunce,
-              account.metalUnit
-            );
-            const nextBalance = roundCurrency((Number(account.quantity) || 0) * pricePerUnit);
-            if (
-              account.pricePerUnit === pricePerUnit &&
-              account.balance === nextBalance &&
-              account.lastValuedAt === quote.updatedAt
-            ) {
-              return account;
-            }
+              const pricePerUnit = normalizePreciousMetalsPricePerUnit(
+                quote.pricePerTroyOunce,
+                account.metalUnit
+              );
+              const nextBalance = roundCurrency((Number(account.quantity) || 0) * pricePerUnit);
+              if (
+                account.pricePerUnit === pricePerUnit &&
+                account.balance === nextBalance &&
+                account.lastValuedAt === quote.updatedAt
+              ) {
+                return account;
+              }
 
-            changed = true;
-            return {
-              ...account,
-              pricePerUnit,
-              balance: nextBalance,
-              lastValuedAt: quote.updatedAt,
-            };
-          });
+              changed = true;
+              return {
+                ...account,
+                pricePerUnit,
+                balance: nextBalance,
+                lastValuedAt: quote.updatedAt,
+              };
+            });
 
-          return changed ? nextAccounts : current;
-        });
+            return changed ? { ...user, accounts: nextAccounts } : user;
+          })
+        );
       })
       .catch(() => {});
 
     return () => {
       cancelled = true;
     };
-  }, [accounts]);
+  }, [accounts, activeUser.id]);
 
   useEffect(() => {
     const staleCryptoAccounts = accounts.filter(
@@ -421,83 +828,79 @@ function ForwardFreedomDashboard() {
       .then((quotes) => {
         if (cancelled || Object.keys(quotes).length === 0) return;
 
-        setAccounts((current) => {
-          let changed = false;
+        setUsers((currentUsers) =>
+          currentUsers.map((user) => {
+            if (user.id !== activeUser.id) return user;
 
-          const nextAccounts = current.map((account) => {
-            if (account.type !== "Crypto" || !account.cryptoAssetId) return account;
+            let changed = false;
+            const nextAccounts = user.accounts.map((account) => {
+              if (account.type !== "Crypto" || !account.cryptoAssetId) return account;
 
-            const quote = quotes[account.cryptoAssetId];
-            if (!quote) return account;
+              const quote = quotes[account.cryptoAssetId];
+              if (!quote) return account;
 
-            const nextPriceUsd = normalizeCryptoPrice(quote.priceUsd);
-            const nextBalance = calculateCryptoBalance(account.quantity, nextPriceUsd);
-            const nextUpdatedAt = quote.lastUpdatedAt;
+              const nextPriceUsd = normalizeCryptoPrice(quote.priceUsd);
+              const nextBalance = calculateCryptoBalance(account.quantity, nextPriceUsd);
+              const nextUpdatedAt = quote.lastUpdatedAt;
 
-            if (
-              account.lastPriceUsd === nextPriceUsd &&
-              account.balance === nextBalance &&
-              account.lastPriceUpdatedAt === nextUpdatedAt
-            ) {
-              return account;
-            }
+              if (
+                account.lastPriceUsd === nextPriceUsd &&
+                account.balance === nextBalance &&
+                account.lastPriceUpdatedAt === nextUpdatedAt
+              ) {
+                return account;
+              }
 
-            changed = true;
-            return {
-              ...account,
-              lastPriceUsd: nextPriceUsd,
-              lastPriceUpdatedAt: nextUpdatedAt,
-              balance: nextBalance,
-              priceSource: CRYPTO_PRICE_SOURCE,
-            };
-          });
+              changed = true;
+              return {
+                ...account,
+                lastPriceUsd: nextPriceUsd,
+                lastPriceUpdatedAt: nextUpdatedAt,
+                balance: nextBalance,
+                priceSource: CRYPTO_PRICE_SOURCE,
+              };
+            });
 
-          return changed ? nextAccounts : current;
-        });
+            return changed ? { ...user, accounts: nextAccounts } : user;
+          })
+        );
       })
       .catch(() => {});
 
     return () => {
       cancelled = true;
     };
-  }, [accounts]);
+  }, [accounts, activeUser.id]);
 
-  const connectMockPlaidAccount = () => {
-    const newAccountNumber = accounts.length + 1;
-    const newAccount = {
-      name: `Plaid Linked Account ${newAccountNumber}`,
-      type: "Checking",
-      institution: "Plaid Secure Link",
-      balance: 6250 + newAccountNumber * 725,
-      status: "Synced",
-    };
-    const newTransactions = [
-      {
-        date: "May 13, 2026",
-        merchant: "Plaid Sync Deposit",
-        category: "Income",
-        account: newAccount.name,
-        amount: 1250.0,
-      },
-      {
-        date: "May 13, 2026",
-        merchant: "Whole Foods",
-        category: "Groceries",
-        account: newAccount.name,
-        amount: -86.42,
-      },
-      {
-        date: "May 13, 2026",
-        merchant: "Electric Utility",
-        category: "Utilities",
-        account: newAccount.name,
-        amount: -142.18,
-      },
-    ];
+  const connectPlaidAccount = async () => {
+    if (!activeUser?.id) return;
 
-    setAccounts((current) => [...current, normalizeAccount(newAccount, current.length)]);
-    setTransactions((current) => [...newTransactions, ...current]);
-    setActiveTab(APP_TABS.TRANSACTIONS);
+    if (!plaidStatus.configured) {
+      setPlaidError(
+        "Plaid is not configured yet. Add PLAID_CLIENT_ID and PLAID_SECRET to enable live account linking."
+      );
+      return;
+    }
+
+    setPlaidError("");
+    setIsPlaidSyncing(true);
+
+    try {
+      const { linkToken } = await createPlaidLinkToken({
+        userId: activeUser.id,
+        userName: getDisplayUserName(
+          activeUser,
+          users.findIndex((user) => user.id === activeUser.id)
+        ),
+      });
+      setPlaidLinkToken(linkToken);
+      setPlaidTargetUserId(activeUser.id);
+      setPlaidShouldOpen(true);
+    } catch (error) {
+      setPlaidError(error.message || "Unable to start the Plaid Link flow.");
+    } finally {
+      setIsPlaidSyncing(false);
+    }
   };
 
   const addManualAccount = ({
@@ -578,10 +981,10 @@ function ForwardFreedomDashboard() {
   };
 
   const selectedTransactions = selectedAccount
-    ? transactions.filter((tx) => tx.account === selectedAccount)
+    ? categorizedTransactions.filter((tx) => tx.account === selectedAccount)
     : [];
 
-  const visibleTransactions = selectedAccount ? selectedTransactions : transactions;
+  const visibleTransactions = selectedAccount ? selectedTransactions : categorizedTransactions;
 
   const openAccountTransactions = (accountName) => {
     setSelectedAccount(accountName);
@@ -603,6 +1006,9 @@ function ForwardFreedomDashboard() {
         amount,
         id: `manual-tx-${getCurrentTimestamp()}-${current.length + 1}`,
         source: "manual",
+        categorySource: transaction.category ? "manual" : undefined,
+        categoryConfidence: transaction.category ? 100 : undefined,
+        needsReview: transaction.category ? false : undefined,
       },
       ...current,
     ]);
@@ -643,10 +1049,22 @@ function ForwardFreedomDashboard() {
   const updateTransactionCategory = (transactionToUpdate, nextCategory) => {
     if (!transactionToUpdate) return;
 
+    setMerchantCategoryRules((current) =>
+      buildMerchantCategoryRules(current, transactionToUpdate.merchant, nextCategory)
+    );
+
     setTransactions((current) => {
       if (transactionToUpdate.id) {
         return current.map((tx) =>
-          tx.id === transactionToUpdate.id ? { ...tx, category: nextCategory } : tx
+          tx.id === transactionToUpdate.id
+            ? {
+                ...tx,
+                category: nextCategory,
+                categorySource: "user",
+                categoryConfidence: 100,
+                needsReview: false,
+              }
+            : tx
         );
       }
 
@@ -660,7 +1078,15 @@ function ForwardFreedomDashboard() {
 
       if (existingIndex >= 0) {
         return current.map((tx, index) =>
-          index === existingIndex ? { ...tx, category: nextCategory } : tx
+          index === existingIndex
+            ? {
+                ...tx,
+                category: nextCategory,
+                categorySource: "user",
+                categoryConfidence: 100,
+                needsReview: false,
+              }
+            : tx
         );
       }
 
@@ -668,8 +1094,96 @@ function ForwardFreedomDashboard() {
     });
   };
 
+  const startEditingUser = (userId) => {
+    const targetUser = users.find((user) => user.id === userId);
+    const targetIndex = users.findIndex((user) => user.id === userId);
+    if (!targetUser) return;
+
+    setActiveUserId(userId);
+    setEditingUserId(userId);
+    setDraftUserName(getDisplayUserName(targetUser, targetIndex >= 0 ? targetIndex : 0));
+  };
+
+  const saveUserName = (userId) => {
+    const targetIndex = users.findIndex((user) => user.id === userId);
+    if (targetIndex < 0) {
+      setEditingUserId(null);
+      setDraftUserName("");
+      return;
+    }
+
+    const nextName = draftUserName.trim() || `User ${targetIndex + 1}`;
+    setUsers((currentUsers) =>
+      currentUsers.map((user, index) =>
+        user.id === userId ? { ...user, name: nextName || `User ${index + 1}` } : user
+      )
+    );
+    setEditingUserId(null);
+    setDraftUserName("");
+  };
+
+  const cancelUserRename = () => {
+    setEditingUserId(null);
+    setDraftUserName("");
+  };
+
+  const addUserProfile = () => {
+    const nextNumber = users.length + 1;
+    const newUser = createEmptyUserProfile({
+      name: `User ${nextNumber}`,
+    });
+
+    setUsers((currentUsers) => [...currentUsers, newUser]);
+    setActiveUserId(newUser.id);
+    setEditingUserId(newUser.id);
+    setDraftUserName(newUser.name);
+  };
+  const plaidIntegration = useMemo(
+    () => ({
+      configured: plaidStatus.configured,
+      environment: plaidStatus.environment,
+      notes: plaidStatus.notes || [],
+      isSyncing: isPlaidSyncing,
+      error: plaidError,
+      lastSyncAt: lastPlaidSyncAt,
+      connectedItemCount: plaidItems.length,
+    }),
+    [isPlaidSyncing, lastPlaidSyncAt, plaidError, plaidItems.length, plaidStatus]
+  );
+  const householdProfilesProps = {
+    users,
+    activeUserId,
+    editingUserId,
+    draftUserName,
+    setDraftUserName,
+    onSelectUser: (userId) => {
+      setActiveUserId(userId);
+      if (editingUserId && editingUserId !== userId) {
+        cancelUserRename();
+      }
+    },
+    onStartEditingUser: startEditingUser,
+    onSaveUserName: saveUserName,
+    onCancelUserRename: cancelUserRename,
+    onAddUser: addUserProfile,
+  };
+  const handleEnterApp = (payload = {}) => {
+    if (payload?.mode === "create-account") {
+      const newUser = createEmptyUserProfile({
+        name: payload.primaryUserName || "User 1",
+      });
+      setUsers([newUser]);
+      setActiveUserId(newUser.id);
+      setEditingUserId(null);
+      setDraftUserName("");
+      setPlaidError("");
+    }
+
+    setCurrentView("app");
+  };
+
   if (currentView === "landing") {
-    return <LandingPage enterApp={() => setCurrentView("app")} />;
+    return <LandingPage enterApp={handleEnterApp} />;
   }
 
   return (
@@ -688,7 +1202,7 @@ function ForwardFreedomDashboard() {
               setActiveRange={setActiveRange}
               setActiveTab={setActiveTab}
               trueCash={trueCash}
-              transactions={transactions}
+              transactions={categorizedTransactions}
               subscriptions={subscriptions}
               incomeStreams={incomeStreams}
               budgetRows={budgetRows}
@@ -696,12 +1210,19 @@ function ForwardFreedomDashboard() {
               dynamicMetrics={dynamicMetrics}
               dynamicAllocations={dynamicAllocations}
               metricSnapshots={trackedMetricSnapshots}
+              householdProfilesProps={householdProfilesProps}
             />
           ) : activeTab === APP_TABS.BUDGET_COMMAND_CENTER ? (
             <BudgetCommandCenter
-              transactions={transactions}
+              transactions={categorizedTransactions}
               budgetRows={budgetRows}
               setBudgetRows={setBudgetRows}
+              householdProfilesProps={householdProfilesProps}
+              currentPlanYear={currentPlanYear}
+              availablePlanningYears={availablePlanningYears}
+              getBudgetRowsForYear={getBudgetRowsForYear}
+              setBudgetRowsForYear={setBudgetRowsForYear}
+              ensurePlanningYear={ensurePlanningYear}
             />
           ) : activeTab === APP_TABS.OPERATIONS_BOARD ? (
             <OperationsBoard
@@ -709,17 +1230,32 @@ function ForwardFreedomDashboard() {
               subscriptions={subscriptions}
               incomeStreams={incomeStreams}
               setIncomeStreams={setIncomeStreams}
-              transactions={transactions}
+              transactions={categorizedTransactions}
               trueCash={trueCash}
               projectionAdjustments={projectionAdjustments}
               setProjectionAdjustments={setProjectionAdjustments}
+              householdProfilesProps={householdProfilesProps}
+              currentPlanYear={currentPlanYear}
+              availablePlanningYears={availablePlanningYears}
+              getBudgetRowsForYear={getBudgetRowsForYear}
+              getIncomeStreamsForYear={getIncomeStreamsForYear}
+              getProjectionAdjustmentsForYear={getProjectionAdjustmentsForYear}
+              setIncomeStreamsForYear={setIncomeStreamsForYear}
+              setProjectionAdjustmentsForYear={setProjectionAdjustmentsForYear}
+              ensurePlanningYear={ensurePlanningYear}
+              plansByYear={plansByYear}
+              currentPlanBaseData={baseCurrentPlanData}
+              getPlanningAnchorForYear={getPlanningAnchorForYear}
+              setPlanningAnchorForYear={setPlanningAnchorForYear}
             />
           ) : activeTab === APP_TABS.ADD_ACCOUNTS ? (
             <AccountsView
               accounts={syncedAccounts}
               addManualAccount={addManualAccount}
-              connectMockPlaidAccount={connectMockPlaidAccount}
+              connectMockPlaidAccount={connectPlaidAccount}
               openAccountTransactions={openAccountTransactions}
+              householdProfilesProps={householdProfilesProps}
+              plaidIntegration={plaidIntegration}
             />
           ) : activeTab === APP_TABS.TRANSACTIONS ? (
             <TransactionsView
@@ -729,10 +1265,12 @@ function ForwardFreedomDashboard() {
               visibleTransactions={visibleTransactions}
               setActiveTab={setActiveTab}
               setSelectedAccount={setSelectedAccount}
-              connectMockPlaidAccount={connectMockPlaidAccount}
+              connectMockPlaidAccount={connectPlaidAccount}
               addManualTransaction={addManualTransaction}
               deleteManualTransaction={deleteManualTransaction}
               updateTransactionCategory={updateTransactionCategory}
+              householdProfilesProps={householdProfilesProps}
+              plaidIntegration={plaidIntegration}
             />
           ) : activeTab === APP_TABS.FORECAST_LAB ? (
             <ForecastLab
@@ -741,15 +1279,20 @@ function ForwardFreedomDashboard() {
               incomeStreams={incomeStreams}
               budgetRows={budgetRows}
               projectionAdjustments={projectionAdjustments}
+              householdProfilesProps={householdProfilesProps}
             />
           ) : activeTab === APP_TABS.RECURRING_SUBSCRIPTIONS ? (
             <RecurringSubscriptions
               accounts={syncedAccounts}
               subscriptions={subscriptions}
               setSubscriptions={setSubscriptions}
+              householdProfilesProps={householdProfilesProps}
             />
           ) : (
-            <ModulePlaceholder activeTab={activeTab} />
+            <ModulePlaceholder
+              activeTab={activeTab}
+              householdProfilesProps={householdProfilesProps}
+            />
           )}
         </main>
       </div>

@@ -19,6 +19,7 @@ import {
   fetchPreciousMetalsSpotPrices,
   normalizePreciousMetalsPricePerUnit,
 } from "../utils/preciousMetalsPricing.js";
+import { HouseholdProfilesControl } from "./Common.jsx";
 
 const EMPTY_FORM = {
   name: "",
@@ -119,6 +120,8 @@ export function AccountsView({
   addManualAccount,
   connectMockPlaidAccount,
   openAccountTransactions,
+  householdProfilesProps,
+  plaidIntegration,
 }) {
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -488,22 +491,16 @@ export function AccountsView({
   return (
     <div>
       {/* Header */}
-      <header
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          marginBottom: 24,
-        }}
-      >
+      <header style={styles.pageHeader}>
         <div>
-          <h1 style={{ margin: 0, fontSize: 32, color: "white", fontWeight: 800 }}>Add Accounts</h1>
-          <p style={{ marginTop: 8, color: "#8ea8ca" }}>
+          <h1 style={styles.pageTitle}>Add Accounts</h1>
+          <p style={styles.pageSubtitle}>
             Connect bank accounts, credit cards, investments, crypto, metals, real estate, and
             loans.
           </p>
         </div>
-        <div style={{ display: "flex", gap: 12 }}>
+        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+          <HouseholdProfilesControl {...householdProfilesProps} />
           <button
             onClick={openModal}
             style={{
@@ -522,6 +519,7 @@ export function AccountsView({
           </button>
           <button
             onClick={connectMockPlaidAccount}
+            disabled={isSearchingCrypto || plaidIntegration?.isSyncing}
             style={{
               background: "linear-gradient(90deg,#00aaff,#0077ff)",
               border: "1px solid rgba(120,220,255,.45)",
@@ -532,9 +530,10 @@ export function AccountsView({
               boxShadow: "0 0 28px rgba(0,136,255,.35)",
               cursor: "pointer",
               fontSize: 15,
+              opacity: plaidIntegration?.isSyncing ? 0.72 : 1,
             }}
           >
-            ⊕ Connect with Plaid
+            {plaidIntegration?.isSyncing ? "Connecting Plaid..." : "⊕ Connect with Plaid"}
           </button>
         </div>
       </header>
@@ -584,9 +583,27 @@ export function AccountsView({
               <span style={{ color: "#00aaff" }}>Every account in one place.</span>
             </div>
             <p style={{ color: "#a8bfdc", fontSize: 16, lineHeight: 1.55, marginTop: 18 }}>
-              Plaid accounts auto-feed transactions. Manual accounts are for cash, safes, private
-              assets, or anything you want tracked without a bank sync.
+              Plaid can sync checking, savings, credit cards, investments, retirement, and some loan
+              or mortgage accounts depending on institution coverage. Manual accounts are for cash,
+              safes, private assets, or anything you want tracked without a bank sync.
             </p>
+            <div
+              style={{ color: plaidIntegration?.configured ? "#8feaff" : "#ffb65d", marginTop: 10 }}
+            >
+              {plaidIntegration?.configured
+                ? `Live Plaid mode is enabled in ${plaidIntegration.environment}.`
+                : "Live Plaid mode is not configured yet. Add Plaid credentials to enable real institution linking."}
+            </div>
+            {plaidIntegration?.lastSyncAt ? (
+              <div style={{ color: "#7294bb", fontSize: 12, marginTop: 8 }}>
+                Last Plaid sync: {new Date(plaidIntegration.lastSyncAt).toLocaleString()}
+              </div>
+            ) : null}
+            {plaidIntegration?.error ? (
+              <div style={{ color: "#ff9a76", fontSize: 12, marginTop: 8 }}>
+                {plaidIntegration.error}
+              </div>
+            ) : null}
           </div>
           <div
             style={{
