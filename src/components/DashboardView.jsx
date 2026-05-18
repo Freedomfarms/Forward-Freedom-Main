@@ -5,6 +5,7 @@ import { styles } from "../styles.js";
 import { buildAreaPath, buildLinePath, money, parseMoney, wholeDollars } from "../utils/format.js";
 import { buildSubscriptionOverview } from "../utils/subscriptions.js";
 import {
+  parseChartDate,
   buildSyncedTrueCashChart,
   buildTrueCashProjectionSchedule,
 } from "../utils/trueCashProjection.js";
