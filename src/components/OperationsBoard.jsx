@@ -42,34 +42,25 @@ export function OperationsBoard({
 }) {
   const [hoveredCommandMonth, setHoveredCommandMonth] = useState(null);
   const currentBudgetPeriod = getCurrentBudgetPeriod();
-  const [activePlanningDate, setActivePlanningDate] = useState(() => ({
-    monthIndex: currentBudgetPeriod.monthIndex,
-    year: currentPlanYear,
-  }));
-  const activePlanningMonth = budgetMonths[activePlanningDate.monthIndex];
-  const planningBudgetRows = getBudgetRowsForYear(activePlanningDate.year);
-  const planningIncomeStreams = getIncomeStreamsForYear(activePlanningDate.year);
-  const planningProjectionAdjustments = getProjectionAdjustmentsForYear(activePlanningDate.year);
-  const planningAnchor = getPlanningAnchorForYear(activePlanningDate.year);
+  const [activePlanningYear, setActivePlanningYear] = useState(currentPlanYear);
+  const activePlanningMonth = budgetMonths[currentBudgetPeriod.monthIndex];
+  const planningBudgetRows = getBudgetRowsForYear(activePlanningYear);
+  const planningIncomeStreams = getIncomeStreamsForYear(activePlanningYear);
+  const planningProjectionAdjustments = getProjectionAdjustmentsForYear(activePlanningYear);
+  const planningAnchor = getPlanningAnchorForYear(activePlanningYear);
   const monthlySpendSeries = buildBudgetMonthlySpendSeries(
     transactions,
     planningBudgetRows,
-    activePlanningDate.year
+    activePlanningYear
   );
-  const updatePlanningDate = (field, value) => {
+  const updatePlanningYear = (value) => {
     const nextValue = Number(value);
-    if (field === "year") {
-      ensurePlanningYear(nextValue);
-    }
-
-    setActivePlanningDate((current) => ({
-      ...current,
-      [field]: nextValue,
-    }));
+    ensurePlanningYear(nextValue);
+    setActivePlanningYear(nextValue);
   };
   const updatePlanningAnchor = (field, value) => {
     const nextValue = field === "startingTrueCash" ? cleanMoneyInput(value) : value;
-    setPlanningAnchorForYear(activePlanningDate.year, {
+    setPlanningAnchorForYear(activePlanningYear, {
       [field]: nextValue,
     });
   };
@@ -129,7 +120,7 @@ export function OperationsBoard({
     parseMoney(planningProjectionAdjustments[month])
   );
   const projectedTrueCashValues = buildFullYearProjectionSeries({
-    targetYear: activePlanningDate.year,
+    targetYear: activePlanningYear,
     plansByYear,
     fallbackPlanData: currentPlanBaseData,
   }).map((entry) => entry.value);
@@ -147,26 +138,8 @@ export function OperationsBoard({
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <HouseholdProfilesControl {...householdProfilesProps} />
           <select
-            value={activePlanningDate.monthIndex}
-            onChange={(event) => updatePlanningDate("monthIndex", event.target.value)}
-            style={{
-              color: "#f2f7ff",
-              background: "rgba(1,10,24,.55)",
-              border: "1px solid rgba(54,126,220,.38)",
-              borderRadius: 7,
-              padding: "10px 12px",
-              minWidth: 124,
-            }}
-          >
-            {budgetMonths.map((month, index) => (
-              <option key={month} value={index} style={{ background: "#061224" }}>
-                {month}
-              </option>
-            ))}
-          </select>
-          <select
-            value={activePlanningDate.year}
-            onChange={(event) => updatePlanningDate("year", event.target.value)}
+            value={activePlanningYear}
+            onChange={(event) => updatePlanningYear(event.target.value)}
             style={{
               color: "#00d8ff",
               background: "rgba(0,104,255,.18)",
@@ -334,9 +307,7 @@ export function OperationsBoard({
               }}
             >
               <div>
-                <div style={{ color: "white", fontSize: 22, fontWeight: 800 }}>
-                  Income Command Center
-                </div>
+                <div style={{ color: "white", fontSize: 22, fontWeight: 800 }}>Monthly Scorecard</div>
                 <div style={{ color: "#8ea8ca", marginTop: 8, fontSize: 16 }}>
                   Income pulls from Income Hub. Budget and spent pull from the same
                   monthly transaction logic used in Budget Strategy Lab.
@@ -720,7 +691,7 @@ export function OperationsBoard({
                   }
                   onChange={(event) => {
                     const nextValue = normalizeAdjustmentInput(event.target.value);
-                    setProjectionAdjustmentsForYear(activePlanningDate.year, (current) => ({
+                    setProjectionAdjustmentsForYear(activePlanningYear, (current) => ({
                       ...current,
                       [month]: nextValue,
                     }));
@@ -779,7 +750,7 @@ export function OperationsBoard({
                 <div
                   key={budgetMonths[index]}
                   style={{
-                    color: index === activePlanningDate.monthIndex ? "#ff9f1c" : "#ffd08a",
+                    color: index === currentBudgetPeriod.monthIndex ? "#ff9f1c" : "#ffd08a",
                     textAlign: "right",
                     fontSize: 14,
                     fontWeight: 900,
