@@ -83,7 +83,6 @@ export function getPlanYearData(plansByYear, targetYear, fallbackPlanData) {
 
 export function buildPlanningYearOptions(plansByYear, currentYear = getCurrentBudgetPeriod().year) {
   const years = new Set([
-    currentYear - 1,
     currentYear,
     currentYear + 1,
     currentYear + 2,
@@ -92,7 +91,7 @@ export function buildPlanningYearOptions(plansByYear, currentYear = getCurrentBu
       .filter((year) => Number.isFinite(year)),
   ]);
 
-  return [...years].sort((a, b) => a - b);
+  return [...years].filter((year) => year >= currentYear).sort((a, b) => a - b);
 }
 
 function buildMonthlyNetForYear(planData, month) {
@@ -112,9 +111,12 @@ export function buildFullYearProjectionSeries({
   plansByYear = {},
   fallbackPlanData = {},
 }) {
+  const currentYear = getCurrentBudgetPeriod().year;
   const targetPlan =
-    ensurePlanYearData(plansByYear, targetYear, fallbackPlanData)[String(targetYear)] ||
-    buildPlanYearData(fallbackPlanData);
+    targetYear === currentYear
+      ? buildPlanYearData(fallbackPlanData)
+      : ensurePlanYearData(plansByYear, targetYear, fallbackPlanData)[String(targetYear)] ||
+        buildPlanYearData(fallbackPlanData);
   const startMonthIndex = Math.max(
     0,
     budgetMonths.indexOf(targetPlan.startingMonth || getCurrentBudgetPeriod().month)
