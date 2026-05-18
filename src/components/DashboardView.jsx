@@ -221,17 +221,61 @@ export function DashboardView({
     startingMonth: projectionStartMonth,
     startingTrueCash: projectionStartingTrueCash,
   });
+  const projectionYear = projectionSchedule[0]?.year || parseChartDate(chartValues.date).year;
+  const actualAnchorIndex = chartValues.supportsProjection
+    ? chartValues.dates.findIndex((date) => {
+        const parsed = parseChartDate(date);
+        return parsed.month === projectionStartMonth && parsed.year === projectionYear;
+      })
+    : -1;
+  const anchoredActualValues =
+    actualAnchorIndex >= 0
+      ? chartValues.values
+          .slice(actualAnchorIndex)
+          .map((value) => parseMoney(value))
+          .map((value, index, values) => projectionStartingTrueCash + (value - values[0]))
+      : chartValues.values.map((value) => parseMoney(value));
+  const anchoredActualDates =
+    actualAnchorIndex >= 0 ? chartValues.dates.slice(actualAnchorIndex) : chartValues.dates;
+  const anchoredActualBasePoints =
+    actualAnchorIndex >= 0 ? chartValues.points.slice(actualAnchorIndex) : chartValues.points;
+  const actualOpeningPoint =
+    projectionSchedule.length && actualAnchorIndex >= 0
+      ? {
+          x: getMonthStartX(projectionStartMonth),
+          y: 0,
+          date: `${projectionStartMonth} ${projectionYear} Opening Balance`,
+          value: wholeDollars(projectionStartingTrueCash),
+          type: "actual",
+        }
+      : null;
   const chartMax = buildChartMax([
-    ...chartValues.values.map((value) => parseMoney(value)),
+    ...anchoredActualValues,
     ...projectionSchedule.map((point) => point.value),
+    projectionStartingTrueCash,
   ]);
   const yAxisLabels = buildYAxisLabels(chartMax);
+  const actualChartPoints = anchoredActualBasePoints.map((point, index) => [
+    point[0],
+    trueCashToChartY(anchoredActualValues[index], chartMax),
+  ]);
+  const normalizedActualOpeningPoint = actualOpeningPoint
+    ? {
+        ...actualOpeningPoint,
+        y: trueCashToChartY(projectionStartingTrueCash, chartMax),
+      }
+    : null;
   const chart = {
     ...chartValues,
-    points: chartValues.points.map((point, index) => [
-      point[0],
-      trueCashToChartY(parseMoney(chartValues.values[index]), chartMax),
-    ]),
+    points: normalizedActualOpeningPoint
+      ? [[normalizedActualOpeningPoint.x, normalizedActualOpeningPoint.y], ...actualChartPoints]
+      : actualChartPoints,
+    dates: normalizedActualOpeningPoint
+      ? [normalizedActualOpeningPoint.date, ...anchoredActualDates]
+      : anchoredActualDates,
+    values: normalizedActualOpeningPoint
+      ? [normalizedActualOpeningPoint.value, ...anchoredActualValues.map((value) => money(value))]
+      : anchoredActualValues.map((value) => money(value)),
   };
   const linePath = buildLinePath(chart.points);
   const areaPath = buildAreaPath(chart.points);
@@ -518,6 +562,15 @@ export function DashboardView({
               strokeWidth="3"
               filter="url(#netWorthGlow)"
             />
+            {normalizedActualOpeningPoint ? (
+              <circle
+                cx={normalizedActualOpeningPoint.x}
+                cy={normalizedActualOpeningPoint.y}
+                r="5"
+                fill="#8edbff"
+                filter="url(#netWorthGlow)"
+              />
+            ) : null}
             <circle
               cx={chart.points[chart.points.length - 1][0]}
               cy={chart.points[chart.points.length - 1][1]}
@@ -535,15 +588,6 @@ export function DashboardView({
                   strokeWidth="3"
                   filter="url(#projectedTrueCashGlow)"
                 />
-                {projectionStartPoint ? (
-                  <circle
-                    cx={projectionStartPoint.x}
-                    cy={projectionStartPoint.y}
-                    r="5"
-                    fill="#ffd08a"
-                    filter="url(#projectedTrueCashGlow)"
-                  />
-                ) : null}
                 {(projectedTrueCashPoints.at(-1) || projectionStartPoint) ? (
                   <circle
                     cx={(projectedTrueCashPoints.at(-1) || projectionStartPoint).x}
@@ -640,7 +684,7 @@ export function DashboardView({
                   letterSpacing: 1,
                 }}
               >
-                {hoverState.point.type === "projected" ? "Projected True Cash" : "True Cash Scan"}
+                {hoverState.point.type === "projected" ? "Projected True Cash" : "True Cash"}
               </div>
               <div style={{ color: "white", fontSize: 15, fontWeight: 800, marginTop: 7 }}>
                 {hoverState.point.date}
