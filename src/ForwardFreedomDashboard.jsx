@@ -1212,6 +1212,7 @@ function ForwardFreedomDashboard() {
               dynamicAllocations={dynamicAllocations}
               metricSnapshots={trackedMetricSnapshots}
               householdProfilesProps={householdProfilesProps}
+              planningAnchor={getPlanningAnchorForYear(currentPlanYear)}
             />
           ) : activeTab === APP_TABS.OPERATIONS_BOARD ? (
             <OperationsBoard

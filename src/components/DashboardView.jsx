@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { APP_TABS, budgetMonthNames, chartSets } from "../data/constants.jsx";
+import { APP_TABS, budgetMonthNames, budgetMonths, chartSets } from "../data/constants.jsx";
 import { buildMonthlyBudgetReview } from "../utils/budgetReview.js";
 import { styles } from "../styles.js";
 import { buildAreaPath, buildLinePath, money, parseMoney, wholeDollars } from "../utils/format.js";
@@ -188,6 +188,7 @@ export function DashboardView({
   dynamicAllocations,
   metricSnapshots,
   householdProfilesProps,
+  planningAnchor,
 }) {
   const [hoverState, setHoverState] = useState(null);
   const [netWorthHistoryRange, setNetWorthHistoryRange] = useState("30D");
@@ -200,11 +201,18 @@ export function DashboardView({
   const subscriptionOverview = buildSubscriptionOverview(subscriptions);
   const netWorthHistory = buildNetWorthHistory(metricSnapshots, netWorthHistoryRange);
   const chartValues = buildSyncedTrueCashChart(chartSets[activeRange], trueCash);
+  const projectionStartMonth = planningAnchor?.startingMonth || budgetMonths[0];
+  const projectionStartingTrueCash =
+    planningAnchor?.startingTrueCash !== undefined && planningAnchor?.startingTrueCash !== null
+      ? Number(planningAnchor.startingTrueCash) || 0
+      : parseMoney(chartValues.values[0] || chartValues.value);
   const projectionSchedule = buildTrueCashProjectionSchedule({
     chart: chartValues,
     incomeStreams,
     budgetRows,
     projectionAdjustments,
+    startingMonth: projectionStartMonth,
+    startingTrueCash: projectionStartingTrueCash,
   });
   const chartMax = buildChartMax([
     ...chartValues.values.map((value) => parseMoney(value)),
@@ -221,12 +229,12 @@ export function DashboardView({
   const linePath = buildLinePath(chart.points);
   const areaPath = buildAreaPath(chart.points);
   const projectionStartPoint =
-    projectionSchedule.length && chart.points.length
+    projectionSchedule.length
       ? {
-          x: chart.points[0][0],
-          y: chart.points[0][1],
-          date: `${chart.dates[0] || "Jan 1"} Projection Start`,
-          value: wholeDollars(parseMoney(chartValues.values[0] || chart.value)),
+          x: MONTH_END_X[projectionStartMonth] || chart.points[0][0],
+          y: trueCashToChartY(projectionStartingTrueCash, chartMax),
+          date: `${projectionStartMonth} Projection Start`,
+          value: wholeDollars(projectionStartingTrueCash),
           profit: 0,
           adjustment: 0,
           type: "projected",

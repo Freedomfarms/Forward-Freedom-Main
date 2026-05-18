@@ -223,6 +223,30 @@ export function OperationsBoard({
           >
             <label style={{ display: "grid", gap: 6 }}>
               <span style={{ color: "#8fb1d9", fontSize: 11, textTransform: "uppercase" }}>
+                Starting Month
+              </span>
+              <select
+                value={planningAnchor.startingMonth || activePlanningMonth}
+                onChange={(event) => updatePlanningAnchor("startingMonth", event.target.value)}
+                style={{
+                  color: "#eaf3ff",
+                  background: "rgba(0,136,255,.08)",
+                  border: "1px solid rgba(0,216,255,.22)",
+                  borderRadius: 9,
+                  padding: "10px 12px",
+                  fontWeight: 800,
+                  outline: "none",
+                }}
+              >
+                {budgetMonths.map((month) => (
+                  <option key={month} value={month} style={{ background: "#061224" }}>
+                    {month}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label style={{ display: "grid", gap: 6 }}>
+              <span style={{ color: "#8fb1d9", fontSize: 11, textTransform: "uppercase" }}>
                 Starting True Cash
               </span>
               <input
@@ -240,8 +264,9 @@ export function OperationsBoard({
               />
             </label>
             <div style={{ color: "#8ea8ca", fontSize: 12, lineHeight: 1.5, marginTop: 2 }}>
-              Use this as the opening true-cash balance for the full-year projection so every month in
-              the selected year follows the same adjustment path.
+              Choose the month where this yearly projection should start, then enter the true-cash
+              balance for that anchor month. The annual row and Command Center projection will both
+              follow this same anchor.
             </div>
           </div>
         </div>
@@ -725,14 +750,19 @@ export function OperationsBoard({
                 <div
                   key={budgetMonths[index]}
                   style={{
-                    color: index === currentBudgetPeriod.monthIndex ? "#ff9f1c" : "#ffd08a",
+                    color:
+                      value === null
+                        ? "#6d819c"
+                        : index === currentBudgetPeriod.monthIndex
+                          ? "#ff9f1c"
+                          : "#ffd08a",
                     textAlign: "right",
                     fontSize: 14,
                     fontWeight: 900,
-                    textShadow: "0 0 10px rgba(255,159,28,.32)",
+                    textShadow: value === null ? "none" : "0 0 10px rgba(255,159,28,.32)",
                   }}
                 >
-                  {wholeDollars(value)}
+                  {value === null ? "—" : wholeDollars(value)}
                 </div>
               ))}
               <div

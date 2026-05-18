@@ -94,16 +94,68 @@ export function buildPlanningYearOptions(plansByYear, currentYear = getCurrentBu
   return [...years].filter((year) => year >= currentYear).sort((a, b) => a - b);
 }
 
-function buildMonthlyNetForYear(planData, month) {
-  const income = (planData?.incomeStreams || [])
+function buildMonthlyProjectionInputs({
+  incomeStreams = [],
+  budgetRows = [],
+  projectionAdjustments = {},
+  month,
+}) {
+  const income = incomeStreams
     .filter((stream) => (stream.months || budgetMonths).includes(month))
     .reduce((sum, stream) => sum + parseMoney(stream.amount), 0);
-  const budget = (planData?.budgetRows || [])
+  const budget = budgetRows
     .filter((row) => (row.months || budgetMonths).includes(month))
     .reduce((sum, row) => sum + Number(row.budget || 0), 0);
-  const adjustment = parseMoney(planData?.projectionAdjustments?.[month]);
+  const profit = income - budget;
+  const adjustment = parseMoney(projectionAdjustments?.[month]);
 
-  return income - budget + adjustment;
+  return {
+    income,
+    budget,
+    profit,
+    adjustment,
+    delta: profit + adjustment,
+  };
+}
+
+export function buildProjectedTrueCashSeries({
+  targetYear,
+  incomeStreams = [],
+  budgetRows = [],
+  projectionAdjustments = {},
+  startingMonth = getCurrentBudgetPeriod().month,
+  startingTrueCash = 0,
+}) {
+  const startMonthIndex = Math.max(0, budgetMonths.indexOf(startingMonth || getCurrentBudgetPeriod().month));
+  let runningBalance = Number(startingTrueCash) || 0;
+
+  return budgetMonths.map((month, monthIndex) => {
+    if (monthIndex < startMonthIndex) {
+      return {
+        month,
+        year: targetYear,
+        value: null,
+        profit: null,
+        adjustment: null,
+      };
+    }
+
+    const { profit, adjustment, delta } = buildMonthlyProjectionInputs({
+      incomeStreams,
+      budgetRows,
+      projectionAdjustments,
+      month,
+    });
+    runningBalance += delta;
+
+    return {
+      month,
+      year: targetYear,
+      value: runningBalance,
+      profit,
+      adjustment,
+    };
+  });
 }
 
 export function buildFullYearProjectionSeries({
@@ -117,15 +169,17 @@ export function buildFullYearProjectionSeries({
       ? buildPlanYearData(fallbackPlanData)
       : ensurePlanYearData(plansByYear, targetYear, fallbackPlanData)[String(targetYear)] ||
         buildPlanYearData(fallbackPlanData);
-  let runningBalance = Number(targetPlan.startingTrueCash) || 0;
 
-  return budgetMonths.map((month) => {
-    runningBalance += buildMonthlyNetForYear(targetPlan, month);
-
-    return {
-      month,
-      year: targetYear,
-      value: runningBalance,
-    };
-  });
+  return buildProjectedTrueCashSeries({
+    targetYear,
+    incomeStreams: targetPlan.incomeStreams,
+    budgetRows: targetPlan.budgetRows,
+    projectionAdjustments: targetPlan.projectionAdjustments,
+    startingMonth: targetPlan.startingMonth,
+    startingTrueCash: targetPlan.startingTrueCash,
+  }).map(({ month, year, value }) => ({
+    month,
+    year,
+    value,
+  }));
 }

@@ -1,6 +1,7 @@
 import { budgetMonthNames, budgetMonths } from "../data/constants.jsx";
 import { getCurrentBudgetPeriod } from "./date.js";
 import { money, parseMoney, wholeDollars } from "./format.js";
+import { buildProjectedTrueCashSeries } from "./planning.js";
 
 const FALLBACK_OPEN_YEAR = 2026;
 
@@ -49,35 +50,36 @@ export function buildTrueCashProjectionSchedule({
   incomeStreams,
   budgetRows,
   projectionAdjustments = {},
+  startingMonth = budgetMonths[0],
+  startingTrueCash,
 }) {
   if (!chart.supportsProjection) return [];
 
   const { year: projectionYear } = parseChartDate(chart.date);
-  let projectedValue = parseMoney(chart.values[0] || chart.value);
+  const openingBalance =
+    typeof startingTrueCash === "number" || typeof startingTrueCash === "string"
+      ? Number(startingTrueCash) || 0
+      : parseMoney(chart.values[0] || chart.value);
 
-  return budgetMonths.map((month) => {
-    const activeStreams = incomeStreams.filter((stream) =>
-      (stream.months || budgetMonths).includes(month)
-    );
-    const income = activeStreams.reduce((sum, stream) => sum + parseMoney(stream.amount), 0);
-    const budget = budgetRows
-      .filter((category) => (category.months || budgetMonths).includes(month))
-      .reduce((sum, category) => sum + Number(category.budget || 0), 0);
-    const profit = income - budget;
-    const adjustment = parseMoney(projectionAdjustments[month]);
-    projectedValue += profit + adjustment;
-
-    return {
-      month,
-      year: projectionYear,
-      date: `${month} ${projectionYear} Projection`,
-      value: projectedValue,
-      formattedValue: wholeDollars(projectedValue),
-      profit,
-      adjustment,
+  return buildProjectedTrueCashSeries({
+    targetYear: projectionYear,
+    incomeStreams,
+    budgetRows,
+    projectionAdjustments,
+    startingMonth,
+    startingTrueCash: openingBalance,
+  })
+    .filter((point) => point.value !== null)
+    .map((point) => ({
+      month: point.month,
+      year: point.year,
+      date: `${point.month} ${point.year} Projection`,
+      value: point.value,
+      formattedValue: wholeDollars(point.value),
+      profit: point.profit,
+      adjustment: point.adjustment,
       type: "projected",
-    };
-  });
+    }));
 }
 
 export function buildForwardTrueCashProjection({
