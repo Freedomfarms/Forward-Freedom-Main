@@ -6,7 +6,7 @@ import { cleanMoneyInput, money, parseMoney, wholeDollars } from "../utils/forma
 import { budgetMonths, yearlyOpsData } from "../data/constants.jsx";
 import { buildFullYearProjectionSeries } from "../utils/planning.js";
 import { buildSubscriptionOverview } from "../utils/subscriptions.js";
-import { HouseholdProfilesControl, MonthCoverageEditor } from "./Common.jsx";
+import { HouseholdProfilesControl } from "./Common.jsx";
 
 function formatAdjustmentValue(value) {
   return String(Math.round(Number(value) || 0));
@@ -33,7 +33,6 @@ export function OperationsBoard({
   getBudgetRowsForYear,
   getIncomeStreamsForYear,
   getProjectionAdjustmentsForYear,
-  setIncomeStreamsForYear,
   setProjectionAdjustmentsForYear,
   ensurePlanningYear,
   plansByYear,
@@ -41,7 +40,6 @@ export function OperationsBoard({
   getPlanningAnchorForYear,
   setPlanningAnchorForYear,
 }) {
-  const [incomeDeleteTarget, setIncomeDeleteTarget] = useState(null);
   const [hoveredCommandMonth, setHoveredCommandMonth] = useState(null);
   const currentBudgetPeriod = getCurrentBudgetPeriod();
   const [activePlanningDate, setActivePlanningDate] = useState(() => ({
@@ -76,53 +74,6 @@ export function OperationsBoard({
     });
   };
 
-  const addIncomeStream = () => {
-    setIncomeStreamsForYear(activePlanningDate.year, (streams) => {
-      const nextNumber = streams.length + 1;
-      return [
-        ...streams,
-        {
-          id: `income-custom-${Date.now()}-${nextNumber}`,
-          name: `New Income ${nextNumber}`,
-          description: "New Source",
-          amount: "$0",
-          type: "Recurring",
-          color: "#00f59b",
-          icon: "✦",
-          months: budgetMonths,
-        },
-      ];
-    });
-  };
-
-  const toggleIncomeMonth = (index, month) => {
-    setIncomeStreamsForYear(activePlanningDate.year, (streams) =>
-      streams.map((stream, streamIndex) => {
-        if (streamIndex !== index) return stream;
-
-        const currentMonths = stream.months || budgetMonths;
-        const nextMonths = currentMonths.includes(month)
-          ? currentMonths.filter((item) => item !== month)
-          : [...currentMonths, month];
-
-        return {
-          ...stream,
-          months: nextMonths.length ? nextMonths : [month],
-        };
-      })
-    );
-  };
-
-  const setIncomeMonths = (index, nextMonths) => {
-    const normalizedMonths = budgetMonths.filter((month) => nextMonths.includes(month));
-    const safeMonths = normalizedMonths.length ? normalizedMonths : [activePlanningMonth];
-
-    setIncomeStreamsForYear(activePlanningDate.year, (streams) =>
-      streams.map((stream, streamIndex) =>
-        streamIndex === index ? { ...stream, months: safeMonths } : stream
-      )
-    );
-  };
   const dynamicYearlyOpsData = yearlyOpsData.map((month) => {
     const activeStreams = planningIncomeStreams.filter((stream) =>
       (stream.months || budgetMonths).includes(month.month)
@@ -370,233 +321,9 @@ export function OperationsBoard({
           style={{
             position: "relative",
             display: "grid",
-            gridTemplateColumns: ".8fr 1.2fr",
             gap: 22,
-            alignItems: "stretch",
           }}
         >
-          <div
-            style={{
-              border: "1px solid rgba(0,136,255,.18)",
-              borderRadius: 12,
-              background: "rgba(0,30,70,.08)",
-              minHeight: 360,
-              padding: 22,
-              display: "flex",
-              flexDirection: "column",
-              position: "relative",
-              zIndex: 3,
-            }}
-          >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: 24,
-              }}
-            >
-              <div>
-                <div style={{ color: "white", fontSize: 22, fontWeight: 800 }}>
-                  Monthly Income Streams
-                </div>
-                <div style={{ color: "#8ea8ca", marginTop: 8, fontSize: 16 }}>
-                  Track recurring and variable income sources.
-                </div>
-              </div>
-              <div style={{ color: "#00f59b", fontSize: 14, fontWeight: 800 }}>
-                + Stable Cashflow
-              </div>
-            </div>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: 18, marginTop: 4 }}>
-              {planningIncomeStreams.map((income, index) => (
-                <div
-                  key={income.id}
-                  style={{
-                    border: "1px solid rgba(0,136,255,.16)",
-                    borderRadius: 14,
-                    background: "rgba(2,14,28,.72)",
-                    padding: "16px 18px",
-                    display: "grid",
-                    gridTemplateColumns: "auto 1fr auto",
-                    alignItems: "center",
-                    gap: 16,
-                    boxShadow: "inset 0 0 18px rgba(0,80,160,.06)",
-                  }}
-                >
-                  <div
-                    onDoubleClick={(event) => {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      setIncomeDeleteTarget({ id: income.id, name: income.name });
-                    }}
-                    title="Double click to delete income stream"
-                    style={{
-                      width: 42,
-                      height: 42,
-                      borderRadius: 12,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      background: `${income.color}22`,
-                      border: `1px solid ${income.color}55`,
-                      fontSize: 20,
-                      boxShadow: `0 0 16px ${income.color}22`,
-                      cursor: "pointer",
-                    }}
-                  >
-                    {income.icon}
-                  </div>
-
-                  <div>
-                    <div
-                      style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}
-                    >
-                      <input
-                        value={income.name}
-                        onChange={(event) =>
-                          setIncomeStreamsForYear(activePlanningDate.year, (streams) =>
-                            streams.map((stream, streamIndex) =>
-                              streamIndex === index
-                                ? { ...stream, name: event.target.value }
-                                : stream
-                            )
-                          )
-                        }
-                        style={{
-                          color: "white",
-                          fontSize: 17,
-                          fontWeight: 800,
-                          background: "transparent",
-                          border: "1px solid transparent",
-                          borderRadius: 8,
-                          padding: "4px 8px",
-                          outline: "none",
-                          width: 150,
-                        }}
-                        onFocus={(event) => {
-                          event.currentTarget.style.border = "1px solid rgba(0,216,255,.38)";
-                          event.currentTarget.style.background = "rgba(0,136,255,.08)";
-                        }}
-                        onBlur={(event) => {
-                          event.currentTarget.style.border = "1px solid transparent";
-                          event.currentTarget.style.background = "transparent";
-                        }}
-                      />
-                      <input
-                        value={income.description}
-                        onChange={(event) =>
-                          setIncomeStreamsForYear(activePlanningDate.year, (streams) =>
-                            streams.map((stream, streamIndex) =>
-                              streamIndex === index
-                                ? { ...stream, description: event.target.value }
-                                : stream
-                            )
-                          )
-                        }
-                        style={{
-                          color: "#b7d7ff",
-                          fontSize: 16,
-                          fontWeight: 700,
-                          background: "transparent",
-                          border: "1px solid transparent",
-                          borderRadius: 8,
-                          padding: "4px 8px",
-                          outline: "none",
-                          minWidth: 180,
-                        }}
-                        onFocus={(event) => {
-                          event.currentTarget.style.border = "1px solid rgba(0,216,255,.38)";
-                          event.currentTarget.style.background = "rgba(0,136,255,.08)";
-                        }}
-                        onBlur={(event) => {
-                          event.currentTarget.style.border = "1px solid transparent";
-                          event.currentTarget.style.background = "transparent";
-                        }}
-                      />
-                    </div>
-                    <div
-                      style={{
-                        display: "grid",
-                        marginTop: 6,
-                        minWidth: 0,
-                      }}
-                    >
-                      <div style={{ color: "#00f59b", fontSize: 13, fontWeight: 800 }}>
-                        {income.type}
-                      </div>
-                      <MonthCoverageEditor
-                        allMonths={budgetMonths}
-                        selectedMonths={income.months || budgetMonths}
-                        onToggleMonth={(month) => toggleIncomeMonth(index, month)}
-                        quickActions={[
-                          { label: "All", onClick: () => setIncomeMonths(index, budgetMonths) },
-                          {
-                            label: `Only ${activePlanningMonth}`,
-                            onClick: () => setIncomeMonths(index, [activePlanningMonth]),
-                          },
-                        ]}
-                      />
-                    </div>
-                  </div>
-
-                  <input
-                    value={income.amount}
-                    onChange={(event) =>
-                      setIncomeStreamsForYear(activePlanningDate.year, (streams) =>
-                        streams.map((stream, streamIndex) =>
-                          streamIndex === index ? { ...stream, amount: event.target.value } : stream
-                        )
-                      )
-                    }
-                    style={{
-                      color: "#eaf3ff",
-                      fontSize: 22,
-                      fontWeight: 900,
-                      background: "transparent",
-                      border: "1px solid transparent",
-                      borderRadius: 8,
-                      padding: "6px 10px",
-                      width: 120,
-                      textAlign: "right",
-                      outline: "none",
-                    }}
-                    onFocus={(event) => {
-                      event.currentTarget.style.border = "1px solid rgba(0,216,255,.38)";
-                      event.currentTarget.style.background = "rgba(0,136,255,.08)";
-                      event.currentTarget.style.boxShadow = "inset 0 0 18px rgba(0,136,255,.10)";
-                    }}
-                    onBlur={(event) => {
-                      event.currentTarget.style.border = "1px solid transparent";
-                      event.currentTarget.style.background = "transparent";
-                      event.currentTarget.style.boxShadow = "none";
-                    }}
-                  />
-                </div>
-              ))}
-            </div>
-
-            <button
-              onClick={addIncomeStream}
-              style={{
-                marginTop: 20,
-                background: "linear-gradient(90deg,#0077ff,#00d8ff)",
-                border: "1px solid rgba(120,220,255,.45)",
-                borderRadius: 10,
-                color: "white",
-                padding: "12px 18px",
-                fontWeight: 800,
-                cursor: "pointer",
-                boxShadow: "0 0 24px rgba(0,136,255,.28)",
-                letterSpacing: 0.4,
-                alignSelf: "center",
-              }}
-            >
-              + Add Income Stream
-            </button>
-          </div>
-
           <div>
             <div
               style={{
@@ -611,7 +338,7 @@ export function OperationsBoard({
                   Income Command Center
                 </div>
                 <div style={{ color: "#8ea8ca", marginTop: 8, fontSize: 16 }}>
-                  Income pulls from Monthly Income Streams. Budget and spent pull from the same
+                  Income pulls from Income Hub. Budget and spent pull from the same
                   monthly transaction logic used in Budget Strategy Lab.
                 </div>
               </div>
@@ -1078,83 +805,6 @@ export function OperationsBoard({
         </div>
       </section>
 
-      {incomeDeleteTarget ? (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,5,14,.72)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 9999,
-          }}
-        >
-          <div
-            style={{
-              ...styles.panel,
-              width: 420,
-              padding: 26,
-              boxShadow: "0 0 55px rgba(0,136,255,.34)",
-            }}
-          >
-            <div
-              style={{
-                color: "#8feaff",
-                fontSize: 12,
-                textTransform: "uppercase",
-                letterSpacing: 1.2,
-                marginBottom: 10,
-              }}
-            >
-              Confirm Delete
-            </div>
-            <div style={{ color: "white", fontSize: 26, fontWeight: 900, lineHeight: 1.15 }}>
-              Delete {incomeDeleteTarget.name}?
-            </div>
-            <p style={{ color: "#a8bfdc", lineHeight: 1.55, marginTop: 14 }}>
-              This removes the income stream from Monthly Income Streams. You can add a new income
-              stream anytime.
-            </p>
-            <div style={{ display: "flex", gap: 12, justifyContent: "flex-end", marginTop: 24 }}>
-              <button
-                onClick={() => setIncomeDeleteTarget(null)}
-                style={{
-                  background: "rgba(0,136,255,.10)",
-                  border: "1px solid rgba(0,216,255,.28)",
-                  color: "#d7ebff",
-                  borderRadius: 8,
-                  padding: "11px 16px",
-                  cursor: "pointer",
-                  fontWeight: 800,
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  setIncomeStreamsForYear(activePlanningDate.year, (streams) =>
-                    streams.filter((stream) => stream.id !== incomeDeleteTarget.id)
-                  );
-                  setIncomeDeleteTarget(null);
-                }}
-                style={{
-                  background: "linear-gradient(90deg,#ff244d,#ff5d7a)",
-                  border: "1px solid rgba(255,93,122,.55)",
-                  color: "white",
-                  borderRadius: 8,
-                  padding: "11px 16px",
-                  cursor: "pointer",
-                  fontWeight: 900,
-                  boxShadow: "0 0 22px rgba(255,36,77,.32)",
-                }}
-              >
-                Delete Income
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }

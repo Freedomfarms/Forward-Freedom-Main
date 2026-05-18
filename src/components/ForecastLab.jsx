@@ -291,8 +291,8 @@ export function ForecastLab({
         </div>
         <div style={{ marginTop: 12, color: "#7294bb", fontSize: 12 }}>
           Forecasts are anchored to your live Command Center true-cash balance, then projected forward
-          through the remaining months in the year. Adjustments use your existing Operations Board
-          income streams and budget as the base.
+          through the remaining months in the year. Adjustments use your existing Income Hub streams
+          and Budget Strategy Lab plan as the base.
         </div>
         {subscriptionOverview.activeCount > 0 ? (
           <div style={{ marginTop: 12, color: "#8feaff", fontSize: 12 }}>

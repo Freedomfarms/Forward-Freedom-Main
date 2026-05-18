@@ -3,8 +3,9 @@ export const LOGO_SRC =
 
 export const APP_TABS = {
   DASHBOARD: "Command Center",
-  BUDGET_COMMAND_CENTER: "Budget Strategy Lab",
   OPERATIONS_BOARD: "Operations Board",
+  INCOME_HUB: "Income Hub",
+  BUDGET_COMMAND_CENTER: "Budget Strategy Lab",
   FORECAST_LAB: "Forecast Lab",
   ADD_ACCOUNTS: "Add Accounts",
   TRANSACTIONS: "Transactions",
@@ -19,8 +20,9 @@ export const APP_TAB_VALUES = Object.values(APP_TABS);
 
 export const navMain = [
   { icon: "⌂", label: APP_TABS.DASHBOARD, active: true },
-  { icon: "↗", label: APP_TABS.BUDGET_COMMAND_CENTER },
   { icon: "▣", label: APP_TABS.OPERATIONS_BOARD },
+  { icon: "$", label: APP_TABS.INCOME_HUB },
+  { icon: "↗", label: APP_TABS.BUDGET_COMMAND_CENTER },
   { icon: "◉", label: APP_TABS.FORECAST_LAB },
   { icon: "⊕", label: APP_TABS.ADD_ACCOUNTS },
   { icon: "▤", label: APP_TABS.TRANSACTIONS },

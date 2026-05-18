@@ -44,6 +44,7 @@ import { AccountsView } from "./components/AccountsView.jsx";
 import { BudgetCommandCenter } from "./components/BudgetCommandCenter.jsx";
 import { DashboardView } from "./components/DashboardView.jsx";
 import { ForecastLab } from "./components/ForecastLab.jsx";
+import { IncomeHub } from "./components/IncomeHub.jsx";
 import { LandingPage } from "./components/LandingPage.jsx";
 import { AppSidebar, ModulePlaceholder } from "./components/Layout.jsx";
 import { OperationsBoard } from "./components/OperationsBoard.jsx";
@@ -1212,6 +1213,34 @@ function ForwardFreedomDashboard() {
               metricSnapshots={trackedMetricSnapshots}
               householdProfilesProps={householdProfilesProps}
             />
+          ) : activeTab === APP_TABS.OPERATIONS_BOARD ? (
+            <OperationsBoard
+              subscriptions={subscriptions}
+              transactions={categorizedTransactions}
+              trueCash={trueCash}
+              householdProfilesProps={householdProfilesProps}
+              currentPlanYear={currentPlanYear}
+              availablePlanningYears={availablePlanningYears}
+              getBudgetRowsForYear={getBudgetRowsForYear}
+              getIncomeStreamsForYear={getIncomeStreamsForYear}
+              getProjectionAdjustmentsForYear={getProjectionAdjustmentsForYear}
+              setProjectionAdjustmentsForYear={setProjectionAdjustmentsForYear}
+              ensurePlanningYear={ensurePlanningYear}
+              plansByYear={plansByYear}
+              currentPlanBaseData={baseCurrentPlanData}
+              getPlanningAnchorForYear={getPlanningAnchorForYear}
+              setPlanningAnchorForYear={setPlanningAnchorForYear}
+            />
+          ) : activeTab === APP_TABS.INCOME_HUB ? (
+            <IncomeHub
+              householdProfilesProps={householdProfilesProps}
+              currentPlanYear={currentPlanYear}
+              availablePlanningYears={availablePlanningYears}
+              getBudgetRowsForYear={getBudgetRowsForYear}
+              getIncomeStreamsForYear={getIncomeStreamsForYear}
+              setIncomeStreamsForYear={setIncomeStreamsForYear}
+              ensurePlanningYear={ensurePlanningYear}
+            />
           ) : activeTab === APP_TABS.BUDGET_COMMAND_CENTER ? (
             <BudgetCommandCenter
               transactions={categorizedTransactions}
@@ -1223,30 +1252,6 @@ function ForwardFreedomDashboard() {
               getBudgetRowsForYear={getBudgetRowsForYear}
               setBudgetRowsForYear={setBudgetRowsForYear}
               ensurePlanningYear={ensurePlanningYear}
-            />
-          ) : activeTab === APP_TABS.OPERATIONS_BOARD ? (
-            <OperationsBoard
-              budgetRows={budgetRows}
-              subscriptions={subscriptions}
-              incomeStreams={incomeStreams}
-              setIncomeStreams={setIncomeStreams}
-              transactions={categorizedTransactions}
-              trueCash={trueCash}
-              projectionAdjustments={projectionAdjustments}
-              setProjectionAdjustments={setProjectionAdjustments}
-              householdProfilesProps={householdProfilesProps}
-              currentPlanYear={currentPlanYear}
-              availablePlanningYears={availablePlanningYears}
-              getBudgetRowsForYear={getBudgetRowsForYear}
-              getIncomeStreamsForYear={getIncomeStreamsForYear}
-              getProjectionAdjustmentsForYear={getProjectionAdjustmentsForYear}
-              setIncomeStreamsForYear={setIncomeStreamsForYear}
-              setProjectionAdjustmentsForYear={setProjectionAdjustmentsForYear}
-              ensurePlanningYear={ensurePlanningYear}
-              plansByYear={plansByYear}
-              currentPlanBaseData={baseCurrentPlanData}
-              getPlanningAnchorForYear={getPlanningAnchorForYear}
-              setPlanningAnchorForYear={setPlanningAnchorForYear}
             />
           ) : activeTab === APP_TABS.ADD_ACCOUNTS ? (
             <AccountsView
