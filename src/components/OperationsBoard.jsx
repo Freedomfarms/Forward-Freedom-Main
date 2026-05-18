@@ -223,30 +223,6 @@ export function OperationsBoard({
           >
             <label style={{ display: "grid", gap: 6 }}>
               <span style={{ color: "#8fb1d9", fontSize: 11, textTransform: "uppercase" }}>
-                Starting Month
-              </span>
-              <select
-                value={planningAnchor.startingMonth || activePlanningMonth}
-                onChange={(event) => updatePlanningAnchor("startingMonth", event.target.value)}
-                style={{
-                  color: "#eaf3ff",
-                  background: "rgba(0,136,255,.08)",
-                  border: "1px solid rgba(0,216,255,.22)",
-                  borderRadius: 9,
-                  padding: "10px 12px",
-                  fontWeight: 800,
-                  outline: "none",
-                }}
-              >
-                {budgetMonths.map((month) => (
-                  <option key={month} value={month} style={{ background: "#061224" }}>
-                    {month}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label style={{ display: "grid", gap: 6 }}>
-              <span style={{ color: "#8fb1d9", fontSize: 11, textTransform: "uppercase" }}>
                 Starting True Cash
               </span>
               <input
@@ -264,9 +240,8 @@ export function OperationsBoard({
               />
             </label>
             <div style={{ color: "#8ea8ca", fontSize: 12, lineHeight: 1.5, marginTop: 2 }}>
-              Auto-filled to help the selected year get started. You can keep the current month and
-              current true cash, or set an earlier starting month and value for more accurate yearly
-              planning.
+              Use this as the opening true-cash balance for the full-year projection so every month in
+              the selected year follows the same adjustment path.
             </div>
           </div>
         </div>

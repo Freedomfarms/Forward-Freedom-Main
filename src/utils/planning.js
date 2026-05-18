@@ -117,17 +117,10 @@ export function buildFullYearProjectionSeries({
       ? buildPlanYearData(fallbackPlanData)
       : ensurePlanYearData(plansByYear, targetYear, fallbackPlanData)[String(targetYear)] ||
         buildPlanYearData(fallbackPlanData);
-  const startMonthIndex = Math.max(
-    0,
-    budgetMonths.indexOf(targetPlan.startingMonth || getCurrentBudgetPeriod().month)
-  );
   let runningBalance = Number(targetPlan.startingTrueCash) || 0;
 
   return budgetMonths.map((month) => {
-    const monthIndex = budgetMonths.indexOf(month);
-    if (monthIndex >= startMonthIndex) {
-      runningBalance += buildMonthlyNetForYear(targetPlan, month);
-    }
+    runningBalance += buildMonthlyNetForYear(targetPlan, month);
 
     return {
       month,
