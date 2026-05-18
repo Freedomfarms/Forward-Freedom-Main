@@ -284,7 +284,7 @@ export function DashboardView({
     <>
       <header style={{ ...styles.pageHeader, marginBottom: 20 }}>
         <div>
-          <h1 style={styles.pageTitle}>Dashboard</h1>
+          <h1 style={styles.pageTitle}>Command Center</h1>
           <p style={styles.pageSubtitle}>Real-time overview of your financial position</p>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>

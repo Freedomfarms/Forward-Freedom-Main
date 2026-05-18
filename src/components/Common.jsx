@@ -280,13 +280,13 @@ export function MonthCoverageEditor({
             position: "absolute",
             top: "calc(100% + 8px)",
             left: 0,
-            zIndex: 60,
+            zIndex: 120,
             minWidth: 280,
             padding: 14,
             borderRadius: 14,
-            border: "1px solid rgba(0,216,255,.24)",
-            background: "#071321",
-            boxShadow: "0 0 28px rgba(0,136,255,.24), inset 0 0 18px rgba(0,216,255,.05)",
+            border: "1px solid rgba(0,216,255,.28)",
+            backgroundColor: "#081423",
+            boxShadow: "0 18px 42px rgba(0,8,18,.62), 0 0 28px rgba(0,136,255,.18)",
             display: "grid",
             gap: 10,
           }}
@@ -310,7 +310,7 @@ export function MonthCoverageEditor({
                 type="button"
                 onClick={action.onClick}
                 style={{
-                  background: "rgba(0,136,255,.10)",
+                  background: "#0f2439",
                   border: "1px solid rgba(0,216,255,.2)",
                   color: "#9fd8ff",
                   borderRadius: 999,
@@ -334,7 +334,7 @@ export function MonthCoverageEditor({
                   type="button"
                   onClick={() => onToggleMonth(month)}
                   style={{
-                    background: isActive ? "rgba(0,104,255,.18)" : "#0b1a2b",
+                  background: isActive ? "#12385d" : "#102133",
                     border: isActive
                       ? "1px solid rgba(0,216,255,.42)"
                       : "1px solid rgba(0,136,255,.16)",

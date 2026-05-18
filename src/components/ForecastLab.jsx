@@ -290,7 +290,7 @@ export function ForecastLab({
           </button>
         </div>
         <div style={{ marginTop: 12, color: "#7294bb", fontSize: 12 }}>
-          Forecasts are anchored to your live Dashboard true-cash balance, then projected forward
+          Forecasts are anchored to your live Command Center true-cash balance, then projected forward
           through the remaining months in the year. Adjustments use your existing Operations Board
           income streams and budget as the base.
         </div>
@@ -369,7 +369,7 @@ export function ForecastLab({
                 </div>
               ) : label === "Current True Cash" ? (
                 <div style={{ color: "#8fb1d9", fontSize: 12, marginTop: 6, fontWeight: 700 }}>
-                  Dashboard anchor for the remaining {projectionMonthsRemaining} month
+                  Command Center anchor for the remaining {projectionMonthsRemaining} month
                   {projectionMonthsRemaining === 1 ? "" : "s"}
                 </div>
               ) : null}

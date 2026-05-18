@@ -612,7 +612,7 @@ export function OperationsBoard({
                 </div>
                 <div style={{ color: "#8ea8ca", marginTop: 8, fontSize: 16 }}>
                   Income pulls from Monthly Income Streams. Budget and spent pull from the same
-                  monthly transaction logic used in Budget Command Center.
+                  monthly transaction logic used in Budget Strategy Lab.
                 </div>
               </div>
               <div

@@ -104,7 +104,7 @@ export function BudgetCommandCenter({
     <>
       <header style={{ ...styles.pageHeader, marginBottom: 20 }}>
         <div>
-          <h1 style={styles.pageTitle}>Budget Command Center</h1>
+          <h1 style={styles.pageTitle}>Budget Strategy Lab</h1>
           <p style={styles.pageSubtitle}>
             Mission-control view of monthly spending, budget pressure, and category risk.
           </p>
@@ -470,7 +470,7 @@ export function BudgetCommandCenter({
               Delete {deleteTarget.name}?
             </div>
             <p style={{ color: "#a8bfdc", lineHeight: 1.55, marginTop: 14 }}>
-              This removes the category from Budget Command Center. Transactions stay safe and will
+              This removes the category from Budget Strategy Lab. Transactions stay safe and will
               roll into Other if they no longer match a category.
             </p>
             <div style={{ display: "flex", gap: 12, justifyContent: "flex-end", marginTop: 24 }}>
