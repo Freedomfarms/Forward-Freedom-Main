@@ -240,7 +240,7 @@ export function DashboardView({
       ? {
           x: getMonthStartX(projectionStartMonth),
           y: trueCashToChartY(projectionStartingTrueCash, chartMax),
-          date: `${projectionStartMonth} Opening Balance`,
+          date: `${projectionStartMonth} ${projectionSchedule[0]?.year || ""} Opening Balance`.trim(),
           value: wholeDollars(projectionStartingTrueCash),
           profit: 0,
           adjustment: 0,
@@ -535,6 +535,15 @@ export function DashboardView({
                   strokeWidth="3"
                   filter="url(#projectedTrueCashGlow)"
                 />
+                {projectionStartPoint ? (
+                  <circle
+                    cx={projectionStartPoint.x}
+                    cy={projectionStartPoint.y}
+                    r="5"
+                    fill="#ffd08a"
+                    filter="url(#projectedTrueCashGlow)"
+                  />
+                ) : null}
                 {(projectedTrueCashPoints.at(-1) || projectionStartPoint) ? (
                   <circle
                     cx={(projectedTrueCashPoints.at(-1) || projectionStartPoint).x}
