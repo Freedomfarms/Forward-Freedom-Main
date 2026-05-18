@@ -5,16 +5,11 @@ import { getCurrentBudgetPeriod } from "../utils/date.js";
 import { money, parseMoney } from "../utils/format.js";
 import { HouseholdProfilesControl, MonthCoverageEditor } from "./Common.jsx";
 
-function buildIncomeDonutGradient(incomeTotal, budgetTotal) {
-  const safeIncome = Math.max(Number(incomeTotal) || 0, 0);
-  const safeBudget = Math.max(Number(budgetTotal) || 0, 0);
-  const total = safeIncome + safeBudget;
-  if (total <= 0) {
-    return "conic-gradient(rgba(18,53,95,.92) 0 100%)";
-  }
-
-  const incomePercent = (safeIncome / total) * 100;
-  return `conic-gradient(#00f59b 0 ${incomePercent.toFixed(2)}%, #00d8ff ${incomePercent.toFixed(2)}% 100%)`;
+function buildHeatBarWidth(value, maxValue) {
+  const safeValue = Math.abs(Number(value) || 0);
+  const safeMax = Math.max(Number(maxValue) || 1, 1);
+  if (safeValue === 0) return "0%";
+  return `${Math.max(12, (safeValue / safeMax) * 100)}%`;
 }
 
 export function IncomeHub({
@@ -104,7 +99,39 @@ export function IncomeHub({
   const monthBudgetTotal = planningBudgetRows
     .filter((category) => (category.months || budgetMonths).includes(activeIncomeMonth))
     .reduce((sum, category) => sum + Number(category.budget || 0), 0);
-  const donutGradient = buildIncomeDonutGradient(monthIncomeTotal, monthBudgetTotal);
+  const monthCashFlow = monthIncomeTotal - monthBudgetTotal;
+  const scorecardBarMax = Math.max(
+    Math.abs(monthIncomeTotal),
+    Math.abs(monthBudgetTotal),
+    Math.abs(monthCashFlow),
+    1
+  );
+  const heatBars = [
+    {
+      label: "Income",
+      value: monthIncomeTotal,
+      accent: "#20c8ff",
+      glow: "rgba(32,200,255,.55)",
+      gradient: "linear-gradient(90deg,#14b8ff 0%, #00d8ff 52%, #7ef4ff 100%)",
+    },
+    {
+      label: "Budget",
+      value: monthBudgetTotal,
+      accent: "#4aa5ff",
+      glow: "rgba(74,165,255,.48)",
+      gradient: "linear-gradient(90deg,#1e87ff 0%, #3cbcff 50%, #9ceaff 100%)",
+    },
+    {
+      label: "Cash Flow",
+      value: monthCashFlow,
+      accent: monthCashFlow >= 0 ? "#00f59b" : "#ff5d7a",
+      glow: monthCashFlow >= 0 ? "rgba(0,245,155,.52)" : "rgba(255,93,122,.48)",
+      gradient:
+        monthCashFlow >= 0
+          ? "linear-gradient(90deg,#00c96f 0%, #00f59b 48%, #86ffd2 100%)"
+          : "linear-gradient(90deg,#ff3d67 0%, #ff5d7a 50%, #ffb3c1 100%)",
+    },
+  ];
 
   return (
     <div>
@@ -169,7 +196,7 @@ export function IncomeHub({
           padding: "32px 46px",
           borderRadius: 32,
           display: "grid",
-          gridTemplateColumns: "1fr 190px 1fr",
+          gridTemplateColumns: "1fr minmax(280px, 340px) 1fr",
           alignItems: "center",
           marginBottom: 38,
         }}
@@ -183,33 +210,119 @@ export function IncomeHub({
         <div style={{ display: "flex", justifyContent: "center" }}>
           <div
             style={{
-              width: 150,
-              height: 150,
-              borderRadius: 999,
-              padding: 18,
-              background: donutGradient,
-              boxShadow: "0 0 38px rgba(0,136,255,.26)",
+              width: "100%",
+              maxWidth: 320,
+              borderRadius: 22,
+              padding: "18px 18px 16px",
+              border: "1px solid rgba(0,216,255,.22)",
+              background:
+                "linear-gradient(180deg, rgba(4,22,43,.96), rgba(2,11,24,.94))",
+              boxShadow:
+                "0 0 28px rgba(0,136,255,.18), inset 0 0 22px rgba(0,216,255,.05)",
+              position: "relative",
+              overflow: "hidden",
             }}
           >
             <div
               style={{
-                width: "100%",
-                height: "100%",
-                borderRadius: 999,
-                background: "#031120",
-                boxShadow: "inset 0 0 28px rgba(0,0,0,.65)",
-                display: "grid",
-                placeItems: "center",
+                position: "absolute",
+                inset: 0,
+                background:
+                  "radial-gradient(circle at top center, rgba(0,216,255,.12), transparent 42%)",
+                pointerEvents: "none",
+              }}
+            />
+            <div
+              style={{
+                position: "relative",
                 color: "#8fb1d9",
                 fontSize: 12,
                 fontWeight: 900,
                 textTransform: "uppercase",
                 letterSpacing: 1,
-                textAlign: "center",
-                padding: 16,
+                marginBottom: 14,
               }}
             >
               {activeIncomeLabel}
+            </div>
+            <div style={{ position: "relative", display: "grid", gap: 14 }}>
+              {heatBars.map((bar) => (
+                <div key={bar.label} style={{ display: "grid", gap: 6 }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: 12,
+                    }}
+                  >
+                    <span
+                      style={{
+                        color: bar.accent,
+                        fontSize: 11,
+                        fontWeight: 900,
+                        textTransform: "uppercase",
+                        letterSpacing: 0.8,
+                      }}
+                    >
+                      {bar.label}
+                    </span>
+                    <span
+                      style={{
+                        color: "white",
+                        fontSize: 14,
+                        fontWeight: 900,
+                        textShadow: `0 0 12px ${bar.glow}`,
+                      }}
+                    >
+                      {bar.label === "Cash Flow" && bar.value > 0 ? "+" : ""}
+                      {money(bar.value)}
+                    </span>
+                  </div>
+                  <div
+                    style={{
+                      height: 14,
+                      borderRadius: 999,
+                      background: "rgba(6,22,40,.96)",
+                      border: "1px solid rgba(74,126,220,.18)",
+                      boxShadow: "inset 0 0 16px rgba(0,0,0,.45)",
+                      overflow: "hidden",
+                      position: "relative",
+                    }}
+                  >
+                    <div
+                      style={{
+                        position: "absolute",
+                        inset: 0,
+                        background:
+                          "linear-gradient(90deg, rgba(255,255,255,.04), rgba(255,255,255,0))",
+                        pointerEvents: "none",
+                      }}
+                    />
+                    <div
+                      style={{
+                        height: "100%",
+                        width: buildHeatBarWidth(bar.value, scorecardBarMax),
+                        minWidth: bar.value === 0 ? 0 : 12,
+                        borderRadius: 999,
+                        background: bar.gradient,
+                        boxShadow: `0 0 18px ${bar.glow}`,
+                        position: "relative",
+                      }}
+                    >
+                      <div
+                        style={{
+                          position: "absolute",
+                          inset: 0,
+                          background:
+                            "linear-gradient(180deg, rgba(255,255,255,.38), rgba(255,255,255,0))",
+                          mixBlendMode: "screen",
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </div>
