@@ -477,8 +477,8 @@ export function DashboardView({
                 <stop offset="1" stopColor="#001b3d" stopOpacity="0.05" />
               </linearGradient>
               <linearGradient id="projectedTrueCashFill" x1="0" x2="0" y1="0" y2="1">
-                <stop offset="0" stopColor="#ff9f1c" stopOpacity="0.42" />
-                <stop offset="1" stopColor="#3a1700" stopOpacity="0.03" />
+                <stop offset="0" stopColor="#ff9f1c" stopOpacity="0.65" />
+                <stop offset="1" stopColor="#3a1700" stopOpacity="0.05" />
               </linearGradient>
               <filter id="netWorthGlow">
                 <feGaussianBlur stdDeviation="4" result="blur" />
@@ -520,25 +520,15 @@ export function DashboardView({
                   strokeWidth="3"
                   filter="url(#projectedTrueCashGlow)"
                 />
-                {projectionStartPoint ? (
+                {(projectedTrueCashPoints.at(-1) || projectionStartPoint) ? (
                   <circle
-                    cx={projectionStartPoint.x}
-                    cy={projectionStartPoint.y}
-                    r="4"
+                    cx={(projectedTrueCashPoints.at(-1) || projectionStartPoint).x}
+                    cy={(projectedTrueCashPoints.at(-1) || projectionStartPoint).y}
+                    r="5"
                     fill="#ffd08a"
                     filter="url(#projectedTrueCashGlow)"
                   />
                 ) : null}
-                {projectedTrueCashPoints.map((point) => (
-                  <circle
-                    key={point.date}
-                    cx={point.x}
-                    cy={point.y}
-                    r="4"
-                    fill="#ffd08a"
-                    filter="url(#projectedTrueCashGlow)"
-                  />
-                ))}
               </>
             ) : null}
             <rect
