@@ -235,13 +235,23 @@ export function DashboardView({
           .slice(actualAnchorIndex)
           .map((value) => parseMoney(value))
           .map((value, index, values) => projectionStartingTrueCash + (value - values[0]))
-      : chartValues.values.map((value) => parseMoney(value));
+      : chartValues.supportsProjection
+        ? []
+        : chartValues.values.map((value) => parseMoney(value));
   const anchoredActualDates =
-    actualAnchorIndex >= 0 ? chartValues.dates.slice(actualAnchorIndex) : chartValues.dates;
+    actualAnchorIndex >= 0
+      ? chartValues.dates.slice(actualAnchorIndex)
+      : chartValues.supportsProjection
+        ? []
+        : chartValues.dates;
   const anchoredActualBasePoints =
-    actualAnchorIndex >= 0 ? chartValues.points.slice(actualAnchorIndex) : chartValues.points;
+    actualAnchorIndex >= 0
+      ? chartValues.points.slice(actualAnchorIndex)
+      : chartValues.supportsProjection
+        ? []
+        : chartValues.points;
   const actualOpeningPoint =
-    projectionSchedule.length && actualAnchorIndex >= 0
+    chartValues.supportsProjection
       ? {
           x: getMonthStartX(projectionStartMonth),
           y: 0,
@@ -278,8 +288,8 @@ export function DashboardView({
       ? [normalizedActualOpeningPoint.value, ...anchoredActualValues.map((value) => money(value))]
       : anchoredActualValues.map((value) => money(value)),
   };
-  const linePath = buildLinePath(chart.points);
-  const areaPath = buildAreaPath(chart.points);
+  const linePath = chart.points.length ? buildLinePath(chart.points) : "";
+  const areaPath = chart.points.length > 1 ? buildAreaPath(chart.points) : "";
   const projectionStartPoint =
     projectionSchedule.length
       ? {
