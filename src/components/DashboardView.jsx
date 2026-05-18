@@ -28,6 +28,13 @@ const MONTH_END_X = {
   Dec: 972,
 };
 
+function getMonthStartX(month) {
+  const monthIndex = budgetMonths.indexOf(month);
+  if (monthIndex <= 0) return 0;
+  const previousMonth = budgetMonths[monthIndex - 1];
+  return MONTH_END_X[previousMonth] || 0;
+}
+
 function trueCashToChartY(value, chartMax) {
   const safeMax = Math.max(Number(chartMax) || 1, 1);
   return Math.max(0, Math.min(CHART_HEIGHT, CHART_HEIGHT - (value / safeMax) * CHART_HEIGHT));
@@ -231,9 +238,9 @@ export function DashboardView({
   const projectionStartPoint =
     projectionSchedule.length
       ? {
-          x: MONTH_END_X[projectionStartMonth] || chart.points[0][0],
+          x: getMonthStartX(projectionStartMonth),
           y: trueCashToChartY(projectionStartingTrueCash, chartMax),
-          date: `${projectionStartMonth} Projection Start`,
+          date: `${projectionStartMonth} Opening Balance`,
           value: wholeDollars(projectionStartingTrueCash),
           profit: 0,
           adjustment: 0,
