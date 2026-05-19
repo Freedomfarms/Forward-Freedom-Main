@@ -1,10 +1,12 @@
 import { useState } from "react";
-import { APP_TABS, budgetMonthNames, chartSets } from "../data/constants.jsx";
+import { APP_TABS, budgetMonthNames, budgetMonths, chartSets } from "../data/constants.jsx";
 import { buildMonthlyBudgetReview } from "../utils/budgetReview.js";
 import { styles } from "../styles.js";
 import { buildAreaPath, buildLinePath, money, parseMoney, wholeDollars } from "../utils/format.js";
 import { buildSubscriptionOverview } from "../utils/subscriptions.js";
+import { buildReconciledTrueCashSeries } from "../utils/planning.js";
 import {
+  parseChartDate,
   buildSyncedTrueCashChart,
   buildTrueCashProjectionSchedule,
 } from "../utils/trueCashProjection.js";
@@ -27,6 +29,25 @@ const MONTH_END_X = {
   Nov: 889,
   Dec: 972,
 };
+
+function getMonthStartX(month) {
+  const monthIndex = budgetMonths.indexOf(month);
+  if (monthIndex <= 0) return 0;
+  const previousMonth = budgetMonths[monthIndex - 1];
+  return MONTH_END_X[previousMonth] || 0;
+}
+
+function shouldUseExtendedProjectionChart(baseChart, anchorMonth, anchorYear) {
+  const firstDate = baseChart?.dates?.[0];
+  if (!firstDate) return true;
+
+  const parsed = parseChartDate(firstDate);
+  const firstMonthIndex = budgetMonths.indexOf(parsed.month);
+  const anchorMonthIndex = budgetMonths.indexOf(anchorMonth);
+  if (parsed.year !== anchorYear) return parsed.year > anchorYear;
+  if (firstMonthIndex < 0 || anchorMonthIndex < 0) return true;
+  return anchorMonthIndex < firstMonthIndex;
+}
 
 function trueCashToChartY(value, chartMax) {
   const safeMax = Math.max(Number(chartMax) || 1, 1);
@@ -188,6 +209,7 @@ export function DashboardView({
   dynamicAllocations,
   metricSnapshots,
   householdProfilesProps,
+  planningAnchor,
 }) {
   const [hoverState, setHoverState] = useState(null);
   const [netWorthHistoryRange, setNetWorthHistoryRange] = useState("30D");
@@ -199,34 +221,97 @@ export function DashboardView({
   const monthlyBudgetReview = buildMonthlyBudgetReview(transactions, budgetRows);
   const subscriptionOverview = buildSubscriptionOverview(subscriptions);
   const netWorthHistory = buildNetWorthHistory(metricSnapshots, netWorthHistoryRange);
-  const chartValues = buildSyncedTrueCashChart(chartSets[activeRange], trueCash);
+  const projectionStartMonth = planningAnchor?.startingMonth || budgetMonths[0];
+  const initialChartValues = buildSyncedTrueCashChart(chartSets[activeRange], trueCash);
+  const initialProjectionYear = parseChartDate(initialChartValues.date).year;
+  const chartValues =
+    shouldUseExtendedProjectionChart(initialChartValues, projectionStartMonth, initialProjectionYear) &&
+    activeRange !== "ALL"
+      ? buildSyncedTrueCashChart(chartSets.ALL, trueCash)
+      : initialChartValues;
+  const projectionStartingTrueCash =
+    planningAnchor?.startingTrueCash !== undefined && planningAnchor?.startingTrueCash !== null
+      ? Number(planningAnchor.startingTrueCash) || 0
+      : parseMoney(chartValues.values[0] || chartValues.value);
   const projectionSchedule = buildTrueCashProjectionSchedule({
     chart: chartValues,
     incomeStreams,
     budgetRows,
-    projectionAdjustments,
+    projectionAdjustments: {},
+    startingMonth: projectionStartMonth,
+    startingTrueCash: projectionStartingTrueCash,
   });
+  const projectionYear = projectionSchedule[0]?.year || parseChartDate(chartValues.date).year;
+  const reconciledTrueCashSeries = chartValues.supportsProjection
+    ? buildReconciledTrueCashSeries({
+        targetYear: projectionYear,
+        incomeStreams,
+        budgetRows,
+        projectionAdjustments,
+        startingMonth: projectionStartMonth,
+        startingTrueCash: projectionStartingTrueCash,
+        liveCurrentTrueCash: trueCash,
+      })
+    : [];
+  const anchoredActualValues = chartValues.supportsProjection
+    ? reconciledTrueCashSeries.map((entry) => entry.value).filter((value) => value !== null)
+    : chartValues.values.map((value) => parseMoney(value));
+  const anchoredActualDates = chartValues.supportsProjection
+    ? reconciledTrueCashSeries
+        .filter((entry) => entry.value !== null)
+        .map((entry) => `${entry.month} ${entry.year} True Cash`)
+    : chartValues.dates;
+  const actualOpeningPoint =
+    chartValues.supportsProjection
+      ? {
+          x: getMonthStartX(projectionStartMonth),
+          y: 0,
+          date: `${projectionStartMonth} ${projectionYear} Opening Balance`,
+          value: wholeDollars(projectionStartingTrueCash),
+          type: "actual",
+        }
+      : null;
   const chartMax = buildChartMax([
-    ...chartValues.values.map((value) => parseMoney(value)),
+    ...anchoredActualValues,
     ...projectionSchedule.map((point) => point.value),
+    projectionStartingTrueCash,
   ]);
   const yAxisLabels = buildYAxisLabels(chartMax);
+  const actualChartPoints = chartValues.supportsProjection
+    ? reconciledTrueCashSeries
+        .filter((entry) => entry.value !== null && MONTH_END_X[entry.month])
+        .map((entry) => [MONTH_END_X[entry.month], trueCashToChartY(entry.value, chartMax)])
+    : chartValues.points.map((point, index) => [
+        point[0],
+        trueCashToChartY(parseMoney(chartValues.values[index]), chartMax),
+      ]);
+  const normalizedActualOpeningPoint = actualOpeningPoint
+    ? {
+        ...actualOpeningPoint,
+        y: trueCashToChartY(projectionStartingTrueCash, chartMax),
+      }
+    : null;
   const chart = {
     ...chartValues,
-    points: chartValues.points.map((point, index) => [
-      point[0],
-      trueCashToChartY(parseMoney(chartValues.values[index]), chartMax),
-    ]),
+    points: normalizedActualOpeningPoint
+      ? [[normalizedActualOpeningPoint.x, normalizedActualOpeningPoint.y], ...actualChartPoints]
+      : actualChartPoints,
+    dates: normalizedActualOpeningPoint
+      ? [normalizedActualOpeningPoint.date, ...anchoredActualDates]
+      : anchoredActualDates,
+    values: normalizedActualOpeningPoint
+      ? [normalizedActualOpeningPoint.value, ...anchoredActualValues.map((value) => money(value))]
+      : anchoredActualValues.map((value) => money(value)),
   };
-  const linePath = buildLinePath(chart.points);
-  const areaPath = buildAreaPath(chart.points);
+  const linePath = chart.points.length ? buildLinePath(chart.points) : "";
+  const areaPath = chart.points.length > 1 ? buildAreaPath(chart.points) : "";
   const projectionStartPoint =
-    projectionSchedule.length && chart.points.length
+    projectionSchedule.length
       ? {
-          x: chart.points[0][0],
-          y: chart.points[0][1],
-          date: `${chart.dates[0] || "Jan 1"} Projection Start`,
-          value: wholeDollars(parseMoney(chartValues.values[0] || chart.value)),
+          x: getMonthStartX(projectionStartMonth),
+          y: trueCashToChartY(projectionStartingTrueCash, chartMax),
+          date: `${projectionStartMonth} ${projectionSchedule[0]?.year || ""} Opening Balance`.trim(),
+          value: wholeDollars(projectionStartingTrueCash),
           profit: 0,
           adjustment: 0,
           type: "projected",
@@ -284,7 +369,7 @@ export function DashboardView({
     <>
       <header style={{ ...styles.pageHeader, marginBottom: 20 }}>
         <div>
-          <h1 style={styles.pageTitle}>Dashboard</h1>
+          <h1 style={styles.pageTitle}>Command Center</h1>
           <p style={styles.pageSubtitle}>Real-time overview of your financial position</p>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
@@ -477,8 +562,8 @@ export function DashboardView({
                 <stop offset="1" stopColor="#001b3d" stopOpacity="0.05" />
               </linearGradient>
               <linearGradient id="projectedTrueCashFill" x1="0" x2="0" y1="0" y2="1">
-                <stop offset="0" stopColor="#ff9f1c" stopOpacity="0.42" />
-                <stop offset="1" stopColor="#3a1700" stopOpacity="0.03" />
+                <stop offset="0" stopColor="#ff9f1c" stopOpacity="0.65" />
+                <stop offset="1" stopColor="#3a1700" stopOpacity="0.05" />
               </linearGradient>
               <filter id="netWorthGlow">
                 <feGaussianBlur stdDeviation="4" result="blur" />
@@ -503,6 +588,15 @@ export function DashboardView({
               strokeWidth="3"
               filter="url(#netWorthGlow)"
             />
+            {normalizedActualOpeningPoint ? (
+              <circle
+                cx={normalizedActualOpeningPoint.x}
+                cy={normalizedActualOpeningPoint.y}
+                r="5"
+                fill="#8edbff"
+                filter="url(#netWorthGlow)"
+              />
+            ) : null}
             <circle
               cx={chart.points[chart.points.length - 1][0]}
               cy={chart.points[chart.points.length - 1][1]}
@@ -520,25 +614,15 @@ export function DashboardView({
                   strokeWidth="3"
                   filter="url(#projectedTrueCashGlow)"
                 />
-                {projectionStartPoint ? (
+                {(projectedTrueCashPoints.at(-1) || projectionStartPoint) ? (
                   <circle
-                    cx={projectionStartPoint.x}
-                    cy={projectionStartPoint.y}
-                    r="4"
+                    cx={(projectedTrueCashPoints.at(-1) || projectionStartPoint).x}
+                    cy={(projectedTrueCashPoints.at(-1) || projectionStartPoint).y}
+                    r="5"
                     fill="#ffd08a"
                     filter="url(#projectedTrueCashGlow)"
                   />
                 ) : null}
-                {projectedTrueCashPoints.map((point) => (
-                  <circle
-                    key={point.date}
-                    cx={point.x}
-                    cy={point.y}
-                    r="4"
-                    fill="#ffd08a"
-                    filter="url(#projectedTrueCashGlow)"
-                  />
-                ))}
               </>
             ) : null}
             <rect
@@ -626,7 +710,7 @@ export function DashboardView({
                   letterSpacing: 1,
                 }}
               >
-                {hoverState.point.type === "projected" ? "Projected True Cash" : "True Cash Scan"}
+                {hoverState.point.type === "projected" ? "Projected True Cash" : "True Cash"}
               </div>
               <div style={{ color: "white", fontSize: 15, fontWeight: 800, marginTop: 7 }}>
                 {hoverState.point.date}

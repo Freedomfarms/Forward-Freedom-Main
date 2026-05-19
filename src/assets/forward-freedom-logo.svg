@@ -1,98 +1,150 @@
-<svg width="1200" height="1200" viewBox="0 0 1200 1200" fill="none" xmlns="http://www.w3.org/2000/svg">
+<svg
+  width="1200"
+  height="1200"
+  viewBox="0 0 1200 1200"
+  fill="none"
+  xmlns="http://www.w3.org/2000/svg"
+  shape-rendering="geometricPrecision"
+  text-rendering="geometricPrecision"
+>
   <defs>
-    <linearGradient id="ringGlow" x1="140" y1="130" x2="1060" y2="1070" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#26C8FF" />
-      <stop offset="0.45" stop-color="#1F7DFF" />
-      <stop offset="1" stop-color="#7BE7FF" />
+    <linearGradient id="chrome" x1="236" y1="190" x2="804" y2="616" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" />
+      <stop offset="0.12" stop-color="#F6FAFF" />
+      <stop offset="0.28" stop-color="#D6E0EA" />
+      <stop offset="0.46" stop-color="#8B99AB" />
+      <stop offset="0.62" stop-color="#F8FBFF" />
+      <stop offset="0.82" stop-color="#B5C0D0" />
+      <stop offset="1" stop-color="#FFFFFF" />
     </linearGradient>
-    <linearGradient id="steel" x1="280" y1="180" x2="740" y2="640" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#FAFDFF" />
-      <stop offset="0.28" stop-color="#DCE7F4" />
-      <stop offset="0.6" stop-color="#AEBFD4" />
-      <stop offset="1" stop-color="#F5FBFF" />
+    <linearGradient id="chrome-cut" x1="366" y1="240" x2="728" y2="362" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" />
+      <stop offset="0.44" stop-color="#ECF3FB" />
+      <stop offset="1" stop-color="#D5DFEB" />
     </linearGradient>
-    <linearGradient id="blueGlow" x1="330" y1="390" x2="930" y2="770" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#1CE6FF" />
-      <stop offset="0.4" stop-color="#2584FF" />
-      <stop offset="1" stop-color="#10D7FF" />
+    <linearGradient id="lux-blue" x1="474" y1="356" x2="948" y2="706" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#36F0FF" />
+      <stop offset="0.36" stop-color="#1E9EFF" />
+      <stop offset="0.74" stop-color="#2550FF" />
+      <stop offset="1" stop-color="#26E9FF" />
     </linearGradient>
-    <filter id="outerGlow" x="0" y="0" width="1200" height="1200" filterUnits="userSpaceOnUse">
-      <feGaussianBlur stdDeviation="10" result="blur" />
-      <feMerge>
-        <feMergeNode in="blur" />
-        <feMergeNode in="SourceGraphic" />
-      </feMerge>
-    </filter>
+    <linearGradient id="lux-blue-cut" x1="560" y1="420" x2="846" y2="526" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#D6FFFF" />
+      <stop offset="0.46" stop-color="#7BE4FF" />
+      <stop offset="1" stop-color="#16C9FF" />
+    </linearGradient>
+    <linearGradient id="ring-blue" x1="164" y1="194" x2="1038" y2="966" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2EEBFF" />
+      <stop offset="0.46" stop-color="#1C90FF" />
+      <stop offset="0.82" stop-color="#214BFF" />
+      <stop offset="1" stop-color="#26EFFF" />
+    </linearGradient>
+    <linearGradient id="text-silver" x1="132" y1="730" x2="918" y2="920" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" />
+      <stop offset="0.18" stop-color="#F5F9FE" />
+      <stop offset="0.46" stop-color="#BAC5D4" />
+      <stop offset="0.68" stop-color="#818EA1" />
+      <stop offset="0.84" stop-color="#F8FBFF" />
+      <stop offset="1" stop-color="#DCE4EF" />
+    </linearGradient>
+    <linearGradient id="text-blue" x1="150" y1="848" x2="1050" y2="964" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#34F0FF" />
+      <stop offset="0.38" stop-color="#1D9FFF" />
+      <stop offset="0.74" stop-color="#2654FF" />
+      <stop offset="1" stop-color="#23EEFF" />
+    </linearGradient>
   </defs>
 
-  <circle cx="600" cy="520" r="410" stroke="url(#ringGlow)" stroke-width="10" opacity="0.18" />
-  <path d="M174 350C236 274 334 214 446 184" stroke="url(#ringGlow)" stroke-width="16" stroke-linecap="round" opacity="0.7" />
-  <path d="M756 160C864 182 962 244 1028 324" stroke="url(#ringGlow)" stroke-width="16" stroke-linecap="round" opacity="0.72" />
-  <path d="M1032 330C1074 396 1094 474 1094 556C1094 642 1072 722 1028 790" stroke="url(#ringGlow)" stroke-width="14" stroke-linecap="round" opacity="0.54" />
-  <path d="M902 930C812 984 708 1012 600 1012C502 1012 410 988 330 944" stroke="url(#ringGlow)" stroke-width="12" stroke-linecap="round" opacity="0.42" />
-
-  <path d="M210 340H400L282 406L210 340Z" fill="url(#blueGlow)" filter="url(#outerGlow)" opacity="0.72" />
-  <path d="M172 398H364L246 462L172 398Z" fill="url(#blueGlow)" filter="url(#outerGlow)" opacity="0.58" />
-  <path d="M134 454H328L214 516L134 454Z" fill="url(#blueGlow)" filter="url(#outerGlow)" opacity="0.46" />
+  <path d="M188 382C266 274 388 198 534 166" stroke="url(#ring-blue)" stroke-width="12" stroke-linecap="round" />
+  <path d="M772 168C860 184 942 230 1004 300" stroke="#EFF5FF" stroke-width="10" stroke-linecap="round" />
+  <path d="M1010 312C1054 374 1080 448 1086 526" stroke="url(#ring-blue)" stroke-width="8" stroke-linecap="round" opacity="0.86" />
+  <path d="M304 1032C396 1068 497 1088 604 1088C718 1088 825 1064 918 1018" stroke="url(#ring-blue)" stroke-width="7" stroke-linecap="round" opacity="0.78" />
 
   <path
-    d="M364 228H856L734 350H520L396 592L214 700L364 404C394 346 420 296 442 256L364 228Z"
-    fill="url(#steel)"
-    stroke="#F4FAFF"
-    stroke-opacity="0.26"
-    stroke-width="4"
+    d="M394 238H846L744 344H554C531 344 509 355 496 375L364 634L220 706L352 438C369 404 387 370 402 326L394 238Z"
+    fill="#05111D"
   />
   <path
-    d="M560 408H1010L862 546L662 546L590 650H818L696 758H398L560 408Z"
-    fill="url(#blueGlow)"
-    stroke="#6EE8FF"
-    stroke-opacity="0.35"
-    stroke-width="4"
-    filter="url(#outerGlow)"
+    d="M382 224H830L724 334H554C531 334 510 345 498 364L368 622L212 694L344 430C361 396 378 362 392 314L382 224Z"
+    fill="url(#chrome)"
+    stroke="#FFFFFF"
+    stroke-width="5"
+    stroke-linejoin="miter"
   />
   <path
-    d="M454 564H732L646 646H408L454 564Z"
-    fill="#1549FF"
-    fill-opacity="0.72"
-    filter="url(#outerGlow)"
-  />
-
-  <text
-    x="600"
-    y="820"
-    text-anchor="middle"
-    font-family="Inter, Arial, sans-serif"
-    font-size="124"
-    font-weight="900"
-    letter-spacing="6"
-    fill="url(#steel)"
-  >
-    FORWARD
-  </text>
-  <text
-    x="600"
-    y="948"
-    text-anchor="middle"
-    font-family="Inter, Arial, sans-serif"
-    font-size="148"
-    font-weight="900"
-    letter-spacing="6"
-    fill="url(#blueGlow)"
-    filter="url(#outerGlow)"
-  >
-    FREEDOM
-  </text>
-  <text
-    x="600"
-    y="1030"
-    text-anchor="middle"
-    font-family="Inter, Arial, sans-serif"
-    font-size="54"
-    font-weight="800"
-    letter-spacing="18"
-    fill="#F7FBFF"
+    d="M410 254H758L694 320H566C541 320 518 331 506 350L422 512L330 552L410 396C424 367 438 338 450 294L410 254Z"
+    fill="url(#chrome-cut)"
     opacity="0.92"
-  >
-    FINANCIAL
-  </text>
+  />
+  <path
+    d="M560 394H996L860 528H688L624 612H842L700 724H410L560 394Z"
+    fill="#06131F"
+  />
+  <path
+    d="M548 382H982L848 516H680L616 600H830L690 712H396L548 382Z"
+    fill="url(#lux-blue)"
+    stroke="#E2FFFF"
+    stroke-width="5"
+    stroke-linejoin="miter"
+  />
+  <path
+    d="M594 412H898L818 492H682L640 536H780L716 596H554L594 412Z"
+    fill="url(#lux-blue-cut)"
+    opacity="0.92"
+  />
+  <path d="M442 548H758L658 646H392L442 548Z" fill="#1230A6" />
+  <path d="M456 562H734L648 630H416L456 562Z" fill="url(#lux-blue-cut)" />
+  <path d="M392 650H670L556 740H310L392 650Z" fill="#2148FF" />
+  <path d="M406 666H644L540 726H338L406 666Z" fill="url(#lux-blue-cut)" />
+  <path d="M838 446L916 458L842 528L820 486L838 446Z" fill="#FFFFFF" />
+
+  <g transform="translate(0 10)">
+    <text
+      x="600"
+      y="798"
+      text-anchor="middle"
+      font-family="Arial Black, Arial, sans-serif"
+      font-size="120"
+      font-weight="900"
+      font-style="italic"
+      letter-spacing="3.5"
+      fill="url(#text-silver)"
+      stroke="#FFFFFF"
+      stroke-width="2"
+      paint-order="stroke fill"
+    >
+      FORWARD
+    </text>
+    <text
+      x="600"
+      y="936"
+      text-anchor="middle"
+      font-family="Arial Black, Arial, sans-serif"
+      font-size="144"
+      font-weight="900"
+      font-style="italic"
+      letter-spacing="3.5"
+      fill="url(#text-blue)"
+      stroke="#F2FFFF"
+      stroke-width="2"
+      paint-order="stroke fill"
+    >
+      FREEDOM
+    </text>
+
+    <path d="M166 994H324" stroke="url(#ring-blue)" stroke-width="5" stroke-linecap="round" />
+    <path d="M876 994H1034" stroke="url(#ring-blue)" stroke-width="5" stroke-linecap="round" />
+    <text
+      x="600"
+      y="1012"
+      text-anchor="middle"
+      font-family="Arial, sans-serif"
+      font-size="54"
+      font-weight="800"
+      letter-spacing="16"
+      fill="#F9FCFF"
+    >
+      FINANCIAL
+    </text>
+  </g>
 </svg>

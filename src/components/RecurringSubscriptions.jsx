@@ -646,7 +646,7 @@ export function RecurringSubscriptions({
           </div>
           <div style={{ marginTop: 10, lineHeight: 1.6 }}>
             Add your subscriptions, insurance, memberships, or mortgage payments so Operations,
-            Forecast, and the Dashboard can see the fixed costs you carry every month.
+            Forecast, and the Command Center can see the fixed costs you carry every month.
           </div>
           <button
             onClick={() => setShowAddForm(true)}

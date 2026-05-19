@@ -1,5 +1,5 @@
 import { useState } from "react";
-import forwardFreedomLogo from "../assets/forward-freedom-logo.svg";
+import forwardFreedomLogo from "../assets/forward-freedom-logo.png";
 
 const LEGAL_CONTENT = {
   terms: {
@@ -63,6 +63,9 @@ function buildPrimaryButtonStyle(isSecondary = false) {
     boxShadow: isSecondary ? "none" : "0 0 24px rgba(0,136,255,.32)",
   };
 }
+
+const HERO_LOGO_MASK =
+  "radial-gradient(circle at center, rgba(0,0,0,1) 0%, rgba(0,0,0,1) 52%, rgba(0,0,0,.96) 66%, rgba(0,0,0,.72) 78%, rgba(0,0,0,.28) 86%, rgba(0,0,0,0) 94%)";
 
 function LegalModal({ activeDocument, closeDocument }) {
   const document = activeDocument ? LEGAL_CONTENT[activeDocument] : null;
@@ -232,20 +235,21 @@ export function LandingPage({ enterApp }) {
         <nav
           style={{
             display: "grid",
-            gridTemplateColumns: "280px 1fr auto",
+            gridTemplateColumns: "minmax(220px, 280px) 1fr auto",
             alignItems: "center",
             marginBottom: 108,
             gap: 24,
           }}
         >
-          <div style={{ display: "flex", alignItems: "center" }}>
+          <div style={{ display: "flex", alignItems: "center", minHeight: 118 }}>
             <img
               src={forwardFreedomLogo}
               alt="Forward Freedom Financial logo"
               style={{
-                width: 214,
+                width: 110,
                 maxWidth: "100%",
-                filter: "drop-shadow(0 0 18px rgba(0,136,255,.28))",
+                display: "block",
+                objectFit: "contain",
               }}
             />
           </div>
@@ -293,10 +297,10 @@ export function LandingPage({ enterApp }) {
           id="home"
           style={{
             display: "grid",
-            gridTemplateColumns: "minmax(0, 1fr) minmax(360px, 460px)",
-            gap: 36,
-            alignItems: "start",
-            marginBottom: 42,
+            gridTemplateColumns: "minmax(0, 1fr) minmax(400px, 560px)",
+            gap: 48,
+            alignItems: "center",
+            marginBottom: 52,
           }}
         >
           <div style={{ maxWidth: 700 }}>
@@ -363,20 +367,73 @@ export function LandingPage({ enterApp }) {
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              minHeight: 430,
-              padding: 8,
+              justifySelf: "center",
+              width: "100%",
+              minHeight: 560,
+              padding: "18px 0",
             }}
           >
-            <img
-              src={forwardFreedomLogo}
-              alt="Forward Freedom Financial logo"
+            <div
               style={{
+                position: "relative",
                 width: "100%",
-                maxWidth: 500,
-                filter:
-                  "drop-shadow(0 0 18px rgba(0,136,255,.36)) drop-shadow(0 0 42px rgba(0,98,255,.2))",
+                maxWidth: 640,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                isolation: "isolate",
               }}
-            />
+            >
+              <div
+                aria-hidden="true"
+                style={{
+                  position: "absolute",
+                  inset: "12% 6%",
+                  background:
+                    "radial-gradient(circle at 50% 46%, rgba(7,166,255,.26) 0%, rgba(5,96,214,.16) 28%, rgba(2,7,17,0) 72%)",
+                  filter: "blur(28px)",
+                  opacity: 0.95,
+                  transform: "scale(1.04)",
+                }}
+              />
+              <div
+                aria-hidden="true"
+                style={{
+                  position: "absolute",
+                  inset: "6%",
+                  backgroundImage: `url(${forwardFreedomLogo})`,
+                  backgroundPosition: "center",
+                  backgroundRepeat: "no-repeat",
+                  backgroundSize: "contain",
+                  opacity: 0.22,
+                  filter: "blur(34px) saturate(1.15)",
+                  transform: "scale(1.02)",
+                }}
+              />
+              <img
+                src={forwardFreedomLogo}
+                alt="Forward Freedom Financial logo"
+                style={{
+                  width: "min(100%, 620px)",
+                  maxWidth: "100%",
+                  position: "relative",
+                  zIndex: 1,
+                  display: "block",
+                  margin: "0 auto",
+                  objectFit: "contain",
+                  objectPosition: "center",
+                  filter: "drop-shadow(0 0 10px rgba(0,136,255,.08))",
+                  WebkitMaskImage: HERO_LOGO_MASK,
+                  maskImage: HERO_LOGO_MASK,
+                  WebkitMaskRepeat: "no-repeat",
+                  maskRepeat: "no-repeat",
+                  WebkitMaskPosition: "center",
+                  maskPosition: "center",
+                  WebkitMaskSize: "100% 100%",
+                  maskSize: "100% 100%",
+                }}
+              />
+            </div>
           </div>
         </section>
 

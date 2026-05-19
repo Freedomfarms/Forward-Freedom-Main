@@ -1,0 +1,57 @@
+<svg
+  width="512"
+  height="512"
+  viewBox="0 0 512 512"
+  fill="none"
+  xmlns="http://www.w3.org/2000/svg"
+  shape-rendering="geometricPrecision"
+>
+  <defs>
+    <linearGradient id="mark-blue" x1="110" y1="86" x2="420" y2="400" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#33F0FF" />
+      <stop offset="0.38" stop-color="#1E9EFF" />
+      <stop offset="0.76" stop-color="#2551FF" />
+      <stop offset="1" stop-color="#25EBFF" />
+    </linearGradient>
+    <linearGradient id="mark-blue-cut" x1="238" y1="184" x2="380" y2="250" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#D8FFFF" />
+      <stop offset="0.52" stop-color="#7CE4FF" />
+      <stop offset="1" stop-color="#18CBFF" />
+    </linearGradient>
+    <linearGradient id="mark-chrome" x1="120" y1="84" x2="300" y2="230" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" />
+      <stop offset="0.18" stop-color="#F6FBFF" />
+      <stop offset="0.44" stop-color="#BAC6D6" />
+      <stop offset="0.66" stop-color="#8693A7" />
+      <stop offset="0.82" stop-color="#FAFCFF" />
+      <stop offset="1" stop-color="#DAE2ED" />
+    </linearGradient>
+  </defs>
+
+  <path d="M84 174C116 128 168 94 230 80" stroke="url(#mark-blue)" stroke-width="7" stroke-linecap="round" />
+  <path d="M320 84C364 92 402 112 432 142" stroke="#F2F8FF" stroke-width="6" stroke-linecap="round" />
+
+  <path d="M166 100H356L296 163H218C205 163 194 169 187 180L110 330L60 354L138 196C147 178 156 160 164 140L166 100Z" fill="#07111D" />
+  <path
+    d="M158 92H354L294 154H218C204 154 192 160 185 172L110 320L54 346L136 190C145 172 152 154 158 136V92Z"
+    fill="url(#mark-chrome)"
+    stroke="#FFFFFF"
+    stroke-width="3.5"
+    stroke-linejoin="miter"
+  />
+  <path d="M182 112H318L280 150H226C210 150 196 158 188 172L136 270L100 284L154 186C162 170 170 154 177 136L182 112Z" fill="#FFFFFF" opacity="0.72" />
+
+  <path d="M242 188H442L378 252H298L266 292H372L308 352H154L242 188Z" fill="#08131F" />
+  <path
+    d="M232 180H438L374 244H296L264 284H368L304 344H146L232 180Z"
+    fill="url(#mark-blue)"
+    stroke="#ECFFFF"
+    stroke-width="3.5"
+    stroke-linejoin="miter"
+  />
+  <path d="M266 198H390L352 236H294L274 258H336L306 290H236L266 198Z" fill="url(#mark-blue-cut)" />
+  <path d="M186 274H314L274 314H168L186 274Z" fill="#1130A9" />
+  <path d="M196 284H298L264 309H180L196 284Z" fill="url(#mark-blue-cut)" />
+  <path d="M166 322H276L232 358H124L166 322Z" fill="#2148FF" />
+  <path d="M178 332H254L226 353H150L178 332Z" fill="url(#mark-blue-cut)" />
+</svg>

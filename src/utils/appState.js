@@ -14,6 +14,10 @@ import { buildPlanYearData, normalizePlansByYear } from "./planning.js";
 export const APP_STATE_STORAGE_KEY = "fff-app-state-v1";
 export const LEGACY_METRIC_SNAPSHOT_STORAGE_KEY = "fff-dashboard-metric-snapshots-v1";
 const DEFAULT_ACTIVE_RANGE = "ALL";
+const LEGACY_APP_TABS = {
+  Dashboard: APP_TABS.DASHBOARD,
+  "Budget Command Center": APP_TABS.BUDGET_COMMAND_CENTER,
+};
 
 function cloneSeed(value) {
   return JSON.parse(JSON.stringify(value));
@@ -89,6 +93,12 @@ function buildUserState({
   };
 }
 
+function normalizeStoredActiveTab(activeTab) {
+  if (typeof activeTab !== "string") return null;
+  if (APP_TAB_VALUES.includes(activeTab)) return activeTab;
+  return LEGACY_APP_TABS[activeTab] || null;
+}
+
 function normalizeUserState(rawUser, fallbackName, useSeedData = true) {
   const defaults = buildUserState({
     id: rawUser?.id || generateUserProfileId(),
@@ -137,10 +147,7 @@ function normalizeUserState(rawUser, fallbackName, useSeedData = true) {
       rawUser?.merchantCategoryRules && typeof rawUser.merchantCategoryRules === "object"
         ? rawUser.merchantCategoryRules
         : defaults.merchantCategoryRules,
-    activeTab:
-      typeof rawUser?.activeTab === "string" && APP_TAB_VALUES.includes(rawUser.activeTab)
-        ? rawUser.activeTab
-        : defaults.activeTab,
+    activeTab: normalizeStoredActiveTab(rawUser?.activeTab) || defaults.activeTab,
     activeRange:
       typeof rawUser?.activeRange === "string" ? rawUser.activeRange : defaults.activeRange,
     metricSnapshots:

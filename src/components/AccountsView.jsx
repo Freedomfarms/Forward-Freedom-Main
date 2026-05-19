@@ -643,7 +643,7 @@ export function AccountsView({
                 Start your financial system
               </div>
               <div style={{ color: "#8ea8ca", marginTop: 10, fontSize: 15, lineHeight: 1.6 }}>
-                Add your core accounts first so Dashboard, Budget, Forecast, and Transactions all
+                Add your core accounts first so Command Center, Budget Strategy Lab, Forecast, and Transactions all
                 have a real source of truth to work from.
               </div>
             </div>

@@ -1,3 +1,5 @@
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { styles } from "../styles.js";
 
 export function InfoDot() {
@@ -223,6 +225,9 @@ export function MonthCoverageEditor({
   quickActions = [],
   onToggleMonth,
 }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [popoverPosition, setPopoverPosition] = useState(null);
+  const triggerRef = useRef(null);
   const activeMonths = selectedMonths?.length ? selectedMonths : allMonths;
   const allSelected = activeMonths.length === allMonths.length;
   const summaryLabel = allSelected
@@ -231,11 +236,182 @@ export function MonthCoverageEditor({
       ? activeMonths[0]
       : `${activeMonths.length} months`;
 
+  useEffect(() => {
+    if (!isOpen) return undefined;
+
+    const handleEscape = (event) => {
+      if (event.key === "Escape") setIsOpen(false);
+    };
+
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, [isOpen]);
+
+  useLayoutEffect(() => {
+    if (!isOpen || !triggerRef.current || typeof window === "undefined") return undefined;
+
+    const updatePopoverPosition = () => {
+      const triggerBounds = triggerRef.current?.getBoundingClientRect();
+      if (!triggerBounds) return;
+
+      const desiredWidth = 300;
+      const maxLeft = Math.max(12, window.innerWidth - desiredWidth - 12);
+      setPopoverPosition({
+        top: triggerBounds.bottom + 8,
+        left: Math.min(Math.max(12, triggerBounds.left), maxLeft),
+        width: desiredWidth,
+      });
+    };
+
+    updatePopoverPosition();
+    window.addEventListener("resize", updatePopoverPosition);
+    window.addEventListener("scroll", updatePopoverPosition, true);
+    return () => {
+      window.removeEventListener("resize", updatePopoverPosition);
+      window.removeEventListener("scroll", updatePopoverPosition, true);
+    };
+  }, [isOpen]);
+
+  const popover =
+    isOpen && popoverPosition && typeof document !== "undefined"
+      ? createPortal(
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 2400,
+            }}
+          >
+            <div
+              aria-hidden="true"
+              style={{
+                position: "absolute",
+                inset: 0,
+                background: "rgba(2,8,18,.04)",
+              }}
+            />
+            <div
+              onMouseDown={(event) => event.stopPropagation()}
+              style={{
+                position: "absolute",
+                top: popoverPosition.top,
+                left: popoverPosition.left,
+                width: popoverPosition.width,
+                padding: 14,
+                borderRadius: 14,
+                border: "1px solid rgba(0,216,255,.28)",
+                backgroundColor: "#081423",
+                boxShadow: "0 18px 42px rgba(0,8,18,.72), 0 0 28px rgba(0,136,255,.2)",
+                display: "grid",
+                gap: 10,
+              }}
+            >
+              <div
+                style={{
+                  color: "#7ea6d8",
+                  fontSize: 11,
+                  fontWeight: 800,
+                  textTransform: "uppercase",
+                  letterSpacing: 0.8,
+                }}
+              >
+                Coverage
+              </div>
+
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                {quickActions.map((action) => (
+                  <button
+                    key={action.label}
+                    type="button"
+                    onMouseDown={(event) => event.stopPropagation()}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      action.onClick();
+                    }}
+                    style={{
+                      background: "#10253b",
+                      border: "1px solid rgba(0,216,255,.2)",
+                      color: "#9fd8ff",
+                      borderRadius: 999,
+                      padding: "5px 10px",
+                      fontSize: 11,
+                      fontWeight: 800,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {action.label}
+                  </button>
+                ))}
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 8 }}>
+                {allMonths.map((month) => {
+                  const isActive = activeMonths.includes(month);
+                  return (
+                    <button
+                      key={month}
+                      type="button"
+                      onMouseDown={(event) => event.stopPropagation()}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onToggleMonth(month);
+                      }}
+                      style={{
+                        background: isActive ? "#12385d" : "#102133",
+                        border: isActive
+                          ? "1px solid rgba(0,216,255,.42)"
+                          : "1px solid rgba(0,136,255,.16)",
+                        color: isActive ? "#eaf7ff" : "#7ea6d8",
+                        borderRadius: 999,
+                        padding: "7px 0",
+                        fontSize: 11,
+                        fontWeight: 800,
+                        cursor: "pointer",
+                        boxShadow: isActive ? "0 0 14px rgba(0,136,255,.16)" : "none",
+                        minWidth: 42,
+                      }}
+                    >
+                      {month}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 2 }}>
+                <button
+                  type="button"
+                  onMouseDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setIsOpen(false);
+                  }}
+                  style={{
+                    background: "linear-gradient(90deg,#0077ff,#00d8ff)",
+                    border: "1px solid rgba(120,220,255,.34)",
+                    borderRadius: 999,
+                    color: "white",
+                    padding: "6px 12px",
+                    fontSize: 11,
+                    fontWeight: 800,
+                    cursor: "pointer",
+                  }}
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )
+      : null;
+
   return (
-    <details style={{ position: "relative", marginTop: 10, zIndex: 40 }}>
-      <summary
+    <div style={{ position: "relative", marginTop: 10, zIndex: 40 }}>
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={() => setIsOpen((current) => !current)}
         style={{
-          listStyle: "none",
           display: "inline-flex",
           alignItems: "center",
           gap: 10,
@@ -248,6 +424,7 @@ export function MonthCoverageEditor({
           fontSize: 12,
           fontWeight: 800,
           userSelect: "none",
+          outline: "none",
         }}
       >
         <span>{summaryLabel}</span>
@@ -256,88 +433,9 @@ export function MonthCoverageEditor({
             ? "All active"
             : `${activeMonths.length} active month${activeMonths.length === 1 ? "" : "s"}`}
         </span>
-        <span style={{ fontSize: 11 }}>▾</span>
-      </summary>
-
-      <div
-        style={{
-          position: "absolute",
-          top: "calc(100% + 8px)",
-          left: 0,
-          zIndex: 60,
-          minWidth: 280,
-          padding: 14,
-          borderRadius: 14,
-          border: "1px solid rgba(0,216,255,.22)",
-          background: "linear-gradient(180deg, rgba(6,22,43,.98), rgba(2,9,22,.96))",
-          boxShadow: "0 0 28px rgba(0,136,255,.24), inset 0 0 18px rgba(0,216,255,.06)",
-          display: "grid",
-          gap: 10,
-        }}
-      >
-        <div
-          style={{
-            color: "#7ea6d8",
-            fontSize: 11,
-            fontWeight: 800,
-            textTransform: "uppercase",
-            letterSpacing: 0.8,
-          }}
-        >
-          Coverage
-        </div>
-
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          {quickActions.map((action) => (
-            <button
-              key={action.label}
-              type="button"
-              onClick={action.onClick}
-              style={{
-                background: "rgba(0,136,255,.08)",
-                border: "1px solid rgba(0,216,255,.18)",
-                color: "#9fd8ff",
-                borderRadius: 999,
-                padding: "5px 10px",
-                fontSize: 11,
-                fontWeight: 800,
-                cursor: "pointer",
-              }}
-            >
-              {action.label}
-            </button>
-          ))}
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 8 }}>
-          {allMonths.map((month) => {
-            const isActive = activeMonths.includes(month);
-            return (
-              <button
-                key={month}
-                type="button"
-                onClick={() => onToggleMonth(month)}
-                style={{
-                  background: isActive ? "rgba(0,104,255,.18)" : "rgba(4,18,34,.72)",
-                  border: isActive
-                    ? "1px solid rgba(0,216,255,.42)"
-                    : "1px solid rgba(0,136,255,.16)",
-                  color: isActive ? "#eaf7ff" : "#7ea6d8",
-                  borderRadius: 999,
-                  padding: "7px 0",
-                  fontSize: 11,
-                  fontWeight: 800,
-                  cursor: "pointer",
-                  boxShadow: isActive ? "0 0 14px rgba(0,136,255,.16)" : "none",
-                  minWidth: 42,
-                }}
-              >
-                {month}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-    </details>
+        <span style={{ fontSize: 11 }}>{isOpen ? "▴" : "▾"}</span>
+      </button>
+      {popover}
+    </div>
   );
 }
