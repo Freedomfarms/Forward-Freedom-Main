@@ -218,7 +218,7 @@ export function DashboardView({
     chart: chartValues,
     incomeStreams,
     budgetRows,
-    projectionAdjustments,
+    projectionAdjustments: {},
     startingMonth: projectionStartMonth,
     startingTrueCash: projectionStartingTrueCash,
   });

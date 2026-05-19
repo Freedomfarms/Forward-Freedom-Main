@@ -4,7 +4,7 @@ import { buildBudgetMonthlySpendSeries } from "../utils/budgetReview.js";
 import { getCurrentBudgetPeriod } from "../utils/date.js";
 import { cleanMoneyInput, money, parseMoney, wholeDollars } from "../utils/format.js";
 import { budgetMonths, yearlyOpsData } from "../data/constants.jsx";
-import { buildFullYearProjectionSeries } from "../utils/planning.js";
+import { buildProjectedTrueCashSeries } from "../utils/planning.js";
 import { buildSubscriptionOverview } from "../utils/subscriptions.js";
 import { HouseholdProfilesControl } from "./Common.jsx";
 
@@ -21,6 +21,11 @@ function normalizeAdjustmentInput(value) {
   if (isNegative && Number(digits) === 0) return "-";
 
   return `${isNegative ? "-" : ""}${Number(digits)}`;
+}
+
+function getLastNonNullValue(values, fallback = 0) {
+  const lastValue = [...values].reverse().find((value) => value !== null && value !== undefined);
+  return lastValue ?? fallback;
 }
 
 export function OperationsBoard({
@@ -119,12 +124,46 @@ export function OperationsBoard({
   const adjustmentValues = budgetMonths.map((month) =>
     parseMoney(planningProjectionAdjustments[month])
   );
-  const projectedTrueCashValues = buildFullYearProjectionSeries({
+  const anchorStartingMonth = planningAnchor.startingMonth || activePlanningMonth;
+  const anchorStartingTrueCash =
+    planningAnchor.startingTrueCash !== undefined && planningAnchor.startingTrueCash !== null
+      ? Number(planningAnchor.startingTrueCash) || 0
+      : trueCash;
+  const baseTrueCashSeries = buildProjectedTrueCashSeries({
     targetYear: activePlanningYear,
-    plansByYear,
-    fallbackPlanData: currentPlanBaseData,
+    incomeStreams: planningIncomeStreams,
+    budgetRows: planningBudgetRows,
+    projectionAdjustments: {},
+    startingMonth: anchorStartingMonth,
+    startingTrueCash: anchorStartingTrueCash,
   }).map((entry) => entry.value);
-  const projectedYearEndTrueCash = projectedTrueCashValues.at(-1) ?? trueCash;
+  const anchorMonthIndex = Math.max(0, budgetMonths.indexOf(anchorStartingMonth));
+  const currentMonthIndex = currentBudgetPeriod.monthIndex;
+  const currentYearResidual =
+    activePlanningYear === currentBudgetPeriod.year
+      ? trueCash - (baseTrueCashSeries[currentMonthIndex] ?? anchorStartingTrueCash)
+      : 0;
+  const trueCashValues = baseTrueCashSeries.map((value, index) => {
+    if (value === null) return null;
+    if (activePlanningYear === currentBudgetPeriod.year && index > currentMonthIndex) return null;
+
+    const progress =
+      activePlanningYear === currentBudgetPeriod.year && currentMonthIndex > anchorMonthIndex
+        ? Math.max(0, (index - anchorMonthIndex) / (currentMonthIndex - anchorMonthIndex))
+        : activePlanningYear === currentBudgetPeriod.year && index >= anchorMonthIndex
+          ? 1
+          : 0;
+    const reconciledValue =
+      activePlanningYear === currentBudgetPeriod.year ? value + currentYearResidual * progress : value;
+    return reconciledValue + adjustmentValues[index];
+  });
+  const projectedTrueCashValues = baseTrueCashSeries.map((value, index) => {
+    if (value === null) return null;
+    if (activePlanningYear === currentBudgetPeriod.year && index <= currentMonthIndex) return null;
+    return value;
+  });
+  const trueCashYearEndValue = getLastNonNullValue(trueCashValues, trueCash);
+  const projectedYearEndTrueCash = getLastNonNullValue(projectedTrueCashValues, trueCashYearEndValue);
 
   return (
     <div>
@@ -415,6 +454,7 @@ export function OperationsBoard({
                     ["Income", hoveredCommandMonth.data.income, "#00f59b"],
                     ["Budget", hoveredCommandMonth.data.budget, "#00d8ff"],
                     ["Spent", hoveredCommandMonth.data.spent, "#ff8f3d"],
+                    ["True Cash", trueCashValues[hoveredCommandMonth.index], "#8feaff"],
                     [
                       "Profit",
                       hoveredCommandMonth.data.income - hoveredCommandMonth.data.budget,
@@ -448,11 +488,11 @@ export function OperationsBoard({
                       <span style={{ color: "#8fb1d9" }}>{label}</span>
                       <span style={{ color }}>
                         {(label === "Profit" || label === "Adjustments") && value >= 0 ? "+" : ""}
-                        {label === "Projected Cash" && value === null
+                        {(label === "Projected Cash" || label === "True Cash") && value === null
                           ? "—"
                           : label === "Adjustments"
                             ? formatAdjustmentValue(value)
-                            : label === "Projected Cash"
+                            : label === "Projected Cash" || label === "True Cash"
                               ? wholeDollars(value)
                               : money(value)}
                       </span>
@@ -729,6 +769,50 @@ export function OperationsBoard({
                 }}
               >
                 {formatAdjustmentValue(adjustmentValues.reduce((sum, value) => sum + value, 0))}
+              </div>
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "120px repeat(12, 1fr) 120px",
+                padding: "16px",
+                alignItems: "center",
+                background: "linear-gradient(90deg, rgba(0,216,255,.16), rgba(0,216,255,.04))",
+                borderTop: "1px solid rgba(0,216,255,.2)",
+                boxShadow: "inset 0 0 22px rgba(0,216,255,.06)",
+              }}
+            >
+              <div style={{ color: "#8feaff", fontSize: 17, fontWeight: 950 }}>True Cash</div>
+              {trueCashValues.map((value, index) => (
+                <div
+                  key={budgetMonths[index]}
+                  style={{
+                    color:
+                      value === null
+                        ? "#6d819c"
+                        : index === currentBudgetPeriod.monthIndex && activePlanningYear === currentBudgetPeriod.year
+                          ? "#d9f7ff"
+                          : "#8feaff",
+                    textAlign: "right",
+                    fontSize: 14,
+                    fontWeight: 900,
+                    textShadow: value === null ? "none" : "0 0 10px rgba(0,216,255,.28)",
+                  }}
+                >
+                  {value === null ? "—" : wholeDollars(value)}
+                </div>
+              ))}
+              <div
+                style={{
+                  color: "#8feaff",
+                  textAlign: "right",
+                  fontSize: 15,
+                  fontWeight: 950,
+                  textShadow: "0 0 14px rgba(0,216,255,.32)",
+                }}
+              >
+                {wholeDollars(trueCashYearEndValue)}
               </div>
             </div>
 
