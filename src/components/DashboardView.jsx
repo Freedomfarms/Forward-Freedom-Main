@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { APP_TABS, budgetMonths, chartSets } from "../data/constants.jsx";
+import { APP_TABS, budgetMonthNames, budgetMonths, chartSets } from "../data/constants.jsx";
 import { buildMonthlyBudgetReview } from "../utils/budgetReview.js";
 import { styles } from "../styles.js";
 import { buildAreaPath, buildLinePath, money, parseMoney, wholeDollars } from "../utils/format.js";
