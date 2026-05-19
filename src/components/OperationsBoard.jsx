@@ -159,7 +159,6 @@ export function OperationsBoard({
   });
   const projectedTrueCashValues = baseTrueCashSeries.map((value, index) => {
     if (value === null) return null;
-    if (activePlanningYear === currentBudgetPeriod.year && index <= currentMonthIndex) return null;
     return value;
   });
   const trueCashYearEndValue = getLastNonNullValue(trueCashValues, trueCash);
