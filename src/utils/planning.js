@@ -181,7 +181,8 @@ export function buildReconciledTrueCashSeries({
     0,
     budgetMonths.indexOf(startingMonth || getCurrentBudgetPeriod().month)
   );
-  const currentBaseValue = baseSeries[currentMonthIndex]?.value ?? Number(startingTrueCash) || 0;
+  const currentBaseValue =
+    baseSeries[currentMonthIndex]?.value ?? (Number(startingTrueCash) || 0);
   const currentYearResidual =
     targetYear === currentYear ? Number(liveCurrentTrueCash) - currentBaseValue : 0;
 
