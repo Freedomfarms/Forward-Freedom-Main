@@ -229,15 +229,28 @@ export function DashboardView({
         return parsed.month === projectionStartMonth && parsed.year === projectionYear;
       })
     : -1;
-  const anchoredActualValues =
+  const sourceAnchoredActualValues =
     actualAnchorIndex >= 0
-      ? chartValues.values
-          .slice(actualAnchorIndex)
-          .map((value) => parseMoney(value))
-          .map((value, index, values) => projectionStartingTrueCash + (value - values[0]))
+      ? chartValues.values.slice(actualAnchorIndex).map((value) => parseMoney(value))
       : chartValues.supportsProjection
         ? []
         : chartValues.values.map((value) => parseMoney(value));
+  const anchoredActualValues =
+    sourceAnchoredActualValues.length > 0
+      ? sourceAnchoredActualValues.map((value, index, values) => {
+          const firstValue = values[0];
+          const lastValue = values[values.length - 1];
+          if (values.length === 1) return trueCash;
+
+          if (lastValue === firstValue) {
+            const progress = index / Math.max(values.length - 1, 1);
+            return projectionStartingTrueCash + (trueCash - projectionStartingTrueCash) * progress;
+          }
+
+          const progress = (value - firstValue) / (lastValue - firstValue);
+          return projectionStartingTrueCash + (trueCash - projectionStartingTrueCash) * progress;
+        })
+      : [];
   const anchoredActualDates =
     actualAnchorIndex >= 0
       ? chartValues.dates.slice(actualAnchorIndex)
