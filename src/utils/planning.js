@@ -158,6 +158,57 @@ export function buildProjectedTrueCashSeries({
   });
 }
 
+export function buildReconciledTrueCashSeries({
+  targetYear,
+  incomeStreams = [],
+  budgetRows = [],
+  projectionAdjustments = {},
+  startingMonth = getCurrentBudgetPeriod().month,
+  startingTrueCash = 0,
+  liveCurrentTrueCash = 0,
+  currentMonthIndex = getCurrentBudgetPeriod().monthIndex,
+  currentYear = getCurrentBudgetPeriod().year,
+}) {
+  const baseSeries = buildProjectedTrueCashSeries({
+    targetYear,
+    incomeStreams,
+    budgetRows,
+    projectionAdjustments: {},
+    startingMonth,
+    startingTrueCash,
+  });
+  const anchorMonthIndex = Math.max(
+    0,
+    budgetMonths.indexOf(startingMonth || getCurrentBudgetPeriod().month)
+  );
+  const currentBaseValue = baseSeries[currentMonthIndex]?.value ?? Number(startingTrueCash) || 0;
+  const currentYearResidual =
+    targetYear === currentYear ? Number(liveCurrentTrueCash) - currentBaseValue : 0;
+
+  return baseSeries.map((entry, index) => {
+    if (entry.value === null) return entry;
+    if (targetYear === currentYear && index > currentMonthIndex) {
+      return { ...entry, value: null };
+    }
+
+    const progress =
+      targetYear === currentYear && currentMonthIndex > anchorMonthIndex
+        ? Math.max(0, (index - anchorMonthIndex) / (currentMonthIndex - anchorMonthIndex))
+        : targetYear === currentYear && index >= anchorMonthIndex
+          ? 1
+          : 0;
+    const reconciledValue =
+      targetYear === currentYear ? entry.value + currentYearResidual * progress : entry.value;
+    const adjustment = parseMoney(projectionAdjustments[entry.month]);
+
+    return {
+      ...entry,
+      adjustment,
+      value: reconciledValue + adjustment,
+    };
+  });
+}
+
 export function buildFullYearProjectionSeries({
   targetYear,
   plansByYear = {},

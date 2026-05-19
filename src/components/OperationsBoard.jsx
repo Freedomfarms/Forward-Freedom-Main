@@ -4,7 +4,7 @@ import { buildBudgetMonthlySpendSeries } from "../utils/budgetReview.js";
 import { getCurrentBudgetPeriod } from "../utils/date.js";
 import { cleanMoneyInput, money, parseMoney, wholeDollars } from "../utils/format.js";
 import { budgetMonths, yearlyOpsData } from "../data/constants.jsx";
-import { buildProjectedTrueCashSeries } from "../utils/planning.js";
+import { buildProjectedTrueCashSeries, buildReconciledTrueCashSeries } from "../utils/planning.js";
 import { buildSubscriptionOverview } from "../utils/subscriptions.js";
 import { HouseholdProfilesControl } from "./Common.jsx";
 
@@ -137,26 +137,17 @@ export function OperationsBoard({
     startingMonth: anchorStartingMonth,
     startingTrueCash: anchorStartingTrueCash,
   }).map((entry) => entry.value);
-  const anchorMonthIndex = Math.max(0, budgetMonths.indexOf(anchorStartingMonth));
-  const currentMonthIndex = currentBudgetPeriod.monthIndex;
-  const currentYearResidual =
-    activePlanningYear === currentBudgetPeriod.year
-      ? trueCash - (baseTrueCashSeries[currentMonthIndex] ?? anchorStartingTrueCash)
-      : 0;
-  const trueCashValues = baseTrueCashSeries.map((value, index) => {
-    if (value === null) return null;
-    if (activePlanningYear === currentBudgetPeriod.year && index > currentMonthIndex) return null;
-
-    const progress =
-      activePlanningYear === currentBudgetPeriod.year && currentMonthIndex > anchorMonthIndex
-        ? Math.max(0, (index - anchorMonthIndex) / (currentMonthIndex - anchorMonthIndex))
-        : activePlanningYear === currentBudgetPeriod.year && index >= anchorMonthIndex
-          ? 1
-          : 0;
-    const reconciledValue =
-      activePlanningYear === currentBudgetPeriod.year ? value + currentYearResidual * progress : value;
-    return reconciledValue + adjustmentValues[index];
-  });
+  const trueCashValues = buildReconciledTrueCashSeries({
+    targetYear: activePlanningYear,
+    incomeStreams: planningIncomeStreams,
+    budgetRows: planningBudgetRows,
+    projectionAdjustments: planningProjectionAdjustments,
+    startingMonth: anchorStartingMonth,
+    startingTrueCash: anchorStartingTrueCash,
+    liveCurrentTrueCash: trueCash,
+    currentMonthIndex: currentBudgetPeriod.monthIndex,
+    currentYear: currentBudgetPeriod.year,
+  }).map((entry) => entry.value);
   const projectedTrueCashValues = baseTrueCashSeries.map((value, index) => {
     if (value === null) return null;
     return value;

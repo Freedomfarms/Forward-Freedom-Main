@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { APP_TABS, budgetMonthNames, budgetMonths, chartSets } from "../data/constants.jsx";
+import { APP_TABS, budgetMonths, chartSets } from "../data/constants.jsx";
 import { buildMonthlyBudgetReview } from "../utils/budgetReview.js";
 import { styles } from "../styles.js";
 import { buildAreaPath, buildLinePath, money, parseMoney, wholeDollars } from "../utils/format.js";
 import { buildSubscriptionOverview } from "../utils/subscriptions.js";
+import { buildReconciledTrueCashSeries } from "../utils/planning.js";
 import {
   parseChartDate,
   buildSyncedTrueCashChart,
@@ -34,6 +35,18 @@ function getMonthStartX(month) {
   if (monthIndex <= 0) return 0;
   const previousMonth = budgetMonths[monthIndex - 1];
   return MONTH_END_X[previousMonth] || 0;
+}
+
+function shouldUseExtendedProjectionChart(baseChart, anchorMonth, anchorYear) {
+  const firstDate = baseChart?.dates?.[0];
+  if (!firstDate) return true;
+
+  const parsed = parseChartDate(firstDate);
+  const firstMonthIndex = budgetMonths.indexOf(parsed.month);
+  const anchorMonthIndex = budgetMonths.indexOf(anchorMonth);
+  if (parsed.year !== anchorYear) return parsed.year > anchorYear;
+  if (firstMonthIndex < 0 || anchorMonthIndex < 0) return true;
+  return anchorMonthIndex < firstMonthIndex;
 }
 
 function trueCashToChartY(value, chartMax) {
@@ -208,8 +221,14 @@ export function DashboardView({
   const monthlyBudgetReview = buildMonthlyBudgetReview(transactions, budgetRows);
   const subscriptionOverview = buildSubscriptionOverview(subscriptions);
   const netWorthHistory = buildNetWorthHistory(metricSnapshots, netWorthHistoryRange);
-  const chartValues = buildSyncedTrueCashChart(chartSets[activeRange], trueCash);
   const projectionStartMonth = planningAnchor?.startingMonth || budgetMonths[0];
+  const initialChartValues = buildSyncedTrueCashChart(chartSets[activeRange], trueCash);
+  const initialProjectionYear = parseChartDate(initialChartValues.date).year;
+  const chartValues =
+    shouldUseExtendedProjectionChart(initialChartValues, projectionStartMonth, initialProjectionYear) &&
+    activeRange !== "ALL"
+      ? buildSyncedTrueCashChart(chartSets.ALL, trueCash)
+      : initialChartValues;
   const projectionStartingTrueCash =
     planningAnchor?.startingTrueCash !== undefined && planningAnchor?.startingTrueCash !== null
       ? Number(planningAnchor.startingTrueCash) || 0
@@ -223,46 +242,25 @@ export function DashboardView({
     startingTrueCash: projectionStartingTrueCash,
   });
   const projectionYear = projectionSchedule[0]?.year || parseChartDate(chartValues.date).year;
-  const actualAnchorIndex = chartValues.supportsProjection
-    ? chartValues.dates.findIndex((date) => {
-        const parsed = parseChartDate(date);
-        return parsed.month === projectionStartMonth && parsed.year === projectionYear;
+  const reconciledTrueCashSeries = chartValues.supportsProjection
+    ? buildReconciledTrueCashSeries({
+        targetYear: projectionYear,
+        incomeStreams,
+        budgetRows,
+        projectionAdjustments,
+        startingMonth: projectionStartMonth,
+        startingTrueCash: projectionStartingTrueCash,
+        liveCurrentTrueCash: trueCash,
       })
-    : -1;
-  const sourceAnchoredActualValues =
-    actualAnchorIndex >= 0
-      ? chartValues.values.slice(actualAnchorIndex).map((value) => parseMoney(value))
-      : chartValues.supportsProjection
-        ? []
-        : chartValues.values.map((value) => parseMoney(value));
-  const anchoredActualValues =
-    sourceAnchoredActualValues.length > 0
-      ? sourceAnchoredActualValues.map((value, index, values) => {
-          const firstValue = values[0];
-          const lastValue = values[values.length - 1];
-          if (values.length === 1) return trueCash;
-
-          if (lastValue === firstValue) {
-            const progress = index / Math.max(values.length - 1, 1);
-            return projectionStartingTrueCash + (trueCash - projectionStartingTrueCash) * progress;
-          }
-
-          const progress = (value - firstValue) / (lastValue - firstValue);
-          return projectionStartingTrueCash + (trueCash - projectionStartingTrueCash) * progress;
-        })
-      : [];
-  const anchoredActualDates =
-    actualAnchorIndex >= 0
-      ? chartValues.dates.slice(actualAnchorIndex)
-      : chartValues.supportsProjection
-        ? []
-        : chartValues.dates;
-  const anchoredActualBasePoints =
-    actualAnchorIndex >= 0
-      ? chartValues.points.slice(actualAnchorIndex)
-      : chartValues.supportsProjection
-        ? []
-        : chartValues.points;
+    : [];
+  const anchoredActualValues = chartValues.supportsProjection
+    ? reconciledTrueCashSeries.map((entry) => entry.value).filter((value) => value !== null)
+    : chartValues.values.map((value) => parseMoney(value));
+  const anchoredActualDates = chartValues.supportsProjection
+    ? reconciledTrueCashSeries
+        .filter((entry) => entry.value !== null)
+        .map((entry) => `${entry.month} ${entry.year} True Cash`)
+    : chartValues.dates;
   const actualOpeningPoint =
     chartValues.supportsProjection
       ? {
@@ -279,10 +277,14 @@ export function DashboardView({
     projectionStartingTrueCash,
   ]);
   const yAxisLabels = buildYAxisLabels(chartMax);
-  const actualChartPoints = anchoredActualBasePoints.map((point, index) => [
-    point[0],
-    trueCashToChartY(anchoredActualValues[index], chartMax),
-  ]);
+  const actualChartPoints = chartValues.supportsProjection
+    ? reconciledTrueCashSeries
+        .filter((entry) => entry.value !== null && MONTH_END_X[entry.month])
+        .map((entry) => [MONTH_END_X[entry.month], trueCashToChartY(entry.value, chartMax)])
+    : chartValues.points.map((point, index) => [
+        point[0],
+        trueCashToChartY(parseMoney(chartValues.values[index]), chartMax),
+      ]);
   const normalizedActualOpeningPoint = actualOpeningPoint
     ? {
         ...actualOpeningPoint,
