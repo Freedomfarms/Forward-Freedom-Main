@@ -321,6 +321,24 @@ app.get("/api/plaid/sync", async (request, response) => {
   }
 });
 
+app.delete("/api/plaid/user", async (request, response) => {
+  const userId = request.query.userId;
+  if (!userId) {
+    return response
+      .status(400)
+      .json(buildErrorResponse("userId is required to delete stored Plaid data."));
+  }
+
+  try {
+    const store = await readPlaidStore();
+    delete store.users[String(userId)];
+    await writePlaidStore(store);
+    return response.json({ deleted: true, userId: String(userId) });
+  } catch (error) {
+    return response.status(500).json(buildErrorResponse(error.message || "Unable to delete user."));
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Plaid server listening on http://localhost:${PORT}`);
 });

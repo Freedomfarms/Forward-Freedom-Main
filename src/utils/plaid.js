@@ -40,3 +40,10 @@ export async function syncPlaidUser(userId) {
   const response = await fetch(`/api/plaid/sync?userId=${encodeURIComponent(userId)}`);
   return parseApiResponse(response);
 }
+
+export async function deletePlaidUser(userId) {
+  const response = await fetch(`/api/plaid/user?userId=${encodeURIComponent(userId)}`, {
+    method: "DELETE",
+  });
+  return parseApiResponse(response);
+}

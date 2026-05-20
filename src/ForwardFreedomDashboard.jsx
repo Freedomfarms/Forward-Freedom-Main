@@ -26,6 +26,7 @@ import {
 } from "./utils/planning.js";
 import {
   createPlaidLinkToken,
+  deletePlaidUser,
   exchangePlaidPublicToken,
   getPlaidStatus,
   syncPlaidUser,
@@ -1139,6 +1140,45 @@ function ForwardFreedomDashboard() {
     setEditingUserId(newUser.id);
     setDraftUserName(newUser.name);
   };
+  const deleteUserProfile = async (userId) => {
+    const targetIndex = users.findIndex((user) => user.id === userId);
+    if (targetIndex < 0) return;
+    if (users.length <= 1) {
+      throw new Error("At least one user profile must remain in the workspace.");
+    }
+
+    const targetUser = users[targetIndex];
+    if ((targetUser.plaidItems || []).length > 0) {
+      await deletePlaidUser(userId);
+    }
+
+    const nextUsers = users.filter((user) => user.id !== userId);
+    const fallbackUser =
+      nextUsers[targetIndex] || nextUsers[targetIndex - 1] || nextUsers[0] || EMPTY_USER_STATE;
+
+    setUsers(nextUsers);
+    setActiveUserId((currentUserId) => {
+      if (currentUserId === userId || !nextUsers.some((user) => user.id === currentUserId)) {
+        return fallbackUser.id;
+      }
+      return currentUserId;
+    });
+
+    if (editingUserId === userId) {
+      setEditingUserId(null);
+      setDraftUserName("");
+    }
+
+    if (plaidTargetUserId === userId) {
+      setPlaidShouldOpen(false);
+      setPlaidLinkToken(null);
+      setPlaidTargetUserId(null);
+    }
+
+    if (activeUserId === userId) {
+      setPlaidError("");
+    }
+  };
   const plaidIntegration = useMemo(
     () => ({
       configured: plaidStatus.configured,
@@ -1167,6 +1207,7 @@ function ForwardFreedomDashboard() {
     onSaveUserName: saveUserName,
     onCancelUserRename: cancelUserRename,
     onAddUser: addUserProfile,
+    onDeleteUser: deleteUserProfile,
   };
   const handleEnterApp = (payload = {}) => {
     if (payload?.mode === "create-account") {
