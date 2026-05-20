@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import {
   getFirebaseAuthInstance,
@@ -38,23 +39,18 @@ function mapFirebaseError(error) {
 
 export function AuthProvider({ children }) {
   const clientConfig = getFirebaseClientConfig();
-  const [user, setUser] = useState(null);
-  const [ready, setReady] = useState(!clientConfig.configured);
-  const [error, setError] = useState("");
+  const auth = clientConfig.configured ? getFirebaseAuthInstance() : null;
+  const [user, setUser] = useState(() => auth?.currentUser || null);
+  const [ready, setReady] = useState(
+    () => !clientConfig.configured || !auth || Boolean(auth.currentUser)
+  );
+  const [error, setError] = useState(() =>
+    clientConfig.configured && !auth ? "Firebase Authentication is configured incorrectly." : ""
+  );
   const [isBusy, setIsBusy] = useState(false);
 
   useEffect(() => {
-    if (!clientConfig.configured) {
-      setReady(true);
-      setUser(null);
-      return undefined;
-    }
-
-    const auth = getFirebaseAuthInstance();
-    if (!auth) {
-      setReady(true);
-      setUser(null);
-      setError("Firebase Authentication is configured incorrectly.");
+    if (!clientConfig.configured || !auth) {
       return undefined;
     }
 
@@ -63,15 +59,17 @@ export function AuthProvider({ children }) {
       (nextUser) => {
         setUser(nextUser);
         setReady(true);
+        setError("");
       },
       (authError) => {
         setError(mapFirebaseError(authError));
         setReady(true);
+        setUser(null);
       }
     );
 
     return unsubscribe;
-  }, [clientConfig.configured]);
+  }, [auth, clientConfig.configured]);
 
   const runAuthAction = useCallback(async (action) => {
     setIsBusy(true);
@@ -82,7 +80,7 @@ export function AuthProvider({ children }) {
     } catch (actionError) {
       const message = mapFirebaseError(actionError);
       setError(message);
-      throw new Error(message);
+      throw new Error(message, { cause: actionError });
     } finally {
       setIsBusy(false);
     }
