@@ -1318,11 +1318,8 @@ function ForwardFreedomDashboard() {
             />
           ) : activeTab === APP_TABS.FORECAST_LAB ? (
             <ForecastLab
-              trueCash={trueCash}
-              subscriptions={subscriptions}
-              incomeStreams={incomeStreams}
+              transactions={categorizedTransactions}
               budgetRows={budgetRows}
-              projectionAdjustments={projectionAdjustments}
               householdProfilesProps={householdProfilesProps}
             />
           ) : activeTab === APP_TABS.RECURRING_SUBSCRIPTIONS ? (

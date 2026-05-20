@@ -1,71 +1,42 @@
 import { useState } from "react";
 import { budgetMonths } from "../data/constants.jsx";
-import { styles } from "../styles.js";
+import { parseBudgetReviewDate } from "../utils/budgetReview.js";
 import { getCurrentBudgetPeriod } from "../utils/date.js";
-import { buildLinePath, buildAreaPath, money, parseMoney, wholeDollars } from "../utils/format.js";
-import { buildSubscriptionOverview } from "../utils/subscriptions.js";
-import { buildForwardTrueCashProjection } from "../utils/trueCashProjection.js";
+import { buildAreaPath, buildLinePath, wholeDollars } from "../utils/format.js";
+import { styles } from "../styles.js";
 import { HouseholdProfilesControl } from "./Common.jsx";
 
 const CHART_W = 940;
-const CHART_H = 280;
+const CHART_H = 300;
+const CATEGORY_COLORS = [
+  "#00d8ff",
+  "#00f59b",
+  "#ffb65d",
+  "#8b5cf6",
+  "#ff7a45",
+  "#f97316",
+  "#38bdf8",
+  "#ec4899",
+  "#22c55e",
+  "#94a3b8",
+];
+const MONTH_X = Object.fromEntries(
+  budgetMonths.map((month, index) => [month, 24 + index * ((CHART_W - 48) / (budgetMonths.length - 1))])
+);
 
-const MONTH_X = {
-  Jan: 0,
-  Feb: 78,
-  Mar: 157,
-  Apr: 235,
-  May: 314,
-  Jun: 392,
-  Jul: 470,
-  Aug: 549,
-  Sep: 627,
-  Oct: 706,
-  Nov: 784,
-  Dec: 862,
-};
-
-function buildProjection(
-  trueCash,
-  incomeStreams,
-  budgetRows,
-  projectionAdjustments,
-  extraIncome,
-  savedSpending,
-  startMonth,
-  startYear
-) {
-  const modifiedStreams =
-    extraIncome === 0
-      ? incomeStreams
-      : incomeStreams.map((s) => ({ ...s, amount: money(parseMoney(s.amount) + extraIncome) }));
-
-  const modifiedRows =
-    savedSpending === 0
-      ? budgetRows
-      : budgetRows.map((r) => ({
-          ...r,
-          budget: Math.max(0, Number(r.budget || 0) - savedSpending),
-        }));
-
-  return buildForwardTrueCashProjection({
-    openingBalance: trueCash,
-    incomeStreams: modifiedStreams,
-    budgetRows: modifiedRows,
-    projectionAdjustments,
-    startMonth,
-    startYear,
-  });
+function sumSpending(transactions) {
+  return transactions.reduce((sum, transaction) => {
+    const amount = Number(transaction?.amount) || 0;
+    return amount < 0 ? sum + Math.abs(amount) : sum;
+  }, 0);
 }
 
-function chartRange(baseline, scenario, openingBalance) {
-  const all = [openingBalance, ...baseline.map((p) => p.value), ...scenario.map((p) => p.value)];
-  const hi = Math.max(...all, 1);
-  const lo = Math.min(...all, 0);
-  const pad = (hi - lo) * 0.18;
+function buildChartRange(values) {
+  const highestValue = Math.max(...values, 1);
+  const paddedMaximum = highestValue < 250 ? 250 : Math.ceil((highestValue * 1.18) / 250) * 250;
   return {
-    max: Math.ceil((hi + pad) / 1000) * 1000,
-    min: Math.floor((lo - pad) / 1000) * 1000,
+    max: paddedMaximum,
+    min: 0,
   };
 }
 
@@ -74,93 +45,280 @@ function toY(value, max, min) {
   return Math.max(0, Math.min(CHART_H, CHART_H - ((value - min) / range) * CHART_H));
 }
 
-function yLabels(max, min, count = 6) {
-  return Array.from({ length: count }, (_, i) => {
-    const v = max - ((max - min) / (count - 1)) * i;
-    return Math.abs(v) >= 1000 ? `$${Math.round(v / 1000)}K` : wholeDollars(v);
+function buildYLabels(max, min, count = 5) {
+  return Array.from({ length: count }, (_, index) => {
+    const value = max - ((max - min) / (count - 1)) * index;
+    return wholeDollars(value);
   });
 }
 
-function parseDollar(v) {
-  const n = Number(String(v).replace(/[^0-9.-]/g, ""));
-  return Number.isFinite(n) ? n : 0;
+function getLatestMonthWithSpend(monthlySeries, fallbackMonth) {
+  return [...monthlySeries].reverse().find((row) => row.spent > 0)?.month || fallbackMonth;
 }
 
-export function ForecastLab({
-  trueCash,
-  subscriptions,
-  incomeStreams,
-  budgetRows,
-  projectionAdjustments,
-  householdProfilesProps,
-}) {
-  const [extraIncomeRaw, setExtraIncomeRaw] = useState("0");
-  const [savedSpendingRaw, setSavedSpendingRaw] = useState("0");
-  const [scenarioName, setScenarioName] = useState("My Scenario");
-  const [hoveredMonth, setHoveredMonth] = useState(null);
+function buildCategoryDefinitions(budgetRows, spendingTransactions) {
+  const primaryBudgetCategories = budgetRows
+    .filter((row) => row.name !== "Other")
+    .map((row, index) => ({
+      id: `budget:${row.id || row.name}`,
+      name: row.name,
+      type: "budget",
+      color: row.color || CATEGORY_COLORS[index % CATEGORY_COLORS.length],
+      matcherSet: new Set([row.name, ...(row.transactionCategories || [])].filter(Boolean)),
+      budgetRow: row,
+      description: "Budget-aligned category",
+    }));
+
+  const otherBudgetRow = budgetRows.find((row) => row.name === "Other");
+  const matchedBudgetCategories = new Set(
+    primaryBudgetCategories.flatMap((definition) => Array.from(definition.matcherSet))
+  );
+  if (otherBudgetRow) {
+    matchedBudgetCategories.add("Other");
+  }
+
+  const extraCategories = Array.from(
+    new Set(spendingTransactions.map((transaction) => transaction.category).filter(Boolean))
+  )
+    .filter((category) => !matchedBudgetCategories.has(category))
+    .sort((left, right) => left.localeCompare(right))
+    .map((category, index) => ({
+      id: `transaction:${category}`,
+      name: category,
+      type: "transaction",
+      color:
+        CATEGORY_COLORS[(primaryBudgetCategories.length + index + 2) % CATEGORY_COLORS.length],
+      matcherSet: null,
+      budgetRow: null,
+      description: "Live transaction category",
+    }));
+
+  return [
+    {
+      id: "all-spending",
+      name: "All Spending",
+      type: "all",
+      color: "#00d8ff",
+      matcherSet: null,
+      budgetRow: null,
+      description: "Every outgoing transaction",
+    },
+    ...primaryBudgetCategories,
+    ...(otherBudgetRow
+      ? [
+          {
+            id: `budget:${otherBudgetRow.id || "other"}`,
+            name: otherBudgetRow.name,
+            type: "budget-other",
+            color: otherBudgetRow.color || "#94a3b8",
+            matcherSet: null,
+            budgetRow: otherBudgetRow,
+            description: "Unmapped spending",
+          },
+        ]
+      : []),
+    ...extraCategories,
+  ];
+}
+
+function matchesCategory(transaction, definition, budgetDefinitions) {
+  if (!transaction || (Number(transaction.amount) || 0) >= 0) return false;
+
+  const category = transaction.category || "Other";
+  if (definition.type === "all") return true;
+  if (definition.type === "budget") return definition.matcherSet.has(category);
+  if (definition.type === "budget-other") {
+    return !budgetDefinitions.some((budgetDefinition) => budgetDefinition.matcherSet.has(category));
+  }
+
+  return category === definition.name;
+}
+
+function getBudgetForMonth(definition, budgetRows, month) {
+  if (definition.type === "transaction") return null;
+
+  if (definition.type === "all") {
+    return budgetRows
+      .filter((row) => (row.months || budgetMonths).includes(month))
+      .reduce((sum, row) => sum + Number(row.budget || 0), 0);
+  }
+
+  if (!definition.budgetRow) return null;
+
+  return (definition.budgetRow.months || budgetMonths).includes(month)
+    ? Number(definition.budgetRow.budget || 0)
+    : null;
+}
+
+export function ForecastLab({ transactions, budgetRows, householdProfilesProps }) {
   const currentBudgetPeriod = getCurrentBudgetPeriod();
-  const subscriptionOverview = buildSubscriptionOverview(subscriptions);
+  const spendingTransactions = transactions
+    .map((transaction) => {
+      const parsed = parseBudgetReviewDate(transaction?.date);
+      const amount = Number(transaction?.amount) || 0;
+      if (!parsed || amount >= 0) return null;
 
-  const extraIncome = parseDollar(extraIncomeRaw);
-  const savedSpending = parseDollar(savedSpendingRaw);
-  const hasScenario = extraIncome !== 0 || savedSpending !== 0;
+      return {
+        ...transaction,
+        amount,
+        parsed,
+      };
+    })
+    .filter(Boolean);
 
-  const baseline = buildProjection(
-    trueCash,
-    incomeStreams,
-    budgetRows,
-    projectionAdjustments,
-    0,
-    0,
-    currentBudgetPeriod.month,
-    currentBudgetPeriod.year
+  const availableYears = Array.from(
+    new Set(spendingTransactions.map((transaction) => transaction.parsed.year))
+  ).sort((left, right) => right - left);
+  if (availableYears.length === 0) {
+    availableYears.push(currentBudgetPeriod.year);
+  }
+
+  const categoryDefinitions = buildCategoryDefinitions(budgetRows, spendingTransactions);
+  const budgetCategoryDefinitions = categoryDefinitions.filter((definition) => definition.type === "budget");
+
+  const [activeYear, setActiveYear] = useState(availableYears[0]);
+  const [activeCategoryId, setActiveCategoryId] = useState("all-spending");
+  const [focusMonth, setFocusMonth] = useState(currentBudgetPeriod.month);
+
+  const selectedYear = availableYears.includes(activeYear) ? activeYear : availableYears[0];
+  const selectedCategory =
+    categoryDefinitions.find((definition) => definition.id === activeCategoryId) ||
+    categoryDefinitions[0];
+  const spendingForYear = spendingTransactions.filter(
+    (transaction) => transaction.parsed.year === selectedYear
   );
-  const scenario = buildProjection(
-    trueCash,
-    incomeStreams,
-    budgetRows,
-    projectionAdjustments,
-    extraIncome,
-    savedSpending,
-    currentBudgetPeriod.month,
-    currentBudgetPeriod.year
+  const selectedTransactions = spendingForYear.filter((transaction) =>
+    matchesCategory(transaction, selectedCategory, budgetCategoryDefinitions)
   );
+  const totalSpendForYear = sumSpending(spendingForYear);
+  const selectedTotalSpend = sumSpending(selectedTransactions);
+  const latestTrackedMonthIndex = spendingForYear.reduce((highestIndex, transaction) => {
+    return Math.max(highestIndex, budgetMonths.indexOf(transaction.parsed.month));
+  }, -1);
+  const reviewedMonthCount =
+    selectedYear < currentBudgetPeriod.year
+      ? Math.max(latestTrackedMonthIndex + 1, 1)
+      : Math.max(currentBudgetPeriod.monthIndex + 1, latestTrackedMonthIndex + 1, 1);
+  const averageMonthlySpend = selectedTotalSpend / reviewedMonthCount;
+  const monthlyBudgets = budgetMonths.map((month) => getBudgetForMonth(selectedCategory, budgetRows, month));
+  const hasBudgetContext = monthlyBudgets.some((value) => value !== null);
+  const budgetInReviewPeriod = hasBudgetContext
+    ? monthlyBudgets.slice(0, reviewedMonthCount).reduce((sum, value) => sum + (value || 0), 0)
+    : null;
+  const monthlySeries = budgetMonths.map((month, index) => {
+    const monthTransactions = selectedTransactions
+      .filter((transaction) => transaction.parsed.month === month)
+      .sort((left, right) => new Date(right.date).getTime() - new Date(left.date).getTime());
+    const spent = sumSpending(monthTransactions);
+    const budget = monthlyBudgets[index];
 
-  const baselineEnd = baseline.at(-1)?.value ?? trueCash;
-  const scenarioEnd = scenario.at(-1)?.value ?? trueCash;
-  const totalDiff = scenarioEnd - baselineEnd;
-  const diffPct = baselineEnd ? (totalDiff / Math.abs(baselineEnd)) * 100 : 0;
-  const projectionMonthsRemaining = baseline.length;
+    return {
+      month,
+      spent,
+      budget,
+      transactionCount: monthTransactions.length,
+      transactions: monthTransactions,
+      deltaFromAverage: spent - averageMonthlySpend,
+      deltaFromBudget: budget == null ? null : spent - budget,
+    };
+  });
 
-  const { max, min } = chartRange(baseline, scenario, trueCash);
-  const labels = yLabels(max, min);
-  const py = (v) => toY(v, max, min);
+  const fallbackFocusMonth =
+    selectedYear === currentBudgetPeriod.year ? currentBudgetPeriod.month : budgetMonths[0];
+  const latestMonthWithSpend = getLatestMonthWithSpend(monthlySeries, fallbackFocusMonth);
+  const selectedFocusMonth = budgetMonths.includes(focusMonth) ? focusMonth : latestMonthWithSpend;
+  const focusMonthData =
+    monthlySeries.find((row) => row.month === selectedFocusMonth) ||
+    monthlySeries.find((row) => row.month === latestMonthWithSpend) ||
+    monthlySeries[0];
+  const peakMonth = monthlySeries.reduce(
+    (highestRow, row) => (row.spent > highestRow.spent ? row : highestRow),
+    monthlySeries[0] || {
+      month: budgetMonths[0],
+      spent: 0,
+      budget: null,
+      transactionCount: 0,
+      transactions: [],
+      deltaFromAverage: 0,
+      deltaFromBudget: null,
+    }
+  );
+  const focusBudgetDelta = focusMonthData?.deltaFromBudget;
+  const categoryShare = totalSpendForYear > 0 ? (selectedTotalSpend / totalSpendForYear) * 100 : 0;
+  const getFocusMonthForCategory = (definition, year = selectedYear) => {
+    const monthlySpendForCategory = budgetMonths.map((month) => ({
+      month,
+      spent: sumSpending(
+        spendingTransactions.filter(
+          (transaction) =>
+            transaction.parsed.year === year &&
+            transaction.parsed.month === month &&
+            matchesCategory(transaction, definition, budgetCategoryDefinitions)
+        )
+      ),
+    }));
 
-  const startCoord = [MONTH_X[currentBudgetPeriod.month], py(trueCash)];
-
-  const bPoints = [
-    startCoord,
-    ...baseline
-      .filter((p) => MONTH_X[p.month] !== undefined)
-      .map((p) => [MONTH_X[p.month], py(p.value)]),
+    return getLatestMonthWithSpend(
+      monthlySpendForCategory,
+      year === currentBudgetPeriod.year ? currentBudgetPeriod.month : budgetMonths[0]
+    );
+  };
+  const topMerchants = Object.values(
+    selectedTransactions.reduce((merchantMap, transaction) => {
+      const key = transaction.merchant || "Unknown Merchant";
+      const current = merchantMap[key] || {
+        merchant: key,
+        total: 0,
+        count: 0,
+      };
+      current.total += Math.abs(Number(transaction.amount) || 0);
+      current.count += 1;
+      merchantMap[key] = current;
+      return merchantMap;
+    }, {})
+  )
+    .sort((left, right) => right.total - left.total)
+    .slice(0, 5);
+  const categoryCards = categoryDefinitions
+    .map((definition) => {
+      const total = sumSpending(
+        spendingForYear.filter((transaction) =>
+          matchesCategory(transaction, definition, budgetCategoryDefinitions)
+        )
+      );
+      return {
+        ...definition,
+        total,
+        share: totalSpendForYear > 0 ? (total / totalSpendForYear) * 100 : 0,
+      };
+    })
+    .sort((left, right) => {
+      if (left.id === "all-spending") return -1;
+      if (right.id === "all-spending") return 1;
+      return right.total - left.total;
+    });
+  const chartValues = [
+    ...monthlySeries.map((row) => row.spent),
+    ...monthlySeries.map((row) => row.budget).filter((value) => value !== null),
+    averageMonthlySpend,
   ];
-  const sPoints = [
-    startCoord,
-    ...scenario
-      .filter((p) => MONTH_X[p.month] !== undefined)
-      .map((p) => [MONTH_X[p.month], py(p.value)]),
-  ];
-
-  const bPath = buildLinePath(bPoints);
-  const bArea = buildAreaPath(bPoints);
-  const sPath = buildLinePath(sPoints);
-  const sArea = buildAreaPath(sPoints);
+  const { max, min } = buildChartRange(chartValues);
+  const yLabels = buildYLabels(max, min);
+  const spendPoints = monthlySeries.map((row) => [MONTH_X[row.month], toY(row.spent, max, min)]);
+  const budgetPoints = monthlySeries
+    .filter((row) => row.budget !== null)
+    .map((row) => [MONTH_X[row.month], toY(row.budget, max, min)]);
+  const spendPath = spendPoints.length > 1 ? buildLinePath(spendPoints) : "";
+  const spendArea = spendPoints.length > 1 ? buildAreaPath(spendPoints) : "";
+  const budgetPath = budgetPoints.length > 1 ? buildLinePath(budgetPoints) : "";
+  const averageY = toY(averageMonthlySpend, max, min);
+  const focusX = focusMonthData ? MONTH_X[focusMonthData.month] : null;
 
   const fieldStyle = {
     color: "#eaf3ff",
     background: "rgba(0,136,255,.08)",
     border: "1px solid rgba(0,216,255,.18)",
-    borderRadius: 8,
+    borderRadius: 10,
     padding: "10px 12px",
     outline: "none",
     fontWeight: 800,
@@ -172,660 +330,825 @@ export function ForecastLab({
     <div>
       <header style={styles.pageHeader}>
         <div>
-          <h1 style={styles.pageTitle}>Forecast Lab</h1>
+          <h1 style={styles.pageTitle}>Spending Intelligence</h1>
           <p style={styles.pageSubtitle}>
-            Model &ldquo;what-if&rdquo; scenarios to project the long-range impact of income or
-            spending changes.
+            Review every category with a crisp monthly lens, average spend signal, and live
+            transaction detail.
           </p>
         </div>
         <HouseholdProfilesControl {...householdProfilesProps} />
       </header>
 
-      {/* Controls */}
-      <div
-        style={{
-          ...styles.panel,
-          padding: 22,
-          marginBottom: 20,
-          border: "1px solid rgba(0,216,255,.22)",
-          boxShadow: "inset 0 0 22px rgba(0,136,255,.06)",
-        }}
-      >
-        <div
-          style={{
-            color: "white",
-            fontSize: 18,
-            fontWeight: 900,
-            marginBottom: 18,
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-          }}
-        >
-          <span style={{ color: "#00d8ff" }}>◈</span> Scenario Builder
-        </div>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1.8fr 1fr 1fr auto",
-            gap: 18,
-            alignItems: "end",
-          }}
-        >
-          <label style={{ display: "grid", gap: 7 }}>
-            <span
-              style={{
-                color: "#8fb1d9",
-                fontSize: 11,
-                textTransform: "uppercase",
-                letterSpacing: 0.8,
-                fontWeight: 900,
-              }}
-            >
-              Scenario Name
-            </span>
-            <input
-              type="text"
-              value={scenarioName}
-              onChange={(e) => setScenarioName(e.target.value)}
-              style={fieldStyle}
-            />
-          </label>
-          <label style={{ display: "grid", gap: 7 }}>
-            <span
-              style={{
-                color: "#8fb1d9",
-                fontSize: 11,
-                textTransform: "uppercase",
-                letterSpacing: 0.8,
-                fontWeight: 900,
-              }}
-            >
-              Extra Monthly Income ($)
-            </span>
-            <input
-              type="text"
-              value={extraIncomeRaw}
-              onChange={(e) => setExtraIncomeRaw(e.target.value)}
-              style={fieldStyle}
-            />
-          </label>
-          <label style={{ display: "grid", gap: 7 }}>
-            <span
-              style={{
-                color: "#8fb1d9",
-                fontSize: 11,
-                textTransform: "uppercase",
-                letterSpacing: 0.8,
-                fontWeight: 900,
-              }}
-            >
-              Monthly Spending Reduction ($)
-            </span>
-            <input
-              type="text"
-              value={savedSpendingRaw}
-              onChange={(e) => setSavedSpendingRaw(e.target.value)}
-              style={fieldStyle}
-            />
-          </label>
-          <button
-            onClick={() => {
-              setExtraIncomeRaw("0");
-              setSavedSpendingRaw("0");
-              setScenarioName("My Scenario");
-            }}
-            style={{
-              background: "rgba(0,136,255,.10)",
-              border: "1px solid rgba(0,216,255,.28)",
-              borderRadius: 10,
-              color: "#d7ebff",
-              padding: "11px 22px",
-              cursor: "pointer",
-              fontWeight: 800,
-              marginBottom: 2,
-            }}
-          >
-            Reset
-          </button>
-        </div>
-        <div style={{ marginTop: 12, color: "#7294bb", fontSize: 12 }}>
-          Forecasts are anchored to your live Command Center true-cash balance, then projected forward
-          through the remaining months in the year. Adjustments use your existing Income Hub streams
-          and Budget Strategy Lab plan as the base.
-        </div>
-        {subscriptionOverview.activeCount > 0 ? (
-          <div style={{ marginTop: 12, color: "#8feaff", fontSize: 12 }}>
-            Active recurring commitments: {money(subscriptionOverview.activeMonthly)}/month (
-            {money(subscriptionOverview.yearlyCommitment)} annualized) across{" "}
-            {subscriptionOverview.activeCount} subscriptions.
-          </div>
-        ) : null}
-      </div>
-
-      {/* Summary Tiles */}
       <div
         style={{
           ...styles.panel,
           padding: 24,
           marginBottom: 20,
-          position: "relative",
-          overflow: "hidden",
+          background:
+            "linear-gradient(135deg, rgba(4,18,34,.96), rgba(3,17,32,.9) 52%, rgba(2,10,22,.96))",
+          border: "1px solid rgba(0,216,255,.24)",
+          boxShadow: "inset 0 0 40px rgba(0,136,255,.07), 0 0 24px rgba(0,80,180,.1)",
         }}
       >
         <div
           style={{
-            position: "absolute",
-            inset: 0,
-            background: "radial-gradient(circle at top right, rgba(0,216,255,.1), transparent 40%)",
-          }}
-        />
-        <div
-          style={{
-            position: "relative",
-            display: "grid",
-            gridTemplateColumns: "repeat(4, 1fr)",
-            gap: 18,
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 20,
+            flexWrap: "wrap",
+            alignItems: "center",
           }}
         >
-          {[
-            ["Current True Cash", wholeDollars(trueCash), "#00d8ff"],
-            ["Baseline Year-End", wholeDollars(baselineEnd), "#8feaff"],
-            [
-              `${scenarioName} Year-End`,
-              wholeDollars(scenarioEnd),
-              !hasScenario ? "#00d8ff" : totalDiff >= 0 ? "#00f59b" : "#ff5d7a",
-            ],
-            [
-              "Year-End Difference",
-              `${totalDiff >= 0 ? "+" : ""}${wholeDollars(totalDiff)}`,
-              totalDiff >= 0 ? "#00f59b" : "#ff5d7a",
-            ],
-          ].map(([label, val, color]) => (
+          <div>
             <div
-              key={label}
               style={{
-                border: "1px solid rgba(0,136,255,.22)",
-                borderRadius: 14,
-                background: "rgba(3,17,32,.72)",
-                padding: 20,
+                color: "#8feaff",
+                textTransform: "uppercase",
+                letterSpacing: 1.4,
+                fontSize: 12,
+                fontWeight: 900,
               }}
             >
-              <div
+              Spending Command Surface
+            </div>
+            <div style={{ color: "white", fontSize: 30, fontWeight: 900, marginTop: 8 }}>
+              {selectedCategory.name}
+            </div>
+            <div style={{ color: "#9fb0c9", marginTop: 10, maxWidth: 760, lineHeight: 1.6 }}>
+              {selectedCategory.description}. Drill into a category on the left to review monthly
+              pacing, budget pressure, and the exact merchants shaping the trend.
+            </div>
+          </div>
+          <div
+            style={{
+              minWidth: 180,
+              display: "grid",
+              gap: 8,
+              justifyItems: "end",
+            }}
+          >
+            <label style={{ display: "grid", gap: 7, width: "100%", maxWidth: 190 }}>
+              <span
                 style={{
                   color: "#8fb1d9",
-                  fontSize: 13,
+                  fontSize: 11,
                   textTransform: "uppercase",
+                  letterSpacing: 0.8,
+                  fontWeight: 900,
+                }}
+              >
+                Review Year
+              </span>
+              <select
+                value={selectedYear}
+                onChange={(event) => {
+                  const nextYear = Number(event.target.value);
+                  setActiveYear(nextYear);
+                  setFocusMonth(getFocusMonthForCategory(selectedCategory, nextYear));
+                }}
+                style={fieldStyle}
+              >
+                {availableYears.map((year) => (
+                  <option key={year} value={year} style={{ background: "#061224", color: "#eaf3ff" }}>
+                    {year}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div
+              style={{
+                color: "#8feaff",
+                fontSize: 12,
+                fontWeight: 800,
+              }}
+            >
+              {categoryShare.toFixed(1)}% of {selectedYear} spend
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {spendingTransactions.length === 0 ? (
+        <div style={{ ...styles.panel, padding: 30 }}>
+          <div style={{ color: "white", fontSize: 24, fontWeight: 800, marginBottom: 12 }}>
+            No spending data yet
+          </div>
+          <div style={{ color: "#9fb0c9", lineHeight: 1.7, maxWidth: 780 }}>
+            Connect Plaid or add manual transactions to unlock Spending Intelligence. Once spending
+            data starts flowing, this workspace will track category trends, monthly averages, and
+            merchant-level detail automatically.
+          </div>
+        </div>
+      ) : (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "320px minmax(0, 1fr)",
+            gap: 20,
+            alignItems: "start",
+          }}
+        >
+          <aside style={{ display: "grid", gap: 18 }}>
+            <div style={{ ...styles.panel, padding: 20 }}>
+              <div
+                style={{
+                  color: "#8feaff",
+                  textTransform: "uppercase",
+                  letterSpacing: 1.1,
+                  fontSize: 12,
+                  fontWeight: 900,
+                }}
+              >
+                Spend Snapshot
+              </div>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                  gap: 12,
+                  marginTop: 16,
+                }}
+              >
+                {[
+                  ["Year Total", wholeDollars(totalSpendForYear), "#00d8ff"],
+                  ["Tracked Categories", `${categoryCards.length - 1}`, "#8feaff"],
+                  ["Selected Avg", wholeDollars(averageMonthlySpend), "#00f59b"],
+                  ["Peak Month", `${peakMonth.month} ${wholeDollars(peakMonth.spent)}`, "#ffb65d"],
+                ].map(([label, value, color]) => (
+                  <div
+                    key={label}
+                    style={{
+                      borderRadius: 14,
+                      border: "1px solid rgba(0,136,255,.2)",
+                      background: "rgba(3,17,32,.68)",
+                      padding: 14,
+                    }}
+                  >
+                    <div
+                      style={{
+                        color: "#7ea6d8",
+                        fontSize: 11,
+                        textTransform: "uppercase",
+                        letterSpacing: 0.8,
+                      }}
+                    >
+                      {label}
+                    </div>
+                    <div style={{ color, fontWeight: 900, fontSize: 18, marginTop: 8 }}>{value}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ ...styles.panel, padding: 16 }}>
+              <div
+                style={{
+                  color: "white",
+                  fontSize: 16,
+                  fontWeight: 900,
                   marginBottom: 12,
                 }}
               >
-                {label}
+                Category Radar
               </div>
-              <div style={{ color, fontSize: 26, fontWeight: 900 }}>{val}</div>
-              {label === "Year-End Difference" && hasScenario ? (
-                <div style={{ color, fontSize: 12, marginTop: 6, fontWeight: 700 }}>
-                  {diffPct >= 0 ? "+" : ""}
-                  {diffPct.toFixed(1)}% vs baseline
-                </div>
-              ) : label === "Current True Cash" ? (
-                <div style={{ color: "#8fb1d9", fontSize: 12, marginTop: 6, fontWeight: 700 }}>
-                  Command Center anchor for the remaining {projectionMonthsRemaining} month
-                  {projectionMonthsRemaining === 1 ? "" : "s"}
-                </div>
-              ) : null}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Chart */}
-      <div style={{ ...styles.panel, padding: "24px 24px 0", marginBottom: 20 }}>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: 22,
-          }}
-        >
-          <div style={{ color: "white", fontSize: 20, fontWeight: 800 }}>
-            True Cash Projection — Remaining {currentBudgetPeriod.year}
-          </div>
-          <div style={{ display: "flex", gap: 20, alignItems: "center", fontSize: 13 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <div style={{ width: 24, height: 3, background: "#138bff", borderRadius: 2 }} />
-              <span style={{ color: "#8fb1d9" }}>Baseline</span>
-            </div>
-            {hasScenario ? (
-              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <div style={{ width: 24, height: 3, background: "#00f59b", borderRadius: 2 }} />
-                <span style={{ color: "#8fb1d9" }}>{scenarioName}</span>
+              <div style={{ display: "grid", gap: 10, maxHeight: "68vh", overflowY: "auto" }}>
+                {categoryCards.map((category) => {
+                  const isActive = category.id === selectedCategory.id;
+                  return (
+                    <button
+                      key={category.id}
+                      type="button"
+                      onClick={() => {
+                        setActiveCategoryId(category.id);
+                        setFocusMonth(getFocusMonthForCategory(category, selectedYear));
+                      }}
+                      style={{
+                        border: isActive
+                          ? `1px solid ${category.color}`
+                          : "1px solid rgba(0,216,255,.14)",
+                        background: isActive ? "rgba(0,136,255,.16)" : "rgba(2,12,24,.72)",
+                        borderRadius: 14,
+                        padding: "14px 14px 12px",
+                        textAlign: "left",
+                        cursor: "pointer",
+                        boxShadow: isActive ? `0 0 18px ${category.color}33` : "none",
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                        <div>
+                          <div
+                            style={{
+                              color: isActive ? "white" : "#d7ebff",
+                              fontWeight: 800,
+                              fontSize: 14,
+                            }}
+                          >
+                            {category.name}
+                          </div>
+                          <div style={{ color: "#7ea6d8", fontSize: 12, marginTop: 5 }}>
+                            {category.description}
+                          </div>
+                        </div>
+                        <div
+                          style={{
+                            width: 10,
+                            height: 10,
+                            borderRadius: 999,
+                            background: category.color,
+                            boxShadow: `0 0 16px ${category.color}`,
+                            marginTop: 4,
+                            flexShrink: 0,
+                          }}
+                        />
+                      </div>
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "baseline",
+                          gap: 10,
+                          marginTop: 14,
+                        }}
+                      >
+                        <div style={{ color: category.color, fontWeight: 900, fontSize: 18 }}>
+                          {wholeDollars(category.total)}
+                        </div>
+                        <div style={{ color: "#9fb0c9", fontSize: 12 }}>
+                          {category.share.toFixed(1)}% share
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
-            ) : null}
-          </div>
-        </div>
+            </div>
+          </aside>
 
-        <div style={{ display: "flex", gap: 0 }}>
-          <div
-            style={{
-              width: 52,
-              flexShrink: 0,
-              display: "flex",
-              flexDirection: "column",
-              justifyContent: "space-between",
-              paddingBottom: 40,
-            }}
-          >
-            {labels.map((l) => (
-              <span key={l} style={{ color: "#5e7da0", fontSize: 11, textAlign: "right" }}>
-                {l}
-              </span>
-            ))}
-          </div>
-
-          <div style={{ flex: 1, position: "relative" }}>
-            <svg
-              viewBox={`0 0 ${CHART_W} ${CHART_H + 36}`}
-              style={{ width: "100%", overflow: "visible" }}
-              onMouseMove={(e) => {
-                const rect = e.currentTarget.getBoundingClientRect();
-                const svgX = ((e.clientX - rect.left) / rect.width) * CHART_W;
-                const months = [
-                  currentBudgetPeriod.month,
-                  ...baseline.map((point) => point.month),
-                ].filter((month, index, allMonths) => {
-                  return MONTH_X[month] !== undefined && allMonths.indexOf(month) === index;
-                });
-                const closest = months.reduce(
-                  (best, m) => {
-                    const dist = Math.abs(MONTH_X[m] - svgX);
-                    return dist < best.dist ? { m, dist } : best;
-                  },
-                  { m: null, dist: Infinity }
-                );
-                setHoveredMonth(closest.m);
+          <div style={{ display: "grid", gap: 20 }}>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+                gap: 16,
               }}
-              onMouseLeave={() => setHoveredMonth(null)}
             >
-              <defs>
-                <linearGradient id="fcBG" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#138bff" stopOpacity="0.22" />
-                  <stop offset="100%" stopColor="#138bff" stopOpacity="0" />
-                </linearGradient>
-                <linearGradient id="fcSG" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#00f59b" stopOpacity="0.16" />
-                  <stop offset="100%" stopColor="#00f59b" stopOpacity="0" />
-                </linearGradient>
-              </defs>
-
-              {labels.map((_, i) => {
-                const y = (i / (labels.length - 1)) * CHART_H;
-                return (
-                  <line
-                    key={i}
-                    x1={0}
-                    y1={y}
-                    x2={CHART_W}
-                    y2={y}
-                    stroke="rgba(0,136,255,.1)"
-                    strokeWidth={1}
-                  />
-                );
-              })}
-
-              {budgetMonths.map((m) => (
-                <line
-                  key={m}
-                  x1={MONTH_X[m]}
-                  y1={0}
-                  x2={MONTH_X[m]}
-                  y2={CHART_H}
-                  stroke="rgba(0,136,255,.06)"
-                  strokeWidth={1}
-                />
+              {[
+                ["Annual Spend", wholeDollars(selectedTotalSpend), selectedCategory.color],
+                ["Average / Month", wholeDollars(averageMonthlySpend), "#8feaff"],
+                [
+                  "Peak Month",
+                  `${peakMonth.month} ${wholeDollars(peakMonth.spent)}`,
+                  peakMonth.spent >= averageMonthlySpend ? "#ffb65d" : "#00f59b",
+                ],
+                [
+                  focusMonthData ? `${focusMonthData.month} Review` : "Focused Month",
+                  focusMonthData ? wholeDollars(focusMonthData.spent) : wholeDollars(0),
+                  focusMonthData?.spent >= averageMonthlySpend ? "#ff7a45" : "#00f59b",
+                ],
+              ].map(([label, value, color]) => (
+                <div
+                  key={label}
+                  style={{
+                    ...styles.panel,
+                    padding: 18,
+                    border: "1px solid rgba(0,216,255,.18)",
+                  }}
+                >
+                  <div
+                    style={{
+                      color: "#7ea6d8",
+                      fontSize: 11,
+                      textTransform: "uppercase",
+                      letterSpacing: 0.8,
+                    }}
+                  >
+                    {label}
+                  </div>
+                  <div style={{ color, fontWeight: 900, fontSize: 24, marginTop: 10 }}>{value}</div>
+                  {label === "Annual Spend" ? (
+                    <div style={{ color: "#9fb0c9", fontSize: 12, marginTop: 8 }}>
+                      {selectedTransactions.length} reviewed transactions in {selectedYear}
+                    </div>
+                  ) : label === "Average / Month" ? (
+                    <div style={{ color: "#9fb0c9", fontSize: 12, marginTop: 8 }}>
+                      Average line is based on {reviewedMonthCount} month
+                      {reviewedMonthCount === 1 ? "" : "s"} in scope
+                    </div>
+                  ) : label === "Peak Month" ? (
+                    <div style={{ color: "#9fb0c9", fontSize: 12, marginTop: 8 }}>
+                      Highest spend concentration in the selected year
+                    </div>
+                  ) : (
+                    <div style={{ color: "#9fb0c9", fontSize: 12, marginTop: 8 }}>
+                      {focusMonthData?.transactionCount || 0} transactions in focus
+                    </div>
+                  )}
+                </div>
               ))}
+            </div>
 
-              {bArea ? <path d={bArea} fill="url(#fcBG)" /> : null}
-              {hasScenario && sArea ? <path d={sArea} fill="url(#fcSG)" /> : null}
+            <div style={{ ...styles.panel, padding: "24px 24px 0" }}>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 18,
+                  flexWrap: "wrap",
+                  marginBottom: 18,
+                }}
+              >
+                <div>
+                  <div style={{ color: "white", fontSize: 22, fontWeight: 900 }}>
+                    Monthly Spend Pattern
+                  </div>
+                  <div style={{ color: "#9fb0c9", marginTop: 6, lineHeight: 1.5 }}>
+                    Track live spend against the average line
+                    {hasBudgetContext ? " and your budget target." : "."}
+                  </div>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#9fb0c9" }}>
+                    <div
+                      style={{
+                        width: 24,
+                        height: 3,
+                        borderRadius: 999,
+                        background: selectedCategory.color,
+                      }}
+                    />
+                    Spend
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#9fb0c9" }}>
+                    <div
+                      style={{
+                        width: 24,
+                        borderTop: "2px dashed rgba(143,234,255,.9)",
+                      }}
+                    />
+                    Average
+                  </div>
+                  {hasBudgetContext ? (
+                    <div
+                      style={{ display: "flex", alignItems: "center", gap: 8, color: "#9fb0c9" }}
+                    >
+                      <div
+                        style={{
+                          width: 24,
+                          borderTop: "2px dashed rgba(255,182,93,.9)",
+                        }}
+                      />
+                      Budget
+                    </div>
+                  ) : null}
+                </div>
+              </div>
 
-              {bPath ? (
-                <path
-                  d={bPath}
-                  fill="none"
-                  stroke="#138bff"
-                  strokeWidth={2.5}
-                  strokeLinejoin="round"
-                  strokeLinecap="round"
-                />
-              ) : null}
-              {hasScenario && sPath ? (
-                <path
-                  d={sPath}
-                  fill="none"
-                  stroke="#00f59b"
-                  strokeWidth={2.5}
-                  strokeLinejoin="round"
-                  strokeLinecap="round"
-                />
-              ) : null}
+              <div style={{ display: "flex", gap: 0 }}>
+                <div
+                  style={{
+                    width: 72,
+                    flexShrink: 0,
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "space-between",
+                    paddingBottom: 44,
+                  }}
+                >
+                  {yLabels.map((label) => (
+                    <span key={label} style={{ color: "#5e7da0", fontSize: 11, textAlign: "right" }}>
+                      {label}
+                    </span>
+                  ))}
+                </div>
 
-              {/* Hover overlay */}
-              {hoveredMonth && MONTH_X[hoveredMonth] !== undefined
-                ? (() => {
-                    const bRow = baseline.find((p) => p.month === hoveredMonth);
-                    const sRow = scenario.find((p) => p.month === hoveredMonth);
-                    const isCurrentMonth = hoveredMonth === currentBudgetPeriod.month;
-                    const baselineValue = isCurrentMonth ? trueCash : bRow?.value;
-                    const scenarioValue = isCurrentMonth ? trueCash : sRow?.value;
-                    if (baselineValue === undefined) return null;
-                    const hx = MONTH_X[hoveredMonth];
-                    const by = py(baselineValue);
-                    const sy = scenarioValue !== undefined ? py(scenarioValue) : null;
-                    const diff = scenarioValue !== undefined ? scenarioValue - baselineValue : 0;
-                    const tipX = hx > CHART_W * 0.7 ? hx - 178 : hx + 12;
-                    const tipH = hasScenario ? 118 : 76;
-                    const tipY = Math.min(by, sy ?? by) - tipH / 2;
-                    return (
-                      <g>
+                <div style={{ flex: 1, position: "relative" }}>
+                  <svg viewBox={`0 0 ${CHART_W} ${CHART_H + 40}`} style={{ width: "100%" }}>
+                    <defs>
+                      <linearGradient id="spendingAreaGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor={selectedCategory.color} stopOpacity="0.28" />
+                        <stop offset="100%" stopColor={selectedCategory.color} stopOpacity="0.02" />
+                      </linearGradient>
+                    </defs>
+
+                    {yLabels.map((_, index) => {
+                      const y = (index / (yLabels.length - 1)) * CHART_H;
+                      return (
                         <line
-                          x1={hx}
-                          y1={0}
-                          x2={hx}
-                          y2={CHART_H}
-                          stroke="rgba(0,216,255,.45)"
+                          key={index}
+                          x1={0}
+                          y1={y}
+                          x2={CHART_W}
+                          y2={y}
+                          stroke="rgba(0,136,255,.1)"
                           strokeWidth={1}
-                          strokeDasharray="3 3"
                         />
-                        <circle
-                          cx={hx}
-                          cy={by}
-                          r={5}
-                          fill="#138bff"
-                          stroke="white"
-                          strokeWidth={1.5}
-                        />
-                        {hasScenario && sy !== null ? (
+                      );
+                    })}
+
+                    {budgetMonths.map((month) => (
+                      <line
+                        key={month}
+                        x1={MONTH_X[month]}
+                        y1={0}
+                        x2={MONTH_X[month]}
+                        y2={CHART_H}
+                        stroke="rgba(0,136,255,.06)"
+                        strokeWidth={1}
+                      />
+                    ))}
+
+                    {spendArea ? <path d={spendArea} fill="url(#spendingAreaGradient)" /> : null}
+                    <line
+                      x1={0}
+                      y1={averageY}
+                      x2={CHART_W}
+                      y2={averageY}
+                      stroke="rgba(143,234,255,.95)"
+                      strokeWidth={1.8}
+                      strokeDasharray="6 5"
+                    />
+                    {hasBudgetContext && budgetPath ? (
+                      <path
+                        d={budgetPath}
+                        fill="none"
+                        stroke="#ffb65d"
+                        strokeWidth={2}
+                        strokeDasharray="7 5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    ) : null}
+                    {spendPath ? (
+                      <path
+                        d={spendPath}
+                        fill="none"
+                        stroke={selectedCategory.color}
+                        strokeWidth={3}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    ) : null}
+
+                    {focusX != null ? (
+                      <line
+                        x1={focusX}
+                        y1={0}
+                        x2={focusX}
+                        y2={CHART_H}
+                        stroke="rgba(0,216,255,.42)"
+                        strokeWidth={1}
+                        strokeDasharray="3 4"
+                      />
+                    ) : null}
+
+                    {monthlySeries.map((row) => {
+                      const y = toY(row.spent, max, min);
+                      const isActive = focusMonthData?.month === row.month;
+                      return (
+                        <g key={row.month}>
                           <circle
-                            cx={hx}
-                            cy={sy}
-                            r={5}
-                            fill="#00f59b"
+                            cx={MONTH_X[row.month]}
+                            cy={y}
+                            r={isActive ? 6 : 4.5}
+                            fill={selectedCategory.color}
                             stroke="white"
-                            strokeWidth={1.5}
+                            strokeWidth={isActive ? 1.8 : 1.3}
+                            style={{ cursor: "pointer" }}
+                            onClick={() => setFocusMonth(row.month)}
                           />
+                          <text
+                            x={MONTH_X[row.month]}
+                            y={CHART_H + 24}
+                            textAnchor="middle"
+                            style={{
+                              fill: isActive ? "#eaf3ff" : "#5e7da0",
+                              fontSize: 11,
+                              fontWeight: isActive ? 800 : 500,
+                              cursor: "pointer",
+                            }}
+                            onClick={() => setFocusMonth(row.month)}
+                          >
+                            {row.month}
+                          </text>
+                        </g>
+                      );
+                    })}
+                  </svg>
+                </div>
+              </div>
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "minmax(0, 1.15fr) minmax(300px, .85fr)",
+                gap: 20,
+                alignItems: "start",
+              }}
+            >
+              <div style={{ ...styles.panel, padding: 24 }}>
+                <div
+                  style={{
+                    color: "white",
+                    fontSize: 20,
+                    fontWeight: 900,
+                    marginBottom: 18,
+                  }}
+                >
+                  Monthly Review Grid
+                </div>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: hasBudgetContext ? "90px 1fr 1fr 1fr 1fr" : "90px 1fr 1fr 1fr",
+                    padding: "0 14px 12px",
+                    color: "#7294bb",
+                    fontSize: 12,
+                    textTransform: "uppercase",
+                    letterSpacing: 0.9,
+                    borderBottom: "1px solid rgba(0,136,255,.14)",
+                  }}
+                >
+                  <div>Month</div>
+                  <div style={{ textAlign: "right" }}>Spend</div>
+                  <div style={{ textAlign: "right" }}>Vs Avg</div>
+                  {hasBudgetContext ? <div style={{ textAlign: "right" }}>Vs Budget</div> : null}
+                  <div style={{ textAlign: "right" }}>Tx Count</div>
+                </div>
+
+                <div style={{ maxHeight: "58vh", overflowY: "auto" }}>
+                  {monthlySeries.map((row, index) => {
+                    const isFocused = focusMonthData?.month === row.month;
+                    const avgColor = row.deltaFromAverage > 0 ? "#ffb65d" : "#00f59b";
+                    const budgetColor =
+                      row.deltaFromBudget == null
+                        ? "#5e7da0"
+                        : row.deltaFromBudget > 0
+                          ? "#ff5d7a"
+                          : "#00f59b";
+
+                    return (
+                      <button
+                        key={row.month}
+                        type="button"
+                        onClick={() => setFocusMonth(row.month)}
+                        style={{
+                          width: "100%",
+                          border: "none",
+                          background: isFocused
+                            ? "rgba(0,136,255,.09)"
+                            : index % 2 === 0
+                              ? "rgba(255,255,255,.01)"
+                              : "transparent",
+                          borderLeft: isFocused
+                            ? "2px solid rgba(0,216,255,.5)"
+                            : "2px solid transparent",
+                          display: "grid",
+                          gridTemplateColumns: hasBudgetContext
+                            ? "90px 1fr 1fr 1fr 1fr"
+                            : "90px 1fr 1fr 1fr",
+                          alignItems: "center",
+                          padding: "12px 14px",
+                          borderBottom: "1px solid rgba(0,136,255,.08)",
+                          cursor: "pointer",
+                          textAlign: "left",
+                        }}
+                      >
+                        <div style={{ color: "white", fontWeight: 800 }}>{row.month}</div>
+                        <div
+                          style={{
+                            textAlign: "right",
+                            color: row.spent > averageMonthlySpend ? "#ffb65d" : "#eaf3ff",
+                            fontWeight: 800,
+                          }}
+                        >
+                          {wholeDollars(row.spent)}
+                        </div>
+                        <div style={{ textAlign: "right", color: avgColor, fontWeight: 700 }}>
+                          {row.deltaFromAverage >= 0 ? "+" : ""}
+                          {wholeDollars(row.deltaFromAverage)}
+                        </div>
+                        {hasBudgetContext ? (
+                          <div style={{ textAlign: "right", color: budgetColor, fontWeight: 700 }}>
+                            {row.deltaFromBudget == null
+                              ? "—"
+                              : `${row.deltaFromBudget >= 0 ? "+" : ""}${wholeDollars(
+                                  row.deltaFromBudget
+                                )}`}
+                          </div>
                         ) : null}
-                        <foreignObject
-                          x={tipX}
-                          y={Math.max(4, tipY)}
-                          width={168}
-                          height={tipH + 10}
+                        <div style={{ textAlign: "right", color: "#9fb0c9" }}>{row.transactionCount}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: hasBudgetContext ? "90px 1fr 1fr 1fr 1fr" : "90px 1fr 1fr 1fr",
+                    padding: "14px",
+                    borderTop: "1px solid rgba(0,136,255,.18)",
+                    background: "rgba(0,136,255,.06)",
+                  }}
+                >
+                  <div
+                    style={{
+                      color: "#8feaff",
+                      fontWeight: 900,
+                      fontSize: 12,
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    Year
+                  </div>
+                  <div style={{ textAlign: "right", color: selectedCategory.color, fontWeight: 900 }}>
+                    {wholeDollars(selectedTotalSpend)}
+                  </div>
+                  <div style={{ textAlign: "right", color: "#8feaff", fontWeight: 800 }}>
+                    Avg {wholeDollars(averageMonthlySpend)}
+                  </div>
+                  {hasBudgetContext ? (
+                    <div
+                      style={{
+                        textAlign: "right",
+                        color:
+                          budgetInReviewPeriod != null && selectedTotalSpend <= budgetInReviewPeriod
+                            ? "#00f59b"
+                            : "#ff5d7a",
+                        fontWeight: 800,
+                      }}
+                    >
+                      {budgetInReviewPeriod == null
+                        ? "—"
+                        : `${selectedTotalSpend - budgetInReviewPeriod >= 0 ? "+" : ""}${wholeDollars(
+                            selectedTotalSpend - budgetInReviewPeriod
+                          )}`}
+                    </div>
+                  ) : null}
+                  <div style={{ textAlign: "right", color: "#d7ebff", fontWeight: 800 }}>
+                    {selectedTransactions.length}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gap: 20 }}>
+                <div style={{ ...styles.panel, padding: 22 }}>
+                  <div
+                    style={{
+                      color: "#8feaff",
+                      fontSize: 12,
+                      textTransform: "uppercase",
+                      letterSpacing: 1,
+                      fontWeight: 900,
+                    }}
+                  >
+                    Month Spotlight
+                  </div>
+                  <div style={{ color: "white", fontSize: 24, fontWeight: 900, marginTop: 8 }}>
+                    {focusMonthData?.month} {selectedYear}
+                  </div>
+                  <div style={{ display: "grid", gap: 12, marginTop: 18 }}>
+                    {[
+                      ["Spend", wholeDollars(focusMonthData?.spent || 0), selectedCategory.color],
+                      [
+                        "Vs Average",
+                        `${(focusMonthData?.deltaFromAverage || 0) >= 0 ? "+" : ""}${wholeDollars(
+                          focusMonthData?.deltaFromAverage || 0
+                        )}`,
+                        (focusMonthData?.deltaFromAverage || 0) > 0 ? "#ffb65d" : "#00f59b",
+                      ],
+                      [
+                        hasBudgetContext ? "Vs Budget" : "Budget Context",
+                        hasBudgetContext
+                          ? focusBudgetDelta == null
+                            ? "—"
+                            : `${focusBudgetDelta >= 0 ? "+" : ""}${wholeDollars(focusBudgetDelta)}`
+                          : "Not tracked",
+                        !hasBudgetContext
+                          ? "#9fb0c9"
+                          : (focusBudgetDelta || 0) > 0
+                            ? "#ff5d7a"
+                            : "#00f59b",
+                      ],
+                    ].map(([label, value, color]) => (
+                      <div
+                        key={label}
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          gap: 14,
+                          padding: "12px 14px",
+                          borderRadius: 12,
+                          border: "1px solid rgba(0,216,255,.14)",
+                          background: "rgba(3,17,32,.72)",
+                        }}
+                      >
+                        <span style={{ color: "#9fb0c9" }}>{label}</span>
+                        <span style={{ color, fontWeight: 800 }}>{value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div style={{ ...styles.panel, padding: 22 }}>
+                  <div style={{ color: "white", fontSize: 18, fontWeight: 900, marginBottom: 14 }}>
+                    Top Merchants
+                  </div>
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {topMerchants.length ? (
+                      topMerchants.map((merchant) => (
+                        <div
+                          key={merchant.merchant}
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            gap: 12,
+                            padding: "11px 0",
+                            borderBottom: "1px solid rgba(0,136,255,.1)",
+                          }}
+                        >
+                          <div>
+                            <div style={{ color: "white", fontWeight: 700 }}>{merchant.merchant}</div>
+                            <div style={{ color: "#7ea6d8", fontSize: 12, marginTop: 4 }}>
+                              {merchant.count} transaction{merchant.count === 1 ? "" : "s"}
+                            </div>
+                          </div>
+                          <div style={{ color: "#8feaff", fontWeight: 800 }}>
+                            {wholeDollars(merchant.total)}
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div style={{ color: "#9fb0c9", lineHeight: 1.6 }}>
+                        No merchant signal yet for this category in {selectedYear}.
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div style={{ ...styles.panel, padding: 22 }}>
+                  <div style={{ color: "white", fontSize: 18, fontWeight: 900, marginBottom: 14 }}>
+                    Recent {focusMonthData?.month} Activity
+                  </div>
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {focusMonthData?.transactions?.length ? (
+                      focusMonthData.transactions.slice(0, 6).map((transaction) => (
+                        <div
+                          key={transaction.id}
+                          style={{
+                            borderRadius: 12,
+                            border: "1px solid rgba(0,216,255,.14)",
+                            background: "rgba(3,17,32,.68)",
+                            padding: "12px 14px",
+                          }}
                         >
                           <div
                             style={{
-                              background: "rgba(4,18,38,.95)",
-                              border: "1px solid rgba(0,216,255,.3)",
-                              borderRadius: 8,
-                              padding: "10px 12px",
-                              color: "white",
-                              fontSize: 13,
+                              display: "flex",
+                              justifyContent: "space-between",
+                              gap: 12,
+                              alignItems: "baseline",
                             }}
                           >
-                            <div
-                              style={{
-                                color: "#8feaff",
-                                fontSize: 11,
-                                marginBottom: 7,
-                                fontWeight: 700,
-                              }}
-                            >
-                              {hoveredMonth} {currentBudgetPeriod.year}
+                            <div style={{ color: "white", fontWeight: 800 }}>
+                              {transaction.merchant || "Spending entry"}
                             </div>
-                            <div
-                              style={{
-                                display: "flex",
-                                justifyContent: "space-between",
-                                marginBottom: 4,
-                              }}
-                            >
-                              <span style={{ color: "#8fb1d9" }}>Baseline</span>
-                              <span style={{ color: "#138bff", fontWeight: 800 }}>
-                                {isCurrentMonth ? wholeDollars(trueCash) : bRow?.formattedValue}
-                              </span>
+                            <div style={{ color: "#ffb65d", fontWeight: 900 }}>
+                              {wholeDollars(Math.abs(transaction.amount))}
                             </div>
-                            {hasScenario && scenarioValue !== undefined ? (
-                              <>
-                                <div
-                                  style={{
-                                    display: "flex",
-                                    justifyContent: "space-between",
-                                    marginBottom: 4,
-                                  }}
-                                >
-                                  <span style={{ color: "#8fb1d9" }}>Scenario</span>
-                                  <span style={{ color: "#00f59b", fontWeight: 800 }}>
-                                    {isCurrentMonth ? wholeDollars(trueCash) : sRow?.formattedValue}
-                                  </span>
-                                </div>
-                                <div
-                                  style={{
-                                    display: "flex",
-                                    justifyContent: "space-between",
-                                    paddingTop: 6,
-                                    borderTop: "1px solid rgba(0,136,255,.2)",
-                                    fontSize: 12,
-                                  }}
-                                >
-                                  <span style={{ color: "#8fb1d9" }}>Diff</span>
-                                  <span
-                                    style={{
-                                      fontWeight: 800,
-                                      color: diff >= 0 ? "#00f59b" : "#ff5d7a",
-                                    }}
-                                  >
-                                    {diff >= 0 ? "+" : ""}
-                                    {wholeDollars(diff)}
-                                  </span>
-                                </div>
-                              </>
-                            ) : null}
                           </div>
-                        </foreignObject>
-                      </g>
-                    );
-                  })()
-                : null}
-
-              {budgetMonths.map((m) => (
-                <text
-                  key={m}
-                  x={MONTH_X[m]}
-                  y={CHART_H + 22}
-                  textAnchor="middle"
-                  style={{ fill: "#5e7da0", fontSize: 11 }}
-                >
-                  {m}
-                </text>
-              ))}
-            </svg>
-          </div>
-        </div>
-      </div>
-
-      {/* Monthly Table */}
-      <div style={{ ...styles.panel, padding: 24 }}>
-        <div style={{ color: "white", fontSize: 20, fontWeight: 800, marginBottom: 18 }}>
-          Monthly Breakdown
-        </div>
-
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: hasScenario ? "100px 1fr 1fr 1fr 1fr" : "100px 1fr 1fr 1fr",
-            padding: "0 16px 12px",
-            color: "#7294bb",
-            fontSize: 12,
-            textTransform: "uppercase",
-            letterSpacing: 1,
-            borderBottom: "1px solid rgba(0,136,255,.14)",
-          }}
-        >
-          <div>Month</div>
-          <div style={{ textAlign: "right" }}>Monthly Profit</div>
-          <div style={{ textAlign: "right" }}>Adjustment</div>
-          <div style={{ textAlign: "right" }}>Baseline</div>
-          {hasScenario ? <div style={{ textAlign: "right" }}>{scenarioName}</div> : null}
-        </div>
-
-        <div style={{ maxHeight: "52vh", overflowY: "auto" }}>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: hasScenario ? "100px 1fr 1fr 1fr 1fr" : "100px 1fr 1fr 1fr",
-              alignItems: "center",
-              padding: "11px 16px",
-              borderBottom: "1px solid rgba(0,136,255,.08)",
-              background:
-                hoveredMonth === currentBudgetPeriod.month
-                  ? "rgba(0,136,255,.07)"
-                  : "rgba(255,255,255,.01)",
-              borderLeft:
-                hoveredMonth === currentBudgetPeriod.month
-                  ? "2px solid rgba(0,216,255,.4)"
-                  : "2px solid transparent",
-              transition: "background .12s",
-            }}
-            onMouseEnter={() => setHoveredMonth(currentBudgetPeriod.month)}
-            onMouseLeave={() => setHoveredMonth(null)}
-          >
-            <div style={{ color: "white", fontWeight: 700 }}>{currentBudgetPeriod.month} Start</div>
-            <div style={{ textAlign: "right", color: "#5e7da0", fontSize: 14 }}>—</div>
-            <div style={{ textAlign: "right", color: "#5e7da0", fontSize: 14 }}>—</div>
-            <div style={{ color: "#138bff", textAlign: "right", fontWeight: 800, fontSize: 15 }}>
-              {wholeDollars(trueCash)}
-            </div>
-            {hasScenario ? (
-              <div style={{ color: "#00f59b", textAlign: "right", fontWeight: 800, fontSize: 15 }}>
-                {wholeDollars(trueCash)}
-              </div>
-            ) : null}
-          </div>
-
-          {baseline.map((bRow, i) => {
-            const sRow = scenario[i];
-            const diff = sRow ? sRow.value - bRow.value : 0;
-            const isHov = hoveredMonth === bRow.month;
-            return (
-              <div
-                key={bRow.month}
-                onMouseEnter={() => setHoveredMonth(bRow.month)}
-                onMouseLeave={() => setHoveredMonth(null)}
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: hasScenario ? "100px 1fr 1fr 1fr 1fr" : "100px 1fr 1fr 1fr",
-                  alignItems: "center",
-                  padding: "11px 16px",
-                  borderBottom: "1px solid rgba(0,136,255,.08)",
-                  background: isHov
-                    ? "rgba(0,136,255,.07)"
-                    : i % 2 === 0
-                      ? "rgba(255,255,255,.01)"
-                      : "transparent",
-                  borderLeft: isHov ? "2px solid rgba(0,216,255,.4)" : "2px solid transparent",
-                  transition: "background .12s",
-                }}
-              >
-                <div style={{ color: "white", fontWeight: 700 }}>
-                  {bRow.month} {currentBudgetPeriod.year}
-                </div>
-                <div
-                  style={{
-                    textAlign: "right",
-                    fontWeight: 700,
-                    color: bRow.profit >= 0 ? "#00f59b" : "#ff5d7a",
-                    fontSize: 14,
-                  }}
-                >
-                  {bRow.profit >= 0 ? "+" : ""}
-                  {wholeDollars(bRow.profit)}
-                </div>
-                <div
-                  style={{
-                    textAlign: "right",
-                    color: bRow.adjustment !== 0 ? "#ffb65d" : "#5e7da0",
-                    fontSize: 14,
-                  }}
-                >
-                  {bRow.adjustment !== 0
-                    ? `${bRow.adjustment >= 0 ? "+" : ""}${wholeDollars(bRow.adjustment)}`
-                    : "—"}
-                </div>
-                <div
-                  style={{ color: "#138bff", textAlign: "right", fontWeight: 800, fontSize: 15 }}
-                >
-                  {bRow.formattedValue}
-                </div>
-                {hasScenario && sRow ? (
-                  <div
-                    style={{
-                      color: diff >= 0 ? "#00f59b" : "#ff5d7a",
-                      textAlign: "right",
-                      fontWeight: 800,
-                      fontSize: 15,
-                    }}
-                  >
-                    {sRow.formattedValue}
-                    {diff !== 0 ? (
-                      <span style={{ fontSize: 11, marginLeft: 5, opacity: 0.75 }}>
-                        ({diff >= 0 ? "+" : ""}
-                        {wholeDollars(diff)})
-                      </span>
-                    ) : null}
+                          <div
+                            style={{
+                              color: "#7ea6d8",
+                              fontSize: 12,
+                              marginTop: 6,
+                              display: "flex",
+                              justifyContent: "space-between",
+                              gap: 12,
+                              flexWrap: "wrap",
+                            }}
+                          >
+                            <span>{transaction.date}</span>
+                            <span>{transaction.account}</span>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div style={{ color: "#9fb0c9", lineHeight: 1.6 }}>
+                        Nothing posted in {focusMonthData?.month} for this category. Pick another
+                        month on the chart or review grid to scan a different slice of spending.
+                      </div>
+                    )}
                   </div>
-                ) : null}
+                </div>
               </div>
-            );
-          })}
-        </div>
-
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: hasScenario ? "100px 1fr 1fr 1fr 1fr" : "100px 1fr 1fr 1fr",
-            padding: "14px 16px",
-            borderTop: "1px solid rgba(0,136,255,.2)",
-            background: "rgba(0,136,255,.06)",
-          }}
-        >
-          <div
-            style={{ color: "#8feaff", fontWeight: 800, fontSize: 13, textTransform: "uppercase" }}
-          >
-            Year-End
-          </div>
-          <div />
-          <div />
-          <div style={{ color: "#138bff", textAlign: "right", fontWeight: 900, fontSize: 16 }}>
-            {wholeDollars(baselineEnd)}
-          </div>
-          {hasScenario ? (
-            <div
-              style={{
-                color: totalDiff >= 0 ? "#00f59b" : "#ff5d7a",
-                textAlign: "right",
-                fontWeight: 900,
-                fontSize: 16,
-              }}
-            >
-              {wholeDollars(scenarioEnd)}
-              {totalDiff !== 0 ? (
-                <span style={{ fontSize: 12, marginLeft: 6, opacity: 0.8 }}>
-                  ({totalDiff >= 0 ? "+" : ""}
-                  {wholeDollars(totalDiff)})
-                </span>
-              ) : null}
             </div>
-          ) : null}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
