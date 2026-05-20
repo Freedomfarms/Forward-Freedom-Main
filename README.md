@@ -110,6 +110,11 @@ The repo now includes starter Vercel-compatible routes:
 
 - `GET /api/health`
 - `GET /api/me`
+- `GET /api/workspace`
+- `PUT /api/workspace`
 
 `/api/me` expects a Firebase bearer token in the `Authorization` header and will upsert the user
 into Postgres when `DATABASE_URL` is configured.
+
+`/api/workspace` stores a user-scoped workspace snapshot in Postgres so the app can start moving
+away from browser-only persistence while the deeper normalized data migration is still in progress.

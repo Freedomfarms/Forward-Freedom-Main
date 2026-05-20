@@ -1,4 +1,10 @@
-export function WorkspaceSessionPanel({ user, onSignOut, isBusy = false }) {
+export function WorkspaceSessionPanel({
+  user,
+  onSignOut,
+  isBusy = false,
+  workspaceStatus = "",
+  workspaceError = "",
+}) {
   if (!user) return null;
 
   const label = user.displayName?.trim() || user.email || "Authenticated User";
@@ -41,6 +47,25 @@ export function WorkspaceSessionPanel({ user, onSignOut, isBusy = false }) {
         <div style={{ color: "#9fb0c9", fontSize: 12, marginTop: 6 }}>
           {user.emailVerified ? "Verified account" : "Email verification pending"}
         </div>
+        {workspaceStatus ? (
+          <div style={{ color: "#8feaff", fontSize: 12, marginTop: 8 }}>{workspaceStatus}</div>
+        ) : null}
+        {workspaceError ? (
+          <div
+            style={{
+              marginTop: 10,
+              color: "#ffd9df",
+              background: "rgba(255,36,77,.08)",
+              border: "1px solid rgba(255,93,122,.22)",
+              borderRadius: 10,
+              padding: "10px 11px",
+              fontSize: 12,
+              lineHeight: 1.45,
+            }}
+          >
+            {workspaceError}
+          </div>
+        ) : null}
         <button
           type="button"
           disabled={isBusy}

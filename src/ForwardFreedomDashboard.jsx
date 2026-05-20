@@ -243,8 +243,13 @@ function mergePlaidSyncIntoUser(user, syncPayload) {
   };
 }
 
-function ForwardFreedomDashboard({ initialView = "landing", storageKey } = {}) {
-  const [initialAppState] = useState(() => loadPersistedAppState(storageKey));
+function ForwardFreedomDashboard({
+  initialView = "landing",
+  storageKey,
+  initialAppStateOverride,
+  onPersistedStateChange,
+} = {}) {
+  const [initialAppState] = useState(() => initialAppStateOverride || loadPersistedAppState(storageKey));
   const [currentView, setCurrentView] = useState(initialView);
   const [users, setUsers] = useState(initialAppState.users);
   const [activeUserId, setActiveUserId] = useState(initialAppState.activeUserId);
@@ -578,11 +583,16 @@ function ForwardFreedomDashboard({ initialView = "landing", storageKey } = {}) {
   ];
 
   useEffect(() => {
-    persistAppState({
+    const nextPersistedState = {
       users: persistedUsers,
       activeUserId: activeUser?.id || persistedUsers[0]?.id || null,
-    }, storageKey);
-  }, [activeUser?.id, persistedUsers, storageKey]);
+    };
+
+    persistAppState(nextPersistedState, storageKey);
+    if (typeof onPersistedStateChange === "function") {
+      onPersistedStateChange(nextPersistedState);
+    }
+  }, [activeUser?.id, onPersistedStateChange, persistedUsers, storageKey]);
 
   useEffect(() => {
     let cancelled = false;

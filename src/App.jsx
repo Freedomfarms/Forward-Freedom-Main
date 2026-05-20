@@ -1,8 +1,17 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ForwardFreedomDashboard from "./ForwardFreedomDashboard.jsx";
 import { AuthProvider, useAuth } from "./context/AuthContext.jsx";
 import { AuthScreen } from "./components/AuthScreen.jsx";
 import { WorkspaceSessionPanel } from "./components/WorkspaceSessionPanel.jsx";
-import { buildScopedAppStateStorageKey } from "./utils/appState.js";
+import {
+  buildScopedAppStateStorageKey,
+  loadPersistedAppState,
+} from "./utils/appState.js";
+import {
+  fetchAuthenticatedUserProfile,
+  fetchWorkspaceSnapshot,
+  saveWorkspaceSnapshot,
+} from "./utils/api.js";
 
 function AppLoadingScreen() {
   return (
@@ -34,6 +43,130 @@ function AppLoadingScreen() {
   );
 }
 
+function AuthenticatedWorkspaceApp({ user, signOut, isBusy }) {
+  const storageKey = useMemo(() => buildScopedAppStateStorageKey(user.uid), [user.uid]);
+  const [workspaceSeedState, setWorkspaceSeedState] = useState(null);
+  const [workspaceError, setWorkspaceError] = useState("");
+  const [workspaceSyncState, setWorkspaceSyncState] = useState("idle");
+  const [latestPersistedState, setLatestPersistedState] = useState(null);
+  const [workspaceProfile, setWorkspaceProfile] = useState(null);
+  const lastServerSnapshotRef = useRef("");
+
+  useEffect(() => {
+    let cancelled = false;
+    const fallbackState = loadPersistedAppState(storageKey);
+
+    const bootstrapWorkspace = async () => {
+      try {
+        const [profilePayload, workspacePayload] = await Promise.all([
+          fetchAuthenticatedUserProfile(),
+          fetchWorkspaceSnapshot(),
+        ]);
+        const remoteState = workspacePayload?.snapshot?.state;
+        const nextSeedState = remoteState || fallbackState;
+
+        if (cancelled) return;
+
+        setWorkspaceProfile(profilePayload?.user || null);
+        setWorkspaceSeedState(nextSeedState);
+        setWorkspaceSyncState("ready");
+        lastServerSnapshotRef.current = remoteState ? JSON.stringify(remoteState) : "";
+      } catch (error) {
+        if (cancelled) return;
+
+        setWorkspaceSeedState(fallbackState);
+        setWorkspaceSyncState("local-only");
+        setWorkspaceError(
+          error?.message ||
+            "Workspace server sync is unavailable right now. Local browser persistence remains active."
+        );
+      }
+    };
+
+    void bootstrapWorkspace();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [storageKey]);
+
+  const handlePersistedStateChange = useCallback((nextState) => {
+    setLatestPersistedState(nextState);
+  }, []);
+
+  useEffect(() => {
+    if (!latestPersistedState || !workspaceSeedState || workspaceSyncState === "local-only") {
+      return undefined;
+    }
+
+    const serializedState = JSON.stringify(latestPersistedState);
+    if (serializedState === lastServerSnapshotRef.current) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    const timeoutId = window.setTimeout(() => {
+      if (cancelled) return;
+      setWorkspaceSyncState("syncing");
+      void saveWorkspaceSnapshot({
+        state: latestPersistedState,
+        source: "phase-2-app-sync",
+        lastClientUpdatedAt: new Date().toISOString(),
+      })
+        .then((payload) => {
+          if (cancelled) return;
+          lastServerSnapshotRef.current = serializedState;
+          setWorkspaceSyncState(payload?.snapshot ? "synced" : "ready");
+          setWorkspaceError("");
+        })
+        .catch((error) => {
+          if (cancelled) return;
+          setWorkspaceSyncState("local-only");
+          setWorkspaceError(
+            error?.message ||
+              "Workspace changes are only being stored locally until server sync is available."
+          );
+        });
+    }, 900);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [latestPersistedState, workspaceSeedState, workspaceSyncState]);
+
+  if (!workspaceSeedState) {
+    return <AppLoadingScreen />;
+  }
+
+  return (
+    <>
+      <WorkspaceSessionPanel
+        user={workspaceProfile || user}
+        onSignOut={() => void signOut()}
+        isBusy={isBusy}
+        workspaceStatus={
+          workspaceSyncState === "local-only"
+            ? "Local persistence fallback"
+            : workspaceSyncState === "syncing"
+              ? "Syncing workspace to server"
+              : workspaceSyncState === "synced"
+                ? "Server-backed workspace active"
+                : "Authenticated workspace ready"
+        }
+        workspaceError={workspaceError}
+      />
+      <ForwardFreedomDashboard
+        initialView="app"
+        storageKey={storageKey}
+        initialAppStateOverride={workspaceSeedState}
+        onPersistedStateChange={handlePersistedStateChange}
+      />
+    </>
+  );
+}
+
 function AppContent() {
   const { configured, isBusy, ready, signOut, user } = useAuth();
 
@@ -49,15 +182,7 @@ function AppContent() {
     return <AuthScreen />;
   }
 
-  return (
-    <>
-      <WorkspaceSessionPanel user={user} onSignOut={() => void signOut()} isBusy={isBusy} />
-      <ForwardFreedomDashboard
-        initialView="app"
-        storageKey={buildScopedAppStateStorageKey(user.uid)}
-      />
-    </>
-  );
+  return <AuthenticatedWorkspaceApp key={user.uid} user={user} signOut={signOut} isBusy={isBusy} />;
 }
 
 export default function App() {
