@@ -1,3 +1,4 @@
+import process from "node:process";
 import { spawn } from "node:child_process";
 
 const PLACEHOLDER_DATABASE_URL = "postgresql://postgres:password@localhost:5432/forward_freedom";
@@ -18,6 +19,6 @@ child.on("exit", (code) => {
 });
 
 child.on("error", (error) => {
-  console.error(error);
+  process.stderr.write(`${error}\n`);
   process.exit(1);
 });
