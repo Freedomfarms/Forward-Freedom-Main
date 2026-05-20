@@ -1,4 +1,5 @@
 import prismaClientPackage from "@prisma/client";
+import { PrismaPg } from "@prisma/adapter-pg";
 
 const { PrismaClient } = prismaClientPackage;
 
@@ -14,7 +15,8 @@ export function getPrismaClient() {
   }
 
   if (!globalScope.__forwardFreedomPrisma) {
-    globalScope.__forwardFreedomPrisma = new PrismaClient();
+    const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
+    globalScope.__forwardFreedomPrisma = new PrismaClient({ adapter });
   }
 
   return globalScope.__forwardFreedomPrisma;
