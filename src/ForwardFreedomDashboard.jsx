@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { usePlaidLink } from "react-plaid-link";
 import { APP_TABS, budgetMonths } from "./data/constants.jsx";
 import { styles } from "./styles.js";
@@ -1179,18 +1179,15 @@ function ForwardFreedomDashboard() {
       setPlaidError("");
     }
   };
-  const plaidIntegration = useMemo(
-    () => ({
-      configured: plaidStatus.configured,
-      environment: plaidStatus.environment,
-      notes: plaidStatus.notes || [],
-      isSyncing: isPlaidSyncing,
-      error: plaidError,
-      lastSyncAt: lastPlaidSyncAt,
-      connectedItemCount: plaidItems.length,
-    }),
-    [isPlaidSyncing, lastPlaidSyncAt, plaidError, plaidItems.length, plaidStatus]
-  );
+  const plaidIntegration = {
+    configured: plaidStatus.configured,
+    environment: plaidStatus.environment,
+    notes: plaidStatus.notes || [],
+    isSyncing: isPlaidSyncing,
+    error: plaidError,
+    lastSyncAt: lastPlaidSyncAt,
+    connectedItemCount: plaidItems.length,
+  };
   const householdProfilesProps = {
     users,
     activeUserId,

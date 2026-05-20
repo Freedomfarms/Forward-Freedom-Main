@@ -40,8 +40,6 @@ export function OperationsBoard({
   getProjectionAdjustmentsForYear,
   setProjectionAdjustmentsForYear,
   ensurePlanningYear,
-  plansByYear,
-  currentPlanBaseData,
   getPlanningAnchorForYear,
   setPlanningAnchorForYear,
 }) {
@@ -148,7 +146,7 @@ export function OperationsBoard({
     currentMonthIndex: currentBudgetPeriod.monthIndex,
     currentYear: currentBudgetPeriod.year,
   }).map((entry) => entry.value);
-  const projectedTrueCashValues = baseTrueCashSeries.map((value, index) => {
+  const projectedTrueCashValues = baseTrueCashSeries.map((value) => {
     if (value === null) return null;
     return value;
   });
