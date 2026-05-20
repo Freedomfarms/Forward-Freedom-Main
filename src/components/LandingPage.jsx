@@ -1,5 +1,5 @@
 import { useState } from "react";
-import forwardFreedomLogo from "../assets/forward-freedom-logo.png";
+import forwardFreedomLogo from "../assets/forward-freedom-logo.svg";
 
 const LEGAL_CONTENT = {
   terms: {
