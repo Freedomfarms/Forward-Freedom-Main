@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { usePlaidLink } from "react-plaid-link";
 import { APP_TABS, budgetMonths } from "./data/constants.jsx";
 import { styles } from "./styles.js";
@@ -26,6 +26,7 @@ import {
 } from "./utils/planning.js";
 import {
   createPlaidLinkToken,
+  deletePlaidUser,
   exchangePlaidPublicToken,
   getPlaidStatus,
   syncPlaidUser,
@@ -242,9 +243,14 @@ function mergePlaidSyncIntoUser(user, syncPayload) {
   };
 }
 
-function ForwardFreedomDashboard() {
-  const [initialAppState] = useState(() => loadPersistedAppState());
-  const [currentView, setCurrentView] = useState("landing");
+function ForwardFreedomDashboard({
+  initialView = "landing",
+  storageKey,
+  initialAppStateOverride,
+  onPersistedStateChange,
+} = {}) {
+  const [initialAppState] = useState(() => initialAppStateOverride || loadPersistedAppState(storageKey));
+  const [currentView, setCurrentView] = useState(initialView);
   const [users, setUsers] = useState(initialAppState.users);
   const [activeUserId, setActiveUserId] = useState(initialAppState.activeUserId);
   const [editingUserId, setEditingUserId] = useState(null);
@@ -577,11 +583,16 @@ function ForwardFreedomDashboard() {
   ];
 
   useEffect(() => {
-    persistAppState({
+    const nextPersistedState = {
       users: persistedUsers,
       activeUserId: activeUser?.id || persistedUsers[0]?.id || null,
-    });
-  }, [activeUser?.id, persistedUsers]);
+    };
+
+    persistAppState(nextPersistedState, storageKey);
+    if (typeof onPersistedStateChange === "function") {
+      onPersistedStateChange(nextPersistedState);
+    }
+  }, [activeUser?.id, onPersistedStateChange, persistedUsers, storageKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -672,7 +683,7 @@ function ForwardFreedomDashboard() {
 
       try {
         const payload = await exchangePlaidPublicToken({
-          userId: targetUserId,
+          workspaceUserId: targetUserId,
           publicToken,
         });
         applyPlaidSyncPayload(targetUserId, payload);
@@ -888,7 +899,7 @@ function ForwardFreedomDashboard() {
 
     try {
       const { linkToken } = await createPlaidLinkToken({
-        userId: activeUser.id,
+        workspaceUserId: activeUser.id,
         userName: getDisplayUserName(
           activeUser,
           users.findIndex((user) => user.id === activeUser.id)
@@ -1139,18 +1150,54 @@ function ForwardFreedomDashboard() {
     setEditingUserId(newUser.id);
     setDraftUserName(newUser.name);
   };
-  const plaidIntegration = useMemo(
-    () => ({
-      configured: plaidStatus.configured,
-      environment: plaidStatus.environment,
-      notes: plaidStatus.notes || [],
-      isSyncing: isPlaidSyncing,
-      error: plaidError,
-      lastSyncAt: lastPlaidSyncAt,
-      connectedItemCount: plaidItems.length,
-    }),
-    [isPlaidSyncing, lastPlaidSyncAt, plaidError, plaidItems.length, plaidStatus]
-  );
+  const deleteUserProfile = async (userId) => {
+    const targetIndex = users.findIndex((user) => user.id === userId);
+    if (targetIndex < 0) return;
+    if (users.length <= 1) {
+      throw new Error("At least one user profile must remain in the workspace.");
+    }
+
+    const targetUser = users[targetIndex];
+    if ((targetUser.plaidItems || []).length > 0) {
+      await deletePlaidUser(userId);
+    }
+
+    const nextUsers = users.filter((user) => user.id !== userId);
+    const fallbackUser =
+      nextUsers[targetIndex] || nextUsers[targetIndex - 1] || nextUsers[0] || EMPTY_USER_STATE;
+
+    setUsers(nextUsers);
+    setActiveUserId((currentUserId) => {
+      if (currentUserId === userId || !nextUsers.some((user) => user.id === currentUserId)) {
+        return fallbackUser.id;
+      }
+      return currentUserId;
+    });
+
+    if (editingUserId === userId) {
+      setEditingUserId(null);
+      setDraftUserName("");
+    }
+
+    if (plaidTargetUserId === userId) {
+      setPlaidShouldOpen(false);
+      setPlaidLinkToken(null);
+      setPlaidTargetUserId(null);
+    }
+
+    if (activeUserId === userId) {
+      setPlaidError("");
+    }
+  };
+  const plaidIntegration = {
+    configured: plaidStatus.configured,
+    environment: plaidStatus.environment,
+    notes: plaidStatus.notes || [],
+    isSyncing: isPlaidSyncing,
+    error: plaidError,
+    lastSyncAt: lastPlaidSyncAt,
+    connectedItemCount: plaidItems.length,
+  };
   const householdProfilesProps = {
     users,
     activeUserId,
@@ -1167,6 +1214,7 @@ function ForwardFreedomDashboard() {
     onSaveUserName: saveUserName,
     onCancelUserRename: cancelUserRename,
     onAddUser: addUserProfile,
+    onDeleteUser: deleteUserProfile,
   };
   const handleEnterApp = (payload = {}) => {
     if (payload?.mode === "create-account") {
@@ -1280,11 +1328,8 @@ function ForwardFreedomDashboard() {
             />
           ) : activeTab === APP_TABS.FORECAST_LAB ? (
             <ForecastLab
-              trueCash={trueCash}
-              subscriptions={subscriptions}
-              incomeStreams={incomeStreams}
+              transactions={categorizedTransactions}
               budgetRows={budgetRows}
-              projectionAdjustments={projectionAdjustments}
               householdProfilesProps={householdProfilesProps}
             />
           ) : activeTab === APP_TABS.RECURRING_SUBSCRIPTIONS ? (

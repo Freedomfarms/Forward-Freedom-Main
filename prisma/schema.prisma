@@ -1,0 +1,241 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum WorkspaceRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum PlaidItemStatus {
+  CONNECTED
+  REQUIRES_ATTENTION
+  DISCONNECTED
+}
+
+enum TransactionSource {
+  MANUAL
+  PLAID
+  IMPORT
+  SYSTEM
+}
+
+model User {
+  id                  String               @id
+  email               String?              @unique
+  displayName         String?
+  photoURL            String?
+  role                WorkspaceRole        @default(OWNER)
+  isDisabled          Boolean              @default(false)
+  lastLoginAt         DateTime?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  plaidItems          PlaidItem[]
+  accounts            Account[]
+  transactions        Transaction[]
+  budgetRows          BudgetRow[]
+  incomeStreams       IncomeStream[]
+  subscriptions       Subscription[]
+  planYears           PlanYear[]
+  merchantRules       MerchantCategoryRule[]
+  metricSnapshots     MetricSnapshot[]
+  workspaceSnapshot   WorkspaceSnapshot?
+}
+
+model PlaidItem {
+  id                    String          @id @default(cuid())
+  userId                String
+  workspaceUserId       String?
+  itemId                String          @unique
+  institutionId         String?
+  institutionName       String?
+  accessTokenCiphertext String
+  cursor                String?
+  environment           String?
+  status                PlaidItemStatus @default(CONNECTED)
+  products              Json?
+  lastSyncAt            DateTime?
+  lastSyncError         String?
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+  user                  User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accounts              Account[]
+  transactions          Transaction[]
+
+  @@index([userId])
+  @@index([userId, workspaceUserId])
+}
+
+model Account {
+  id                String        @id @default(cuid())
+  userId            String
+  workspaceUserId   String?
+  plaidItemRecordId String?
+  plaidAccountId    String?       @unique
+  name              String
+  type              String
+  institution       String?
+  status            String?
+  balance           Decimal?      @db.Decimal(14, 2)
+  syncSource        String?
+  plaidType         String?
+  plaidSubtype      String?
+  plaidMask         String?
+  lastSyncedAt      DateTime?
+  metadata          Json?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plaidItem         PlaidItem?    @relation(fields: [plaidItemRecordId], references: [id], onDelete: SetNull)
+  transactions      Transaction[]
+  subscriptions     Subscription[]
+
+  @@index([userId])
+  @@index([userId, workspaceUserId])
+}
+
+model Transaction {
+  id                 String            @id @default(cuid())
+  userId             String
+  workspaceUserId    String?
+  accountId          String?
+  plaidItemRecordId  String?
+  plaidTransactionId String?           @unique
+  source             TransactionSource @default(MANUAL)
+  syncSource         String?
+  merchant           String
+  category           String?
+  amount             Decimal           @db.Decimal(14, 2)
+  postedAt           DateTime
+  authorizedAt       DateTime?
+  pending            Boolean           @default(false)
+  raw                Json?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  user               User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account            Account?          @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  plaidItem          PlaidItem?        @relation(fields: [plaidItemRecordId], references: [id], onDelete: SetNull)
+
+  @@index([userId, postedAt])
+  @@index([accountId, postedAt])
+  @@index([userId, workspaceUserId, postedAt])
+}
+
+model PlanYear {
+  id                   String         @id @default(cuid())
+  userId               String
+  year                 Int
+  startingMonth        String
+  startingTrueCash     Decimal        @db.Decimal(14, 2)
+  projectionAdjustments Json
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+  user                 User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  budgetRows           BudgetRow[]
+  incomeStreams        IncomeStream[]
+
+  @@unique([userId, year])
+  @@index([userId])
+}
+
+model BudgetRow {
+  id                    String    @id @default(cuid())
+  userId                String
+  planYearId            String
+  name                  String
+  icon                  String?
+  color                 String?
+  budget                Decimal   @db.Decimal(14, 2)
+  transactionCategories Json
+  months                Json
+  position              Int       @default(0)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planYear              PlanYear  @relation(fields: [planYearId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([planYearId, position])
+}
+
+model IncomeStream {
+  id          String    @id @default(cuid())
+  userId      String
+  planYearId  String
+  name        String
+  description String?
+  amount      Decimal   @db.Decimal(14, 2)
+  type        String
+  color       String?
+  icon        String?
+  months      Json
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planYear    PlanYear  @relation(fields: [planYearId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([planYearId])
+}
+
+model Subscription {
+  id          String    @id @default(cuid())
+  userId      String
+  accountId   String?
+  name        String
+  amount      Decimal   @db.Decimal(14, 2)
+  frequency   String
+  category    String?
+  billingDay  Int?
+  status      String
+  icon        String?
+  color       String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  account     Account?  @relation(fields: [accountId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+}
+
+model MerchantCategoryRule {
+  id          String    @id @default(cuid())
+  userId      String
+  merchantKey String
+  category    String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, merchantKey])
+}
+
+model MetricSnapshot {
+  id             String    @id @default(cuid())
+  userId         String
+  snapshotDate   DateTime
+  liquidCash     Decimal   @db.Decimal(14, 2)
+  creditCardDebt Decimal   @db.Decimal(14, 2)
+  totalNetWorth  Decimal   @db.Decimal(14, 2)
+  createdAt      DateTime  @default(now())
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, snapshotDate])
+  @@index([userId, snapshotDate])
+}
+
+model WorkspaceSnapshot {
+  id                  String   @id @default(cuid())
+  userId              String   @unique
+  state               Json
+  source              String?
+  lastClientUpdatedAt DateTime?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}

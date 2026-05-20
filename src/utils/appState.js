@@ -23,6 +23,11 @@ function cloneSeed(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+export function buildScopedAppStateStorageKey(scope = "") {
+  const normalizedScope = String(scope || "").trim();
+  return normalizedScope ? `${APP_STATE_STORAGE_KEY}:${normalizedScope}` : APP_STATE_STORAGE_KEY;
+}
+
 function readLegacyMetricSnapshots() {
   if (typeof window === "undefined") return {};
 
@@ -178,12 +183,14 @@ export function createEmptyUserProfile({ name = "User", id } = {}) {
   });
 }
 
-export function loadPersistedAppState() {
+export function loadPersistedAppState(storageKey = APP_STATE_STORAGE_KEY) {
   const defaults = buildDefaultAppState();
   if (typeof window === "undefined") return defaults;
 
   try {
-    const stored = window.localStorage.getItem(APP_STATE_STORAGE_KEY);
+    const stored =
+      window.localStorage.getItem(storageKey) ||
+      (storageKey !== APP_STATE_STORAGE_KEY ? window.localStorage.getItem(APP_STATE_STORAGE_KEY) : null);
     if (!stored) {
       const defaultUser = {
         ...defaults.users[0],
@@ -234,7 +241,7 @@ export function loadPersistedAppState() {
   }
 }
 
-export function persistAppState(state) {
+export function persistAppState(state, storageKey = APP_STATE_STORAGE_KEY) {
   if (typeof window === "undefined") return;
 
   const payload = {
@@ -242,5 +249,5 @@ export function persistAppState(state) {
     activeUserId: state.activeUserId,
   };
 
-  window.localStorage.setItem(APP_STATE_STORAGE_KEY, JSON.stringify(payload));
+  window.localStorage.setItem(storageKey, JSON.stringify(payload));
 }

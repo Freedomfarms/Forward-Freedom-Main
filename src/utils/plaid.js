@@ -1,3 +1,5 @@
+import { buildAuthenticatedHeaders } from "./api.js";
+
 async function parseApiResponse(response) {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -12,31 +14,47 @@ export async function getPlaidStatus() {
   return parseApiResponse(response);
 }
 
-export async function createPlaidLinkToken({ userId, userName }) {
+export async function createPlaidLinkToken({ workspaceUserId, userName }) {
   const response = await fetch("/api/plaid/link-token/create", {
     method: "POST",
-    headers: {
+    headers: await buildAuthenticatedHeaders({
       "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ userId, userName }),
+    }),
+    body: JSON.stringify({ workspaceUserId, userName }),
   });
 
   return parseApiResponse(response);
 }
 
-export async function exchangePlaidPublicToken({ userId, publicToken }) {
+export async function exchangePlaidPublicToken({ workspaceUserId, publicToken }) {
   const response = await fetch("/api/plaid/exchange-public-token", {
     method: "POST",
-    headers: {
+    headers: await buildAuthenticatedHeaders({
       "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ userId, publicToken }),
+    }),
+    body: JSON.stringify({ workspaceUserId, publicToken }),
   });
 
   return parseApiResponse(response);
 }
 
-export async function syncPlaidUser(userId) {
-  const response = await fetch(`/api/plaid/sync?userId=${encodeURIComponent(userId)}`);
+export async function syncPlaidUser(workspaceUserId) {
+  const search = workspaceUserId
+    ? `?workspaceUserId=${encodeURIComponent(workspaceUserId)}`
+    : "";
+  const response = await fetch(`/api/plaid/sync${search}`, {
+    headers: await buildAuthenticatedHeaders(),
+  });
+  return parseApiResponse(response);
+}
+
+export async function deletePlaidUser(workspaceUserId) {
+  const search = workspaceUserId
+    ? `?workspaceUserId=${encodeURIComponent(workspaceUserId)}`
+    : "";
+  const response = await fetch(`/api/plaid/user${search}`, {
+    method: "DELETE",
+    headers: await buildAuthenticatedHeaders(),
+  });
   return parseApiResponse(response);
 }

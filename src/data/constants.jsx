@@ -6,7 +6,7 @@ export const APP_TABS = {
   OPERATIONS_BOARD: "Operations Board",
   INCOME_HUB: "Income Hub",
   BUDGET_COMMAND_CENTER: "Budget Strategy Lab",
-  FORECAST_LAB: "Forecast Lab",
+  FORECAST_LAB: "Spending Intelligence",
   ADD_ACCOUNTS: "Add Accounts",
   TRANSACTIONS: "Transactions",
   DEBT_PAYOFF_TRACKER: "Debt Payoff Tracker",

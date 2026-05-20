@@ -62,7 +62,73 @@ export function HouseholdProfilesControl({
   onSaveUserName,
   onCancelUserRename,
   onAddUser,
+  onDeleteUser,
 }) {
+  const [menuUserId, setMenuUserId] = useState(null);
+  const [deleteTargetUserId, setDeleteTargetUserId] = useState(null);
+  const [deleteError, setDeleteError] = useState("");
+  const [isDeletingUser, setIsDeletingUser] = useState(false);
+  const menuRef = useRef(null);
+  const hasMultipleUsers = users.length > 1;
+  const deleteTarget = users.find((user) => user.id === deleteTargetUserId) || null;
+  const deleteTargetSummary = deleteTarget
+    ? [
+        { label: "Accounts", value: deleteTarget.accounts?.length || 0 },
+        { label: "Transactions", value: deleteTarget.transactions?.length || 0 },
+        { label: "Budget Rows", value: deleteTarget.budgetRows?.length || 0 },
+        { label: "Income Streams", value: deleteTarget.incomeStreams?.length || 0 },
+        { label: "Subscriptions", value: deleteTarget.subscriptions?.length || 0 },
+        { label: "Plans", value: Object.keys(deleteTarget.plansByYear || {}).length },
+        { label: "Linked Plaid Items", value: deleteTarget.plaidItems?.length || 0 },
+      ]
+    : [];
+
+  useEffect(() => {
+    if (!menuUserId && !deleteTargetUserId) return undefined;
+
+    const handlePointerDown = (event) => {
+      if (menuUserId && menuRef.current && !menuRef.current.contains(event.target)) {
+        setMenuUserId(null);
+      }
+    };
+    const handleKeyDown = (event) => {
+      if (event.key !== "Escape" || isDeletingUser) return;
+      setMenuUserId(null);
+      setDeleteTargetUserId(null);
+      setDeleteError("");
+    };
+
+    window.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [deleteTargetUserId, isDeletingUser, menuUserId]);
+
+  const closeDeleteDialog = () => {
+    if (isDeletingUser) return;
+    setDeleteTargetUserId(null);
+    setDeleteError("");
+  };
+
+  const confirmDeleteUser = async () => {
+    if (!deleteTarget || !onDeleteUser || isDeletingUser) return;
+
+    setDeleteError("");
+    setIsDeletingUser(true);
+
+    try {
+      await onDeleteUser(deleteTarget.id);
+      setDeleteTargetUserId(null);
+      setMenuUserId(null);
+    } catch (error) {
+      setDeleteError(error?.message || "Unable to delete this user profile right now.");
+    } finally {
+      setIsDeletingUser(false);
+    }
+  };
+
   return (
     <div
       style={{
@@ -106,31 +172,155 @@ export function HouseholdProfilesControl({
         }
 
         return (
-          <button
+          <div
             key={user.id}
-            onClick={() => onSelectUser(user.id)}
-            onDoubleClick={() => onStartEditingUser(user.id)}
-            title="Double-click to rename"
+            ref={menuUserId === user.id ? menuRef : null}
             style={{
-              color: isActive ? "#f4fbff" : "#9fb0c9",
-              background: isActive ? "rgba(0,136,255,.18)" : "rgba(0,136,255,.06)",
-              border: isActive ? "1px solid rgba(0,216,255,.42)" : "1px solid rgba(0,216,255,.18)",
-              borderRadius: 999,
-              padding: "9px 14px",
-              cursor: "pointer",
-              fontWeight: 800,
-              fontSize: 13,
-              boxShadow: isActive ? "0 0 18px rgba(0,136,255,.18)" : "none",
-              whiteSpace: "nowrap",
+              position: "relative",
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
             }}
           >
-            {label}
-          </button>
+            <button
+              onClick={() => {
+                setMenuUserId(null);
+                onSelectUser(user.id);
+              }}
+              onDoubleClick={() => {
+                setMenuUserId(null);
+                onStartEditingUser(user.id);
+              }}
+              title="Double-click to rename"
+              style={{
+                color: isActive ? "#f4fbff" : "#9fb0c9",
+                background: isActive ? "rgba(0,136,255,.18)" : "rgba(0,136,255,.06)",
+                border: isActive
+                  ? "1px solid rgba(0,216,255,.42)"
+                  : "1px solid rgba(0,216,255,.18)",
+                borderRadius: 999,
+                padding: "9px 14px",
+                cursor: "pointer",
+                fontWeight: 800,
+                fontSize: 13,
+                boxShadow: isActive ? "0 0 18px rgba(0,136,255,.18)" : "none",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {label}
+            </button>
+            <button
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded={menuUserId === user.id}
+              title={`Profile actions for ${label}`}
+              onClick={(event) => {
+                event.stopPropagation();
+                setMenuUserId((currentUserId) => (currentUserId === user.id ? null : user.id));
+              }}
+              style={{
+                width: 34,
+                height: 34,
+                borderRadius: 999,
+                border: isActive
+                  ? "1px solid rgba(0,216,255,.35)"
+                  : "1px solid rgba(0,216,255,.18)",
+                background: isActive ? "rgba(0,136,255,.12)" : "rgba(0,136,255,.05)",
+                color: isActive ? "#eaf7ff" : "#9fb0c9",
+                cursor: "pointer",
+                fontSize: 18,
+                fontWeight: 900,
+                lineHeight: 1,
+              }}
+            >
+              ⋯
+            </button>
+            {menuUserId === user.id ? (
+              <div
+                role="menu"
+                style={{
+                  position: "absolute",
+                  top: "calc(100% + 10px)",
+                  right: 0,
+                  minWidth: 180,
+                  borderRadius: 14,
+                  border: "1px solid rgba(0,216,255,.24)",
+                  background: "#081423",
+                  boxShadow: "0 18px 42px rgba(0,8,18,.72), 0 0 28px rgba(0,136,255,.2)",
+                  padding: 8,
+                  display: "grid",
+                  gap: 6,
+                  zIndex: 120,
+                }}
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenuUserId(null);
+                    onStartEditingUser(user.id);
+                  }}
+                  style={{
+                    background: "rgba(0,136,255,.08)",
+                    border: "1px solid rgba(0,216,255,.16)",
+                    color: "#eaf3ff",
+                    borderRadius: 10,
+                    padding: "10px 12px",
+                    cursor: "pointer",
+                    fontWeight: 800,
+                    textAlign: "left",
+                  }}
+                >
+                  Rename
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={!hasMultipleUsers}
+                  onClick={() => {
+                    if (!hasMultipleUsers) return;
+                    setDeleteError("");
+                    setDeleteTargetUserId(user.id);
+                    setMenuUserId(null);
+                  }}
+                  style={{
+                    background: hasMultipleUsers ? "rgba(255,36,77,.10)" : "rgba(103,120,144,.10)",
+                    border: hasMultipleUsers
+                      ? "1px solid rgba(255,93,122,.28)"
+                      : "1px solid rgba(126,166,216,.18)",
+                    color: hasMultipleUsers ? "#ffd9df" : "#7f95b2",
+                    borderRadius: 10,
+                    padding: "10px 12px",
+                    cursor: hasMultipleUsers ? "pointer" : "not-allowed",
+                    fontWeight: 800,
+                    textAlign: "left",
+                  }}
+                >
+                  Delete user
+                </button>
+                {!hasMultipleUsers ? (
+                  <div
+                    style={{
+                      color: "#7ea6d8",
+                      fontSize: 11,
+                      lineHeight: 1.45,
+                      padding: "0 2px 2px",
+                    }}
+                  >
+                    Keep at least one profile in the workspace.
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
         );
       })}
 
       <button
-        onClick={onAddUser}
+        onClick={() => {
+          setMenuUserId(null);
+          onAddUser();
+        }}
         style={{
           background: "linear-gradient(90deg,#0077ff,#00d8ff)",
           border: "1px solid rgba(120,220,255,.45)",
@@ -146,6 +336,154 @@ export function HouseholdProfilesControl({
       >
         + Add User
       </button>
+      {deleteTarget ? (
+        <div
+          onClick={(event) => {
+            if (event.target === event.currentTarget) closeDeleteDialog();
+          }}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,5,14,.72)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 9999,
+            padding: 24,
+          }}
+        >
+          <div
+            style={{
+              ...styles.panel,
+              width: "min(520px, 100%)",
+              padding: 26,
+              boxShadow: "0 0 55px rgba(0,136,255,.34)",
+            }}
+          >
+            <div
+              style={{
+                color: "#8feaff",
+                fontSize: 12,
+                textTransform: "uppercase",
+                letterSpacing: 1.2,
+                marginBottom: 10,
+              }}
+            >
+              Confirm Delete
+            </div>
+            <div style={{ color: "white", fontSize: 26, fontWeight: 900, lineHeight: 1.15 }}>
+              Delete {deleteTarget.name || "this user profile"}?
+            </div>
+            <p style={{ color: "#a8bfdc", lineHeight: 1.6, marginTop: 14, marginBottom: 0 }}>
+              This permanently removes the profile from this workspace, including its accounts,
+              transactions, budget setup, income streams, subscriptions, and planning data.
+            </p>
+            {deleteTarget.plaidItems?.length ? (
+              <div
+                style={{
+                  marginTop: 16,
+                  borderRadius: 12,
+                  border: "1px solid rgba(255,93,122,.28)",
+                  background: "rgba(255,36,77,.08)",
+                  color: "#ffd9df",
+                  padding: "12px 14px",
+                  lineHeight: 1.55,
+                }}
+              >
+                This profile has {deleteTarget.plaidItems.length} linked Plaid item
+                {deleteTarget.plaidItems.length === 1 ? "" : "s"}. Stored linked-account data for
+                this user will also be cleared from the workspace.
+              </div>
+            ) : null}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+                gap: 10,
+                marginTop: 18,
+              }}
+            >
+              {deleteTargetSummary.map((item) => (
+                <div
+                  key={item.label}
+                  style={{
+                    borderRadius: 12,
+                    border: "1px solid rgba(0,216,255,.16)",
+                    background: "rgba(4,18,33,.72)",
+                    padding: "12px 14px",
+                  }}
+                >
+                  <div
+                    style={{
+                      color: "#7ea6d8",
+                      fontSize: 11,
+                      textTransform: "uppercase",
+                      letterSpacing: 0.7,
+                    }}
+                  >
+                    {item.label}
+                  </div>
+                  <div style={{ color: "white", fontSize: 20, fontWeight: 800, marginTop: 6 }}>
+                    {item.value}
+                  </div>
+                </div>
+              ))}
+            </div>
+            {deleteError ? (
+              <div
+                style={{
+                  marginTop: 16,
+                  color: "#ffd9df",
+                  background: "rgba(255,36,77,.08)",
+                  border: "1px solid rgba(255,93,122,.24)",
+                  borderRadius: 12,
+                  padding: "12px 14px",
+                  lineHeight: 1.5,
+                }}
+              >
+                {deleteError}
+              </div>
+            ) : null}
+            <div style={{ display: "flex", gap: 12, justifyContent: "flex-end", marginTop: 24 }}>
+              <button
+                type="button"
+                disabled={isDeletingUser}
+                onClick={closeDeleteDialog}
+                style={{
+                  background: "rgba(0,136,255,.10)",
+                  border: "1px solid rgba(0,216,255,.28)",
+                  color: "#d7ebff",
+                  borderRadius: 8,
+                  padding: "11px 16px",
+                  cursor: isDeletingUser ? "wait" : "pointer",
+                  fontWeight: 800,
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeletingUser}
+                onClick={() => {
+                  void confirmDeleteUser();
+                }}
+                style={{
+                  background: "linear-gradient(90deg,#ff244d,#ff5d7a)",
+                  border: "1px solid rgba(255,93,122,.55)",
+                  color: "white",
+                  borderRadius: 8,
+                  padding: "11px 16px",
+                  cursor: isDeletingUser ? "wait" : "pointer",
+                  fontWeight: 900,
+                  boxShadow: "0 0 22px rgba(255,36,77,.32)",
+                }}
+              >
+                {isDeletingUser ? "Deleting..." : "Delete User"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
