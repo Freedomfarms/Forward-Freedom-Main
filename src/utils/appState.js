@@ -194,7 +194,7 @@ function buildDefaultAppStateRecord(defaults) {
   };
 }
 
-function normalizePersistedAppState(rawState, defaults) {
+function normalizePersistedAppState(rawState) {
   if (Array.isArray(rawState?.users) && rawState.users.length > 0) {
     const users = rawState.users.map((user, index) =>
       normalizeUserState(user, `User ${index + 1}`, true)
@@ -278,7 +278,7 @@ export function loadPersistedAppStateRecord(storageKey = APP_STATE_STORAGE_KEY) 
     const unwrapped = unwrapPersistedAppState(parsed);
 
     return {
-      state: normalizePersistedAppState(unwrapped.rawState, defaults),
+      state: normalizePersistedAppState(unwrapped.rawState),
       hasPersistedState: true,
       persistedAt: unwrapped.persistedAt,
       mode: unwrapped.mode,
@@ -299,6 +299,7 @@ export function persistAppState(state, storageKey = APP_STATE_STORAGE_KEY, optio
     kind: APP_STATE_STORAGE_RECORD_KIND,
     version: APP_STATE_STORAGE_RECORD_VERSION,
     mode: typeof options.mode === "string" ? options.mode : "local",
+    cacheState: typeof options.cacheState === "string" ? options.cacheState : null,
     persistedAt:
       typeof options.persistedAt === "string" ? options.persistedAt : new Date().toISOString(),
     state: {
