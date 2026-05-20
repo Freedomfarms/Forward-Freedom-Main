@@ -76,6 +76,7 @@ or:
 - `PLAID_ENV`
 - `PLAID_CLIENT_ID`
 - `PLAID_SECRET`
+- `PLAID_TOKEN_ENCRYPTION_KEY`
 - `PLAID_WEBHOOK_URL` (later, once webhook handling is ready)
 
 ## Prisma
@@ -112,9 +113,18 @@ The repo now includes starter Vercel-compatible routes:
 - `GET /api/me`
 - `GET /api/workspace`
 - `PUT /api/workspace`
+- `GET /api/plaid/status`
+- `POST /api/plaid/link-token/create`
+- `POST /api/plaid/exchange-public-token`
+- `GET /api/plaid/sync`
+- `DELETE /api/plaid/user`
 
 `/api/me` expects a Firebase bearer token in the `Authorization` header and will upsert the user
 into Postgres when `DATABASE_URL` is configured.
 
 `/api/workspace` stores a user-scoped workspace snapshot in Postgres so the app can start moving
 away from browser-only persistence while the deeper normalized data migration is still in progress.
+
+The Plaid endpoints now expect an authenticated Firebase bearer token and store Plaid item records in
+Postgres with encrypted access-token persistence. Keep Plaid on sandbox/development until the rest
+of the server-backed data migration is complete.

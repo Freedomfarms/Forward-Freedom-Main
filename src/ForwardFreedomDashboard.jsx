@@ -683,7 +683,7 @@ function ForwardFreedomDashboard({
 
       try {
         const payload = await exchangePlaidPublicToken({
-          userId: targetUserId,
+          workspaceUserId: targetUserId,
           publicToken,
         });
         applyPlaidSyncPayload(targetUserId, payload);
@@ -899,7 +899,7 @@ function ForwardFreedomDashboard({
 
     try {
       const { linkToken } = await createPlaidLinkToken({
-        userId: activeUser.id,
+        workspaceUserId: activeUser.id,
         userName: getDisplayUserName(
           activeUser,
           users.findIndex((user) => user.id === activeUser.id)

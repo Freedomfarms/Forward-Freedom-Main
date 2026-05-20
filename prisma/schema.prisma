@@ -50,6 +50,7 @@ model User {
 model PlaidItem {
   id                    String          @id @default(cuid())
   userId                String
+  workspaceUserId       String?
   itemId                String          @unique
   institutionId         String?
   institutionName       String?
@@ -64,13 +65,16 @@ model PlaidItem {
   updatedAt             DateTime        @updatedAt
   user                  User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   accounts              Account[]
+  transactions          Transaction[]
 
   @@index([userId])
+  @@index([userId, workspaceUserId])
 }
 
 model Account {
   id                String        @id @default(cuid())
   userId            String
+  workspaceUserId   String?
   plaidItemRecordId String?
   plaidAccountId    String?       @unique
   name              String
@@ -92,12 +96,15 @@ model Account {
   subscriptions     Subscription[]
 
   @@index([userId])
+  @@index([userId, workspaceUserId])
 }
 
 model Transaction {
   id                 String            @id @default(cuid())
   userId             String
+  workspaceUserId    String?
   accountId          String?
+  plaidItemRecordId  String?
   plaidTransactionId String?           @unique
   source             TransactionSource @default(MANUAL)
   syncSource         String?
@@ -112,9 +119,11 @@ model Transaction {
   updatedAt          DateTime          @updatedAt
   user               User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   account            Account?          @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  plaidItem          PlaidItem?        @relation(fields: [plaidItemRecordId], references: [id], onDelete: SetNull)
 
   @@index([userId, postedAt])
   @@index([accountId, postedAt])
+  @@index([userId, workspaceUserId, postedAt])
 }
 
 model PlanYear {

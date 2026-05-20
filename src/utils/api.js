@@ -9,7 +9,7 @@ async function parseApiResponse(response) {
   return payload;
 }
 
-async function buildAuthenticatedHeaders(headers = {}) {
+export async function buildAuthenticatedHeaders(headers = {}) {
   const token = await getCurrentUserIdToken();
 
   return {
