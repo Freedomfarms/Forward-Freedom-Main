@@ -5,7 +5,8 @@ import { AuthScreen } from "./components/AuthScreen.jsx";
 import { WorkspaceSessionPanel } from "./components/WorkspaceSessionPanel.jsx";
 import {
   buildScopedAppStateStorageKey,
-  loadPersistedAppState,
+  loadPersistedAppStateRecord,
+  persistAppState,
 } from "./utils/appState.js";
 import {
   fetchAuthenticatedUserProfile,
@@ -43,6 +44,18 @@ function AppLoadingScreen() {
   );
 }
 
+function buildWorkspaceStatus(syncState) {
+  if (syncState === "hydrating-cache") return "Restoring cached workspace into the database";
+  if (syncState === "initializing-server") return "Creating your first server-backed workspace";
+  if (syncState === "syncing") return "Syncing workspace changes to the database";
+  if (syncState === "cache-fallback") return "Using a temporary browser cache until the database returns";
+  if (syncState === "synced" || syncState === "server-primary") {
+    return "Database-backed workspace active";
+  }
+
+  return "Loading server-backed workspace";
+}
+
 function AuthenticatedWorkspaceApp({ user, signOut, isBusy }) {
   const storageKey = useMemo(() => buildScopedAppStateStorageKey(user.uid), [user.uid]);
   const [workspaceSeedState, setWorkspaceSeedState] = useState(null);
@@ -51,10 +64,23 @@ function AuthenticatedWorkspaceApp({ user, signOut, isBusy }) {
   const [latestPersistedState, setLatestPersistedState] = useState(null);
   const [workspaceProfile, setWorkspaceProfile] = useState(null);
   const lastServerSnapshotRef = useRef("");
+  const cacheWorkspaceState = useCallback(
+    (state, cacheState = "browser-cache") => {
+      if (!state) return;
+
+      persistAppState(state, storageKey, {
+        mode: "cache",
+        persistedAt: new Date().toISOString(),
+        cacheState,
+      });
+    },
+    [storageKey]
+  );
 
   useEffect(() => {
     let cancelled = false;
-    const fallbackState = loadPersistedAppState(storageKey);
+    const cachedWorkspaceRecord = loadPersistedAppStateRecord(storageKey);
+    const cachedState = cachedWorkspaceRecord.state;
 
     const bootstrapWorkspace = async () => {
       try {
@@ -62,23 +88,42 @@ function AuthenticatedWorkspaceApp({ user, signOut, isBusy }) {
           fetchAuthenticatedUserProfile(),
           fetchWorkspaceSnapshot(),
         ]);
-        const remoteState = workspacePayload?.snapshot?.state;
-        const nextSeedState = remoteState || fallbackState;
+        const remoteSnapshot = workspacePayload?.snapshot || null;
+        const remoteState = remoteSnapshot?.state;
+        const nextSeedState = remoteState || cachedState;
 
         if (cancelled) return;
 
         setWorkspaceProfile(profilePayload?.user || null);
         setWorkspaceSeedState(nextSeedState);
-        setWorkspaceSyncState("ready");
+        setWorkspaceError("");
         lastServerSnapshotRef.current = remoteState ? JSON.stringify(remoteState) : "";
+
+        if (remoteState) {
+          cacheWorkspaceState(remoteState, "server-snapshot");
+          setWorkspaceSyncState("server-primary");
+          return;
+        }
+
+        cacheWorkspaceState(
+          nextSeedState,
+          cachedWorkspaceRecord.hasPersistedState ? "restored-cache" : "seed-default"
+        );
+        setWorkspaceSyncState(
+          cachedWorkspaceRecord.hasPersistedState ? "hydrating-cache" : "initializing-server"
+        );
       } catch (error) {
         if (cancelled) return;
 
-        setWorkspaceSeedState(fallbackState);
-        setWorkspaceSyncState("local-only");
+        setWorkspaceSeedState(cachedState);
+        cacheWorkspaceState(
+          cachedState,
+          cachedWorkspaceRecord.hasPersistedState ? "cache-fallback" : "seed-default"
+        );
+        setWorkspaceSyncState("cache-fallback");
         setWorkspaceError(
           error?.message ||
-            "Workspace server sync is unavailable right now. Local browser persistence remains active."
+            "Workspace server sync is unavailable right now. Using a temporary browser cache until the database is reachable again."
         );
       }
     };
@@ -88,16 +133,18 @@ function AuthenticatedWorkspaceApp({ user, signOut, isBusy }) {
     return () => {
       cancelled = true;
     };
-  }, [storageKey]);
+  }, [cacheWorkspaceState, storageKey]);
 
   const handlePersistedStateChange = useCallback((nextState) => {
     setLatestPersistedState(nextState);
   }, []);
 
   useEffect(() => {
-    if (!latestPersistedState || !workspaceSeedState || workspaceSyncState === "local-only") {
+    if (!latestPersistedState || !workspaceSeedState) {
       return undefined;
     }
+
+    cacheWorkspaceState(latestPersistedState, "working-cache");
 
     const serializedState = JSON.stringify(latestPersistedState);
     if (serializedState === lastServerSnapshotRef.current) {
@@ -111,21 +158,24 @@ function AuthenticatedWorkspaceApp({ user, signOut, isBusy }) {
       setWorkspaceSyncState("syncing");
       void saveWorkspaceSnapshot({
         state: latestPersistedState,
-        source: "phase-2-app-sync",
+        source: "phase-5-server-primary",
         lastClientUpdatedAt: new Date().toISOString(),
       })
         .then((payload) => {
           if (cancelled) return;
-          lastServerSnapshotRef.current = serializedState;
-          setWorkspaceSyncState(payload?.snapshot ? "synced" : "ready");
+          const confirmedState = payload?.snapshot?.state || latestPersistedState;
+          lastServerSnapshotRef.current = JSON.stringify(confirmedState);
+          cacheWorkspaceState(confirmedState, "server-confirmed");
+          setWorkspaceSyncState("synced");
           setWorkspaceError("");
         })
         .catch((error) => {
           if (cancelled) return;
-          setWorkspaceSyncState("local-only");
+          cacheWorkspaceState(latestPersistedState, "cache-fallback");
+          setWorkspaceSyncState("cache-fallback");
           setWorkspaceError(
             error?.message ||
-              "Workspace changes are only being stored locally until server sync is available."
+              "Workspace changes are being held in a temporary browser cache until the database is available again."
           );
         });
     }, 900);
@@ -134,7 +184,7 @@ function AuthenticatedWorkspaceApp({ user, signOut, isBusy }) {
       cancelled = true;
       window.clearTimeout(timeoutId);
     };
-  }, [latestPersistedState, workspaceSeedState, workspaceSyncState]);
+  }, [cacheWorkspaceState, latestPersistedState, workspaceSeedState]);
 
   if (!workspaceSeedState) {
     return <AppLoadingScreen />;
@@ -146,15 +196,7 @@ function AuthenticatedWorkspaceApp({ user, signOut, isBusy }) {
         user={workspaceProfile || user}
         onSignOut={() => void signOut()}
         isBusy={isBusy}
-        workspaceStatus={
-          workspaceSyncState === "local-only"
-            ? "Local persistence fallback"
-            : workspaceSyncState === "syncing"
-              ? "Syncing workspace to server"
-              : workspaceSyncState === "synced"
-                ? "Server-backed workspace active"
-                : "Authenticated workspace ready"
-        }
+        workspaceStatus={buildWorkspaceStatus(workspaceSyncState)}
         workspaceError={workspaceError}
       />
       <ForwardFreedomDashboard
@@ -162,6 +204,7 @@ function AuthenticatedWorkspaceApp({ user, signOut, isBusy }) {
         storageKey={storageKey}
         initialAppStateOverride={workspaceSeedState}
         onPersistedStateChange={handlePersistedStateChange}
+        persistLocally={false}
       />
     </>
   );

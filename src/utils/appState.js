@@ -13,6 +13,8 @@ import { buildPlanYearData, normalizePlansByYear } from "./planning.js";
 
 export const APP_STATE_STORAGE_KEY = "fff-app-state-v1";
 export const LEGACY_METRIC_SNAPSHOT_STORAGE_KEY = "fff-dashboard-metric-snapshots-v1";
+const APP_STATE_STORAGE_RECORD_KIND = "forward-freedom-app-state";
+const APP_STATE_STORAGE_RECORD_VERSION = 2;
 const DEFAULT_ACTIVE_RANGE = "ALL";
 const LEGACY_APP_TABS = {
   Dashboard: APP_TABS.DASHBOARD,
@@ -175,6 +177,76 @@ function buildDefaultAppState() {
   };
 }
 
+function buildDefaultAppStateRecord(defaults) {
+  const defaultUser = {
+    ...defaults.users[0],
+    metricSnapshots: readLegacyMetricSnapshots(),
+  };
+
+  return {
+    state: {
+      users: [defaultUser],
+      activeUserId: defaultUser.id,
+    },
+    hasPersistedState: false,
+    persistedAt: null,
+    mode: "default",
+  };
+}
+
+function normalizePersistedAppState(rawState, defaults) {
+  if (Array.isArray(rawState?.users) && rawState.users.length > 0) {
+    const users = rawState.users.map((user, index) =>
+      normalizeUserState(user, `User ${index + 1}`, true)
+    );
+    const activeUserId = users.some((user) => user.id === rawState?.activeUserId)
+      ? rawState.activeUserId
+      : users[0].id;
+
+    return { users, activeUserId };
+  }
+
+  const legacyUser = normalizeUserState(
+    {
+      ...rawState,
+      id: "user-profile-1",
+      name: "User 1",
+      metricSnapshots:
+        rawState?.metricSnapshots && typeof rawState.metricSnapshots === "object"
+          ? rawState.metricSnapshots
+          : readLegacyMetricSnapshots(),
+    },
+    "User 1",
+    true
+  );
+
+  return {
+    users: [legacyUser],
+    activeUserId: legacyUser.id,
+  };
+}
+
+function unwrapPersistedAppState(parsed) {
+  if (
+    parsed?.kind === APP_STATE_STORAGE_RECORD_KIND &&
+    parsed?.version === APP_STATE_STORAGE_RECORD_VERSION &&
+    parsed?.state &&
+    typeof parsed.state === "object"
+  ) {
+    return {
+      rawState: parsed.state,
+      persistedAt: typeof parsed.persistedAt === "string" ? parsed.persistedAt : null,
+      mode: typeof parsed.mode === "string" ? parsed.mode : "cache",
+    };
+  }
+
+  return {
+    rawState: parsed,
+    persistedAt: null,
+    mode: "legacy",
+  };
+}
+
 export function createEmptyUserProfile({ name = "User", id } = {}) {
   return buildUserState({
     id: id || generateUserProfileId(),
@@ -183,70 +255,56 @@ export function createEmptyUserProfile({ name = "User", id } = {}) {
   });
 }
 
-export function loadPersistedAppState(storageKey = APP_STATE_STORAGE_KEY) {
+export function loadPersistedAppStateRecord(storageKey = APP_STATE_STORAGE_KEY) {
   const defaults = buildDefaultAppState();
-  if (typeof window === "undefined") return defaults;
+  if (typeof window === "undefined") {
+    return {
+      state: defaults,
+      hasPersistedState: false,
+      persistedAt: null,
+      mode: "ssr",
+    };
+  }
 
   try {
     const stored =
       window.localStorage.getItem(storageKey) ||
       (storageKey !== APP_STATE_STORAGE_KEY ? window.localStorage.getItem(APP_STATE_STORAGE_KEY) : null);
     if (!stored) {
-      const defaultUser = {
-        ...defaults.users[0],
-        metricSnapshots: readLegacyMetricSnapshots(),
-      };
-      return {
-        users: [defaultUser],
-        activeUserId: defaultUser.id,
-      };
+      return buildDefaultAppStateRecord(defaults);
     }
 
     const parsed = JSON.parse(stored);
-    if (Array.isArray(parsed?.users) && parsed.users.length > 0) {
-      const users = parsed.users.map((user, index) =>
-        normalizeUserState(user, `User ${index + 1}`, true)
-      );
-      const activeUserId = users.some((user) => user.id === parsed?.activeUserId)
-        ? parsed.activeUserId
-        : users[0].id;
-
-      return { users, activeUserId };
-    }
-
-    const legacyUser = normalizeUserState(
-      {
-        ...parsed,
-        id: "user-profile-1",
-        name: "User 1",
-        metricSnapshots:
-          parsed?.metricSnapshots && typeof parsed.metricSnapshots === "object"
-            ? parsed.metricSnapshots
-            : readLegacyMetricSnapshots(),
-      },
-      "User 1",
-      true
-    );
+    const unwrapped = unwrapPersistedAppState(parsed);
 
     return {
-      users: [legacyUser],
-      activeUserId: legacyUser.id,
+      state: normalizePersistedAppState(unwrapped.rawState, defaults),
+      hasPersistedState: true,
+      persistedAt: unwrapped.persistedAt,
+      mode: unwrapped.mode,
     };
   } catch {
-    const defaultUser = {
-      ...defaults.users[0],
-      metricSnapshots: readLegacyMetricSnapshots(),
-    };
-    return { users: [defaultUser], activeUserId: defaultUser.id };
+    return buildDefaultAppStateRecord(defaults);
   }
 }
 
-export function persistAppState(state, storageKey = APP_STATE_STORAGE_KEY) {
+export function loadPersistedAppState(storageKey = APP_STATE_STORAGE_KEY) {
+  return loadPersistedAppStateRecord(storageKey).state;
+}
+
+export function persistAppState(state, storageKey = APP_STATE_STORAGE_KEY, options = {}) {
   if (typeof window === "undefined") return;
 
   const payload = {
-    users: state.users,
-    activeUserId: state.activeUserId,
+    kind: APP_STATE_STORAGE_RECORD_KIND,
+    version: APP_STATE_STORAGE_RECORD_VERSION,
+    mode: typeof options.mode === "string" ? options.mode : "local",
+    persistedAt:
+      typeof options.persistedAt === "string" ? options.persistedAt : new Date().toISOString(),
+    state: {
+      users: state.users,
+      activeUserId: state.activeUserId,
+    },
   };
 
   window.localStorage.setItem(storageKey, JSON.stringify(payload));

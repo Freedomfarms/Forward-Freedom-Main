@@ -248,6 +248,7 @@ function ForwardFreedomDashboard({
   storageKey,
   initialAppStateOverride,
   onPersistedStateChange,
+  persistLocally = true,
 } = {}) {
   const [initialAppState] = useState(() => initialAppStateOverride || loadPersistedAppState(storageKey));
   const [currentView, setCurrentView] = useState(initialView);
@@ -588,11 +589,13 @@ function ForwardFreedomDashboard({
       activeUserId: activeUser?.id || persistedUsers[0]?.id || null,
     };
 
-    persistAppState(nextPersistedState, storageKey);
+    if (persistLocally) {
+      persistAppState(nextPersistedState, storageKey);
+    }
     if (typeof onPersistedStateChange === "function") {
       onPersistedStateChange(nextPersistedState);
     }
-  }, [activeUser?.id, onPersistedStateChange, persistedUsers, storageKey]);
+  }, [activeUser?.id, onPersistedStateChange, persistLocally, persistedUsers, storageKey]);
 
   useEffect(() => {
     let cancelled = false;
