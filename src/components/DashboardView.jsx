@@ -225,6 +225,7 @@ export function DashboardView({
   const initialChartValues = buildSyncedTrueCashChart(chartSets[activeRange], trueCash);
   const initialProjectionYear = parseChartDate(initialChartValues.date).year;
   const chartValues =
+    initialChartValues.supportsProjection &&
     shouldUseExtendedProjectionChart(initialChartValues, projectionStartMonth, initialProjectionYear) &&
     activeRange !== "ALL"
       ? buildSyncedTrueCashChart(chartSets.ALL, trueCash)
