@@ -589,22 +589,6 @@ export function DashboardView({
               strokeWidth="3"
               filter="url(#netWorthGlow)"
             />
-            {normalizedActualOpeningPoint ? (
-              <circle
-                cx={normalizedActualOpeningPoint.x}
-                cy={normalizedActualOpeningPoint.y}
-                r="5"
-                fill="#8edbff"
-                filter="url(#netWorthGlow)"
-              />
-            ) : null}
-            <circle
-              cx={chart.points[chart.points.length - 1][0]}
-              cy={chart.points[chart.points.length - 1][1]}
-              r="5"
-              fill="#8edbff"
-              filter="url(#netWorthGlow)"
-            />
             {projectedTrueCashPoints.length > 0 ? (
               <>
                 <path d={projectionAreaPath} fill="url(#projectedTrueCashFill)" />
@@ -615,15 +599,6 @@ export function DashboardView({
                   strokeWidth="3"
                   filter="url(#projectedTrueCashGlow)"
                 />
-                {(projectedTrueCashPoints.at(-1) || projectionStartPoint) ? (
-                  <circle
-                    cx={(projectedTrueCashPoints.at(-1) || projectionStartPoint).x}
-                    cy={(projectedTrueCashPoints.at(-1) || projectionStartPoint).y}
-                    r="5"
-                    fill="#ffd08a"
-                    filter="url(#projectedTrueCashGlow)"
-                  />
-                ) : null}
               </>
             ) : null}
             <rect
