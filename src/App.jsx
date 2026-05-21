@@ -56,7 +56,7 @@ function buildWorkspaceStatus(syncState) {
   return "Loading server-backed workspace";
 }
 
-function AuthenticatedWorkspaceApp({ user, signOut, isBusy }) {
+function AuthenticatedWorkspaceApp({ user, signOut, isBusy, authNotice, resendVerificationEmail }) {
   const storageKey = useMemo(() => buildScopedAppStateStorageKey(user.uid), [user.uid]);
   const [workspaceSeedState, setWorkspaceSeedState] = useState(null);
   const [workspaceError, setWorkspaceError] = useState("");
@@ -224,7 +224,9 @@ function AuthenticatedWorkspaceApp({ user, signOut, isBusy }) {
         onSignOut={() => void signOut()}
         isBusy={isBusy}
         workspaceStatus={buildWorkspaceStatus(workspaceSyncState)}
+        workspaceNotice={authNotice}
         workspaceError={workspaceError}
+        onResendVerification={() => void resendVerificationEmail()}
       />
       <ForwardFreedomDashboard
         initialView="app"
@@ -238,7 +240,7 @@ function AuthenticatedWorkspaceApp({ user, signOut, isBusy }) {
 }
 
 function AppContent() {
-  const { configured, isBusy, ready, signOut, user } = useAuth();
+  const { configured, isBusy, notice, ready, resendVerificationEmail, signOut, user } = useAuth();
 
   if (!configured) {
     return <ForwardFreedomDashboard initialView="landing" />;
@@ -252,7 +254,16 @@ function AppContent() {
     return <AuthScreen />;
   }
 
-  return <AuthenticatedWorkspaceApp key={user.uid} user={user} signOut={signOut} isBusy={isBusy} />;
+  return (
+    <AuthenticatedWorkspaceApp
+      key={user.uid}
+      user={user}
+      signOut={signOut}
+      isBusy={isBusy}
+      authNotice={notice}
+      resendVerificationEmail={resendVerificationEmail}
+    />
+  );
 }
 
 export default function App() {

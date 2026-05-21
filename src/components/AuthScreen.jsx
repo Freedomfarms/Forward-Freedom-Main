@@ -41,8 +41,17 @@ function buildInputStyle() {
 }
 
 export function AuthScreen() {
-  const { error, clearError, isBusy, signInWithEmail, signInWithGoogle, signUpWithEmail } =
-    useAuth();
+  const {
+    error,
+    notice,
+    clearError,
+    clearNotice,
+    isBusy,
+    requestPasswordReset,
+    signInWithEmail,
+    signInWithGoogle,
+    signUpWithEmail,
+  } = useAuth();
   const [mode, setMode] = useState("login");
   const [form, setForm] = useState({
     fullName: "",
@@ -55,6 +64,7 @@ export function AuthScreen() {
     setForm((current) => ({ ...current, [field]: value }));
     if (formError) setFormError("");
     if (error) clearError();
+    if (notice) clearNotice();
   };
 
   const handleEmailSubmit = async (event) => {
@@ -86,6 +96,21 @@ export function AuthScreen() {
           password: form.password,
         });
       }
+    } catch {
+      // Auth context already surfaces a friendly error message.
+    }
+  };
+
+  const handlePasswordReset = async () => {
+    if (!form.email.trim()) {
+      setFormError("Enter your email address first so we know where to send the reset link.");
+      return;
+    }
+
+    setFormError("");
+
+    try {
+      await requestPasswordReset({ email: form.email.trim() });
     } catch {
       // Auth context already surfaces a friendly error message.
     }
@@ -193,6 +218,7 @@ export function AuthScreen() {
                   setMode(value);
                   setFormError("");
                   clearError();
+                  clearNotice();
                 }}
                 style={{
                   flex: 1,
@@ -297,6 +323,21 @@ export function AuthScreen() {
               </div>
             ) : null}
 
+            {notice ? (
+              <div
+                style={{
+                  borderRadius: 12,
+                  border: "1px solid rgba(0,216,255,.22)",
+                  background: "rgba(0,136,255,.10)",
+                  color: "#dff7ff",
+                  padding: "12px 14px",
+                  lineHeight: 1.5,
+                }}
+              >
+                {notice}
+              </div>
+            ) : null}
+
             <button type="submit" disabled={isBusy} style={buildButtonStyle({ primary: true })}>
               {isBusy
                 ? "Working..."
@@ -304,6 +345,19 @@ export function AuthScreen() {
                   ? "Create Protected Access"
                   : "Enter Workspace"}
             </button>
+
+            {mode === "login" ? (
+              <button
+                type="button"
+                disabled={isBusy}
+                onClick={() => {
+                  void handlePasswordReset();
+                }}
+                style={buildButtonStyle()}
+              >
+                Send Password Reset Email
+              </button>
+            ) : null}
           </form>
 
           <div style={{ marginTop: 18, color: "#7d97b9", fontSize: 12, lineHeight: 1.6 }}>

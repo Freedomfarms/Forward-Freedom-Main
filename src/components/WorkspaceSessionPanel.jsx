@@ -4,6 +4,8 @@ export function WorkspaceSessionPanel({
   isBusy = false,
   workspaceStatus = "",
   workspaceError = "",
+  workspaceNotice = "",
+  onResendVerification = null,
 }) {
   if (!user) return null;
 
@@ -47,8 +49,44 @@ export function WorkspaceSessionPanel({
         <div style={{ color: "#9fb0c9", fontSize: 12, marginTop: 6 }}>
           {user.emailVerified ? "Verified account" : "Email verification pending"}
         </div>
+        {!user.emailVerified && typeof onResendVerification === "function" ? (
+          <button
+            type="button"
+            disabled={isBusy}
+            onClick={onResendVerification}
+            style={{
+              marginTop: 10,
+              width: "100%",
+              borderRadius: 10,
+              border: "1px solid rgba(0,216,255,.24)",
+              background: "rgba(0,136,255,.08)",
+              color: "#eef6ff",
+              padding: "10px 12px",
+              cursor: isBusy ? "wait" : "pointer",
+              fontWeight: 700,
+            }}
+          >
+            {isBusy ? "Sending email..." : "Resend Verification Email"}
+          </button>
+        ) : null}
         {workspaceStatus ? (
           <div style={{ color: "#8feaff", fontSize: 12, marginTop: 8 }}>{workspaceStatus}</div>
+        ) : null}
+        {workspaceNotice ? (
+          <div
+            style={{
+              marginTop: 10,
+              color: "#dff7ff",
+              background: "rgba(0,136,255,.10)",
+              border: "1px solid rgba(0,216,255,.22)",
+              borderRadius: 10,
+              padding: "10px 11px",
+              fontSize: 12,
+              lineHeight: 1.45,
+            }}
+          >
+            {workspaceNotice}
+          </div>
         ) : null}
         {workspaceError ? (
           <div
