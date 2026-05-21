@@ -85,7 +85,6 @@ function serializeStoredAccount(accountRecord) {
     plaidItemId: metadata.plaidItemId || "",
     plaidType: accountRecord.plaidType || "",
     plaidSubtype: accountRecord.plaidSubtype || "",
-    plaidMask: accountRecord.plaidMask || "",
     plaidLastSyncAt: accountRecord.lastSyncedAt || null,
     loanCategory: metadata.loanCategory || "",
     interestRate: metadata.interestRate || "",
@@ -223,7 +222,7 @@ async function persistPlaidAccounts({
         syncSource: account.syncSource,
         plaidType: account.plaidType || null,
         plaidSubtype: account.plaidSubtype || null,
-        plaidMask: account.plaidMask || null,
+        plaidMask: null,
         lastSyncedAt: account.plaidLastSyncAt ? new Date(account.plaidLastSyncAt) : new Date(),
         metadata: {
           loanCategory: account.loanCategory || "",
@@ -245,7 +244,7 @@ async function persistPlaidAccounts({
         syncSource: account.syncSource,
         plaidType: account.plaidType || null,
         plaidSubtype: account.plaidSubtype || null,
-        plaidMask: account.plaidMask || null,
+        plaidMask: null,
         lastSyncedAt: account.plaidLastSyncAt ? new Date(account.plaidLastSyncAt) : new Date(),
         metadata: {
           loanCategory: account.loanCategory || "",
@@ -301,7 +300,7 @@ async function persistPlaidTransactions({
         postedAt: toPlaidDate(transaction.date),
         authorizedAt: toPlaidDate(transaction.authorized_date),
         pending: Boolean(transaction.pending),
-        raw: transaction,
+        raw: null,
       },
       create: {
         userId,
@@ -317,7 +316,7 @@ async function persistPlaidTransactions({
         postedAt: toPlaidDate(transaction.date),
         authorizedAt: toPlaidDate(transaction.authorized_date),
         pending: Boolean(transaction.pending),
-        raw: transaction,
+        raw: null,
       },
     });
   }
@@ -481,23 +480,6 @@ async function syncPlaidWorkspace({ prisma, plaidClient, userId, workspaceUserId
     let liabilitiesResponse = null;
     try {
       liabilitiesResponse = await plaidClient.liabilitiesGet({
-        access_token: accessToken,
-      });
-    } catch (error) {
-      if (!isPlaidProductUnavailable(error)) {
-        const details = getPlaidErrorDetails(error);
-        await prisma.plaidItem.update({
-          where: { id: item.id },
-          data: {
-            status: "REQUIRES_ATTENTION",
-            lastSyncError: details.message,
-          },
-        });
-      }
-    }
-
-    try {
-      await plaidClient.investmentsHoldingsGet({
         access_token: accessToken,
       });
     } catch (error) {

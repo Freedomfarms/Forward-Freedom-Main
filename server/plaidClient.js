@@ -4,8 +4,7 @@ import { Configuration, PlaidApi, PlaidEnvironments, Products } from "plaid";
 dotenv.config();
 
 const PLAID_ENV = process.env.PLAID_ENV || "sandbox";
-const DEFAULT_PRODUCTS = [Products.Transactions];
-const DEFAULT_OPTIONAL_PRODUCTS = [Products.Investments, Products.Liabilities];
+const DEFAULT_PRODUCTS = [Products.Transactions, Products.Liabilities];
 
 let cachedClient = null;
 
@@ -22,18 +21,19 @@ export function getPlaidConfig() {
     configured: isPlaidConfigured(),
     environment: PLAID_ENV,
     products: DEFAULT_PRODUCTS.map(String),
-    optionalProducts: DEFAULT_OPTIONAL_PRODUCTS.map(String),
+    optionalProducts: [],
     capabilities: {
       accounts: true,
       transactions: true,
-      investments: true,
+      investments: false,
       liabilities: true,
       realtimeBalances: false,
       webhooksConfigured: Boolean(process.env.PLAID_WEBHOOK_URL),
     },
     notes: [
       "Depository and credit transactions typically refresh one to four times per day.",
-      "Investments and liabilities generally refresh about once per day.",
+      "Liability statement and payment details generally refresh about once per day.",
+      "Forward Freedom only requests account names, balances, transactions, statement dates, and payment details.",
       "Realtime balances require additional Plaid balance workflows and may incur extra cost.",
     ],
   };
@@ -71,7 +71,6 @@ export function getPlaidLinkTokenRequest({ userId, userName }) {
     language: "en",
     country_codes: ["US"],
     products: DEFAULT_PRODUCTS,
-    optional_products: DEFAULT_OPTIONAL_PRODUCTS,
     transactions: {
       days_requested: 365,
     },
