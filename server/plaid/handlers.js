@@ -520,6 +520,27 @@ async function syncPlaidWorkspace({ prisma, plaidClient, userId, workspaceUserId
       institutionName: item.institutionName,
       liabilityLookup,
     });
+    await Promise.all([
+      prisma.account.updateMany({
+        where: {
+          userId,
+          plaidItemRecordId: item.id,
+        },
+        data: {
+          plaidMask: null,
+        },
+      }),
+      prisma.transaction.updateMany({
+        where: {
+          userId,
+          plaidItemRecordId: item.id,
+          source: "PLAID",
+        },
+        data: {
+          raw: null,
+        },
+      }),
+    ]);
     const accountLookup = await persistPlaidAccounts({
       prisma,
       userId,

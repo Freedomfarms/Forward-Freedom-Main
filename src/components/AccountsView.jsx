@@ -636,9 +636,9 @@ export function AccountsView({
               <span style={{ color: "#00aaff" }}>Every account in one place.</span>
             </div>
             <p style={{ color: "#a8bfdc", fontSize: 16, lineHeight: 1.55, marginTop: 18 }}>
-              Plaid can sync checking, savings, credit cards, investments, retirement, and some loan
-              or mortgage accounts depending on institution coverage. Manual accounts are for cash,
-              safes, private assets, or anything you want tracked without a bank sync.
+              Plaid syncs account names, balances, transactions, and available loan or card payment
+              details. Forward Freedom does not request account or routing numbers. Manual accounts
+              are for cash, safes, private assets, or anything you want tracked without a bank sync.
             </p>
             <div
               style={{ color: plaidIntegration?.configured ? "#8feaff" : "#ffb65d", marginTop: 10 }}

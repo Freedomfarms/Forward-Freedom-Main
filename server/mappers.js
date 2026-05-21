@@ -154,7 +154,6 @@ export function mapPlaidAccountsToAppAccounts({
         plaidItemId: itemId,
         plaidType: account.type || "",
         plaidSubtype: account.subtype || "",
-        plaidMask: account.mask || "",
         plaidLastSyncAt: syncedAt,
       };
 
