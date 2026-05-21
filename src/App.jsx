@@ -64,6 +64,7 @@ function AuthenticatedWorkspaceApp({ user, signOut, isBusy }) {
   const [latestPersistedState, setLatestPersistedState] = useState(null);
   const [workspaceProfile, setWorkspaceProfile] = useState(null);
   const lastServerSnapshotRef = useRef("");
+  const lastQueuedPersistedStateRef = useRef("");
   const cacheWorkspaceState = useCallback(
     (state, cacheState = "browser-cache") => {
       if (!state) return;
@@ -155,6 +156,12 @@ function AuthenticatedWorkspaceApp({ user, signOut, isBusy }) {
   }, [cacheWorkspaceState, storageKey]);
 
   const handlePersistedStateChange = useCallback((nextState) => {
+    const serializedState = JSON.stringify(nextState);
+    if (serializedState === lastQueuedPersistedStateRef.current) {
+      return;
+    }
+
+    lastQueuedPersistedStateRef.current = serializedState;
     setLatestPersistedState(nextState);
   }, []);
 
@@ -190,6 +197,7 @@ function AuthenticatedWorkspaceApp({ user, signOut, isBusy }) {
         })
         .catch((error) => {
           if (cancelled) return;
+          lastQueuedPersistedStateRef.current = "";
           cacheWorkspaceState(latestPersistedState, "cache-fallback");
           setWorkspaceSyncState("cache-fallback");
           setWorkspaceError(
