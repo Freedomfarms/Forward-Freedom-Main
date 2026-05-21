@@ -26,6 +26,7 @@ import {
 } from "./utils/planning.js";
 import {
   createPlaidLinkToken,
+  deletePlaidItem,
   deletePlaidUser,
   exchangePlaidPublicToken,
   getPlaidStatus,
@@ -240,6 +241,54 @@ function mergePlaidSyncIntoUser(user, syncPayload) {
     transactions: sortTransactionsByDate([...syncedTransactions, ...retainedTransactions]),
     plaidItems: syncPayload.plaidItems || user.plaidItems,
     lastPlaidSyncAt: syncPayload.lastSyncAt || user.lastPlaidSyncAt,
+  };
+}
+
+function removeManualAccountFromUser(user, targetAccount) {
+  const targetAccountName = targetAccount.name;
+  const nextAccounts = user.accounts
+    .filter((account) => account.id !== targetAccount.id)
+    .map((account) => {
+      const updates = {};
+      if (account.linkedLoanId === targetAccount.id) {
+        updates.linkedLoanId = "";
+      }
+      if (account.linkedPropertyId === targetAccount.id) {
+        updates.linkedPropertyId = "";
+      }
+
+      return Object.keys(updates).length ? { ...account, ...updates } : account;
+    });
+
+  return {
+    ...user,
+    accounts: nextAccounts,
+    transactions: user.transactions.filter((transaction) => transaction.account !== targetAccountName),
+    subscriptions: user.subscriptions.filter(
+      (subscription) =>
+        subscription.account !== targetAccountName && subscription.accountId !== targetAccount.id
+    ),
+    selectedAccount: user.selectedAccount === targetAccountName ? null : user.selectedAccount,
+  };
+}
+
+function removePlaidItemFromUser(user, plaidItemId) {
+  const linkedAccounts = user.accounts.filter((account) => account.plaidItemId === plaidItemId);
+  const linkedAccountNames = new Set(linkedAccounts.map((account) => account.name));
+  const linkedAccountIds = new Set(linkedAccounts.map((account) => account.id));
+
+  return {
+    ...user,
+    accounts: user.accounts.filter((account) => account.plaidItemId !== plaidItemId),
+    transactions: user.transactions.filter(
+      (transaction) => !(transaction.source === "plaid" && linkedAccountNames.has(transaction.account))
+    ),
+    subscriptions: user.subscriptions.filter(
+      (subscription) =>
+        !linkedAccountNames.has(subscription.account) && !linkedAccountIds.has(subscription.accountId)
+    ),
+    plaidItems: (user.plaidItems || []).filter((item) => item.itemId !== plaidItemId),
+    selectedAccount: linkedAccountNames.has(user.selectedAccount) ? null : user.selectedAccount,
   };
 }
 
@@ -1192,6 +1241,34 @@ function ForwardFreedomDashboard({
       setPlaidError("");
     }
   };
+  const deleteAccount = async (accountToDelete) => {
+    if (!accountToDelete?.id || !activeUser?.id) return;
+
+    if (accountToDelete.plaidItemId) {
+      await deletePlaidItem({
+        itemId: accountToDelete.plaidItemId,
+        workspaceUserId: activeUser.id,
+      });
+      setUsers((currentUsers) =>
+        currentUsers.map((user) =>
+          user.id === activeUser.id ? removePlaidItemFromUser(user, accountToDelete.plaidItemId) : user
+        )
+      );
+      if (selectedAccount === accountToDelete.name) {
+        setSelectedAccount(null);
+      }
+      return;
+    }
+
+    setUsers((currentUsers) =>
+      currentUsers.map((user) =>
+        user.id === activeUser.id ? removeManualAccountFromUser(user, accountToDelete) : user
+      )
+    );
+    if (selectedAccount === accountToDelete.name) {
+      setSelectedAccount(null);
+    }
+  };
   const plaidIntegration = {
     configured: plaidStatus.configured,
     environment: plaidStatus.environment,
@@ -1200,6 +1277,7 @@ function ForwardFreedomDashboard({
     error: plaidError,
     lastSyncAt: lastPlaidSyncAt,
     connectedItemCount: plaidItems.length,
+    items: plaidItems,
   };
   const householdProfilesProps = {
     users,
@@ -1310,9 +1388,12 @@ function ForwardFreedomDashboard({
               accounts={syncedAccounts}
               addManualAccount={addManualAccount}
               connectMockPlaidAccount={connectPlaidAccount}
+              deleteAccount={deleteAccount}
               openAccountTransactions={openAccountTransactions}
               householdProfilesProps={householdProfilesProps}
               plaidIntegration={plaidIntegration}
+              subscriptions={subscriptions}
+              transactions={categorizedTransactions}
             />
           ) : activeTab === APP_TABS.TRANSACTIONS ? (
             <TransactionsView

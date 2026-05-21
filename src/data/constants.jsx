@@ -7,7 +7,7 @@ export const APP_TABS = {
   INCOME_HUB: "Income Hub",
   BUDGET_COMMAND_CENTER: "Budget Strategy Lab",
   FORECAST_LAB: "Spending Intelligence",
-  ADD_ACCOUNTS: "Add Accounts",
+  ADD_ACCOUNTS: "Accounts",
   TRANSACTIONS: "Transactions",
   DEBT_PAYOFF_TRACKER: "Debt Payoff Tracker",
   RECURRING_SUBSCRIPTIONS: "Recurring Subscriptions",
