@@ -496,23 +496,6 @@ async function syncPlaidWorkspace({ prisma, plaidClient, userId, workspaceUserId
       }
     }
 
-    try {
-      await plaidClient.investmentsHoldingsGet({
-        access_token: accessToken,
-      });
-    } catch (error) {
-      if (!isPlaidProductUnavailable(error)) {
-        const details = getPlaidErrorDetails(error);
-        await prisma.plaidItem.update({
-          where: { id: item.id },
-          data: {
-            status: "REQUIRES_ATTENTION",
-            lastSyncError: details.message,
-          },
-        });
-      }
-    }
-
     const liabilityLookup = buildLiabilityLookup(liabilitiesResponse?.data?.liabilities);
     const mappedAccounts = mapPlaidAccountsToAppAccounts({
       accounts: accountsResponse.data.accounts || [],
@@ -520,27 +503,6 @@ async function syncPlaidWorkspace({ prisma, plaidClient, userId, workspaceUserId
       institutionName: item.institutionName,
       liabilityLookup,
     });
-    await Promise.all([
-      prisma.account.updateMany({
-        where: {
-          userId,
-          plaidItemRecordId: item.id,
-        },
-        data: {
-          plaidMask: null,
-        },
-      }),
-      prisma.transaction.updateMany({
-        where: {
-          userId,
-          plaidItemRecordId: item.id,
-          source: "PLAID",
-        },
-        data: {
-          raw: null,
-        },
-      }),
-    ]);
     const accountLookup = await persistPlaidAccounts({
       prisma,
       userId,
