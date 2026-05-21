@@ -1178,7 +1178,7 @@ export function TransactionsView({
             >
               {selectedAccount
                 ? isSelectedNonTransactionalAccount
-                  ? `${selectedAccount} is a valuation-based account, so it does not keep a spending ledger here. Manage its value from Add Accounts.`
+                  ? `${selectedAccount} is a valuation-based account, so it does not keep a spending ledger here. Manage its value from Accounts.`
                   : filters.search ||
                       filters.category !== "All" ||
                       filters.account !== (selectedAccount || "All") ||

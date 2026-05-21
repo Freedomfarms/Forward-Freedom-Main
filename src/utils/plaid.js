@@ -58,3 +58,16 @@ export async function deletePlaidUser(workspaceUserId) {
   });
   return parseApiResponse(response);
 }
+
+export async function deletePlaidItem({ itemId, workspaceUserId }) {
+  const searchParams = new URLSearchParams();
+  if (itemId) searchParams.set("itemId", itemId);
+  if (workspaceUserId) searchParams.set("workspaceUserId", workspaceUserId);
+
+  const search = searchParams.toString() ? `?${searchParams.toString()}` : "";
+  const response = await fetch(`/api/plaid/item${search}`, {
+    method: "DELETE",
+    headers: await buildAuthenticatedHeaders(),
+  });
+  return parseApiResponse(response);
+}

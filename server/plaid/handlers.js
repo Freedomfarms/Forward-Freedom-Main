@@ -44,6 +44,12 @@ function normalizeWorkspaceUserId(value) {
   return normalized || null;
 }
 
+function normalizePlaidItemId(value) {
+  if (value == null) return null;
+  const normalized = String(value).trim();
+  return normalized || null;
+}
+
 function buildPlaidClientUserId(authUserId, workspaceUserId) {
   return workspaceUserId ? `${authUserId}:${workspaceUserId}` : authUserId;
 }
@@ -546,6 +552,49 @@ async function syncPlaidWorkspace({ prisma, plaidClient, userId, workspaceUserId
   return buildWorkspaceSyncPayload(prisma, userId, workspaceUserId);
 }
 
+async function deletePlaidItems({ prisma, userId, plaidItems }) {
+  const plaidClient =
+    isPlaidConfigured() && isSensitiveEncryptionConfigured() ? getPlaidClient() : null;
+  for (const item of plaidItems) {
+    try {
+      if (plaidClient) {
+        await plaidClient.itemRemove({
+          access_token: decryptSensitiveValue(item.accessTokenCiphertext),
+        });
+      }
+    } catch {
+      // Continue deleting local metadata even if Plaid item removal fails.
+    }
+  }
+
+  const plaidItemIds = plaidItems.map((item) => item.id);
+  if (plaidItemIds.length) {
+    await prisma.transaction.deleteMany({
+      where: {
+        userId,
+        plaidItemRecordId: {
+          in: plaidItemIds,
+        },
+      },
+    });
+    await prisma.account.deleteMany({
+      where: {
+        userId,
+        plaidItemRecordId: {
+          in: plaidItemIds,
+        },
+      },
+    });
+    await prisma.plaidItem.deleteMany({
+      where: {
+        id: {
+          in: plaidItemIds,
+        },
+      },
+    });
+  }
+}
+
 export async function handlePlaidStatus(_request, response) {
   const plaidConfig = getPlaidConfig();
 
@@ -707,46 +756,11 @@ export async function handleDeletePlaidWorkspace(request, response) {
       },
     });
 
-    const plaidClient =
-      isPlaidConfigured() && isSensitiveEncryptionConfigured() ? getPlaidClient() : null;
-    for (const item of plaidItems) {
-      try {
-        if (plaidClient) {
-          await plaidClient.itemRemove({
-            access_token: decryptSensitiveValue(item.accessTokenCiphertext),
-          });
-        }
-      } catch {
-        // Continue deleting local metadata even if Plaid item removal fails.
-      }
-    }
-
-    const plaidItemIds = plaidItems.map((item) => item.id);
-    if (plaidItemIds.length) {
-      await prisma.transaction.deleteMany({
-        where: {
-          userId: decodedToken.uid,
-          plaidItemRecordId: {
-            in: plaidItemIds,
-          },
-        },
-      });
-      await prisma.account.deleteMany({
-        where: {
-          userId: decodedToken.uid,
-          plaidItemRecordId: {
-            in: plaidItemIds,
-          },
-        },
-      });
-      await prisma.plaidItem.deleteMany({
-        where: {
-          id: {
-            in: plaidItemIds,
-          },
-        },
-      });
-    }
+    await deletePlaidItems({
+      prisma,
+      userId: decodedToken.uid,
+      plaidItems,
+    });
 
     return response.status(200).json({
       deleted: true,
@@ -761,5 +775,59 @@ export async function handleDeletePlaidWorkspace(request, response) {
     return response
       .status(error.status || 500)
       .json(buildErrorResponse(error?.message || "Unable to delete Plaid data for this workspace."));
+  }
+}
+
+export async function handleDeletePlaidItem(request, response) {
+  try {
+    const decodedToken = await authenticateRequest(request);
+    const prisma = getPrismaOrThrow();
+    const workspaceUserId = normalizeWorkspaceUserId(request.query?.workspaceUserId);
+    const itemId = normalizePlaidItemId(request.query?.itemId);
+
+    if (!itemId) {
+      return response
+        .status(400)
+        .json(buildErrorResponse("itemId is required to remove a linked Plaid institution."));
+    }
+
+    const plaidItems = await prisma.plaidItem.findMany({
+      where: {
+        userId: decodedToken.uid,
+        workspaceUserId,
+        itemId,
+      },
+    });
+
+    if (!plaidItems.length) {
+      return response
+        .status(404)
+        .json(buildErrorResponse("No linked Plaid institution was found for that itemId."));
+    }
+
+    await deletePlaidItems({
+      prisma,
+      userId: decodedToken.uid,
+      plaidItems,
+    });
+
+    return response.status(200).json({
+      deleted: true,
+      itemId,
+      workspaceUserId,
+      deletedItemCount: plaidItems.length,
+    });
+  } catch (error) {
+    if (error instanceof AuthError) {
+      return response.status(error.status).json(buildErrorResponse(error.message));
+    }
+
+    return response
+      .status(error.status || 500)
+      .json(
+        buildErrorResponse(
+          error?.message || "Unable to remove this linked Plaid institution right now."
+        )
+      );
   }
 }
