@@ -97,14 +97,16 @@ function AuthenticatedWorkspaceApp({ user, signOut, isBusy }) {
         setWorkspaceProfile(profilePayload?.user || null);
         setWorkspaceSeedState(nextSeedState);
         setWorkspaceError("");
-        lastServerSnapshotRef.current = remoteState ? JSON.stringify(remoteState) : "";
 
         if (remoteState) {
+          lastServerSnapshotRef.current = JSON.stringify(remoteState);
           cacheWorkspaceState(remoteState, "server-snapshot");
           setWorkspaceSyncState("server-primary");
           return;
         }
 
+        const serializedSeedState = JSON.stringify(nextSeedState);
+        lastServerSnapshotRef.current = serializedSeedState;
         cacheWorkspaceState(
           nextSeedState,
           cachedWorkspaceRecord.hasPersistedState ? "restored-cache" : "seed-default"
@@ -112,9 +114,26 @@ function AuthenticatedWorkspaceApp({ user, signOut, isBusy }) {
         setWorkspaceSyncState(
           cachedWorkspaceRecord.hasPersistedState ? "hydrating-cache" : "initializing-server"
         );
+
+        const payload = await saveWorkspaceSnapshot({
+          state: nextSeedState,
+          source: cachedWorkspaceRecord.hasPersistedState
+            ? "phase-5-bootstrap-hydration"
+            : "phase-5-bootstrap-seed",
+          lastClientUpdatedAt: new Date().toISOString(),
+        });
+
+        if (cancelled) return;
+
+        const confirmedState = payload?.snapshot?.state || nextSeedState;
+        lastServerSnapshotRef.current = JSON.stringify(confirmedState);
+        cacheWorkspaceState(confirmedState, "server-confirmed");
+        setWorkspaceSeedState(confirmedState);
+        setWorkspaceSyncState("synced");
       } catch (error) {
         if (cancelled) return;
 
+        lastServerSnapshotRef.current = "";
         setWorkspaceSeedState(cachedState);
         cacheWorkspaceState(
           cachedState,
