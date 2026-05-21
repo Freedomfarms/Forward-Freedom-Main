@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 
 import { mapPlaidAccountsToAppAccounts } from "../server/mappers.js";
 import { getPlaidConfig, getPlaidLinkTokenRequest } from "../server/plaidClient.js";
@@ -58,4 +59,15 @@ test("Mapped Plaid accounts keep payment details but omit account masks", () => 
   assert.equal(mappedAccounts[0].loanCategory, "Mortgage");
   assert.equal(mappedAccounts[0].interestRate, "5.5");
   assert.equal(mappedAccounts[0].monthlyPayment, "247.13");
+});
+
+test("Plaid handlers do not keep extra mask or raw payload access", () => {
+  const handlerSource = fs.readFileSync(new URL("../server/plaid/handlers.js", import.meta.url), "utf8");
+
+  assert.equal(handlerSource.includes("investmentsHoldingsGet"), false);
+  assert.equal(handlerSource.includes("plaidMask: accountRecord.plaidMask"), false);
+  assert.equal(handlerSource.includes("plaidMask: account.plaidMask"), false);
+  assert.equal(handlerSource.includes("raw: transaction"), false);
+  assert.equal(handlerSource.includes("plaidMask: null"), true);
+  assert.equal(handlerSource.includes("raw: null"), true);
 });
