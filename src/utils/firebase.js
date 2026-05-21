@@ -5,6 +5,8 @@ import {
   createUserWithEmailAndPassword,
   getAuth,
   onAuthStateChanged,
+  sendEmailVerification,
+  sendPasswordResetEmail,
   setPersistence,
   signInWithEmailAndPassword,
   signInWithPopup,
@@ -91,8 +93,33 @@ export async function registerWithEmail({ email, password, displayName }) {
   if (displayName?.trim()) {
     await updateProfile(credentials.user, { displayName: displayName.trim() });
   }
+  await sendEmailVerification(credentials.user);
 
   return credentials;
+}
+
+export async function requestPasswordReset({ email }) {
+  const auth = await getReadyFirebaseAuth();
+  const normalizedEmail = String(email || "").trim();
+
+  try {
+    await sendPasswordResetEmail(auth, normalizedEmail);
+  } catch (error) {
+    if (error?.code?.includes("user-not-found")) {
+      return;
+    }
+
+    throw error;
+  }
+}
+
+export async function resendCurrentUserVerification() {
+  const auth = await getReadyFirebaseAuth();
+  if (!auth.currentUser) {
+    throw new Error("Sign in before requesting another verification email.");
+  }
+
+  await sendEmailVerification(auth.currentUser);
 }
 
 export async function signOutCurrentUser() {

@@ -5,6 +5,8 @@ import {
   getFirebaseClientConfig,
   onAuthStateChanged,
   registerWithEmail,
+  requestPasswordReset,
+  resendCurrentUserVerification,
   signInWithEmail,
   signInWithGooglePopup,
   signOutCurrentUser,
@@ -30,6 +32,12 @@ function mapFirebaseError(error) {
   if (code.includes("popup-closed-by-user")) {
     return "Google sign-in was cancelled before it completed.";
   }
+  if (code.includes("invalid-email")) {
+    return "Enter a valid email address.";
+  }
+  if (code.includes("too-many-requests")) {
+    return "Too many attempts right now. Wait a moment and try again.";
+  }
   if (code.includes("network-request-failed")) {
     return "Network issue detected. Please check your connection and try again.";
   }
@@ -47,6 +55,7 @@ export function AuthProvider({ children }) {
   const [error, setError] = useState(() =>
     clientConfig.configured && !auth ? "Firebase Authentication is configured incorrectly." : ""
   );
+  const [notice, setNotice] = useState("");
   const [isBusy, setIsBusy] = useState(false);
 
   useEffect(() => {
@@ -71,14 +80,21 @@ export function AuthProvider({ children }) {
     return unsubscribe;
   }, [auth, clientConfig.configured]);
 
-  const runAuthAction = useCallback(async (action) => {
+  const runAuthAction = useCallback(async (action, options = {}) => {
+    const successMessage = typeof options.successMessage === "string" ? options.successMessage : "";
     setIsBusy(true);
     setError("");
+    setNotice("");
 
     try {
-      return await action();
+      const result = await action();
+      if (successMessage) {
+        setNotice(successMessage);
+      }
+      return result;
     } catch (actionError) {
       const message = mapFirebaseError(actionError);
+      setNotice("");
       setError(message);
       throw new Error(message, { cause: actionError });
     } finally {
@@ -93,14 +109,38 @@ export function AuthProvider({ children }) {
       ready,
       user,
       error,
+      notice,
       isBusy,
       clearError: () => setError(""),
+      clearNotice: () => setNotice(""),
       signInWithGoogle: () => runAuthAction(() => signInWithGooglePopup()),
       signInWithEmail: (payload) => runAuthAction(() => signInWithEmail(payload)),
-      signUpWithEmail: (payload) => runAuthAction(() => registerWithEmail(payload)),
+      signUpWithEmail: (payload) =>
+        runAuthAction(() => registerWithEmail(payload), {
+          successMessage:
+            "Verification email sent. Check your inbox and use the link there to confirm this account.",
+        }),
+      requestPasswordReset: (payload) =>
+        runAuthAction(() => requestPasswordReset(payload), {
+          successMessage:
+            "If that email has an account, a password reset link is now on the way.",
+        }),
+      resendVerificationEmail: () =>
+        runAuthAction(() => resendCurrentUserVerification(), {
+          successMessage: "Verification email sent again. Check your inbox and spam folder.",
+        }),
       signOut: () => runAuthAction(() => signOutCurrentUser()),
     }),
-    [clientConfig.configured, clientConfig.missingKeys, error, isBusy, ready, runAuthAction, user]
+    [
+      clientConfig.configured,
+      clientConfig.missingKeys,
+      error,
+      isBusy,
+      notice,
+      ready,
+      runAuthAction,
+      user,
+    ]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
