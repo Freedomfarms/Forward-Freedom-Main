@@ -746,6 +746,7 @@ function ForwardFreedomDashboard({
         setPlaidError(error.message || "Unable to connect the Plaid item.");
       } finally {
         setIsPlaidSyncing(false);
+        setPlaidShouldOpen(false);
         setPlaidLinkToken(null);
         setPlaidTargetUserId(null);
       }
@@ -761,7 +762,6 @@ function ForwardFreedomDashboard({
     if (plaidShouldOpen && isPlaidReady) {
       const timeoutId = window.setTimeout(() => {
         openPlaidLink();
-        setPlaidShouldOpen(false);
       }, 0);
 
       return () => {
