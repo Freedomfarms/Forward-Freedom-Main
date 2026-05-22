@@ -73,6 +73,16 @@ function normalizeSearchText(...values) {
     .trim();
 }
 
+function normalizePlaidAccountName(value) {
+  const normalized = String(value || "")
+    .trim()
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/\s+/g, " ");
+
+  if (!normalized) return "";
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
 function formatAppDate(dateString) {
   if (!dateString) return "";
 
@@ -173,12 +183,10 @@ export function mapPlaidAccountsToAppAccounts({
           : balanceSource;
 
       const liability = liabilityLookup.get(account.account_id);
+      const displayName = normalizePlaidAccountName(account.name || account.official_name);
       const mapped = {
         id: `plaid-${account.account_id}`,
-        name:
-          account.name ||
-          account.official_name ||
-          `${institutionName} ${titleize(account.subtype)}`,
+        name: displayName || `${institutionName} ${titleize(account.subtype)}`,
         type: appType,
         institution: institutionName || "Plaid",
         status: "Synced",

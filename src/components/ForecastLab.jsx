@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { budgetMonths } from "../data/constants.jsx";
 import { parseBudgetReviewDate } from "../utils/budgetReview.js";
-import { isSpendTransaction } from "../utils/budgetReview.js";
+import { sumSpendTransactions } from "../utils/transactions.js";
 import { getCurrentBudgetPeriod } from "../utils/date.js";
 import { buildAreaPath, buildLinePath, wholeDollars } from "../utils/format.js";
 import { styles } from "../styles.js";
@@ -26,10 +26,7 @@ const MONTH_X = Object.fromEntries(
 );
 
 function sumSpending(transactions) {
-  return transactions.reduce((sum, transaction) => {
-    const amount = Number(transaction?.amount) || 0;
-    return isSpendTransaction(transaction) ? sum + Math.abs(amount) : sum;
-  }, 0);
+  return sumSpendTransactions(transactions);
 }
 
 function buildChartRange(values) {

@@ -1,15 +1,10 @@
 import { budgetMonthNames, budgetMonths } from "../data/constants.jsx";
 import { getCurrentBudgetPeriod } from "./date.js";
+import { isSpendTransaction } from "./transactions.js";
 
 const monthNameToBudgetMonth = Object.fromEntries(
   budgetMonths.map((month) => [budgetMonthNames[month], month])
 );
-
-export function isSpendTransaction(transaction) {
-  const amount = Number(transaction?.amount) || 0;
-  if (amount >= 0) return false;
-  return String(transaction?.category || "").trim().toLowerCase() !== "transfers";
-}
 
 export function parseBudgetReviewDate(value) {
   const match = /^([A-Za-z]+)\s+\d{1,2},\s+(\d{4})$/.exec(value || "");
