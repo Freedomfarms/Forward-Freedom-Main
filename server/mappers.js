@@ -45,6 +45,16 @@ const CATEGORY_MAPPINGS = [
   [/TRANSFER/, "Transfers"],
 ];
 
+const LIABILITY_PAYMENT_PATTERNS = [
+  /\bPAYMENT\b/,
+  /\bAUTOPAY\b/,
+  /\bPMT\b/,
+  /\bTHANK YOU\b/,
+  /\bACH CREDIT\b/,
+  /\bELECTRONIC PAYMENT\b/,
+  /\bONLINE PAYMENT\b/,
+];
+
 function titleize(value) {
   return String(value || "")
     .split(/[_\s]+/)
@@ -53,14 +63,14 @@ function titleize(value) {
     .join(" ");
 }
 
-function normalizePlaidAccountName(value) {
-  const normalized = String(value || "")
-    .trim()
-    .replace(/([a-z])([A-Z])/g, "$1 $2")
-    .replace(/\s+/g, " ");
-
-  if (!normalized) return "";
-  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+function normalizeSearchText(...values) {
+  return values
+    .filter(Boolean)
+    .join(" ")
+    .toUpperCase()
+    .replace(/[^A-Z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function formatAppDate(dateString) {
@@ -112,6 +122,20 @@ function mapPlaidTransactionCategory(category) {
   return titleize(category || "Other");
 }
 
+function isLiabilityPaymentTransaction(transaction, mappedAccount) {
+  const accountType = mappedAccount?.type || "";
+  const categoryText = normalizeSearchText(
+    transaction?.personal_finance_category?.primary,
+    transaction?.personal_finance_category?.detailed
+  );
+
+  if (categoryText.includes("TRANSFER")) return true;
+  if (accountType !== "Credit Card" && accountType !== "Mortgages / Loans") return false;
+
+  const descriptorText = normalizeSearchText(transaction?.merchant_name, transaction?.name);
+  return LIABILITY_PAYMENT_PATTERNS.some((pattern) => pattern.test(descriptorText));
+}
+
 export function buildLiabilityLookup(liabilities) {
   const lookup = new Map();
 
@@ -149,10 +173,12 @@ export function mapPlaidAccountsToAppAccounts({
           : balanceSource;
 
       const liability = liabilityLookup.get(account.account_id);
-      const displayName = normalizePlaidAccountName(account.name || account.official_name);
       const mapped = {
         id: `plaid-${account.account_id}`,
-        name: displayName || `${institutionName} ${titleize(account.subtype)}`,
+        name:
+          account.name ||
+          account.official_name ||
+          `${institutionName} ${titleize(account.subtype)}`,
         type: appType,
         institution: institutionName || "Plaid",
         status: "Synced",
@@ -194,6 +220,9 @@ export function mapPlaidTransactionsToAppTransactions(rawTransactions, accountsB
       const date = formatAppDate(transaction.authorized_date || transaction.date);
       if (!date) return null;
 
+      const isLiabilityPayment = isLiabilityPaymentTransaction(transaction, mappedAccount);
+      const rawAmount = Number(transaction.amount) || 0;
+
       return {
         id: `plaid-${transaction.transaction_id}`,
         plaidTransactionId: transaction.transaction_id,
@@ -201,9 +230,17 @@ export function mapPlaidTransactionsToAppTransactions(rawTransactions, accountsB
         syncSource: "Plaid",
         date,
         merchant: transaction.merchant_name || transaction.name || "Plaid Transaction",
-        category: mapPlaidTransactionCategory(transaction.personal_finance_category?.primary),
+        category: isLiabilityPayment
+          ? "Transfers"
+          : mapPlaidTransactionCategory(transaction.personal_finance_category?.primary),
         account: mappedAccount.name,
-        amount: Number((-(Number(transaction.amount) || 0)).toFixed(2)),
+        amount: Number(
+          (
+            isLiabilityPayment && mappedAccount.type === "Credit Card"
+              ? Math.abs(rawAmount)
+              : -rawAmount
+          ).toFixed(2)
+        ),
         pending: Boolean(transaction.pending),
       };
     })

@@ -5,6 +5,12 @@ const monthNameToBudgetMonth = Object.fromEntries(
   budgetMonths.map((month) => [budgetMonthNames[month], month])
 );
 
+export function isSpendTransaction(transaction) {
+  const amount = Number(transaction?.amount) || 0;
+  if (amount >= 0) return false;
+  return String(transaction?.category || "").trim().toLowerCase() !== "transfers";
+}
+
 export function parseBudgetReviewDate(value) {
   const match = /^([A-Za-z]+)\s+\d{1,2},\s+(\d{4})$/.exec(value || "");
   if (!match) return null;
@@ -35,7 +41,7 @@ export function buildBudgetRowsWithSpend(transactions, budgetRows, month, year) 
     .map((row) => {
       const spent = activeMonthTransactions
         .filter((tx) => {
-          if (tx.amount >= 0) return false;
+          if (!isSpendTransaction(tx)) return false;
           if (row.name === "Other") return !matchedBudgetCategories.includes(tx.category);
           return row.transactionCategories.includes(tx.category);
         })
