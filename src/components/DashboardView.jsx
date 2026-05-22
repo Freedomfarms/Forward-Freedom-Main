@@ -200,7 +200,6 @@ export function DashboardView({
   setActiveTab,
   trueCash,
   transactions,
-  subscriptions,
   incomeStreams,
   budgetRows,
   projectionAdjustments,
