@@ -83,6 +83,34 @@ function formatLastUpdated(value) {
   });
 }
 
+function formatEditableNumber(value) {
+  return value === null || value === undefined || value === "" ? "" : String(value);
+}
+
+function buildFormFromAccount(account) {
+  return {
+    ...EMPTY_FORM,
+    name: account.name || "",
+    type: account.type || EMPTY_FORM.type,
+    institution: account.institution || "",
+    balance: formatEditableNumber(account.balance),
+    quantity: formatEditableNumber(account.quantity),
+    metalType: account.metalType || EMPTY_FORM.metalType,
+    metalCustomName: account.metalCustomName || "",
+    metalUnit: account.metalUnit || EMPTY_FORM.metalUnit,
+    pricePerUnit: formatEditableNumber(account.pricePerUnit),
+    valuationSource: account.valuationSource || EMPTY_FORM.valuationSource,
+    propertyAddress: account.propertyAddress || "",
+    propertyType: account.propertyType || EMPTY_FORM.propertyType,
+    propertyMarketValue: formatEditableNumber(account.propertyMarketValue),
+    linkedLoanId: account.linkedLoanId || "",
+    linkedPropertyId: account.linkedPropertyId || "",
+    loanCategory: account.loanCategory || EMPTY_FORM.loanCategory,
+    interestRate: account.interestRate || "",
+    monthlyPayment: account.monthlyPayment || "",
+  };
+}
+
 const QUICK_START_TEMPLATES = [
   {
     title: "Start with cash",
@@ -121,12 +149,14 @@ export function AccountsView({
   connectMockPlaidAccount,
   deleteAccount,
   openAccountTransactions,
+  updateManualAccount,
   householdProfilesProps,
   plaidIntegration,
   subscriptions,
   transactions,
 }) {
   const [showModal, setShowModal] = useState(false);
+  const [editingAccount, setEditingAccount] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteError, setDeleteError] = useState("");
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
@@ -206,13 +236,40 @@ export function AccountsView({
   const parsedPropertyMarketValue = parseBalance(form.propertyMarketValue);
   const linkedLoanBalance =
     loanAccounts.find((account) => account.id === form.linkedLoanId)?.balance || 0;
-  const derivedCryptoBalance = selectedCryptoQuote
-    ? calculateCryptoBalance(parsedQuantity, selectedCryptoQuote.priceUsd)
+  const effectiveCryptoQuote =
+    selectedCryptoQuote ||
+    (editingAccount &&
+    editingAccount.type === "Crypto" &&
+    selectedCrypto?.id === editingAccount.cryptoAssetId &&
+    Number.isFinite(Number(editingAccount.lastPriceUsd)) &&
+    Number(editingAccount.lastPriceUsd) > 0
+      ? {
+          priceUsd: editingAccount.lastPriceUsd,
+          lastUpdatedAt: editingAccount.lastPriceUpdatedAt,
+        }
+      : null);
+  const derivedCryptoBalance = effectiveCryptoQuote
+    ? calculateCryptoBalance(parsedQuantity, effectiveCryptoQuote.priceUsd)
     : 0;
+  const effectiveMetalsQuote =
+    metalsQuote ||
+    (editingAccount &&
+    editingAccount.type === "Precious Metals" &&
+    form.valuationSource === "Live Spot" &&
+    form.metalType === editingAccount.metalType &&
+    form.metalUnit === editingAccount.metalUnit &&
+    Number.isFinite(Number(editingAccount.pricePerUnit)) &&
+    Number(editingAccount.pricePerUnit) > 0
+      ? {
+          pricePerUnit: editingAccount.pricePerUnit,
+          updatedAt: editingAccount.lastValuedAt,
+          source: editingAccount.valuationSource || "Saved quote",
+        }
+      : null);
   const derivedPreciousMetalsBalance = calculatePreciousMetalsBalance(
     parsedQuantity,
-    form.valuationSource === "Live Spot" && metalsQuote
-      ? metalsQuote.pricePerUnit
+    form.valuationSource === "Live Spot" && effectiveMetalsQuote
+      ? effectiveMetalsQuote.pricePerUnit
       : parsedPricePerUnit
   );
   const canDeriveRealEstateEquity = Boolean(form.linkedLoanId) && parsedPropertyMarketValue > 0;
@@ -227,13 +284,13 @@ export function AccountsView({
         form.quantity.trim().length > 0 &&
         Number.isFinite(parsedQuantity) &&
         parsedQuantity > 0 &&
-        selectedCryptoQuote
+        effectiveCryptoQuote
       : isPreciousMetalsAccount
         ? form.quantity.trim().length > 0 &&
           Number.isFinite(parsedQuantity) &&
           parsedQuantity > 0 &&
           (form.valuationSource === "Live Spot"
-            ? Boolean(metalsQuote)
+            ? Boolean(effectiveMetalsQuote)
             : form.pricePerUnit.trim().length > 0 &&
               Number.isFinite(parsedPricePerUnit) &&
               parsedPricePerUnit > 0)
@@ -339,6 +396,7 @@ export function AccountsView({
 
   const openModal = (overrides = {}) => {
     const nextForm = { ...EMPTY_FORM, ...overrides };
+    setEditingAccount(null);
     setForm(nextForm);
     resetCryptoState();
     resetMetalsState();
@@ -350,6 +408,7 @@ export function AccountsView({
 
   const closeModal = () => {
     setForm(EMPTY_FORM);
+    setEditingAccount(null);
     resetCryptoState();
     resetMetalsState();
     setShowModal(false);
@@ -374,12 +433,44 @@ export function AccountsView({
     });
   };
 
+  const openEditModal = (account) => {
+    if (!account || account.plaidItemId || account.status !== "Manual") return;
+
+    setEditingAccount(account);
+    setForm(buildFormFromAccount(account));
+    resetCryptoState();
+    resetMetalsState();
+
+    if (account.type === "Crypto" && account.cryptoAssetId) {
+      const asset = {
+        id: account.cryptoAssetId,
+        name: account.cryptoName || account.name,
+        symbol: account.cryptoSymbol || "",
+        thumb: account.cryptoThumb || "",
+      };
+      setSelectedCrypto(asset);
+      setCryptoSearchQuery(formatCryptoSearchLabel(asset));
+      if (account.lastPriceUsd !== null && account.lastPriceUsd !== undefined) {
+        setSelectedCryptoQuote({
+          priceUsd: account.lastPriceUsd,
+          lastUpdatedAt: account.lastPriceUpdatedAt,
+        });
+      }
+    }
+
+    if (shouldFetchMetalsQuoteForForm(account)) {
+      setIsLoadingMetalsQuote(true);
+    }
+
+    setShowModal(true);
+  };
+
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!canSubmit) return;
 
     if (isCryptoAccount) {
-      addManualAccount({
+      const accountPayload = {
         name: form.name.trim(),
         type: form.type,
         institution: form.institution.trim() || "Crypto Wallet",
@@ -389,17 +480,22 @@ export function AccountsView({
         cryptoName: selectedCrypto.name,
         cryptoSymbol: selectedCrypto.symbol,
         cryptoThumb: selectedCrypto.thumb,
-        lastPriceUsd: selectedCryptoQuote.priceUsd,
-        lastPriceUpdatedAt: selectedCryptoQuote.lastUpdatedAt,
+        lastPriceUsd: effectiveCryptoQuote.priceUsd,
+        lastPriceUpdatedAt: effectiveCryptoQuote.lastUpdatedAt,
         priceSource: "CoinGecko",
-      });
+      };
+      if (editingAccount) {
+        updateManualAccount?.(editingAccount.id, accountPayload);
+      } else {
+        addManualAccount(accountPayload);
+      }
       closeModal();
       return;
     }
 
     if (isPreciousMetalsAccount) {
       const currentTimestamp = getCurrentTimestamp();
-      addManualAccount({
+      const accountPayload = {
         name: form.name.trim(),
         type: form.type,
         institution: form.institution.trim() || "Manual Valuation",
@@ -409,17 +505,22 @@ export function AccountsView({
         metalUnit: form.metalUnit,
         quantity: parsedQuantity,
         pricePerUnit:
-          form.valuationSource === "Live Spot" && metalsQuote
-            ? metalsQuote.pricePerUnit
+          form.valuationSource === "Live Spot" && effectiveMetalsQuote
+            ? effectiveMetalsQuote.pricePerUnit
             : parsedPricePerUnit,
         valuationSource: form.valuationSource,
-        lastValuedAt: metalsQuote?.updatedAt || currentTimestamp,
-      });
+        lastValuedAt: effectiveMetalsQuote?.updatedAt || currentTimestamp,
+      };
+      if (editingAccount) {
+        updateManualAccount?.(editingAccount.id, accountPayload);
+      } else {
+        addManualAccount(accountPayload);
+      }
       closeModal();
       return;
     }
 
-    addManualAccount({
+    const accountPayload = {
       name: form.name.trim(),
       type: form.type,
       institution: form.institution.trim() || form.type,
@@ -434,7 +535,12 @@ export function AccountsView({
       loanCategory: form.loanCategory,
       interestRate: form.interestRate.trim(),
       monthlyPayment: form.monthlyPayment.trim(),
-    });
+    };
+    if (editingAccount) {
+      updateManualAccount?.(editingAccount.id, accountPayload);
+    } else {
+      addManualAccount(accountPayload);
+    }
     closeModal();
   };
 
@@ -852,28 +958,53 @@ export function AccountsView({
                           ) : null}
                         </div>
                         <div style={{ display: "grid", justifyItems: "end", gap: 10 }}>
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              setDeleteError("");
-                              setDeleteTarget(account);
-                            }}
-                            style={{
-                              borderRadius: 999,
-                              border: "1px solid rgba(255,93,122,.32)",
-                              background: "rgba(255,36,77,.10)",
-                              color: "#ffd9df",
-                              padding: "7px 12px",
-                              cursor: "pointer",
-                              fontSize: 11,
-                              fontWeight: 900,
-                              textTransform: "uppercase",
-                              letterSpacing: 0.7,
-                            }}
-                          >
-                            {account.plaidItemId ? "Disconnect" : "Delete"}
-                          </button>
+                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "end" }}>
+                            {!account.plaidItemId && account.status === "Manual" ? (
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  openEditModal(account);
+                                }}
+                                style={{
+                                  borderRadius: 999,
+                                  border: "1px solid rgba(0,216,255,.28)",
+                                  background: "rgba(0,136,255,.10)",
+                                  color: "#d7ebff",
+                                  padding: "7px 12px",
+                                  cursor: "pointer",
+                                  fontSize: 11,
+                                  fontWeight: 900,
+                                  textTransform: "uppercase",
+                                  letterSpacing: 0.7,
+                                }}
+                              >
+                                Edit
+                              </button>
+                            ) : null}
+                            <button
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setDeleteError("");
+                                setDeleteTarget(account);
+                              }}
+                              style={{
+                                borderRadius: 999,
+                                border: "1px solid rgba(255,93,122,.32)",
+                                background: "rgba(255,36,77,.10)",
+                                color: "#ffd9df",
+                                padding: "7px 12px",
+                                cursor: "pointer",
+                                fontSize: 11,
+                                fontWeight: 900,
+                                textTransform: "uppercase",
+                                letterSpacing: 0.7,
+                              }}
+                            >
+                              {account.plaidItemId ? "Disconnect" : "Delete"}
+                            </button>
+                          </div>
                           <div
                             style={{
                               color: "#00f59b",
@@ -1131,10 +1262,10 @@ export function AccountsView({
                     marginBottom: 8,
                   }}
                 >
-                  Manual Account
+                  {editingAccount ? "Edit Manual Account" : "Manual Account"}
                 </div>
                 <div style={{ color: "white", fontSize: 26, fontWeight: 900 }}>
-                  Add a New Account
+                  {editingAccount ? `Edit ${editingAccount.name}` : "Add a New Account"}
                 </div>
               </div>
               <button
@@ -1191,7 +1322,12 @@ export function AccountsView({
                   <select
                     value={form.type}
                     onChange={(e) => update("type", e.target.value)}
-                    style={inputStyle}
+                    disabled={Boolean(editingAccount)}
+                    style={{
+                      ...inputStyle,
+                      opacity: editingAccount ? 0.8 : 1,
+                      cursor: editingAccount ? "not-allowed" : "pointer",
+                    }}
                   >
                     {ACCOUNT_TYPES.map((t) => (
                       <option key={t} value={t} style={{ background: "#061224" }}>
@@ -1747,7 +1883,7 @@ export function AccountsView({
                   fontSize: 15,
                 }}
               >
-                Add Account →
+                {editingAccount ? "Save Changes" : "Add Account →"}
               </button>
             </div>
           </form>
