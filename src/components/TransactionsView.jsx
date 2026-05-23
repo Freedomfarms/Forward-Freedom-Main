@@ -436,7 +436,7 @@ export function TransactionsView({
                 border: "1px solid rgba(0,136,255,.22)",
                 borderRadius: 14,
                 background: "rgba(3,17,32,.72)",
-                padding: "18px 16px",
+                padding: "16px 14px",
               }}
             >
               <div
@@ -444,13 +444,13 @@ export function TransactionsView({
                   color: "#8fb1d9",
                   fontSize: 12,
                   textTransform: "uppercase",
-                  marginBottom: 10,
+                  marginBottom: 8,
                   letterSpacing: 0.8,
                 }}
               >
                 {item[0]}
               </div>
-              <div style={{ color: "white", fontSize: 25, fontWeight: 800, lineHeight: 1.2 }}>
+              <div style={{ color: "white", fontSize: 23, fontWeight: 800, lineHeight: 1.15 }}>
                 {item[1]}
               </div>
             </div>
@@ -465,7 +465,7 @@ export function TransactionsView({
               background: canOpenManualEntry
                 ? "linear-gradient(180deg, rgba(255,159,28,.14), rgba(56,22,0,.22))"
                 : "rgba(48,55,68,.28)",
-              padding: "18px 16px",
+              padding: "16px 14px",
               textAlign: "left",
               cursor: canOpenManualEntry ? "pointer" : "not-allowed",
               boxShadow: canOpenManualEntry ? "0 0 24px rgba(255,159,28,.12)" : "none",
@@ -478,20 +478,15 @@ export function TransactionsView({
                 color: "#ffd08a",
                 fontSize: 12,
                 textTransform: "uppercase",
-                marginBottom: 10,
+                marginBottom: 8,
                 letterSpacing: 0.8,
                 fontWeight: 900,
               }}
             >
               Manual Entry
             </div>
-            <div style={{ fontSize: 23, fontWeight: 900, lineHeight: 1.2 }}>
-              {canOpenManualEntry ? "+ Add Tx" : "No Account"}
-            </div>
-            <div style={{ color: "#ffd8b0", fontSize: 12, marginTop: 10, lineHeight: 1.45 }}>
-              {canOpenManualEntry
-                ? "Open the full entry screen for cash buys, backfills, and offline charges."
-                : "Add a transactional account first to enter manual transactions."}
+            <div style={{ fontSize: 22, fontWeight: 900, lineHeight: 1.15 }}>
+              {canOpenManualEntry ? "Transaction" : "No Account"}
             </div>
           </button>
         </div>
@@ -1139,7 +1134,7 @@ export function TransactionsView({
                   display: "grid",
                   gridTemplateColumns: "140px 1.4fr 1fr 1fr 160px",
                   alignItems: "center",
-                  padding: "12px 16px",
+                  padding: "9px 16px",
                   borderBottom: "1px solid rgba(0,136,255,.08)",
                   background: tx.needsReview
                     ? "rgba(255,159,28,.06)"
@@ -1168,7 +1163,7 @@ export function TransactionsView({
                   {tx.date}
                 </div>
                 <div style={{ color: "white", fontWeight: 700 }}>{tx.merchant}</div>
-                <div style={{ display: "grid", gap: 6 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
                   <select
                     value={tx.category}
                     onChange={(event) => updateTransactionCategory(tx, event.target.value)}
@@ -1177,11 +1172,12 @@ export function TransactionsView({
                       background: "rgba(0,136,255,.08)",
                       border: "1px solid rgba(0,216,255,.18)",
                       borderRadius: 8,
-                      padding: "8px 10px",
+                      padding: "7px 10px",
                       outline: "none",
-                      width: "92%",
+                      width: "100%",
                       cursor: "pointer",
                       boxShadow: "inset 0 0 14px rgba(0,136,255,.08)",
+                      minWidth: 0,
                     }}
                   >
                     {categoryOptions.map((category) => (
@@ -1202,7 +1198,14 @@ export function TransactionsView({
                       </option>
                     ) : null}
                   </select>
-                  <div style={{ color: tx.needsReview ? "#ffb65d" : "#7294bb", fontSize: 11 }}>
+                  <div
+                    style={{
+                      color: tx.needsReview ? "#ffb65d" : "#7294bb",
+                      fontSize: 11,
+                      whiteSpace: "nowrap",
+                      flexShrink: 0,
+                    }}
+                  >
                     {formatCategorySourceLabel(tx)}
                     {tx.needsReview ? " • Needs review" : ""}
                   </div>
