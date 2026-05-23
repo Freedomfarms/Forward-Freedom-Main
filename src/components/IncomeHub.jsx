@@ -46,14 +46,16 @@ export function IncomeHub({
   };
 
   const shiftIncomeMonth = (delta) => {
-    setActiveIncomeDate((current) => {
-      const nextDate = new Date(current.year, current.monthIndex + Number(delta || 0), 1);
-      const nextYear = nextDate.getFullYear();
-      ensurePlanningYear(nextYear);
-      return {
-        monthIndex: nextDate.getMonth(),
-        year: nextYear,
-      };
+    const nextDate = new Date(
+      activeIncomeDate.year,
+      activeIncomeDate.monthIndex + Number(delta || 0),
+      1
+    );
+    const nextYear = nextDate.getFullYear();
+    ensurePlanningYear(nextYear);
+    setActiveIncomeDate({
+      monthIndex: nextDate.getMonth(),
+      year: nextYear,
     });
   };
 
