@@ -9,6 +9,7 @@ import {
   calculateRealEstateEquity,
   normalizeAccount,
 } from "./utils/accounts.js";
+import { createManualAccount, updateManualAccountInUser } from "./utils/manualAccounts.js";
 import {
   createEmptyUserProfile,
   loadPersistedAppState,
@@ -973,81 +974,27 @@ function ForwardFreedomDashboard({
     }
   };
 
-  const addManualAccount = ({
-    name,
-    type,
-    institution,
-    balance,
-    quantity,
-    metalType,
-    metalCustomName,
-    metalUnit,
-    pricePerUnit,
-    valuationSource,
-    lastValuedAt,
-    propertyAddress,
-    propertyType,
-    propertyMarketValue,
-    equitySource,
-    linkedLoanId,
-    linkedPropertyId,
-    loanCategory,
-    interestRate,
-    monthlyPayment,
-    cryptoAssetId,
-    cryptoName,
-    cryptoSymbol,
-    cryptoThumb,
-    lastPriceUsd,
-    lastPriceUpdatedAt,
-    priceSource,
-  }) => {
+  const addManualAccount = (accountInput) => {
     const currentTimestamp = getCurrentTimestamp();
-    const newAccount = {
-      name,
-      type,
-      institution: institution || "Manual",
-      balance: roundCurrency(balance),
-      status: "Manual",
-      propertyAddress: propertyAddress || "",
-      propertyType: propertyType || "",
-      propertyMarketValue: Number(propertyMarketValue) || 0,
-      equitySource: equitySource || "Manual",
-      lastValuedAt: currentTimestamp,
-      linkedLoanId: linkedLoanId || "",
-      linkedPropertyId: linkedPropertyId || "",
-      loanCategory: loanCategory || "",
-      interestRate: interestRate || "",
-      monthlyPayment: monthlyPayment || "",
-    };
+    setAccounts((current) => [
+      ...current,
+      createManualAccount(accountInput, current.length, { timestamp: currentTimestamp }),
+    ]);
+    openAccountTransactions(accountInput.name);
+  };
 
-    if (type === "Crypto" && cryptoAssetId) {
-      Object.assign(newAccount, {
-        quantity: Number(quantity) || 0,
-        cryptoAssetId,
-        cryptoName,
-        cryptoSymbol,
-        cryptoThumb,
-        lastPriceUsd: normalizeCryptoPrice(lastPriceUsd),
-        lastPriceUpdatedAt: Number(lastPriceUpdatedAt) || currentTimestamp,
-        priceSource: priceSource || CRYPTO_PRICE_SOURCE,
-      });
-    }
+  const updateManualAccount = (accountId, accountInput) => {
+    if (!accountId || !activeUser?.id) return;
 
-    if (type === "Precious Metals") {
-      Object.assign(newAccount, {
-        quantity: Number(quantity) || 0,
-        metalType: metalType || "Gold",
-        metalCustomName: metalCustomName || "",
-        metalUnit: metalUnit || "oz",
-        pricePerUnit: Number(pricePerUnit) || 0,
-        valuationSource: valuationSource || "Manual",
-        lastValuedAt: Number(lastValuedAt) || currentTimestamp,
-      });
-    }
-
-    setAccounts((current) => [...current, normalizeAccount(newAccount, current.length)]);
-    openAccountTransactions(name);
+    setUsers((currentUsers) =>
+      currentUsers.map((user) =>
+        user.id === activeUser.id
+          ? updateManualAccountInUser(user, accountId, accountInput, {
+              timestamp: getCurrentTimestamp(),
+            })
+          : user
+      )
+    );
   };
 
   const selectedTransactions = selectedAccount
@@ -1397,6 +1344,7 @@ function ForwardFreedomDashboard({
               connectMockPlaidAccount={connectPlaidAccount}
               deleteAccount={deleteAccount}
               openAccountTransactions={openAccountTransactions}
+              updateManualAccount={updateManualAccount}
               householdProfilesProps={householdProfilesProps}
               plaidIntegration={plaidIntegration}
               subscriptions={subscriptions}

@@ -339,6 +339,7 @@ export function AccountsView({
 
   const openModal = (overrides = {}) => {
     const nextForm = { ...EMPTY_FORM, ...overrides };
+    setEditingAccount(null);
     setForm(nextForm);
     resetCryptoState();
     resetMetalsState();
@@ -350,6 +351,7 @@ export function AccountsView({
 
   const closeModal = () => {
     setForm(EMPTY_FORM);
+    setEditingAccount(null);
     resetCryptoState();
     resetMetalsState();
     setShowModal(false);
@@ -374,12 +376,44 @@ export function AccountsView({
     });
   };
 
+  const openEditModal = (account) => {
+    if (!account || account.plaidItemId) return;
+
+    setEditingAccount(account);
+    setForm(buildFormFromAccount(account));
+    resetCryptoState();
+    resetMetalsState();
+
+    if (account.type === "Crypto" && account.cryptoAssetId) {
+      const asset = {
+        id: account.cryptoAssetId,
+        name: account.cryptoName || account.name,
+        symbol: account.cryptoSymbol || "",
+        thumb: account.cryptoThumb || "",
+      };
+      setSelectedCrypto(asset);
+      setCryptoSearchQuery(formatCryptoSearchLabel(asset));
+      if (account.lastPriceUsd !== null && account.lastPriceUsd !== undefined) {
+        setSelectedCryptoQuote({
+          priceUsd: account.lastPriceUsd,
+          lastUpdatedAt: account.lastPriceUpdatedAt,
+        });
+      }
+    }
+
+    if (shouldFetchMetalsQuoteForForm(account)) {
+      setIsLoadingMetalsQuote(true);
+    }
+
+    setShowModal(true);
+  };
+
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!canSubmit) return;
 
     if (isCryptoAccount) {
-      addManualAccount({
+      const accountPayload = {
         name: form.name.trim(),
         type: form.type,
         institution: form.institution.trim() || "Crypto Wallet",
@@ -389,17 +423,22 @@ export function AccountsView({
         cryptoName: selectedCrypto.name,
         cryptoSymbol: selectedCrypto.symbol,
         cryptoThumb: selectedCrypto.thumb,
-        lastPriceUsd: selectedCryptoQuote.priceUsd,
-        lastPriceUpdatedAt: selectedCryptoQuote.lastUpdatedAt,
+        lastPriceUsd: effectiveCryptoQuote.priceUsd,
+        lastPriceUpdatedAt: effectiveCryptoQuote.lastUpdatedAt,
         priceSource: "CoinGecko",
-      });
+      };
+      if (editingAccount) {
+        updateManualAccount?.(editingAccount.id, accountPayload);
+      } else {
+        addManualAccount(accountPayload);
+      }
       closeModal();
       return;
     }
 
     if (isPreciousMetalsAccount) {
       const currentTimestamp = getCurrentTimestamp();
-      addManualAccount({
+      const accountPayload = {
         name: form.name.trim(),
         type: form.type,
         institution: form.institution.trim() || "Manual Valuation",
@@ -409,17 +448,22 @@ export function AccountsView({
         metalUnit: form.metalUnit,
         quantity: parsedQuantity,
         pricePerUnit:
-          form.valuationSource === "Live Spot" && metalsQuote
-            ? metalsQuote.pricePerUnit
+          form.valuationSource === "Live Spot" && effectiveMetalsQuote
+            ? effectiveMetalsQuote.pricePerUnit
             : parsedPricePerUnit,
         valuationSource: form.valuationSource,
-        lastValuedAt: metalsQuote?.updatedAt || currentTimestamp,
-      });
+        lastValuedAt: effectiveMetalsQuote?.updatedAt || currentTimestamp,
+      };
+      if (editingAccount) {
+        updateManualAccount?.(editingAccount.id, accountPayload);
+      } else {
+        addManualAccount(accountPayload);
+      }
       closeModal();
       return;
     }
 
-    addManualAccount({
+    const accountPayload = {
       name: form.name.trim(),
       type: form.type,
       institution: form.institution.trim() || form.type,
@@ -434,7 +478,12 @@ export function AccountsView({
       loanCategory: form.loanCategory,
       interestRate: form.interestRate.trim(),
       monthlyPayment: form.monthlyPayment.trim(),
-    });
+    };
+    if (editingAccount) {
+      updateManualAccount?.(editingAccount.id, accountPayload);
+    } else {
+      addManualAccount(accountPayload);
+    }
     closeModal();
   };
 
