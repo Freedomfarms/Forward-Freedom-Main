@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { APP_TABS, budgetMonthNames, budgetMonths, chartSets } from "../data/constants.jsx";
 import { buildMonthlyBudgetReview } from "../utils/budgetReview.js";
+import { getCurrentBudgetPeriod } from "../utils/date.js";
 import { styles } from "../styles.js";
 import { buildAreaPath, buildLinePath, money, parseMoney, wholeDollars } from "../utils/format.js";
 import { buildReconciledTrueCashSeries } from "../utils/planning.js";
@@ -208,6 +209,7 @@ export function DashboardView({
   metricSnapshots,
   householdProfilesProps,
   planningAnchor,
+  currentMonthSnapshot,
 }) {
   const [hoverState, setHoverState] = useState(null);
   const [netWorthHistoryRange, setNetWorthHistoryRange] = useState("30D");
@@ -216,7 +218,12 @@ export function DashboardView({
     (sum, item) => sum + Number(item.valueNumber || 0),
     0
   );
-  const monthlyBudgetReview = buildMonthlyBudgetReview(transactions, budgetRows);
+  const monthlyBudgetReview =
+    currentMonthSnapshot ||
+    buildMonthlyBudgetReview(transactions, budgetRows, {
+      month: getCurrentBudgetPeriod().month,
+      year: getCurrentBudgetPeriod().year,
+    });
   const netWorthHistory = buildNetWorthHistory(metricSnapshots, netWorthHistoryRange);
   const projectionStartMonth = planningAnchor?.startingMonth || budgetMonths[0];
   const initialChartValues = buildSyncedTrueCashChart(chartSets[activeRange], trueCash);

@@ -18,6 +18,7 @@ import {
   buildMerchantCategoryRules,
   categorizeTransactions,
 } from "./utils/transactionCategorization.js";
+import { buildMonthlySpendSnapshot } from "./utils/budgetReview.js";
 import {
   buildPlanningYearOptions,
   buildPlanYearData,
@@ -329,7 +330,8 @@ function ForwardFreedomDashboard({
   const activeTab = activeUser.activeTab;
   const activeRange = activeUser.activeRange;
   const metricSnapshots = activeUser.metricSnapshots;
-  const currentPlanYear = getBudgetPeriodAtOffset(0).year;
+  const currentBudgetPeriod = getBudgetPeriodAtOffset(0);
+  const currentPlanYear = currentBudgetPeriod.year;
   const setActiveUserField = (field, valueOrUpdater) => {
     if (!activeUser?.id) return;
 
@@ -394,8 +396,12 @@ function ForwardFreedomDashboard({
     .filter((account) => account.type === "Retirement")
     .reduce((sum, account) => sum + account.balance, 0);
 
-  const currentMonth = getBudgetPeriodAtOffset(0).month;
+  const currentMonth = currentBudgetPeriod.month;
   const nextMonth = getBudgetPeriodAtOffset(1).month;
+  const currentMonthSpendSnapshot = buildMonthlySpendSnapshot(categorizedTransactions, budgetRows, {
+    month: currentBudgetPeriod.month,
+    year: currentBudgetPeriod.year,
+  });
   const currentMonthIncome = incomeStreams
     .filter((s) => (s.months || budgetMonths).includes(currentMonth))
     .reduce((sum, s) => sum + parseMoney(s.amount), 0);
@@ -1342,6 +1348,7 @@ function ForwardFreedomDashboard({
               metricSnapshots={trackedMetricSnapshots}
               householdProfilesProps={householdProfilesProps}
               planningAnchor={getPlanningAnchorForYear(currentPlanYear)}
+              currentMonthSnapshot={currentMonthSpendSnapshot}
             />
           ) : activeTab === APP_TABS.OPERATIONS_BOARD ? (
             <OperationsBoard
@@ -1399,6 +1406,7 @@ function ForwardFreedomDashboard({
             <TransactionsView
               accounts={syncedAccounts}
               budgetRows={budgetRows}
+              currentMonthSnapshot={currentMonthSpendSnapshot}
               selectedAccount={selectedAccount}
               visibleTransactions={visibleTransactions}
               setActiveTab={setActiveTab}

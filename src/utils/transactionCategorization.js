@@ -32,17 +32,18 @@ const MERCHANT_CATEGORY_RULES = [
     confidence: 90,
   },
   { pattern: /\bAMAZON\b/, category: "Shopping", confidence: 82 },
-  { pattern: /\bCVS\b|\bWALGREENS\b|\bPHARMACY\b/, category: "Health", confidence: 86 },
-  { pattern: /\bHOME DEPOT\b|\bLOWE'?S\b/, category: "Home", confidence: 88 },
+  { pattern: /\bCVS\b|\bWALGREENS\b|\bPHARMACY\b/, category: "Health & Wellness", confidence: 86 },
+  { pattern: /\bHOME DEPOT\b|\bLOWE'?S\b/, category: "Home Improvement", confidence: 88 },
   { pattern: /\bMORTGAGE\b|\bROCKET MORTGAGE\b|\bRENT\b/, category: "Housing", confidence: 94 },
   { pattern: /\bPAYROLL\b|\bDIRECT DEP\b|\bSALARY\b/, category: "Income", confidence: 95 },
   { pattern: /\bDIVIDEND\b/, category: "Investments", confidence: 88 },
+  { pattern: /\bBEST BUY\b|\bMICRO CENTER\b|\bAPPLE\b/, category: "Technology", confidence: 84 },
 ];
 
 const PLAID_CATEGORY_RULES = [
   { pattern: /INCOME/, category: "Income", confidence: 86 },
-  { pattern: /GROCER|FOOD_AND_DRINK/, category: "Groceries", confidence: 82 },
-  { pattern: /RESTAURANT/, category: "Restaurants", confidence: 82 },
+  { pattern: /GROCER/, category: "Groceries", confidence: 82 },
+  { pattern: /FOOD_AND_DRINK|RESTAURANT/, category: "Restaurants & Coffee", confidence: 82 },
   { pattern: /ENTERTAINMENT/, category: "Entertainment", confidence: 78 },
   { pattern: /GENERAL_MERCHANDISE|SHOPPING/, category: "Shopping", confidence: 76 },
   { pattern: /UTILITY/, category: "Utilities", confidence: 84 },
@@ -51,7 +52,7 @@ const PLAID_CATEGORY_RULES = [
   { pattern: /GAS/, category: "Fuel", confidence: 84 },
   { pattern: /INVESTMENT/, category: "Investments", confidence: 78 },
   { pattern: /TRANSFER/, category: "Transfers", confidence: 74 },
-  { pattern: /HEALTH/, category: "Health", confidence: 78 },
+  { pattern: /HEALTH/, category: "Health & Wellness", confidence: 78 },
   { pattern: /INSURANCE/, category: "Insurance", confidence: 84 },
   { pattern: /HOUSING|MORTGAGE|RENT/, category: "Housing", confidence: 86 },
 ];
@@ -68,11 +69,29 @@ export function normalizeMerchantName(merchant) {
 function buildValidCategorySet(budgetRows) {
   return new Set([
     ...transactionCategoryOptions,
-    ...budgetRows.flatMap((row) => row.transactionCategories || []),
     ...budgetRows.map((row) => row.name).filter(Boolean),
-    "Other",
+    "Income",
     "Transfers",
+    "Other",
   ]);
+}
+
+function buildBudgetCategoryAliasMap(budgetRows) {
+  const aliasMap = new Map();
+
+  budgetRows.forEach((row) => {
+    [row.name, ...(row.transactionCategories || [])].filter(Boolean).forEach((alias) => {
+      aliasMap.set(String(alias).trim(), row.name);
+    });
+  });
+
+  return aliasMap;
+}
+
+function normalizeBudgetCategory(category, aliasMap) {
+  const normalized = String(category || "").trim();
+  if (!normalized) return "";
+  return aliasMap.get(normalized) || normalized;
 }
 
 function pickRuleCategory(text, validCategories, rules) {
@@ -107,14 +126,16 @@ function buildCategorizedTransaction(transaction, nextCategory, source, confiden
 
 export function categorizeTransaction(transaction, { budgetRows, merchantCategoryRules = {} }) {
   const validCategories = buildValidCategorySet(budgetRows);
+  const aliasMap = buildBudgetCategoryAliasMap(budgetRows);
   const normalizedMerchant = normalizeMerchantName(transaction.merchant);
+  const normalizedTransactionCategory = normalizeBudgetCategory(transaction.category, aliasMap);
   const lockedByUser = transaction.categorySource === "user";
   const lockedManual = transaction.source === "manual" && transaction.category;
 
   if (lockedByUser) {
     return buildCategorizedTransaction(
       transaction,
-      validCategories.has(transaction.category) ? transaction.category : "Other",
+      validCategories.has(normalizedTransactionCategory) ? normalizedTransactionCategory : "Other",
       "user",
       100
     );
@@ -123,13 +144,13 @@ export function categorizeTransaction(transaction, { budgetRows, merchantCategor
   if (lockedManual) {
     return buildCategorizedTransaction(
       transaction,
-      validCategories.has(transaction.category) ? transaction.category : "Other",
+      validCategories.has(normalizedTransactionCategory) ? normalizedTransactionCategory : "Other",
       "manual",
       100
     );
   }
 
-  const learnedCategory = merchantCategoryRules[normalizedMerchant];
+  const learnedCategory = normalizeBudgetCategory(merchantCategoryRules[normalizedMerchant], aliasMap);
   if (learnedCategory && validCategories.has(learnedCategory)) {
     return buildCategorizedTransaction(transaction, learnedCategory, "learned", 98);
   }
@@ -139,7 +160,11 @@ export function categorizeTransaction(transaction, { budgetRows, merchantCategor
     validCategories,
     MERCHANT_CATEGORY_RULES
   );
-  const plaidMatch = pickRuleCategory(transaction.category, validCategories, PLAID_CATEGORY_RULES);
+  const plaidMatch = pickRuleCategory(
+    `${transaction.category || ""} ${normalizedTransactionCategory}`,
+    validCategories,
+    PLAID_CATEGORY_RULES
+  );
 
   if (merchantMatch && plaidMatch && merchantMatch.category === plaidMatch.category) {
     return buildCategorizedTransaction(
@@ -159,10 +184,10 @@ export function categorizeTransaction(transaction, { budgetRows, merchantCategor
     );
   }
 
-  if (transaction.category && validCategories.has(transaction.category)) {
+  if (normalizedTransactionCategory && validCategories.has(normalizedTransactionCategory)) {
     return buildCategorizedTransaction(
       transaction,
-      transaction.category,
+      normalizedTransactionCategory,
       transaction.source === "plaid" ? "plaid" : transaction.categorySource || "ai",
       plaidMatch?.confidence || merchantMatch?.confidence || 76
     );
