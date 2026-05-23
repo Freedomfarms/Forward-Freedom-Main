@@ -169,8 +169,41 @@ export function IncomeHub({
           gridTemplateColumns: "1fr minmax(280px, 340px) 1fr",
           alignItems: "center",
           marginBottom: 38,
+          position: "relative",
         }}
       >
+        <div
+          style={{
+            position: "absolute",
+            top: 18,
+            right: 24,
+            zIndex: 1,
+          }}
+        >
+          <select
+            value={activeIncomeDate.year}
+            onChange={(event) => updateIncomeDate("year", event.target.value)}
+            aria-label="Select income planning year"
+            style={{
+              color: "#8feaff",
+              background: "rgba(0,136,255,.12)",
+              border: "1px solid rgba(0,216,255,.32)",
+              borderRadius: 999,
+              padding: "10px 16px",
+              cursor: "pointer",
+              fontWeight: 900,
+              boxShadow: "0 0 14px rgba(0,136,255,.14)",
+              minWidth: 96,
+              textAlign: "center",
+            }}
+          >
+            {availablePlanningYears.map((year) => (
+              <option key={year} value={year} style={{ background: "#061224", color: "#eaf3ff" }}>
+                {year}
+              </option>
+            ))}
+          </select>
+        </div>
         <div style={{ textAlign: "center", display: "grid", justifyItems: "center" }}>
           <div style={{ color: "#e9f3ff", fontSize: 38, fontWeight: 800 }}>{money(monthIncomeTotal)}</div>
           <div style={{ color: "#668ab9", fontSize: 26, fontWeight: 700, marginTop: 16 }}>
@@ -243,41 +276,6 @@ export function IncomeHub({
                   textAlign: "center",
                 }}
               >
-                <div
-                  style={{
-                    position: "absolute",
-                    top: 0,
-                    right: 0,
-                  }}
-                >
-                  <select
-                    value={activeIncomeDate.year}
-                    onChange={(event) => updateIncomeDate("year", event.target.value)}
-                    aria-label="Select income planning year"
-                    style={{
-                      color: "#8feaff",
-                      background: "rgba(0,136,255,.12)",
-                      border: "1px solid rgba(0,216,255,.32)",
-                      borderRadius: "0 18px 0 18px",
-                      padding: "10px 14px 9px",
-                      cursor: "pointer",
-                      fontWeight: 900,
-                      boxShadow: "0 0 14px rgba(0,136,255,.14)",
-                      minWidth: 94,
-                      textAlign: "center",
-                    }}
-                  >
-                    {availablePlanningYears.map((year) => (
-                      <option
-                        key={year}
-                        value={year}
-                        style={{ background: "#061224", color: "#eaf3ff" }}
-                      >
-                        {year}
-                      </option>
-                    ))}
-                  </select>
-                </div>
                 <div
                   style={{
                     color: "#8fb1d9",
