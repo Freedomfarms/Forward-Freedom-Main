@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { styles } from "../styles.js";
 import { money, cleanMoneyInput } from "../utils/format.js";
-import { buildBudgetRowsWithSpend } from "../utils/budgetReview.js";
+import { buildMonthlySpendSnapshot } from "../utils/budgetReview.js";
 import { getCurrentBudgetPeriod } from "../utils/date.js";
 import { budgetMonths, budgetMonthNames } from "../data/constants.jsx";
 import { HouseholdProfilesControl, MonthCoverageEditor } from "./Common.jsx";
@@ -36,21 +36,29 @@ export function BudgetCommandCenter({
     }));
   };
 
-  const budgetRowsWithSpend = buildBudgetRowsWithSpend(
+  const activeBudgetSnapshot = buildMonthlySpendSnapshot(
     transactions,
     planningBudgetRows,
-    activeBudgetMonth,
-    activeBudgetDate.year
+    {
+      month: activeBudgetMonth,
+      year: activeBudgetDate.year,
+    }
   );
-
-  const spentTotal = budgetRowsWithSpend.reduce((sum, item) => sum + item.spent, 0);
-  const budgetTotal = budgetRowsWithSpend.reduce((sum, item) => sum + item.budget, 0);
+  const budgetRowsWithSpend = activeBudgetSnapshot.rows;
+  const spentTotal = activeBudgetSnapshot.monthlySpend;
+  const budgetTotal = activeBudgetSnapshot.monthlyBudget;
   const updateBudgetRow = (id, field, value) => {
     setBudgetRowsForYear(activeBudgetDate.year, (rows) =>
       rows.map((row) => {
         if (row.id !== id) return row;
         if (field === "name") {
-          return { ...row, name: value, transactionCategories: [value] };
+          return {
+            ...row,
+            name: value,
+            transactionCategories: Array.from(
+              new Set([value, ...(row.transactionCategories || [])].filter(Boolean))
+            ),
+          };
         }
         return { ...row, [field]: cleanMoneyInput(value) };
       })
@@ -268,11 +276,12 @@ export function BudgetCommandCenter({
                 <button
                   type="button"
                   onDoubleClick={(event) => {
+                    if (item.name === "Other") return;
                     event.preventDefault();
                     event.stopPropagation();
                     setDeleteTarget({ id: item.id, name: item.name });
                   }}
-                  title="Double click to delete category"
+                  title={item.name === "Other" ? "Other is required" : "Double click to delete category"}
                   style={{
                     width: 34,
                     height: 34,
@@ -284,8 +293,9 @@ export function BudgetCommandCenter({
                     fontSize: 20,
                     background: "rgba(0,136,255,.08)",
                     border: "1px solid rgba(0,216,255,.14)",
-                    cursor: "pointer",
+                    cursor: item.name === "Other" ? "default" : "pointer",
                     boxShadow: "inset 0 0 14px rgba(0,80,160,.05)",
+                    opacity: item.name === "Other" ? 0.68 : 1,
                   }}
                 >
                   {item.icon}

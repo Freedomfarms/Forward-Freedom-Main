@@ -561,13 +561,23 @@ export const budgetMonthNames = {
 
 export const initialBudgetCategories = [
   {
-    id: "budget-mortgage-rent",
+    id: "budget-housing",
     dot: "#ff7a45",
     icon: "🏠",
-    name: "Mortgage / Rent",
+    name: "Housing",
     budget: 3000,
     color: "#ff7a45",
-    transactionCategories: ["Housing", "Home"],
+    transactionCategories: ["Housing", "Mortgage / Rent", "Mortgage", "Rent"],
+    months: budgetMonths,
+  },
+  {
+    id: "budget-home-improvement",
+    dot: "#f59e0b",
+    icon: "🛠️",
+    name: "Home Improvement",
+    budget: 350,
+    color: "#f59e0b",
+    transactionCategories: ["Home Improvement", "Home", "Repairs"],
     months: budgetMonths,
   },
   {
@@ -577,7 +587,7 @@ export const initialBudgetCategories = [
     name: "Utilities",
     budget: 550,
     color: "#00d8ff",
-    transactionCategories: ["Utilities"],
+    transactionCategories: ["Utilities", "Electric", "Internet", "Phone"],
     months: budgetMonths,
   },
   {
@@ -604,10 +614,16 @@ export const initialBudgetCategories = [
     id: "budget-restaurants",
     dot: "#ef4444",
     icon: "🍽️",
-    name: "Restaurants",
+    name: "Restaurants & Coffee",
     budget: 450,
     color: "#ef4444",
-    transactionCategories: ["Restaurants", "Food & Drink", "Food"],
+    transactionCategories: [
+      "Restaurants & Coffee",
+      "Restaurants",
+      "Food & Drink",
+      "Food",
+      "Coffee",
+    ],
     months: budgetMonths,
   },
   {
@@ -621,26 +637,6 @@ export const initialBudgetCategories = [
     months: budgetMonths,
   },
   {
-    id: "budget-fitness",
-    dot: "#06b6d4",
-    icon: "🏋️",
-    name: "Fitness & Wellness",
-    budget: 300,
-    color: "#06b6d4",
-    transactionCategories: ["Fitness & Wellness", "Health"],
-    months: budgetMonths,
-  },
-  {
-    id: "budget-farm",
-    dot: "#3b82f6",
-    icon: "🚜",
-    name: "Farm Operations",
-    budget: 1800,
-    color: "#3b82f6",
-    transactionCategories: ["Farm Operations"],
-    months: budgetMonths,
-  },
-  {
     id: "budget-insurance",
     dot: "#8b5cf6",
     icon: "🧾",
@@ -651,13 +647,43 @@ export const initialBudgetCategories = [
     months: budgetMonths,
   },
   {
-    id: "budget-travel",
+    id: "budget-health-wellness",
+    dot: "#06b6d4",
+    icon: "🏥",
+    name: "Health & Wellness",
+    budget: 300,
+    color: "#06b6d4",
+    transactionCategories: ["Health & Wellness", "Health", "Fitness & Wellness", "Medical", "Pharmacy"],
+    months: budgetMonths,
+  },
+  {
+    id: "budget-farm",
+    dot: "#3b82f6",
+    icon: "🚜",
+    name: "Farm Operations",
+    budget: 1800,
+    color: "#3b82f6",
+    transactionCategories: ["Farm Operations", "Business / Farm Operations"],
+    months: budgetMonths,
+  },
+  {
+    id: "budget-transportation",
     dot: "#14b8a6",
+    icon: "🚌",
+    name: "Transportation",
+    budget: 350,
+    color: "#14b8a6",
+    transactionCategories: ["Transportation", "Transit", "Rideshare"],
+    months: budgetMonths,
+  },
+  {
+    id: "budget-travel",
+    dot: "#0ea5e9",
     icon: "✈️",
     name: "Travel",
     budget: 900,
-    color: "#14b8a6",
-    transactionCategories: ["Travel", "Transportation"],
+    color: "#0ea5e9",
+    transactionCategories: ["Travel"],
     months: budgetMonths,
   },
   {
@@ -671,13 +697,13 @@ export const initialBudgetCategories = [
     months: budgetMonths,
   },
   {
-    id: "budget-clothing",
+    id: "budget-clothing-personal",
     dot: "#facc15",
-    icon: "👕",
-    name: "Clothing",
+    icon: "🧥",
+    name: "Clothing & Personal Care",
     budget: 250,
     color: "#facc15",
-    transactionCategories: ["Clothing"],
+    transactionCategories: ["Clothing & Personal Care", "Clothing", "Personal Care"],
     months: budgetMonths,
   },
   {
@@ -691,13 +717,23 @@ export const initialBudgetCategories = [
     months: budgetMonths,
   },
   {
+    id: "budget-technology",
+    dot: "#60a5fa",
+    icon: "💻",
+    name: "Technology",
+    budget: 250,
+    color: "#60a5fa",
+    transactionCategories: ["Technology", "Electronics"],
+    months: budgetMonths,
+  },
+  {
     id: "budget-emergency",
     dot: "#10b981",
     icon: "💰",
-    name: "Emergency Fund",
+    name: "Savings / Emergency Fund",
     budget: 1000,
     color: "#10b981",
-    transactionCategories: ["Emergency Fund"],
+    transactionCategories: ["Savings / Emergency Fund", "Emergency Fund", "Savings"],
     months: budgetMonths,
   },
   {
@@ -717,7 +753,7 @@ export const initialBudgetCategories = [
     name: "Shopping",
     budget: 600,
     color: "#64748b",
-    transactionCategories: ["Shopping", "Technology"],
+    transactionCategories: ["Shopping", "General Merchandise"],
     months: budgetMonths,
   },
   {
@@ -734,7 +770,12 @@ export const initialBudgetCategories = [
 
 export const transactionCategoryOptions = Array.from(
   new Set(
-    initialBudgetCategories.flatMap((category) => category.transactionCategories).filter(Boolean)
+    [
+      ...initialBudgetCategories.map((category) => category.name).filter(Boolean),
+      "Income",
+      "Transfers",
+      "Other",
+    ].filter(Boolean)
   )
 ).sort();
 

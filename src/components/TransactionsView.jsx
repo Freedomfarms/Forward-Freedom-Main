@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import { APP_TABS, transactionCategoryOptions } from "../data/constants.jsx";
 import { styles } from "../styles.js";
-import { isSpendTransaction } from "../utils/transactions.js";
 import { getIsoDateInputValue } from "../utils/date.js";
 import { money } from "../utils/format.js";
 import { accountSupportsTransactions } from "../utils/accounts.js";
@@ -185,6 +184,7 @@ function buildAccountProfile(account, accounts) {
 export function TransactionsView({
   accounts,
   budgetRows,
+  currentMonthSnapshot,
   selectedAccount,
   visibleTransactions,
   setActiveTab,
@@ -212,6 +212,7 @@ export function TransactionsView({
     amount: "",
     category: "",
   });
+  const [showManualEntry, setShowManualEntry] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState({
@@ -227,9 +228,7 @@ export function TransactionsView({
   const categoryOptions = Array.from(
     new Set([
       ...transactionCategoryOptions,
-      ...budgetRows.flatMap((row) => row.transactionCategories || []),
       ...budgetRows.map((row) => row.name).filter(Boolean),
-      ...visibleTransactions.map((tx) => tx.category).filter(Boolean),
     ])
   ).sort();
   const filterAccountOptions = Array.from(
@@ -256,9 +255,7 @@ export function TransactionsView({
       return true;
     });
   }, [filters, selectedAccount, visibleTransactions]);
-  const monthlySpend = filteredTransactions
-    .filter((tx) => isSpendTransaction(tx))
-    .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
+  const monthlySpend = currentMonthSnapshot?.monthlySpend || 0;
   const cashInflow = filteredTransactions
     .filter((tx) => tx.amount > 0)
     .reduce((sum, tx) => sum + tx.amount, 0);
@@ -269,13 +266,13 @@ export function TransactionsView({
     ? !accountSupportsTransactions(selectedAccountRecord)
     : false;
   const canAddManualTransaction =
-    !isSelectedNonTransactionalAccount &&
     manualForm.date &&
     manualForm.merchant.trim() &&
     manualAccountValue.trim() &&
     accountOptions.includes(manualAccountValue) &&
     Number.isFinite(parseManualAmount(manualForm.amount)) &&
     parseManualAmount(manualForm.amount) !== 0;
+  const canOpenManualEntry = accountOptions.length > 0;
 
   const updateManualForm = (field, value) => {
     setManualForm((current) => ({ ...current, [field]: value }));
@@ -316,6 +313,7 @@ export function TransactionsView({
       amount: "",
       category: current.category,
     }));
+    setShowManualEntry(false);
   };
 
   const exportFilteredTransactions = () => {
@@ -397,8 +395,8 @@ export function TransactionsView({
           style={{
             position: "relative",
             display: "grid",
-            gridTemplateColumns: "repeat(5,1fr)",
-            gap: 18,
+            gridTemplateColumns: "repeat(6,minmax(0,1fr))",
+            gap: 14,
           }}
         >
           {plaidIntegration?.error ? (
@@ -434,110 +432,193 @@ export function TransactionsView({
                 border: "1px solid rgba(0,136,255,.22)",
                 borderRadius: 14,
                 background: "rgba(3,17,32,.72)",
-                padding: 20,
+                padding: "16px 14px",
               }}
             >
               <div
                 style={{
                   color: "#8fb1d9",
-                  fontSize: 13,
+                  fontSize: 12,
                   textTransform: "uppercase",
-                  marginBottom: 12,
+                  marginBottom: 8,
+                  letterSpacing: 0.8,
                 }}
               >
                 {item[0]}
               </div>
-              <div style={{ color: "white", fontSize: 30, fontWeight: 800 }}>{item[1]}</div>
+              <div style={{ color: "white", fontSize: 23, fontWeight: 800, lineHeight: 1.15 }}>
+                {item[1]}
+              </div>
             </div>
           ))}
+          <button
+            type="button"
+            onClick={() => setShowManualEntry(true)}
+            disabled={!canOpenManualEntry}
+            style={{
+              border: "1px solid rgba(255,159,28,.32)",
+              borderRadius: 14,
+              background: canOpenManualEntry
+                ? "linear-gradient(180deg, rgba(255,159,28,.14), rgba(56,22,0,.22))"
+                : "rgba(48,55,68,.28)",
+              padding: "16px 14px",
+              textAlign: "left",
+              cursor: canOpenManualEntry ? "pointer" : "not-allowed",
+              boxShadow: canOpenManualEntry ? "0 0 24px rgba(255,159,28,.12)" : "none",
+              color: "white",
+              opacity: canOpenManualEntry ? 1 : 0.6,
+            }}
+          >
+            <div
+              style={{
+                color: "#ffd08a",
+                fontSize: 12,
+                textTransform: "uppercase",
+                marginBottom: 8,
+                letterSpacing: 0.8,
+                fontWeight: 900,
+              }}
+            >
+              Manual Entry
+            </div>
+            <div style={{ fontSize: 22, fontWeight: 900, lineHeight: 1.15 }}>
+              {canOpenManualEntry ? "Transaction" : "No Account"}
+            </div>
+          </button>
         </div>
       </div>
 
-      {isSelectedNonTransactionalAccount ? (
+      {showManualEntry ? (
         <div
           style={{
-            ...styles.panel,
-            padding: 22,
-            marginBottom: 18,
-            border: "1px solid rgba(0,216,255,.22)",
-            boxShadow: "inset 0 0 22px rgba(0,136,255,.06)",
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,5,14,.72)",
+            display: "flex",
+            alignItems: "flex-end",
+            justifyContent: "center",
+            zIndex: 9998,
+            padding: "24px 24px 18px",
           }}
         >
-          <div style={{ color: "white", fontSize: 20, fontWeight: 900 }}>Account Valuation</div>
-          <div style={{ color: "#8ea8ca", fontSize: 13, marginTop: 8, lineHeight: 1.6 }}>
-            {selectedAccountRecord?.type === "Crypto"
-              ? "Crypto accounts are quantity-based. Their balance comes from the stored holding quantity multiplied by the latest market price, so manual transaction entry is disabled to keep the account value in sync with the live quote."
-              : selectedAccountRecord?.type === "Precious Metals"
-                ? "Precious metals accounts are valuation-based. Their balance comes from quantity and manual spot pricing, so transaction entry is disabled to keep the holding value clean."
-                : selectedAccountRecord?.type === "Real Estate"
-                  ? "Real estate accounts track equity instead of cashflow, so transaction entry is disabled on the property valuation record."
-                  : "Mortgage and loan accounts track liabilities directly, so transaction entry is disabled on the balance record."}
-          </div>
-        </div>
-      ) : (
-        <form
-          onSubmit={submitManualTransaction}
-          style={{
-            ...styles.panel,
-            padding: 22,
-            marginBottom: 18,
-            border: "1px solid rgba(255,159,28,.22)",
-            boxShadow: "inset 0 0 22px rgba(255,159,28,.06)",
-          }}
-        >
-          <div
+          <form
+            onSubmit={submitManualTransaction}
             style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              gap: 18,
-              marginBottom: 18,
+              ...styles.panel,
+              width: "min(1180px, 100%)",
+              padding: 24,
+              border: "1px solid rgba(255,159,28,.26)",
+              boxShadow: "0 0 40px rgba(255,159,28,.12), inset 0 0 22px rgba(255,159,28,.06)",
+              borderRadius: 22,
             }}
           >
-            <div>
-              <div style={{ color: "white", fontSize: 20, fontWeight: 900 }}>
-                Manual Transaction Entry
-              </div>
-              <div style={{ color: "#8ea8ca", fontSize: 13, marginTop: 6 }}>
-                Add cash buys, offline credit cards, future payments, or backfilled transactions.
-              </div>
-            </div>
-            <button
-              type="submit"
-              disabled={!canAddManualTransaction}
+            <div
               style={{
-                background: canAddManualTransaction
-                  ? "linear-gradient(90deg,#ff9f1c,#ff6b1c)"
-                  : "rgba(120,130,150,.18)",
-                border: canAddManualTransaction
-                  ? "1px solid rgba(255,208,138,.55)"
-                  : "1px solid rgba(160,175,200,.16)",
-                borderRadius: 10,
-                color: canAddManualTransaction ? "white" : "#7f93ad",
-                padding: "12px 18px",
-                fontWeight: 900,
-                cursor: canAddManualTransaction ? "pointer" : "not-allowed",
-                boxShadow: canAddManualTransaction ? "0 0 24px rgba(255,159,28,.28)" : "none",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: 18,
+                marginBottom: 18,
               }}
             >
-              + Add Manual Transaction
-            </button>
-          </div>
+              <div>
+                <div style={{ color: "white", fontSize: 20, fontWeight: 900 }}>
+                  Manual Transaction Entry
+                </div>
+                <div style={{ color: "#8ea8ca", fontSize: 13, marginTop: 6 }}>
+                  Add cash buys, offline credit cards, future payments, or backfilled transactions.
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                <button
+                  type="button"
+                  onClick={() => setShowManualEntry(false)}
+                  style={{
+                    background: "rgba(0,136,255,.10)",
+                    border: "1px solid rgba(0,216,255,.24)",
+                    borderRadius: 10,
+                    color: "#d7ebff",
+                    padding: "12px 18px",
+                    fontWeight: 800,
+                    cursor: "pointer",
+                  }}
+                >
+                  Done
+                </button>
+                <button
+                  type="submit"
+                  disabled={!canAddManualTransaction}
+                  style={{
+                    background: canAddManualTransaction
+                      ? "linear-gradient(90deg,#ff9f1c,#ff6b1c)"
+                      : "rgba(120,130,150,.18)",
+                    border: canAddManualTransaction
+                      ? "1px solid rgba(255,208,138,.55)"
+                      : "1px solid rgba(160,175,200,.16)",
+                    borderRadius: 10,
+                    color: canAddManualTransaction ? "white" : "#7f93ad",
+                    padding: "12px 18px",
+                    fontWeight: 900,
+                    cursor: canAddManualTransaction ? "pointer" : "not-allowed",
+                    boxShadow: canAddManualTransaction ? "0 0 24px rgba(255,159,28,.28)" : "none",
+                  }}
+                >
+                  + Add Manual Transaction
+                </button>
+              </div>
+            </div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "140px minmax(105px,.7fr) minmax(115px,.7fr) 88px 118px",
+                gap: 10,
+                alignItems: "center",
+              }}
+            >
+              {[
+                ["date", "Date", "date"],
+                ["merchant", "Merchant", "text"],
+                ["amount", "Amount", "text"],
+              ].map(([field, label, type]) => (
+                <label key={field} style={{ display: "grid", gap: 7, minWidth: 0 }}>
+                  <span
+                    style={{
+                      color: "#8fb1d9",
+                      fontSize: 11,
+                      textTransform: "uppercase",
+                      letterSpacing: 0.8,
+                      fontWeight: 900,
+                    }}
+                  >
+                    {label}
+                  </span>
+                  <input
+                    type={type}
+                    value={manualForm[field]}
+                    placeholder={
+                      field === "amount"
+                        ? "-45.00"
+                        : field === "merchant"
+                          ? "Merchant name"
+                          : undefined
+                    }
+                    onChange={(event) => updateManualForm(field, event.target.value)}
+                    style={{
+                      color: "#eaf3ff",
+                      background: "rgba(0,136,255,.08)",
+                      border: "1px solid rgba(0,216,255,.18)",
+                      borderRadius: 8,
+                      padding: "10px 11px",
+                      outline: "none",
+                      fontWeight: 800,
+                      colorScheme: "dark",
+                      minWidth: 0,
+                    }}
+                  />
+                </label>
+              ))}
 
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "140px minmax(105px,.7fr) minmax(115px,.7fr) 88px 118px",
-              gap: 10,
-              alignItems: "center",
-            }}
-          >
-            {[
-              ["date", "Date", "date"],
-              ["merchant", "Merchant", "text"],
-              ["amount", "Amount", "text"],
-            ].map(([field, label, type]) => (
-              <label key={field} style={{ display: "grid", gap: 7, minWidth: 0 }}>
+              <label style={{ display: "grid", gap: 7, minWidth: 0 }}>
                 <span
                   style={{
                     color: "#8fb1d9",
@@ -547,19 +628,47 @@ export function TransactionsView({
                     fontWeight: 900,
                   }}
                 >
-                  {label}
+                  Account
                 </span>
-                <input
-                  type={type}
-                  value={manualForm[field]}
-                  placeholder={
-                    field === "amount"
-                      ? "-45.00"
-                      : field === "merchant"
-                        ? "Merchant name"
-                        : undefined
-                  }
-                  onChange={(event) => updateManualForm(field, event.target.value)}
+                <select
+                  value={manualAccountValue}
+                  onChange={(event) => updateManualForm("account", event.target.value)}
+                  disabled={Boolean(selectedAccount)}
+                  style={{
+                    color: "#eaf3ff",
+                    background: selectedAccount ? "rgba(0,136,255,.04)" : "rgba(0,136,255,.08)",
+                    border: "1px solid rgba(0,216,255,.18)",
+                    borderRadius: 8,
+                    padding: "10px 11px",
+                    outline: "none",
+                    fontWeight: 800,
+                    minWidth: 0,
+                    opacity: selectedAccount ? 0.88 : 1,
+                  }}
+                >
+                  {accountOptions.map((accountName) => (
+                    <option key={accountName} value={accountName} style={{ background: "#061224" }}>
+                      {accountName}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label style={{ display: "grid", gap: 7, minWidth: 0 }}>
+                <span
+                  style={{
+                    color: "#8fb1d9",
+                    fontSize: 11,
+                    textTransform: "uppercase",
+                    letterSpacing: 0.8,
+                    fontWeight: 900,
+                  }}
+                >
+                  Category
+                </span>
+                <select
+                  value={selectedCategory}
+                  onChange={(event) => updateManualForm("category", event.target.value)}
                   style={{
                     color: "#eaf3ff",
                     background: "rgba(0,136,255,.08)",
@@ -568,93 +677,28 @@ export function TransactionsView({
                     padding: "10px 11px",
                     outline: "none",
                     fontWeight: 800,
-                    colorScheme: "dark",
                     minWidth: 0,
                   }}
-                />
+                >
+                  <option value="" style={{ background: "#061224" }}>
+                    AI Best Guess
+                  </option>
+                  {categoryOptions.map((category) => (
+                    <option key={category} value={category} style={{ background: "#061224" }}>
+                      {category}
+                    </option>
+                  ))}
+                </select>
               </label>
-            ))}
-
-            <label style={{ display: "grid", gap: 7, minWidth: 0 }}>
-              <span
-                style={{
-                  color: "#8fb1d9",
-                  fontSize: 11,
-                  textTransform: "uppercase",
-                  letterSpacing: 0.8,
-                  fontWeight: 900,
-                }}
-              >
-                Account
-              </span>
-              <select
-                value={manualAccountValue}
-                onChange={(event) => updateManualForm("account", event.target.value)}
-                disabled={Boolean(selectedAccount)}
-                style={{
-                  color: "#eaf3ff",
-                  background: selectedAccount ? "rgba(0,136,255,.04)" : "rgba(0,136,255,.08)",
-                  border: "1px solid rgba(0,216,255,.18)",
-                  borderRadius: 8,
-                  padding: "10px 11px",
-                  outline: "none",
-                  fontWeight: 800,
-                  minWidth: 0,
-                  opacity: selectedAccount ? 0.88 : 1,
-                }}
-              >
-                {accountOptions.map((accountName) => (
-                  <option key={accountName} value={accountName} style={{ background: "#061224" }}>
-                    {accountName}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label style={{ display: "grid", gap: 7, minWidth: 0 }}>
-              <span
-                style={{
-                  color: "#8fb1d9",
-                  fontSize: 11,
-                  textTransform: "uppercase",
-                  letterSpacing: 0.8,
-                  fontWeight: 900,
-                }}
-              >
-                Category
-              </span>
-              <select
-                value={selectedCategory}
-                onChange={(event) => updateManualForm("category", event.target.value)}
-                style={{
-                  color: "#eaf3ff",
-                  background: "rgba(0,136,255,.08)",
-                  border: "1px solid rgba(0,216,255,.18)",
-                  borderRadius: 8,
-                  padding: "10px 11px",
-                  outline: "none",
-                  fontWeight: 800,
-                  minWidth: 0,
-                }}
-              >
-                <option value="" style={{ background: "#061224" }}>
-                  AI Best Guess
-                </option>
-                {categoryOptions.map((category) => (
-                  <option key={category} value={category} style={{ background: "#061224" }}>
-                    {category}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <div style={{ color: "#8ea8ca", fontSize: 12, marginTop: 12 }}>
-            Use negative amounts for purchases/outflows and positive amounts for deposits, credits,
-            or reimbursements. Leave category on AI Best Guess to let the app auto-categorize and
-            learn from later edits.
-          </div>
-        </form>
-      )}
+            </div>
+            <div style={{ color: "#8ea8ca", fontSize: 12, marginTop: 12 }}>
+              Use negative amounts for purchases/outflows and positive amounts for deposits, credits,
+              or reimbursements. Leave category on AI Best Guess to let the app auto-categorize and
+              learn from later edits.
+            </div>
+          </form>
+        </div>
+      ) : null}
 
       <div style={{ ...styles.panel, padding: 24 }}>
         {selectedAccount ? (
@@ -1072,8 +1116,8 @@ export function TransactionsView({
         >
           <div>Date</div>
           <div>Merchant</div>
-          <div>Category</div>
-          <div>Account</div>
+          <div style={{ paddingRight: 18 }}>Category</div>
+          <div style={{ marginLeft: -10 }}>Account</div>
           <div style={{ textAlign: "right" }}>Amount</div>
         </div>
 
@@ -1086,7 +1130,7 @@ export function TransactionsView({
                   display: "grid",
                   gridTemplateColumns: "140px 1.4fr 1fr 1fr 160px",
                   alignItems: "center",
-                  padding: "12px 16px",
+                  padding: "9px 16px",
                   borderBottom: "1px solid rgba(0,136,255,.08)",
                   background: tx.needsReview
                     ? "rgba(255,159,28,.06)"
@@ -1115,7 +1159,15 @@ export function TransactionsView({
                   {tx.date}
                 </div>
                 <div style={{ color: "white", fontWeight: 700 }}>{tx.merchant}</div>
-                <div style={{ display: "grid", gap: 6 }}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    minWidth: 0,
+                    paddingRight: 18,
+                  }}
+                >
                   <select
                     value={tx.category}
                     onChange={(event) => updateTransactionCategory(tx, event.target.value)}
@@ -1124,11 +1176,12 @@ export function TransactionsView({
                       background: "rgba(0,136,255,.08)",
                       border: "1px solid rgba(0,216,255,.18)",
                       borderRadius: 8,
-                      padding: "8px 10px",
+                      padding: "7px 10px",
                       outline: "none",
-                      width: "92%",
+                      width: "100%",
                       cursor: "pointer",
                       boxShadow: "inset 0 0 14px rgba(0,136,255,.08)",
+                      minWidth: 0,
                     }}
                   >
                     {categoryOptions.map((category) => (
@@ -1149,7 +1202,14 @@ export function TransactionsView({
                       </option>
                     ) : null}
                   </select>
-                  <div style={{ color: tx.needsReview ? "#ffb65d" : "#7294bb", fontSize: 11 }}>
+                  <div
+                    style={{
+                      color: tx.needsReview ? "#ffb65d" : "#7294bb",
+                      fontSize: 11,
+                      whiteSpace: "nowrap",
+                      flexShrink: 0,
+                    }}
+                  >
                     {formatCategorySourceLabel(tx)}
                     {tx.needsReview ? " • Needs review" : ""}
                   </div>
