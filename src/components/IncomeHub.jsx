@@ -169,17 +169,39 @@ export function IncomeHub({
           marginBottom: 38,
         }}
       >
-        <div style={{ textAlign: "center" }}>
+        <div style={{ textAlign: "center", display: "grid", justifyItems: "center" }}>
           <div style={{ color: "#e9f3ff", fontSize: 38, fontWeight: 800 }}>{money(monthIncomeTotal)}</div>
           <div style={{ color: "#668ab9", fontSize: 26, fontWeight: 700, marginTop: 16 }}>
             income in {activeIncomeLabel}
           </div>
+          <button
+            type="button"
+            onClick={() => shiftIncomeMonth(-1)}
+            aria-label="Go to previous month"
+            style={{
+              marginTop: 18,
+              height: 50,
+              minWidth: 126,
+              borderRadius: 999,
+              border: "1px solid rgba(0,216,255,.28)",
+              background: "linear-gradient(180deg, rgba(0,136,255,.18), rgba(0,43,87,.28))",
+              color: "#dff7ff",
+              cursor: "pointer",
+              fontSize: 20,
+              fontWeight: 900,
+              letterSpacing: 0.4,
+              boxShadow:
+                "0 0 18px rgba(0,136,255,.18), inset 0 0 16px rgba(143,234,255,.08)",
+            }}
+          >
+            ← Prev
+          </button>
         </div>
         <div style={{ display: "flex", justifyContent: "center" }}>
           <div
             style={{
               width: "100%",
-              maxWidth: 364,
+              maxWidth: 320,
               borderRadius: 24,
               padding: "18px 18px 18px",
               border: "1px solid rgba(0,216,255,.22)",
@@ -204,121 +226,79 @@ export function IncomeHub({
               style={{
                 position: "relative",
                 display: "grid",
-                gap: 16,
+                gap: 14,
               }}
             >
               <div
                 style={{
-                  display: "grid",
-                  gridTemplateColumns: "52px 1fr 52px",
-                  alignItems: "center",
-                  gap: 12,
+                  position: "relative",
+                  borderRadius: 18,
+                  border: "1px solid rgba(0,216,255,.18)",
+                  background:
+                    "linear-gradient(180deg, rgba(8,31,58,.95), rgba(3,18,36,.92))",
+                  boxShadow: "inset 0 0 18px rgba(0,216,255,.05)",
+                  padding: "16px 12px 14px",
+                  textAlign: "center",
                 }}
               >
-                <button
-                  type="button"
-                  onClick={() => shiftIncomeMonth(-1)}
-                  aria-label="Go to previous month"
-                  style={{
-                    height: 52,
-                    width: 52,
-                    borderRadius: 16,
-                    border: "1px solid rgba(0,216,255,.28)",
-                    background: "linear-gradient(180deg, rgba(0,136,255,.18), rgba(0,43,87,.28))",
-                    color: "#dff7ff",
-                    cursor: "pointer",
-                    fontSize: 22,
-                    fontWeight: 900,
-                    boxShadow:
-                      "0 0 18px rgba(0,136,255,.18), inset 0 0 16px rgba(143,234,255,.08)",
-                  }}
-                >
-                  ←
-                </button>
                 <div
                   style={{
-                    borderRadius: 18,
-                    border: "1px solid rgba(0,216,255,.18)",
-                    background:
-                      "linear-gradient(180deg, rgba(8,31,58,.95), rgba(3,18,36,.92))",
-                    boxShadow: "inset 0 0 18px rgba(0,216,255,.05)",
-                    padding: "12px 12px 14px",
-                    textAlign: "center",
+                    position: "absolute",
+                    top: 0,
+                    right: 0,
                   }}
                 >
-                  <div
+                  <select
+                    value={activeIncomeDate.year}
+                    onChange={(event) => updateIncomeDate("year", event.target.value)}
+                    aria-label="Select income planning year"
                     style={{
-                      color: "#8fb1d9",
-                      fontSize: 11,
+                      color: "#8feaff",
+                      background: "rgba(0,136,255,.12)",
+                      border: "1px solid rgba(0,216,255,.32)",
+                      borderRadius: "0 18px 0 18px",
+                      padding: "10px 14px 9px",
+                      cursor: "pointer",
                       fontWeight: 900,
-                      textTransform: "uppercase",
-                      letterSpacing: 1.2,
+                      boxShadow: "0 0 14px rgba(0,136,255,.14)",
+                      minWidth: 94,
+                      textAlign: "center",
                     }}
                   >
-                    Income Timeline
-                  </div>
-                  <div
-                    style={{
-                      marginTop: 8,
-                      color: "white",
-                      fontSize: 24,
-                      fontWeight: 900,
-                      letterSpacing: 0.4,
-                      textShadow: "0 0 18px rgba(0,216,255,.18)",
-                    }}
-                  >
-                    {budgetMonthNames[activeIncomeMonth]}
-                  </div>
-                  <div style={{ marginTop: 10, display: "flex", justifyContent: "center" }}>
-                    <select
-                      value={activeIncomeDate.year}
-                      onChange={(event) => updateIncomeDate("year", event.target.value)}
-                      aria-label="Select income planning year"
-                      style={{
-                        color: "#8feaff",
-                        background: "rgba(0,136,255,.10)",
-                        border: "1px solid rgba(0,216,255,.32)",
-                        borderRadius: 999,
-                        padding: "7px 14px",
-                        cursor: "pointer",
-                        fontWeight: 900,
-                        boxShadow: "0 0 14px rgba(0,136,255,.14)",
-                        minWidth: 96,
-                        textAlign: "center",
-                      }}
-                    >
-                      {availablePlanningYears.map((year) => (
-                        <option
-                          key={year}
-                          value={year}
-                          style={{ background: "#061224", color: "#eaf3ff" }}
-                        >
-                          {year}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                    {availablePlanningYears.map((year) => (
+                      <option
+                        key={year}
+                        value={year}
+                        style={{ background: "#061224", color: "#eaf3ff" }}
+                      >
+                        {year}
+                      </option>
+                    ))}
+                  </select>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => shiftIncomeMonth(1)}
-                  aria-label="Go to next month"
+                <div
                   style={{
-                    height: 52,
-                    width: 52,
-                    borderRadius: 16,
-                    border: "1px solid rgba(0,216,255,.28)",
-                    background: "linear-gradient(180deg, rgba(0,136,255,.18), rgba(0,43,87,.28))",
-                    color: "#dff7ff",
-                    cursor: "pointer",
-                    fontSize: 22,
+                    color: "#8fb1d9",
+                    fontSize: 11,
                     fontWeight: 900,
-                    boxShadow:
-                      "0 0 18px rgba(0,136,255,.18), inset 0 0 16px rgba(143,234,255,.08)",
+                    textTransform: "uppercase",
+                    letterSpacing: 1.2,
                   }}
                 >
-                  →
-                </button>
+                  Income Timeline
+                </div>
+                <div
+                  style={{
+                    marginTop: 10,
+                    color: "white",
+                    fontSize: 28,
+                    fontWeight: 900,
+                    letterSpacing: 0.4,
+                    textShadow: "0 0 18px rgba(0,216,255,.18)",
+                  }}
+                >
+                  {budgetMonthNames[activeIncomeMonth]}
+                </div>
               </div>
               <div style={{ position: "relative", display: "grid", gap: 14 }}>
               {heatBars.map((bar) => (
@@ -402,13 +382,35 @@ export function IncomeHub({
             </div>
           </div>
         </div>
-        <div style={{ textAlign: "center" }}>
+        <div style={{ textAlign: "center", display: "grid", justifyItems: "center" }}>
           <div style={{ color: "#e9f3ff", fontSize: 38, fontWeight: 800 }}>
             {money(monthBudgetTotal)}
           </div>
           <div style={{ color: "#668ab9", fontSize: 26, fontWeight: 700, marginTop: 16 }}>
             budget in {activeIncomeLabel}
           </div>
+          <button
+            type="button"
+            onClick={() => shiftIncomeMonth(1)}
+            aria-label="Go to next month"
+            style={{
+              marginTop: 18,
+              height: 50,
+              minWidth: 126,
+              borderRadius: 999,
+              border: "1px solid rgba(0,216,255,.28)",
+              background: "linear-gradient(180deg, rgba(0,136,255,.18), rgba(0,43,87,.28))",
+              color: "#dff7ff",
+              cursor: "pointer",
+              fontSize: 20,
+              fontWeight: 900,
+              letterSpacing: 0.4,
+              boxShadow:
+                "0 0 18px rgba(0,136,255,.18), inset 0 0 16px rgba(143,234,255,.08)",
+            }}
+          >
+            Next →
+          </button>
         </div>
       </section>
 
