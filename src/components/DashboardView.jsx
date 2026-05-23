@@ -3,7 +3,6 @@ import { APP_TABS, budgetMonthNames, budgetMonths, chartSets } from "../data/con
 import { buildMonthlyBudgetReview } from "../utils/budgetReview.js";
 import { styles } from "../styles.js";
 import { buildAreaPath, buildLinePath, money, parseMoney, wholeDollars } from "../utils/format.js";
-import { buildSubscriptionOverview } from "../utils/subscriptions.js";
 import { buildReconciledTrueCashSeries } from "../utils/planning.js";
 import {
   parseChartDate,
@@ -201,7 +200,6 @@ export function DashboardView({
   setActiveTab,
   trueCash,
   transactions,
-  subscriptions,
   incomeStreams,
   budgetRows,
   projectionAdjustments,
@@ -219,7 +217,6 @@ export function DashboardView({
     0
   );
   const monthlyBudgetReview = buildMonthlyBudgetReview(transactions, budgetRows);
-  const subscriptionOverview = buildSubscriptionOverview(subscriptions);
   const netWorthHistory = buildNetWorthHistory(metricSnapshots, netWorthHistoryRange);
   const projectionStartMonth = planningAnchor?.startingMonth || budgetMonths[0];
   const initialChartValues = buildSyncedTrueCashChart(chartSets[activeRange], trueCash);
@@ -848,34 +845,6 @@ export function DashboardView({
               <div style={{ color: "#8ea8ca", fontSize: 13, marginTop: 6 }}>
                 Budgeted plan vs actual spending across your highest-impact categories.
               </div>
-              {subscriptionOverview.activeCount > 0 ? (
-                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10 }}>
-                  <span
-                    style={{
-                      border: "1px solid rgba(0,216,255,.18)",
-                      borderRadius: 999,
-                      padding: "6px 10px",
-                      color: "#8feaff",
-                      fontSize: 12,
-                    }}
-                  >
-                    Auto-pay commitments {money(subscriptionOverview.activeMonthly)}/mo
-                  </span>
-                  {subscriptionOverview.topAccounts[0] ? (
-                    <span
-                      style={{
-                        border: "1px solid rgba(0,216,255,.18)",
-                        borderRadius: 999,
-                        padding: "6px 10px",
-                        color: "#b8d3f3",
-                        fontSize: 12,
-                      }}
-                    >
-                      Highest billed account: {subscriptionOverview.topAccounts[0].account}
-                    </span>
-                  ) : null}
-                </div>
-              ) : null}
             </div>
             <div style={{ display: "flex", gap: 10 }}>
               <button

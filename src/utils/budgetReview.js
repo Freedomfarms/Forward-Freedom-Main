@@ -1,5 +1,6 @@
 import { budgetMonthNames, budgetMonths } from "../data/constants.jsx";
 import { getCurrentBudgetPeriod } from "./date.js";
+import { isSpendTransaction } from "./transactions.js";
 
 const monthNameToBudgetMonth = Object.fromEntries(
   budgetMonths.map((month) => [budgetMonthNames[month], month])
@@ -35,7 +36,7 @@ export function buildBudgetRowsWithSpend(transactions, budgetRows, month, year) 
     .map((row) => {
       const spent = activeMonthTransactions
         .filter((tx) => {
-          if (tx.amount >= 0) return false;
+          if (!isSpendTransaction(tx)) return false;
           if (row.name === "Other") return !matchedBudgetCategories.includes(tx.category);
           return row.transactionCategories.includes(tx.category);
         })

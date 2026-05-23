@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { APP_TABS, transactionCategoryOptions } from "../data/constants.jsx";
 import { styles } from "../styles.js";
+import { isSpendTransaction } from "../utils/transactions.js";
 import { getIsoDateInputValue } from "../utils/date.js";
 import { money } from "../utils/format.js";
 import { accountSupportsTransactions } from "../utils/accounts.js";
@@ -256,7 +257,7 @@ export function TransactionsView({
     });
   }, [filters, selectedAccount, visibleTransactions]);
   const monthlySpend = filteredTransactions
-    .filter((tx) => tx.amount < 0)
+    .filter((tx) => isSpendTransaction(tx))
     .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
   const cashInflow = filteredTransactions
     .filter((tx) => tx.amount > 0)
