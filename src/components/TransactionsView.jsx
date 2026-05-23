@@ -1120,8 +1120,8 @@ export function TransactionsView({
         >
           <div>Date</div>
           <div>Merchant</div>
-          <div>Category</div>
-          <div>Account</div>
+          <div style={{ paddingRight: 18 }}>Category</div>
+          <div style={{ marginLeft: -10 }}>Account</div>
           <div style={{ textAlign: "right" }}>Amount</div>
         </div>
 
@@ -1163,7 +1163,15 @@ export function TransactionsView({
                   {tx.date}
                 </div>
                 <div style={{ color: "white", fontWeight: 700 }}>{tx.merchant}</div>
-                <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    minWidth: 0,
+                    paddingRight: 18,
+                  }}
+                >
                   <select
                     value={tx.category}
                     onChange={(event) => updateTransactionCategory(tx, event.target.value)}
