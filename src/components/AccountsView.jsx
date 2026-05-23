@@ -87,6 +87,39 @@ function formatEditableNumber(value) {
   return value === null || value === undefined || value === "" ? "" : String(value);
 }
 
+function institutionListLabel(account) {
+  if (account.type === "Crypto") return "Wallet / exchange";
+  if (account.type === "Real Estate") return "Property label";
+  if (account.type === "Mortgages / Loans") return "Lender";
+  return "Bank / institution";
+}
+
+function sourceBadgeStyle(isPlaid) {
+  return {
+    display: "inline-flex",
+    alignItems: "center",
+    fontSize: 9,
+    fontWeight: 700,
+    letterSpacing: 1.05,
+    textTransform: "uppercase",
+    padding: "3px 9px",
+    borderRadius: 999,
+    border: isPlaid ? "1px solid rgba(0,216,255,.4)" : "1px solid rgba(168,120,255,.42)",
+    background: isPlaid ? "rgba(0,216,255,.09)" : "rgba(120,72,200,.14)",
+    color: isPlaid ? "#8feaff" : "#dcc6ff",
+    flexShrink: 0,
+  };
+}
+
+const ACCOUNTS_MICRO_LABEL = {
+  color: "#5f7fa3",
+  fontSize: 9,
+  textTransform: "uppercase",
+  letterSpacing: 1.05,
+  fontWeight: 700,
+  marginBottom: 3,
+};
+
 function buildFormFromAccount(account) {
   return {
     ...EMPTY_FORM,
@@ -629,49 +662,58 @@ export function AccountsView({
     color: "#eaf3ff",
     background: "rgba(0,136,255,.09)",
     border: "1px solid rgba(0,216,255,.22)",
-    borderRadius: 9,
-    padding: "11px 13px",
+    borderRadius: 8,
+    padding: "9px 12px",
     outline: "none",
-    fontWeight: 800,
+    fontWeight: 600,
     colorScheme: "dark",
-    fontSize: 15,
+    fontSize: 14,
     width: "100%",
   };
 
-  const labelStyle = { display: "grid", gap: 8 };
+  const labelStyle = { display: "grid", gap: 6 };
   const labelCapStyle = {
     color: "#8fb1d9",
-    fontSize: 11,
+    fontSize: 10,
     textTransform: "uppercase",
-    letterSpacing: 0.9,
-    fontWeight: 900,
+    letterSpacing: 1,
+    fontWeight: 700,
   };
 
   return (
     <div>
       {/* Header */}
-      <header style={styles.pageHeader}>
+      <header style={{ ...styles.pageHeader, marginBottom: 16, gap: 14 }}>
         <div>
-          <h1 style={styles.pageTitle}>Accounts</h1>
-          <p style={styles.pageSubtitle}>
+          <h1
+            style={{
+              ...styles.pageTitle,
+              fontSize: 22,
+              fontWeight: 700,
+              letterSpacing: "-0.02em",
+            }}
+          >
+            Accounts
+          </h1>
+          <p style={{ ...styles.pageSubtitle, fontSize: 13, lineHeight: 1.45, marginTop: 4 }}>
             Connect bank accounts, credit cards, investments, crypto, metals, real estate, and
             loans.
           </p>
         </div>
-        <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           <HouseholdProfilesControl {...householdProfilesProps} />
           <button
             onClick={openModal}
             style={{
               background: "rgba(0,136,255,.12)",
               border: "1px solid rgba(0,216,255,.38)",
-              borderRadius: 10,
+              borderRadius: 8,
               color: "#eaf3ff",
-              padding: "14px 22px",
-              fontWeight: 800,
-              boxShadow: "0 0 20px rgba(0,136,255,.18)",
+              padding: "10px 16px",
+              fontWeight: 700,
+              boxShadow: "0 0 16px rgba(0,136,255,.14)",
               cursor: "pointer",
-              fontSize: 15,
+              fontSize: 13,
             }}
           >
             ✎ Add Manually
@@ -682,13 +724,13 @@ export function AccountsView({
             style={{
               background: "linear-gradient(90deg,#00aaff,#0077ff)",
               border: "1px solid rgba(120,220,255,.45)",
-              borderRadius: 10,
+              borderRadius: 8,
               color: "white",
-              padding: "14px 24px",
-              fontWeight: 800,
-              boxShadow: "0 0 28px rgba(0,136,255,.35)",
+              padding: "10px 18px",
+              fontWeight: 700,
+              boxShadow: "0 0 20px rgba(0,136,255,.28)",
               cursor: "pointer",
-              fontSize: 15,
+              fontSize: 13,
               opacity: plaidIntegration?.isSyncing ? 0.72 : 1,
             }}
           >
@@ -701,10 +743,12 @@ export function AccountsView({
       <section
         style={{
           ...styles.panel,
-          padding: 26,
-          marginBottom: 20,
+          padding: "18px 20px",
+          marginBottom: 16,
           position: "relative",
           overflow: "hidden",
+          borderRadius: 14,
+          backdropFilter: "blur(8px)",
         }}
       >
         <div
@@ -712,136 +756,139 @@ export function AccountsView({
             position: "absolute",
             inset: 0,
             background:
-              "radial-gradient(circle at top right, rgba(0,216,255,.16), transparent 36%)",
+              "radial-gradient(circle at top right, rgba(0,216,255,.12), transparent 40%)",
           }}
         />
         <div
           style={{
             position: "relative",
             display: "grid",
-            gridTemplateColumns: "1.1fr .9fr",
-            gap: 24,
+            gridTemplateColumns: "minmax(0,1.12fr) minmax(200px,0.88fr)",
+            gap: 18,
             alignItems: "center",
           }}
         >
           <div>
             <div
               style={{
-                color: "#8feaff",
+                color: "#6eb8d4",
                 textTransform: "uppercase",
-                letterSpacing: 1.6,
-                fontSize: 13,
-                marginBottom: 12,
+                letterSpacing: 1.25,
+                fontSize: 10,
+                marginBottom: 8,
+                fontWeight: 700,
               }}
             >
-              Account Connection Hub
+              Connection hub
             </div>
-            <div style={{ color: "white", fontSize: 34, fontWeight: 900, lineHeight: 1.1 }}>
-              Link with Plaid or add manually.
-              <br />
-              <span style={{ color: "#00aaff" }}>Every account in one place.</span>
+            <div style={{ color: "white", fontSize: 21, fontWeight: 700, lineHeight: 1.2 }}>
+              Link with Plaid or add manually.{" "}
+              <span style={{ color: "#00aaff" }}>One ledger for everything.</span>
             </div>
-            <p style={{ color: "#a8bfdc", fontSize: 16, lineHeight: 1.55, marginTop: 18 }}>
-              Plaid syncs account names, balances, transactions, and available loan or card payment
-              details. Forward Freedom does not request account or routing numbers. Manual accounts
-              are for cash, safes, private assets, or anything you want tracked without a bank sync.
+            <p style={{ color: "#8aa3bf", fontSize: 13, lineHeight: 1.5, marginTop: 12 }}>
+              Plaid syncs names, balances, transactions, and payment details—no routing or account
+              numbers. Manual entries cover cash, private assets, and anything off-sync.
             </p>
             <div
-              style={{ color: plaidIntegration?.configured ? "#8feaff" : "#ffb65d", marginTop: 10 }}
+              style={{
+                color: plaidIntegration?.configured ? "#7ec9e0" : "#e0a878",
+                marginTop: 8,
+                fontSize: 12,
+                fontWeight: 600,
+              }}
             >
               {plaidIntegration?.configured
-                ? `Live Plaid mode is enabled in ${plaidIntegration.environment}.`
-                : "Live Plaid mode is not configured yet. Add Plaid credentials to enable real institution linking."}
+                ? `Live Plaid · ${plaidIntegration.environment}`
+                : "Plaid not configured — add credentials to link real institutions."}
             </div>
             {plaidIntegration?.lastSyncAt ? (
-              <div style={{ color: "#7294bb", fontSize: 12, marginTop: 8 }}>
-                Last Plaid sync: {new Date(plaidIntegration.lastSyncAt).toLocaleString()}
+              <div style={{ color: "#5a7a9a", fontSize: 11, marginTop: 6 }}>
+                Last sync {new Date(plaidIntegration.lastSyncAt).toLocaleString()}
               </div>
             ) : null}
             {plaidIntegration?.error ? (
-              <div style={{ color: "#ff9a76", fontSize: 12, marginTop: 8 }}>
-                {plaidIntegration.error}
-              </div>
+              <div style={{ color: "#ff9a76", fontSize: 11, marginTop: 6 }}>{plaidIntegration.error}</div>
             ) : null}
           </div>
           <div
             style={{
-              border: "1px solid rgba(0,136,255,.25)",
-              borderRadius: 18,
-              background: "rgba(0,30,70,.26)",
-              padding: 22,
+              border: "1px solid rgba(0,136,255,.2)",
+              borderRadius: 12,
+              background: "rgba(0,24,52,.4)",
+              padding: "16px 18px",
             }}
           >
             <div
               style={{
-                color: "#8fb1d9",
-                fontSize: 13,
+                color: "#6b8aaf",
+                fontSize: 10,
                 textTransform: "uppercase",
-                marginBottom: 12,
+                letterSpacing: 1.1,
+                fontWeight: 700,
+                marginBottom: 8,
               }}
             >
-              Linked Balance
+              Combined balance
             </div>
-            <div style={{ color: "white", fontSize: 38, fontWeight: 900 }}>
+            <div style={{ color: "white", fontSize: 26, fontWeight: 700, letterSpacing: "-0.02em" }}>
               {money(linkedBalance)}
             </div>
-            <div style={{ color: "#00f59b", marginTop: 10, fontWeight: 800 }}>
-              {accounts.length} account{accounts.length !== 1 ? "s" : ""} synced
+            <div style={{ color: "#5ad4a8", marginTop: 8, fontWeight: 600, fontSize: 12 }}>
+              {accounts.length} account{accounts.length !== 1 ? "s" : ""} tracked
             </div>
           </div>
         </div>
       </section>
 
       {/* Account list */}
-      <section style={{ ...styles.panel, padding: 24 }}>
-        <div style={{ height: 4 }} />
+      <section style={{ ...styles.panel, padding: "16px 18px 18px", borderRadius: 14 }}>
         {accounts.length === 0 ? (
-          <div style={{ display: "grid", gap: 18 }}>
-            <div style={{ textAlign: "center", padding: "18px 10px 4px" }}>
-              <div style={{ color: "white", fontSize: 28, fontWeight: 900 }}>
+          <div style={{ display: "grid", gap: 14 }}>
+            <div style={{ textAlign: "center", padding: "12px 8px 2px" }}>
+              <div style={{ color: "white", fontSize: 19, fontWeight: 700 }}>
                 Start your financial system
               </div>
-              <div style={{ color: "#8ea8ca", marginTop: 10, fontSize: 15, lineHeight: 1.6 }}>
+              <div style={{ color: "#7a93b5", marginTop: 8, fontSize: 13, lineHeight: 1.55 }}>
                 Add your core accounts first so Command Center, Budget Strategy Lab, Forecast, and Transactions all
                 have a real source of truth to work from.
               </div>
             </div>
 
             <div
-              style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 16 }}
+              style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12 }}
             >
               {QUICK_START_TEMPLATES.map((template) => (
                 <button
                   key={template.title}
                   onClick={() => launchQuickStart(template.type)}
                   style={{
-                    border: "1px solid rgba(0,136,255,.22)",
-                    background: "rgba(3,17,32,.72)",
-                    borderRadius: 16,
-                    padding: 20,
+                    border: "1px solid rgba(0,136,255,.18)",
+                    background: "rgba(3,17,32,.55)",
+                    borderRadius: 12,
+                    padding: "14px 16px",
                     textAlign: "left",
                     cursor: "pointer",
-                    boxShadow: "inset 0 0 24px rgba(0,80,160,.08)",
+                    boxShadow: "inset 0 0 20px rgba(0,80,160,.06)",
                   }}
                 >
                   <div
                     style={{
                       color: template.accent,
-                      fontSize: 12,
+                      fontSize: 10,
                       textTransform: "uppercase",
-                      letterSpacing: 1,
-                      fontWeight: 900,
+                      letterSpacing: 0.9,
+                      fontWeight: 700,
                     }}
                   >
                     {template.type}
                   </div>
-                  <div style={{ color: "white", fontSize: 20, fontWeight: 800, marginTop: 10 }}>
+                  <div style={{ color: "white", fontSize: 16, fontWeight: 700, marginTop: 8 }}>
                     {template.title}
                   </div>
-                  <div style={{ color: "#8ea8ca", marginTop: 10, lineHeight: 1.55 }}>
+                  <div style={{ color: "#7a93b5", marginTop: 8, lineHeight: 1.5, fontSize: 12 }}>
                     {template.description}
                   </div>
-                  <div style={{ color: "#8feaff", marginTop: 16, fontWeight: 800 }}>
+                  <div style={{ color: "#7ec9e0", marginTop: 12, fontWeight: 700, fontSize: 12 }}>
                     Open setup →
                   </div>
                 </button>
@@ -853,23 +900,23 @@ export function AccountsView({
             const grouped = accounts.filter(group.filter);
             if (grouped.length === 0) return null;
             return (
-              <div key={group.title} style={{ marginBottom: 28 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+              <div key={group.title} style={{ marginBottom: 20 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
                   <div
                     style={{
-                      width: 10,
-                      height: 10,
+                      width: 6,
+                      height: 6,
                       borderRadius: 999,
-                      background: "#00d8ff",
-                      boxShadow: "0 0 12px rgba(0,216,255,.8)",
+                      background: "#00c8f0",
+                      boxShadow: "0 0 8px rgba(0,216,255,.55)",
                     }}
                   />
                   <div
                     style={{
-                      color: "#dcecff",
-                      fontSize: 18,
-                      fontWeight: 800,
-                      letterSpacing: 0.5,
+                      color: "#9eb5d4",
+                      fontSize: 11,
+                      fontWeight: 700,
+                      letterSpacing: 1.1,
                       textTransform: "uppercase",
                     }}
                   >
@@ -880,85 +927,63 @@ export function AccountsView({
                   style={{
                     display: "grid",
                     gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                    gap: 16,
+                    gap: 12,
                   }}
                 >
-                  {grouped.map((account) => (
-                    <div
-                      key={account.id}
-                      onClick={() => openAccountTransactions(account.name)}
-                      style={{
-                        border: "1px solid rgba(0,136,255,.22)",
-                        background: "rgba(3,17,32,.72)",
-                        borderRadius: 16,
-                        padding: 18,
-                        boxShadow: "inset 0 0 24px rgba(0,80,160,.08)",
-                        cursor: "pointer",
-                      }}
-                    >
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
-                        <div>
-                          <div style={{ color: "white", fontSize: 19, fontWeight: 800 }}>
-                            {account.name}
+                  {grouped.map((account) => {
+                    const isPlaid = Boolean(account.plaidItemId);
+                    return (
+                      <div
+                        key={account.id}
+                        onClick={() => openAccountTransactions(account.name)}
+                        style={{
+                          border: "1px solid rgba(0,136,255,.14)",
+                          borderLeft: `3px solid ${
+                            isPlaid ? "rgba(0,200,255,.72)" : "rgba(176,132,255,.82)"
+                          }`,
+                          background: isPlaid
+                            ? "linear-gradient(145deg, rgba(4,20,38,.88), rgba(6,16,32,.52))"
+                            : "linear-gradient(145deg, rgba(22,12,32,.42), rgba(6,16,32,.58))",
+                          borderRadius: 12,
+                          padding: "12px 14px 13px",
+                          boxShadow: "inset 0 0 18px rgba(0,60,120,.05)",
+                          cursor: "pointer",
+                          backdropFilter: "blur(6px)",
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "flex-start",
+                            gap: 10,
+                            marginBottom: 8,
+                          }}
+                        >
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                            <span style={sourceBadgeStyle(isPlaid)}>
+                              {isPlaid ? "Plaid-linked" : "Manual entry"}
+                            </span>
+                            <span
+                              style={{
+                                fontSize: 10,
+                                color: "#5a7394",
+                                fontWeight: 600,
+                                textTransform: "uppercase",
+                                letterSpacing: 0.75,
+                              }}
+                            >
+                              {account.status}
+                            </span>
                           </div>
-                          <div style={{ color: "#8fb1d9", marginTop: 6 }}>
-                            {account.institution} • {account.type}
-                          </div>
-                          {account.type === "Crypto" && account.cryptoSymbol ? (
-                            <div style={{ color: "#5fd6ff", marginTop: 6, fontSize: 13 }}>
-                              {formatCryptoQuantity(account.quantity)} {account.cryptoSymbol} @{" "}
-                              {formatCryptoPrice(account.lastPriceUsd || 0)} •{" "}
-                              {formatLastUpdated(account.lastPriceUpdatedAt)}
-                            </div>
-                          ) : null}
-                          {account.type === "Precious Metals" ? (
-                            <div style={{ color: "#f6d48d", marginTop: 6, fontSize: 13 }}>
-                              {formatCryptoQuantity(account.quantity)} {account.metalUnit}{" "}
-                              {account.metalType === "Custom" && account.metalCustomName
-                                ? account.metalCustomName
-                                : account.metalType}{" "}
-                              @ {money(account.pricePerUnit || 0)} / {account.metalUnit} •{" "}
-                              {account.valuationSource || "Manual"} •{" "}
-                              {formatLastUpdated(account.lastValuedAt)}
-                            </div>
-                          ) : null}
-                          {account.type === "Real Estate" && account.propertyAddress ? (
-                            <div style={{ color: "#8feaff", marginTop: 6, fontSize: 13 }}>
-                              {account.propertyType} • {account.propertyAddress}
-                            </div>
-                          ) : null}
-                          {account.type === "Real Estate" && account.propertyMarketValue ? (
-                            <div style={{ color: "#7bc7ff", marginTop: 4, fontSize: 12 }}>
-                              {account.equitySource === "Derived" ? "Derived" : "Manual"} equity •
-                              Market {money(account.propertyMarketValue)}
-                            </div>
-                          ) : null}
-                          {account.type === "Real Estate" && account.linkedLoanId ? (
-                            <div style={{ color: "#7bc7ff", marginTop: 4, fontSize: 12 }}>
-                              Linked loan:{" "}
-                              {loanAccounts.find(
-                                (loanAccount) => loanAccount.id === account.linkedLoanId
-                              )?.name || "Saved link"}
-                            </div>
-                          ) : null}
-                          {account.type === "Mortgages / Loans" ? (
-                            <div style={{ color: "#ffb6a0", marginTop: 6, fontSize: 13 }}>
-                              {account.loanCategory}
-                              {account.interestRate ? ` • ${account.interestRate}% APR` : ""}
-                              {account.monthlyPayment ? ` • ${account.monthlyPayment}/mo` : ""}
-                            </div>
-                          ) : null}
-                          {account.type === "Mortgages / Loans" && account.linkedPropertyId ? (
-                            <div style={{ color: "#ffc9bd", marginTop: 4, fontSize: 12 }}>
-                              Linked property:{" "}
-                              {realEstateAccounts.find(
-                                (propertyAccount) => propertyAccount.id === account.linkedPropertyId
-                              )?.name || "Saved link"}
-                            </div>
-                          ) : null}
-                        </div>
-                        <div style={{ display: "grid", justifyItems: "end", gap: 10 }}>
-                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "end" }}>
+                          <div
+                            style={{
+                              display: "flex",
+                              gap: 6,
+                              flexWrap: "wrap",
+                              justifyContent: "flex-end",
+                            }}
+                          >
                             {!account.plaidItemId && account.status === "Manual" ? (
                               <button
                                 type="button"
@@ -968,15 +993,15 @@ export function AccountsView({
                                 }}
                                 style={{
                                   borderRadius: 999,
-                                  border: "1px solid rgba(0,216,255,.28)",
-                                  background: "rgba(0,136,255,.10)",
+                                  border: "1px solid rgba(0,216,255,.26)",
+                                  background: "rgba(0,136,255,.1)",
                                   color: "#d7ebff",
-                                  padding: "7px 12px",
+                                  padding: "5px 10px",
                                   cursor: "pointer",
-                                  fontSize: 11,
-                                  fontWeight: 900,
+                                  fontSize: 10,
+                                  fontWeight: 700,
                                   textTransform: "uppercase",
-                                  letterSpacing: 0.7,
+                                  letterSpacing: 0.65,
                                 }}
                               >
                                 Edit
@@ -991,45 +1016,135 @@ export function AccountsView({
                               }}
                               style={{
                                 borderRadius: 999,
-                                border: "1px solid rgba(255,93,122,.32)",
-                                background: "rgba(255,36,77,.10)",
+                                border: "1px solid rgba(255,93,122,.3)",
+                                background: "rgba(255,36,77,.09)",
                                 color: "#ffd9df",
-                                padding: "7px 12px",
+                                padding: "5px 10px",
                                 cursor: "pointer",
-                                fontSize: 11,
-                                fontWeight: 900,
+                                fontSize: 10,
+                                fontWeight: 700,
                                 textTransform: "uppercase",
-                                letterSpacing: 0.7,
+                                letterSpacing: 0.65,
                               }}
                             >
                               {account.plaidItemId ? "Disconnect" : "Delete"}
                             </button>
                           </div>
-                          <div
-                            style={{
-                              color: "#00f59b",
-                              fontSize: 12,
-                              fontWeight: 900,
-                              textTransform: "uppercase",
-                            }}
-                          >
-                            {account.status}
+                        </div>
+
+                        <div style={ACCOUNTS_MICRO_LABEL}>Account</div>
+                        <div
+                          style={{
+                            color: "#f2f7ff",
+                            fontSize: 16,
+                            fontWeight: 700,
+                            lineHeight: 1.25,
+                            letterSpacing: "-0.015em",
+                          }}
+                        >
+                          {account.name}
+                        </div>
+
+                        <div
+                          style={{
+                            display: "flex",
+                            marginTop: 10,
+                            gap: 18,
+                            flexWrap: "wrap",
+                          }}
+                        >
+                          <div style={{ minWidth: 100 }}>
+                            <div style={ACCOUNTS_MICRO_LABEL}>{institutionListLabel(account)}</div>
+                            <div style={{ color: "#9fb4d4", fontSize: 12, fontWeight: 600 }}>
+                              {account.institution || "—"}
+                            </div>
+                          </div>
+                          <div style={{ minWidth: 90 }}>
+                            <div style={ACCOUNTS_MICRO_LABEL}>Product</div>
+                            <div style={{ color: "#9fb4d4", fontSize: 12, fontWeight: 600 }}>
+                              {account.type}
+                            </div>
                           </div>
                         </div>
+
+                        {account.type === "Crypto" && account.cryptoSymbol ? (
+                          <div style={{ color: "#5fd6ff", marginTop: 8, fontSize: 12, lineHeight: 1.45 }}>
+                            {formatCryptoQuantity(account.quantity)} {account.cryptoSymbol} @{" "}
+                            {formatCryptoPrice(account.lastPriceUsd || 0)} ·{" "}
+                            {formatLastUpdated(account.lastPriceUpdatedAt)}
+                          </div>
+                        ) : null}
+                        {account.type === "Precious Metals" ? (
+                          <div style={{ color: "#e8c97a", marginTop: 8, fontSize: 12, lineHeight: 1.45 }}>
+                            {formatCryptoQuantity(account.quantity)} {account.metalUnit}{" "}
+                            {account.metalType === "Custom" && account.metalCustomName
+                              ? account.metalCustomName
+                              : account.metalType}{" "}
+                            @ {money(account.pricePerUnit || 0)} / {account.metalUnit} ·{" "}
+                            {account.valuationSource || "Manual"} · {formatLastUpdated(account.lastValuedAt)}
+                          </div>
+                        ) : null}
+                        {account.type === "Real Estate" && account.propertyAddress ? (
+                          <div style={{ color: "#8fdcf5", marginTop: 8, fontSize: 12, lineHeight: 1.45 }}>
+                            {account.propertyType} · {account.propertyAddress}
+                          </div>
+                        ) : null}
+                        {account.type === "Real Estate" && account.propertyMarketValue ? (
+                          <div style={{ color: "#7bc7ff", marginTop: 4, fontSize: 11 }}>
+                            {account.equitySource === "Derived" ? "Derived" : "Manual"} equity · Market{" "}
+                            {money(account.propertyMarketValue)}
+                          </div>
+                        ) : null}
+                        {account.type === "Real Estate" && account.linkedLoanId ? (
+                          <div style={{ color: "#7bc7ff", marginTop: 4, fontSize: 11 }}>
+                            Linked loan:{" "}
+                            {loanAccounts.find((loanAccount) => loanAccount.id === account.linkedLoanId)?.name ||
+                              "Saved link"}
+                          </div>
+                        ) : null}
+                        {account.type === "Mortgages / Loans" ? (
+                          <div style={{ color: "#ffb6a0", marginTop: 8, fontSize: 12, lineHeight: 1.45 }}>
+                            {account.loanCategory}
+                            {account.interestRate ? ` · ${account.interestRate}% APR` : ""}
+                            {account.monthlyPayment ? ` · ${account.monthlyPayment}/mo` : ""}
+                          </div>
+                        ) : null}
+                        {account.type === "Mortgages / Loans" && account.linkedPropertyId ? (
+                          <div style={{ color: "#ffc9bd", marginTop: 4, fontSize: 11 }}>
+                            Linked property:{" "}
+                            {realEstateAccounts.find(
+                              (propertyAccount) => propertyAccount.id === account.linkedPropertyId
+                            )?.name || "Saved link"}
+                          </div>
+                        ) : null}
+
+                        <div
+                          style={{
+                            marginTop: 12,
+                            paddingTop: 11,
+                            borderTop: "1px solid rgba(0,136,255,.12)",
+                            display: "flex",
+                            alignItems: "baseline",
+                            justifyContent: "space-between",
+                            gap: 12,
+                          }}
+                        >
+                          <span style={{ ...ACCOUNTS_MICRO_LABEL, marginBottom: 0 }}>Balance</span>
+                          <span
+                            style={{
+                              color: account.balance < 0 ? "#ff6b8a" : "#f0f6ff",
+                              fontSize: 19,
+                              fontWeight: 700,
+                              letterSpacing: "-0.02em",
+                            }}
+                          >
+                            {account.balance < 0 ? "−" : ""}
+                            {money(Math.abs(account.balance))}
+                          </span>
+                        </div>
                       </div>
-                      <div
-                        style={{
-                          marginTop: 18,
-                          color: account.balance < 0 ? "#ff5d7a" : "#eaf3ff",
-                          fontSize: 28,
-                          fontWeight: 900,
-                        }}
-                      >
-                        {account.balance < 0 ? "-" : ""}
-                        {money(Math.abs(account.balance))}
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             );
@@ -1072,12 +1187,12 @@ export function AccountsView({
             >
               Confirm Remove
             </div>
-            <div style={{ color: "white", fontSize: 26, fontWeight: 900, lineHeight: 1.15 }}>
+            <div style={{ color: "white", fontSize: 20, fontWeight: 800, lineHeight: 1.15 }}>
               {deleteTarget.plaidItemId
                 ? `Disconnect ${deleteTargetPlaidItem?.institutionName || deleteTarget.institution}?`
                 : `Delete ${deleteTarget.name}?`}
             </div>
-            <p style={{ color: "#a8bfdc", lineHeight: 1.6, marginTop: 14, marginBottom: 0 }}>
+            <p style={{ color: "#8aa3bf", lineHeight: 1.55, marginTop: 12, marginBottom: 0, fontSize: 13 }}>
               {deleteTarget.plaidItemId
                 ? "Plaid-linked accounts are removed one institution at a time so they do not reappear on the next sync."
                 : "This permanently removes the manual account and clears any related local entries from this workspace."}
@@ -1108,7 +1223,7 @@ export function AccountsView({
                 >
                   Accounts Removed
                 </div>
-                <div style={{ color: "white", fontSize: 20, fontWeight: 800, marginTop: 6 }}>
+                <div style={{ color: "white", fontSize: 17, fontWeight: 700, marginTop: 5 }}>
                   {deleteTargetLinkedAccounts.length}
                 </div>
               </div>
@@ -1130,7 +1245,7 @@ export function AccountsView({
                 >
                   Transactions Removed
                 </div>
-                <div style={{ color: "white", fontSize: 20, fontWeight: 800, marginTop: 6 }}>
+                <div style={{ color: "white", fontSize: 17, fontWeight: 700, marginTop: 5 }}>
                   {deleteTargetTransactionCount}
                 </div>
               </div>
@@ -1152,7 +1267,7 @@ export function AccountsView({
                 >
                   Subscriptions Removed
                 </div>
-                <div style={{ color: "white", fontSize: 20, fontWeight: 800, marginTop: 6 }}>
+                <div style={{ color: "white", fontSize: 17, fontWeight: 700, marginTop: 5 }}>
                   {deleteTargetSubscriptionCount}
                 </div>
               </div>
@@ -1264,7 +1379,7 @@ export function AccountsView({
                 >
                   {editingAccount ? "Edit Manual Account" : "Manual Account"}
                 </div>
-                <div style={{ color: "white", fontSize: 26, fontWeight: 900 }}>
+                <div style={{ color: "white", fontSize: 18, fontWeight: 700 }}>
                   {editingAccount ? `Edit ${editingAccount.name}` : "Add a New Account"}
                 </div>
               </div>
