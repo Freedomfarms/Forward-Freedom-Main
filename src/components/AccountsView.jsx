@@ -722,40 +722,6 @@ export function AccountsView({
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           <HouseholdProfilesControl {...householdProfilesProps} />
-          <button
-            onClick={openModal}
-            style={{
-              background: "rgba(0,136,255,.12)",
-              border: "1px solid rgba(0,216,255,.38)",
-              borderRadius: 8,
-              color: "#eaf3ff",
-              padding: "10px 16px",
-              fontWeight: 700,
-              boxShadow: "0 0 16px rgba(0,136,255,.14)",
-              cursor: "pointer",
-              fontSize: 13,
-            }}
-          >
-            ✎ Add Manually
-          </button>
-          <button
-            onClick={connectMockPlaidAccount}
-            disabled={isSearchingCrypto || plaidIntegration?.isSyncing}
-            style={{
-              background: "linear-gradient(90deg,#00aaff,#0077ff)",
-              border: "1px solid rgba(120,220,255,.45)",
-              borderRadius: 8,
-              color: "white",
-              padding: "10px 18px",
-              fontWeight: 700,
-              boxShadow: "0 0 20px rgba(0,136,255,.28)",
-              cursor: "pointer",
-              fontSize: 13,
-              opacity: plaidIntegration?.isSyncing ? 0.72 : 1,
-            }}
-          >
-            {plaidIntegration?.isSyncing ? "Connecting Plaid..." : "⊕ Connect with Plaid"}
-          </button>
         </div>
       </header>
 
@@ -841,59 +807,125 @@ export function AccountsView({
                   <div style={{ color: "#ff9a76", fontSize: 11, marginTop: 4 }}>{plaidIntegration.error}</div>
                 ) : null}
               </div>
-              {accounts.length > 0 ? (
-                <div
+              <div
+                style={{
+                  flex: "1 1 200px",
+                  minWidth: 0,
+                  display: "flex",
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                  justifyContent: "flex-end",
+                  gap: 8,
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    openModal();
+                  }}
                   style={{
-                    flex: "1 1 200px",
-                    minWidth: 0,
-                    display: "flex",
-                    flexWrap: "wrap",
-                    alignItems: "center",
-                    justifyContent: "flex-end",
-                    gap: 8,
+                    background: "rgba(0,136,255,.12)",
+                    border: "1px solid rgba(0,216,255,.38)",
+                    borderRadius: 8,
+                    color: "#eaf3ff",
+                    padding: "8px 14px",
+                    fontWeight: 700,
+                    boxShadow: "0 0 14px rgba(0,136,255,.12)",
+                    cursor: "pointer",
+                    fontSize: 12,
+                    whiteSpace: "nowrap",
                   }}
                 >
-                  <select
-                    value={
-                      hubManageAccountId && accounts.some((a) => a.id === hubManageAccountId)
-                        ? hubManageAccountId
-                        : ""
-                    }
-                    onChange={(e) => setHubManageAccountId(e.target.value)}
-                    aria-label="Choose account to edit or remove"
-                    title="Edit or remove without using row buttons"
-                    style={{
-                      color: "#eaf3ff",
-                      background: "rgba(0,136,255,.09)",
-                      border: "1px solid rgba(0,216,255,.22)",
-                      borderRadius: 8,
-                      padding: "6px 10px",
-                      fontSize: 12,
-                      fontWeight: 600,
-                      maxWidth: "100%",
-                      minWidth: 0,
-                    }}
-                  >
-                    <option value="">Account…</option>
-                    {[...accounts]
-                      .sort((a, b) => String(a.name).localeCompare(String(b.name)))
-                      .map((a) => (
-                        <option key={a.id} value={a.id} style={{ background: "#061224" }}>
-                          {a.name} · {a.type}
-                        </option>
-                      ))}
-                  </select>
-                  {hubManageAccount ? (
-                    <>
-                      {!hubManageAccount.plaidItemId && hubManageAccount.status === "Manual" ? (
+                  ✎ Add Manually
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    connectMockPlaidAccount();
+                  }}
+                  disabled={isSearchingCrypto || plaidIntegration?.isSyncing}
+                  style={{
+                    background: "linear-gradient(90deg,#00aaff,#0077ff)",
+                    border: "1px solid rgba(120,220,255,.45)",
+                    borderRadius: 8,
+                    color: "white",
+                    padding: "8px 14px",
+                    fontWeight: 700,
+                    boxShadow: "0 0 18px rgba(0,136,255,.24)",
+                    cursor: "pointer",
+                    fontSize: 12,
+                    opacity: plaidIntegration?.isSyncing ? 0.72 : 1,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {plaidIntegration?.isSyncing ? "Connecting Plaid..." : "⊕ Connect with Plaid"}
+                </button>
+                {accounts.length > 0 ? (
+                  <>
+                    <select
+                      value={
+                        hubManageAccountId && accounts.some((a) => a.id === hubManageAccountId)
+                          ? hubManageAccountId
+                          : ""
+                      }
+                      onChange={(e) => setHubManageAccountId(e.target.value)}
+                      aria-label="Choose account to edit or remove"
+                      title="Edit or remove without using row buttons"
+                      style={{
+                        color: "#eaf3ff",
+                        background: "rgba(0,136,255,.09)",
+                        border: "1px solid rgba(0,216,255,.22)",
+                        borderRadius: 8,
+                        padding: "6px 10px",
+                        fontSize: 12,
+                        fontWeight: 600,
+                        maxWidth: "100%",
+                        minWidth: 0,
+                      }}
+                    >
+                      <option value="">Account…</option>
+                      {[...accounts]
+                        .sort((a, b) => String(a.name).localeCompare(String(b.name)))
+                        .map((a) => (
+                          <option key={a.id} value={a.id} style={{ background: "#061224" }}>
+                            {a.name} · {a.type}
+                          </option>
+                        ))}
+                    </select>
+                    {hubManageAccount ? (
+                      <>
+                        {!hubManageAccount.plaidItemId && hubManageAccount.status === "Manual" ? (
+                          <button
+                            type="button"
+                            onClick={() => openEditModal(hubManageAccount)}
+                            style={{
+                              background: "rgba(0,136,255,.12)",
+                              border: "1px solid rgba(0,216,255,.32)",
+                              borderRadius: 8,
+                              color: "#eaf3ff",
+                              padding: "6px 12px",
+                              fontWeight: 700,
+                              fontSize: 11,
+                              cursor: "pointer",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            Edit
+                          </button>
+                        ) : null}
                         <button
                           type="button"
-                          onClick={() => openEditModal(hubManageAccount)}
+                          onClick={() => {
+                            setDeleteError("");
+                            setDeleteTarget(hubManageAccount);
+                          }}
                           style={{
-                            background: "rgba(0,136,255,.12)",
-                            border: "1px solid rgba(0,216,255,.32)",
+                            background: "rgba(255,36,77,.1)",
+                            border: "1px solid rgba(255,93,122,.32)",
                             borderRadius: 8,
-                            color: "#eaf3ff",
+                            color: "#ffd9df",
                             padding: "6px 12px",
                             fontWeight: 700,
                             fontSize: 11,
@@ -901,33 +933,13 @@ export function AccountsView({
                             whiteSpace: "nowrap",
                           }}
                         >
-                          Edit
+                          {hubManageAccount.plaidItemId ? "Disconnect" : "Remove"}
                         </button>
-                      ) : null}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setDeleteError("");
-                          setDeleteTarget(hubManageAccount);
-                        }}
-                        style={{
-                          background: "rgba(255,36,77,.1)",
-                          border: "1px solid rgba(255,93,122,.32)",
-                          borderRadius: 8,
-                          color: "#ffd9df",
-                          padding: "6px 12px",
-                          fontWeight: 700,
-                          fontSize: 11,
-                          cursor: "pointer",
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {hubManageAccount.plaidItemId ? "Disconnect" : "Remove"}
-                      </button>
-                    </>
-                  ) : null}
-                </div>
-              ) : null}
+                      </>
+                    ) : null}
+                  </>
+                ) : null}
+              </div>
             </div>
           </div>
           <div
