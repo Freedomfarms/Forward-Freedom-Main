@@ -1334,6 +1334,7 @@ function ForwardFreedomDashboard({
               currentPlanYear={currentPlanYear}
               availablePlanningYears={availablePlanningYears}
               getBudgetRowsForYear={getBudgetRowsForYear}
+              getIncomeStreamsForYear={getIncomeStreamsForYear}
               setBudgetRowsForYear={setBudgetRowsForYear}
               ensurePlanningYear={ensurePlanningYear}
             />
