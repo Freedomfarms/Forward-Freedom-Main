@@ -336,24 +336,22 @@ export function OperationsBoard({
               <div
                 style={{
                   display: "flex",
-                  gap: 18,
-                  color: "#c5dff5",
-                  fontSize: 12,
-                  fontWeight: 700,
+                  gap: 20,
+                  color: "#94a3b8",
+                  fontSize: 13,
+                  fontWeight: 600,
                   flexWrap: "wrap",
                   justifyContent: "flex-end",
-                  letterSpacing: 0.6,
-                  textTransform: "uppercase",
+                  letterSpacing: 0.02,
                 }}
               >
                 <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <span
                     style={{
-                      width: 8,
-                      height: 8,
-                      borderRadius: 99,
-                      background: "linear-gradient(135deg,#7fffd4,#2dd4bf)",
-                      boxShadow: "0 0 10px rgba(94,255,225,.65)",
+                      width: 10,
+                      height: 10,
+                      borderRadius: 2,
+                      background: "#2dd4bf",
                     }}
                   />
                   Planned income
@@ -361,11 +359,10 @@ export function OperationsBoard({
                 <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <span
                     style={{
-                      width: 8,
-                      height: 8,
-                      borderRadius: 99,
-                      background: "linear-gradient(135deg,#7ecbff,#3b82f6)",
-                      boxShadow: "0 0 10px rgba(100,180,255,.55)",
+                      width: 10,
+                      height: 10,
+                      borderRadius: 2,
+                      background: "#38bdf8",
                     }}
                   />
                   Budget
@@ -373,11 +370,10 @@ export function OperationsBoard({
                 <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <span
                     style={{
-                      width: 8,
-                      height: 8,
-                      borderRadius: 99,
-                      background: "linear-gradient(135deg,#ffb38a,#f97316)",
-                      boxShadow: "0 0 10px rgba(255,150,100,.5)",
+                      width: 10,
+                      height: 10,
+                      borderRadius: 2,
+                      background: "#fb923c",
                     }}
                   />
                   Spent
@@ -385,11 +381,10 @@ export function OperationsBoard({
                 <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <span
                     style={{
-                      width: 8,
-                      height: 8,
-                      borderRadius: 99,
-                      background: "linear-gradient(135deg,#f5ff9a,#c8e620)",
-                      boxShadow: "0 0 10px rgba(220,240,90,.55)",
+                      width: 10,
+                      height: 10,
+                      borderRadius: 2,
+                      background: "#a3e635",
                     }}
                   />
                   Actual income
@@ -402,17 +397,13 @@ export function OperationsBoard({
               style={{
                 position: "relative",
                 height: 348,
-                borderRadius: 22,
-                border: "1px solid rgba(0,210,255,.22)",
-                background:
-                  "linear-gradient(165deg, rgba(10,40,72,.28) 0%, rgba(4,18,36,.9) 45%, rgba(2,8,18,.97) 100%)",
-                boxShadow:
-                  "inset 0 1px 0 rgba(255,255,255,.07), inset 0 -1px 0 rgba(0,60,120,.2), 0 18px 50px rgba(0,0,0,.45)",
-                padding: "22px 10px 4px",
-                backdropFilter: "blur(10px)",
+                borderRadius: 12,
+                border: "1px solid rgba(148,163,184,0.22)",
+                background: "rgba(15,23,42,0.55)",
+                padding: "20px 12px 6px",
                 display: "grid",
                 gridTemplateColumns: "repeat(12, 1fr)",
-                gap: 5,
+                gap: 6,
                 alignItems: "end",
                 overflow: "hidden",
               }}
@@ -421,11 +412,11 @@ export function OperationsBoard({
                 aria-hidden
                 style={{
                   position: "absolute",
-                  left: 10,
-                  right: 10,
-                  bottom: 36,
+                  left: 12,
+                  right: 12,
+                  bottom: 34,
                   height: 1,
-                  background: "linear-gradient(90deg, transparent, rgba(0,200,255,.18), transparent)",
+                  background: "rgba(148,163,184,0.18)",
                   pointerEvents: "none",
                 }}
               />
@@ -433,30 +424,30 @@ export function OperationsBoard({
                 <div
                   style={{
                     position: "absolute",
-                    top: 16,
+                    top: 14,
                     left: `${Math.min(
                       88,
                       Math.max(12, ((hoveredCommandMonth.index + 0.5) / 12) * 100)
                     )}%`,
                     transform: "translateX(-50%)",
                     zIndex: 5,
-                    minWidth: 200,
-                    border: "1px solid rgba(120,230,255,.45)",
-                    borderRadius: 14,
-                    background: "linear-gradient(180deg, rgba(8,28,52,.97), rgba(2,10,22,.98))",
-                    boxShadow: "0 8px 32px rgba(0,40,90,.5), inset 0 0 0 1px rgba(255,255,255,.04)",
-                    padding: "14px 16px",
+                    minWidth: 210,
+                    border: "1px solid rgba(148,163,184,0.28)",
+                    borderRadius: 8,
+                    background: "rgba(15,23,42,0.97)",
+                    boxShadow: "0 12px 28px rgba(0,0,0,0.35)",
+                    padding: "12px 14px",
                     pointerEvents: "none",
                   }}
                 >
                   <div
                     style={{
-                      color: "#9fe8ff",
-                      fontSize: 11,
-                      textTransform: "uppercase",
-                      letterSpacing: 1.2,
+                      color: "#e2e8f0",
+                      fontSize: 13,
                       marginBottom: 10,
-                      fontWeight: 800,
+                      fontWeight: 700,
+                      borderBottom: "1px solid rgba(148,163,184,0.2)",
+                      paddingBottom: 8,
                     }}
                   >
                     {hoveredCommandMonth.data.month}
@@ -465,12 +456,12 @@ export function OperationsBoard({
                     [
                       "Planned income",
                       hoveredCommandMonth.data.plannedIncome ?? hoveredCommandMonth.data.income,
-                      "#7fffd4",
+                      "#2dd4bf",
                     ],
-                    ["Budget", hoveredCommandMonth.data.budget, "#7ecbff"],
-                    ["Spent", hoveredCommandMonth.data.spent, "#ffb38a"],
-                    ["Actual income", hoveredCommandMonth.data.actualIncome, "#e8f57a"],
-                    ["True Cash", trueCashValues[hoveredCommandMonth.index], "#8feaff"],
+                    ["Budget", hoveredCommandMonth.data.budget, "#38bdf8"],
+                    ["Spent", hoveredCommandMonth.data.spent, "#fb923c"],
+                    ["Actual income", hoveredCommandMonth.data.actualIncome, "#a3e635"],
+                    ["True Cash", trueCashValues[hoveredCommandMonth.index], "#94a3b8"],
                     [
                       "Profit",
                       (hoveredCommandMonth.data.plannedIncome ?? hoveredCommandMonth.data.income) -
@@ -478,18 +469,18 @@ export function OperationsBoard({
                       (hoveredCommandMonth.data.plannedIncome ?? hoveredCommandMonth.data.income) -
                         hoveredCommandMonth.data.budget >=
                       0
-                        ? "#00f59b"
-                        : "#ff5d7a",
+                        ? "#4ade80"
+                        : "#f87171",
                     ],
                     [
                       "Adjustments",
                       adjustmentValues[hoveredCommandMonth.index],
-                      adjustmentValues[hoveredCommandMonth.index] >= 0 ? "#ffb347" : "#ff7a45",
+                      adjustmentValues[hoveredCommandMonth.index] >= 0 ? "#fbbf24" : "#f97316",
                     ],
                     [
                       "Projected Cash",
                       projectedTrueCashValues[hoveredCommandMonth.index],
-                      "#ff9f1c",
+                      "#fbbf24",
                     ],
                   ].map(([label, value, color]) => (
                     <div
@@ -498,13 +489,13 @@ export function OperationsBoard({
                         display: "flex",
                         justifyContent: "space-between",
                         gap: 18,
-                        color: "#d7ecff",
+                        color: "#cbd5e1",
                         fontSize: 13,
-                        fontWeight: 800,
-                        marginTop: 5,
+                        fontWeight: 600,
+                        marginTop: 6,
                       }}
                     >
-                      <span style={{ color: "#8fb1d9" }}>{label}</span>
+                      <span style={{ color: "#94a3b8" }}>{label}</span>
                       <span style={{ color }}>
                         {(label === "Profit" || label === "Adjustments") && value >= 0 ? "+" : ""}
                         {(label === "Projected Cash" || label === "True Cash") && value === null
@@ -531,7 +522,7 @@ export function OperationsBoard({
                     justifyContent: "flex-end",
                     alignItems: "center",
                     gap: 8,
-                    cursor: "crosshair",
+                    cursor: "pointer",
                   }}
                 >
                   <div
@@ -541,62 +532,52 @@ export function OperationsBoard({
                       display: "flex",
                       alignItems: "end",
                       justifyContent: "center",
-                      gap: 4,
+                      gap: 5,
                     }}
                   >
                     <div
                       title={`Planned income ${money(month.plannedIncome ?? month.income)}`}
                       style={{
-                        width: 8,
+                        width: 9,
                         height: scorecardBarHeightPercent(month.plannedIncome ?? month.income, maxValue),
-                        borderRadius: "6px 6px 2px 2px",
-                        background: "linear-gradient(180deg,rgba(127,255,212,.95),rgba(0,140,120,.25))",
-                        border: "1px solid rgba(200,255,245,.25)",
-                        boxShadow: "0 -2px 14px rgba(64,220,200,.4)",
+                        borderRadius: "3px 3px 1px 1px",
+                        background: "#2dd4bf",
                       }}
                     />
                     <div
                       title={`Budget ${money(month.budget)}`}
                       style={{
-                        width: 8,
+                        width: 9,
                         height: scorecardBarHeightPercent(month.budget, maxValue),
-                        borderRadius: "6px 6px 2px 2px",
-                        background: "linear-gradient(180deg,rgba(126,203,255,.95),rgba(30,100,200,.28))",
-                        border: "1px solid rgba(180,220,255,.22)",
-                        boxShadow: "0 -2px 14px rgba(80,160,255,.38)",
+                        borderRadius: "3px 3px 1px 1px",
+                        background: "#38bdf8",
                       }}
                     />
                     <div
                       title={`Spent ${money(month.spent)}`}
                       style={{
-                        width: 8,
+                        width: 9,
                         height: scorecardBarHeightPercent(month.spent, maxValue),
-                        borderRadius: "6px 6px 2px 2px",
-                        background: "linear-gradient(180deg,rgba(255,179,138,.95),rgba(220,90,40,.3))",
-                        border: "1px solid rgba(255,210,190,.2)",
-                        boxShadow: "0 -2px 14px rgba(255,140,80,.35)",
+                        borderRadius: "3px 3px 1px 1px",
+                        background: "#fb923c",
                       }}
                     />
                     <div
                       title={`Actual income ${money(month.actualIncome)}`}
                       style={{
-                        width: 8,
+                        width: 9,
                         height: scorecardBarHeightPercent(month.actualIncome, maxValue),
-                        borderRadius: "6px 6px 2px 2px",
-                        background: "linear-gradient(180deg,rgba(245,255,154,.95),rgba(160,200,40,.28))",
-                        border: "1px solid rgba(240,255,200,.22)",
-                        boxShadow: "0 -2px 14px rgba(210,230,100,.4)",
+                        borderRadius: "3px 3px 1px 1px",
+                        background: "#a3e635",
                       }}
                     />
                   </div>
                   <div
                     style={{
-                      color: "#7a9bc4",
-                      fontSize: 11,
-                      fontWeight: 800,
-                      letterSpacing: 1.4,
-                      textTransform: "uppercase",
-                      marginTop: 2,
+                      color: "#64748b",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      marginTop: 4,
                     }}
                   >
                     {month.month}
