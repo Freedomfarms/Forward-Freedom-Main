@@ -1,10 +1,17 @@
 import { useState } from "react";
 import { styles } from "../styles.js";
-import { money, cleanMoneyInput } from "../utils/format.js";
+import { money, cleanMoneyInput, parseMoney } from "../utils/format.js";
 import { buildMonthlySpendSnapshot } from "../utils/budgetReview.js";
 import { getCurrentBudgetPeriod } from "../utils/date.js";
 import { budgetMonths, budgetMonthNames } from "../data/constants.jsx";
 import { HouseholdProfilesControl, MonthCoverageEditor } from "./Common.jsx";
+
+function buildHeatBarWidth(value, maxValue) {
+  const safeValue = Math.abs(Number(value) || 0);
+  const safeMax = Math.max(Number(maxValue) || 1, 1);
+  if (safeValue === 0) return "0%";
+  return `${Math.max(12, (safeValue / safeMax) * 100)}%`;
+}
 
 export function BudgetCommandCenter({
   transactions,
@@ -12,6 +19,7 @@ export function BudgetCommandCenter({
   currentPlanYear,
   availablePlanningYears,
   getBudgetRowsForYear,
+  getIncomeStreamsForYear,
   setBudgetRowsForYear,
   ensurePlanningYear,
 }) {
@@ -36,6 +44,20 @@ export function BudgetCommandCenter({
     }));
   };
 
+  const shiftBudgetMonth = (delta) => {
+    const nextDate = new Date(
+      activeBudgetDate.year,
+      activeBudgetDate.monthIndex + Number(delta || 0),
+      1
+    );
+    const nextYear = nextDate.getFullYear();
+    ensurePlanningYear(nextYear);
+    setActiveBudgetDate({
+      monthIndex: nextDate.getMonth(),
+      year: nextYear,
+    });
+  };
+
   const activeBudgetSnapshot = buildMonthlySpendSnapshot(
     transactions,
     planningBudgetRows,
@@ -45,8 +67,45 @@ export function BudgetCommandCenter({
     }
   );
   const budgetRowsWithSpend = activeBudgetSnapshot.rows;
-  const spentTotal = activeBudgetSnapshot.monthlySpend;
   const budgetTotal = activeBudgetSnapshot.monthlyBudget;
+  const planningIncomeStreams = getIncomeStreamsForYear(activeBudgetDate.year);
+  const monthIncomeTotal = planningIncomeStreams
+    .filter((stream) => (stream.months || budgetMonths).includes(activeBudgetMonth))
+    .reduce((sum, stream) => sum + parseMoney(stream.amount), 0);
+  const monthCashFlow = monthIncomeTotal - budgetTotal;
+  const scorecardBarMax = Math.max(
+    Math.abs(monthIncomeTotal),
+    Math.abs(budgetTotal),
+    Math.abs(monthCashFlow),
+    1
+  );
+  const heatBars = [
+    {
+      label: "Income",
+      value: monthIncomeTotal,
+      accent: "#20c8ff",
+      glow: "rgba(32,200,255,.55)",
+      gradient: "linear-gradient(90deg,#14b8ff 0%, #00d8ff 52%, #7ef4ff 100%)",
+    },
+    {
+      label: "Budget",
+      value: budgetTotal,
+      accent: "#4aa5ff",
+      glow: "rgba(74,165,255,.48)",
+      gradient: "linear-gradient(90deg,#1e87ff 0%, #3cbcff 50%, #9ceaff 100%)",
+    },
+    {
+      label: "Cash Flow",
+      value: monthCashFlow,
+      accent: monthCashFlow >= 0 ? "#00f59b" : "#ff5d7a",
+      glow: monthCashFlow >= 0 ? "rgba(0,245,155,.52)" : "rgba(255,93,122,.48)",
+      gradient:
+        monthCashFlow >= 0
+          ? "linear-gradient(90deg,#00c96f 0%, #00f59b 48%, #86ffd2 100%)"
+          : "linear-gradient(90deg,#ff3d67 0%, #ff5d7a 50%, #ffb3c1 100%)",
+    },
+  ];
+
   const updateBudgetRow = (id, field, value) => {
     setBudgetRowsForYear(activeBudgetDate.year, (rows) =>
       rows.map((row) => {
@@ -117,42 +176,45 @@ export function BudgetCommandCenter({
             Mission-control view of monthly spending, budget pressure, and category risk.
           </p>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          <HouseholdProfilesControl {...householdProfilesProps} />
-          <select
-            value={activeBudgetDate.monthIndex}
-            onChange={(event) => updateBudgetDate("monthIndex", event.target.value)}
-            style={{
-              color: "#c9d8ee",
-              background: "rgba(1,10,24,.55)",
-              border: "1px solid rgba(54,126,220,.28)",
-              borderRadius: 7,
-              padding: "10px 12px",
-              cursor: "pointer",
-              fontWeight: 900,
-              boxShadow: "0 0 14px rgba(0,136,255,.12)",
-              minWidth: 124,
-            }}
-          >
-            {budgetMonths.map((month, index) => (
-              <option key={month} value={index} style={{ background: "#061224" }}>
-                {budgetMonthNames[month]}
-              </option>
-            ))}
-          </select>
+        <HouseholdProfilesControl {...householdProfilesProps} />
+      </header>
+
+      <section
+        style={{
+          ...styles.panel,
+          minHeight: 165,
+          padding: "26px 40px",
+          borderRadius: 32,
+          display: "grid",
+          gridTemplateColumns: "1fr minmax(280px, 340px) 1fr",
+          alignItems: "center",
+          marginBottom: 38,
+          position: "relative",
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            top: 18,
+            right: 24,
+            zIndex: 1,
+          }}
+        >
           <select
             value={activeBudgetDate.year}
             onChange={(event) => updateBudgetDate("year", event.target.value)}
+            aria-label="Select budget planning year"
             style={{
-              color: "#00d8ff",
-              background: "rgba(0,104,255,.18)",
-              border: "1px solid rgba(0,216,255,.55)",
-              borderRadius: 7,
-              padding: "10px 12px",
+              color: "#8feaff",
+              background: "rgba(0,136,255,.12)",
+              border: "1px solid rgba(0,216,255,.32)",
+              borderRadius: 999,
+              padding: "10px 16px",
               cursor: "pointer",
               fontWeight: 900,
-              boxShadow: "0 0 18px rgba(0,136,255,.22)",
+              boxShadow: "0 0 14px rgba(0,136,255,.14)",
               minWidth: 96,
+              textAlign: "center",
             }}
           >
             {availablePlanningYears.map((year) => (
@@ -162,56 +224,201 @@ export function BudgetCommandCenter({
             ))}
           </select>
         </div>
-      </header>
-
-      <section
-        style={{
-          ...styles.panel,
-          minHeight: 190,
-          padding: "32px 46px",
-          borderRadius: 32,
-          display: "grid",
-          gridTemplateColumns: "1fr 190px 1fr",
-          alignItems: "center",
-          marginBottom: 38,
-        }}
-      >
-        <div style={{ textAlign: "center" }}>
-          <div style={{ color: "#e9f3ff", fontSize: 38, fontWeight: 800 }}>{money(spentTotal)}</div>
+        <div style={{ textAlign: "center", display: "grid", justifyItems: "center" }}>
+          <div style={{ color: "#e9f3ff", fontSize: 38, fontWeight: 800 }}>{money(monthIncomeTotal)}</div>
           <div style={{ color: "#668ab9", fontSize: 26, fontWeight: 700, marginTop: 16 }}>
-            spent in {activeBudgetLabel}
+            income in {activeBudgetLabel}
           </div>
+          <button
+            type="button"
+            onClick={() => shiftBudgetMonth(-1)}
+            aria-label="Go to previous month"
+            style={{
+              marginTop: 18,
+              height: 50,
+              minWidth: 126,
+              borderRadius: 999,
+              border: "1px solid rgba(0,216,255,.28)",
+              background: "linear-gradient(180deg, rgba(0,136,255,.18), rgba(0,43,87,.28))",
+              color: "#dff7ff",
+              cursor: "pointer",
+              fontSize: 20,
+              fontWeight: 900,
+              letterSpacing: 0.4,
+              boxShadow:
+                "0 0 18px rgba(0,136,255,.18), inset 0 0 16px rgba(143,234,255,.08)",
+            }}
+          >
+            ← Prev
+          </button>
         </div>
         <div style={{ display: "flex", justifyContent: "center" }}>
           <div
             style={{
-              width: 150,
-              height: 150,
-              borderRadius: 999,
-              padding: 18,
+              width: "100%",
+              maxWidth: 320,
+              borderRadius: 24,
+              padding: "14px 14px 14px",
+              border: "1px solid rgba(0,216,255,.22)",
               background:
-                "conic-gradient(#ef6b3b 0 70%, #f0559a 70% 82%, #e650df 82% 90%, #20bfc7 90% 95%, #4aa5ff 95% 100%)",
-              boxShadow: "0 0 38px rgba(0,136,255,.26)",
+                "linear-gradient(180deg, rgba(4,22,43,.96), rgba(2,11,24,.94))",
+              boxShadow:
+                "0 0 28px rgba(0,136,255,.18), inset 0 0 22px rgba(0,216,255,.05)",
+              position: "relative",
+              overflow: "hidden",
             }}
           >
             <div
               style={{
-                width: "100%",
-                height: "100%",
-                borderRadius: 999,
-                background: "#031120",
-                boxShadow: "inset 0 0 28px rgba(0,0,0,.65)",
+                position: "absolute",
+                inset: 0,
+                background:
+                  "radial-gradient(circle at top center, rgba(0,216,255,.12), transparent 42%)",
+                pointerEvents: "none",
               }}
             />
+            <div
+              style={{
+                position: "relative",
+                display: "grid",
+                gap: 10,
+              }}
+            >
+              <div
+                style={{
+                  position: "relative",
+                  borderRadius: 18,
+                  border: "1px solid rgba(0,216,255,.18)",
+                  background:
+                    "linear-gradient(180deg, rgba(8,31,58,.95), rgba(3,18,36,.92))",
+                  boxShadow: "inset 0 0 18px rgba(0,216,255,.05)",
+                  padding: "12px 12px 10px",
+                  textAlign: "center",
+                }}
+              >
+                <div
+                  style={{
+                    color: "white",
+                    fontSize: 28,
+                    fontWeight: 900,
+                    letterSpacing: 0.4,
+                    textShadow: "0 0 18px rgba(0,216,255,.18)",
+                  }}
+                >
+                  {budgetMonthNames[activeBudgetMonth]}
+                </div>
+              </div>
+              <div style={{ position: "relative", display: "grid", gap: 14 }}>
+                {heatBars.map((bar) => (
+                  <div key={bar.label} style={{ display: "grid", gap: 6 }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        gap: 12,
+                      }}
+                    >
+                      <span
+                        style={{
+                          color: bar.accent,
+                          fontSize: 11,
+                          fontWeight: 900,
+                          textTransform: "uppercase",
+                          letterSpacing: 0.8,
+                        }}
+                      >
+                        {bar.label}
+                      </span>
+                      <span
+                        style={{
+                          color: "white",
+                          fontSize: 14,
+                          fontWeight: 900,
+                          textShadow: `0 0 12px ${bar.glow}`,
+                        }}
+                      >
+                        {bar.label === "Cash Flow" && bar.value > 0 ? "+" : ""}
+                        {money(bar.value)}
+                      </span>
+                    </div>
+                    <div
+                      style={{
+                        height: 14,
+                        borderRadius: 999,
+                        background: "rgba(6,22,40,.96)",
+                        border: "1px solid rgba(74,126,220,.18)",
+                        boxShadow: "inset 0 0 16px rgba(0,0,0,.45)",
+                        overflow: "hidden",
+                        position: "relative",
+                      }}
+                    >
+                      <div
+                        style={{
+                          position: "absolute",
+                          inset: 0,
+                          background:
+                            "linear-gradient(90deg, rgba(255,255,255,.04), rgba(255,255,255,0))",
+                          pointerEvents: "none",
+                        }}
+                      />
+                      <div
+                        style={{
+                          height: "100%",
+                          width: buildHeatBarWidth(bar.value, scorecardBarMax),
+                          minWidth: bar.value === 0 ? 0 : 12,
+                          borderRadius: 999,
+                          background: bar.gradient,
+                          boxShadow: `0 0 18px ${bar.glow}`,
+                          position: "relative",
+                        }}
+                      >
+                        <div
+                          style={{
+                            position: "absolute",
+                            inset: 0,
+                            background:
+                              "linear-gradient(180deg, rgba(255,255,255,.38), rgba(255,255,255,0))",
+                            mixBlendMode: "screen",
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
-        <div style={{ textAlign: "center" }}>
+        <div style={{ textAlign: "center", display: "grid", justifyItems: "center" }}>
           <div style={{ color: "#e9f3ff", fontSize: 38, fontWeight: 800 }}>
             {money(budgetTotal)}
           </div>
           <div style={{ color: "#668ab9", fontSize: 26, fontWeight: 700, marginTop: 16 }}>
-            total budget
+            budget in {activeBudgetLabel}
           </div>
+          <button
+            type="button"
+            onClick={() => shiftBudgetMonth(1)}
+            aria-label="Go to next month"
+            style={{
+              marginTop: 18,
+              height: 50,
+              minWidth: 126,
+              borderRadius: 999,
+              border: "1px solid rgba(0,216,255,.28)",
+              background: "linear-gradient(180deg, rgba(0,136,255,.18), rgba(0,43,87,.28))",
+              color: "#dff7ff",
+              cursor: "pointer",
+              fontSize: 20,
+              fontWeight: 900,
+              letterSpacing: 0.4,
+              boxShadow:
+                "0 0 18px rgba(0,136,255,.18), inset 0 0 16px rgba(143,234,255,.08)",
+            }}
+          >
+            Next →
+          </button>
         </div>
       </section>
 
