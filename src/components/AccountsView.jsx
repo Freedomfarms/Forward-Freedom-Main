@@ -87,7 +87,15 @@ function formatEditableNumber(value) {
   return value === null || value === undefined || value === "" ? "" : String(value);
 }
 
-function sourceBadgeStyle(isPlaid) {
+/** UI: bank-linked vs manual. Demo accounts use status "Synced" without plaidItemId; live Plaid sets plaidItemId + syncSource. */
+function accountBankLinkPresentation(account) {
+  const isLivePlaid = Boolean(account.plaidItemId || account.syncSource === "Plaid");
+  const isSyncedDemoStyle = account.status === "Synced";
+  const isBankLinked = isLivePlaid || isSyncedDemoStyle;
+  return { isBankLinked, badgeLabel: isBankLinked ? "Plaid" : "Manual" };
+}
+
+function sourceBadgeStyle(isBankLinked) {
   return {
     display: "inline-flex",
     alignItems: "center",
@@ -97,9 +105,9 @@ function sourceBadgeStyle(isPlaid) {
     textTransform: "uppercase",
     padding: "2px 6px",
     borderRadius: 4,
-    border: isPlaid ? "1px solid rgba(0,216,255,.38)" : "1px solid rgba(168,120,255,.4)",
-    background: isPlaid ? "rgba(0,216,255,.1)" : "rgba(120,72,200,.15)",
-    color: isPlaid ? "#88f0ff" : "#e8d8ff",
+    border: isBankLinked ? "1px solid rgba(0,216,255,.38)" : "1px solid rgba(168,120,255,.4)",
+    background: isBankLinked ? "rgba(0,216,255,.1)" : "rgba(120,72,200,.15)",
+    color: isBankLinked ? "#88f0ff" : "#e8d8ff",
     flexShrink: 0,
   };
 }
@@ -957,7 +965,7 @@ export function AccountsView({
                   }}
                 >
                   {grouped.map((account) => {
-                    const isPlaid = Boolean(account.plaidItemId);
+                    const { isBankLinked, badgeLabel } = accountBankLinkPresentation(account);
                     const metaLine = [account.institution || "—", account.type, account.status].join(" · ");
                     const btnBase = {
                       borderRadius: 6,
@@ -975,7 +983,7 @@ export function AccountsView({
                         style={{
                           border: "1px solid rgba(0,136,255,.11)",
                           borderLeft: `2px solid ${
-                            isPlaid ? "rgba(0,200,255,.68)" : "rgba(176,132,255,.72)"
+                            isBankLinked ? "rgba(0,200,255,.68)" : "rgba(176,132,255,.72)"
                           }`,
                           background: "rgba(4,14,28,.82)",
                           borderRadius: 8,
@@ -1011,9 +1019,7 @@ export function AccountsView({
                               >
                                 {account.name}
                               </span>
-                              <span style={sourceBadgeStyle(isPlaid)}>
-                                {isPlaid ? "Plaid" : "Manual"}
-                              </span>
+                              <span style={sourceBadgeStyle(isBankLinked)}>{badgeLabel}</span>
                             </div>
                             <div
                               style={{
