@@ -225,7 +225,7 @@ export function DashboardView({
       year: getCurrentBudgetPeriod().year,
     });
   const netWorthHistory = buildNetWorthHistory(metricSnapshots, netWorthHistoryRange);
-  const projectionStartMonth = planningAnchor?.startingMonth || budgetMonths[0];
+  const projectionStartMonth = getCurrentBudgetPeriod().month;
   const initialChartValues = buildSyncedTrueCashChart(chartSets[activeRange], trueCash);
   const initialProjectionYear = parseChartDate(initialChartValues.date).year;
   const chartValues =

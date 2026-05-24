@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { AccountRemoveConfirmModal } from "./AccountRemoveConfirmModal.jsx";
 import { styles } from "../styles.js";
 import { getCurrentTimestamp } from "../utils/date.js";
 import { money } from "../utils/format.js";
@@ -200,6 +201,8 @@ export function AccountsView({
   plaidIntegration,
   subscriptions,
   transactions,
+  pendingManualEditAccountId,
+  onPendingManualEditAccountConsumed,
 }) {
   const [showModal, setShowModal] = useState(false);
   const [editingAccount, setEditingAccount] = useState(null);
@@ -218,13 +221,8 @@ export function AccountsView({
   const [metalsQuote, setMetalsQuote] = useState(null);
   const [metalsQuoteError, setMetalsQuoteError] = useState("");
   const [isLoadingMetalsQuote, setIsLoadingMetalsQuote] = useState(false);
-  const [hubManageAccountId, setHubManageAccountId] = useState("");
 
   const linkedBalance = accounts.reduce((sum, a) => sum + a.balance, 0);
-  const hubManageAccount =
-    hubManageAccountId && accounts.some((a) => a.id === hubManageAccountId)
-      ? accounts.find((a) => a.id === hubManageAccountId) || null
-      : null;
   const isCryptoAccount = form.type === "Crypto";
   const isPreciousMetalsAccount = form.type === "Precious Metals";
   const isRealEstateAccount = form.type === "Real Estate";
@@ -232,7 +230,6 @@ export function AccountsView({
   const realEstateAccounts = accounts.filter((account) => account.type === "Real Estate");
   const loanAccounts = accounts.filter((account) => account.type === "Mortgages / Loans");
   const { metalType, metalUnit, type, valuationSource } = form;
-  const linkedPlaidItems = plaidIntegration?.items || [];
 
   const resetCryptoState = () => {
     setCryptoSearchQuery("");
@@ -517,6 +514,19 @@ export function AccountsView({
     setShowModal(true);
   };
 
+  useEffect(() => {
+    if (!pendingManualEditAccountId) return;
+    const account = accounts.find((a) => a.id === pendingManualEditAccountId);
+    const timeoutId = window.setTimeout(() => {
+      if (account) {
+        openEditModal(account);
+      }
+      onPendingManualEditAccountConsumed?.();
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot deep link from Transactions
+  }, [pendingManualEditAccountId, accounts]);
+
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!canSubmit) return;
@@ -596,31 +606,6 @@ export function AccountsView({
     closeModal();
   };
 
-  const deleteTargetPlaidItem = deleteTarget?.plaidItemId
-    ? linkedPlaidItems.find((item) => item.itemId === deleteTarget.plaidItemId) || null
-    : null;
-  const deleteTargetLinkedAccounts = deleteTargetPlaidItem
-    ? accounts.filter((account) => account.plaidItemId === deleteTargetPlaidItem.itemId)
-    : deleteTarget
-      ? [deleteTarget]
-      : [];
-  const deleteTargetLinkedAccountNames = new Set(
-    deleteTargetLinkedAccounts.map((account) => account.name)
-  );
-  const deleteTargetTransactionCount = deleteTarget
-    ? transactions.filter((transaction) =>
-        deleteTarget.plaidItemId
-          ? transaction.source === "plaid" && deleteTargetLinkedAccountNames.has(transaction.account)
-          : transaction.account === deleteTarget.name
-      ).length
-    : 0;
-  const deleteTargetSubscriptionCount = deleteTarget
-    ? subscriptions.filter((subscription) =>
-        deleteTarget.plaidItemId
-          ? deleteTargetLinkedAccountNames.has(subscription.account)
-          : subscription.account === deleteTarget.name || subscription.accountId === deleteTarget.id
-      ).length
-    : 0;
   const confirmDeleteAccount = async () => {
     if (!deleteTarget || typeof deleteAccount !== "function" || isDeletingAccount) return;
 
@@ -630,7 +615,6 @@ export function AccountsView({
     try {
       await deleteAccount(deleteTarget);
       setDeleteTarget(null);
-      setHubManageAccountId("");
     } catch (error) {
       setDeleteError(error?.message || "Unable to remove this account right now.");
     } finally {
@@ -862,83 +846,6 @@ export function AccountsView({
                 >
                   {plaidIntegration?.isSyncing ? "Connecting Plaid..." : "⊕ Connect with Plaid"}
                 </button>
-                {accounts.length > 0 ? (
-                  <>
-                    <select
-                      value={
-                        hubManageAccountId && accounts.some((a) => a.id === hubManageAccountId)
-                          ? hubManageAccountId
-                          : ""
-                      }
-                      onChange={(e) => setHubManageAccountId(e.target.value)}
-                      aria-label="Choose account to edit or remove"
-                      title="Edit or remove without using row buttons"
-                      style={{
-                        color: "#eaf3ff",
-                        background: "rgba(0,136,255,.09)",
-                        border: "1px solid rgba(0,216,255,.22)",
-                        borderRadius: 8,
-                        padding: "6px 10px",
-                        fontSize: 12,
-                        fontWeight: 600,
-                        maxWidth: "100%",
-                        minWidth: 0,
-                      }}
-                    >
-                      <option value="">Account…</option>
-                      {[...accounts]
-                        .sort((a, b) => String(a.name).localeCompare(String(b.name)))
-                        .map((a) => (
-                          <option key={a.id} value={a.id} style={{ background: "#061224" }}>
-                            {a.name} · {a.type}
-                          </option>
-                        ))}
-                    </select>
-                    {hubManageAccount ? (
-                      <>
-                        {!hubManageAccount.plaidItemId && hubManageAccount.status === "Manual" ? (
-                          <button
-                            type="button"
-                            onClick={() => openEditModal(hubManageAccount)}
-                            style={{
-                              background: "rgba(0,136,255,.12)",
-                              border: "1px solid rgba(0,216,255,.32)",
-                              borderRadius: 8,
-                              color: "#eaf3ff",
-                              padding: "6px 12px",
-                              fontWeight: 700,
-                              fontSize: 11,
-                              cursor: "pointer",
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            Edit
-                          </button>
-                        ) : null}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setDeleteError("");
-                            setDeleteTarget(hubManageAccount);
-                          }}
-                          style={{
-                            background: "rgba(255,36,77,.1)",
-                            border: "1px solid rgba(255,93,122,.32)",
-                            borderRadius: 8,
-                            color: "#ffd9df",
-                            padding: "6px 12px",
-                            fontWeight: 700,
-                            fontSize: 11,
-                            cursor: "pointer",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          {hubManageAccount.plaidItemId ? "Disconnect" : "Remove"}
-                        </button>
-                      </>
-                    ) : null}
-                  </>
-                ) : null}
               </div>
             </div>
           </div>
@@ -1221,185 +1128,18 @@ export function AccountsView({
         )}
       </section>
 
-      {deleteTarget ? (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,5,14,.72)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 9999,
-            padding: 24,
-          }}
-          onClick={(event) => {
-            if (event.target === event.currentTarget) closeDeleteModal();
-          }}
-        >
-          <div
-            style={{
-              ...styles.panel,
-              width: "min(520px, 100%)",
-              padding: 26,
-              boxShadow: "0 0 55px rgba(0,136,255,.34)",
-            }}
-          >
-            <div
-              style={{
-                color: "#8feaff",
-                fontSize: 12,
-                textTransform: "uppercase",
-                letterSpacing: 1.2,
-                marginBottom: 10,
-              }}
-            >
-              Confirm Remove
-            </div>
-            <div style={{ color: "white", fontSize: 20, fontWeight: 800, lineHeight: 1.15 }}>
-              {deleteTarget.plaidItemId
-                ? `Disconnect ${deleteTargetPlaidItem?.institutionName || deleteTarget.institution}?`
-                : `Delete ${deleteTarget.name}?`}
-            </div>
-            <p style={{ color: "#8aa3bf", lineHeight: 1.55, marginTop: 12, marginBottom: 0, fontSize: 13 }}>
-              {deleteTarget.plaidItemId
-                ? "Plaid-linked accounts are removed one institution at a time so they do not reappear on the next sync."
-                : "This permanently removes the manual account and clears any related local entries from this workspace."}
-            </p>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
-                gap: 10,
-                marginTop: 18,
-              }}
-            >
-              <div
-                style={{
-                  borderRadius: 12,
-                  border: "1px solid rgba(0,216,255,.16)",
-                  background: "rgba(4,18,33,.72)",
-                  padding: "12px 14px",
-                }}
-              >
-                <div
-                  style={{
-                    color: "#7ea6d8",
-                    fontSize: 11,
-                    textTransform: "uppercase",
-                    letterSpacing: 0.7,
-                  }}
-                >
-                  Accounts Removed
-                </div>
-                <div style={{ color: "white", fontSize: 17, fontWeight: 700, marginTop: 5 }}>
-                  {deleteTargetLinkedAccounts.length}
-                </div>
-              </div>
-              <div
-                style={{
-                  borderRadius: 12,
-                  border: "1px solid rgba(0,216,255,.16)",
-                  background: "rgba(4,18,33,.72)",
-                  padding: "12px 14px",
-                }}
-              >
-                <div
-                  style={{
-                    color: "#7ea6d8",
-                    fontSize: 11,
-                    textTransform: "uppercase",
-                    letterSpacing: 0.7,
-                  }}
-                >
-                  Transactions Removed
-                </div>
-                <div style={{ color: "white", fontSize: 17, fontWeight: 700, marginTop: 5 }}>
-                  {deleteTargetTransactionCount}
-                </div>
-              </div>
-              <div
-                style={{
-                  borderRadius: 12,
-                  border: "1px solid rgba(0,216,255,.16)",
-                  background: "rgba(4,18,33,.72)",
-                  padding: "12px 14px",
-                }}
-              >
-                <div
-                  style={{
-                    color: "#7ea6d8",
-                    fontSize: 11,
-                    textTransform: "uppercase",
-                    letterSpacing: 0.7,
-                  }}
-                >
-                  Subscriptions Removed
-                </div>
-                <div style={{ color: "white", fontSize: 17, fontWeight: 700, marginTop: 5 }}>
-                  {deleteTargetSubscriptionCount}
-                </div>
-              </div>
-            </div>
-            {deleteError ? (
-              <div
-                style={{
-                  marginTop: 16,
-                  color: "#ffd9df",
-                  background: "rgba(255,36,77,.08)",
-                  border: "1px solid rgba(255,93,122,.24)",
-                  borderRadius: 12,
-                  padding: "12px 14px",
-                  lineHeight: 1.5,
-                }}
-              >
-                {deleteError}
-              </div>
-            ) : null}
-            <div style={{ display: "flex", gap: 12, justifyContent: "flex-end", marginTop: 24 }}>
-              <button
-                type="button"
-                disabled={isDeletingAccount}
-                onClick={closeDeleteModal}
-                style={{
-                  background: "rgba(0,136,255,.10)",
-                  border: "1px solid rgba(0,216,255,.28)",
-                  color: "#d7ebff",
-                  borderRadius: 8,
-                  padding: "11px 16px",
-                  cursor: isDeletingAccount ? "wait" : "pointer",
-                  fontWeight: 800,
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={isDeletingAccount}
-                onClick={() => {
-                  void confirmDeleteAccount();
-                }}
-                style={{
-                  background: "linear-gradient(90deg,#ff244d,#ff5d7a)",
-                  border: "1px solid rgba(255,93,122,.55)",
-                  color: "white",
-                  borderRadius: 8,
-                  padding: "11px 16px",
-                  cursor: isDeletingAccount ? "wait" : "pointer",
-                  fontWeight: 900,
-                  boxShadow: "0 0 22px rgba(255,36,77,.32)",
-                }}
-              >
-                {isDeletingAccount
-                  ? "Removing..."
-                  : deleteTarget.plaidItemId
-                    ? "Disconnect Institution"
-                    : "Delete Account"}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <AccountRemoveConfirmModal
+        deleteTarget={deleteTarget}
+        accounts={accounts}
+        transactions={transactions}
+        subscriptions={subscriptions}
+        plaidItems={plaidIntegration?.items}
+        onBackdropClick={closeDeleteModal}
+        onCancel={closeDeleteModal}
+        onConfirm={confirmDeleteAccount}
+        isDeleting={isDeletingAccount}
+        deleteError={deleteError}
+      />
 
       {/* ── Add Account Modal ── */}
       {showModal ? (

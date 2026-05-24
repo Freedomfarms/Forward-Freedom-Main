@@ -60,14 +60,14 @@ export function ensurePlanYearData(plansByYear, targetYear, fallbackPlanData) {
   const referencePlan =
     normalizedPlans[String(referenceYear)] || buildPlanYearData(fallbackPlanData);
   const fallback = buildPlanYearData(fallbackPlanData);
-  const defaultStartingMonth = targetYear === currentYear ? fallback.startingMonth : "Jan";
+  const liveStartingMonth = getCurrentBudgetPeriod().month;
   const defaultStartingTrueCash = fallback.startingTrueCash;
 
   return {
     ...normalizedPlans,
     [targetKey]: buildPlanYearData({
       ...referencePlan,
-      startingMonth: defaultStartingMonth,
+      startingMonth: liveStartingMonth,
       startingTrueCash: defaultStartingTrueCash,
     }),
   };
@@ -227,7 +227,7 @@ export function buildFullYearProjectionSeries({
     incomeStreams: targetPlan.incomeStreams,
     budgetRows: targetPlan.budgetRows,
     projectionAdjustments: targetPlan.projectionAdjustments,
-    startingMonth: targetPlan.startingMonth,
+    startingMonth: getCurrentBudgetPeriod().month,
     startingTrueCash: targetPlan.startingTrueCash,
   }).map(({ month, year, value }) => ({
     month,

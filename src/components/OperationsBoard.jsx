@@ -46,7 +46,6 @@ export function OperationsBoard({
   const [hoveredCommandMonth, setHoveredCommandMonth] = useState(null);
   const currentBudgetPeriod = getCurrentBudgetPeriod();
   const [activePlanningYear, setActivePlanningYear] = useState(currentPlanYear);
-  const activePlanningMonth = budgetMonths[currentBudgetPeriod.monthIndex];
   const planningBudgetRows = getBudgetRowsForYear(activePlanningYear);
   const planningIncomeStreams = getIncomeStreamsForYear(activePlanningYear);
   const planningProjectionAdjustments = getProjectionAdjustmentsForYear(activePlanningYear);
@@ -62,9 +61,9 @@ export function OperationsBoard({
     setActivePlanningYear(nextValue);
   };
   const updatePlanningAnchor = (field, value) => {
-    const nextValue = field === "startingTrueCash" ? cleanMoneyInput(value) : value;
+    if (field !== "startingTrueCash") return;
     setPlanningAnchorForYear(activePlanningYear, {
-      [field]: nextValue,
+      startingTrueCash: cleanMoneyInput(value),
     });
   };
 
@@ -122,7 +121,7 @@ export function OperationsBoard({
   const adjustmentValues = budgetMonths.map((month) =>
     parseMoney(planningProjectionAdjustments[month])
   );
-  const anchorStartingMonth = planningAnchor.startingMonth || activePlanningMonth;
+  const anchorStartingMonth = currentBudgetPeriod.month;
   const anchorStartingTrueCash =
     planningAnchor.startingTrueCash !== undefined && planningAnchor.startingTrueCash !== null
       ? Number(planningAnchor.startingTrueCash) || 0
@@ -250,30 +249,6 @@ export function OperationsBoard({
           >
             <label style={{ display: "grid", gap: 6 }}>
               <span style={{ color: "#8fb1d9", fontSize: 11, textTransform: "uppercase" }}>
-                Starting Month
-              </span>
-              <select
-                value={planningAnchor.startingMonth || activePlanningMonth}
-                onChange={(event) => updatePlanningAnchor("startingMonth", event.target.value)}
-                style={{
-                  color: "#eaf3ff",
-                  background: "rgba(0,136,255,.08)",
-                  border: "1px solid rgba(0,216,255,.22)",
-                  borderRadius: 9,
-                  padding: "10px 12px",
-                  fontWeight: 800,
-                  outline: "none",
-                }}
-              >
-                {budgetMonths.map((month) => (
-                  <option key={month} value={month} style={{ background: "#061224" }}>
-                    {month}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label style={{ display: "grid", gap: 6 }}>
-              <span style={{ color: "#8fb1d9", fontSize: 11, textTransform: "uppercase" }}>
                 Starting True Cash
               </span>
               <input
@@ -291,9 +266,9 @@ export function OperationsBoard({
               />
             </label>
             <div style={{ color: "#8ea8ca", fontSize: 12, lineHeight: 1.5, marginTop: 2 }}>
-              Choose the month where this yearly projection should start, then enter the true-cash
-              balance for that anchor month. The annual row and Command Center projection will both
-              follow this same anchor.
+              Projections use the current calendar month as the anchor (no backdating).
+              Enter the true-cash balance that should anchor the plan for this year; Command Center uses
+              the same anchor and starting value for its projection line.
             </div>
           </div>
         </div>

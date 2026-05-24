@@ -4,6 +4,7 @@ import { styles } from "../styles.js";
 import { getIsoDateInputValue } from "../utils/date.js";
 import { money } from "../utils/format.js";
 import { accountSupportsTransactions } from "../utils/accounts.js";
+import { AccountRemoveConfirmModal } from "./AccountRemoveConfirmModal.jsx";
 import { HouseholdProfilesControl } from "./Common.jsx";
 
 function formatManualDate(value) {
@@ -195,6 +196,10 @@ export function TransactionsView({
   updateTransactionCategory,
   householdProfilesProps,
   plaidIntegration,
+  deleteAccount,
+  subscriptions,
+  transactions,
+  onNavigateToEditManualAccount,
 }) {
   const selectedAccountRecord = selectedAccount
     ? accounts.find((account) => account.name === selectedAccount) || null
@@ -215,6 +220,9 @@ export function TransactionsView({
   const [showManualEntry, setShowManualEntry] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [showFilters, setShowFilters] = useState(false);
+  const [accountRemoveTarget, setAccountRemoveTarget] = useState(null);
+  const [accountRemoveError, setAccountRemoveError] = useState("");
+  const [isRemovingAccount, setIsRemovingAccount] = useState(false);
   const [filters, setFilters] = useState({
     search: "",
     category: "All",
@@ -223,6 +231,29 @@ export function TransactionsView({
     source: "All",
     review: "All",
   });
+
+  const closeAccountRemoveModal = () => {
+    if (isRemovingAccount) return;
+    setAccountRemoveTarget(null);
+    setAccountRemoveError("");
+  };
+
+  const confirmAccountRemoval = async () => {
+    if (!accountRemoveTarget || typeof deleteAccount !== "function" || isRemovingAccount) return;
+
+    setAccountRemoveError("");
+    setIsRemovingAccount(true);
+
+    try {
+      await deleteAccount(accountRemoveTarget);
+      setAccountRemoveTarget(null);
+    } catch (error) {
+      setAccountRemoveError(error?.message || "Unable to remove this account right now.");
+    } finally {
+      setIsRemovingAccount(false);
+    }
+  };
+
   const manualAccountValue = selectedAccount ? defaultTransactionalAccount : manualForm.account;
   const accountOptions = transactionCapableAccounts.map((account) => account.name);
   const categoryOptions = Array.from(
@@ -831,6 +862,82 @@ export function TransactionsView({
                 </div>
               </div>
             ) : null}
+
+            {selectedAccountRecord ? (
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: 10,
+                  marginBottom: 18,
+                }}
+              >
+                {selectedAccountRecord.plaidItemId ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAccountRemoveError("");
+                      setAccountRemoveTarget(selectedAccountRecord);
+                    }}
+                    style={{
+                      background: "rgba(255,36,77,.1)",
+                      border: "1px solid rgba(255,93,122,.32)",
+                      borderRadius: 8,
+                      color: "#ffd9df",
+                      padding: "8px 14px",
+                      fontWeight: 700,
+                      fontSize: 12,
+                      cursor: "pointer",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    Disconnect institution
+                  </button>
+                ) : (
+                  <>
+                    {selectedAccountRecord.status === "Manual" ? (
+                      <button
+                        type="button"
+                        onClick={() => onNavigateToEditManualAccount?.(selectedAccountRecord.id)}
+                        style={{
+                          background: "rgba(0,136,255,.12)",
+                          border: "1px solid rgba(0,216,255,.32)",
+                          borderRadius: 8,
+                          color: "#eaf3ff",
+                          padding: "8px 14px",
+                          fontWeight: 700,
+                          fontSize: 12,
+                          cursor: "pointer",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        Edit account
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAccountRemoveError("");
+                        setAccountRemoveTarget(selectedAccountRecord);
+                      }}
+                      style={{
+                        background: "rgba(255,36,77,.1)",
+                        border: "1px solid rgba(255,93,122,.32)",
+                        borderRadius: 8,
+                        color: "#ffd9df",
+                        padding: "8px 14px",
+                        fontWeight: 700,
+                        fontSize: 12,
+                        cursor: "pointer",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      Delete account
+                    </button>
+                  </>
+                )}
+              </div>
+            ) : null}
           </>
         ) : null}
         <div
@@ -1239,7 +1346,7 @@ export function TransactionsView({
             >
               {selectedAccount
                 ? isSelectedNonTransactionalAccount
-                  ? `${selectedAccount} is a valuation-based account, so it does not keep a spending ledger here. Manage its value from Accounts.`
+                  ? `${selectedAccount} is a valuation-based account, so it does not keep a spending ledger here. For manual entries use Edit account above; for Plaid-linked institutions use Disconnect above.`
                   : filters.search ||
                       filters.category !== "All" ||
                       filters.account !== (selectedAccount || "All") ||
@@ -1336,6 +1443,19 @@ export function TransactionsView({
           </div>
         </div>
       ) : null}
+
+      <AccountRemoveConfirmModal
+        deleteTarget={accountRemoveTarget}
+        accounts={accounts}
+        transactions={transactions}
+        subscriptions={subscriptions}
+        plaidItems={plaidIntegration?.items}
+        onBackdropClick={closeAccountRemoveModal}
+        onCancel={closeAccountRemoveModal}
+        onConfirm={confirmAccountRemoval}
+        isDeleting={isRemovingAccount}
+        deleteError={accountRemoveError}
+      />
     </div>
   );
 }
