@@ -1028,6 +1028,17 @@ function ForwardFreedomDashboard({
     openAccountTransactions(accountInput.name);
   };
 
+  const renameAccount = (accountId, nickname) => {
+    if (!accountId) return;
+    setAccounts((current) =>
+      current.map((account) =>
+        account.id === accountId
+          ? { ...account, nickname: typeof nickname === "string" && nickname.trim() ? nickname.trim() : null }
+          : account
+      )
+    );
+  };
+
   const updateManualAccount = (accountId, accountInput) => {
     if (!accountId || !activeUser?.id) return;
 
@@ -1392,6 +1403,7 @@ function ForwardFreedomDashboard({
               deleteAccount={deleteAccount}
               openAccountTransactions={openAccountTransactions}
               updateManualAccount={updateManualAccount}
+              renameAccount={renameAccount}
               householdProfilesProps={householdProfilesProps}
               plaidIntegration={plaidIntegration}
               subscriptions={subscriptions}

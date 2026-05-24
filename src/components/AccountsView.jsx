@@ -197,6 +197,7 @@ export function AccountsView({
   deleteAccount,
   openAccountTransactions,
   updateManualAccount,
+  renameAccount,
   householdProfilesProps,
   plaidIntegration,
   subscriptions,
@@ -205,6 +206,8 @@ export function AccountsView({
   onPendingManualEditAccountConsumed,
 }) {
   const [showModal, setShowModal] = useState(false);
+  const [renamingAccountId, setRenamingAccountId] = useState(null);
+  const [renameValue, setRenameValue] = useState("");
   const [editingAccount, setEditingAccount] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteError, setDeleteError] = useState("");
@@ -246,6 +249,21 @@ export function AccountsView({
     setMetalsQuoteError("");
     setIsLoadingMetalsQuote(false);
   };
+
+  const startRenaming = (account) => {
+    setRenamingAccountId(account.id);
+    setRenameValue(account.nickname || "");
+  };
+  const commitRename = (account) => {
+    renameAccount?.(account.id, renameValue);
+    setRenamingAccountId(null);
+    setRenameValue("");
+  };
+  const cancelRename = () => {
+    setRenamingAccountId(null);
+    setRenameValue("");
+  };
+
   const update = (field, value) => {
     const nextForm = { ...form, [field]: value };
 
@@ -995,7 +1013,10 @@ export function AccountsView({
                     return (
                       <div
                         key={account.id}
-                        onClick={() => openAccountTransactions(account.name)}
+                        onClick={() => {
+                          if (renamingAccountId === account.id) return;
+                          openAccountTransactions(account.name);
+                        }}
                         style={{
                           border: "1px solid rgba(0,136,255,.11)",
                           borderLeft: `2px solid ${
@@ -1004,7 +1025,7 @@ export function AccountsView({
                           background: "rgba(4,14,28,.82)",
                           borderRadius: 8,
                           padding: "7px 9px 8px",
-                          cursor: "pointer",
+                          cursor: renamingAccountId === account.id ? "default" : "pointer",
                         }}
                       >
                         <div
@@ -1016,27 +1037,125 @@ export function AccountsView({
                           }}
                         >
                           <div style={{ minWidth: 0, flex: 1 }}>
-                            <div
-                              style={{
-                                display: "flex",
-                                alignItems: "center",
-                                gap: 6,
-                                flexWrap: "wrap",
-                              }}
-                            >
-                              <span
+                            {renamingAccountId === account.id ? (
+                              <div
+                                onClick={(e) => e.stopPropagation()}
+                                style={{ display: "flex", alignItems: "center", gap: 4 }}
+                              >
+                                <input
+                                  autoFocus
+                                  value={renameValue}
+                                  placeholder={account.name}
+                                  onChange={(e) => setRenameValue(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") commitRename(account);
+                                    if (e.key === "Escape") cancelRename();
+                                  }}
+                                  style={{
+                                    flex: "1 1 80px",
+                                    minWidth: 0,
+                                    background: "rgba(0,80,160,.22)",
+                                    border: "1px solid rgba(0,216,255,.55)",
+                                    borderRadius: 5,
+                                    color: "#eaf3ff",
+                                    fontSize: 12,
+                                    fontWeight: 700,
+                                    padding: "3px 7px",
+                                    outline: "none",
+                                  }}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => commitRename(account)}
+                                  title="Save nickname"
+                                  style={{
+                                    background: "none",
+                                    border: "none",
+                                    color: "#00f59b",
+                                    cursor: "pointer",
+                                    fontSize: 14,
+                                    padding: "0 2px",
+                                    lineHeight: 1,
+                                    flexShrink: 0,
+                                  }}
+                                >
+                                  ✓
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={cancelRename}
+                                  title="Cancel"
+                                  style={{
+                                    background: "none",
+                                    border: "none",
+                                    color: "#8fb1d9",
+                                    cursor: "pointer",
+                                    fontSize: 12,
+                                    padding: "0 2px",
+                                    lineHeight: 1,
+                                    flexShrink: 0,
+                                  }}
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            ) : (
+                              <div
                                 style={{
-                                  color: "#f0f6ff",
-                                  fontSize: 13,
-                                  fontWeight: 700,
-                                  lineHeight: 1.2,
-                                  letterSpacing: "-0.02em",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: 6,
+                                  flexWrap: "wrap",
                                 }}
                               >
+                                <span
+                                  style={{
+                                    color: "#f0f6ff",
+                                    fontSize: 13,
+                                    fontWeight: 700,
+                                    lineHeight: 1.2,
+                                    letterSpacing: "-0.02em",
+                                  }}
+                                >
+                                  {account.nickname || account.name}
+                                </span>
+                                <span style={sourceBadgeStyle(isBankLinked)}>{badgeLabel}</span>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    startRenaming(account);
+                                  }}
+                                  title="Rename account"
+                                  style={{
+                                    background: "none",
+                                    border: "none",
+                                    color: "#6a8eae",
+                                    cursor: "pointer",
+                                    fontSize: 11,
+                                    padding: "0 2px",
+                                    lineHeight: 1,
+                                    flexShrink: 0,
+                                  }}
+                                >
+                                  ✎
+                                </button>
+                              </div>
+                            )}
+                            {account.nickname ? (
+                              <div
+                                style={{
+                                  fontSize: 9,
+                                  color: "#3d5470",
+                                  marginTop: 1,
+                                  lineHeight: 1.3,
+                                  fontStyle: "italic",
+                                }}
+                                title={`Bank name: ${account.name}`}
+                              >
                                 {account.name}
-                              </span>
-                              <span style={sourceBadgeStyle(isBankLinked)}>{badgeLabel}</span>
-                            </div>
+                              </div>
+                            ) : null}
                             <div
                               style={{
                                 fontSize: 10,

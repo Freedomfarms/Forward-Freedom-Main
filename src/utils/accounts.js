@@ -72,6 +72,7 @@ export function normalizeAccount(account, index = 0) {
     ...account,
     id: account.id || `account-${slugify(account.name || account.type || "item")}-${index}`,
     name: account.name || `Account ${index + 1}`,
+    nickname: typeof account.nickname === "string" && account.nickname.trim() ? account.nickname.trim() : null,
     type: account.type || "Checking",
     institution: account.institution || "Manual",
     status: account.status || "Manual",

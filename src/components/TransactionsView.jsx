@@ -77,7 +77,7 @@ function buildAccountProfile(account, accounts) {
 
   const baseProfile = {
     eyebrow: "Account Profile",
-    title: account.name,
+    title: account.nickname || account.name,
     subtitle: `${account.institution} • ${account.type}`,
     highlights: [
       { label: "Current Balance", value: money(account.balance) },
@@ -256,6 +256,9 @@ export function TransactionsView({
 
   const manualAccountValue = selectedAccount ? defaultTransactionalAccount : manualForm.account;
   const accountOptions = transactionCapableAccounts.map((account) => account.name);
+  const accountDisplayNames = Object.fromEntries(
+    transactionCapableAccounts.map((account) => [account.name, account.nickname || account.name])
+  );
   const categoryOptions = Array.from(
     new Set([
       ...transactionCategoryOptions,
@@ -679,7 +682,7 @@ export function TransactionsView({
                 >
                   {accountOptions.map((accountName) => (
                     <option key={accountName} value={accountName} style={{ background: "#061224" }}>
-                      {accountName}
+                      {accountDisplayNames[accountName] || accountName}
                     </option>
                   ))}
                 </select>
