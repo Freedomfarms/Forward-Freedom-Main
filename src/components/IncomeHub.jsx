@@ -73,6 +73,7 @@ export function IncomeHub({
           color: "#00f59b",
           icon: "✦",
           months: budgetMonths,
+          transactionMerchants: [],
         },
       ];
     });

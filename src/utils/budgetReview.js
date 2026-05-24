@@ -1,5 +1,6 @@
 import { budgetMonthNames, budgetMonths } from "../data/constants.jsx";
 import { getCurrentBudgetPeriod } from "./date.js";
+import { parseMoney } from "./format.js";
 import { isSpendTransaction, sumSpendTransactions } from "./transactions.js";
 
 const monthNameToBudgetMonth = Object.fromEntries(
@@ -24,6 +25,82 @@ export function isTransactionInBudgetMonth(transaction, month, year) {
 
 function buildBudgetCategorySet(row) {
   return new Set([row.name, ...(row.transactionCategories || [])].filter(Boolean));
+}
+
+function normalizeIncomeMatchToken(value) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function buildIncomeStreamMatchTokens(stream) {
+  const extras = Array.isArray(stream.transactionMerchants) ? stream.transactionMerchants : [];
+  const nameParts = String(stream.name || "")
+    .split(/[\s/|,&]+/)
+    .map(normalizeIncomeMatchToken)
+    .filter((part) => part.length > 2);
+  const merged = [...extras, ...nameParts, stream.name, stream.description];
+  return [...new Set(merged.map(normalizeIncomeMatchToken).filter(Boolean))];
+}
+
+function merchantMatchesIncomeTokens(merchant, tokens) {
+  const merchantNorm = normalizeIncomeMatchToken(merchant);
+  if (!merchantNorm || tokens.length === 0) return false;
+  return tokens.some(
+    (token) => merchantNorm.includes(token) || (token.length > 1 && token.includes(merchantNorm))
+  );
+}
+
+function isIncomeDepositTransaction(transaction) {
+  const amount = Number(transaction?.amount) || 0;
+  if (amount <= 0) return false;
+  const category = String(transaction?.category || "").trim().toLowerCase();
+  if (category === "transfers") return false;
+  return true;
+}
+
+/**
+ * For each active income stream in `month`, sums positive (inflow) transactions in that month.
+ * Matches deposits when merchant text matches stream name, description, or `transactionMerchants`.
+ * Uncategorized `Income` category deposits only roll into a stream when it is the sole active stream for the month.
+ */
+export function buildIncomeStreamsWithReceived(transactions, incomeStreams, month, year) {
+  const activeStreams = incomeStreams.filter((stream) => (stream.months || budgetMonths).includes(month));
+  const depositsInMonth = transactions.filter(
+    (tx) => isTransactionInBudgetMonth(tx, month, year) && isIncomeDepositTransaction(tx)
+  );
+
+  const streamTokens = activeStreams.map((stream) => ({
+    stream,
+    tokens: buildIncomeStreamMatchTokens(stream),
+  }));
+
+  const receivedById = Object.fromEntries(activeStreams.map((s) => [s.id, 0]));
+
+  for (const tx of depositsInMonth) {
+    const merchant = tx.merchant;
+    const category = String(tx.category || "").trim().toLowerCase();
+
+    let matchedId = null;
+    for (const { stream, tokens } of streamTokens) {
+      if (merchantMatchesIncomeTokens(merchant, tokens)) {
+        matchedId = stream.id;
+        break;
+      }
+    }
+
+    if (!matchedId && category === "income" && activeStreams.length === 1) {
+      matchedId = activeStreams[0].id;
+    }
+
+    if (matchedId) {
+      receivedById[matchedId] += Number(tx.amount) || 0;
+    }
+  }
+
+  return activeStreams.map((stream) => ({
+    ...stream,
+    expected: parseMoney(stream.amount),
+    received: receivedById[stream.id] || 0,
+  }));
 }
 
 export function buildMonthlySpendSnapshot(

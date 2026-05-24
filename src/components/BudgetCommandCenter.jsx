@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { styles } from "../styles.js";
 import { money, cleanMoneyInput, parseMoney } from "../utils/format.js";
-import { buildMonthlySpendSnapshot } from "../utils/budgetReview.js";
+import { buildMonthlySpendSnapshot, buildIncomeStreamsWithReceived } from "../utils/budgetReview.js";
 import { getCurrentBudgetPeriod } from "../utils/date.js";
 import { budgetMonths, budgetMonthNames } from "../data/constants.jsx";
 import { HouseholdProfilesControl, MonthCoverageEditor } from "./Common.jsx";
@@ -21,6 +21,7 @@ export function BudgetCommandCenter({
   getBudgetRowsForYear,
   getIncomeStreamsForYear,
   setBudgetRowsForYear,
+  setIncomeStreamsForYear,
   ensurePlanningYear,
 }) {
   const currentBudgetPeriod = getCurrentBudgetPeriod();
@@ -69,6 +70,12 @@ export function BudgetCommandCenter({
   const budgetRowsWithSpend = activeBudgetSnapshot.rows;
   const budgetTotal = activeBudgetSnapshot.monthlyBudget;
   const planningIncomeStreams = getIncomeStreamsForYear(activeBudgetDate.year);
+  const incomeStreamsWithReceived = buildIncomeStreamsWithReceived(
+    transactions,
+    planningIncomeStreams,
+    activeBudgetMonth,
+    activeBudgetDate.year
+  );
   const monthIncomeTotal = planningIncomeStreams
     .filter((stream) => (stream.months || budgetMonths).includes(activeBudgetMonth))
     .reduce((sum, stream) => sum + parseMoney(stream.amount), 0);
@@ -165,6 +172,12 @@ export function BudgetCommandCenter({
         },
       ];
     });
+  };
+
+  const updateIncomeStreamAmount = (id, value) => {
+    setIncomeStreamsForYear(activeBudgetDate.year, (streams) =>
+      streams.map((stream) => (stream.id === id ? { ...stream, amount: cleanMoneyInput(value) } : stream))
+    );
   };
 
   return (
@@ -420,6 +433,190 @@ export function BudgetCommandCenter({
             Next →
           </button>
         </div>
+      </section>
+
+      <section style={{ padding: "0 8px", marginBottom: 32 }}>
+        <div style={{ color: "white", fontSize: 20, fontWeight: 800, marginBottom: 6 }}>Income</div>
+        <div style={{ color: "#7a93b5", fontSize: 13, lineHeight: 1.55, marginBottom: 16 }}>
+          Received totals positive inflows for {activeBudgetLabel} (for example payroll to checking or
+          manual deposits). The bar fills toward your planned amount so you can see over- or under-earning
+          for the month. Deposits match when the merchant text includes your stream name, description, or
+          configured keywords; Income-category deposits only attach when this is the sole active stream
+          for the month.
+        </div>
+        {incomeStreamsWithReceived.length === 0 ? (
+          <div style={{ color: "#8ea8ca", fontSize: 14, padding: "12px 0" }}>
+            No income streams apply to {activeBudgetLabel}. Add sources in Income Hub.
+          </div>
+        ) : (
+          <>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1.15fr 120px 1fr 120px",
+                alignItems: "center",
+                columnGap: 32,
+                color: "#6d92c2",
+                fontSize: 12,
+                fontWeight: 800,
+                letterSpacing: 1,
+                textTransform: "uppercase",
+                marginBottom: 14,
+              }}
+            >
+              <div aria-hidden="true" />
+              <div style={{ textAlign: "right", padding: "8px 10px" }}>Received</div>
+              <div aria-hidden="true" />
+              <div style={{ textAlign: "center", padding: "8px 10px" }}>Planned</div>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
+              {incomeStreamsWithReceived.map((item) => {
+                const fillPercent =
+                  item.expected > 0
+                    ? Math.min(100, Math.round((item.received / item.expected) * 100))
+                    : item.received > 0
+                      ? 100
+                      : 0;
+                return (
+                  <div
+                    key={item.id}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1.15fr 120px 1fr 120px",
+                      alignItems: "center",
+                      columnGap: 32,
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "auto auto 1fr",
+                        alignItems: "center",
+                        gap: 20,
+                        color: "#e6efff",
+                        fontSize: 23,
+                        fontWeight: 700,
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: 12,
+                          height: 12,
+                          borderRadius: 999,
+                          background: item.color || "#00f59b",
+                          boxShadow: `0 0 12px ${item.color || "#00f59b"}`,
+                        }}
+                      />
+                      <div
+                        style={{
+                          width: 34,
+                          height: 34,
+                          borderRadius: 10,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          color: "#e6efff",
+                          fontSize: 20,
+                          background: "rgba(0,136,255,.08)",
+                          border: "1px solid rgba(0,216,255,.14)",
+                          boxShadow: "inset 0 0 14px rgba(0,80,160,.05)",
+                        }}
+                      >
+                        {item.icon || "◎"}
+                      </div>
+                      <div style={{ display: "grid", gap: 4, minWidth: 0 }}>
+                        <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          {item.name}
+                        </div>
+                        {item.description ? (
+                          <div
+                            style={{
+                              color: "#6d8ab5",
+                              fontSize: 12,
+                              fontWeight: 600,
+                              whiteSpace: "nowrap",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                            }}
+                          >
+                            {item.description}
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div
+                      style={{
+                        color: "#e6efff",
+                        fontSize: 22,
+                        fontWeight: 800,
+                        textAlign: "right",
+                        padding: "8px 10px",
+                        width: "100%",
+                      }}
+                    >
+                      {money(item.received)}
+                    </div>
+                    <div
+                      style={{
+                        height: 11,
+                        borderRadius: 999,
+                        background: "rgba(8,28,49,.95)",
+                        position: "relative",
+                        overflow: "hidden",
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: `${fillPercent}%`,
+                          height: "100%",
+                          borderRadius: 999,
+                          background: item.color || "#00f59b",
+                          boxShadow: `0 0 14px ${item.color || "#00f59b"}`,
+                        }}
+                      />
+                      {item.expected > 0 && item.received > item.expected ? (
+                        <div
+                          style={{
+                            position: "absolute",
+                            inset: 0,
+                            border: "2px solid rgba(255,58,68,.95)",
+                            borderRadius: 999,
+                          }}
+                        />
+                      ) : null}
+                    </div>
+                    <input
+                      value={money(item.expected)}
+                      onChange={(event) => updateIncomeStreamAmount(item.id, event.target.value)}
+                      style={{
+                        color: "#e6efff",
+                        fontSize: 22,
+                        fontWeight: 800,
+                        textAlign: "center",
+                        background: "transparent",
+                        border: "1px solid transparent",
+                        borderRadius: 10,
+                        padding: "8px 10px",
+                        width: "100%",
+                        outline: "none",
+                      }}
+                      onFocus={(event) => {
+                        event.currentTarget.style.border = "1px solid rgba(0,216,255,.38)";
+                        event.currentTarget.style.background = "rgba(0,136,255,.08)";
+                        event.currentTarget.style.boxShadow = "inset 0 0 18px rgba(0,136,255,.10)";
+                      }}
+                      onBlur={(event) => {
+                        event.currentTarget.style.border = "1px solid transparent";
+                        event.currentTarget.style.background = "transparent";
+                        event.currentTarget.style.boxShadow = "none";
+                      }}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
       </section>
 
       <section style={{ padding: "0 8px" }}>

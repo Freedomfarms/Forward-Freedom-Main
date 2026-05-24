@@ -912,6 +912,7 @@ export const incomeStreamSeed = [
     color: "#00f59b",
     icon: "💼",
     months: budgetMonths,
+    transactionMerchants: ["Payroll", "Salary", "Pratt", "Whitney", "ADP", "Gusto"],
   },
 ];
 

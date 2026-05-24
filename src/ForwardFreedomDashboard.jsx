@@ -1381,6 +1381,7 @@ function ForwardFreedomDashboard({
               getBudgetRowsForYear={getBudgetRowsForYear}
               getIncomeStreamsForYear={getIncomeStreamsForYear}
               setBudgetRowsForYear={setBudgetRowsForYear}
+              setIncomeStreamsForYear={setIncomeStreamsForYear}
               ensurePlanningYear={ensurePlanningYear}
             />
           ) : activeTab === APP_TABS.ADD_ACCOUNTS ? (
