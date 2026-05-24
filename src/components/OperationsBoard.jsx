@@ -336,59 +336,68 @@ export function OperationsBoard({
               <div
                 style={{
                   display: "flex",
-                  gap: 20,
+                  gap: 22,
                   color: "#94a3b8",
                   fontSize: 13,
                   fontWeight: 600,
                   flexWrap: "wrap",
                   justifyContent: "flex-end",
                   letterSpacing: 0.02,
+                  alignItems: "center",
                 }}
               >
-                <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span
-                    style={{
-                      width: 10,
-                      height: 10,
-                      borderRadius: 2,
-                      background: "#2dd4bf",
-                    }}
-                  />
-                  Planned income
-                </span>
-                <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span
-                    style={{
-                      width: 10,
-                      height: 10,
-                      borderRadius: 2,
-                      background: "#38bdf8",
-                    }}
-                  />
-                  Budget
-                </span>
-                <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span
-                    style={{
-                      width: 10,
-                      height: 10,
-                      borderRadius: 2,
-                      background: "#fb923c",
-                    }}
-                  />
-                  Spent
-                </span>
-                <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span
-                    style={{
-                      width: 10,
-                      height: 10,
-                      borderRadius: 2,
-                      background: "#a3e635",
-                    }}
-                  />
-                  Actual income
-                </span>
+                <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span
+                      style={{
+                        width: 10,
+                        height: 10,
+                        borderRadius: 2,
+                        background: "linear-gradient(135deg,#7fffd4,#34d399)",
+                        boxShadow: "0 0 10px rgba(52,211,153,0.45)",
+                      }}
+                    />
+                    Planned income
+                  </span>
+                  <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span
+                      style={{
+                        width: 10,
+                        height: 10,
+                        borderRadius: 2,
+                        background: "#0f766e",
+                        boxShadow: "inset 0 0 0 1px rgba(110,255,210,0.25)",
+                      }}
+                    />
+                    Actual income
+                  </span>
+                </div>
+                <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span
+                      style={{
+                        width: 10,
+                        height: 10,
+                        borderRadius: 2,
+                        background: "linear-gradient(135deg,#fdba74,#fb923c)",
+                        boxShadow: "0 0 8px rgba(251,146,60,0.35)",
+                      }}
+                    />
+                    Budget
+                  </span>
+                  <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span
+                      style={{
+                        width: 10,
+                        height: 10,
+                        borderRadius: 2,
+                        background: "#7c2d12",
+                        boxShadow: "inset 0 0 0 1px rgba(253,186,116,0.2)",
+                      }}
+                    />
+                    Spent
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -456,11 +465,11 @@ export function OperationsBoard({
                     [
                       "Planned income",
                       hoveredCommandMonth.data.plannedIncome ?? hoveredCommandMonth.data.income,
-                      "#2dd4bf",
+                      "#5eead4",
                     ],
-                    ["Budget", hoveredCommandMonth.data.budget, "#38bdf8"],
-                    ["Spent", hoveredCommandMonth.data.spent, "#fb923c"],
-                    ["Actual income", hoveredCommandMonth.data.actualIncome, "#a3e635"],
+                    ["Actual income", hoveredCommandMonth.data.actualIncome, "#0f766e"],
+                    ["Budget", hoveredCommandMonth.data.budget, "#fdba74"],
+                    ["Spent", hoveredCommandMonth.data.spent, "#9a3412"],
                     ["True Cash", trueCashValues[hoveredCommandMonth.index], "#94a3b8"],
                     [
                       "Profit",
@@ -532,45 +541,71 @@ export function OperationsBoard({
                       display: "flex",
                       alignItems: "end",
                       justifyContent: "center",
-                      gap: 5,
+                      gap: 12,
                     }}
                   >
                     <div
-                      title={`Planned income ${money(month.plannedIncome ?? month.income)}`}
                       style={{
-                        width: 9,
-                        height: scorecardBarHeightPercent(month.plannedIncome ?? month.income, maxValue),
-                        borderRadius: "3px 3px 1px 1px",
-                        background: "#2dd4bf",
+                        display: "flex",
+                        alignItems: "end",
+                        justifyContent: "center",
+                        gap: 3,
                       }}
-                    />
+                    >
+                      <div
+                        title={`Planned income ${money(month.plannedIncome ?? month.income)}`}
+                        style={{
+                          width: 9,
+                          height: scorecardBarHeightPercent(month.plannedIncome ?? month.income, maxValue),
+                          borderRadius: "3px 3px 1px 1px",
+                          background: "linear-gradient(180deg,#7fffd4,#34d399)",
+                          border: "1px solid rgba(167,255,230,0.35)",
+                          boxShadow: "0 -2px 12px rgba(52,211,153,0.35)",
+                        }}
+                      />
+                      <div
+                        title={`Actual income ${money(month.actualIncome)}`}
+                        style={{
+                          width: 9,
+                          height: scorecardBarHeightPercent(month.actualIncome, maxValue),
+                          borderRadius: "3px 3px 1px 1px",
+                          background: "linear-gradient(180deg,#0f766e,#064e3b)",
+                          border: "1px solid rgba(45,120,110,0.6)",
+                          boxShadow: "inset 0 1px 0 rgba(110,255,210,0.12)",
+                        }}
+                      />
+                    </div>
                     <div
-                      title={`Budget ${money(month.budget)}`}
                       style={{
-                        width: 9,
-                        height: scorecardBarHeightPercent(month.budget, maxValue),
-                        borderRadius: "3px 3px 1px 1px",
-                        background: "#38bdf8",
+                        display: "flex",
+                        alignItems: "end",
+                        justifyContent: "center",
+                        gap: 3,
                       }}
-                    />
-                    <div
-                      title={`Spent ${money(month.spent)}`}
-                      style={{
-                        width: 9,
-                        height: scorecardBarHeightPercent(month.spent, maxValue),
-                        borderRadius: "3px 3px 1px 1px",
-                        background: "#fb923c",
-                      }}
-                    />
-                    <div
-                      title={`Actual income ${money(month.actualIncome)}`}
-                      style={{
-                        width: 9,
-                        height: scorecardBarHeightPercent(month.actualIncome, maxValue),
-                        borderRadius: "3px 3px 1px 1px",
-                        background: "#a3e635",
-                      }}
-                    />
+                    >
+                      <div
+                        title={`Budget ${money(month.budget)}`}
+                        style={{
+                          width: 9,
+                          height: scorecardBarHeightPercent(month.budget, maxValue),
+                          borderRadius: "3px 3px 1px 1px",
+                          background: "linear-gradient(180deg,#fdba74,#fb923c)",
+                          border: "1px solid rgba(255,220,180,0.35)",
+                          boxShadow: "0 -2px 10px rgba(251,146,60,0.28)",
+                        }}
+                      />
+                      <div
+                        title={`Spent ${money(month.spent)}`}
+                        style={{
+                          width: 9,
+                          height: scorecardBarHeightPercent(month.spent, maxValue),
+                          borderRadius: "3px 3px 1px 1px",
+                          background: "linear-gradient(180deg,#9a3412,#7c2d12)",
+                          border: "1px solid rgba(120,45,25,0.55)",
+                          boxShadow: "inset 0 1px 0 rgba(253,186,116,0.1)",
+                        }}
+                      />
+                    </div>
                   </div>
                   <div
                     style={{
