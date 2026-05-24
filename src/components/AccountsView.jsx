@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { AccountRemoveConfirmModal } from "./AccountRemoveConfirmModal.jsx";
 import { styles } from "../styles.js";
 import { getCurrentTimestamp } from "../utils/date.js";
@@ -224,9 +224,6 @@ export function AccountsView({
   const [metalsQuote, setMetalsQuote] = useState(null);
   const [metalsQuoteError, setMetalsQuoteError] = useState("");
   const [isLoadingMetalsQuote, setIsLoadingMetalsQuote] = useState(false);
-
-  const accountsRef = useRef(accounts);
-  accountsRef.current = accounts;
 
   const linkedBalance = accounts.reduce((sum, a) => sum + a.balance, 0);
   const isCryptoAccount = form.type === "Crypto";
@@ -537,18 +534,19 @@ export function AccountsView({
 
   useEffect(() => {
     if (!pendingManualEditAccountId) return;
-    const capturedId = pendingManualEditAccountId;
+    // Resolve the account at effect time (when pendingManualEditAccountId just changed).
+    // accounts is intentionally omitted from deps: including it would cancel the timer on every
+    // parent re-render (accounts is a new array reference each render) and prevent the modal
+    // from opening on the first attempt.
+    const account = accounts.find((a) => a.id === pendingManualEditAccountId);
     const timeoutId = window.setTimeout(() => {
-      const account = accountsRef.current.find((a) => a.id === capturedId);
       if (account) {
         openEditModal(account);
       }
       onPendingManualEditAccountConsumed?.();
     }, 0);
-    return () => {
-      window.clearTimeout(timeoutId);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot trigger; accountsRef always holds the latest accounts
+    return () => window.clearTimeout(timeoutId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot deep link; see comment above
   }, [pendingManualEditAccountId]);
 
   const handleSubmit = (e) => {
