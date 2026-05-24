@@ -218,8 +218,13 @@ export function AccountsView({
   const [metalsQuote, setMetalsQuote] = useState(null);
   const [metalsQuoteError, setMetalsQuoteError] = useState("");
   const [isLoadingMetalsQuote, setIsLoadingMetalsQuote] = useState(false);
+  const [hubManageAccountId, setHubManageAccountId] = useState("");
 
   const linkedBalance = accounts.reduce((sum, a) => sum + a.balance, 0);
+  const hubManageAccount =
+    hubManageAccountId && accounts.some((a) => a.id === hubManageAccountId)
+      ? accounts.find((a) => a.id === hubManageAccountId) || null
+      : null;
   const isCryptoAccount = form.type === "Crypto";
   const isPreciousMetalsAccount = form.type === "Precious Metals";
   const isRealEstateAccount = form.type === "Real Estate";
@@ -228,6 +233,7 @@ export function AccountsView({
   const loanAccounts = accounts.filter((account) => account.type === "Mortgages / Loans");
   const { metalType, metalUnit, type, valuationSource } = form;
   const linkedPlaidItems = plaidIntegration?.items || [];
+
   const resetCryptoState = () => {
     setCryptoSearchQuery("");
     setCryptoResults([]);
@@ -624,6 +630,7 @@ export function AccountsView({
     try {
       await deleteAccount(deleteTarget);
       setDeleteTarget(null);
+      setHubManageAccountId("");
     } catch (error) {
       setDeleteError(error?.message || "Unable to remove this account right now.");
     } finally {
@@ -823,6 +830,120 @@ export function AccountsView({
             {plaidIntegration?.error ? (
               <div style={{ color: "#ff9a76", fontSize: 11, marginTop: 6 }}>{plaidIntegration.error}</div>
             ) : null}
+            {accounts.length > 0 ? (
+              <div
+                style={{
+                  marginTop: 16,
+                  paddingTop: 14,
+                  borderTop: "1px solid rgba(0,136,255,.16)",
+                }}
+              >
+                <div
+                  style={{
+                    color: "#6b8aaf",
+                    fontSize: 10,
+                    textTransform: "uppercase",
+                    letterSpacing: 1.05,
+                    fontWeight: 700,
+                    marginBottom: 8,
+                  }}
+                >
+                  Manage existing accounts
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: 10,
+                    alignItems: "center",
+                  }}
+                >
+                  <select
+                    value={
+                      hubManageAccountId && accounts.some((a) => a.id === hubManageAccountId)
+                        ? hubManageAccountId
+                        : ""
+                    }
+                    onChange={(e) => setHubManageAccountId(e.target.value)}
+                    aria-label="Choose account to edit or remove"
+                    style={{
+                      color: "#eaf3ff",
+                      background: "rgba(0,136,255,.09)",
+                      border: "1px solid rgba(0,216,255,.22)",
+                      borderRadius: 8,
+                      padding: "8px 12px",
+                      fontSize: 13,
+                      fontWeight: 600,
+                      flex: "1 1 200px",
+                      minWidth: 0,
+                      maxWidth: "100%",
+                    }}
+                  >
+                    <option value="">Select an account…</option>
+                    {[...accounts]
+                      .sort((a, b) => String(a.name).localeCompare(String(b.name)))
+                      .map((a) => (
+                        <option key={a.id} value={a.id} style={{ background: "#061224" }}>
+                          {a.name} · {a.type}
+                        </option>
+                      ))}
+                  </select>
+                  {hubManageAccount ? (
+                    <>
+                      {!hubManageAccount.plaidItemId && hubManageAccount.status === "Manual" ? (
+                        <button
+                          type="button"
+                          onClick={() => openEditModal(hubManageAccount)}
+                          style={{
+                            background: "rgba(0,136,255,.12)",
+                            border: "1px solid rgba(0,216,255,.32)",
+                            borderRadius: 8,
+                            color: "#eaf3ff",
+                            padding: "8px 14px",
+                            fontWeight: 700,
+                            fontSize: 12,
+                            cursor: "pointer",
+                          }}
+                        >
+                          Edit
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDeleteError("");
+                          setDeleteTarget(hubManageAccount);
+                        }}
+                        style={{
+                          background: "rgba(255,36,77,.1)",
+                          border: "1px solid rgba(255,93,122,.32)",
+                          borderRadius: 8,
+                          color: "#ffd9df",
+                          padding: "8px 14px",
+                          fontWeight: 700,
+                          fontSize: 12,
+                          cursor: "pointer",
+                        }}
+                      >
+                        {hubManageAccount.plaidItemId ? "Disconnect" : "Remove"}
+                      </button>
+                    </>
+                  ) : null}
+                </div>
+                <p
+                  style={{
+                    color: "#5a7394",
+                    fontSize: 11,
+                    marginTop: 8,
+                    marginBottom: 0,
+                    lineHeight: 1.45,
+                  }}
+                >
+                  Tap an account below to open its transactions. Use the controls here to edit manual
+                  accounts or remove a link—so rows stay uncluttered.
+                </p>
+              </div>
+            ) : null}
           </div>
           <div
             style={{
@@ -967,15 +1088,6 @@ export function AccountsView({
                   {grouped.map((account) => {
                     const { isBankLinked, badgeLabel } = accountBankLinkPresentation(account);
                     const metaLine = [account.institution || "—", account.type, account.status].join(" · ");
-                    const btnBase = {
-                      borderRadius: 6,
-                      cursor: "pointer",
-                      fontSize: 9,
-                      fontWeight: 700,
-                      textTransform: "uppercase",
-                      letterSpacing: 0.55,
-                      padding: "3px 7px",
-                    };
                     return (
                       <div
                         key={account.id}
@@ -1039,59 +1151,16 @@ export function AccountsView({
                           <div
                             style={{
                               flexShrink: 0,
-                              display: "flex",
-                              flexDirection: "column",
-                              alignItems: "flex-end",
-                              gap: 3,
+                              fontSize: 14,
+                              fontWeight: 700,
+                              color: account.balance < 0 ? "#ff6b8a" : "#eaf3ff",
+                              letterSpacing: "-0.02em",
+                              lineHeight: 1.1,
+                              textAlign: "right",
                             }}
                           >
-                            <div style={{ display: "flex", gap: 4, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                              {!account.plaidItemId && account.status === "Manual" ? (
-                                <button
-                                  type="button"
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    openEditModal(account);
-                                  }}
-                                  style={{
-                                    ...btnBase,
-                                    border: "1px solid rgba(0,216,255,.28)",
-                                    background: "rgba(0,136,255,.12)",
-                                    color: "#d7ebff",
-                                  }}
-                                >
-                                  Edit
-                                </button>
-                              ) : null}
-                              <button
-                                type="button"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  setDeleteError("");
-                                  setDeleteTarget(account);
-                                }}
-                                style={{
-                                  ...btnBase,
-                                  border: "1px solid rgba(255,93,122,.28)",
-                                  background: "rgba(255,36,77,.1)",
-                                  color: "#ffd9df",
-                                }}
-                              >
-                                {account.plaidItemId ? "Disconnect" : "Delete"}
-                              </button>
-                            </div>
-                            <div
-                              style={{
-                                fontSize: 14,
-                                fontWeight: 700,
-                                color: account.balance < 0 ? "#ff6b8a" : "#eaf3ff",
-                                letterSpacing: "-0.02em",
-                                lineHeight: 1.1,
-                              }}
-                            >
-                              {account.balance < 0 ? "−" : ""}
-                              {money(Math.abs(account.balance))}
-                            </div>
+                            {account.balance < 0 ? "−" : ""}
+                            {money(Math.abs(account.balance))}
                           </div>
                         </div>
 
