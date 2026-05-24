@@ -469,6 +469,7 @@ export function AccountsView({
     if (isDeletingAccount) return;
     setDeleteTarget(null);
     setDeleteError("");
+    setAccountActionsMenuId(null);
   };
 
   const launchQuickStart = (type) => {
@@ -488,6 +489,7 @@ export function AccountsView({
   const openEditModal = (account) => {
     if (!account || account.plaidItemId || account.status !== "Manual") return;
 
+    setAccountActionsMenuId(null);
     setEditingAccount(account);
     setForm(buildFormFromAccount(account));
     resetCryptoState();
