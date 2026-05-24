@@ -812,50 +812,45 @@ export function AccountsView({
             </p>
             <div
               style={{
-                color: plaidIntegration?.configured ? "#7ec9e0" : "#e0a878",
                 marginTop: 8,
-                fontSize: 12,
-                fontWeight: 600,
+                display: "flex",
+                flexWrap: "wrap",
+                alignItems: "flex-end",
+                justifyContent: "space-between",
+                gap: 10,
               }}
             >
-              {plaidIntegration?.configured
-                ? `Live Plaid · ${plaidIntegration.environment}`
-                : "Plaid not configured — add credentials to link real institutions."}
-            </div>
-            {plaidIntegration?.lastSyncAt ? (
-              <div style={{ color: "#5a7a9a", fontSize: 11, marginTop: 6 }}>
-                Last sync {new Date(plaidIntegration.lastSyncAt).toLocaleString()}
-              </div>
-            ) : null}
-            {plaidIntegration?.error ? (
-              <div style={{ color: "#ff9a76", fontSize: 11, marginTop: 6 }}>{plaidIntegration.error}</div>
-            ) : null}
-            {accounts.length > 0 ? (
-              <div
-                style={{
-                  marginTop: 16,
-                  paddingTop: 14,
-                  borderTop: "1px solid rgba(0,136,255,.16)",
-                }}
-              >
+              <div style={{ flex: "1 1 180px", minWidth: 0 }}>
                 <div
                   style={{
-                    color: "#6b8aaf",
-                    fontSize: 10,
-                    textTransform: "uppercase",
-                    letterSpacing: 1.05,
-                    fontWeight: 700,
-                    marginBottom: 8,
+                    color: plaidIntegration?.configured ? "#7ec9e0" : "#e0a878",
+                    fontSize: 12,
+                    fontWeight: 600,
                   }}
                 >
-                  Manage existing accounts
+                  {plaidIntegration?.configured
+                    ? `Live Plaid · ${plaidIntegration.environment}`
+                    : "Plaid not configured — add credentials to link real institutions."}
                 </div>
+                {plaidIntegration?.lastSyncAt ? (
+                  <div style={{ color: "#5a7a9a", fontSize: 11, marginTop: 4 }}>
+                    Last sync {new Date(plaidIntegration.lastSyncAt).toLocaleString()}
+                  </div>
+                ) : null}
+                {plaidIntegration?.error ? (
+                  <div style={{ color: "#ff9a76", fontSize: 11, marginTop: 4 }}>{plaidIntegration.error}</div>
+                ) : null}
+              </div>
+              {accounts.length > 0 ? (
                 <div
                   style={{
+                    flex: "1 1 200px",
+                    minWidth: 0,
                     display: "flex",
                     flexWrap: "wrap",
-                    gap: 10,
                     alignItems: "center",
+                    justifyContent: "flex-end",
+                    gap: 8,
                   }}
                 >
                   <select
@@ -866,20 +861,20 @@ export function AccountsView({
                     }
                     onChange={(e) => setHubManageAccountId(e.target.value)}
                     aria-label="Choose account to edit or remove"
+                    title="Edit or remove without using row buttons"
                     style={{
                       color: "#eaf3ff",
                       background: "rgba(0,136,255,.09)",
                       border: "1px solid rgba(0,216,255,.22)",
                       borderRadius: 8,
-                      padding: "8px 12px",
-                      fontSize: 13,
+                      padding: "6px 10px",
+                      fontSize: 12,
                       fontWeight: 600,
-                      flex: "1 1 200px",
-                      minWidth: 0,
                       maxWidth: "100%",
+                      minWidth: 0,
                     }}
                   >
-                    <option value="">Select an account…</option>
+                    <option value="">Account…</option>
                     {[...accounts]
                       .sort((a, b) => String(a.name).localeCompare(String(b.name)))
                       .map((a) => (
@@ -899,10 +894,11 @@ export function AccountsView({
                             border: "1px solid rgba(0,216,255,.32)",
                             borderRadius: 8,
                             color: "#eaf3ff",
-                            padding: "8px 14px",
+                            padding: "6px 12px",
                             fontWeight: 700,
-                            fontSize: 12,
+                            fontSize: 11,
                             cursor: "pointer",
+                            whiteSpace: "nowrap",
                           }}
                         >
                           Edit
@@ -919,10 +915,11 @@ export function AccountsView({
                           border: "1px solid rgba(255,93,122,.32)",
                           borderRadius: 8,
                           color: "#ffd9df",
-                          padding: "8px 14px",
+                          padding: "6px 12px",
                           fontWeight: 700,
-                          fontSize: 12,
+                          fontSize: 11,
                           cursor: "pointer",
+                          whiteSpace: "nowrap",
                         }}
                       >
                         {hubManageAccount.plaidItemId ? "Disconnect" : "Remove"}
@@ -930,20 +927,8 @@ export function AccountsView({
                     </>
                   ) : null}
                 </div>
-                <p
-                  style={{
-                    color: "#5a7394",
-                    fontSize: 11,
-                    marginTop: 8,
-                    marginBottom: 0,
-                    lineHeight: 1.45,
-                  }}
-                >
-                  Tap an account below to open its transactions. Use the controls here to edit manual
-                  accounts or remove a link—so rows stay uncluttered.
-                </p>
-              </div>
-            ) : null}
+              ) : null}
+            </div>
           </div>
           <div
             style={{
