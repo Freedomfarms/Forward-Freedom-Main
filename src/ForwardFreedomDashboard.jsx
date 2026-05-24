@@ -142,6 +142,59 @@ function buildTrackedMetricMeta(snapshots, metricKey, currentValue, increaseIsGo
   };
 }
 
+function buildTrackedTrueCashMeta(snapshots, currentTrueCash, increaseIsGood = true) {
+  const thresholdDate = new Date();
+  thresholdDate.setDate(thresholdDate.getDate() - THIRTY_DAY_WINDOW);
+  const thresholdKey = getLocalDateKey(thresholdDate);
+  const comparisonKey = Object.keys(snapshots)
+    .sort()
+    .reverse()
+    .find((key) => {
+      const snap = snapshots[key];
+      return (
+        key <= thresholdKey &&
+        snap &&
+        typeof snap.liquidCash === "number" &&
+        typeof snap.creditCardDebt === "number"
+      );
+    });
+
+  if (!comparisonKey) {
+    return {
+      change: "Tracking 30-day baseline",
+      changeColor: "#8fb1d9",
+      changeIcon: "•",
+      subLabel: "daily tracking in progress",
+    };
+  }
+
+  const previousSnapshot = snapshots[comparisonKey];
+  const previousValue = roundCurrency(
+    Number(previousSnapshot.liquidCash) - Number(previousSnapshot.creditCardDebt)
+  );
+  const delta = roundCurrency(currentTrueCash - previousValue);
+  const changeIcon = delta > 0 ? "↑" : delta < 0 ? "↓" : "→";
+
+  if (previousValue === 0) {
+    return {
+      change: `${delta >= 0 ? "+" : "-"}${money(Math.abs(delta))}`,
+      changeColor: "#8fb1d9",
+      changeIcon,
+      subLabel: `since ${comparisonKey}`,
+    };
+  }
+
+  const percentChange = Math.abs((delta / Math.abs(previousValue)) * 100);
+  const isGood = delta === 0 ? true : increaseIsGood ? delta >= 0 : delta <= 0;
+
+  return {
+    change: `${delta >= 0 ? "+" : "-"}${money(Math.abs(delta))} (${percentChange.toFixed(2)}%)`,
+    changeColor: isGood ? "#00f59b" : "#ff355d",
+    changeIcon,
+    subLabel: "vs last 30 days",
+  };
+}
+
 function syncDerivedAccountValues(accounts) {
   return accounts.map((account) => {
     if (account.type !== "Real Estate") return account;
@@ -398,7 +451,6 @@ function ForwardFreedomDashboard({
     .reduce((sum, account) => sum + account.balance, 0);
 
   const currentMonth = currentBudgetPeriod.month;
-  const nextMonth = getBudgetPeriodAtOffset(1).month;
   const currentMonthSpendSnapshot = buildMonthlySpendSnapshot(categorizedTransactions, budgetRows, {
     month: currentBudgetPeriod.month,
     year: currentBudgetPeriod.year,
@@ -410,13 +462,6 @@ function ForwardFreedomDashboard({
     .filter((r) => (r.months || budgetMonths).includes(currentMonth))
     .reduce((sum, r) => sum + Number(r.budget || 0), 0);
   const monthlyFlow = currentMonthIncome - currentMonthBudget;
-  const nextMonthIncome = incomeStreams
-    .filter((s) => (s.months || budgetMonths).includes(nextMonth))
-    .reduce((sum, s) => sum + parseMoney(s.amount), 0);
-  const nextMonthBudget = budgetRows
-    .filter((r) => (r.months || budgetMonths).includes(nextMonth))
-    .reduce((sum, r) => sum + Number(r.budget || 0), 0);
-  const nextMonthFlow = nextMonthIncome - nextMonthBudget;
   const currentYearPlanState = activeUser.plansByYear?.[String(currentPlanYear)];
   const baseCurrentPlanData = buildPlanYearData({
     budgetRows: activeUser.budgetRows,
@@ -779,6 +824,13 @@ function ForwardFreedomDashboard({
 
   const dynamicMetrics = [
     {
+      icon: "▧",
+      title: "TRUE CASH",
+      value: money(trueCash),
+      ...buildTrackedTrueCashMeta(trackedMetricSnapshots, trueCash, true),
+      onClick: () => setActiveTab(APP_TABS.ADD_ACCOUNTS),
+    },
+    {
       icon: "▱",
       title: "LIQUID CASH",
       value: money(liquidCash),
@@ -794,22 +846,12 @@ function ForwardFreedomDashboard({
     },
     {
       icon: "⌁",
-      title: "MONTHLY CASH FLOW",
+      title: "CURRENT MONTH CASH FLOW",
       value: money(monthlyFlow),
       change: monthlyFlow >= 0 ? "Projected surplus" : "Projected deficit",
       changeColor: monthlyFlow >= 0 ? "#00f59b" : "#ff355d",
       changeIcon: monthlyFlow >= 0 ? "↑" : "↓",
-      subLabel: "current month plan",
-      onClick: () => setActiveTab(APP_TABS.BUDGET_COMMAND_CENTER),
-    },
-    {
-      icon: "▰",
-      title: "NEXT MONTH CASH FLOW",
-      value: money(nextMonthFlow),
-      change: nextMonthFlow >= 0 ? "Projected surplus" : "Projected deficit",
-      changeColor: nextMonthFlow >= 0 ? "#00f59b" : "#ff355d",
-      changeIcon: nextMonthFlow >= 0 ? "↑" : "↓",
-      subLabel: `${nextMonth} plan`,
+      subLabel: `${currentMonth} plan`,
       onClick: () => setActiveTab(APP_TABS.BUDGET_COMMAND_CENTER),
     },
   ];
