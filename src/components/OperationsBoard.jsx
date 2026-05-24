@@ -36,6 +36,11 @@ function scorecardBarHeightPercent(value, maxValue) {
   return `${Math.max(2.8, Math.min(100, pct))}%`;
 }
 
+function finiteMoney(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
 export function OperationsBoard({
   subscriptions,
   transactions,
@@ -78,38 +83,55 @@ export function OperationsBoard({
     });
   };
 
-  const dynamicYearlyOpsData = yearlyOpsData.map((month) => {
+  const planConfigured =
+    planningIncomeStreams.length > 0 ||
+    planningBudgetRows.some((row) => finiteMoney(row.budget) > 0);
+
+  const dynamicYearlyOpsData = yearlyOpsData.map((seedMonth) => {
     const activeStreams = planningIncomeStreams.filter((stream) =>
-      (stream.months || budgetMonths).includes(month.month)
+      (stream.months || budgetMonths).includes(seedMonth.month)
     );
-    const plannedIncome = activeStreams.reduce((sum, stream) => sum + parseMoney(stream.amount), 0);
-    const oneTimeIncome = activeStreams
+    const plannedFromStreams = activeStreams.reduce((sum, stream) => sum + parseMoney(stream.amount), 0);
+    const oneTimeFromStreams = activeStreams
       .filter((stream) => stream.type === "One-Time")
       .reduce((sum, stream) => sum + parseMoney(stream.amount), 0);
 
     const activeBudgetCategories = planningBudgetRows.filter((category) =>
-      (category.months || budgetMonths).includes(month.month)
+      (category.months || budgetMonths).includes(seedMonth.month)
     );
 
-    const budget = activeBudgetCategories.reduce(
-      (sum, category) => sum + Number(category.budget || 0),
+    const budgetFromRows = activeBudgetCategories.reduce(
+      (sum, category) => sum + finiteMoney(category.budget),
       0
     );
 
-    const spent = monthlySpendSeries.find((entry) => entry.month === month.month)?.spent || 0;
+    const spentLive =
+      monthlySpendSeries.find((entry) => entry.month === seedMonth.month)?.spent || 0;
     const actualIncome =
-      monthlyActualIncomeSeries.find((entry) => entry.month === month.month)?.actualIncome || 0;
+      monthlyActualIncomeSeries.find((entry) => entry.month === seedMonth.month)?.actualIncome || 0;
+
+    const plannedIncome = planConfigured
+      ? finiteMoney(plannedFromStreams)
+      : finiteMoney(seedMonth.income);
+    const budget = planConfigured ? finiteMoney(budgetFromRows) : finiteMoney(seedMonth.budget);
+    const spent = planConfigured ? finiteMoney(spentLive) : finiteMoney(seedMonth.spent);
+    const oneTimeIncome = planConfigured
+      ? finiteMoney(oneTimeFromStreams)
+      : finiteMoney(seedMonth.oneTimeIncome);
+    const recurringIncome = planConfigured
+      ? plannedIncome - oneTimeIncome
+      : finiteMoney(seedMonth.recurringIncome);
 
     return {
-      ...month,
+      ...seedMonth,
       income: plannedIncome,
       plannedIncome,
-      actualIncome,
+      actualIncome: finiteMoney(actualIncome),
       budget,
       spent,
       baseBudget: budget,
       profit: plannedIncome - budget,
-      recurringIncome: plannedIncome - oneTimeIncome,
+      recurringIncome,
       oneTimeIncome,
     };
   });
@@ -120,15 +142,14 @@ export function OperationsBoard({
   const subscriptionOverview = buildSubscriptionOverview(subscriptions);
   const scorecardPeak = Math.max(
     ...dynamicYearlyOpsData.flatMap((month) => [
-      month.plannedIncome,
-      month.budget,
-      month.spent,
-      month.actualIncome,
+      finiteMoney(month.plannedIncome),
+      finiteMoney(month.budget),
+      finiteMoney(month.spent),
+      finiteMoney(month.actualIncome),
     ]),
     0
   );
   const maxValue = Math.max(scorecardPeak, 1);
-  const scorecardHasBars = scorecardPeak > 0;
 
   const incomeOutlookRows = planningIncomeStreams.map((stream) => {
     const monthlyValues = budgetMonths.map((month) =>
@@ -336,6 +357,13 @@ export function OperationsBoard({
                 <div style={{ color: "#8ea8ca", marginTop: 8, fontSize: 15, lineHeight: 1.5 }}>
                   Planned income from Income Hub, budget and spent from Budget Lab logic, and actual
                   income from positive in-month deposits (excluding transfers).
+                  {!planConfigured ? (
+                    <span style={{ display: "block", marginTop: 8, color: "#94a3b8", fontSize: 13 }}>
+                      No income streams or budget amounts are set for {activePlanningYear}; sample
+                      planned, budget, and spent values are shown so the chart is not empty. Actual
+                      income still reflects your transactions.
+                    </span>
+                  ) : null}
                 </div>
               </div>
               <div
@@ -435,7 +463,7 @@ export function OperationsBoard({
                   pointerEvents: "none",
                 }}
               />
-              {scorecardHasBars && hoveredCommandMonth ? (
+              {hoveredCommandMonth ? (
                 <div
                   style={{
                     position: "absolute",
@@ -526,45 +554,21 @@ export function OperationsBoard({
                 </div>
               ) : null}
 
-              {!scorecardHasBars ? (
+              {dynamicYearlyOpsData.map((month, index) => (
                 <div
+                  key={month.month}
+                  onMouseEnter={() => setHoveredCommandMonth({ data: month, index })}
                   style={{
-                    gridColumn: "1 / -1",
-                    alignSelf: "center",
-                    justifySelf: "center",
-                    maxWidth: 420,
-                    margin: "32px 12px",
-                    padding: "20px 22px",
-                    borderRadius: 10,
-                    border: "1px dashed rgba(148,163,184,0.35)",
-                    color: "#94a3b8",
-                    fontSize: 14,
-                    lineHeight: 1.55,
-                    textAlign: "center",
+                    height: "100%",
+                    minWidth: 0,
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "flex-end",
+                    alignItems: "center",
+                    gap: 8,
+                    cursor: "pointer",
                   }}
                 >
-                  No scorecard amounts for {activePlanningYear} yet (planned income, budget, spending, or
-                  positive deposits). Add income streams and budget rows for this year, or sync
-                  transactions—empty preview environments often look blank until data exists.
-                </div>
-              ) : null}
-
-              {scorecardHasBars
-                ? dynamicYearlyOpsData.map((month, index) => (
-                    <div
-                      key={month.month}
-                      onMouseEnter={() => setHoveredCommandMonth({ data: month, index })}
-                      style={{
-                        height: "100%",
-                        minWidth: 0,
-                        display: "flex",
-                        flexDirection: "column",
-                        justifyContent: "flex-end",
-                        alignItems: "center",
-                        gap: 8,
-                        cursor: "pointer",
-                      }}
-                    >
                       <div
                         style={{
                           height: 248,
@@ -666,8 +670,7 @@ export function OperationsBoard({
                         {month.month}
                       </div>
                     </div>
-                  ))
-                : null}
+              ))}
             </div>
           </div>
         </div>
