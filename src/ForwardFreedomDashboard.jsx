@@ -468,7 +468,7 @@ function ForwardFreedomDashboard({
     budgetRows: activeUser.budgetRows,
     incomeStreams: activeUser.incomeStreams,
     projectionAdjustments: activeUser.projectionAdjustments,
-    startingMonth: currentYearPlanState?.startingMonth || currentMonth,
+    startingMonth: currentMonth,
     startingTrueCash:
       currentYearPlanState?.startingTrueCash && currentYearPlanState.startingTrueCash !== 0
         ? currentYearPlanState.startingTrueCash
@@ -596,6 +596,7 @@ function ForwardFreedomDashboard({
     });
   };
   const setPlanningAnchorForYear = (targetYear, nextAnchor) => {
+    const liveStartingMonth = getBudgetPeriodAtOffset(0).month;
     setActiveUserField("plansByYear", (currentPlansByYear) => {
       const nextPlansByYear = ensurePlanYearData(
         currentPlansByYear,
@@ -610,6 +611,7 @@ function ForwardFreedomDashboard({
         [yearKey]: {
           ...currentPlan,
           ...nextAnchor,
+          startingMonth: liveStartingMonth,
         },
       };
     });
