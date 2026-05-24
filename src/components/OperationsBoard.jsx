@@ -28,12 +28,14 @@ function getLastNonNullValue(values, fallback = 0) {
   return lastValue ?? fallback;
 }
 
+const SCORECARD_BAR_AREA_PX = 248;
+
 function scorecardBarHeightPercent(value, maxValue) {
   const max = Math.max(Number(maxValue) || 1, 1);
   const v = Math.max(0, Number(value) || 0);
-  if (v <= 0) return "0%";
-  const pct = (v / max) * 100;
-  return `${Math.max(2.8, Math.min(100, pct))}%`;
+  if (v <= 0) return 0;
+  const raw = (v / max) * SCORECARD_BAR_AREA_PX;
+  return Math.round(Math.max(SCORECARD_BAR_AREA_PX * 0.028, Math.min(SCORECARD_BAR_AREA_PX, raw)));
 }
 
 function finiteMoney(value) {
