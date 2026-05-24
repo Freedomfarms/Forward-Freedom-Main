@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { styles } from "../styles.js";
-import { buildBudgetMonthlySpendSeries } from "../utils/budgetReview.js";
+import { buildBudgetMonthlySpendSeries, buildMonthlyActualIncomeSeries } from "../utils/budgetReview.js";
 import { getCurrentBudgetPeriod } from "../utils/date.js";
 import { cleanMoneyInput, money, parseMoney, wholeDollars } from "../utils/format.js";
 import { budgetMonths, yearlyOpsData } from "../data/constants.jsx";
@@ -28,6 +28,19 @@ function getLastNonNullValue(values, fallback = 0) {
   return lastValue ?? fallback;
 }
 
+function scorecardBarHeightPercent(value, maxValue) {
+  const max = Math.max(Number(maxValue) || 1, 1);
+  const v = Math.max(0, Number(value) || 0);
+  if (v <= 0) return "0%";
+  const pct = (v / max) * 100;
+  return `${Math.max(2.8, Math.min(100, pct))}%`;
+}
+
+function finiteMoney(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
 export function OperationsBoard({
   subscriptions,
   transactions,
@@ -46,18 +59,21 @@ export function OperationsBoard({
   const [hoveredCommandMonth, setHoveredCommandMonth] = useState(null);
   const currentBudgetPeriod = getCurrentBudgetPeriod();
   const [activePlanningYear, setActivePlanningYear] = useState(currentPlanYear);
+  const safeTransactions = Array.isArray(transactions) ? transactions : [];
   const planningBudgetRows = getBudgetRowsForYear(activePlanningYear);
   const planningIncomeStreams = getIncomeStreamsForYear(activePlanningYear);
   const planningProjectionAdjustments = getProjectionAdjustmentsForYear(activePlanningYear);
   const planningAnchor = getPlanningAnchorForYear(activePlanningYear);
   const monthlySpendSeries = buildBudgetMonthlySpendSeries(
-    transactions,
+    safeTransactions,
     planningBudgetRows,
     activePlanningYear
   );
+  const monthlyActualIncomeSeries = buildMonthlyActualIncomeSeries(safeTransactions, activePlanningYear);
   const updatePlanningYear = (value) => {
     const nextValue = Number(value);
     ensurePlanningYear(nextValue);
+    setHoveredCommandMonth(null);
     setActivePlanningYear(nextValue);
   };
   const updatePlanningAnchor = (field, value) => {
@@ -67,34 +83,55 @@ export function OperationsBoard({
     });
   };
 
-  const dynamicYearlyOpsData = yearlyOpsData.map((month) => {
+  const planConfigured =
+    planningIncomeStreams.length > 0 ||
+    planningBudgetRows.some((row) => finiteMoney(row.budget) > 0);
+
+  const dynamicYearlyOpsData = yearlyOpsData.map((seedMonth) => {
     const activeStreams = planningIncomeStreams.filter((stream) =>
-      (stream.months || budgetMonths).includes(month.month)
+      (stream.months || budgetMonths).includes(seedMonth.month)
     );
-    const income = activeStreams.reduce((sum, stream) => sum + parseMoney(stream.amount), 0);
-    const oneTimeIncome = activeStreams
+    const plannedFromStreams = activeStreams.reduce((sum, stream) => sum + parseMoney(stream.amount), 0);
+    const oneTimeFromStreams = activeStreams
       .filter((stream) => stream.type === "One-Time")
       .reduce((sum, stream) => sum + parseMoney(stream.amount), 0);
 
     const activeBudgetCategories = planningBudgetRows.filter((category) =>
-      (category.months || budgetMonths).includes(month.month)
+      (category.months || budgetMonths).includes(seedMonth.month)
     );
 
-    const budget = activeBudgetCategories.reduce(
-      (sum, category) => sum + Number(category.budget || 0),
+    const budgetFromRows = activeBudgetCategories.reduce(
+      (sum, category) => sum + finiteMoney(category.budget),
       0
     );
 
-    const spent = monthlySpendSeries.find((entry) => entry.month === month.month)?.spent || 0;
+    const spentLive =
+      monthlySpendSeries.find((entry) => entry.month === seedMonth.month)?.spent || 0;
+    const actualIncome =
+      monthlyActualIncomeSeries.find((entry) => entry.month === seedMonth.month)?.actualIncome || 0;
+
+    const plannedIncome = planConfigured
+      ? finiteMoney(plannedFromStreams)
+      : finiteMoney(seedMonth.income);
+    const budget = planConfigured ? finiteMoney(budgetFromRows) : finiteMoney(seedMonth.budget);
+    const spent = planConfigured ? finiteMoney(spentLive) : finiteMoney(seedMonth.spent);
+    const oneTimeIncome = planConfigured
+      ? finiteMoney(oneTimeFromStreams)
+      : finiteMoney(seedMonth.oneTimeIncome);
+    const recurringIncome = planConfigured
+      ? plannedIncome - oneTimeIncome
+      : finiteMoney(seedMonth.recurringIncome);
 
     return {
-      ...month,
-      income,
+      ...seedMonth,
+      income: plannedIncome,
+      plannedIncome,
+      actualIncome: finiteMoney(actualIncome),
       budget,
       spent,
       baseBudget: budget,
-      profit: income - budget,
-      recurringIncome: income - oneTimeIncome,
+      profit: plannedIncome - budget,
+      recurringIncome,
       oneTimeIncome,
     };
   });
@@ -103,10 +140,17 @@ export function OperationsBoard({
   const yearlyBudget = dynamicYearlyOpsData.reduce((sum, month) => sum + month.budget, 0);
   const yearlySurplus = yearlyIncome - yearlyBudget;
   const subscriptionOverview = buildSubscriptionOverview(subscriptions);
-  const maxValue = Math.max(
-    ...dynamicYearlyOpsData.flatMap((month) => [month.income, month.budget, month.spent]),
-    1
+  const scorecardPeak = Math.max(
+    ...dynamicYearlyOpsData.flatMap((month) => [
+      finiteMoney(month.plannedIncome),
+      finiteMoney(month.budget),
+      finiteMoney(month.spent),
+      finiteMoney(month.actualIncome),
+    ]),
+    0
   );
+  const maxValue = Math.max(scorecardPeak, 1);
+
   const incomeOutlookRows = planningIncomeStreams.map((stream) => {
     const monthlyValues = budgetMonths.map((month) =>
       (stream.months || budgetMonths).includes(month) ? parseMoney(stream.amount) : 0
@@ -310,61 +354,83 @@ export function OperationsBoard({
             >
               <div>
                 <div style={{ color: "white", fontSize: 22, fontWeight: 800 }}>Monthly Scorecard</div>
-                <div style={{ color: "#8ea8ca", marginTop: 8, fontSize: 16 }}>
-                  Income pulls from Income Hub. Budget and spent pull from the same
-                  monthly transaction logic used in Budget Strategy Lab.
+                <div style={{ color: "#8ea8ca", marginTop: 8, fontSize: 15, lineHeight: 1.5 }}>
+                  Planned income from Income Hub, budget and spent from Budget Lab logic, and actual
+                  income from positive in-month deposits (excluding transfers).
+                  {!planConfigured ? (
+                    <span style={{ display: "block", marginTop: 8, color: "#94a3b8", fontSize: 13 }}>
+                      No income streams or budget amounts are set for {activePlanningYear}; sample
+                      planned, budget, and spent values are shown so the chart is not empty. Actual
+                      income still reflects your transactions.
+                    </span>
+                  ) : null}
                 </div>
               </div>
               <div
                 style={{
                   display: "flex",
-                  gap: 16,
-                  color: "#b8d3f3",
-                  fontSize: 15,
-                  fontWeight: 700,
+                  gap: 22,
+                  color: "#94a3b8",
+                  fontSize: 13,
+                  fontWeight: 600,
                   flexWrap: "wrap",
                   justifyContent: "flex-end",
+                  letterSpacing: 0.02,
+                  alignItems: "center",
                 }}
               >
-                <span>
-                  <b
-                    style={{
-                      display: "inline-block",
-                      width: 10,
-                      height: 10,
-                      borderRadius: 99,
-                      background: "#00f59b",
-                      marginRight: 8,
-                    }}
-                  />
-                  Total Income
-                </span>
-                <span>
-                  <b
-                    style={{
-                      display: "inline-block",
-                      width: 10,
-                      height: 10,
-                      borderRadius: 99,
-                      background: "#00d8ff",
-                      marginRight: 8,
-                    }}
-                  />
-                  Budget
-                </span>
-                <span>
-                  <b
-                    style={{
-                      display: "inline-block",
-                      width: 10,
-                      height: 10,
-                      borderRadius: 99,
-                      background: "#ff8f3d",
-                      marginRight: 8,
-                    }}
-                  />
-                  Spent
-                </span>
+                <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span
+                      style={{
+                        width: 10,
+                        height: 10,
+                        borderRadius: 2,
+                        background: "linear-gradient(135deg,#7fffd4,#34d399)",
+                        boxShadow: "0 0 10px rgba(52,211,153,0.45)",
+                      }}
+                    />
+                    Planned income
+                  </span>
+                  <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span
+                      style={{
+                        width: 10,
+                        height: 10,
+                        borderRadius: 2,
+                        background: "#0f766e",
+                        boxShadow: "inset 0 0 0 1px rgba(110,255,210,0.25)",
+                      }}
+                    />
+                    Actual income
+                  </span>
+                </div>
+                <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span
+                      style={{
+                        width: 10,
+                        height: 10,
+                        borderRadius: 2,
+                        background: "linear-gradient(135deg,#fdba74,#fb923c)",
+                        boxShadow: "0 0 8px rgba(251,146,60,0.35)",
+                      }}
+                    />
+                    Budget
+                  </span>
+                  <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span
+                      style={{
+                        width: 10,
+                        height: 10,
+                        borderRadius: 2,
+                        background: "#7c2d12",
+                        boxShadow: "inset 0 0 0 1px rgba(253,186,116,0.2)",
+                      }}
+                    />
+                    Spent
+                  </span>
+                </div>
               </div>
             </div>
 
@@ -372,68 +438,92 @@ export function OperationsBoard({
               onMouseLeave={() => setHoveredCommandMonth(null)}
               style={{
                 position: "relative",
-                height: 360,
+                height: 348,
+                borderRadius: 12,
+                border: "1px solid rgba(148,163,184,0.22)",
+                background: "rgba(15,23,42,0.55)",
+                padding: "20px 10px 6px",
                 display: "grid",
-                gridTemplateColumns: "repeat(12, 1fr)",
-                gap: 8,
+                gridTemplateColumns: "repeat(12, minmax(0, 1fr))",
+                gap: 4,
                 alignItems: "end",
-                borderLeft: "1px solid rgba(0,136,255,.18)",
-                borderBottom: "1px solid rgba(0,136,255,.18)",
-                padding: "18px 8px 0",
+                overflowX: "auto",
+                overflowY: "hidden",
               }}
             >
+              <div
+                aria-hidden
+                style={{
+                  position: "absolute",
+                  left: 12,
+                  right: 12,
+                  bottom: 34,
+                  height: 1,
+                  background: "rgba(148,163,184,0.18)",
+                  pointerEvents: "none",
+                }}
+              />
               {hoveredCommandMonth ? (
                 <div
                   style={{
                     position: "absolute",
                     top: 14,
                     left: `${Math.min(
-                      86,
-                      Math.max(14, ((hoveredCommandMonth.index + 0.5) / 12) * 100)
+                      88,
+                      Math.max(12, ((hoveredCommandMonth.index + 0.5) / 12) * 100)
                     )}%`,
                     transform: "translateX(-50%)",
                     zIndex: 5,
-                    minWidth: 190,
-                    border: "1px solid rgba(0,216,255,.55)",
-                    borderRadius: 12,
-                    background: "linear-gradient(180deg, rgba(5,23,45,.98), rgba(2,10,23,.96))",
-                    boxShadow: "0 0 28px rgba(0,136,255,.32), inset 0 0 18px rgba(0,216,255,.08)",
+                    minWidth: 210,
+                    border: "1px solid rgba(148,163,184,0.28)",
+                    borderRadius: 8,
+                    background: "rgba(15,23,42,0.97)",
+                    boxShadow: "0 12px 28px rgba(0,0,0,0.35)",
                     padding: "12px 14px",
                     pointerEvents: "none",
                   }}
                 >
                   <div
                     style={{
-                      color: "#8feaff",
-                      fontSize: 12,
-                      textTransform: "uppercase",
-                      letterSpacing: 1,
-                      marginBottom: 9,
+                      color: "#e2e8f0",
+                      fontSize: 13,
+                      marginBottom: 10,
+                      fontWeight: 700,
+                      borderBottom: "1px solid rgba(148,163,184,0.2)",
+                      paddingBottom: 8,
                     }}
                   >
-                    {hoveredCommandMonth.data.month} Values
+                    {hoveredCommandMonth.data.month}
                   </div>
                   {[
-                    ["Income", hoveredCommandMonth.data.income, "#00f59b"],
-                    ["Budget", hoveredCommandMonth.data.budget, "#00d8ff"],
-                    ["Spent", hoveredCommandMonth.data.spent, "#ff8f3d"],
-                    ["True Cash", trueCashValues[hoveredCommandMonth.index], "#8feaff"],
+                    [
+                      "Planned income",
+                      hoveredCommandMonth.data.plannedIncome ?? hoveredCommandMonth.data.income,
+                      "#5eead4",
+                    ],
+                    ["Actual income", hoveredCommandMonth.data.actualIncome, "#0f766e"],
+                    ["Budget", hoveredCommandMonth.data.budget, "#fdba74"],
+                    ["Spent", hoveredCommandMonth.data.spent, "#9a3412"],
+                    ["True Cash", trueCashValues[hoveredCommandMonth.index], "#94a3b8"],
                     [
                       "Profit",
-                      hoveredCommandMonth.data.income - hoveredCommandMonth.data.budget,
-                      hoveredCommandMonth.data.income - hoveredCommandMonth.data.budget >= 0
-                        ? "#00f59b"
-                        : "#ff5d7a",
+                      (hoveredCommandMonth.data.plannedIncome ?? hoveredCommandMonth.data.income) -
+                        hoveredCommandMonth.data.budget,
+                      (hoveredCommandMonth.data.plannedIncome ?? hoveredCommandMonth.data.income) -
+                        hoveredCommandMonth.data.budget >=
+                      0
+                        ? "#4ade80"
+                        : "#f87171",
                     ],
                     [
                       "Adjustments",
                       adjustmentValues[hoveredCommandMonth.index],
-                      adjustmentValues[hoveredCommandMonth.index] >= 0 ? "#ffb347" : "#ff7a45",
+                      adjustmentValues[hoveredCommandMonth.index] >= 0 ? "#fbbf24" : "#f97316",
                     ],
                     [
                       "Projected Cash",
                       projectedTrueCashValues[hoveredCommandMonth.index],
-                      "#ff9f1c",
+                      "#fbbf24",
                     ],
                   ].map(([label, value, color]) => (
                     <div
@@ -442,13 +532,13 @@ export function OperationsBoard({
                         display: "flex",
                         justifyContent: "space-between",
                         gap: 18,
-                        color: "#d7ecff",
-                        fontSize: 14,
-                        fontWeight: 800,
+                        color: "#cbd5e1",
+                        fontSize: 13,
+                        fontWeight: 600,
                         marginTop: 6,
                       }}
                     >
-                      <span style={{ color: "#8fb1d9" }}>{label}</span>
+                      <span style={{ color: "#94a3b8" }}>{label}</span>
                       <span style={{ color }}>
                         {(label === "Profit" || label === "Adjustments") && value >= 0 ? "+" : ""}
                         {(label === "Projected Cash" || label === "True Cash") && value === null
@@ -470,59 +560,116 @@ export function OperationsBoard({
                   onMouseEnter={() => setHoveredCommandMonth({ data: month, index })}
                   style={{
                     height: "100%",
+                    minWidth: 0,
                     display: "flex",
                     flexDirection: "column",
                     justifyContent: "flex-end",
                     alignItems: "center",
-                    gap: 10,
-                    cursor: "crosshair",
+                    gap: 8,
+                    cursor: "pointer",
                   }}
                 >
-                  <div
-                    style={{
-                      height: 255,
-                      width: "100%",
-                      display: "flex",
-                      alignItems: "end",
-                      justifyContent: "center",
-                      gap: 3,
-                    }}
-                  >
-                    <div
-                      title={`Income ${money(month.income)}`}
-                      style={{
-                        width: 14,
-                        height: `${(month.income / maxValue) * 100}%`,
-                        borderRadius: "8px 8px 0 0",
-                        background: "linear-gradient(180deg,#00f59b,#006d4a)",
-                        boxShadow: "0 0 14px rgba(0,245,155,.35)",
-                      }}
-                    />
-                    <div
-                      title={`Spent ${money(month.spent)}`}
-                      style={{
-                        width: 14,
-                        height: `${(month.spent / maxValue) * 100}%`,
-                        borderRadius: "8px 8px 0 0",
-                        background: "linear-gradient(180deg,#ffb65d,#ff6b1c)",
-                        boxShadow: "0 0 14px rgba(255,159,28,.35)",
-                      }}
-                    />
-                    <div
-                      title={`Budget ${money(month.budget)}`}
-                      style={{
-                        width: 14,
-                        height: `${(month.budget / maxValue) * 100}%`,
-                        borderRadius: "8px 8px 0 0",
-                        background: "linear-gradient(180deg,#00d8ff,#005dff)",
-                        boxShadow: "0 0 14px rgba(0,216,255,.35)",
-                      }}
-                    />
-                  </div>
-                  <div style={{ color: "#9fb0c9", fontSize: 16, fontWeight: 800 }}>
-                    {month.month}
-                  </div>
-                </div>
+                      <div
+                        style={{
+                          height: 248,
+                          width: "100%",
+                          minWidth: 0,
+                          maxWidth: "100%",
+                          display: "flex",
+                          alignItems: "end",
+                          justifyContent: "center",
+                          gap: 5,
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "end",
+                            justifyContent: "center",
+                            gap: 2,
+                          }}
+                        >
+                          <div
+                            title={`Planned income ${money(month.plannedIncome ?? month.income)}`}
+                            style={{
+                              width: 8,
+                              height: scorecardBarHeightPercent(
+                                month.plannedIncome ?? month.income,
+                                maxValue
+                              ),
+                              borderRadius: "3px 3px 1px 1px",
+                              background: "linear-gradient(180deg,#7fffd4,#34d399)",
+                              border: "1px solid rgba(167,255,230,0.35)",
+                              boxShadow: "0 -2px 12px rgba(52,211,153,0.35)",
+                            }}
+                          />
+                          <div
+                            title={`Actual income ${money(month.actualIncome)}`}
+                            style={{
+                              width: 8,
+                              height: scorecardBarHeightPercent(month.actualIncome, maxValue),
+                              borderRadius: "3px 3px 1px 1px",
+                              background: "linear-gradient(180deg,#0f766e,#064e3b)",
+                              border: "1px solid rgba(45,120,110,0.6)",
+                              boxShadow: "inset 0 1px 0 rgba(110,255,210,0.12)",
+                            }}
+                          />
+                        </div>
+                        <div
+                          aria-hidden
+                          style={{
+                            width: 1,
+                            height: 200,
+                            flexShrink: 0,
+                            alignSelf: "flex-end",
+                            marginBottom: 0,
+                            background: "rgba(148,163,184,0.22)",
+                            borderRadius: 1,
+                          }}
+                        />
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "end",
+                            justifyContent: "center",
+                            gap: 2,
+                          }}
+                        >
+                          <div
+                            title={`Budget ${money(month.budget)}`}
+                            style={{
+                              width: 8,
+                              height: scorecardBarHeightPercent(month.budget, maxValue),
+                              borderRadius: "3px 3px 1px 1px",
+                              background: "linear-gradient(180deg,#fdba74,#fb923c)",
+                              border: "1px solid rgba(255,220,180,0.35)",
+                              boxShadow: "0 -2px 10px rgba(251,146,60,0.28)",
+                            }}
+                          />
+                          <div
+                            title={`Spent ${money(month.spent)}`}
+                            style={{
+                              width: 8,
+                              height: scorecardBarHeightPercent(month.spent, maxValue),
+                              borderRadius: "3px 3px 1px 1px",
+                              background: "linear-gradient(180deg,#9a3412,#7c2d12)",
+                              border: "1px solid rgba(120,45,25,0.55)",
+                              boxShadow: "inset 0 1px 0 rgba(253,186,116,0.1)",
+                            }}
+                          />
+                        </div>
+                      </div>
+                      <div
+                        style={{
+                          color: "#64748b",
+                          fontSize: 12,
+                          fontWeight: 600,
+                          marginTop: 4,
+                        }}
+                      >
+                        {month.month}
+                      </div>
+                    </div>
               ))}
             </div>
           </div>
