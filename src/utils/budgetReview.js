@@ -182,8 +182,9 @@ export function buildMonthlyBudgetReview(transactions, budgetRows, options = {})
 }
 
 export function buildBudgetMonthlySpendSeries(transactions, budgetRows, year) {
+  const list = Array.isArray(transactions) ? transactions : [];
   return budgetMonths.map((month) => {
-    const snapshot = buildMonthlySpendSnapshot(transactions, budgetRows, { month, year });
+    const snapshot = buildMonthlySpendSnapshot(list, budgetRows, { month, year });
 
     return {
       month,
@@ -195,7 +196,8 @@ export function buildBudgetMonthlySpendSeries(transactions, budgetRows, year) {
 
 /** Positive inflows for the month (excludes Transfers category). */
 export function sumActualIncomeForMonth(transactions, month, year) {
-  return transactions
+  const list = Array.isArray(transactions) ? transactions : [];
+  return list
     .filter((tx) => isTransactionInBudgetMonth(tx, month, year))
     .reduce((sum, tx) => {
       const amount = Number(tx.amount) || 0;

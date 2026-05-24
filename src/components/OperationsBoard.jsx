@@ -54,19 +54,21 @@ export function OperationsBoard({
   const [hoveredCommandMonth, setHoveredCommandMonth] = useState(null);
   const currentBudgetPeriod = getCurrentBudgetPeriod();
   const [activePlanningYear, setActivePlanningYear] = useState(currentPlanYear);
+  const safeTransactions = Array.isArray(transactions) ? transactions : [];
   const planningBudgetRows = getBudgetRowsForYear(activePlanningYear);
   const planningIncomeStreams = getIncomeStreamsForYear(activePlanningYear);
   const planningProjectionAdjustments = getProjectionAdjustmentsForYear(activePlanningYear);
   const planningAnchor = getPlanningAnchorForYear(activePlanningYear);
   const monthlySpendSeries = buildBudgetMonthlySpendSeries(
-    transactions,
+    safeTransactions,
     planningBudgetRows,
     activePlanningYear
   );
-  const monthlyActualIncomeSeries = buildMonthlyActualIncomeSeries(transactions, activePlanningYear);
+  const monthlyActualIncomeSeries = buildMonthlyActualIncomeSeries(safeTransactions, activePlanningYear);
   const updatePlanningYear = (value) => {
     const nextValue = Number(value);
     ensurePlanningYear(nextValue);
+    setHoveredCommandMonth(null);
     setActivePlanningYear(nextValue);
   };
   const updatePlanningAnchor = (field, value) => {
@@ -116,15 +118,18 @@ export function OperationsBoard({
   const yearlyBudget = dynamicYearlyOpsData.reduce((sum, month) => sum + month.budget, 0);
   const yearlySurplus = yearlyIncome - yearlyBudget;
   const subscriptionOverview = buildSubscriptionOverview(subscriptions);
-  const maxValue = Math.max(
+  const scorecardPeak = Math.max(
     ...dynamicYearlyOpsData.flatMap((month) => [
       month.plannedIncome,
       month.budget,
       month.spent,
       month.actualIncome,
     ]),
-    1
+    0
   );
+  const maxValue = Math.max(scorecardPeak, 1);
+  const scorecardHasBars = scorecardPeak > 0;
+
   const incomeOutlookRows = planningIncomeStreams.map((stream) => {
     const monthlyValues = budgetMonths.map((month) =>
       (stream.months || budgetMonths).includes(month) ? parseMoney(stream.amount) : 0
@@ -409,12 +414,13 @@ export function OperationsBoard({
                 borderRadius: 12,
                 border: "1px solid rgba(148,163,184,0.22)",
                 background: "rgba(15,23,42,0.55)",
-                padding: "20px 12px 6px",
+                padding: "20px 10px 6px",
                 display: "grid",
-                gridTemplateColumns: "repeat(12, 1fr)",
-                gap: 6,
+                gridTemplateColumns: "repeat(12, minmax(0, 1fr))",
+                gap: 4,
                 alignItems: "end",
-                overflow: "hidden",
+                overflowX: "auto",
+                overflowY: "hidden",
               }}
             >
               <div
@@ -429,7 +435,7 @@ export function OperationsBoard({
                   pointerEvents: "none",
                 }}
               />
-              {hoveredCommandMonth ? (
+              {scorecardHasBars && hoveredCommandMonth ? (
                 <div
                   style={{
                     position: "absolute",
@@ -520,105 +526,148 @@ export function OperationsBoard({
                 </div>
               ) : null}
 
-              {dynamicYearlyOpsData.map((month, index) => (
+              {!scorecardHasBars ? (
                 <div
-                  key={month.month}
-                  onMouseEnter={() => setHoveredCommandMonth({ data: month, index })}
                   style={{
-                    height: "100%",
-                    display: "flex",
-                    flexDirection: "column",
-                    justifyContent: "flex-end",
-                    alignItems: "center",
-                    gap: 8,
-                    cursor: "pointer",
+                    gridColumn: "1 / -1",
+                    alignSelf: "center",
+                    justifySelf: "center",
+                    maxWidth: 420,
+                    margin: "32px 12px",
+                    padding: "20px 22px",
+                    borderRadius: 10,
+                    border: "1px dashed rgba(148,163,184,0.35)",
+                    color: "#94a3b8",
+                    fontSize: 14,
+                    lineHeight: 1.55,
+                    textAlign: "center",
                   }}
                 >
-                  <div
-                    style={{
-                      height: 248,
-                      width: "100%",
-                      display: "flex",
-                      alignItems: "end",
-                      justifyContent: "center",
-                      gap: 12,
-                    }}
-                  >
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "end",
-                        justifyContent: "center",
-                        gap: 3,
-                      }}
-                    >
-                      <div
-                        title={`Planned income ${money(month.plannedIncome ?? month.income)}`}
-                        style={{
-                          width: 9,
-                          height: scorecardBarHeightPercent(month.plannedIncome ?? month.income, maxValue),
-                          borderRadius: "3px 3px 1px 1px",
-                          background: "linear-gradient(180deg,#7fffd4,#34d399)",
-                          border: "1px solid rgba(167,255,230,0.35)",
-                          boxShadow: "0 -2px 12px rgba(52,211,153,0.35)",
-                        }}
-                      />
-                      <div
-                        title={`Actual income ${money(month.actualIncome)}`}
-                        style={{
-                          width: 9,
-                          height: scorecardBarHeightPercent(month.actualIncome, maxValue),
-                          borderRadius: "3px 3px 1px 1px",
-                          background: "linear-gradient(180deg,#0f766e,#064e3b)",
-                          border: "1px solid rgba(45,120,110,0.6)",
-                          boxShadow: "inset 0 1px 0 rgba(110,255,210,0.12)",
-                        }}
-                      />
-                    </div>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "end",
-                        justifyContent: "center",
-                        gap: 3,
-                      }}
-                    >
-                      <div
-                        title={`Budget ${money(month.budget)}`}
-                        style={{
-                          width: 9,
-                          height: scorecardBarHeightPercent(month.budget, maxValue),
-                          borderRadius: "3px 3px 1px 1px",
-                          background: "linear-gradient(180deg,#fdba74,#fb923c)",
-                          border: "1px solid rgba(255,220,180,0.35)",
-                          boxShadow: "0 -2px 10px rgba(251,146,60,0.28)",
-                        }}
-                      />
-                      <div
-                        title={`Spent ${money(month.spent)}`}
-                        style={{
-                          width: 9,
-                          height: scorecardBarHeightPercent(month.spent, maxValue),
-                          borderRadius: "3px 3px 1px 1px",
-                          background: "linear-gradient(180deg,#9a3412,#7c2d12)",
-                          border: "1px solid rgba(120,45,25,0.55)",
-                          boxShadow: "inset 0 1px 0 rgba(253,186,116,0.1)",
-                        }}
-                      />
-                    </div>
-                  </div>
-                  <div
-                    style={{
-                      color: "#64748b",
-                      fontSize: 12,
-                      fontWeight: 600,
-                      marginTop: 4,
-                    }}
-                  >
-                    {month.month}
-                  </div>
+                  No scorecard amounts for {activePlanningYear} yet (planned income, budget, spending, or
+                  positive deposits). Add income streams and budget rows for this year, or sync
+                  transactions—empty preview environments often look blank until data exists.
                 </div>
-              ))}
+              ) : null}
+
+              {scorecardHasBars
+                ? dynamicYearlyOpsData.map((month, index) => (
+                    <div
+                      key={month.month}
+                      onMouseEnter={() => setHoveredCommandMonth({ data: month, index })}
+                      style={{
+                        height: "100%",
+                        minWidth: 0,
+                        display: "flex",
+                        flexDirection: "column",
+                        justifyContent: "flex-end",
+                        alignItems: "center",
+                        gap: 8,
+                        cursor: "pointer",
+                      }}
+                    >
+                      <div
+                        style={{
+                          height: 248,
+                          width: "100%",
+                          minWidth: 0,
+                          maxWidth: "100%",
+                          display: "flex",
+                          alignItems: "end",
+                          justifyContent: "center",
+                          gap: 5,
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "end",
+                            justifyContent: "center",
+                            gap: 2,
+                          }}
+                        >
+                          <div
+                            title={`Planned income ${money(month.plannedIncome ?? month.income)}`}
+                            style={{
+                              width: 8,
+                              height: scorecardBarHeightPercent(
+                                month.plannedIncome ?? month.income,
+                                maxValue
+                              ),
+                              borderRadius: "3px 3px 1px 1px",
+                              background: "linear-gradient(180deg,#7fffd4,#34d399)",
+                              border: "1px solid rgba(167,255,230,0.35)",
+                              boxShadow: "0 -2px 12px rgba(52,211,153,0.35)",
+                            }}
+                          />
+                          <div
+                            title={`Actual income ${money(month.actualIncome)}`}
+                            style={{
+                              width: 8,
+                              height: scorecardBarHeightPercent(month.actualIncome, maxValue),
+                              borderRadius: "3px 3px 1px 1px",
+                              background: "linear-gradient(180deg,#0f766e,#064e3b)",
+                              border: "1px solid rgba(45,120,110,0.6)",
+                              boxShadow: "inset 0 1px 0 rgba(110,255,210,0.12)",
+                            }}
+                          />
+                        </div>
+                        <div
+                          aria-hidden
+                          style={{
+                            width: 1,
+                            height: 200,
+                            flexShrink: 0,
+                            alignSelf: "flex-end",
+                            marginBottom: 0,
+                            background: "rgba(148,163,184,0.22)",
+                            borderRadius: 1,
+                          }}
+                        />
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "end",
+                            justifyContent: "center",
+                            gap: 2,
+                          }}
+                        >
+                          <div
+                            title={`Budget ${money(month.budget)}`}
+                            style={{
+                              width: 8,
+                              height: scorecardBarHeightPercent(month.budget, maxValue),
+                              borderRadius: "3px 3px 1px 1px",
+                              background: "linear-gradient(180deg,#fdba74,#fb923c)",
+                              border: "1px solid rgba(255,220,180,0.35)",
+                              boxShadow: "0 -2px 10px rgba(251,146,60,0.28)",
+                            }}
+                          />
+                          <div
+                            title={`Spent ${money(month.spent)}`}
+                            style={{
+                              width: 8,
+                              height: scorecardBarHeightPercent(month.spent, maxValue),
+                              borderRadius: "3px 3px 1px 1px",
+                              background: "linear-gradient(180deg,#9a3412,#7c2d12)",
+                              border: "1px solid rgba(120,45,25,0.55)",
+                              boxShadow: "inset 0 1px 0 rgba(253,186,116,0.1)",
+                            }}
+                          />
+                        </div>
+                      </div>
+                      <div
+                        style={{
+                          color: "#64748b",
+                          fontSize: 12,
+                          fontWeight: 600,
+                          marginTop: 4,
+                        }}
+                      >
+                        {month.month}
+                      </div>
+                    </div>
+                  ))
+                : null}
             </div>
           </div>
         </div>
