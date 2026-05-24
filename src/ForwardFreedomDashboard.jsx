@@ -360,6 +360,7 @@ function ForwardFreedomDashboard({
   const [activeUserId, setActiveUserId] = useState(initialAppState.activeUserId);
   const [editingUserId, setEditingUserId] = useState(null);
   const [draftUserName, setDraftUserName] = useState("");
+  const [pendingManualEditAccountId, setPendingManualEditAccountId] = useState(null);
   const [plaidStatus, setPlaidStatus] = useState({
     configured: false,
     environment: "sandbox",
@@ -1392,6 +1393,8 @@ function ForwardFreedomDashboard({
               plaidIntegration={plaidIntegration}
               subscriptions={subscriptions}
               transactions={categorizedTransactions}
+              pendingManualEditAccountId={pendingManualEditAccountId}
+              onPendingManualEditAccountConsumed={() => setPendingManualEditAccountId(null)}
             />
           ) : activeTab === APP_TABS.TRANSACTIONS ? (
             <TransactionsView
@@ -1408,6 +1411,13 @@ function ForwardFreedomDashboard({
               updateTransactionCategory={updateTransactionCategory}
               householdProfilesProps={householdProfilesProps}
               plaidIntegration={plaidIntegration}
+              deleteAccount={deleteAccount}
+              subscriptions={subscriptions}
+              transactions={categorizedTransactions}
+              onNavigateToEditManualAccount={(accountId) => {
+                setPendingManualEditAccountId(accountId);
+                setActiveTab(APP_TABS.ADD_ACCOUNTS);
+              }}
             />
           ) : activeTab === APP_TABS.FORECAST_LAB ? (
             <ForecastLab
