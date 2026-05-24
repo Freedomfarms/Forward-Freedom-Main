@@ -192,3 +192,24 @@ export function buildBudgetMonthlySpendSeries(transactions, budgetRows, year) {
     };
   });
 }
+
+/** Positive inflows for the month (excludes Transfers category). */
+export function sumActualIncomeForMonth(transactions, month, year) {
+  return transactions
+    .filter((tx) => isTransactionInBudgetMonth(tx, month, year))
+    .reduce((sum, tx) => {
+      const amount = Number(tx.amount) || 0;
+      if (amount <= 0) return sum;
+      const category = String(tx.category || "").trim().toLowerCase();
+      if (category === "transfers") return sum;
+      return sum + amount;
+    }, 0);
+}
+
+export function buildMonthlyActualIncomeSeries(transactions, year) {
+  return budgetMonths.map((month) => ({
+    month,
+    year,
+    actualIncome: sumActualIncomeForMonth(transactions, month, year),
+  }));
+}
