@@ -3,6 +3,7 @@ import { styles } from "../styles.js";
 import { budgetMonths, budgetMonthNames } from "../data/constants.jsx";
 import { getCurrentBudgetPeriod } from "../utils/date.js";
 import { money, parseMoney } from "../utils/format.js";
+import { buildIncomeStreamsWithReceived } from "../utils/budgetReview.js";
 import { HouseholdProfilesControl, MonthCoverageEditor } from "./Common.jsx";
 
 function buildHeatBarWidth(value, maxValue) {
@@ -13,6 +14,7 @@ function buildHeatBarWidth(value, maxValue) {
 }
 
 export function IncomeHub({
+  transactions = [],
   householdProfilesProps,
   currentPlanYear,
   availablePlanningYears,
@@ -32,6 +34,13 @@ export function IncomeHub({
   const activeIncomeLabel = `${budgetMonthNames[activeIncomeMonth]} ${activeIncomeDate.year}`;
   const planningBudgetRows = getBudgetRowsForYear(activeIncomeDate.year);
   const planningIncomeStreams = getIncomeStreamsForYear(activeIncomeDate.year);
+  const incomeStreamsWithReceived = buildIncomeStreamsWithReceived(
+    transactions,
+    planningIncomeStreams,
+    activeIncomeMonth,
+    activeIncomeDate.year
+  );
+  const incomeReceivedById = new Map(incomeStreamsWithReceived.map((entry) => [entry.id, entry]));
 
   const updateIncomeDate = (field, value) => {
     const nextValue = Number(value);
@@ -440,159 +449,257 @@ export function IncomeHub({
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 18, marginTop: 4 }}>
-            {planningIncomeStreams.map((income, index) => (
-              <div
-                key={income.id}
-                style={{
-                  border: "1px solid rgba(0,136,255,.16)",
-                  borderRadius: 14,
-                  background: "rgba(2,14,28,.72)",
-                  padding: "16px 18px",
-                  display: "grid",
-                  gridTemplateColumns: "auto 1fr auto",
-                  alignItems: "center",
-                  gap: 16,
-                  boxShadow: "inset 0 0 18px rgba(0,80,160,.06)",
-                }}
-              >
+            {planningIncomeStreams.map((income, index) => {
+              const inMonth = (income.months || budgetMonths).includes(activeIncomeMonth);
+              const tracked = incomeReceivedById.get(income.id);
+              const received = tracked?.received ?? 0;
+              const expected = tracked?.expected ?? parseMoney(income.amount);
+              const fillPercent =
+                expected > 0
+                  ? Math.min(100, Math.round((received / expected) * 100))
+                  : received > 0
+                    ? 100
+                    : 0;
+
+              return (
                 <div
-                  onDoubleClick={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    setIncomeDeleteTarget({ id: income.id, name: income.name });
-                  }}
-                  title="Double click to delete income stream"
+                  key={income.id}
                   style={{
-                    width: 42,
-                    height: 42,
-                    borderRadius: 12,
+                    border: "1px solid rgba(0,136,255,.16)",
+                    borderRadius: 14,
+                    background: "rgba(2,14,28,.72)",
+                    padding: "16px 18px",
                     display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    background: `${income.color}22`,
-                    border: `1px solid ${income.color}55`,
-                    fontSize: 20,
-                    boxShadow: `0 0 16px ${income.color}22`,
-                    cursor: "pointer",
+                    flexDirection: "column",
+                    gap: 14,
+                    boxShadow: "inset 0 0 18px rgba(0,80,160,.06)",
                   }}
                 >
-                  {income.icon}
-                </div>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "auto 1fr auto",
+                      alignItems: "center",
+                      gap: 16,
+                    }}
+                  >
+                    <div
+                      onDoubleClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        setIncomeDeleteTarget({ id: income.id, name: income.name });
+                      }}
+                      title="Double click to delete income stream"
+                      style={{
+                        width: 42,
+                        height: 42,
+                        borderRadius: 12,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        background: `${income.color}22`,
+                        border: `1px solid ${income.color}55`,
+                        fontSize: 20,
+                        boxShadow: `0 0 16px ${income.color}22`,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {income.icon}
+                    </div>
 
-                <div>
-                  <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                    <div>
+                      <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                        <input
+                          value={income.name}
+                          onChange={(event) =>
+                            setIncomeStreamsForYear(activeIncomeDate.year, (streams) =>
+                              streams.map((stream, streamIndex) =>
+                                streamIndex === index ? { ...stream, name: event.target.value } : stream
+                              )
+                            )
+                          }
+                          style={{
+                            color: "white",
+                            fontSize: 17,
+                            fontWeight: 800,
+                            background: "transparent",
+                            border: "1px solid transparent",
+                            borderRadius: 8,
+                            padding: "4px 8px",
+                            outline: "none",
+                            width: 150,
+                          }}
+                          onFocus={(event) => {
+                            event.currentTarget.style.border = "1px solid rgba(0,216,255,.38)";
+                            event.currentTarget.style.background = "rgba(0,136,255,.08)";
+                          }}
+                          onBlur={(event) => {
+                            event.currentTarget.style.border = "1px solid transparent";
+                            event.currentTarget.style.background = "transparent";
+                          }}
+                        />
+                        <input
+                          value={income.description}
+                          onChange={(event) =>
+                            setIncomeStreamsForYear(activeIncomeDate.year, (streams) =>
+                              streams.map((stream, streamIndex) =>
+                                streamIndex === index
+                                  ? { ...stream, description: event.target.value }
+                                  : stream
+                              )
+                            )
+                          }
+                          style={{
+                            color: "#b7d7ff",
+                            fontSize: 16,
+                            fontWeight: 700,
+                            background: "transparent",
+                            border: "1px solid transparent",
+                            borderRadius: 8,
+                            padding: "4px 8px",
+                            outline: "none",
+                            minWidth: 180,
+                          }}
+                          onFocus={(event) => {
+                            event.currentTarget.style.border = "1px solid rgba(0,216,255,.38)";
+                            event.currentTarget.style.background = "rgba(0,136,255,.08)";
+                          }}
+                          onBlur={(event) => {
+                            event.currentTarget.style.border = "1px solid transparent";
+                            event.currentTarget.style.background = "transparent";
+                          }}
+                        />
+                      </div>
+                      <div style={{ display: "grid", marginTop: 6, minWidth: 0 }}>
+                        <div style={{ color: "#00f59b", fontSize: 13, fontWeight: 800 }}>{income.type}</div>
+                        <MonthCoverageEditor
+                          allMonths={budgetMonths}
+                          selectedMonths={income.months || budgetMonths}
+                          onToggleMonth={(month) => toggleIncomeMonth(index, month)}
+                          quickActions={[
+                            { label: "All", onClick: () => setIncomeMonths(index, budgetMonths) },
+                            {
+                              label: `Only ${activeIncomeMonth}`,
+                              onClick: () => setIncomeMonths(index, [activeIncomeMonth]),
+                            },
+                          ]}
+                        />
+                      </div>
+                    </div>
+
                     <input
-                      value={income.name}
+                      value={income.amount}
                       onChange={(event) =>
                         setIncomeStreamsForYear(activeIncomeDate.year, (streams) =>
                           streams.map((stream, streamIndex) =>
-                            streamIndex === index ? { ...stream, name: event.target.value } : stream
+                            streamIndex === index ? { ...stream, amount: event.target.value } : stream
                           )
                         )
                       }
                       style={{
-                        color: "white",
-                        fontSize: 17,
-                        fontWeight: 800,
+                        color: "#eaf3ff",
+                        fontSize: 22,
+                        fontWeight: 900,
                         background: "transparent",
                         border: "1px solid transparent",
                         borderRadius: 8,
-                        padding: "4px 8px",
+                        padding: "6px 10px",
+                        width: 120,
+                        textAlign: "right",
                         outline: "none",
-                        width: 150,
                       }}
                       onFocus={(event) => {
                         event.currentTarget.style.border = "1px solid rgba(0,216,255,.38)";
                         event.currentTarget.style.background = "rgba(0,136,255,.08)";
+                        event.currentTarget.style.boxShadow = "inset 0 0 18px rgba(0,136,255,.10)";
                       }}
                       onBlur={(event) => {
                         event.currentTarget.style.border = "1px solid transparent";
                         event.currentTarget.style.background = "transparent";
-                      }}
-                    />
-                    <input
-                      value={income.description}
-                      onChange={(event) =>
-                        setIncomeStreamsForYear(activeIncomeDate.year, (streams) =>
-                          streams.map((stream, streamIndex) =>
-                            streamIndex === index
-                              ? { ...stream, description: event.target.value }
-                              : stream
-                          )
-                        )
-                      }
-                      style={{
-                        color: "#b7d7ff",
-                        fontSize: 16,
-                        fontWeight: 700,
-                        background: "transparent",
-                        border: "1px solid transparent",
-                        borderRadius: 8,
-                        padding: "4px 8px",
-                        outline: "none",
-                        minWidth: 180,
-                      }}
-                      onFocus={(event) => {
-                        event.currentTarget.style.border = "1px solid rgba(0,216,255,.38)";
-                        event.currentTarget.style.background = "rgba(0,136,255,.08)";
-                      }}
-                      onBlur={(event) => {
-                        event.currentTarget.style.border = "1px solid transparent";
-                        event.currentTarget.style.background = "transparent";
+                        event.currentTarget.style.boxShadow = "none";
                       }}
                     />
                   </div>
-                  <div style={{ display: "grid", marginTop: 6, minWidth: 0 }}>
-                    <div style={{ color: "#00f59b", fontSize: 13, fontWeight: 800 }}>{income.type}</div>
-                    <MonthCoverageEditor
-                      allMonths={budgetMonths}
-                      selectedMonths={income.months || budgetMonths}
-                      onToggleMonth={(month) => toggleIncomeMonth(index, month)}
-                      quickActions={[
-                        { label: "All", onClick: () => setIncomeMonths(index, budgetMonths) },
-                        {
-                          label: `Only ${activeIncomeMonth}`,
-                          onClick: () => setIncomeMonths(index, [activeIncomeMonth]),
-                        },
-                      ]}
-                    />
-                  </div>
-                </div>
 
-                <input
-                  value={income.amount}
-                  onChange={(event) =>
-                    setIncomeStreamsForYear(activeIncomeDate.year, (streams) =>
-                      streams.map((stream, streamIndex) =>
-                        streamIndex === index ? { ...stream, amount: event.target.value } : stream
-                      )
-                    )
-                  }
-                  style={{
-                    color: "#eaf3ff",
-                    fontSize: 22,
-                    fontWeight: 900,
-                    background: "transparent",
-                    border: "1px solid transparent",
-                    borderRadius: 8,
-                    padding: "6px 10px",
-                    width: 120,
-                    textAlign: "right",
-                    outline: "none",
-                  }}
-                  onFocus={(event) => {
-                    event.currentTarget.style.border = "1px solid rgba(0,216,255,.38)";
-                    event.currentTarget.style.background = "rgba(0,136,255,.08)";
-                    event.currentTarget.style.boxShadow = "inset 0 0 18px rgba(0,136,255,.10)";
-                  }}
-                  onBlur={(event) => {
-                    event.currentTarget.style.border = "1px solid transparent";
-                    event.currentTarget.style.background = "transparent";
-                    event.currentTarget.style.boxShadow = "none";
-                  }}
-                />
-              </div>
-            ))}
+                  {inMonth ? (
+                    <div
+                      style={{
+                        display: "grid",
+                        gap: 8,
+                        paddingTop: 4,
+                        borderTop: "1px solid rgba(0,136,255,.14)",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          flexWrap: "wrap",
+                          gap: 10,
+                        }}
+                      >
+                        <span
+                          style={{
+                            color: "#8fb1d9",
+                            fontSize: 11,
+                            fontWeight: 800,
+                            textTransform: "uppercase",
+                            letterSpacing: 0.75,
+                          }}
+                        >
+                          Received vs planned ({activeIncomeMonth})
+                        </span>
+                        <span style={{ color: "#eaf3ff", fontSize: 14, fontWeight: 800 }}>
+                          {money(received)} / {money(expected)}
+                        </span>
+                      </div>
+                      <div
+                        style={{
+                          height: 11,
+                          borderRadius: 999,
+                          background: "rgba(8,28,49,.95)",
+                          position: "relative",
+                          overflow: "hidden",
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: `${fillPercent}%`,
+                            height: "100%",
+                            borderRadius: 999,
+                            background: income.color || "#00f59b",
+                            boxShadow: `0 0 14px ${income.color || "#00f59b"}`,
+                          }}
+                        />
+                        {expected > 0 && received > expected ? (
+                          <div
+                            style={{
+                              position: "absolute",
+                              inset: 0,
+                              border: "2px solid rgba(255,58,68,.95)",
+                              borderRadius: 999,
+                            }}
+                          />
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : (
+                    <div
+                      style={{
+                        color: "#5f7394",
+                        fontSize: 12,
+                        paddingTop: 4,
+                        borderTop: "1px solid rgba(0,136,255,.14)",
+                      }}
+                    >
+                      Not scheduled for {activeIncomeMonth}; switch month coverage or pick another month
+                      above.
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
 
           <button

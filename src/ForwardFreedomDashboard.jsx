@@ -1362,6 +1362,7 @@ function ForwardFreedomDashboard({
             />
           ) : activeTab === APP_TABS.INCOME_HUB ? (
             <IncomeHub
+              transactions={categorizedTransactions}
               householdProfilesProps={householdProfilesProps}
               currentPlanYear={currentPlanYear}
               availablePlanningYears={availablePlanningYears}
@@ -1381,7 +1382,6 @@ function ForwardFreedomDashboard({
               getBudgetRowsForYear={getBudgetRowsForYear}
               getIncomeStreamsForYear={getIncomeStreamsForYear}
               setBudgetRowsForYear={setBudgetRowsForYear}
-              setIncomeStreamsForYear={setIncomeStreamsForYear}
               ensurePlanningYear={ensurePlanningYear}
             />
           ) : activeTab === APP_TABS.ADD_ACCOUNTS ? (
