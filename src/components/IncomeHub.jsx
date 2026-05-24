@@ -162,8 +162,8 @@ export function IncomeHub({
       <section
         style={{
           ...styles.panel,
-          minHeight: 190,
-          padding: "32px 46px",
+          minHeight: 165,
+          padding: "26px 40px",
           borderRadius: 32,
           display: "grid",
           gridTemplateColumns: "1fr minmax(280px, 340px) 1fr",
@@ -238,7 +238,7 @@ export function IncomeHub({
               width: "100%",
               maxWidth: 320,
               borderRadius: 24,
-              padding: "18px 18px 18px",
+              padding: "14px 14px 14px",
               border: "1px solid rgba(0,216,255,.22)",
               background:
                 "linear-gradient(180deg, rgba(4,22,43,.96), rgba(2,11,24,.94))",
@@ -261,7 +261,7 @@ export function IncomeHub({
               style={{
                 position: "relative",
                 display: "grid",
-                gap: 14,
+                gap: 10,
               }}
             >
               <div
@@ -272,24 +272,12 @@ export function IncomeHub({
                   background:
                     "linear-gradient(180deg, rgba(8,31,58,.95), rgba(3,18,36,.92))",
                   boxShadow: "inset 0 0 18px rgba(0,216,255,.05)",
-                  padding: "16px 12px 14px",
+                  padding: "12px 12px 10px",
                   textAlign: "center",
                 }}
               >
                 <div
                   style={{
-                    color: "#8fb1d9",
-                    fontSize: 11,
-                    fontWeight: 900,
-                    textTransform: "uppercase",
-                    letterSpacing: 1.2,
-                  }}
-                >
-                  Income Timeline
-                </div>
-                <div
-                  style={{
-                    marginTop: 10,
                     color: "white",
                     fontSize: 28,
                     fontWeight: 900,
