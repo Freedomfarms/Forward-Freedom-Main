@@ -221,8 +221,7 @@ export function BudgetCommandCenter({
       if (!targetRowId || targetRowId === pointerDragBudgetRowId) return;
 
       reorderBudgetRows(pointerDragBudgetRowId, targetRowId);
-      setPointerDragBudgetRowId(targetRowId);
-      activateBudgetRow(targetRowId);
+      activateBudgetRow(pointerDragBudgetRowId);
     };
 
     const handleGlobalPointerRelease = () => {
