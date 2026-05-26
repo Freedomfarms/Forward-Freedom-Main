@@ -261,13 +261,12 @@ export function OperationsBoard({
   ]);
   const scorecardPlannedPath =
     scorecardPlannedPoints.length > 1 ? buildLinePath(scorecardPlannedPoints) : "";
-  const scorecardPlannedArea =
-    scorecardPlannedPoints.length > 1 ? buildAreaPath(scorecardPlannedPoints) : "";
   const scorecardActualPath =
     scorecardActualPoints.length > 1 ? buildLinePath(scorecardActualPoints) : "";
   const scorecardBudgetPath =
     scorecardBudgetPoints.length > 1 ? buildLinePath(scorecardBudgetPoints) : "";
   const scorecardSpentPath = scorecardSpentPoints.length > 1 ? buildLinePath(scorecardSpentPoints) : "";
+  const scorecardSpentArea = scorecardSpentPoints.length > 1 ? buildAreaPath(scorecardSpentPoints) : "";
   const scorecardAverageSpentY = scorecardToY(scorecardAverageSpent, scorecardChartMax, scorecardChartMin);
   const scorecardFocusX = hoveredCommandMonth ? SCORECARD_MONTH_X[hoveredCommandMonth.data.month] : null;
 
@@ -443,10 +442,10 @@ export function OperationsBoard({
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
                 {[
-                  ["Planned", "rgba(0,216,255,.9)", "solid", "rgba(0,216,255,.25)"],
+                  ["Planned", "rgba(168,184,204,.9)", "solid", "rgba(168,184,204,.18)"],
                   ["Actual", "rgba(0,245,155,.9)", "solid", "rgba(0,245,155,.24)"],
                   ["Budget", "rgba(255,182,93,.95)", "dashed", "rgba(255,182,93,.2)"],
-                  ["Spent", "rgba(255,122,69,.95)", "solid", "rgba(255,122,69,.24)"],
+                  ["Spent", "rgba(0,216,255,.95)", "solid", "rgba(0,216,255,.3)"],
                   ["Avg Spent", "rgba(143,234,255,.95)", "dashed", "rgba(143,234,255,.2)"],
                 ].map(([label, color, type, glow]) => (
                   <div key={label} style={{ display: "flex", alignItems: "center", gap: 8, color: "#9fb0c9" }}>
@@ -588,8 +587,8 @@ export function OperationsBoard({
                   <svg viewBox={`0 0 ${SCORECARD_CHART_W} ${SCORECARD_CHART_H + 40}`} style={{ width: "100%" }}>
                     <defs>
                       <linearGradient id="opsScorecardAreaGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#00d8ff" stopOpacity="0.28" />
-                        <stop offset="100%" stopColor="#00d8ff" stopOpacity="0.02" />
+                        <stop offset="0%" stopColor="#00d8ff" stopOpacity="0.4" />
+                        <stop offset="100%" stopColor="#00d8ff" stopOpacity="0.06" />
                       </linearGradient>
                     </defs>
 
@@ -620,8 +619,8 @@ export function OperationsBoard({
                       />
                     ))}
 
-                    {scorecardPlannedArea ? (
-                      <path d={scorecardPlannedArea} fill="url(#opsScorecardAreaGradient)" />
+                    {scorecardSpentArea ? (
+                      <path d={scorecardSpentArea} fill="url(#opsScorecardAreaGradient)" />
                     ) : null}
                     <line
                       x1={0}
@@ -657,8 +656,8 @@ export function OperationsBoard({
                       <path
                         d={scorecardSpentPath}
                         fill="none"
-                        stroke="#ff7a45"
-                        strokeWidth={2.4}
+                        stroke="#00d8ff"
+                        strokeWidth={3}
                         strokeLinecap="round"
                         strokeLinejoin="round"
                       />
@@ -667,8 +666,8 @@ export function OperationsBoard({
                       <path
                         d={scorecardPlannedPath}
                         fill="none"
-                        stroke="#00d8ff"
-                        strokeWidth={3}
+                        stroke="#a8b8cc"
+                        strokeWidth={2.2}
                         strokeLinecap="round"
                         strokeLinejoin="round"
                       />
@@ -701,8 +700,8 @@ export function OperationsBoard({
                           <circle
                             cx={x}
                             cy={plannedY}
-                            r={isActive ? 6 : 4.5}
-                            fill="#00d8ff"
+                            r={isActive ? 5.4 : 4}
+                            fill="#a8b8cc"
                             stroke="white"
                             strokeWidth={isActive ? 1.8 : 1.3}
                             style={{ cursor: "pointer" }}
@@ -711,8 +710,8 @@ export function OperationsBoard({
                           <circle
                             cx={x}
                             cy={spentY}
-                            r={isActive ? 5.2 : 3.8}
-                            fill="#ff7a45"
+                            r={isActive ? 6.2 : 4.8}
+                            fill="#00d8ff"
                             stroke="rgba(255,255,255,.9)"
                             strokeWidth={isActive ? 1.6 : 1.2}
                             style={{ cursor: "pointer" }}
