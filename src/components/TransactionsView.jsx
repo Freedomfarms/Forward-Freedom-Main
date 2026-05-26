@@ -1256,18 +1256,18 @@ export function TransactionsView({
                     borderRadius: 10,
                     borderBottom: "1px solid rgba(0,136,255,.08)",
                     border: isSelectedRow
-                      ? "1px solid rgba(0,216,255,.58)"
+                      ? "1px solid rgba(0,216,255,.9)"
                       : "1px solid transparent",
                     background: isSelectedRow
-                      ? "linear-gradient(96deg, rgba(0,136,255,.22), rgba(0,216,255,.12) 52%, rgba(4,18,36,.84))"
+                      ? "linear-gradient(96deg, rgba(0,136,255,.32), rgba(0,216,255,.20) 52%, rgba(4,18,36,.9))"
                       : defaultRowBackground,
                     borderLeft: isSelectedRow
-                      ? "2px solid rgba(0,216,255,.9)"
+                      ? "3px solid rgba(0,216,255,1)"
                       : tx.needsReview
                         ? "2px solid rgba(255,159,28,.45)"
                         : "2px solid transparent",
                     boxShadow: isSelectedRow
-                      ? "0 0 22px rgba(0,136,255,.26), inset 0 0 22px rgba(0,216,255,.16)"
+                      ? "0 0 32px rgba(0,136,255,.45), inset 0 0 30px rgba(0,216,255,.24)"
                       : "none",
                     cursor: "pointer",
                     transition: "border-color 120ms ease, box-shadow 160ms ease, background 160ms ease",
