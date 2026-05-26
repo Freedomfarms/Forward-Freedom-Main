@@ -10,7 +10,9 @@ async function parseApiResponse(response) {
 }
 
 export async function getPlaidStatus() {
-  const response = await fetch("/api/plaid/status");
+  const response = await fetch("/api/plaid/status", {
+    headers: await buildAuthenticatedHeaders(),
+  });
   return parseApiResponse(response);
 }
 

@@ -36,3 +36,19 @@ export async function authenticateRequest(request) {
     throw new AuthError(error?.message || "Unable to verify the provided auth token.", 401);
   }
 }
+
+/**
+ * Like authenticateRequest but also requires the user's email to be verified.
+ * Used for sensitive operations (Plaid bank linking) to prevent unverified accounts
+ * from connecting financial institutions.
+ */
+export async function authenticateVerifiedRequest(request) {
+  const decodedToken = await authenticateRequest(request);
+  if (!decodedToken.email_verified) {
+    throw new AuthError(
+      "Email verification is required before linking bank accounts. Please verify your email address and try again.",
+      403
+    );
+  }
+  return decodedToken;
+}
