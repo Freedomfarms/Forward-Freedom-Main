@@ -7,6 +7,8 @@ import { accountSupportsTransactions } from "../utils/accounts.js";
 import { AccountRemoveConfirmModal } from "./AccountRemoveConfirmModal.jsx";
 import { HouseholdProfilesControl } from "./Common.jsx";
 
+const TRANSACTION_FEED_GRID_COLUMNS = "140px 1.4fr minmax(270px,1.1fr) minmax(180px,0.9fr) 160px";
+
 function formatManualDate(value) {
   if (!value) return "";
 
@@ -1216,19 +1218,20 @@ export function TransactionsView({
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "140px 1.4fr 1fr 1fr 160px",
+            gridTemplateColumns: TRANSACTION_FEED_GRID_COLUMNS,
             padding: "0 16px 12px",
             color: "#7294bb",
             fontSize: 13,
             textTransform: "uppercase",
             letterSpacing: 1,
             borderBottom: "1px solid rgba(0,136,255,.14)",
+            columnGap: 10,
           }}
         >
           <div>Date</div>
           <div>Merchant</div>
-          <div style={{ paddingRight: 18 }}>Category</div>
-          <div style={{ marginLeft: -10 }}>Account</div>
+          <div style={{ paddingLeft: 6 }}>Category</div>
+          <div style={{ paddingLeft: 14 }}>Account</div>
           <div style={{ textAlign: "right" }}>Amount</div>
         </div>
 
@@ -1249,7 +1252,7 @@ export function TransactionsView({
                   onFocusCapture={() => setSelectedTransactionKey(rowKey)}
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "140px 1.4fr 1fr 1fr 160px",
+                    gridTemplateColumns: TRANSACTION_FEED_GRID_COLUMNS,
                     alignItems: "center",
                     padding: "9px 16px",
                     margin: "2px 8px",
@@ -1271,6 +1274,7 @@ export function TransactionsView({
                       : "none",
                     cursor: "pointer",
                     transition: "border-color 120ms ease, box-shadow 160ms ease, background 160ms ease",
+                    columnGap: 10,
                   }}
                 >
                 <div
@@ -1296,7 +1300,7 @@ export function TransactionsView({
                     alignItems: "center",
                     gap: 10,
                     minWidth: 0,
-                    paddingRight: 18,
+                    paddingLeft: 6,
                   }}
                 >
                   <select
@@ -1345,7 +1349,9 @@ export function TransactionsView({
                     {tx.needsReview ? " • Needs review" : ""}
                   </div>
                 </div>
-                <div style={{ color: "#7ebeff" }}>{accountDisplayNames[tx.account] || tx.account}</div>
+                <div style={{ color: "#7ebeff", paddingLeft: 14 }}>
+                  {accountDisplayNames[tx.account] || tx.account}
+                </div>
                 <div
                   style={{
                     textAlign: "right",
