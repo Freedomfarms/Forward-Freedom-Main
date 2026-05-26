@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { styles } from "../styles.js";
 import { money, cleanMoneyInput, parseMoney } from "../utils/format.js";
 import { buildMonthlySpendSnapshot } from "../utils/budgetReview.js";
@@ -182,15 +182,20 @@ export function BudgetCommandCenter({
     });
   };
 
-  const activateBudgetRow = (rowId) => {
+  const activateBudgetRow = useCallback((rowId) => {
     if (!rowId) return;
     setActiveBudgetRowId(rowId);
-  };
+  }, []);
 
-  const reorderBudgetRows = (draggedId, targetId) => {
-    if (!draggedId || !targetId || draggedId === targetId) return;
-    setBudgetRowsForYear(activeBudgetDate.year, (rows) => moveBudgetRowById(rows, draggedId, targetId));
-  };
+  const reorderBudgetRows = useCallback(
+    (draggedId, targetId) => {
+      if (!draggedId || !targetId || draggedId === targetId) return;
+      setBudgetRowsForYear(activeBudgetDate.year, (rows) =>
+        moveBudgetRowById(rows, draggedId, targetId)
+      );
+    },
+    [activeBudgetDate.year, setBudgetRowsForYear]
+  );
 
   const handleBudgetRowPointerDown = (event, rowId) => {
     if (event.button !== 0) return;
@@ -232,7 +237,7 @@ export function BudgetCommandCenter({
       window.removeEventListener("mouseup", handleGlobalPointerRelease);
       window.removeEventListener("blur", handleGlobalPointerRelease);
     };
-  }, [pointerDragBudgetRowId, activeBudgetDate.year, setBudgetRowsForYear]);
+  }, [activateBudgetRow, pointerDragBudgetRowId, reorderBudgetRows]);
 
   return (
     <>
