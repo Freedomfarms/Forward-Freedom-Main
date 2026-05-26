@@ -204,34 +204,35 @@ export function BudgetCommandCenter({
     setPointerDragBudgetRowId(rowId);
   };
 
-  const handleBudgetRowPointerEnter = (event, rowId) => {
-    if (!pointerDragBudgetRowId || pointerDragBudgetRowId === rowId) return;
-    if (event.buttons !== 1) {
-      setPointerDragBudgetRowId(null);
-      return;
-    }
-
-    reorderBudgetRows(pointerDragBudgetRowId, rowId);
-    setPointerDragBudgetRowId(rowId);
-    activateBudgetRow(rowId);
-  };
-
-  const endBudgetRowPointerDrag = () => {
-    setPointerDragBudgetRowId(null);
-  };
-
   useEffect(() => {
+    if (!pointerDragBudgetRowId) return;
+
+    const handlePointerMove = (event) => {
+      if ((event.buttons & 1) !== 1) return;
+      const rowElement = document
+        .elementFromPoint(event.clientX, event.clientY)
+        ?.closest("[data-budget-row-id]");
+      const targetRowId = rowElement?.getAttribute("data-budget-row-id");
+      if (!targetRowId || targetRowId === pointerDragBudgetRowId) return;
+
+      reorderBudgetRows(pointerDragBudgetRowId, targetRowId);
+      setPointerDragBudgetRowId(targetRowId);
+      activateBudgetRow(targetRowId);
+    };
+
     const handleGlobalPointerRelease = () => {
       setPointerDragBudgetRowId(null);
     };
 
+    window.addEventListener("mousemove", handlePointerMove);
     window.addEventListener("mouseup", handleGlobalPointerRelease);
     window.addEventListener("blur", handleGlobalPointerRelease);
     return () => {
+      window.removeEventListener("mousemove", handlePointerMove);
       window.removeEventListener("mouseup", handleGlobalPointerRelease);
       window.removeEventListener("blur", handleGlobalPointerRelease);
     };
-  }, []);
+  }, [pointerDragBudgetRowId, activeBudgetDate.year, setBudgetRowsForYear]);
 
   return (
     <>
@@ -538,8 +539,7 @@ export function BudgetCommandCenter({
               }}
               onClick={() => activateBudgetRow(item.id)}
               onMouseDown={(event) => handleBudgetRowPointerDown(event, item.id)}
-              onMouseEnter={(event) => handleBudgetRowPointerEnter(event, item.id)}
-              onMouseUp={endBudgetRowPointerDrag}
+              data-budget-row-id={item.id}
             >
               <div
                 style={{
