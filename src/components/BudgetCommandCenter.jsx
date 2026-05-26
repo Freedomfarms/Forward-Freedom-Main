@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { styles } from "../styles.js";
 import { money, cleanMoneyInput, parseMoney } from "../utils/format.js";
 import { buildMonthlySpendSnapshot } from "../utils/budgetReview.js";
@@ -39,8 +39,7 @@ export function BudgetCommandCenter({
   const currentBudgetPeriod = getCurrentBudgetPeriod();
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [activeBudgetRowId, setActiveBudgetRowId] = useState(null);
-  const [draggingBudgetRowId, setDraggingBudgetRowId] = useState(null);
-  const [dragOverBudgetRowId, setDragOverBudgetRowId] = useState(null);
+  const [pointerDragBudgetRowId, setPointerDragBudgetRowId] = useState(null);
   const [activeBudgetDate, setActiveBudgetDate] = useState(() => ({
     monthIndex: currentBudgetPeriod.monthIndex,
     year: currentPlanYear,
@@ -193,48 +192,46 @@ export function BudgetCommandCenter({
     setBudgetRowsForYear(activeBudgetDate.year, (rows) => moveBudgetRowById(rows, draggedId, targetId));
   };
 
-  const handleBudgetRowDragStart = (event, rowId) => {
+  const handleBudgetRowPointerDown = (event, rowId) => {
+    if (event.button !== 0) return;
     const interactiveTarget = event.target.closest("input, button, select, textarea, [contenteditable='true']");
     if (interactiveTarget) {
-      event.preventDefault();
       return;
     }
 
+    event.preventDefault();
     activateBudgetRow(rowId);
-    setDraggingBudgetRowId(rowId);
-    setDragOverBudgetRowId(rowId);
-    event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("text/plain", rowId);
+    setPointerDragBudgetRowId(rowId);
   };
 
-  const handleBudgetRowDragOver = (event, rowId) => {
-    if (!draggingBudgetRowId || draggingBudgetRowId === rowId) return;
-    event.preventDefault();
-    event.dataTransfer.dropEffect = "move";
-    if (dragOverBudgetRowId !== rowId) {
-      setDragOverBudgetRowId(rowId);
-    }
-  };
-
-  const handleBudgetRowDrop = (event, rowId) => {
-    event.preventDefault();
-    const droppedRowId = draggingBudgetRowId || event.dataTransfer.getData("text/plain");
-    if (!droppedRowId || droppedRowId === rowId) {
-      setDraggingBudgetRowId(null);
-      setDragOverBudgetRowId(null);
+  const handleBudgetRowPointerEnter = (event, rowId) => {
+    if (!pointerDragBudgetRowId || pointerDragBudgetRowId === rowId) return;
+    if (event.buttons !== 1) {
+      setPointerDragBudgetRowId(null);
       return;
     }
 
-    reorderBudgetRows(droppedRowId, rowId);
-    setDraggingBudgetRowId(null);
-    setDragOverBudgetRowId(null);
-    activateBudgetRow(droppedRowId);
+    reorderBudgetRows(pointerDragBudgetRowId, rowId);
+    setPointerDragBudgetRowId(rowId);
+    activateBudgetRow(rowId);
   };
 
-  const handleBudgetRowDragEnd = () => {
-    setDraggingBudgetRowId(null);
-    setDragOverBudgetRowId(null);
+  const endBudgetRowPointerDrag = () => {
+    setPointerDragBudgetRowId(null);
   };
+
+  useEffect(() => {
+    const handleGlobalPointerRelease = () => {
+      setPointerDragBudgetRowId(null);
+    };
+
+    window.addEventListener("mouseup", handleGlobalPointerRelease);
+    window.addEventListener("blur", handleGlobalPointerRelease);
+    return () => {
+      window.removeEventListener("mouseup", handleGlobalPointerRelease);
+      window.removeEventListener("blur", handleGlobalPointerRelease);
+    };
+  }, []);
 
   return (
     <>
@@ -522,35 +519,27 @@ export function BudgetCommandCenter({
                 columnGap: 32,
                 borderRadius: 16,
                 border:
-                  dragOverBudgetRowId === item.id && draggingBudgetRowId && draggingBudgetRowId !== item.id
-                    ? "1px solid rgba(0,216,255,.78)"
-                    : activeBudgetRowId === item.id
-                      ? "1px solid rgba(0,216,255,.54)"
-                      : "1px solid rgba(0,136,255,.10)",
+                  activeBudgetRowId === item.id
+                    ? "1px solid rgba(0,216,255,.54)"
+                    : "1px solid rgba(0,136,255,.10)",
                 background:
-                  activeBudgetRowId === item.id ||
-                  (dragOverBudgetRowId === item.id &&
-                    draggingBudgetRowId &&
-                    draggingBudgetRowId !== item.id)
+                  activeBudgetRowId === item.id
                     ? "linear-gradient(95deg, rgba(0,136,255,.20), rgba(0,216,255,.11) 52%, rgba(4,18,36,.85))"
                     : "rgba(3,14,28,.42)",
                 boxShadow:
                   activeBudgetRowId === item.id
                     ? "0 0 24px rgba(0,136,255,.28), inset 0 0 26px rgba(0,216,255,.17)"
-                    : dragOverBudgetRowId === item.id && draggingBudgetRowId && draggingBudgetRowId !== item.id
-                      ? "0 0 20px rgba(0,136,255,.24), inset 0 0 22px rgba(0,216,255,.14)"
-                      : "inset 0 0 0 1px rgba(0,136,255,.04)",
+                    : "inset 0 0 0 1px rgba(0,136,255,.04)",
                 padding: "14px 16px",
-                cursor: draggingBudgetRowId === item.id ? "grabbing" : "grab",
-                opacity: draggingBudgetRowId === item.id ? 0.7 : 1,
+                cursor: pointerDragBudgetRowId === item.id ? "grabbing" : "grab",
+                opacity: pointerDragBudgetRowId === item.id ? 0.78 : 1,
+                userSelect: "none",
                 transition: "border-color 120ms ease, box-shadow 160ms ease, background 160ms ease",
               }}
-              draggable
               onClick={() => activateBudgetRow(item.id)}
-              onDragStart={(event) => handleBudgetRowDragStart(event, item.id)}
-              onDragOver={(event) => handleBudgetRowDragOver(event, item.id)}
-              onDrop={(event) => handleBudgetRowDrop(event, item.id)}
-              onDragEnd={handleBudgetRowDragEnd}
+              onMouseDown={(event) => handleBudgetRowPointerDown(event, item.id)}
+              onMouseEnter={(event) => handleBudgetRowPointerEnter(event, item.id)}
+              onMouseUp={endBudgetRowPointerDrag}
             >
               <div
                 style={{
