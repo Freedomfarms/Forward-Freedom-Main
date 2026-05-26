@@ -1093,7 +1093,7 @@ export function TransactionsView({
                 </option>
                 {filterAccountOptions.map((accountName) => (
                   <option key={accountName} value={accountName} style={{ background: "#061224" }}>
-                    {accountName}
+                    {accountDisplayNames[accountName] || accountName}
                   </option>
                 ))}
               </select>
@@ -1324,7 +1324,7 @@ export function TransactionsView({
                     {tx.needsReview ? " • Needs review" : ""}
                   </div>
                 </div>
-                <div style={{ color: "#7ebeff" }}>{tx.account}</div>
+                <div style={{ color: "#7ebeff" }}>{accountDisplayNames[tx.account] || tx.account}</div>
                 <div
                   style={{
                     textAlign: "right",

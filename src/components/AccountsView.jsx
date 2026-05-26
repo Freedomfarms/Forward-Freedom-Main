@@ -206,6 +206,7 @@ export function AccountsView({
   onPendingManualEditAccountConsumed,
 }) {
   const [showModal, setShowModal] = useState(false);
+  const [selectedCardId, setSelectedCardId] = useState(null);
   const [renamingAccountId, setRenamingAccountId] = useState(null);
   const [renameValue, setRenameValue] = useState("");
   const [editingAccount, setEditingAccount] = useState(null);
@@ -251,6 +252,7 @@ export function AccountsView({
   };
 
   const startRenaming = (account) => {
+    setSelectedCardId(account.id);
     setRenamingAccountId(account.id);
     setRenameValue(account.nickname || "");
   };
@@ -258,10 +260,12 @@ export function AccountsView({
     renameAccount?.(account.id, renameValue);
     setRenamingAccountId(null);
     setRenameValue("");
+    // keep card selected so user can see the saved name
   };
   const cancelRename = () => {
     setRenamingAccountId(null);
     setRenameValue("");
+    // keep card selected
   };
 
   const update = (field, value) => {
@@ -904,7 +908,13 @@ export function AccountsView({
       </section>
 
       {/* Account list */}
-      <section style={{ ...styles.panel, padding: "16px 18px 18px", borderRadius: 14 }}>
+      <section
+        style={{ ...styles.panel, padding: "16px 18px 18px", borderRadius: 14 }}
+        onClick={() => {
+          setSelectedCardId(null);
+          if (renamingAccountId) cancelRename();
+        }}
+      >
         {accounts.length === 0 ? (
           <div style={{ display: "grid", gap: 14 }}>
             <div style={{ textAlign: "center", padding: "12px 8px 2px" }}>
@@ -1017,19 +1027,25 @@ export function AccountsView({
                     return (
                       <div
                         key={account.id}
-                        onClick={() => {
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (renamingAccountId && renamingAccountId !== account.id) cancelRename();
                           if (renamingAccountId === account.id) return;
-                          openAccountTransactions(account.name);
+                          setSelectedCardId((current) => (current === account.id ? null : account.id));
                         }}
                         style={{
-                          border: "1px solid rgba(0,136,255,.11)",
+                          border: selectedCardId === account.id
+                            ? "1px solid rgba(0,216,255,.42)"
+                            : "1px solid rgba(0,136,255,.11)",
                           borderLeft: `2px solid ${
                             isBankLinked ? "rgba(0,200,255,.68)" : "rgba(176,132,255,.72)"
                           }`,
-                          background: "rgba(4,14,28,.82)",
+                          background: selectedCardId === account.id
+                            ? "rgba(0,28,56,.94)"
+                            : "rgba(4,14,28,.82)",
                           borderRadius: 8,
                           padding: "7px 9px 8px",
-                          cursor: renamingAccountId === account.id ? "default" : "pointer",
+                          cursor: "pointer",
                         }}
                       >
                         <div
@@ -1124,26 +1140,6 @@ export function AccountsView({
                                   {account.nickname || account.name}
                                 </span>
                                 <span style={sourceBadgeStyle(isBankLinked)}>{badgeLabel}</span>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    startRenaming(account);
-                                  }}
-                                  title="Rename account"
-                                  style={{
-                                    background: "none",
-                                    border: "none",
-                                    color: "#6a8eae",
-                                    cursor: "pointer",
-                                    fontSize: 11,
-                                    padding: "0 2px",
-                                    lineHeight: 1,
-                                    flexShrink: 0,
-                                  }}
-                                >
-                                  ✎
-                                </button>
                               </div>
                             )}
                             {account.nickname ? (
@@ -1239,6 +1235,56 @@ export function AccountsView({
                             {realEstateAccounts.find(
                               (propertyAccount) => propertyAccount.id === account.linkedPropertyId
                             )?.name || "Saved link"}
+                          </div>
+                        ) : null}
+
+                        {selectedCardId === account.id && renamingAccountId !== account.id ? (
+                          <div
+                            onClick={(e) => e.stopPropagation()}
+                            style={{
+                              display: "flex",
+                              gap: 6,
+                              marginTop: 8,
+                              paddingTop: 7,
+                              borderTop: "1px solid rgba(0,136,255,.18)",
+                            }}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => startRenaming(account)}
+                              style={{
+                                flex: 1,
+                                background: "rgba(0,136,255,.1)",
+                                border: "1px solid rgba(0,216,255,.26)",
+                                borderRadius: 6,
+                                color: "#8ec8f0",
+                                fontSize: 11,
+                                fontWeight: 700,
+                                padding: "5px 6px",
+                                cursor: "pointer",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              ✎ Edit Name
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => openAccountTransactions(account.name)}
+                              style={{
+                                flex: 1,
+                                background: "rgba(0,136,255,.1)",
+                                border: "1px solid rgba(0,216,255,.26)",
+                                borderRadius: 6,
+                                color: "#8ec8f0",
+                                fontSize: 11,
+                                fontWeight: 700,
+                                padding: "5px 6px",
+                                cursor: "pointer",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              Transactions →
+                            </button>
                           </div>
                         ) : null}
                       </div>
