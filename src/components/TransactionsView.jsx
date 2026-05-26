@@ -220,6 +220,7 @@ export function TransactionsView({
   const [showManualEntry, setShowManualEntry] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [showFilters, setShowFilters] = useState(false);
+  const [selectedTransactionKey, setSelectedTransactionKey] = useState(null);
   const [accountRemoveTarget, setAccountRemoveTarget] = useState(null);
   const [accountRemoveError, setAccountRemoveError] = useState("");
   const [isRemovingAccount, setIsRemovingAccount] = useState(false);
@@ -1233,25 +1234,45 @@ export function TransactionsView({
 
         <div style={{ maxHeight: "62vh", overflowY: "auto", paddingRight: 4 }}>
           {visibleTransactions.length > 0 ? (
-            filteredTransactions.map((tx, index) => (
-              <div
-                key={`${tx.id || tx.date}-${tx.merchant}-${tx.account}-${tx.amount}`}
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "140px 1.4fr 1fr 1fr 160px",
-                  alignItems: "center",
-                  padding: "9px 16px",
-                  borderBottom: "1px solid rgba(0,136,255,.08)",
-                  background: tx.needsReview
-                    ? "rgba(255,159,28,.06)"
-                    : index % 2 === 0
-                      ? "rgba(255,255,255,.01)"
-                      : "transparent",
-                  borderLeft: tx.needsReview
-                    ? "2px solid rgba(255,159,28,.45)"
-                    : "2px solid transparent",
-                }}
-              >
+            filteredTransactions.map((tx, index) => {
+              const rowKey = `${tx.id || tx.date}-${tx.merchant}-${tx.account}-${tx.amount}`;
+              const isSelectedRow = selectedTransactionKey === rowKey;
+              const defaultRowBackground = tx.needsReview
+                ? "rgba(255,159,28,.06)"
+                : index % 2 === 0
+                  ? "rgba(255,255,255,.01)"
+                  : "transparent";
+              return (
+                <div
+                  key={rowKey}
+                  onClick={() => setSelectedTransactionKey(rowKey)}
+                  onFocusCapture={() => setSelectedTransactionKey(rowKey)}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "140px 1.4fr 1fr 1fr 160px",
+                    alignItems: "center",
+                    padding: "9px 16px",
+                    margin: "2px 8px",
+                    borderRadius: 10,
+                    borderBottom: "1px solid rgba(0,136,255,.08)",
+                    border: isSelectedRow
+                      ? "1px solid rgba(0,216,255,.58)"
+                      : "1px solid transparent",
+                    background: isSelectedRow
+                      ? "linear-gradient(96deg, rgba(0,136,255,.22), rgba(0,216,255,.12) 52%, rgba(4,18,36,.84))"
+                      : defaultRowBackground,
+                    borderLeft: isSelectedRow
+                      ? "2px solid rgba(0,216,255,.9)"
+                      : tx.needsReview
+                        ? "2px solid rgba(255,159,28,.45)"
+                        : "2px solid transparent",
+                    boxShadow: isSelectedRow
+                      ? "0 0 22px rgba(0,136,255,.26), inset 0 0 22px rgba(0,216,255,.16)"
+                      : "none",
+                    cursor: "pointer",
+                    transition: "border-color 120ms ease, box-shadow 160ms ease, background 160ms ease",
+                  }}
+                >
                 <div
                   onDoubleClick={(event) => {
                     if (tx.source !== "manual") return;
@@ -1337,7 +1358,8 @@ export function TransactionsView({
                   {Math.abs(tx.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                 </div>
               </div>
-            ))
+              );
+            })
           ) : (
             <div
               style={{
