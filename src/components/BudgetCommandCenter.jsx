@@ -13,6 +13,19 @@ function buildHeatBarWidth(value, maxValue) {
   return `${Math.max(12, (safeValue / safeMax) * 100)}%`;
 }
 
+function moveBudgetRowById(rows, draggedId, targetId) {
+  if (!Array.isArray(rows) || !draggedId || !targetId || draggedId === targetId) return rows;
+
+  const fromIndex = rows.findIndex((row) => row.id === draggedId);
+  const toIndex = rows.findIndex((row) => row.id === targetId);
+  if (fromIndex < 0 || toIndex < 0) return rows;
+
+  const nextRows = [...rows];
+  const [draggedRow] = nextRows.splice(fromIndex, 1);
+  nextRows.splice(toIndex, 0, draggedRow);
+  return nextRows;
+}
+
 export function BudgetCommandCenter({
   transactions,
   householdProfilesProps,
@@ -25,6 +38,9 @@ export function BudgetCommandCenter({
 }) {
   const currentBudgetPeriod = getCurrentBudgetPeriod();
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [activeBudgetRowId, setActiveBudgetRowId] = useState(null);
+  const [draggingBudgetRowId, setDraggingBudgetRowId] = useState(null);
+  const [dragOverBudgetRowId, setDragOverBudgetRowId] = useState(null);
   const [activeBudgetDate, setActiveBudgetDate] = useState(() => ({
     monthIndex: currentBudgetPeriod.monthIndex,
     year: currentPlanYear,
@@ -165,6 +181,59 @@ export function BudgetCommandCenter({
         },
       ];
     });
+  };
+
+  const activateBudgetRow = (rowId) => {
+    if (!rowId) return;
+    setActiveBudgetRowId(rowId);
+  };
+
+  const reorderBudgetRows = (draggedId, targetId) => {
+    if (!draggedId || !targetId || draggedId === targetId) return;
+    setBudgetRowsForYear(activeBudgetDate.year, (rows) => moveBudgetRowById(rows, draggedId, targetId));
+  };
+
+  const handleBudgetRowDragStart = (event, rowId) => {
+    const interactiveTarget = event.target.closest("input, button, select, textarea, [contenteditable='true']");
+    if (interactiveTarget) {
+      event.preventDefault();
+      return;
+    }
+
+    activateBudgetRow(rowId);
+    setDraggingBudgetRowId(rowId);
+    setDragOverBudgetRowId(rowId);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", rowId);
+  };
+
+  const handleBudgetRowDragOver = (event, rowId) => {
+    if (!draggingBudgetRowId || draggingBudgetRowId === rowId) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    if (dragOverBudgetRowId !== rowId) {
+      setDragOverBudgetRowId(rowId);
+    }
+  };
+
+  const handleBudgetRowDrop = (event, rowId) => {
+    event.preventDefault();
+    const droppedRowId = draggingBudgetRowId || event.dataTransfer.getData("text/plain");
+    if (!droppedRowId || droppedRowId === rowId) {
+      setDraggingBudgetRowId(null);
+      setDragOverBudgetRowId(null);
+      return;
+    }
+
+    reorderBudgetRows(droppedRowId, rowId);
+    setDraggingBudgetRowId(null);
+    setDragOverBudgetRowId(null);
+    activateBudgetRow(droppedRowId);
+  };
+
+  const handleBudgetRowDragEnd = () => {
+    setDraggingBudgetRowId(null);
+    setDragOverBudgetRowId(null);
   };
 
   return (
@@ -451,7 +520,37 @@ export function BudgetCommandCenter({
                 gridTemplateColumns: "1.15fr 120px 1fr 120px",
                 alignItems: "center",
                 columnGap: 32,
+                borderRadius: 16,
+                border:
+                  dragOverBudgetRowId === item.id && draggingBudgetRowId && draggingBudgetRowId !== item.id
+                    ? "1px solid rgba(0,216,255,.78)"
+                    : activeBudgetRowId === item.id
+                      ? "1px solid rgba(0,216,255,.54)"
+                      : "1px solid rgba(0,136,255,.10)",
+                background:
+                  activeBudgetRowId === item.id ||
+                  (dragOverBudgetRowId === item.id &&
+                    draggingBudgetRowId &&
+                    draggingBudgetRowId !== item.id)
+                    ? "linear-gradient(95deg, rgba(0,136,255,.20), rgba(0,216,255,.11) 52%, rgba(4,18,36,.85))"
+                    : "rgba(3,14,28,.42)",
+                boxShadow:
+                  activeBudgetRowId === item.id
+                    ? "0 0 24px rgba(0,136,255,.28), inset 0 0 26px rgba(0,216,255,.17)"
+                    : dragOverBudgetRowId === item.id && draggingBudgetRowId && draggingBudgetRowId !== item.id
+                      ? "0 0 20px rgba(0,136,255,.24), inset 0 0 22px rgba(0,216,255,.14)"
+                      : "inset 0 0 0 1px rgba(0,136,255,.04)",
+                padding: "14px 16px",
+                cursor: draggingBudgetRowId === item.id ? "grabbing" : "grab",
+                opacity: draggingBudgetRowId === item.id ? 0.7 : 1,
+                transition: "border-color 120ms ease, box-shadow 160ms ease, background 160ms ease",
               }}
+              draggable
+              onClick={() => activateBudgetRow(item.id)}
+              onDragStart={(event) => handleBudgetRowDragStart(event, item.id)}
+              onDragOver={(event) => handleBudgetRowDragOver(event, item.id)}
+              onDrop={(event) => handleBudgetRowDrop(event, item.id)}
+              onDragEnd={handleBudgetRowDragEnd}
             >
               <div
                 style={{
@@ -504,6 +603,7 @@ export function BudgetCommandCenter({
                   <input
                     value={item.name}
                     onChange={(event) => updateBudgetRow(item.id, "name", event.target.value)}
+                    onFocus={() => activateBudgetRow(item.id)}
                     style={{
                       color: "#e6efff",
                       fontSize: 23,
@@ -598,6 +698,7 @@ export function BudgetCommandCenter({
               <input
                 value={money(item.budget)}
                 onChange={(event) => updateBudgetRow(item.id, "budget", event.target.value)}
+                onFocus={() => activateBudgetRow(item.id)}
                 style={{
                   color: "#e6efff",
                   fontSize: 22,
