@@ -28,19 +28,56 @@ function getLastNonNullValue(values, fallback = 0) {
   return lastValue ?? fallback;
 }
 
-const SCORECARD_BAR_AREA_PX = 248;
+const SCORECARD_BAR_AREA_PX = 236;
+const SCORECARD_BAR_MIN_PX = 10;
 
 function scorecardBarHeightPercent(value, maxValue) {
   const max = Math.max(Number(maxValue) || 1, 1);
   const v = Math.max(0, Number(value) || 0);
   if (v <= 0) return 0;
   const raw = (v / max) * SCORECARD_BAR_AREA_PX;
-  return Math.round(Math.max(SCORECARD_BAR_AREA_PX * 0.028, Math.min(SCORECARD_BAR_AREA_PX, raw)));
+  return Math.round(Math.max(SCORECARD_BAR_MIN_PX, Math.min(SCORECARD_BAR_AREA_PX, raw)));
 }
 
 function finiteMoney(value) {
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;
+}
+
+function buildScorecardTrendPaths(values, { minValue, maxValue, width, height, paddingX = 16, paddingY = 14 }) {
+  const count = values.length;
+  if (!count || width <= 0 || height <= 0) return [];
+
+  const usableWidth = Math.max(width - paddingX * 2, 0);
+  const usableHeight = Math.max(height - paddingY * 2, 0);
+  const span = Math.max(Number(maxValue) - Number(minValue), 1);
+
+  const points = values.map((value, index) => {
+    if (value === null || value === undefined) return null;
+    const x = paddingX + (count === 1 ? usableWidth / 2 : (index / (count - 1)) * usableWidth);
+    const y = paddingY + ((Number(maxValue) - Number(value)) / span) * usableHeight;
+    return { x, y };
+  });
+
+  const segments = [];
+  let currentSegment = [];
+
+  points.forEach((point) => {
+    if (!point) {
+      if (currentSegment.length > 1) segments.push(currentSegment);
+      currentSegment = [];
+      return;
+    }
+    currentSegment.push(point);
+  });
+
+  if (currentSegment.length > 1) segments.push(currentSegment);
+
+  return segments.map((segment) =>
+    segment
+      .map((point, index) => `${index === 0 ? "M" : "L"} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`)
+      .join(" ")
+  );
 }
 
 export function OperationsBoard({
@@ -197,6 +234,56 @@ export function OperationsBoard({
   });
   const trueCashYearEndValue = getLastNonNullValue(trueCashValues, trueCash);
   const projectedYearEndTrueCash = getLastNonNullValue(projectedTrueCashValues, trueCashYearEndValue);
+  const scorecardMonths = dynamicYearlyOpsData.map((month, index) => {
+    const plannedIncome = finiteMoney(month.plannedIncome ?? month.income);
+    const actualIncome = finiteMoney(month.actualIncome);
+    const budget = finiteMoney(month.budget);
+    const spent = finiteMoney(month.spent);
+    const profit = plannedIncome - budget;
+    return {
+      month,
+      index,
+      plannedIncome,
+      actualIncome,
+      budget,
+      spent,
+      profit,
+      trueCash: trueCashValues[index],
+    };
+  });
+  const chartTrendWidth = 1000;
+  const chartTrendHeight = SCORECARD_BAR_AREA_PX;
+  const profitValues = scorecardMonths.map((entry) => entry.profit);
+  const profitRange = {
+    min: Math.min(...profitValues, 0),
+    max: Math.max(...profitValues, 0),
+  };
+  const profitTrendPaths = buildScorecardTrendPaths(profitValues, {
+    minValue: profitRange.min,
+    maxValue: profitRange.max,
+    width: chartTrendWidth,
+    height: chartTrendHeight,
+  });
+  const trueCashEntries = scorecardMonths
+    .map((entry) => entry.trueCash)
+    .filter((value) => value !== null && value !== undefined);
+  const trueCashRange = {
+    min: Math.min(...trueCashEntries, 0),
+    max: Math.max(...trueCashEntries, 1),
+  };
+  const trueCashTrendPaths = buildScorecardTrendPaths(
+    scorecardMonths.map((entry) => entry.trueCash),
+    {
+      minValue: trueCashRange.min,
+      maxValue: trueCashRange.max,
+      width: chartTrendWidth,
+      height: chartTrendHeight,
+    }
+  );
+  const scorecardScaleMarks = [1, 0.75, 0.5, 0.25, 0].map((ratio) => ({
+    ratio,
+    label: money(maxValue * ratio),
+  }));
 
   return (
     <div>
@@ -351,19 +438,19 @@ export function OperationsBoard({
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "center",
-                marginBottom: 26,
+                marginBottom: 24,
+                gap: 18,
+                flexWrap: "wrap",
               }}
             >
               <div>
-                <div style={{ color: "white", fontSize: 22, fontWeight: 800 }}>Monthly Scorecard</div>
-                <div style={{ color: "#8ea8ca", marginTop: 8, fontSize: 15, lineHeight: 1.5 }}>
-                  Planned income from Income Hub, budget and spent from Budget Lab logic, and actual
-                  income from positive in-month deposits (excluding transfers).
+                <div style={{ color: "white", fontSize: 22, fontWeight: 900 }}>Monthly Scorecard</div>
+                <div style={{ color: "#8ea8ca", marginTop: 8, fontSize: 14, lineHeight: 1.55 }}>
+                  Mission-control view for monthly income, budget execution, and trend momentum.
                   {!planConfigured ? (
                     <span style={{ display: "block", marginTop: 8, color: "#94a3b8", fontSize: 13 }}>
-                      No income streams or budget amounts are set for {activePlanningYear}; sample
-                      planned, budget, and spent values are shown so the chart is not empty. Actual
-                      income still reflects your transactions.
+                      No plan data set for {activePlanningYear} yet; planned/budget/spent values use
+                      sample baselines while actual income remains transaction-driven.
                     </span>
                   ) : null}
                 </div>
@@ -371,68 +458,47 @@ export function OperationsBoard({
               <div
                 style={{
                   display: "flex",
-                  gap: 22,
-                  color: "#94a3b8",
-                  fontSize: 13,
-                  fontWeight: 600,
+                  gap: 10,
                   flexWrap: "wrap",
                   justifyContent: "flex-end",
-                  letterSpacing: 0.02,
                   alignItems: "center",
                 }}
               >
-                <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
-                  <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                {[
+                  ["Planned", "linear-gradient(180deg,#7fffd4,#34d399)", "#7fffd4"],
+                  ["Actual", "linear-gradient(180deg,#0f766e,#064e3b)", "#5eead4"],
+                  ["Budget", "linear-gradient(180deg,#fdba74,#fb923c)", "#fdba74"],
+                  ["Spent", "linear-gradient(180deg,#9a3412,#7c2d12)", "#f97316"],
+                  ["Profit Trend", "linear-gradient(90deg,#22c55e,#00f59b)", "#4ade80"],
+                  ["True Cash Trend", "linear-gradient(90deg,#0ea5e9,#00d8ff)", "#38bdf8"],
+                ].map(([label, swatch, glow]) => (
+                  <span
+                    key={label}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 8,
+                      padding: "5px 10px",
+                      borderRadius: 999,
+                      border: `1px solid ${glow}44`,
+                      background: "rgba(2,12,24,.64)",
+                      color: "#b9d4f2",
+                      fontSize: 12,
+                      fontWeight: 700,
+                    }}
+                  >
                     <span
                       style={{
-                        width: 10,
-                        height: 10,
-                        borderRadius: 2,
-                        background: "linear-gradient(135deg,#7fffd4,#34d399)",
-                        boxShadow: "0 0 10px rgba(52,211,153,0.45)",
+                        width: 14,
+                        height: 4,
+                        borderRadius: 999,
+                        background: swatch,
+                        boxShadow: `0 0 10px ${glow}66`,
                       }}
                     />
-                    Planned income
+                    {label}
                   </span>
-                  <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span
-                      style={{
-                        width: 10,
-                        height: 10,
-                        borderRadius: 2,
-                        background: "#0f766e",
-                        boxShadow: "inset 0 0 0 1px rgba(110,255,210,0.25)",
-                      }}
-                    />
-                    Actual income
-                  </span>
-                </div>
-                <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
-                  <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span
-                      style={{
-                        width: 10,
-                        height: 10,
-                        borderRadius: 2,
-                        background: "linear-gradient(135deg,#fdba74,#fb923c)",
-                        boxShadow: "0 0 8px rgba(251,146,60,0.35)",
-                      }}
-                    />
-                    Budget
-                  </span>
-                  <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span
-                      style={{
-                        width: 10,
-                        height: 10,
-                        borderRadius: 2,
-                        background: "#7c2d12",
-                        boxShadow: "inset 0 0 0 1px rgba(253,186,116,0.2)",
-                      }}
-                    />
-                    Spent
-                  </span>
-                </div>
+                ))}
               </div>
             </div>
 
@@ -440,59 +506,45 @@ export function OperationsBoard({
               onMouseLeave={() => setHoveredCommandMonth(null)}
               style={{
                 position: "relative",
-                height: 348,
-                borderRadius: 12,
-                border: "1px solid rgba(148,163,184,0.22)",
-                background: "rgba(15,23,42,0.55)",
-                padding: "20px 10px 6px",
-                display: "grid",
-                gridTemplateColumns: "repeat(12, minmax(0, 1fr))",
-                gap: 4,
-                alignItems: "end",
-                overflowX: "auto",
-                overflowY: "hidden",
+                borderRadius: 14,
+                border: "1px solid rgba(0,216,255,.2)",
+                background:
+                  "linear-gradient(160deg, rgba(4,20,40,.86), rgba(3,12,24,.92) 52%, rgba(2,8,18,.95))",
+                boxShadow:
+                  "inset 0 0 28px rgba(0,136,255,.12), 0 14px 28px rgba(0,0,0,.2), 0 0 0 1px rgba(0,216,255,.05)",
+                padding: "18px 14px 12px",
+                overflow: "hidden",
               }}
             >
-              <div
-                aria-hidden
-                style={{
-                  position: "absolute",
-                  left: 12,
-                  right: 12,
-                  bottom: 34,
-                  height: 1,
-                  background: "rgba(148,163,184,0.18)",
-                  pointerEvents: "none",
-                }}
-              />
               {hoveredCommandMonth ? (
                 <div
                   style={{
                     position: "absolute",
-                    top: 14,
+                    top: 16,
                     left: `${Math.min(
-                      88,
-                      Math.max(12, ((hoveredCommandMonth.index + 0.5) / 12) * 100)
+                      87,
+                      Math.max(14, ((hoveredCommandMonth.index + 0.5) / scorecardMonths.length) * 100)
                     )}%`,
                     transform: "translateX(-50%)",
-                    zIndex: 5,
-                    minWidth: 210,
-                    border: "1px solid rgba(148,163,184,0.28)",
-                    borderRadius: 8,
-                    background: "rgba(15,23,42,0.97)",
-                    boxShadow: "0 12px 28px rgba(0,0,0,0.35)",
+                    zIndex: 7,
+                    minWidth: 220,
+                    border: "1px solid rgba(0,216,255,.28)",
+                    borderRadius: 10,
+                    background: "rgba(4,16,31,0.96)",
+                    boxShadow: "0 14px 30px rgba(0,0,0,0.45)",
                     padding: "12px 14px",
                     pointerEvents: "none",
+                    backdropFilter: "blur(6px)",
                   }}
                 >
                   <div
                     style={{
-                      color: "#e2e8f0",
+                      color: "#e2f4ff",
                       fontSize: 13,
-                      marginBottom: 10,
-                      fontWeight: 700,
-                      borderBottom: "1px solid rgba(148,163,184,0.2)",
-                      paddingBottom: 8,
+                      marginBottom: 8,
+                      fontWeight: 800,
+                      borderBottom: "1px solid rgba(0,216,255,.16)",
+                      paddingBottom: 7,
                     }}
                   >
                     {hoveredCommandMonth.data.month}
@@ -506,7 +558,7 @@ export function OperationsBoard({
                     ["Actual income", hoveredCommandMonth.data.actualIncome, "#0f766e"],
                     ["Budget", hoveredCommandMonth.data.budget, "#fdba74"],
                     ["Spent", hoveredCommandMonth.data.spent, "#9a3412"],
-                    ["True Cash", trueCashValues[hoveredCommandMonth.index], "#94a3b8"],
+                    ["True Cash", trueCashValues[hoveredCommandMonth.index], "#38bdf8"],
                     [
                       "Profit",
                       (hoveredCommandMonth.data.plannedIncome ?? hoveredCommandMonth.data.income) -
@@ -533,14 +585,14 @@ export function OperationsBoard({
                       style={{
                         display: "flex",
                         justifyContent: "space-between",
-                        gap: 18,
+                        gap: 16,
                         color: "#cbd5e1",
-                        fontSize: 13,
-                        fontWeight: 600,
+                        fontSize: 12,
+                        fontWeight: 700,
                         marginTop: 6,
                       }}
                     >
-                      <span style={{ color: "#94a3b8" }}>{label}</span>
+                      <span style={{ color: "#8ea8ca" }}>{label}</span>
                       <span style={{ color }}>
                         {(label === "Profit" || label === "Adjustments") && value >= 0 ? "+" : ""}
                         {(label === "Projected Cash" || label === "True Cash") && value === null
@@ -556,123 +608,275 @@ export function OperationsBoard({
                 </div>
               ) : null}
 
-              {dynamicYearlyOpsData.map((month, index) => (
+              <div style={{ position: "relative", paddingLeft: 58 }}>
                 <div
-                  key={month.month}
-                  onMouseEnter={() => setHoveredCommandMonth({ data: month, index })}
+                  aria-hidden
                   style={{
-                    height: "100%",
-                    minWidth: 0,
-                    display: "flex",
-                    flexDirection: "column",
-                    justifyContent: "flex-end",
-                    alignItems: "center",
-                    gap: 8,
-                    cursor: "pointer",
+                    position: "absolute",
+                    left: 0,
+                    top: 34,
+                    bottom: 36,
+                    width: 50,
+                    display: "grid",
+                    gridTemplateRows: "repeat(5, 1fr)",
+                    alignContent: "stretch",
+                    pointerEvents: "none",
                   }}
                 >
-                      <div
-                        style={{
-                          height: 248,
-                          width: "100%",
-                          minWidth: 0,
-                          maxWidth: "100%",
-                          display: "flex",
-                          alignItems: "end",
-                          justifyContent: "center",
-                          gap: 5,
-                        }}
-                      >
+                  {scorecardScaleMarks.map((mark) => (
+                    <div
+                      key={mark.ratio}
+                      style={{
+                        display: "flex",
+                        alignItems: mark.ratio === 0 ? "end" : "center",
+                        justifyContent: "flex-end",
+                        paddingRight: 8,
+                        color: "#6482a7",
+                        fontSize: 10,
+                        fontWeight: 700,
+                        letterSpacing: 0.3,
+                      }}
+                    >
+                      {mark.label}
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{ overflowX: "auto", overflowY: "hidden", paddingBottom: 2 }}>
+                  <div style={{ position: "relative", minWidth: 980, paddingRight: 6 }}>
+                    <div
+                      aria-hidden
+                      style={{
+                        position: "absolute",
+                        left: 0,
+                        right: 0,
+                        top: 34,
+                        height: SCORECARD_BAR_AREA_PX,
+                        pointerEvents: "none",
+                      }}
+                    >
+                      {scorecardScaleMarks.map((mark) => (
                         <div
+                          key={`grid-${mark.ratio}`}
                           style={{
-                            display: "flex",
-                            alignItems: "end",
-                            justifyContent: "center",
-                            gap: 2,
-                          }}
-                        >
-                          <div
-                            title={`Planned income ${money(month.plannedIncome ?? month.income)}`}
-                            style={{
-                              width: 8,
-                              height: scorecardBarHeightPercent(
-                                month.plannedIncome ?? month.income,
-                                maxValue
-                              ),
-                              borderRadius: "3px 3px 1px 1px",
-                              background: "linear-gradient(180deg,#7fffd4,#34d399)",
-                              border: "1px solid rgba(167,255,230,0.35)",
-                              boxShadow: "0 -2px 12px rgba(52,211,153,0.35)",
-                            }}
-                          />
-                          <div
-                            title={`Actual income ${money(month.actualIncome)}`}
-                            style={{
-                              width: 8,
-                              height: scorecardBarHeightPercent(month.actualIncome, maxValue),
-                              borderRadius: "3px 3px 1px 1px",
-                              background: "linear-gradient(180deg,#0f766e,#064e3b)",
-                              border: "1px solid rgba(45,120,110,0.6)",
-                              boxShadow: "inset 0 1px 0 rgba(110,255,210,0.12)",
-                            }}
-                          />
-                        </div>
-                        <div
-                          aria-hidden
-                          style={{
-                            width: 1,
-                            height: 200,
-                            flexShrink: 0,
-                            alignSelf: "flex-end",
-                            marginBottom: 0,
-                            background: "rgba(148,163,184,0.22)",
-                            borderRadius: 1,
+                            position: "absolute",
+                            left: 0,
+                            right: 0,
+                            top: `${(1 - mark.ratio) * 100}%`,
+                            borderTop:
+                              mark.ratio === 0
+                                ? "1px solid rgba(148,163,184,0.32)"
+                                : "1px dashed rgba(148,163,184,0.14)",
                           }}
                         />
+                      ))}
+                    </div>
+
+                    <svg
+                      aria-hidden
+                      viewBox={`0 0 ${chartTrendWidth} ${chartTrendHeight}`}
+                      preserveAspectRatio="none"
+                      style={{
+                        position: "absolute",
+                        left: 0,
+                        right: 0,
+                        top: 34,
+                        height: SCORECARD_BAR_AREA_PX,
+                        width: "100%",
+                        zIndex: 1,
+                        pointerEvents: "none",
+                      }}
+                    >
+                      <defs>
+                        <linearGradient id="ops-profit-line" x1="0%" y1="0%" x2="100%" y2="0%">
+                          <stop offset="0%" stopColor="#22c55e" />
+                          <stop offset="100%" stopColor="#00f59b" />
+                        </linearGradient>
+                        <linearGradient id="ops-true-cash-line" x1="0%" y1="0%" x2="100%" y2="0%">
+                          <stop offset="0%" stopColor="#0ea5e9" />
+                          <stop offset="100%" stopColor="#00d8ff" />
+                        </linearGradient>
+                      </defs>
+                      {profitTrendPaths.map((path, index) => (
+                        <path
+                          key={`profit-glow-${index}`}
+                          d={path}
+                          fill="none"
+                          stroke="rgba(0,245,155,0.18)"
+                          strokeWidth="7"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      ))}
+                      {profitTrendPaths.map((path, index) => (
+                        <path
+                          key={`profit-${index}`}
+                          d={path}
+                          fill="none"
+                          stroke="url(#ops-profit-line)"
+                          strokeWidth="2.5"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      ))}
+                      {trueCashTrendPaths.map((path, index) => (
+                        <path
+                          key={`cash-glow-${index}`}
+                          d={path}
+                          fill="none"
+                          stroke="rgba(0,216,255,0.16)"
+                          strokeWidth="6"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      ))}
+                      {trueCashTrendPaths.map((path, index) => (
+                        <path
+                          key={`cash-${index}`}
+                          d={path}
+                          fill="none"
+                          stroke="url(#ops-true-cash-line)"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeDasharray="5 4"
+                        />
+                      ))}
+                    </svg>
+
+                    <div
+                      style={{
+                        position: "relative",
+                        zIndex: 2,
+                        display: "grid",
+                        gridTemplateColumns: "repeat(12, minmax(56px, 1fr))",
+                        gap: 8,
+                        alignItems: "end",
+                      }}
+                    >
+                      {scorecardMonths.map((entry) => (
                         <div
+                          key={entry.month.month}
+                          onMouseEnter={() => setHoveredCommandMonth({ data: entry.month, index: entry.index })}
                           style={{
+                            minWidth: 0,
                             display: "flex",
-                            alignItems: "end",
-                            justifyContent: "center",
-                            gap: 2,
+                            flexDirection: "column",
+                            justifyContent: "flex-end",
+                            alignItems: "center",
+                            gap: 8,
+                            cursor: "pointer",
                           }}
                         >
                           <div
-                            title={`Budget ${money(month.budget)}`}
                             style={{
-                              width: 8,
-                              height: scorecardBarHeightPercent(month.budget, maxValue),
-                              borderRadius: "3px 3px 1px 1px",
-                              background: "linear-gradient(180deg,#fdba74,#fb923c)",
-                              border: "1px solid rgba(255,220,180,0.35)",
-                              boxShadow: "0 -2px 10px rgba(251,146,60,0.28)",
+                              color: entry.profit >= 0 ? "#63f6ad" : "#ff8aa0",
+                              border: `1px solid ${entry.profit >= 0 ? "rgba(0,245,155,.26)" : "rgba(255,93,122,.32)"}`,
+                              background: entry.profit >= 0 ? "rgba(0,245,155,.09)" : "rgba(255,93,122,.1)",
+                              borderRadius: 999,
+                              padding: "2px 8px",
+                              fontSize: 10,
+                              fontWeight: 900,
+                              letterSpacing: 0.35,
+                              minHeight: 20,
                             }}
-                          />
+                          >
+                            {entry.profit >= 0 ? "+" : ""}
+                            {wholeDollars(entry.profit)}
+                          </div>
+
                           <div
-                            title={`Spent ${money(month.spent)}`}
                             style={{
-                              width: 8,
-                              height: scorecardBarHeightPercent(month.spent, maxValue),
-                              borderRadius: "3px 3px 1px 1px",
-                              background: "linear-gradient(180deg,#9a3412,#7c2d12)",
-                              border: "1px solid rgba(120,45,25,0.55)",
-                              boxShadow: "inset 0 1px 0 rgba(253,186,116,0.1)",
+                              height: SCORECARD_BAR_AREA_PX,
+                              width: "100%",
+                              display: "flex",
+                              alignItems: "end",
+                              justifyContent: "center",
+                              gap: 5,
+                              padding: "0 2px",
                             }}
-                          />
+                          >
+                            {[
+                              [
+                                "Planned",
+                                entry.plannedIncome,
+                                "linear-gradient(180deg,#7fffd4,#34d399)",
+                                "rgba(167,255,230,0.38)",
+                                "0 -2px 14px rgba(52,211,153,0.45)",
+                              ],
+                              [
+                                "Actual",
+                                entry.actualIncome,
+                                "linear-gradient(180deg,#0f766e,#064e3b)",
+                                "rgba(45,120,110,0.62)",
+                                "inset 0 1px 0 rgba(110,255,210,0.12)",
+                              ],
+                              [
+                                "Budget",
+                                entry.budget,
+                                "linear-gradient(180deg,#fdba74,#fb923c)",
+                                "rgba(255,220,180,0.35)",
+                                "0 -2px 10px rgba(251,146,60,0.32)",
+                              ],
+                              [
+                                "Spent",
+                                entry.spent,
+                                "linear-gradient(180deg,#9a3412,#7c2d12)",
+                                "rgba(120,45,25,0.58)",
+                                "inset 0 1px 0 rgba(253,186,116,0.11)",
+                              ],
+                            ].map(([label, value, background, border, shadow]) => (
+                              <div
+                                key={label}
+                                title={`${label} ${money(value)}`}
+                                style={{
+                                  width: 10,
+                                  height: "100%",
+                                  borderRadius: 8,
+                                  background: "rgba(5,16,30,.66)",
+                                  border: "1px solid rgba(0,216,255,.08)",
+                                  position: "relative",
+                                  overflow: "hidden",
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    position: "absolute",
+                                    left: 0,
+                                    right: 0,
+                                    bottom: 0,
+                                    height: scorecardBarHeightPercent(value, maxValue),
+                                    borderRadius: "6px 6px 2px 2px",
+                                    background,
+                                    border: `1px solid ${border}`,
+                                    boxShadow: shadow,
+                                  }}
+                                />
+                              </div>
+                            ))}
+                          </div>
+
+                          <div
+                            style={{
+                              color: "#7ba2cf",
+                              fontSize: 11,
+                              fontWeight: 800,
+                              letterSpacing: 0.4,
+                              textTransform: "uppercase",
+                              padding: "3px 8px",
+                              borderRadius: 999,
+                              background: "rgba(0,96,180,.12)",
+                              border: "1px solid rgba(0,216,255,.16)",
+                            }}
+                          >
+                            {entry.month.month}
+                          </div>
                         </div>
-                      </div>
-                      <div
-                        style={{
-                          color: "#64748b",
-                          fontSize: 12,
-                          fontWeight: 600,
-                          marginTop: 4,
-                        }}
-                      >
-                        {month.month}
-                      </div>
+                      ))}
                     </div>
-              ))}
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
