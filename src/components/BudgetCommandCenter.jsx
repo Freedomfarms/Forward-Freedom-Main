@@ -526,19 +526,25 @@ export function BudgetCommandCenter({
                 borderRadius: 16,
                 border:
                   activeBudgetRowId === item.id
-                    ? "1px solid rgba(0,216,255,.54)"
+                    ? pointerDragBudgetRowId === item.id
+                      ? "1px solid rgba(0,216,255,.78)"
+                      : "1px solid rgba(0,216,255,.54)"
                     : "1px solid rgba(0,136,255,.10)",
                 background:
                   activeBudgetRowId === item.id
-                    ? "linear-gradient(95deg, rgba(0,136,255,.20), rgba(0,216,255,.11) 52%, rgba(4,18,36,.85))"
+                    ? pointerDragBudgetRowId === item.id
+                      ? "linear-gradient(95deg, rgba(0,136,255,.30), rgba(0,216,255,.19) 52%, rgba(4,20,40,.9))"
+                      : "linear-gradient(95deg, rgba(0,136,255,.20), rgba(0,216,255,.11) 52%, rgba(4,18,36,.85))"
                     : "rgba(3,14,28,.42)",
                 boxShadow:
                   activeBudgetRowId === item.id
-                    ? "0 0 24px rgba(0,136,255,.28), inset 0 0 26px rgba(0,216,255,.17)"
+                    ? pointerDragBudgetRowId === item.id
+                      ? "0 0 30px rgba(0,136,255,.38), inset 0 0 28px rgba(0,216,255,.24)"
+                      : "0 0 24px rgba(0,136,255,.28), inset 0 0 26px rgba(0,216,255,.17)"
                     : "inset 0 0 0 1px rgba(0,136,255,.04)",
                 padding: "14px 16px",
                 cursor: pointerDragBudgetRowId === item.id ? "grabbing" : "grab",
-                opacity: pointerDragBudgetRowId === item.id ? 0.78 : 1,
+                opacity: 1,
                 userSelect: "none",
                 transition: "border-color 120ms ease, box-shadow 160ms ease, background 160ms ease",
               }}
