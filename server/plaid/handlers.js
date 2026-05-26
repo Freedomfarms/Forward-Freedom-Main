@@ -15,7 +15,7 @@ import {
   encryptSensitiveValue,
   isSensitiveEncryptionConfigured,
 } from "../security/encryption.js";
-import { authenticateRequest, AuthError } from "../auth/verifyAuth.js";
+import { authenticateRequest, authenticateVerifiedRequest, AuthError } from "../auth/verifyAuth.js";
 
 function buildErrorResponse(message, extra = {}) {
   return {
@@ -577,10 +577,19 @@ async function deletePlaidItems({ prisma, userId, plaidItems }) {
   }
 }
 
-export async function handlePlaidStatus(_request, response) {
-  const plaidConfig = getPlaidConfig();
+export async function handlePlaidStatus(request, response) {
+  try {
+    await authenticateRequest(request);
+  } catch {
+    // If auth fails, return only the minimum needed to drive the UI — no server details.
+    return response.status(200).json({
+      configured: false,
+      notes: [],
+    });
+  }
 
-  response.status(200).json({
+  const plaidConfig = getPlaidConfig();
+  return response.status(200).json({
     ...plaidConfig,
     capabilities: {
       ...plaidConfig.capabilities,
@@ -593,7 +602,7 @@ export async function handlePlaidStatus(_request, response) {
 
 export async function handleCreatePlaidLinkToken(request, response) {
   try {
-    const decodedToken = await authenticateRequest(request);
+    const decodedToken = await authenticateVerifiedRequest(request);
     const { prisma, plaidClient } = assertPlaidRuntimeReady();
     await ensureAuthenticatedUserRecord(prisma, decodedToken);
 
@@ -620,7 +629,7 @@ export async function handleCreatePlaidLinkToken(request, response) {
 
 export async function handleExchangePlaidPublicToken(request, response) {
   try {
-    const decodedToken = await authenticateRequest(request);
+    const decodedToken = await authenticateVerifiedRequest(request);
     const { prisma, plaidClient } = assertPlaidRuntimeReady();
     await ensureAuthenticatedUserRecord(prisma, decodedToken);
 
@@ -642,6 +651,16 @@ export async function handleExchangePlaidPublicToken(request, response) {
     const itemResponse = await plaidClient.itemGet({ access_token: accessToken });
     const institutionId = itemResponse.data.item.institution_id;
     const institutionName = await resolveInstitutionName(plaidClient, institutionId);
+
+    // Ownership guard: if this itemId already exists, it must belong to the same user.
+    // Without this check the update branch would silently re-assign the item to whoever
+    // exchanges a public token referencing the same itemId.
+    const existingItem = await prisma.plaidItem.findUnique({ where: { itemId } });
+    if (existingItem && existingItem.userId !== decodedToken.uid) {
+      return response
+        .status(409)
+        .json(buildErrorResponse("This institution is already linked to a different account."));
+    }
 
     await prisma.plaidItem.upsert({
       where: {
