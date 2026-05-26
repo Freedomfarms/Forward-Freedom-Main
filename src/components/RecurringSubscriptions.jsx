@@ -370,7 +370,7 @@ export function RecurringSubscriptions({
                 </option>
                 {accountOptions.map((account) => (
                   <option key={account.id} value={account.name} style={{ background: "#061224" }}>
-                    {account.name}
+                    {account.nickname || account.name}
                   </option>
                 ))}
               </select>
