@@ -691,14 +691,14 @@ function ForwardFreedomDashboard({
       name: "Real Estate",
       amount: money(realEstateTotal),
       percent: pct(realEstateTotal),
-      color: "#18d3ff",
+      color: "#00f59b",
       valueNumber: realEstateTotal,
     },
     {
       name: "Retirement",
       amount: money(retirementTotal),
       percent: pct(retirementTotal),
-      color: "#ffb65d",
+      color: "#ff5d7a",
       valueNumber: retirementTotal,
     },
   ];
