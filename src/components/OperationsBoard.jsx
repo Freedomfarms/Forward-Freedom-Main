@@ -238,17 +238,12 @@ export function OperationsBoard({
       trueCash: trueCashValues[index],
     };
   });
-  const scorecardAverageSpent =
-    scorecardMonths.reduce((sum, entry) => sum + entry.spent, 0) / Math.max(scorecardMonths.length, 1);
-  const scorecardChartValues = [
-    ...scorecardMonths.flatMap((entry) => [
-      entry.plannedIncome,
-      entry.actualIncome,
-      entry.budget,
-      entry.spent,
-    ]),
-    scorecardAverageSpent,
-  ];
+  const scorecardChartValues = scorecardMonths.flatMap((entry) => [
+    entry.plannedIncome,
+    entry.actualIncome,
+    entry.budget,
+    entry.spent,
+  ]);
   const { max: scorecardChartMax, min: scorecardChartMin } = buildScorecardRange(scorecardChartValues);
   const scorecardYLabels = buildScorecardYLabels(scorecardChartMax, scorecardChartMin);
   const scorecardPlannedPoints = scorecardMonths.map((entry) => [
@@ -275,7 +270,6 @@ export function OperationsBoard({
     scorecardBudgetPoints.length > 1 ? buildLinePath(scorecardBudgetPoints) : "";
   const scorecardSpentPath = scorecardSpentPoints.length > 1 ? buildLinePath(scorecardSpentPoints) : "";
   const scorecardSpentArea = scorecardSpentPoints.length > 1 ? buildAreaPath(scorecardSpentPoints) : "";
-  const scorecardAverageSpentY = scorecardToY(scorecardAverageSpent, scorecardChartMax, scorecardChartMin);
   const scorecardFocusX = hoveredCommandMonth ? SCORECARD_MONTH_X[hoveredCommandMonth.data.month] : null;
 
   return (
@@ -454,7 +448,6 @@ export function OperationsBoard({
                   ["Earned Income", "rgba(0,245,155,.9)", "solid", "rgba(0,245,155,.24)"],
                   ["Budget", "rgba(0,216,255,.95)", "dashed", "rgba(0,216,255,.3)"],
                   ["Spent", "rgba(0,216,255,.95)", "solid", "rgba(0,216,255,.3)"],
-                  ["Avg Spent", "rgba(143,234,255,.95)", "dashed", "rgba(143,234,255,.2)"],
                 ].map(([label, color, type, glow]) => (
                   <div key={label} style={{ display: "flex", alignItems: "center", gap: 8, color: "#9fb0c9" }}>
                     <div
@@ -630,15 +623,6 @@ export function OperationsBoard({
                     {scorecardSpentArea ? (
                       <path d={scorecardSpentArea} fill="url(#opsScorecardAreaGradient)" />
                     ) : null}
-                    <line
-                      x1={0}
-                      y1={scorecardAverageSpentY}
-                      x2={SCORECARD_CHART_W}
-                      y2={scorecardAverageSpentY}
-                      stroke="rgba(143,234,255,.95)"
-                      strokeWidth={1.8}
-                      strokeDasharray="6 5"
-                    />
                     {scorecardBudgetPath ? (
                       <path
                         d={scorecardBudgetPath}
@@ -696,26 +680,11 @@ export function OperationsBoard({
 
                     {scorecardMonths.map((entry) => {
                       const x = SCORECARD_MONTH_X[entry.month.month];
-                      const plannedY = scorecardToY(
-                        entry.plannedIncome,
-                        scorecardChartMax,
-                        scorecardChartMin
-                      );
                       const spentY = scorecardToY(entry.spent, scorecardChartMax, scorecardChartMin);
                       const isActive = hoveredCommandMonth?.data?.month === entry.month.month;
 
                       return (
                         <g key={entry.month.month}>
-                          <circle
-                            cx={x}
-                            cy={plannedY}
-                            r={isActive ? 5.4 : 4}
-                            fill="#00f59b"
-                            stroke="white"
-                            strokeWidth={isActive ? 1.8 : 1.3}
-                            style={{ cursor: "pointer" }}
-                            onMouseEnter={() => setHoveredCommandMonth({ data: entry.month, index: entry.index })}
-                          />
                           <circle
                             cx={x}
                             cy={spentY}
