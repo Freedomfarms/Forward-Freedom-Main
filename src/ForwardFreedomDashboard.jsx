@@ -255,9 +255,25 @@ function sortTransactionsByDate(transactions) {
 function mergePlaidSyncIntoUser(user, syncPayload) {
   const hasLivePlaidItems = Array.isArray(user.plaidItems) && user.plaidItems.length > 0;
   const shouldReplaceDemoSyncedData = !hasLivePlaidItems;
-  const syncedAccounts = (syncPayload.accounts || []).map((account, index) =>
-    normalizeAccount(account, index)
+  const existingPlaidNicknamesByKey = new Map(
+    user.accounts
+      .filter((account) => account.syncSource === "Plaid" || account.plaidAccountId)
+      .map((account) => [account.plaidAccountId || account.id, account.nickname])
+      .filter(([, nickname]) => typeof nickname === "string" && nickname.trim().length > 0)
   );
+  const syncedAccounts = (syncPayload.accounts || []).map((account, index) => {
+    const normalizedAccount = normalizeAccount(account, index);
+    const existingNickname = existingPlaidNicknamesByKey.get(
+      normalizedAccount.plaidAccountId || normalizedAccount.id
+    );
+
+    return existingNickname
+      ? {
+          ...normalizedAccount,
+          nickname: existingNickname,
+        }
+      : normalizedAccount;
+  });
   const existingPlaidTransactions = new Map(
     user.transactions
       .filter((transaction) => transaction.source === "plaid")

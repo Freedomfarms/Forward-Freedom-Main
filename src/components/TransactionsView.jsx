@@ -7,6 +7,8 @@ import { accountSupportsTransactions } from "../utils/accounts.js";
 import { AccountRemoveConfirmModal } from "./AccountRemoveConfirmModal.jsx";
 import { HouseholdProfilesControl } from "./Common.jsx";
 
+const TRANSACTION_FEED_GRID_COLUMNS = "140px 1.4fr minmax(270px,1.1fr) minmax(180px,0.9fr) 160px";
+
 function formatManualDate(value) {
   if (!value) return "";
 
@@ -220,6 +222,7 @@ export function TransactionsView({
   const [showManualEntry, setShowManualEntry] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [showFilters, setShowFilters] = useState(false);
+  const [selectedTransactionKey, setSelectedTransactionKey] = useState(null);
   const [accountRemoveTarget, setAccountRemoveTarget] = useState(null);
   const [accountRemoveError, setAccountRemoveError] = useState("");
   const [isRemovingAccount, setIsRemovingAccount] = useState(false);
@@ -1215,43 +1218,65 @@ export function TransactionsView({
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "140px 1.4fr 1fr 1fr 160px",
+            gridTemplateColumns: TRANSACTION_FEED_GRID_COLUMNS,
             padding: "0 16px 12px",
             color: "#7294bb",
             fontSize: 13,
             textTransform: "uppercase",
             letterSpacing: 1,
             borderBottom: "1px solid rgba(0,136,255,.14)",
+            columnGap: 10,
           }}
         >
           <div>Date</div>
           <div>Merchant</div>
-          <div style={{ paddingRight: 18 }}>Category</div>
-          <div style={{ marginLeft: -10 }}>Account</div>
+          <div style={{ paddingLeft: 6 }}>Category</div>
+          <div style={{ paddingLeft: 14 }}>Account</div>
           <div style={{ textAlign: "right" }}>Amount</div>
         </div>
 
         <div style={{ maxHeight: "62vh", overflowY: "auto", paddingRight: 4 }}>
           {visibleTransactions.length > 0 ? (
-            filteredTransactions.map((tx, index) => (
-              <div
-                key={`${tx.id || tx.date}-${tx.merchant}-${tx.account}-${tx.amount}`}
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "140px 1.4fr 1fr 1fr 160px",
-                  alignItems: "center",
-                  padding: "9px 16px",
-                  borderBottom: "1px solid rgba(0,136,255,.08)",
-                  background: tx.needsReview
-                    ? "rgba(255,159,28,.06)"
-                    : index % 2 === 0
-                      ? "rgba(255,255,255,.01)"
-                      : "transparent",
-                  borderLeft: tx.needsReview
-                    ? "2px solid rgba(255,159,28,.45)"
-                    : "2px solid transparent",
-                }}
-              >
+            filteredTransactions.map((tx, index) => {
+              const rowKey = `${tx.id || tx.date}-${tx.merchant}-${tx.account}-${tx.amount}`;
+              const isSelectedRow = selectedTransactionKey === rowKey;
+              const defaultRowBackground = tx.needsReview
+                ? "rgba(255,159,28,.06)"
+                : index % 2 === 0
+                  ? "rgba(255,255,255,.01)"
+                  : "transparent";
+              return (
+                <div
+                  key={rowKey}
+                  onClick={() => setSelectedTransactionKey(rowKey)}
+                  onFocusCapture={() => setSelectedTransactionKey(rowKey)}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: TRANSACTION_FEED_GRID_COLUMNS,
+                    alignItems: "center",
+                    padding: "9px 16px",
+                    margin: "2px 8px",
+                    borderRadius: 10,
+                    borderBottom: "1px solid rgba(0,136,255,.08)",
+                    border: isSelectedRow
+                      ? "1px solid rgba(0,216,255,.9)"
+                      : "1px solid transparent",
+                    background: isSelectedRow
+                      ? "linear-gradient(96deg, rgba(0,136,255,.32), rgba(0,216,255,.20) 52%, rgba(4,18,36,.9))"
+                      : defaultRowBackground,
+                    borderLeft: isSelectedRow
+                      ? "3px solid rgba(0,216,255,1)"
+                      : tx.needsReview
+                        ? "2px solid rgba(255,159,28,.45)"
+                        : "2px solid transparent",
+                    boxShadow: isSelectedRow
+                      ? "0 0 32px rgba(0,136,255,.45), inset 0 0 30px rgba(0,216,255,.24)"
+                      : "none",
+                    cursor: "pointer",
+                    transition: "border-color 120ms ease, box-shadow 160ms ease, background 160ms ease",
+                    columnGap: 10,
+                  }}
+                >
                 <div
                   onDoubleClick={(event) => {
                     if (tx.source !== "manual") return;
@@ -1275,7 +1300,7 @@ export function TransactionsView({
                     alignItems: "center",
                     gap: 10,
                     minWidth: 0,
-                    paddingRight: 18,
+                    paddingLeft: 6,
                   }}
                 >
                   <select
@@ -1324,7 +1349,9 @@ export function TransactionsView({
                     {tx.needsReview ? " • Needs review" : ""}
                   </div>
                 </div>
-                <div style={{ color: "#7ebeff" }}>{accountDisplayNames[tx.account] || tx.account}</div>
+                <div style={{ color: "#7ebeff", paddingLeft: 14 }}>
+                  {accountDisplayNames[tx.account] || tx.account}
+                </div>
                 <div
                   style={{
                     textAlign: "right",
@@ -1337,7 +1364,8 @@ export function TransactionsView({
                   {Math.abs(tx.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                 </div>
               </div>
-            ))
+              );
+            })
           ) : (
             <div
               style={{

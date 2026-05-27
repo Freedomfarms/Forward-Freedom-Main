@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { styles } from "../styles.js";
 import { money, cleanMoneyInput, parseMoney } from "../utils/format.js";
 import { buildMonthlySpendSnapshot } from "../utils/budgetReview.js";
@@ -13,6 +13,19 @@ function buildHeatBarWidth(value, maxValue) {
   return `${Math.max(12, (safeValue / safeMax) * 100)}%`;
 }
 
+function moveBudgetRowById(rows, draggedId, targetId) {
+  if (!Array.isArray(rows) || !draggedId || !targetId || draggedId === targetId) return rows;
+
+  const fromIndex = rows.findIndex((row) => row.id === draggedId);
+  const toIndex = rows.findIndex((row) => row.id === targetId);
+  if (fromIndex < 0 || toIndex < 0) return rows;
+
+  const nextRows = [...rows];
+  const [draggedRow] = nextRows.splice(fromIndex, 1);
+  nextRows.splice(toIndex, 0, draggedRow);
+  return nextRows;
+}
+
 export function BudgetCommandCenter({
   transactions,
   householdProfilesProps,
@@ -25,6 +38,8 @@ export function BudgetCommandCenter({
 }) {
   const currentBudgetPeriod = getCurrentBudgetPeriod();
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [activeBudgetRowId, setActiveBudgetRowId] = useState(null);
+  const [pointerDragBudgetRowId, setPointerDragBudgetRowId] = useState(null);
   const [activeBudgetDate, setActiveBudgetDate] = useState(() => ({
     monthIndex: currentBudgetPeriod.monthIndex,
     year: currentPlanYear,
@@ -166,6 +181,62 @@ export function BudgetCommandCenter({
       ];
     });
   };
+
+  const activateBudgetRow = useCallback((rowId) => {
+    if (!rowId) return;
+    setActiveBudgetRowId(rowId);
+  }, []);
+
+  const reorderBudgetRows = useCallback(
+    (draggedId, targetId) => {
+      if (!draggedId || !targetId || draggedId === targetId) return;
+      setBudgetRowsForYear(activeBudgetDate.year, (rows) =>
+        moveBudgetRowById(rows, draggedId, targetId)
+      );
+    },
+    [activeBudgetDate.year, setBudgetRowsForYear]
+  );
+
+  const handleBudgetRowPointerDown = (event, rowId) => {
+    if (event.button !== 0) return;
+    const interactiveTarget = event.target.closest("input, button, select, textarea, [contenteditable='true']");
+    if (interactiveTarget) {
+      return;
+    }
+
+    event.preventDefault();
+    activateBudgetRow(rowId);
+    setPointerDragBudgetRowId(rowId);
+  };
+
+  useEffect(() => {
+    if (!pointerDragBudgetRowId) return;
+
+    const handlePointerMove = (event) => {
+      if ((event.buttons & 1) !== 1) return;
+      const rowElement = document
+        .elementFromPoint(event.clientX, event.clientY)
+        ?.closest("[data-budget-row-id]");
+      const targetRowId = rowElement?.getAttribute("data-budget-row-id");
+      if (!targetRowId || targetRowId === pointerDragBudgetRowId) return;
+
+      reorderBudgetRows(pointerDragBudgetRowId, targetRowId);
+      activateBudgetRow(pointerDragBudgetRowId);
+    };
+
+    const handleGlobalPointerRelease = () => {
+      setPointerDragBudgetRowId(null);
+    };
+
+    window.addEventListener("mousemove", handlePointerMove);
+    window.addEventListener("mouseup", handleGlobalPointerRelease);
+    window.addEventListener("blur", handleGlobalPointerRelease);
+    return () => {
+      window.removeEventListener("mousemove", handlePointerMove);
+      window.removeEventListener("mouseup", handleGlobalPointerRelease);
+      window.removeEventListener("blur", handleGlobalPointerRelease);
+    };
+  }, [activateBudgetRow, pointerDragBudgetRowId, reorderBudgetRows]);
 
   return (
     <>
@@ -451,7 +522,34 @@ export function BudgetCommandCenter({
                 gridTemplateColumns: "1.15fr 120px 1fr 120px",
                 alignItems: "center",
                 columnGap: 32,
+                borderRadius: 16,
+                border:
+                  activeBudgetRowId === item.id
+                    ? pointerDragBudgetRowId === item.id
+                      ? "1px solid rgba(0,216,255,.78)"
+                      : "1px solid rgba(0,216,255,.54)"
+                    : "1px solid rgba(0,136,255,.10)",
+                background:
+                  activeBudgetRowId === item.id
+                    ? pointerDragBudgetRowId === item.id
+                      ? "linear-gradient(95deg, rgba(0,136,255,.30), rgba(0,216,255,.19) 52%, rgba(4,20,40,.9))"
+                      : "linear-gradient(95deg, rgba(0,136,255,.20), rgba(0,216,255,.11) 52%, rgba(4,18,36,.85))"
+                    : "rgba(3,14,28,.42)",
+                boxShadow:
+                  activeBudgetRowId === item.id
+                    ? pointerDragBudgetRowId === item.id
+                      ? "0 0 30px rgba(0,136,255,.38), inset 0 0 28px rgba(0,216,255,.24)"
+                      : "0 0 24px rgba(0,136,255,.28), inset 0 0 26px rgba(0,216,255,.17)"
+                    : "inset 0 0 0 1px rgba(0,136,255,.04)",
+                padding: "14px 16px",
+                cursor: pointerDragBudgetRowId === item.id ? "grabbing" : "grab",
+                opacity: 1,
+                userSelect: "none",
+                transition: "border-color 120ms ease, box-shadow 160ms ease, background 160ms ease",
               }}
+              onClick={() => activateBudgetRow(item.id)}
+              onMouseDown={(event) => handleBudgetRowPointerDown(event, item.id)}
+              data-budget-row-id={item.id}
             >
               <div
                 style={{
@@ -504,6 +602,7 @@ export function BudgetCommandCenter({
                   <input
                     value={item.name}
                     onChange={(event) => updateBudgetRow(item.id, "name", event.target.value)}
+                    onFocus={() => activateBudgetRow(item.id)}
                     style={{
                       color: "#e6efff",
                       fontSize: 23,
@@ -598,6 +697,7 @@ export function BudgetCommandCenter({
               <input
                 value={money(item.budget)}
                 onChange={(event) => updateBudgetRow(item.id, "budget", event.target.value)}
+                onFocus={() => activateBudgetRow(item.id)}
                 style={{
                   color: "#e6efff",
                   fontSize: 22,

@@ -1065,7 +1065,7 @@ export function AccountsView({
                                 <input
                                   autoFocus
                                   value={renameValue}
-                                  placeholder={account.name}
+                                  placeholder={`Nickname for ${account.name}`}
                                   onChange={(e) => setRenameValue(e.target.value)}
                                   onKeyDown={(e) => {
                                     if (e.key === "Enter") commitRename(account);
@@ -1265,7 +1265,7 @@ export function AccountsView({
                                 whiteSpace: "nowrap",
                               }}
                             >
-                              ✎ Edit Name
+                              ✎ {account.nickname ? "Edit Nickname" : "Add Nickname"}
                             </button>
                             <button
                               type="button"
