@@ -386,9 +386,7 @@ export function OperationsBoard({
               />
             </label>
             <div style={{ color: "#8ea8ca", fontSize: 12, lineHeight: 1.5, marginTop: 2 }}>
-              Projections use the current calendar month as the anchor (no backdating).
-              Enter the true-cash balance that should anchor the plan for this year; Command Center uses
-              the same anchor and starting value for its projection line.
+              Enter the starting true-cash balance that will anchor the plan for this year
             </div>
           </div>
         </div>
