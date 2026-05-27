@@ -167,6 +167,14 @@ export function OperationsBoard({
 
   const yearlyIncome = dynamicYearlyOpsData.reduce((sum, month) => sum + month.income, 0);
   const yearlyBudget = dynamicYearlyOpsData.reduce((sum, month) => sum + month.budget, 0);
+  const yearlyActualIncome = dynamicYearlyOpsData.reduce(
+    (sum, month) => sum + finiteMoney(month.actualIncome),
+    0
+  );
+  const yearlySpent = dynamicYearlyOpsData.reduce(
+    (sum, month) => sum + finiteMoney(month.spent),
+    0
+  );
   const yearlySurplus = yearlyIncome - yearlyBudget;
   const subscriptionOverview = buildSubscriptionOverview(subscriptions);
   const incomeOutlookRows = planningIncomeStreams.map((stream) => {
@@ -313,9 +321,9 @@ export function OperationsBoard({
         }}
       >
         {[
-          ["Total Income", money(yearlyIncome), "#00f59b"],
-          ["Total Budget", money(yearlyBudget), "#00d8ff"],
-          ["Yearly Profit", money(yearlySurplus), yearlySurplus >= 0 ? "#00f59b" : "#ff5d7a"],
+          ["Total Income Earned", money(yearlyActualIncome), "#00f59b"],
+          ["Total Spent", money(yearlySpent), "#00d8ff"],
+          ["Projected Yearly Profit", money(yearlySurplus), yearlySurplus >= 0 ? "#00f59b" : "#ff5d7a"],
           [
             "Recurring Commitments",
             money(subscriptionOverview.activeMonthly),
