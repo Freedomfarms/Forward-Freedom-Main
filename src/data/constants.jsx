@@ -768,16 +768,7 @@ export const initialBudgetCategories = [
   },
 ];
 
-export const transactionCategoryOptions = Array.from(
-  new Set(
-    [
-      ...initialBudgetCategories.map((category) => category.name).filter(Boolean),
-      "Income",
-      "Transfers",
-      "Other",
-    ].filter(Boolean)
-  )
-).sort();
+export const transactionCategoryOptions = ["Income", "Transfers", "Other"];
 
 export const initialSubscriptions = [
   {

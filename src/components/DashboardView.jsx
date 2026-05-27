@@ -882,7 +882,7 @@ export function DashboardView({
                   whiteSpace: "nowrap",
                 }}
               >
-                Open Budget Center
+                Open Budget Lab
               </button>
             </div>
           </div>

@@ -167,6 +167,14 @@ export function OperationsBoard({
 
   const yearlyIncome = dynamicYearlyOpsData.reduce((sum, month) => sum + month.income, 0);
   const yearlyBudget = dynamicYearlyOpsData.reduce((sum, month) => sum + month.budget, 0);
+  const yearlyActualIncome = dynamicYearlyOpsData.reduce(
+    (sum, month) => sum + finiteMoney(month.actualIncome),
+    0
+  );
+  const yearlySpent = dynamicYearlyOpsData.reduce(
+    (sum, month) => sum + finiteMoney(month.spent),
+    0
+  );
   const yearlySurplus = yearlyIncome - yearlyBudget;
   const subscriptionOverview = buildSubscriptionOverview(subscriptions);
   const incomeOutlookRows = planningIncomeStreams.map((stream) => {
@@ -313,14 +321,14 @@ export function OperationsBoard({
         }}
       >
         {[
-          ["Total Income", money(yearlyIncome), "#00f59b"],
-          ["Total Budget", money(yearlyBudget), "#00d8ff"],
-          ["Yearly Profit", money(yearlySurplus), yearlySurplus >= 0 ? "#00f59b" : "#ff5d7a"],
+          ["Total Income Earned", wholeDollars(yearlyActualIncome), "#00f59b"],
+          ["Total Spent", wholeDollars(yearlySpent), "#00d8ff"],
+          ["Projected Yearly Profit", wholeDollars(yearlySurplus), yearlySurplus >= 0 ? "#00f59b" : "#ff5d7a"],
           [
             "Recurring Commitments",
-            money(subscriptionOverview.activeMonthly),
+            wholeDollars(subscriptionOverview.activeMonthly),
             "#ffb65d",
-            `${money(subscriptionOverview.yearlyCommitment)} annualized`,
+            `${wholeDollars(subscriptionOverview.yearlyCommitment)} annualized`,
           ],
         ].map((item) => (
           <div key={item[0]} style={{ ...styles.panel, padding: 20 }}>
@@ -442,9 +450,9 @@ export function OperationsBoard({
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
                 {[
-                  ["Planned", "rgba(168,184,204,.9)", "solid", "rgba(168,184,204,.18)"],
-                  ["Actual", "rgba(0,245,155,.9)", "solid", "rgba(0,245,155,.24)"],
-                  ["Budget", "rgba(255,182,93,.95)", "dashed", "rgba(255,182,93,.2)"],
+                  ["Planned Income", "rgba(0,245,155,.9)", "dashed", "rgba(0,245,155,.24)"],
+                  ["Earned Income", "rgba(0,245,155,.9)", "solid", "rgba(0,245,155,.24)"],
+                  ["Budget", "rgba(0,216,255,.95)", "dashed", "rgba(0,216,255,.3)"],
                   ["Spent", "rgba(0,216,255,.95)", "solid", "rgba(0,216,255,.3)"],
                   ["Avg Spent", "rgba(143,234,255,.95)", "dashed", "rgba(143,234,255,.2)"],
                 ].map(([label, color, type, glow]) => (
@@ -635,7 +643,7 @@ export function OperationsBoard({
                       <path
                         d={scorecardBudgetPath}
                         fill="none"
-                        stroke="#ffb65d"
+                        stroke="#00d8ff"
                         strokeWidth={2}
                         strokeDasharray="7 5"
                         strokeLinecap="round"
@@ -666,8 +674,9 @@ export function OperationsBoard({
                       <path
                         d={scorecardPlannedPath}
                         fill="none"
-                        stroke="#a8b8cc"
+                        stroke="#00f59b"
                         strokeWidth={2.2}
+                        strokeDasharray="7 5"
                         strokeLinecap="round"
                         strokeLinejoin="round"
                       />
@@ -701,7 +710,7 @@ export function OperationsBoard({
                             cx={x}
                             cy={plannedY}
                             r={isActive ? 5.4 : 4}
-                            fill="#a8b8cc"
+                            fill="#00f59b"
                             stroke="white"
                             strokeWidth={isActive ? 1.8 : 1.3}
                             style={{ cursor: "pointer" }}
