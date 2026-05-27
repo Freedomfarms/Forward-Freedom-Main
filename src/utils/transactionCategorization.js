@@ -38,6 +38,11 @@ const MERCHANT_CATEGORY_RULES = [
   { pattern: /\bPAYROLL\b|\bDIRECT DEP\b|\bSALARY\b/, category: "Income", confidence: 95 },
   { pattern: /\bDIVIDEND\b/, category: "Investments", confidence: 88 },
   { pattern: /\bBEST BUY\b|\bMICRO CENTER\b|\bAPPLE\b/, category: "Technology", confidence: 84 },
+  {
+    pattern: /\bEPAY\b|\bEPAYMENT\b|\bPYMT\b|\bPYMNT\b/,
+    category: "Transfers",
+    confidence: 88,
+  },
 ];
 
 const PLAID_CATEGORY_RULES = [
@@ -51,6 +56,7 @@ const PLAID_CATEGORY_RULES = [
   { pattern: /TRANSPORT/, category: "Transportation", confidence: 76 },
   { pattern: /GAS/, category: "Fuel", confidence: 84 },
   { pattern: /INVESTMENT/, category: "Investments", confidence: 78 },
+  { pattern: /CREDIT_CARD_PAYMENT|LOAN_PAYMENTS/, category: "Transfers", confidence: 90 },
   { pattern: /TRANSFER/, category: "Transfers", confidence: 74 },
   { pattern: /HEALTH/, category: "Health & Wellness", confidence: 78 },
   { pattern: /INSURANCE/, category: "Insurance", confidence: 84 },
