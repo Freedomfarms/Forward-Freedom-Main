@@ -164,7 +164,7 @@ function AuthenticatedWorkspaceApp({ user, signOut, isBusy, authNotice, resendVe
     return () => {
       cancelled = true;
     };
-  }, [cacheWorkspaceState, storageKey]);
+  }, [cacheWorkspaceState, storageKey, user.displayName, user.email]);
 
   const handlePersistedStateChange = useCallback((nextState) => {
     const serializedState = JSON.stringify(nextState);

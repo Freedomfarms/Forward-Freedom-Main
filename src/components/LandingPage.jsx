@@ -1,6 +1,7 @@
 import { useState } from "react";
 import forwardFreedomLogo from "../assets/forward-freedom-logo.svg";
-import { LEGAL_CONTENT, LegalModal } from "./LegalDocuments.jsx";
+import { LEGAL_CONTENT } from "../content/legalContent.js";
+import { LegalModal } from "./LegalDocuments.jsx";
 
 function buildPrimaryButtonStyle(isSecondary = false) {
   return {
