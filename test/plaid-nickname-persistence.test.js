@@ -1,7 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { buildPlaidNicknameMap, normalizePlaidNicknameMap } from "../src/utils/plaidNicknames.js";
+import {
+  applyPlaidNicknamesToAccounts,
+  buildPlaidNicknameMap,
+  normalizePlaidNicknameMap,
+} from "../src/utils/plaidNicknames.js";
 import { sanitizeWorkspaceStateForPersistence } from "../src/utils/workspacePersistence.js";
 
 test("plaid nickname helpers preserve only valid plaid nickname preferences", () => {
@@ -73,4 +77,23 @@ test("workspace persistence retains plaid nickname preferences while stripping p
   assert.deepEqual(sanitized.users[0].plaidNicknames, {
     "acct-1": "Bills Account",
   });
+});
+
+test("saved plaid nicknames are reapplied after a refreshed sync payload", () => {
+  const accounts = applyPlaidNicknamesToAccounts(
+    [
+      {
+        id: "plaid-acct-1",
+        plaidAccountId: "acct-1",
+        name: "Primary Checking",
+        syncSource: "Plaid",
+      },
+    ],
+    {
+      "acct-1": "Bills Account",
+    }
+  );
+
+  assert.equal(accounts[0].name, "Primary Checking");
+  assert.equal(accounts[0].nickname, "Bills Account");
 });

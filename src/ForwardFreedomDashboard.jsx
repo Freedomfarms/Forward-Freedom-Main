@@ -35,7 +35,11 @@ import {
   syncPlaidUser,
 } from "./utils/plaid.js";
 import { logPlaidClientEvent } from "./utils/plaidLogging.js";
-import { buildPlaidNicknameMap, normalizePlaidNicknameMap } from "./utils/plaidNicknames.js";
+import {
+  applyPlaidNicknamesToAccounts,
+  buildPlaidNicknameMap,
+  normalizePlaidNicknameMap,
+} from "./utils/plaidNicknames.js";
 import {
   calculateCryptoBalance,
   fetchCryptoQuotes,
@@ -269,19 +273,10 @@ function mergePlaidSyncIntoUser(user, syncPayload) {
         existingPlaidNicknamesByKey.set(account.plaidAccountId || account.id, account.nickname.trim());
       }
     });
-  const syncedAccounts = (syncPayload.accounts || []).map((account, index) => {
-    const normalizedAccount = normalizeAccount(account, index);
-    const existingNickname = existingPlaidNicknamesByKey.get(
-      normalizedAccount.plaidAccountId || normalizedAccount.id
-    );
-
-    return existingNickname
-      ? {
-          ...normalizedAccount,
-          nickname: existingNickname,
-        }
-      : normalizedAccount;
-  });
+  const syncedAccounts = applyPlaidNicknamesToAccounts(
+    (syncPayload.accounts || []).map((account, index) => normalizeAccount(account, index)),
+    Object.fromEntries(existingPlaidNicknamesByKey)
+  );
   const existingPlaidTransactions = new Map(
     user.transactions
       .filter((transaction) => transaction.source === "plaid")

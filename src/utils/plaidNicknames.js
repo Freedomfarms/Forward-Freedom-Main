@@ -24,3 +24,13 @@ export function buildPlaidNicknameMap(accounts = []) {
       .filter(([accountId, nickname]) => Boolean(accountId) && Boolean(nickname))
   );
 }
+
+export function applyPlaidNicknamesToAccounts(accounts = [], nicknameMap = {}) {
+  const normalizedNicknameMap = normalizePlaidNicknameMap(nicknameMap);
+  if (!Array.isArray(accounts) || accounts.length === 0) return [];
+
+  return accounts.map((account) => {
+    const nickname = normalizedNicknameMap[account?.plaidAccountId || account?.id];
+    return nickname ? { ...account, nickname } : account;
+  });
+}
