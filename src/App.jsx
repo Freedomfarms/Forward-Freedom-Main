@@ -5,9 +5,11 @@ import { AuthScreen } from "./components/AuthScreen.jsx";
 import { WorkspaceSessionPanel } from "./components/WorkspaceSessionPanel.jsx";
 import {
   buildScopedAppStateStorageKey,
+  createEmptyAppState,
   loadPersistedAppStateRecord,
   persistAppState,
 } from "./utils/appState.js";
+import { sanitizeWorkspaceStateForPersistence } from "./utils/workspacePersistence.js";
 import {
   fetchAuthenticatedUserProfile,
   fetchWorkspaceSnapshot,
@@ -68,8 +70,9 @@ function AuthenticatedWorkspaceApp({ user, signOut, isBusy, authNotice, resendVe
   const cacheWorkspaceState = useCallback(
     (state, cacheState = "browser-cache") => {
       if (!state) return;
+      const sanitizedState = sanitizeWorkspaceStateForPersistence(state);
 
-      persistAppState(state, storageKey, {
+      persistAppState(sanitizedState, storageKey, {
         mode: "cache",
         persistedAt: new Date().toISOString(),
         cacheState,
@@ -81,7 +84,12 @@ function AuthenticatedWorkspaceApp({ user, signOut, isBusy, authNotice, resendVe
   useEffect(() => {
     let cancelled = false;
     const cachedWorkspaceRecord = loadPersistedAppStateRecord(storageKey);
-    const cachedState = cachedWorkspaceRecord.state;
+    const emptyWorkspaceState = createEmptyAppState({
+      primaryUserName: user.displayName || user.email || "User 1",
+    });
+    const cachedState = cachedWorkspaceRecord.hasPersistedState
+      ? sanitizeWorkspaceStateForPersistence(cachedWorkspaceRecord.state)
+      : emptyWorkspaceState;
 
     const bootstrapWorkspace = async () => {
       try {
@@ -90,7 +98,9 @@ function AuthenticatedWorkspaceApp({ user, signOut, isBusy, authNotice, resendVe
           fetchWorkspaceSnapshot(),
         ]);
         const remoteSnapshot = workspacePayload?.snapshot || null;
-        const remoteState = remoteSnapshot?.state;
+        const remoteState = remoteSnapshot?.state
+          ? sanitizeWorkspaceStateForPersistence(remoteSnapshot.state)
+          : null;
         const nextSeedState = remoteState || cachedState;
 
         if (cancelled) return;
@@ -117,7 +127,7 @@ function AuthenticatedWorkspaceApp({ user, signOut, isBusy, authNotice, resendVe
         );
 
         const payload = await saveWorkspaceSnapshot({
-          state: nextSeedState,
+          state: sanitizeWorkspaceStateForPersistence(nextSeedState),
           source: cachedWorkspaceRecord.hasPersistedState
             ? "phase-5-bootstrap-hydration"
             : "phase-5-bootstrap-seed",
@@ -127,9 +137,10 @@ function AuthenticatedWorkspaceApp({ user, signOut, isBusy, authNotice, resendVe
         if (cancelled) return;
 
         const confirmedState = payload?.snapshot?.state || nextSeedState;
-        lastServerSnapshotRef.current = JSON.stringify(confirmedState);
-        cacheWorkspaceState(confirmedState, "server-confirmed");
-        setWorkspaceSeedState(confirmedState);
+        const sanitizedConfirmedState = sanitizeWorkspaceStateForPersistence(confirmedState);
+        lastServerSnapshotRef.current = JSON.stringify(sanitizedConfirmedState);
+        cacheWorkspaceState(sanitizedConfirmedState, "server-confirmed");
+        setWorkspaceSeedState(sanitizedConfirmedState);
         setWorkspaceSyncState("synced");
       } catch (error) {
         if (cancelled) return;
@@ -170,9 +181,10 @@ function AuthenticatedWorkspaceApp({ user, signOut, isBusy, authNotice, resendVe
       return undefined;
     }
 
-    cacheWorkspaceState(latestPersistedState, "working-cache");
+    const sanitizedPersistedState = sanitizeWorkspaceStateForPersistence(latestPersistedState);
+    cacheWorkspaceState(sanitizedPersistedState, "working-cache");
 
-    const serializedState = JSON.stringify(latestPersistedState);
+    const serializedState = JSON.stringify(sanitizedPersistedState);
     if (serializedState === lastServerSnapshotRef.current) {
       return undefined;
     }
@@ -183,13 +195,15 @@ function AuthenticatedWorkspaceApp({ user, signOut, isBusy, authNotice, resendVe
       if (cancelled) return;
       setWorkspaceSyncState("syncing");
       void saveWorkspaceSnapshot({
-        state: latestPersistedState,
+        state: sanitizedPersistedState,
         source: "phase-5-server-primary",
         lastClientUpdatedAt: new Date().toISOString(),
       })
         .then((payload) => {
           if (cancelled) return;
-          const confirmedState = payload?.snapshot?.state || latestPersistedState;
+          const confirmedState = sanitizeWorkspaceStateForPersistence(
+            payload?.snapshot?.state || sanitizedPersistedState
+          );
           lastServerSnapshotRef.current = JSON.stringify(confirmedState);
           cacheWorkspaceState(confirmedState, "server-confirmed");
           setWorkspaceSyncState("synced");

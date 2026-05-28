@@ -2,10 +2,11 @@ import crypto from "crypto";
 
 const ENCRYPTION_ALGORITHM = "aes-256-gcm";
 const IV_LENGTH_BYTES = 12;
+const MIN_SECRET_LENGTH = 32;
 
 function getEncryptionKeyBuffer() {
-  const secret = process.env.PLAID_TOKEN_ENCRYPTION_KEY || "";
-  if (!secret.trim()) return null;
+  const secret = (process.env.PLAID_TOKEN_ENCRYPTION_KEY || "").trim();
+  if (!secret || secret.length < MIN_SECRET_LENGTH) return null;
   return crypto.createHash("sha256").update(secret).digest();
 }
 
@@ -16,7 +17,9 @@ export function isSensitiveEncryptionConfigured() {
 export function encryptSensitiveValue(value) {
   const key = getEncryptionKeyBuffer();
   if (!key) {
-    throw new Error("PLAID_TOKEN_ENCRYPTION_KEY is required for secure Plaid token storage.");
+    throw new Error(
+      "PLAID_TOKEN_ENCRYPTION_KEY must be a random secret at least 32 characters long."
+    );
   }
 
   const iv = crypto.randomBytes(IV_LENGTH_BYTES);
@@ -34,7 +37,9 @@ export function encryptSensitiveValue(value) {
 export function decryptSensitiveValue(payload) {
   const key = getEncryptionKeyBuffer();
   if (!key) {
-    throw new Error("PLAID_TOKEN_ENCRYPTION_KEY is required for secure Plaid token storage.");
+    throw new Error(
+      "PLAID_TOKEN_ENCRYPTION_KEY must be a random secret at least 32 characters long."
+    );
   }
 
   const parsed = typeof payload === "string" ? JSON.parse(payload) : payload;

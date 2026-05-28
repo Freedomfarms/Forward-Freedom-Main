@@ -193,7 +193,7 @@ function shouldFetchMetalsQuoteForForm(form) {
 export function AccountsView({
   accounts,
   addManualAccount,
-  connectMockPlaidAccount,
+  connectPlaidAccount,
   repairPlaidItem,
   deleteAccount,
   openAccountTransactions,
@@ -857,7 +857,7 @@ export function AccountsView({
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    connectMockPlaidAccount();
+                    connectPlaidAccount();
                   }}
                   disabled={isSearchingCrypto || plaidIntegration?.isSyncing}
                   style={{

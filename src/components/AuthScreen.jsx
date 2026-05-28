@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useAuth } from "../context/AuthContext.jsx";
+import { LegalModal } from "./LegalDocuments.jsx";
 
 function buildButtonStyle({ primary = false, danger = false } = {}) {
   return {
@@ -58,6 +59,8 @@ export function AuthScreen() {
     email: "",
     password: "",
   });
+  const [agreedToLegal, setAgreedToLegal] = useState(false);
+  const [activeDocument, setActiveDocument] = useState(null);
   const [formError, setFormError] = useState("");
 
   const updateForm = (field, value) => {
@@ -80,6 +83,10 @@ export function AuthScreen() {
     }
     if (mode === "register" && !form.fullName.trim()) {
       setFormError("Enter your full name for the workspace owner profile.");
+      return;
+    }
+    if (!agreedToLegal) {
+      setFormError("Review and accept the Terms of Service and Privacy Policy to continue.");
       return;
     }
 
@@ -114,6 +121,17 @@ export function AuthScreen() {
     } catch {
       // Auth context already surfaces a friendly error message.
     }
+  };
+
+  const handleGoogleSignIn = () => {
+    if (!agreedToLegal) {
+      setFormError("Review and accept the Terms of Service and Privacy Policy to continue.");
+      return;
+    }
+
+    clearError();
+    setFormError("");
+    void signInWithGoogle().catch(() => {});
   };
 
   return (
@@ -241,11 +259,7 @@ export function AuthScreen() {
 
           <button
             type="button"
-            onClick={() => {
-              clearError();
-              setFormError("");
-              void signInWithGoogle().catch(() => {});
-            }}
+            onClick={handleGoogleSignIn}
             disabled={isBusy}
             style={buildButtonStyle({ primary: true })}
           >
@@ -308,6 +322,60 @@ export function AuthScreen() {
               />
             </label>
 
+            <label
+              style={{
+                display: "flex",
+                gap: 10,
+                alignItems: "flex-start",
+                color: "#c6d7ea",
+                fontSize: 12,
+                lineHeight: 1.6,
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={agreedToLegal}
+                onChange={(event) => {
+                  setAgreedToLegal(event.target.checked);
+                  if (formError) setFormError("");
+                }}
+                style={{ marginTop: 3 }}
+              />
+              <span>
+                I agree to the{" "}
+                <button
+                  type="button"
+                  onClick={() => setActiveDocument("terms")}
+                  style={{
+                    background: "transparent",
+                    border: "none",
+                    color: "#8feaff",
+                    cursor: "pointer",
+                    padding: 0,
+                    fontWeight: 800,
+                  }}
+                >
+                  Terms of Service
+                </button>{" "}
+                and{" "}
+                <button
+                  type="button"
+                  onClick={() => setActiveDocument("privacy")}
+                  style={{
+                    background: "transparent",
+                    border: "none",
+                    color: "#8feaff",
+                    cursor: "pointer",
+                    padding: 0,
+                    fontWeight: 800,
+                  }}
+                >
+                  Privacy Policy
+                </button>
+                , including connected-account data handling through Plaid.
+              </span>
+            </label>
+
             {formError || error ? (
               <div
                 style={{
@@ -361,11 +429,12 @@ export function AuthScreen() {
           </form>
 
           <div style={{ marginTop: 18, color: "#7d97b9", fontSize: 12, lineHeight: 1.6 }}>
-            By continuing, you confirm this workspace should move from prototype access toward
-            authenticated production usage.
+            By continuing, you confirm this workspace should move through authenticated production
+            access with linked-account disclosures available before Plaid connection.
           </div>
         </section>
       </div>
+      <LegalModal activeDocument={activeDocument} closeDocument={() => setActiveDocument(null)} />
     </div>
   );
 }

@@ -12,7 +12,8 @@ The repo now includes the first production-readiness scaffolding for:
 - Postgres data modeling through Prisma
 - Vercel-compatible API route foundations
 
-Plaid should remain in sandbox/development until the backend hardening work is complete.
+Plaid can run against `development` during testing and should be switched to `production` only after
+deployment secrets, legal review, and production Plaid approval are in place.
 
 ## Local development
 
@@ -125,6 +126,7 @@ into Postgres when `DATABASE_URL` is configured.
 `/api/workspace` stores a user-scoped workspace snapshot in Postgres so the app can start moving
 away from browser-only persistence while the deeper normalized data migration is still in progress.
 
-The Plaid endpoints now expect an authenticated Firebase bearer token and store Plaid item records in
-Postgres with encrypted access-token persistence. Keep Plaid on sandbox/development until the rest
-of the server-backed data migration is complete.
+The Plaid endpoints expect an authenticated Firebase bearer token and store Plaid item records in
+Postgres with encrypted access-token persistence. Connected-account consent is collected in the
+authenticated UI before opening Plaid Link, and workspace snapshots intentionally omit synced Plaid
+accounts and transactions so financial data is reloaded from the server-backed Plaid sync path.

@@ -3,13 +3,17 @@ import { Configuration, PlaidApi, PlaidEnvironments, Products } from "plaid";
 
 dotenv.config();
 
-const PLAID_ENV = process.env.PLAID_ENV || "sandbox";
+const PLAID_ENV = (process.env.PLAID_ENV || "development").trim().toLowerCase();
 const DEFAULT_PRODUCTS = [Products.Transactions, Products.Liabilities];
 
 let cachedClient = null;
 
 function getBasePath() {
-  return PlaidEnvironments[PLAID_ENV] || PlaidEnvironments.sandbox;
+  const basePath = PlaidEnvironments[PLAID_ENV];
+  if (!basePath) {
+    throw new Error('PLAID_ENV must be one of "sandbox", "development", or "production".');
+  }
+  return basePath;
 }
 
 export function isPlaidConfigured() {

@@ -54,6 +54,7 @@ import { AppSidebar, ModulePlaceholder } from "./components/Layout.jsx";
 import { OperationsBoard } from "./components/OperationsBoard.jsx";
 import { RecurringSubscriptions } from "./components/RecurringSubscriptions.jsx";
 import { TransactionsView } from "./components/TransactionsView.jsx";
+import { LegalModal } from "./components/LegalDocuments.jsx";
 
 function roundCurrency(value) {
   return Number((Number(value) || 0).toFixed(2));
@@ -379,13 +380,17 @@ function ForwardFreedomDashboard({
   const [pendingManualEditAccountId, setPendingManualEditAccountId] = useState(null);
   const [plaidStatus, setPlaidStatus] = useState({
     configured: false,
-    environment: "sandbox",
+    environment: "development",
     notes: [],
   });
   const [plaidLinkToken, setPlaidLinkToken] = useState(null);
   const [plaidShouldOpen, setPlaidShouldOpen] = useState(false);
   const [plaidTargetUserId, setPlaidTargetUserId] = useState(null);
   const [plaidTargetItemId, setPlaidTargetItemId] = useState(null);
+  const [plaidConsentPrompt, setPlaidConsentPrompt] = useState(null);
+  const [hasAcceptedPlaidConsent, setHasAcceptedPlaidConsent] = useState(false);
+  const [plaidConsentError, setPlaidConsentError] = useState("");
+  const [activeLegalDocument, setActiveLegalDocument] = useState(null);
   const [plaidError, setPlaidError] = useState("");
   const [isPlaidSyncing, setIsPlaidSyncing] = useState(false);
   const activeUser = users.find((user) => user.id === activeUserId) || users[0] || EMPTY_USER_STATE;
@@ -729,7 +734,7 @@ function ForwardFreedomDashboard({
         if (!cancelled) {
           setPlaidStatus({
             configured: false,
-            environment: "sandbox",
+            environment: "development",
             notes: [],
           });
         }
@@ -803,6 +808,12 @@ function ForwardFreedomDashboard({
     setPlaidLinkToken(null);
     setPlaidTargetUserId(null);
     setPlaidTargetItemId(null);
+  };
+
+  const closePlaidConsentPrompt = () => {
+    setPlaidConsentPrompt(null);
+    setHasAcceptedPlaidConsent(false);
+    setPlaidConsentError("");
   };
 
   const { open: openPlaidLink, ready: isPlaidReady } = usePlaidLink({
@@ -1009,40 +1020,8 @@ function ForwardFreedomDashboard({
     };
   }, [accounts, activeUser.id]);
 
-  const connectPlaidAccount = async () => {
+  const startPlaidLinkFlow = async ({ plaidItemId = null } = {}) => {
     if (!activeUser?.id) return;
-
-    if (!plaidStatus.configured) {
-      setPlaidError(
-        "Plaid is not configured yet. Add PLAID_CLIENT_ID and PLAID_SECRET to enable live account linking."
-      );
-      return;
-    }
-
-    setPlaidError("");
-    setIsPlaidSyncing(true);
-
-    try {
-      const { linkToken } = await createPlaidLinkToken({
-        workspaceUserId: activeUser.id,
-        userName: getDisplayUserName(
-          activeUser,
-          users.findIndex((user) => user.id === activeUser.id)
-        ),
-      });
-      setPlaidLinkToken(linkToken);
-      setPlaidTargetUserId(activeUser.id);
-      setPlaidTargetItemId(null);
-      setPlaidShouldOpen(true);
-    } catch (error) {
-      setPlaidError(error.message || "Unable to start the Plaid Link flow.");
-    } finally {
-      setIsPlaidSyncing(false);
-    }
-  };
-
-  const repairPlaidItem = async (plaidItemId) => {
-    if (!activeUser?.id || !plaidItemId) return;
 
     if (!plaidStatus.configured) {
       setPlaidError(
@@ -1068,10 +1047,45 @@ function ForwardFreedomDashboard({
       setPlaidTargetItemId(plaidItemId);
       setPlaidShouldOpen(true);
     } catch (error) {
-      setPlaidError(error.message || "Unable to start the Plaid repair flow.");
+      setPlaidError(
+        error.message ||
+          (plaidItemId
+            ? "Unable to start the Plaid repair flow."
+            : "Unable to start the Plaid Link flow.")
+      );
     } finally {
       setIsPlaidSyncing(false);
     }
+  };
+
+  const requestPlaidLinkConsent = ({ plaidItemId = null } = {}) => {
+    setPlaidConsentPrompt({ plaidItemId });
+    setHasAcceptedPlaidConsent(false);
+    setPlaidConsentError("");
+    setPlaidError("");
+  };
+
+  const connectPlaidAccount = () => {
+    requestPlaidLinkConsent();
+  };
+
+  const repairPlaidItem = (plaidItemId) => {
+    if (!plaidItemId) return;
+    requestPlaidLinkConsent({ plaidItemId });
+  };
+
+  const confirmPlaidConsent = async () => {
+    if (!plaidConsentPrompt) return;
+    if (!hasAcceptedPlaidConsent) {
+      setPlaidConsentError(
+        "Confirm the Plaid disclosure before continuing to connected-account access."
+      );
+      return;
+    }
+
+    const request = plaidConsentPrompt;
+    closePlaidConsentPrompt();
+    await startPlaidLinkFlow({ plaidItemId: request.plaidItemId || null });
   };
 
   const addManualAccount = (accountInput) => {
@@ -1454,7 +1468,7 @@ function ForwardFreedomDashboard({
             <AccountsView
               accounts={syncedAccounts}
               addManualAccount={addManualAccount}
-              connectMockPlaidAccount={connectPlaidAccount}
+              connectPlaidAccount={connectPlaidAccount}
               repairPlaidItem={repairPlaidItem}
               deleteAccount={deleteAccount}
               openAccountTransactions={openAccountTransactions}
@@ -1476,7 +1490,7 @@ function ForwardFreedomDashboard({
               visibleTransactions={visibleTransactions}
               setActiveTab={setActiveTab}
               setSelectedAccount={setSelectedAccount}
-              connectMockPlaidAccount={connectPlaidAccount}
+              connectPlaidAccount={connectPlaidAccount}
               addManualTransaction={addManualTransaction}
               deleteManualTransaction={deleteManualTransaction}
               updateTransactionCategory={updateTransactionCategory}
@@ -1511,6 +1525,169 @@ function ForwardFreedomDashboard({
           )}
         </main>
       </div>
+
+      {plaidConsentPrompt ? (
+        <div
+          onClick={(event) => {
+            if (event.target === event.currentTarget) closePlaidConsentPrompt();
+          }}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 9999,
+            background: "rgba(1,8,18,.78)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 24,
+          }}
+        >
+          <div
+            style={{
+              width: "min(560px, 100%)",
+              borderRadius: 18,
+              border: "1px solid rgba(0,174,255,.24)",
+              background: "linear-gradient(180deg, rgba(5,19,37,.98), rgba(3,12,24,.98))",
+              boxShadow: "0 0 50px rgba(0,136,255,.22)",
+              padding: 24,
+              display: "grid",
+              gap: 16,
+            }}
+          >
+            <div>
+              <div
+                style={{
+                  color: "#8feaff",
+                  textTransform: "uppercase",
+                  letterSpacing: 1.2,
+                  fontSize: 12,
+                  fontWeight: 900,
+                }}
+              >
+                Plaid connected-account consent
+              </div>
+              <div style={{ color: "white", fontSize: 26, fontWeight: 900, marginTop: 10 }}>
+                {plaidConsentPrompt.plaidItemId ? "Repair institution access" : "Connect a financial institution"}
+              </div>
+              <div style={{ color: "#c6d7ea", lineHeight: 1.7, marginTop: 10 }}>
+                Forward Freedom uses Plaid Link to access permitted balance, liability, and
+                transaction data from your selected institution. Bank-login credentials are handled
+                by Plaid, and the app stores server-side access tokens only in encrypted form.
+              </div>
+            </div>
+
+            <label
+              style={{
+                display: "flex",
+                gap: 10,
+                alignItems: "flex-start",
+                color: "#dce8f6",
+                fontSize: 13,
+                lineHeight: 1.6,
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={hasAcceptedPlaidConsent}
+                onChange={(event) => {
+                  setHasAcceptedPlaidConsent(event.target.checked);
+                  if (plaidConsentError) setPlaidConsentError("");
+                }}
+                style={{ marginTop: 3 }}
+              />
+              <span>
+                I authorize Plaid and Forward Freedom Financial to access and refresh my permitted
+                financial account data for this workspace, and I have reviewed the{" "}
+                <button
+                  type="button"
+                  onClick={() => setActiveLegalDocument("terms")}
+                  style={{
+                    background: "transparent",
+                    border: "none",
+                    color: "#8feaff",
+                    cursor: "pointer",
+                    padding: 0,
+                    fontWeight: 800,
+                  }}
+                >
+                  Terms of Service
+                </button>{" "}
+                and{" "}
+                <button
+                  type="button"
+                  onClick={() => setActiveLegalDocument("privacy")}
+                  style={{
+                    background: "transparent",
+                    border: "none",
+                    color: "#8feaff",
+                    cursor: "pointer",
+                    padding: 0,
+                    fontWeight: 800,
+                  }}
+                >
+                  Privacy Policy
+                </button>
+                .
+              </span>
+            </label>
+
+            {plaidConsentError ? (
+              <div
+                style={{
+                  borderRadius: 12,
+                  border: "1px solid rgba(255,93,122,.24)",
+                  background: "rgba(255,36,77,.08)",
+                  color: "#ffd9df",
+                  padding: "12px 14px",
+                  lineHeight: 1.5,
+                }}
+              >
+                {plaidConsentError}
+              </div>
+            ) : null}
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+              <button
+                type="button"
+                onClick={closePlaidConsentPrompt}
+                style={{
+                  background: "rgba(2,16,34,.62)",
+                  border: "1px solid rgba(125,220,255,.24)",
+                  borderRadius: 10,
+                  color: "white",
+                  padding: "11px 15px",
+                  cursor: "pointer",
+                  fontWeight: 800,
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void confirmPlaidConsent();
+                }}
+                style={{
+                  background: "linear-gradient(90deg,#0077ff,#00aaff)",
+                  border: "1px solid rgba(125,220,255,.45)",
+                  borderRadius: 10,
+                  color: "white",
+                  padding: "11px 15px",
+                  cursor: "pointer",
+                  fontWeight: 800,
+                }}
+              >
+                Continue to Plaid
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      <LegalModal
+        activeDocument={activeLegalDocument}
+        closeDocument={() => setActiveLegalDocument(null)}
+      />
     </div>
   );
 }

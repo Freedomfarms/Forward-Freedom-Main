@@ -165,7 +165,7 @@ function assertPlaidRuntimeReady() {
 
   if (!isSensitiveEncryptionConfigured()) {
     const error = new Error(
-      "PLAID_TOKEN_ENCRYPTION_KEY is required before Plaid access tokens can be stored securely."
+      "PLAID_TOKEN_ENCRYPTION_KEY must be a random secret at least 32 characters long before Plaid access tokens can be stored securely."
     );
     error.status = 503;
     throw error;
