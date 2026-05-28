@@ -608,11 +608,35 @@ export async function handleCreatePlaidLinkToken(request, response) {
 
     const body = await readJsonBody(request);
     const workspaceUserId = normalizeWorkspaceUserId(body.workspaceUserId);
+    const plaidItemId = normalizePlaidItemId(body.plaidItemId);
     const userName = body.userName || decodedToken.name || decodedToken.email || undefined;
+    let accessToken;
+
+    if (plaidItemId) {
+      const existingItem = await prisma.plaidItem.findUnique({
+        where: {
+          itemId: plaidItemId,
+        },
+      });
+
+      if (
+        !existingItem ||
+        existingItem.userId !== decodedToken.uid ||
+        existingItem.workspaceUserId !== workspaceUserId
+      ) {
+        return response
+          .status(404)
+          .json(buildErrorResponse("No linked Plaid institution was found for that itemId."));
+      }
+
+      accessToken = decryptSensitiveValue(existingItem.accessTokenCiphertext);
+    }
+
     const linkTokenResponse = await plaidClient.linkTokenCreate(
       getPlaidLinkTokenRequest({
         userId: buildPlaidClientUserId(decodedToken.uid, workspaceUserId),
         userName,
+        accessToken,
       })
     );
 

@@ -16,13 +16,13 @@ export async function getPlaidStatus() {
   return parseApiResponse(response);
 }
 
-export async function createPlaidLinkToken({ workspaceUserId, userName }) {
+export async function createPlaidLinkToken({ workspaceUserId, userName, plaidItemId }) {
   const response = await fetch("/api/plaid/link-token/create", {
     method: "POST",
     headers: await buildAuthenticatedHeaders({
       "Content-Type": "application/json",
     }),
-    body: JSON.stringify({ workspaceUserId, userName }),
+    body: JSON.stringify({ workspaceUserId, userName, plaidItemId }),
   });
 
   return parseApiResponse(response);

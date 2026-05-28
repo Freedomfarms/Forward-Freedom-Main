@@ -385,6 +385,7 @@ function ForwardFreedomDashboard({
   const [plaidLinkToken, setPlaidLinkToken] = useState(null);
   const [plaidShouldOpen, setPlaidShouldOpen] = useState(false);
   const [plaidTargetUserId, setPlaidTargetUserId] = useState(null);
+  const [plaidTargetItemId, setPlaidTargetItemId] = useState(null);
   const [plaidError, setPlaidError] = useState("");
   const [isPlaidSyncing, setIsPlaidSyncing] = useState(false);
   const activeUser = users.find((user) => user.id === activeUserId) || users[0] || EMPTY_USER_STATE;
@@ -797,10 +798,18 @@ function ForwardFreedomDashboard({
     };
   }, [activeUser?.id, plaidItems.length, plaidStatus.configured, syncLinkedPlaidAccounts]);
 
+  const resetPlaidLinkState = () => {
+    setPlaidShouldOpen(false);
+    setPlaidLinkToken(null);
+    setPlaidTargetUserId(null);
+    setPlaidTargetItemId(null);
+  };
+
   const { open: openPlaidLink, ready: isPlaidReady } = usePlaidLink({
     token: plaidLinkToken,
     onSuccess: async (publicToken) => {
       const targetUserId = plaidTargetUserId || activeUser.id;
+      const isRepairFlow = Boolean(plaidTargetItemId);
       setPlaidError("");
       setIsPlaidSyncing(true);
 
@@ -810,22 +819,18 @@ function ForwardFreedomDashboard({
           publicToken,
         });
         applyPlaidSyncPayload(targetUserId, payload);
-        if (targetUserId === activeUser.id) {
+        if (targetUserId === activeUser.id && !isRepairFlow) {
           setActiveTab(APP_TABS.TRANSACTIONS);
         }
       } catch (error) {
         setPlaidError(error.message || "Unable to connect the Plaid item.");
       } finally {
         setIsPlaidSyncing(false);
-        setPlaidShouldOpen(false);
-        setPlaidLinkToken(null);
-        setPlaidTargetUserId(null);
+        resetPlaidLinkState();
       }
     },
     onExit: () => {
-      setPlaidShouldOpen(false);
-      setPlaidLinkToken(null);
-      setPlaidTargetUserId(null);
+      resetPlaidLinkState();
     },
   });
 
@@ -1027,9 +1032,43 @@ function ForwardFreedomDashboard({
       });
       setPlaidLinkToken(linkToken);
       setPlaidTargetUserId(activeUser.id);
+      setPlaidTargetItemId(null);
       setPlaidShouldOpen(true);
     } catch (error) {
       setPlaidError(error.message || "Unable to start the Plaid Link flow.");
+    } finally {
+      setIsPlaidSyncing(false);
+    }
+  };
+
+  const repairPlaidItem = async (plaidItemId) => {
+    if (!activeUser?.id || !plaidItemId) return;
+
+    if (!plaidStatus.configured) {
+      setPlaidError(
+        "Plaid is not configured yet. Add PLAID_CLIENT_ID and PLAID_SECRET to enable live account linking."
+      );
+      return;
+    }
+
+    setPlaidError("");
+    setIsPlaidSyncing(true);
+
+    try {
+      const { linkToken } = await createPlaidLinkToken({
+        workspaceUserId: activeUser.id,
+        userName: getDisplayUserName(
+          activeUser,
+          users.findIndex((user) => user.id === activeUser.id)
+        ),
+        plaidItemId,
+      });
+      setPlaidLinkToken(linkToken);
+      setPlaidTargetUserId(activeUser.id);
+      setPlaidTargetItemId(plaidItemId);
+      setPlaidShouldOpen(true);
+    } catch (error) {
+      setPlaidError(error.message || "Unable to start the Plaid repair flow.");
     } finally {
       setIsPlaidSyncing(false);
     }
@@ -1416,6 +1455,7 @@ function ForwardFreedomDashboard({
               accounts={syncedAccounts}
               addManualAccount={addManualAccount}
               connectMockPlaidAccount={connectPlaidAccount}
+              repairPlaidItem={repairPlaidItem}
               deleteAccount={deleteAccount}
               openAccountTransactions={openAccountTransactions}
               updateManualAccount={updateManualAccount}
