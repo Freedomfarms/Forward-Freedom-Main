@@ -193,7 +193,8 @@ function shouldFetchMetalsQuoteForForm(form) {
 export function AccountsView({
   accounts,
   addManualAccount,
-  connectMockPlaidAccount,
+  connectPlaidAccount,
+  repairPlaidItem,
   deleteAccount,
   openAccountTransactions,
   updateManualAccount,
@@ -227,6 +228,9 @@ export function AccountsView({
   const [isLoadingMetalsQuote, setIsLoadingMetalsQuote] = useState(false);
 
   const linkedBalance = accounts.reduce((sum, a) => sum + a.balance, 0);
+  const attentionItems = (plaidIntegration?.items || []).filter(
+    (item) => item.status === "requires_attention"
+  );
   const isCryptoAccount = form.type === "Crypto";
   const isPreciousMetalsAccount = form.type === "Precious Metals";
   const isRealEstateAccount = form.type === "Real Estate";
@@ -853,7 +857,7 @@ export function AccountsView({
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    connectMockPlaidAccount();
+                    connectPlaidAccount();
                   }}
                   disabled={isSearchingCrypto || plaidIntegration?.isSyncing}
                   style={{
@@ -906,6 +910,78 @@ export function AccountsView({
           </div>
         </div>
       </section>
+
+      {attentionItems.length ? (
+        <section
+          style={{
+            ...styles.panel,
+            padding: "14px 16px",
+            borderRadius: 14,
+            border: "1px solid rgba(255,166,0,.26)",
+            background: "linear-gradient(135deg, rgba(61,34,0,.38), rgba(11,18,35,.96))",
+            marginTop: 14,
+            display: "grid",
+            gap: 10,
+          }}
+        >
+          <div>
+            <div style={{ color: "#ffd38a", fontSize: 12, fontWeight: 800, letterSpacing: 0.4 }}>
+              Plaid connection needs attention
+            </div>
+            <div style={{ color: "#c8d6ea", fontSize: 13, marginTop: 4, lineHeight: 1.5 }}>
+              Reconnect any affected institution to restore balance and transaction syncing.
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gap: 8 }}>
+            {attentionItems.map((item) => (
+              <div
+                key={item.itemId}
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 10,
+                  padding: "10px 12px",
+                  borderRadius: 10,
+                  border: "1px solid rgba(255,166,0,.2)",
+                  background: "rgba(255,166,0,.06)",
+                }}
+              >
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ color: "white", fontSize: 13, fontWeight: 700 }}>
+                    {item.institutionName || "Linked institution"}
+                  </div>
+                  <div style={{ color: "#f6c57c", fontSize: 11, marginTop: 3 }}>
+                    Session expired or re-authentication required.
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => repairPlaidItem?.(item.itemId)}
+                  disabled={plaidIntegration?.isSyncing}
+                  style={{
+                    background: "rgba(255,166,0,.12)",
+                    border: "1px solid rgba(255,196,112,.38)",
+                    borderRadius: 8,
+                    color: "#fff1d6",
+                    padding: "8px 12px",
+                    fontWeight: 700,
+                    cursor: plaidIntegration?.isSyncing ? "progress" : "pointer",
+                    fontSize: 12,
+                    whiteSpace: "nowrap",
+                    opacity: plaidIntegration?.isSyncing ? 0.72 : 1,
+                  }}
+                >
+                  Repair connection
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       {/* Account list */}
       <section

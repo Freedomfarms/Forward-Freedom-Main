@@ -3,7 +3,10 @@ import { buildAuthenticatedHeaders } from "./api.js";
 async function parseApiResponse(response) {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(payload.message || "Plaid request failed.");
+    const error = new Error(payload.message || "Plaid request failed.");
+    error.code = payload.code || null;
+    error.payload = payload;
+    throw error;
   }
 
   return payload;
@@ -16,25 +19,30 @@ export async function getPlaidStatus() {
   return parseApiResponse(response);
 }
 
-export async function createPlaidLinkToken({ workspaceUserId, userName }) {
+export async function createPlaidLinkToken({ workspaceUserId, userName, plaidItemId }) {
   const response = await fetch("/api/plaid/link-token/create", {
     method: "POST",
     headers: await buildAuthenticatedHeaders({
       "Content-Type": "application/json",
     }),
-    body: JSON.stringify({ workspaceUserId, userName }),
+    body: JSON.stringify({ workspaceUserId, userName, plaidItemId }),
   });
 
   return parseApiResponse(response);
 }
 
-export async function exchangePlaidPublicToken({ workspaceUserId, publicToken }) {
+export async function exchangePlaidPublicToken({
+  workspaceUserId,
+  publicToken,
+  plaidItemId,
+  linkMetadata,
+}) {
   const response = await fetch("/api/plaid/exchange-public-token", {
     method: "POST",
     headers: await buildAuthenticatedHeaders({
       "Content-Type": "application/json",
     }),
-    body: JSON.stringify({ workspaceUserId, publicToken }),
+    body: JSON.stringify({ workspaceUserId, publicToken, plaidItemId, linkMetadata }),
   });
 
   return parseApiResponse(response);

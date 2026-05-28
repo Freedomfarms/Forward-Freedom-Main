@@ -192,7 +192,7 @@ export function TransactionsView({
   visibleTransactions,
   setActiveTab,
   setSelectedAccount,
-  connectMockPlaidAccount,
+  connectPlaidAccount,
   addManualTransaction,
   deleteManualTransaction,
   updateTransactionCategory,
@@ -392,7 +392,7 @@ export function TransactionsView({
         <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
           <HouseholdProfilesControl {...householdProfilesProps} />
           <button
-            onClick={connectMockPlaidAccount}
+            onClick={connectPlaidAccount}
             disabled={plaidIntegration?.isSyncing}
             style={{
               background: "linear-gradient(90deg,#00aaff,#0077ff)",

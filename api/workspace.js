@@ -1,5 +1,6 @@
 import { authenticateRequest, AuthError } from "../server/auth/verifyAuth.js";
 import { getPrismaClient, isDatabaseConfigured } from "../server/db/prisma.js";
+import { sanitizeWorkspaceStateForPersistence } from "../src/utils/workspacePersistence.js";
 
 async function readJsonBody(request) {
   if (request.body && typeof request.body === "object") {
@@ -52,7 +53,7 @@ export default async function handler(request, response) {
       return response.status(200).json({
         snapshot: snapshot
           ? {
-              state: snapshot.state,
+              state: sanitizeWorkspaceStateForPersistence(snapshot.state),
               source: snapshot.source,
               updatedAt: snapshot.updatedAt,
               lastClientUpdatedAt: snapshot.lastClientUpdatedAt,
@@ -65,11 +66,12 @@ export default async function handler(request, response) {
     if (!payload?.state || typeof payload.state !== "object" || Array.isArray(payload.state)) {
       return response.status(400).json(buildErrorResponse("A workspace state object is required."));
     }
+    const sanitizedState = sanitizeWorkspaceStateForPersistence(payload.state);
 
     const snapshot = await prisma.workspaceSnapshot.upsert({
       where: { userId: decodedToken.uid },
       update: {
-        state: payload.state,
+        state: sanitizedState,
         source: typeof payload.source === "string" ? payload.source : "app-sync",
         lastClientUpdatedAt: payload.lastClientUpdatedAt
           ? new Date(payload.lastClientUpdatedAt)
@@ -77,7 +79,7 @@ export default async function handler(request, response) {
       },
       create: {
         userId: decodedToken.uid,
-        state: payload.state,
+        state: sanitizedState,
         source: typeof payload.source === "string" ? payload.source : "app-sync",
         lastClientUpdatedAt: payload.lastClientUpdatedAt
           ? new Date(payload.lastClientUpdatedAt)

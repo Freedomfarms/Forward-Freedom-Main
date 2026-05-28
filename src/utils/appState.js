@@ -177,6 +177,19 @@ function buildDefaultAppState() {
   };
 }
 
+export function createEmptyAppState({ primaryUserName = "User 1" } = {}) {
+  const defaultUser = buildUserState({
+    id: "user-profile-1",
+    name: primaryUserName,
+    useSeedData: false,
+  });
+
+  return {
+    users: [defaultUser],
+    activeUserId: defaultUser.id,
+  };
+}
+
 function buildDefaultAppStateRecord(defaults) {
   const defaultUser = {
     ...defaults.users[0],

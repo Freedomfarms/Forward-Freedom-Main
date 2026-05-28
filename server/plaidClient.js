@@ -3,13 +3,17 @@ import { Configuration, PlaidApi, PlaidEnvironments, Products } from "plaid";
 
 dotenv.config();
 
-const PLAID_ENV = process.env.PLAID_ENV || "sandbox";
+const PLAID_ENV = (process.env.PLAID_ENV || "development").trim().toLowerCase();
 const DEFAULT_PRODUCTS = [Products.Transactions, Products.Liabilities];
 
 let cachedClient = null;
 
 function getBasePath() {
-  return PlaidEnvironments[PLAID_ENV] || PlaidEnvironments.sandbox;
+  const basePath = PlaidEnvironments[PLAID_ENV];
+  if (!basePath) {
+    throw new Error('PLAID_ENV must be one of "sandbox", "development", or "production".');
+  }
+  return basePath;
 }
 
 export function isPlaidConfigured() {
@@ -61,8 +65,8 @@ export function getPlaidClient() {
   return cachedClient;
 }
 
-export function getPlaidLinkTokenRequest({ userId, userName }) {
-  return {
+export function getPlaidLinkTokenRequest({ userId, userName, accessToken }) {
+  const request = {
     user: {
       client_user_id: userId,
       legal_name: userName || undefined,
@@ -76,4 +80,10 @@ export function getPlaidLinkTokenRequest({ userId, userName }) {
     },
     webhook: process.env.PLAID_WEBHOOK_URL || undefined,
   };
+
+  if (accessToken) {
+    request.access_token = accessToken;
+  }
+
+  return request;
 }

@@ -9,6 +9,8 @@ import {
   getPlaidLinkTokenRequest,
   isPlaidConfigured,
 } from "../plaidClient.js";
+import { detectDuplicatePlaidItem } from "./duplicateItemDetection.js";
+import { getPlaidRequestId, logPlaidServerEvent } from "./logging.js";
 import { getPrismaClient, isDatabaseConfigured } from "../db/prisma.js";
 import {
   decryptSensitiveValue,
@@ -48,6 +50,57 @@ function normalizePlaidItemId(value) {
   if (value == null) return null;
   const normalized = String(value).trim();
   return normalized || null;
+}
+
+function normalizeLinkMetadata(metadata) {
+  if (!metadata || typeof metadata !== "object") return null;
+
+  const institution =
+    metadata.institution && typeof metadata.institution === "object"
+      ? {
+          institution_id: normalizePlaidItemId(metadata.institution.institution_id),
+          name: metadata.institution.name || null,
+        }
+      : null;
+  const accounts = Array.isArray(metadata.accounts)
+    ? metadata.accounts
+        .map((account) => ({
+          id: normalizePlaidItemId(account?.id),
+          name: account?.name || null,
+          subtype: account?.subtype || null,
+          type: account?.type || null,
+        }))
+        .filter((account) => account.id || account.name)
+    : [];
+
+  return {
+    institution,
+    accounts,
+    link_session_id: normalizePlaidItemId(metadata.link_session_id),
+    request_id: normalizePlaidItemId(metadata.request_id),
+  };
+}
+
+async function getExistingPlaidItemsForDetection(prisma, userId, workspaceUserId) {
+  return prisma.plaidItem.findMany({
+    where: {
+      userId,
+      workspaceUserId,
+    },
+    select: {
+      itemId: true,
+      institutionId: true,
+      accounts: {
+        select: {
+          plaidAccountId: true,
+          name: true,
+          type: true,
+          plaidType: true,
+          plaidSubtype: true,
+        },
+      },
+    },
+  });
 }
 
 function buildPlaidClientUserId(authUserId, workspaceUserId) {
@@ -165,7 +218,7 @@ function assertPlaidRuntimeReady() {
 
   if (!isSensitiveEncryptionConfigured()) {
     const error = new Error(
-      "PLAID_TOKEN_ENCRYPTION_KEY is required before Plaid access tokens can be stored securely."
+      "PLAID_TOKEN_ENCRYPTION_KEY must be a random secret at least 32 characters long before Plaid access tokens can be stored securely."
     );
     error.status = 503;
     throw error;
@@ -337,7 +390,7 @@ async function persistPlaidTransactions({
   }
 }
 
-async function syncTransactionsForItem(plaidClient, accessToken, cursor) {
+async function syncTransactionsForItem(plaidClient, accessToken, cursor, { itemId } = {}) {
   let nextCursor = cursor || null;
   let hasMore = true;
   let added = [];
@@ -349,6 +402,14 @@ async function syncTransactionsForItem(plaidClient, accessToken, cursor) {
       access_token: accessToken,
       cursor: nextCursor,
       count: 250,
+    });
+    logPlaidServerEvent("info", "transactions_sync_response", {
+      itemId,
+      requestId: getPlaidRequestId(response),
+      addedCount: response.data.added?.length || 0,
+      modifiedCount: response.data.modified?.length || 0,
+      removedCount: response.data.removed?.length || 0,
+      hasMore: response.data.has_more,
     });
 
     added = added.concat(response.data.added || []);
@@ -441,8 +502,21 @@ async function syncPlaidWorkspace({ prisma, plaidClient, userId, workspaceUserId
       accountsResponse = await plaidClient.accountsGet({
         access_token: accessToken,
       });
+      logPlaidServerEvent("info", "accounts_get_success", {
+        itemId: item.itemId,
+        requestId: getPlaidRequestId(accountsResponse),
+        institutionId: item.institutionId,
+        accountIds: (accountsResponse.data.accounts || []).map((account) => account.account_id),
+      });
     } catch (error) {
       const details = getPlaidErrorDetails(error);
+      logPlaidServerEvent("warn", "accounts_get_failed", {
+        itemId: item.itemId,
+        institutionId: item.institutionId,
+        requestId: getPlaidRequestId(error),
+        code: details.code,
+        message: details.message,
+      });
       await prisma.plaidItem.update({
         where: { id: item.id },
         data: {
@@ -459,7 +533,9 @@ async function syncPlaidWorkspace({ prisma, plaidClient, userId, workspaceUserId
     let removedTransactions = [];
 
     try {
-      const transactionPayload = await syncTransactionsForItem(plaidClient, accessToken, item.cursor);
+      const transactionPayload = await syncTransactionsForItem(plaidClient, accessToken, item.cursor, {
+        itemId: item.itemId,
+      });
       transactionsCursor = transactionPayload.cursor;
       addedTransactions = transactionPayload.added;
       modifiedTransactions = transactionPayload.modified;
@@ -467,6 +543,13 @@ async function syncPlaidWorkspace({ prisma, plaidClient, userId, workspaceUserId
     } catch (error) {
       if (!isPlaidProductUnavailable(error)) {
         const details = getPlaidErrorDetails(error);
+        logPlaidServerEvent("warn", "transactions_sync_failed", {
+          itemId: item.itemId,
+          institutionId: item.institutionId,
+          requestId: getPlaidRequestId(error),
+          code: details.code,
+          message: details.message,
+        });
         await prisma.plaidItem.update({
           where: { id: item.id },
           data: {
@@ -482,9 +565,21 @@ async function syncPlaidWorkspace({ prisma, plaidClient, userId, workspaceUserId
       liabilitiesResponse = await plaidClient.liabilitiesGet({
         access_token: accessToken,
       });
+      logPlaidServerEvent("info", "liabilities_get_success", {
+        itemId: item.itemId,
+        requestId: getPlaidRequestId(liabilitiesResponse),
+        institutionId: item.institutionId,
+      });
     } catch (error) {
       if (!isPlaidProductUnavailable(error)) {
         const details = getPlaidErrorDetails(error);
+        logPlaidServerEvent("warn", "liabilities_get_failed", {
+          itemId: item.itemId,
+          institutionId: item.institutionId,
+          requestId: getPlaidRequestId(error),
+          code: details.code,
+          message: details.message,
+        });
         await prisma.plaidItem.update({
           where: { id: item.id },
           data: {
@@ -528,6 +623,11 @@ async function syncPlaidWorkspace({ prisma, plaidClient, userId, workspaceUserId
         lastSyncAt,
         lastSyncError: "",
       },
+    });
+    logPlaidServerEvent("info", "plaid_item_sync_complete", {
+      itemId: item.itemId,
+      institutionId: item.institutionId,
+      accountIds: mappedAccounts.map((account) => account.plaidAccountId).filter(Boolean),
     });
   }
 
@@ -580,24 +680,23 @@ async function deletePlaidItems({ prisma, userId, plaidItems }) {
 export async function handlePlaidStatus(request, response) {
   try {
     await authenticateRequest(request);
-  } catch {
-    // If auth fails, return only the minimum needed to drive the UI — no server details.
+    const plaidConfig = getPlaidConfig();
     return response.status(200).json({
-      configured: false,
-      notes: [],
+      ...plaidConfig,
+      capabilities: {
+        ...plaidConfig.capabilities,
+        authenticatedRoutes: true,
+        secureTokenStorage: isSensitiveEncryptionConfigured(),
+        databasePersistence: isDatabaseConfigured(),
+      },
     });
-  }
+  } catch (error) {
+    if (error instanceof AuthError) {
+      return response.status(error.status).json(buildErrorResponse(error.message));
+    }
 
-  const plaidConfig = getPlaidConfig();
-  return response.status(200).json({
-    ...plaidConfig,
-    capabilities: {
-      ...plaidConfig.capabilities,
-      authenticatedRoutes: true,
-      secureTokenStorage: isSensitiveEncryptionConfigured(),
-      databasePersistence: isDatabaseConfigured(),
-    },
-  });
+    return response.status(500).json(buildErrorResponse("Unable to load Plaid status."));
+  }
 }
 
 export async function handleCreatePlaidLinkToken(request, response) {
@@ -608,13 +707,44 @@ export async function handleCreatePlaidLinkToken(request, response) {
 
     const body = await readJsonBody(request);
     const workspaceUserId = normalizeWorkspaceUserId(body.workspaceUserId);
+    const plaidItemId = normalizePlaidItemId(body.plaidItemId);
     const userName = body.userName || decodedToken.name || decodedToken.email || undefined;
+    let accessToken;
+
+    if (plaidItemId) {
+      const existingItem = await prisma.plaidItem.findUnique({
+        where: {
+          itemId: plaidItemId,
+        },
+      });
+
+      if (
+        !existingItem ||
+        existingItem.userId !== decodedToken.uid ||
+        existingItem.workspaceUserId !== workspaceUserId
+      ) {
+        return response
+          .status(404)
+          .json(buildErrorResponse("No linked Plaid institution was found for that itemId."));
+      }
+
+      accessToken = decryptSensitiveValue(existingItem.accessTokenCiphertext);
+    }
+
     const linkTokenResponse = await plaidClient.linkTokenCreate(
       getPlaidLinkTokenRequest({
         userId: buildPlaidClientUserId(decodedToken.uid, workspaceUserId),
         userName,
+        accessToken,
       })
     );
+    logPlaidServerEvent("info", "link_token_created", {
+      userId: decodedToken.uid,
+      workspaceUserId,
+      plaidItemId,
+      mode: plaidItemId ? "update" : "connect",
+      requestId: getPlaidRequestId(linkTokenResponse),
+    });
 
     return response.status(200).json({ linkToken: linkTokenResponse.data.link_token });
   } catch (error) {
@@ -623,6 +753,11 @@ export async function handleCreatePlaidLinkToken(request, response) {
     }
 
     const details = getPlaidErrorDetails(error);
+    logPlaidServerEvent("warn", "link_token_create_failed", {
+      requestId: getPlaidRequestId(error),
+      code: details.code,
+      message: details.message,
+    });
     return response.status(error.status || 500).json(buildErrorResponse(details.message, { code: details.code }));
   }
 }
@@ -636,6 +771,8 @@ export async function handleExchangePlaidPublicToken(request, response) {
     const body = await readJsonBody(request);
     const publicToken = body.publicToken;
     const workspaceUserId = normalizeWorkspaceUserId(body.workspaceUserId);
+    const plaidItemId = normalizePlaidItemId(body.plaidItemId);
+    const linkMetadata = normalizeLinkMetadata(body.linkMetadata);
 
     if (!publicToken) {
       return response
@@ -643,14 +780,62 @@ export async function handleExchangePlaidPublicToken(request, response) {
         .json(buildErrorResponse("publicToken is required to connect a Plaid item."));
     }
 
+    if (!plaidItemId && linkMetadata?.institution?.institution_id && linkMetadata.accounts.length > 0) {
+      const existingItems = await getExistingPlaidItemsForDetection(
+        prisma,
+        decodedToken.uid,
+        workspaceUserId
+      );
+      const duplicateDetection = detectDuplicatePlaidItem({
+        currentItemId: plaidItemId,
+        existingItems,
+        incomingAccounts: linkMetadata.accounts,
+        institutionId: linkMetadata.institution.institution_id,
+      });
+
+      if (duplicateDetection.isDuplicate) {
+        logPlaidServerEvent("warn", "duplicate_item_blocked", {
+          userId: decodedToken.uid,
+          workspaceUserId,
+          institutionId: linkMetadata.institution.institution_id,
+          institutionName: linkMetadata.institution.name,
+          linkSessionId: linkMetadata.link_session_id,
+          requestId: linkMetadata.request_id,
+          accountIds: linkMetadata.accounts.map((account) => account.id).filter(Boolean),
+          reason: duplicateDetection.reason,
+        });
+        return response.status(409).json(
+          buildErrorResponse(
+            "This institution appears to already be linked in your workspace. Repair the existing connection instead of linking it again.",
+            { code: "DUPLICATE_PLAID_ITEM" }
+          )
+        );
+      }
+    }
+
     const exchangeResponse = await plaidClient.itemPublicTokenExchange({
       public_token: publicToken,
     });
     const accessToken = exchangeResponse.data.access_token;
     const itemId = exchangeResponse.data.item_id;
+    logPlaidServerEvent("info", "public_token_exchanged", {
+      userId: decodedToken.uid,
+      workspaceUserId,
+      itemId,
+      plaidItemId,
+      linkSessionId: linkMetadata?.link_session_id,
+      requestId: getPlaidRequestId(exchangeResponse),
+    });
     const itemResponse = await plaidClient.itemGet({ access_token: accessToken });
     const institutionId = itemResponse.data.item.institution_id;
     const institutionName = await resolveInstitutionName(plaidClient, institutionId);
+    logPlaidServerEvent("info", "item_get_success", {
+      userId: decodedToken.uid,
+      workspaceUserId,
+      itemId,
+      institutionId,
+      requestId: getPlaidRequestId(itemResponse),
+    });
 
     // Ownership guard: if this itemId already exists, it must belong to the same user.
     // Without this check the update branch would silently re-assign the item to whoever
@@ -708,6 +893,14 @@ export async function handleExchangePlaidPublicToken(request, response) {
       workspaceUserId,
     });
 
+    logPlaidServerEvent("info", "plaid_item_exchange_complete", {
+      userId: decodedToken.uid,
+      workspaceUserId,
+      itemId,
+      institutionId,
+      linkSessionId: linkMetadata?.link_session_id,
+    });
+
     return response.status(200).json(syncPayload);
   } catch (error) {
     if (error instanceof AuthError) {
@@ -715,6 +908,11 @@ export async function handleExchangePlaidPublicToken(request, response) {
     }
 
     const details = getPlaidErrorDetails(error);
+    logPlaidServerEvent("warn", "exchange_public_token_failed", {
+      requestId: getPlaidRequestId(error),
+      code: details.code,
+      message: details.message,
+    });
     return response.status(error.status || 500).json(buildErrorResponse(details.message, { code: details.code }));
   }
 }
