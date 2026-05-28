@@ -34,6 +34,7 @@ import {
   getPlaidStatus,
   syncPlaidUser,
 } from "./utils/plaid.js";
+import { logPlaidClientEvent } from "./utils/plaidLogging.js";
 import {
   calculateCryptoBalance,
   fetchCryptoQuotes,
@@ -818,9 +819,25 @@ function ForwardFreedomDashboard({
 
   const { open: openPlaidLink, ready: isPlaidReady } = usePlaidLink({
     token: plaidLinkToken,
-    onSuccess: async (publicToken) => {
+    onSuccess: async (publicToken, metadata) => {
       const targetUserId = plaidTargetUserId || activeUser.id;
       const isRepairFlow = Boolean(plaidTargetItemId);
+      const plaidAccounts = (metadata?.accounts || []).map((account) => ({
+        id: account.id,
+        name: account.name,
+        subtype: account.subtype,
+        type: account.type,
+      }));
+      const plaidLogFields = {
+        mode: isRepairFlow ? "update" : "connect",
+        institutionId: metadata?.institution?.institution_id,
+        institutionName: metadata?.institution?.name,
+        linkSessionId: metadata?.link_session_id,
+        requestId: metadata?.request_id,
+        accountIds: plaidAccounts.map((account) => account.id).filter(Boolean),
+      };
+
+      logPlaidClientEvent("link_success", plaidLogFields);
       setPlaidError("");
       setIsPlaidSyncing(true);
 
@@ -828,19 +845,53 @@ function ForwardFreedomDashboard({
         const payload = await exchangePlaidPublicToken({
           workspaceUserId: targetUserId,
           publicToken,
+          plaidItemId: plaidTargetItemId,
+          linkMetadata: {
+            institution: metadata?.institution
+              ? {
+                  institution_id: metadata.institution.institution_id,
+                  name: metadata.institution.name,
+                }
+              : null,
+            accounts: plaidAccounts,
+            link_session_id: metadata?.link_session_id || null,
+            request_id: metadata?.request_id || null,
+          },
         });
         applyPlaidSyncPayload(targetUserId, payload);
         if (targetUserId === activeUser.id && !isRepairFlow) {
           setActiveTab(APP_TABS.TRANSACTIONS);
         }
       } catch (error) {
+        logPlaidClientEvent(
+          "exchange_public_token_failed",
+          {
+            ...plaidLogFields,
+            code: error.code,
+            message: error.message,
+          },
+          "warn"
+        );
         setPlaidError(error.message || "Unable to connect the Plaid item.");
       } finally {
         setIsPlaidSyncing(false);
         resetPlaidLinkState();
       }
     },
-    onExit: () => {
+    onExit: (error, metadata) => {
+      logPlaidClientEvent(
+        error ? "link_exit_error" : "link_exit",
+        {
+          institutionId: metadata?.institution?.institution_id,
+          institutionName: metadata?.institution?.name,
+          linkSessionId: metadata?.link_session_id,
+          requestId: metadata?.request_id,
+          status: metadata?.status,
+          errorCode: error?.error_code,
+          errorMessage: error?.error_message,
+        },
+        error ? "warn" : "info"
+      );
       resetPlaidLinkState();
     },
   });
@@ -1032,6 +1083,11 @@ function ForwardFreedomDashboard({
 
     setPlaidError("");
     setIsPlaidSyncing(true);
+    logPlaidClientEvent("link_token_requested", {
+      mode: plaidItemId ? "update" : "connect",
+      plaidItemId,
+      workspaceUserId: activeUser.id,
+    });
 
     try {
       const { linkToken } = await createPlaidLinkToken({
@@ -1046,7 +1102,23 @@ function ForwardFreedomDashboard({
       setPlaidTargetUserId(activeUser.id);
       setPlaidTargetItemId(plaidItemId);
       setPlaidShouldOpen(true);
+      logPlaidClientEvent("link_token_created", {
+        mode: plaidItemId ? "update" : "connect",
+        plaidItemId,
+        workspaceUserId: activeUser.id,
+      });
     } catch (error) {
+      logPlaidClientEvent(
+        "link_token_failed",
+        {
+          mode: plaidItemId ? "update" : "connect",
+          plaidItemId,
+          workspaceUserId: activeUser.id,
+          code: error.code,
+          message: error.message,
+        },
+        "warn"
+      );
       setPlaidError(
         error.message ||
           (plaidItemId
