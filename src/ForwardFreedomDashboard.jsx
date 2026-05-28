@@ -370,6 +370,7 @@ function ForwardFreedomDashboard({
   storageKey,
   initialAppStateOverride,
   onPersistedStateChange,
+  sessionControls,
   persistLocally = true,
 } = {}) {
   const [initialAppState] = useState(() => initialAppStateOverride || loadPersistedAppState(storageKey));
@@ -1473,6 +1474,7 @@ function ForwardFreedomDashboard({
           activeTab={activeTab}
           setActiveTab={setActiveTab}
           onBackHome={() => setCurrentView("landing")}
+          sessionControls={sessionControls}
         />
 
         <main style={styles.main}>

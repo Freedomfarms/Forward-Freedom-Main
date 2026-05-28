@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ForwardFreedomDashboard from "./ForwardFreedomDashboard.jsx";
 import { AuthProvider, useAuth } from "./context/AuthContext.jsx";
 import { AuthScreen } from "./components/AuthScreen.jsx";
-import { WorkspaceSessionPanel } from "./components/WorkspaceSessionPanel.jsx";
 import {
   buildScopedAppStateStorageKey,
   createEmptyAppState,
@@ -231,25 +230,25 @@ function AuthenticatedWorkspaceApp({ user, signOut, isBusy, authNotice, resendVe
     return <AppLoadingScreen />;
   }
 
+  const sessionControls = {
+    onSignOut: () => void signOut(),
+    isBusy,
+    isEmailVerified: Boolean((workspaceProfile || user)?.emailVerified),
+    onResendVerification: () => void resendVerificationEmail(),
+    workspaceStatus: buildWorkspaceStatus(workspaceSyncState),
+    notice: authNotice,
+    error: workspaceError,
+  };
+
   return (
-    <>
-      <WorkspaceSessionPanel
-        user={workspaceProfile || user}
-        onSignOut={() => void signOut()}
-        isBusy={isBusy}
-        workspaceStatus={buildWorkspaceStatus(workspaceSyncState)}
-        workspaceNotice={authNotice}
-        workspaceError={workspaceError}
-        onResendVerification={() => void resendVerificationEmail()}
-      />
-      <ForwardFreedomDashboard
-        initialView="app"
-        storageKey={storageKey}
-        initialAppStateOverride={workspaceSeedState}
-        onPersistedStateChange={handlePersistedStateChange}
-        persistLocally={false}
-      />
-    </>
+    <ForwardFreedomDashboard
+      initialView="app"
+      storageKey={storageKey}
+      initialAppStateOverride={workspaceSeedState}
+      onPersistedStateChange={handlePersistedStateChange}
+      sessionControls={sessionControls}
+      persistLocally={false}
+    />
   );
 }
 
