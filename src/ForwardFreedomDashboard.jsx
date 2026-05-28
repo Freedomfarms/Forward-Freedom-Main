@@ -35,6 +35,7 @@ import {
   syncPlaidUser,
 } from "./utils/plaid.js";
 import { logPlaidClientEvent } from "./utils/plaidLogging.js";
+import { buildPlaidNicknameMap, normalizePlaidNicknameMap } from "./utils/plaidNicknames.js";
 import {
   calculateCryptoBalance,
   fetchCryptoQuotes,
@@ -80,6 +81,7 @@ const EMPTY_USER_STATE = Object.freeze({
   projectionAdjustments: {},
   subscriptions: [],
   plaidItems: [],
+  plaidNicknames: {},
   lastPlaidSyncAt: null,
   merchantCategoryRules: {},
   activeTab: APP_TABS.DASHBOARD,
@@ -258,11 +260,15 @@ function mergePlaidSyncIntoUser(user, syncPayload) {
   const hasLivePlaidItems = Array.isArray(user.plaidItems) && user.plaidItems.length > 0;
   const shouldReplaceDemoSyncedData = !hasLivePlaidItems;
   const existingPlaidNicknamesByKey = new Map(
-    user.accounts
-      .filter((account) => account.syncSource === "Plaid" || account.plaidAccountId)
-      .map((account) => [account.plaidAccountId || account.id, account.nickname])
-      .filter(([, nickname]) => typeof nickname === "string" && nickname.trim().length > 0)
+    Object.entries(normalizePlaidNicknameMap(user.plaidNicknames || {}))
   );
+  user.accounts
+    .filter((account) => account.syncSource === "Plaid" || account.plaidAccountId)
+    .forEach((account) => {
+      if (typeof account.nickname === "string" && account.nickname.trim().length > 0) {
+        existingPlaidNicknamesByKey.set(account.plaidAccountId || account.id, account.nickname.trim());
+      }
+    });
   const syncedAccounts = (syncPayload.accounts || []).map((account, index) => {
     const normalizedAccount = normalizeAccount(account, index);
     const existingNickname = existingPlaidNicknamesByKey.get(
@@ -313,6 +319,7 @@ function mergePlaidSyncIntoUser(user, syncPayload) {
     accounts: [...retainedAccounts, ...syncedAccounts],
     transactions: sortTransactionsByDate([...syncedTransactions, ...retainedTransactions]),
     plaidItems: syncPayload.plaidItems || user.plaidItems,
+    plaidNicknames: buildPlaidNicknameMap(syncedAccounts),
     lastPlaidSyncAt: syncPayload.lastSyncAt || user.lastPlaidSyncAt,
   };
 }
@@ -504,6 +511,7 @@ function ForwardFreedomDashboard({
     baseCurrentPlanData
   );
   const availablePlanningYears = buildPlanningYearOptions(plansByYear, currentPlanYear);
+  const activePlaidNicknames = buildPlaidNicknameMap(syncedAccounts);
 
   const totalNetWorth = Math.max(
     trueCash +
@@ -648,6 +656,7 @@ function ForwardFreedomDashboard({
           accounts: syncedAccounts,
           transactions: categorizedTransactions,
           merchantCategoryRules,
+          plaidNicknames: activePlaidNicknames,
           plansByYear: {
             ...plansByYear,
             [String(currentPlanYear)]: buildPlanYearData({
