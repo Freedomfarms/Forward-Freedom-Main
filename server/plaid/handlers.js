@@ -680,24 +680,23 @@ async function deletePlaidItems({ prisma, userId, plaidItems }) {
 export async function handlePlaidStatus(request, response) {
   try {
     await authenticateRequest(request);
-  } catch {
-    // If auth fails, return only the minimum needed to drive the UI — no server details.
+    const plaidConfig = getPlaidConfig();
     return response.status(200).json({
-      configured: false,
-      notes: [],
+      ...plaidConfig,
+      capabilities: {
+        ...plaidConfig.capabilities,
+        authenticatedRoutes: true,
+        secureTokenStorage: isSensitiveEncryptionConfigured(),
+        databasePersistence: isDatabaseConfigured(),
+      },
     });
-  }
+  } catch (error) {
+    if (error instanceof AuthError) {
+      return response.status(error.status).json(buildErrorResponse(error.message));
+    }
 
-  const plaidConfig = getPlaidConfig();
-  return response.status(200).json({
-    ...plaidConfig,
-    capabilities: {
-      ...plaidConfig.capabilities,
-      authenticatedRoutes: true,
-      secureTokenStorage: isSensitiveEncryptionConfigured(),
-      databasePersistence: isDatabaseConfigured(),
-    },
-  });
+    return response.status(500).json(buildErrorResponse("Unable to load Plaid status."));
+  }
 }
 
 export async function handleCreatePlaidLinkToken(request, response) {
