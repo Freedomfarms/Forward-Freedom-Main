@@ -8,6 +8,7 @@ import { AccountRemoveConfirmModal } from "./AccountRemoveConfirmModal.jsx";
 import { HouseholdProfilesControl } from "./Common.jsx";
 
 const TRANSACTION_FEED_GRID_COLUMNS = "140px 1.4fr minmax(270px,1.1fr) minmax(180px,0.9fr) 160px";
+const REVIEW_QUEUE_PREVIEW_COUNT = 4;
 
 function formatManualDate(value) {
   if (!value) return "";
@@ -69,6 +70,10 @@ function formatCategorySourceLabel(transaction) {
             : "AI guess";
 
   return confidence ? `${label} · ${confidence}` : label;
+}
+
+function buildTransactionRowKey(transaction) {
+  return `${transaction.id || transaction.date}-${transaction.merchant}-${transaction.account}-${transaction.amount}`;
 }
 
 function buildAccountProfile(account, accounts) {
@@ -296,7 +301,13 @@ export function TransactionsView({
   const cashInflow = filteredTransactions
     .filter((tx) => tx.amount > 0)
     .reduce((sum, tx) => sum + tx.amount, 0);
-  const reviewQueueCount = visibleTransactions.filter((tx) => tx.needsReview).length;
+  const reviewScopeTransactions = selectedAccount
+    ? visibleTransactions.filter((tx) => tx.account === selectedAccount)
+    : visibleTransactions;
+  const reviewQueueTransactions = reviewScopeTransactions.filter((tx) => tx.needsReview);
+  const reviewQueueCount = reviewQueueTransactions.length;
+  const reviewedTransactionCount = Math.max(reviewScopeTransactions.length - reviewQueueCount, 0);
+  const reviewQueuePreview = reviewQueueTransactions.slice(0, REVIEW_QUEUE_PREVIEW_COUNT);
   const selectedCategory = manualForm.category;
   const accountProfile = buildAccountProfile(selectedAccountRecord, accounts);
   const isSelectedNonTransactionalAccount = selectedAccountRecord
@@ -328,6 +339,15 @@ export function TransactionsView({
       source: "All",
       review: "All",
     });
+  };
+
+  const setReviewPreset = (review) => {
+    setFilters((current) => ({ ...current, review }));
+  };
+
+  const focusReviewTransaction = (transaction) => {
+    setReviewPreset("Needs Review");
+    setSelectedTransactionKey(buildTransactionRowKey(transaction));
   };
 
   const submitManualTransaction = (event) => {
@@ -386,7 +406,7 @@ export function TransactionsView({
         <div>
           <h1 style={styles.pageTitle}>Transactions</h1>
           <p style={styles.pageSubtitle}>
-            Connected accounts, live spending intelligence, and synced Plaid transaction feeds.
+            Review the queue, confirm categories, and keep the ledger detailed without feeling noisy.
           </p>
         </div>
         <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
@@ -432,7 +452,7 @@ export function TransactionsView({
           style={{
             position: "relative",
             display: "grid",
-            gridTemplateColumns: "repeat(6,minmax(0,1fr))",
+            gridTemplateColumns: "repeat(5,minmax(0,1fr))",
             gap: 14,
           }}
         >
@@ -456,6 +476,7 @@ export function TransactionsView({
             ["Monthly Spend", money(monthlySpend)],
             ["Visible Transactions", String(filteredTransactions.length)],
             ["Needs Review", String(reviewQueueCount)],
+            ["Reviewed", String(reviewedTransactionCount)],
             [
               plaidIntegration?.lastSyncAt ? "Last Plaid Sync" : "Cash Inflow",
               plaidIntegration?.lastSyncAt
@@ -488,41 +509,242 @@ export function TransactionsView({
               </div>
             </div>
           ))}
+        </div>
+      </div>
+
+      <div
+        style={{
+          ...styles.panel,
+          padding: 20,
+          marginBottom: 18,
+        }}
+      >
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "minmax(260px,1.2fr) auto auto auto auto",
+            gap: 12,
+            alignItems: "center",
+          }}
+        >
+          <label style={{ display: "grid", gap: 7 }}>
+            <span
+              style={{
+                color: "#8fb1d9",
+                fontSize: 11,
+                textTransform: "uppercase",
+                letterSpacing: 0.8,
+                fontWeight: 900,
+              }}
+            >
+              Search transactions
+            </span>
+            <input
+              type="text"
+              value={filters.search}
+              onChange={(event) => updateFilters("search", event.target.value)}
+              placeholder="Merchant, category, account..."
+              style={{
+                color: "#eaf3ff",
+                background: "rgba(0,136,255,.08)",
+                border: "1px solid rgba(0,216,255,.18)",
+                borderRadius: 10,
+                padding: "11px 12px",
+                outline: "none",
+                fontWeight: 700,
+              }}
+            />
+          </label>
+
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignSelf: "end" }}>
+            {[
+              ["All", "All transactions"],
+              ["Needs Review", `Needs review (${reviewQueueCount})`],
+              ["Reviewed", `Reviewed (${reviewedTransactionCount})`],
+            ].map(([value, label]) => {
+              const isActive = filters.review === value;
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setReviewPreset(value)}
+                  style={{
+                    background: isActive
+                      ? "linear-gradient(90deg, rgba(0,119,255,.22), rgba(0,216,255,.16))"
+                      : "rgba(0,136,255,.08)",
+                    border: isActive
+                      ? "1px solid rgba(0,216,255,.44)"
+                      : "1px solid rgba(0,216,255,.18)",
+                    color: isActive ? "#ffffff" : "#d7ebff",
+                    borderRadius: 999,
+                    padding: "11px 14px",
+                    cursor: "pointer",
+                    fontWeight: 800,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+
           <button
             type="button"
             onClick={() => setShowManualEntry(true)}
             disabled={!canOpenManualEntry}
             style={{
-              border: "1px solid rgba(255,159,28,.32)",
-              borderRadius: 14,
+              alignSelf: "end",
               background: canOpenManualEntry
-                ? "linear-gradient(180deg, rgba(255,159,28,.14), rgba(56,22,0,.22))"
+                ? "linear-gradient(180deg, rgba(255,159,28,.16), rgba(56,22,0,.22))"
                 : "rgba(48,55,68,.28)",
-              padding: "16px 14px",
-              textAlign: "left",
+              border: "1px solid rgba(255,159,28,.28)",
+              color: canOpenManualEntry ? "#fff2db" : "#9aa8bc",
+              borderRadius: 10,
+              padding: "11px 14px",
               cursor: canOpenManualEntry ? "pointer" : "not-allowed",
-              boxShadow: canOpenManualEntry ? "0 0 24px rgba(255,159,28,.12)" : "none",
-              color: "white",
-              opacity: canOpenManualEntry ? 1 : 0.6,
+              fontWeight: 800,
+              whiteSpace: "nowrap",
             }}
           >
+            + Add Manual
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowFilters((current) => !current)}
+            style={{
+              alignSelf: "end",
+              background: "rgba(0,136,255,.12)",
+              border: "1px solid rgba(0,136,255,.28)",
+              color: "#d7ebff",
+              borderRadius: 10,
+              padding: "11px 14px",
+              cursor: "pointer",
+              fontWeight: 700,
+              whiteSpace: "nowrap",
+            }}
+          >
+            {showFilters ? "Hide Advanced" : "Advanced Filters"}
+          </button>
+
+          <button
+            type="button"
+            onClick={exportFilteredTransactions}
+            style={{
+              alignSelf: "end",
+              background: "rgba(0,136,255,.12)",
+              border: "1px solid rgba(0,136,255,.28)",
+              color: "#d7ebff",
+              borderRadius: 10,
+              padding: "11px 14px",
+              cursor: "pointer",
+              fontWeight: 700,
+              whiteSpace: "nowrap",
+            }}
+          >
+            Export
+          </button>
+        </div>
+      </div>
+
+      <div
+        style={{
+          ...styles.panel,
+          padding: 20,
+          marginBottom: 18,
+          border: "1px solid rgba(255,159,28,.18)",
+          background: "linear-gradient(180deg, rgba(20,16,8,.22), rgba(3,17,32,.82))",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 18,
+            alignItems: "flex-start",
+            flexWrap: "wrap",
+          }}
+        >
+          <div>
             <div
               style={{
                 color: "#ffd08a",
                 fontSize: 12,
                 textTransform: "uppercase",
-                marginBottom: 8,
-                letterSpacing: 0.8,
+                letterSpacing: 0.9,
                 fontWeight: 900,
               }}
             >
-              Manual Entry
+              Review Queue
             </div>
-            <div style={{ fontSize: 22, fontWeight: 900, lineHeight: 1.15 }}>
-              {canOpenManualEntry ? "Transaction" : "No Account"}
+            <div style={{ color: "white", fontSize: 24, fontWeight: 900, marginTop: 8 }}>
+              {reviewQueueCount > 0
+                ? `${reviewQueueCount} transactions need a closer look`
+                : "All visible transactions are reviewed"}
             </div>
-          </button>
+            <div style={{ color: "#c8d7ea", lineHeight: 1.6, marginTop: 10, maxWidth: 720 }}>
+              Keep low-confidence categories and AI guesses in one clear queue, then use the full
+              ledger only when you need deeper filtering.
+            </div>
+          </div>
+          {reviewQueueCount > 0 ? (
+            <button
+              type="button"
+              onClick={() => setReviewPreset("Needs Review")}
+              style={{
+                background: "rgba(255,159,28,.12)",
+                border: "1px solid rgba(255,159,28,.28)",
+                color: "#fff2db",
+                borderRadius: 10,
+                padding: "11px 14px",
+                cursor: "pointer",
+                fontWeight: 800,
+              }}
+            >
+              Open review mode
+            </button>
+          ) : null}
         </div>
+
+        {reviewQueuePreview.length > 0 ? (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+              gap: 12,
+              marginTop: 18,
+            }}
+          >
+            {reviewQueuePreview.map((transaction) => (
+              <button
+                key={buildTransactionRowKey(transaction)}
+                type="button"
+                onClick={() => focusReviewTransaction(transaction)}
+                style={{
+                  textAlign: "left",
+                  border: "1px solid rgba(255,159,28,.18)",
+                  borderRadius: 14,
+                  background: "rgba(255,159,28,.06)",
+                  padding: "14px 14px 16px",
+                  cursor: "pointer",
+                  color: "#eef6ff",
+                }}
+              >
+                <div style={{ fontWeight: 800, fontSize: 15 }}>{transaction.merchant}</div>
+                <div style={{ color: "#8fb1d9", fontSize: 12, marginTop: 6 }}>
+                  {transaction.date} • {accountDisplayNames[transaction.account] || transaction.account}
+                </div>
+                <div style={{ color: "#ffcf82", fontSize: 12, marginTop: 10, fontWeight: 700 }}>
+                  {formatCategorySourceLabel(transaction)}
+                </div>
+                <div style={{ color: "#c8d7ea", fontSize: 12, marginTop: 8 }}>
+                  Current category: {transaction.category || "Other"}
+                </div>
+              </button>
+            ))}
+          </div>
+        ) : null}
       </div>
 
       {showManualEntry ? (
@@ -950,48 +1172,55 @@ export function TransactionsView({
           style={{
             display: "flex",
             justifyContent: "space-between",
-            alignItems: "center",
+            alignItems: "flex-start",
+            gap: 18,
             marginBottom: 22,
+            flexWrap: "wrap",
           }}
         >
-          <div style={{ color: "white", fontSize: 22, fontWeight: 700 }}>
-            {selectedAccount ? `${selectedAccount} Transactions` : "Live Transaction Feed"}
+          <div>
+            <div style={{ color: "white", fontSize: 22, fontWeight: 700 }}>
+              {filters.review === "Needs Review"
+                ? "Review Queue Ledger"
+                : selectedAccount
+                  ? `${selectedAccount} Transactions`
+                  : "Live Transaction Feed"}
+            </div>
+            <div style={{ color: "#8ea8ca", fontSize: 13, marginTop: 8 }}>
+              {filters.review === "Needs Review"
+                ? "Focus the items that still need confirmation, then return to the full ledger."
+                : "Search stays upfront; advanced filters are only there when you truly need them."}
+            </div>
           </div>
-          <div style={{ display: "flex", gap: 12 }}>
+          {filters.search ||
+          filters.category !== "All" ||
+          filters.account !== (selectedAccount || "All") ||
+          filters.direction !== "All" ||
+          filters.source !== "All" ||
+          filters.review !== "All" ? (
             <button
-              onClick={() => setShowFilters((current) => !current)}
+              type="button"
+              onClick={clearFilters}
               style={{
-                background: "rgba(0,136,255,.12)",
-                border: "1px solid rgba(0,136,255,.28)",
-                color: "#d7ebff",
+                background: "rgba(0,136,255,.10)",
+                border: "1px solid rgba(0,216,255,.20)",
                 borderRadius: 8,
+                color: "#d7ebff",
                 padding: "10px 14px",
                 cursor: "pointer",
+                fontWeight: 800,
               }}
             >
-              {showFilters ? "Hide Filters" : "Filter"}
+              Clear current view
             </button>
-            <button
-              onClick={exportFilteredTransactions}
-              style={{
-                background: "rgba(0,136,255,.12)",
-                border: "1px solid rgba(0,136,255,.28)",
-                color: "#d7ebff",
-                borderRadius: 8,
-                padding: "10px 14px",
-                cursor: "pointer",
-              }}
-            >
-              Export
-            </button>
-          </div>
+          ) : null}
         </div>
 
         {showFilters ? (
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "1.4fr 1fr 1fr 1fr 1fr 1fr auto",
+              gridTemplateColumns: "repeat(5, minmax(0, 1fr)) auto",
               gap: 10,
               marginBottom: 18,
               padding: 16,
@@ -1001,34 +1230,6 @@ export function TransactionsView({
               alignItems: "end",
             }}
           >
-            <label style={{ display: "grid", gap: 7 }}>
-              <span
-                style={{
-                  color: "#8fb1d9",
-                  fontSize: 11,
-                  textTransform: "uppercase",
-                  letterSpacing: 0.8,
-                  fontWeight: 900,
-                }}
-              >
-                Search
-              </span>
-              <input
-                type="text"
-                value={filters.search}
-                onChange={(event) => updateFilters("search", event.target.value)}
-                placeholder="Merchant, category, account..."
-                style={{
-                  color: "#eaf3ff",
-                  background: "rgba(0,136,255,.08)",
-                  border: "1px solid rgba(0,216,255,.18)",
-                  borderRadius: 8,
-                  padding: "10px 11px",
-                  outline: "none",
-                  fontWeight: 700,
-                }}
-              />
-            </label>
             <label style={{ display: "grid", gap: 7 }}>
               <span
                 style={{
@@ -1238,7 +1439,7 @@ export function TransactionsView({
         <div style={{ maxHeight: "62vh", overflowY: "auto", paddingRight: 4 }}>
           {visibleTransactions.length > 0 ? (
             filteredTransactions.map((tx, index) => {
-              const rowKey = `${tx.id || tx.date}-${tx.merchant}-${tx.account}-${tx.amount}`;
+              const rowKey = buildTransactionRowKey(tx);
               const isSelectedRow = selectedTransactionKey === rowKey;
               const defaultRowBackground = tx.needsReview
                 ? "rgba(255,159,28,.06)"
