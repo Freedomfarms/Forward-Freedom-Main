@@ -291,10 +291,6 @@ export function TransactionsView({
       return true;
     });
   }, [filters, selectedAccount, visibleTransactions]);
-  const monthlySpend = currentMonthSnapshot?.monthlySpend || 0;
-  const cashInflow = filteredTransactions
-    .filter((tx) => tx.amount > 0)
-    .reduce((sum, tx) => sum + tx.amount, 0);
   const reviewQueueCount = visibleTransactions.filter((tx) => tx.needsReview).length;
   const selectedCategory = manualForm.category;
   const accountProfile = buildAccountProfile(selectedAccountRecord, accounts);
