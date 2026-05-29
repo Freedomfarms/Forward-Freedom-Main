@@ -409,7 +409,9 @@ function ForwardFreedomDashboard({
   const plaidItems = activeUser.plaidItems;
   const lastPlaidSyncAt = activeUser.lastPlaidSyncAt;
   const merchantCategoryRules = activeUser.merchantCategoryRules || {};
-  const activeTab = activeUser.activeTab;
+  const activeTab = SUPPORTED_APP_TABS.has(activeUser.activeTab)
+    ? activeUser.activeTab
+    : APP_TABS.DASHBOARD;
   const activeRange = activeUser.activeRange;
   const metricSnapshots = activeUser.metricSnapshots;
   const currentBudgetPeriod = getBudgetPeriodAtOffset(0);
@@ -442,11 +444,6 @@ function ForwardFreedomDashboard({
   const setActiveRange = (valueOrUpdater) => setActiveUserField("activeRange", valueOrUpdater);
   const syncedAccounts = syncDerivedAccountValues(accounts);
 
-  useEffect(() => {
-    if (!SUPPORTED_APP_TABS.has(activeTab)) {
-      setActiveTab(APP_TABS.DASHBOARD);
-    }
-  }, [activeTab, setActiveTab]);
   const categorizedTransactions = categorizeTransactions(transactions, {
     budgetRows,
     merchantCategoryRules,
