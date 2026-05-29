@@ -36,8 +36,8 @@ const CONTACT_CARDS = [
     "Guide new households into planning, account setup, and their first budgeting workflow.",
   ],
   [
-    "Policy questions",
-    "Keep legal review available on demand without pushing compliance copy into the main homepage story.",
+    "Email support",
+    "Reach Forward Freedom Financial directly when you need help or want a guided next step.",
   ],
   [
     "Workspace support",
@@ -490,7 +490,7 @@ export function LandingPage({ enterApp }) {
             Contact & Footer
           </div>
           <div style={{ color: "white", fontSize: 28, fontWeight: 900, marginTop: 10 }}>
-            Support, onboarding, and legal review
+            Support and onboarding
           </div>
           <div style={{ color: "#c6d2e1", lineHeight: 1.7, marginTop: 12, maxWidth: 760 }}>
             For support, onboarding assistance, or policy questions, please contact Forward Freedom
@@ -525,14 +525,6 @@ export function LandingPage({ enterApp }) {
                 <div style={{ color: "#c6d2e1", lineHeight: 1.65, marginTop: 10 }}>{text}</div>
               </div>
             ))}
-          </div>
-          <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginTop: 20 }}>
-            <button onClick={() => setActiveDocument("terms")} style={buildPrimaryButtonStyle(true)}>
-              Terms of Service
-            </button>
-            <button onClick={() => setActiveDocument("privacy")} style={buildPrimaryButtonStyle(true)}>
-              Privacy Policy
-            </button>
           </div>
         </section>
 
