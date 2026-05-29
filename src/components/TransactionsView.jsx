@@ -71,10 +71,6 @@ function formatCategorySourceLabel(transaction) {
   return confidence ? `${label} · ${confidence}` : label;
 }
 
-function buildTransactionRowKey(transaction) {
-  return `${transaction.id || transaction.date}-${transaction.merchant}-${transaction.account}-${transaction.amount}`;
-}
-
 function buildAccountProfile(account, accounts) {
   if (!account) return null;
 
@@ -191,7 +187,6 @@ function buildAccountProfile(account, accounts) {
 export function TransactionsView({
   accounts,
   budgetRows,
-  currentMonthSnapshot,
   selectedAccount,
   visibleTransactions,
   setActiveTab,
@@ -296,11 +291,11 @@ export function TransactionsView({
       return true;
     });
   }, [filters, selectedAccount, visibleTransactions]);
-  const reviewScopeTransactions = selectedAccount
-    ? visibleTransactions.filter((tx) => tx.account === selectedAccount)
-    : visibleTransactions;
-  const reviewQueueCount = reviewScopeTransactions.filter((tx) => tx.needsReview).length;
-  const reviewedTransactionCount = Math.max(reviewScopeTransactions.length - reviewQueueCount, 0);
+  const monthlySpend = currentMonthSnapshot?.monthlySpend || 0;
+  const cashInflow = filteredTransactions
+    .filter((tx) => tx.amount > 0)
+    .reduce((sum, tx) => sum + tx.amount, 0);
+  const reviewQueueCount = visibleTransactions.filter((tx) => tx.needsReview).length;
   const selectedCategory = manualForm.category;
   const accountProfile = buildAccountProfile(selectedAccountRecord, accounts);
   const isSelectedNonTransactionalAccount = selectedAccountRecord
@@ -332,10 +327,6 @@ export function TransactionsView({
       source: "All",
       review: "All",
     });
-  };
-
-  const setReviewPreset = (review) => {
-    setFilters((current) => ({ ...current, review }));
   };
 
   const submitManualTransaction = (event) => {
@@ -394,7 +385,7 @@ export function TransactionsView({
         <div>
           <h1 style={styles.pageTitle}>Transactions</h1>
           <p style={styles.pageSubtitle}>
-            Review the queue, confirm categories, and keep the ledger detailed without feeling noisy.
+            Connected accounts, live spending intelligence, and synced Plaid transaction feeds.
           </p>
         </div>
         <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
@@ -422,135 +413,113 @@ export function TransactionsView({
       <div
         style={{
           ...styles.panel,
-          padding: 20,
+          padding: 24,
           marginBottom: 18,
+          position: "relative",
+          overflow: "hidden",
         }}
       >
         <div
           style={{
+            position: "absolute",
+            inset: 0,
+            background:
+              "radial-gradient(circle at top right, rgba(0,216,255,.14), transparent 35%)",
+          }}
+        />
+        <div
+          style={{
+            position: "relative",
             display: "grid",
-            gridTemplateColumns: "minmax(260px,1.2fr) auto auto auto auto",
-            gap: 12,
-            alignItems: "center",
+            gridTemplateColumns: "repeat(6,minmax(0,1fr))",
+            gap: 14,
           }}
         >
-          <label style={{ display: "grid", gap: 7 }}>
-            <span
+          {plaidIntegration?.error ? (
+            <div
               style={{
-                color: "#8fb1d9",
-                fontSize: 11,
-                textTransform: "uppercase",
-                letterSpacing: 0.8,
-                fontWeight: 900,
+                gridColumn: "1 / -1",
+                color: "#ff9a76",
+                border: "1px solid rgba(255,154,118,.2)",
+                background: "rgba(60,16,7,.26)",
+                borderRadius: 12,
+                padding: "12px 14px",
+                marginBottom: 2,
               }}
             >
-              Search transactions
-            </span>
-            <input
-              type="text"
-              value={filters.search}
-              onChange={(event) => updateFilters("search", event.target.value)}
-              placeholder="Merchant, category, account..."
+              {plaidIntegration.error}
+            </div>
+          ) : null}
+          {[
+            ["Connected Accounts", String(accounts.length)],
+            ["Monthly Spend", money(monthlySpend)],
+            ["Visible Transactions", String(filteredTransactions.length)],
+            ["Needs Review", String(reviewQueueCount)],
+            [
+              plaidIntegration?.lastSyncAt ? "Last Plaid Sync" : "Cash Inflow",
+              plaidIntegration?.lastSyncAt
+                ? new Date(plaidIntegration.lastSyncAt).toLocaleDateString()
+                : money(cashInflow),
+            ],
+          ].map((item) => (
+            <div
+              key={item[0]}
               style={{
-                color: "#eaf3ff",
-                background: "rgba(0,136,255,.08)",
-                border: "1px solid rgba(0,216,255,.18)",
-                borderRadius: 10,
-                padding: "11px 12px",
-                outline: "none",
-                fontWeight: 700,
+                border: "1px solid rgba(0,136,255,.22)",
+                borderRadius: 14,
+                background: "rgba(3,17,32,.72)",
+                padding: "16px 14px",
               }}
-            />
-          </label>
-
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignSelf: "end" }}>
-            {[
-              ["All", "All transactions"],
-              ["Needs Review", `Needs review (${reviewQueueCount})`],
-              ["Reviewed", `Reviewed (${reviewedTransactionCount})`],
-            ].map(([value, label]) => {
-              const isActive = filters.review === value;
-              return (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => setReviewPreset(value)}
-                  style={{
-                    background: isActive
-                      ? "linear-gradient(90deg, rgba(0,119,255,.22), rgba(0,216,255,.16))"
-                      : "rgba(0,136,255,.08)",
-                    border: isActive
-                      ? "1px solid rgba(0,216,255,.44)"
-                      : "1px solid rgba(0,216,255,.18)",
-                    color: isActive ? "#ffffff" : "#d7ebff",
-                    borderRadius: 999,
-                    padding: "11px 14px",
-                    cursor: "pointer",
-                    fontWeight: 800,
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {label}
-                </button>
-              );
-            })}
-          </div>
-
+            >
+              <div
+                style={{
+                  color: "#8fb1d9",
+                  fontSize: 12,
+                  textTransform: "uppercase",
+                  marginBottom: 8,
+                  letterSpacing: 0.8,
+                }}
+              >
+                {item[0]}
+              </div>
+              <div style={{ color: "white", fontSize: 23, fontWeight: 800, lineHeight: 1.15 }}>
+                {item[1]}
+              </div>
+            </div>
+          ))}
           <button
             type="button"
             onClick={() => setShowManualEntry(true)}
             disabled={!canOpenManualEntry}
             style={{
-              alignSelf: "end",
+              border: "1px solid rgba(255,159,28,.32)",
+              borderRadius: 14,
               background: canOpenManualEntry
-                ? "linear-gradient(180deg, rgba(255,159,28,.16), rgba(56,22,0,.22))"
+                ? "linear-gradient(180deg, rgba(255,159,28,.14), rgba(56,22,0,.22))"
                 : "rgba(48,55,68,.28)",
-              border: "1px solid rgba(255,159,28,.28)",
-              color: canOpenManualEntry ? "#fff2db" : "#9aa8bc",
-              borderRadius: 10,
-              padding: "11px 14px",
+              padding: "16px 14px",
+              textAlign: "left",
               cursor: canOpenManualEntry ? "pointer" : "not-allowed",
-              fontWeight: 800,
-              whiteSpace: "nowrap",
+              boxShadow: canOpenManualEntry ? "0 0 24px rgba(255,159,28,.12)" : "none",
+              color: "white",
+              opacity: canOpenManualEntry ? 1 : 0.6,
             }}
           >
-            + Add Manual
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setShowFilters((current) => !current)}
-            style={{
-              alignSelf: "end",
-              background: "rgba(0,136,255,.12)",
-              border: "1px solid rgba(0,136,255,.28)",
-              color: "#d7ebff",
-              borderRadius: 10,
-              padding: "11px 14px",
-              cursor: "pointer",
-              fontWeight: 700,
-              whiteSpace: "nowrap",
-            }}
-          >
-            {showFilters ? "Hide Advanced" : "Advanced Filters"}
-          </button>
-
-          <button
-            type="button"
-            onClick={exportFilteredTransactions}
-            style={{
-              alignSelf: "end",
-              background: "rgba(0,136,255,.12)",
-              border: "1px solid rgba(0,136,255,.28)",
-              color: "#d7ebff",
-              borderRadius: 10,
-              padding: "11px 14px",
-              cursor: "pointer",
-              fontWeight: 700,
-              whiteSpace: "nowrap",
-            }}
-          >
-            Export
+            <div
+              style={{
+                color: "#ffd08a",
+                fontSize: 12,
+                textTransform: "uppercase",
+                marginBottom: 8,
+                letterSpacing: 0.8,
+                fontWeight: 900,
+              }}
+            >
+              Manual Entry
+            </div>
+            <div style={{ fontSize: 22, fontWeight: 900, lineHeight: 1.15 }}>
+              {canOpenManualEntry ? "Transaction" : "No Account"}
+            </div>
           </button>
         </div>
       </div>
@@ -980,55 +949,48 @@ export function TransactionsView({
           style={{
             display: "flex",
             justifyContent: "space-between",
-            alignItems: "flex-start",
-            gap: 18,
+            alignItems: "center",
             marginBottom: 22,
-            flexWrap: "wrap",
           }}
         >
-          <div>
-            <div style={{ color: "white", fontSize: 22, fontWeight: 700 }}>
-              {filters.review === "Needs Review"
-                ? "Review Queue Ledger"
-                : selectedAccount
-                  ? `${selectedAccount} Transactions`
-                  : "Live Transaction Feed"}
-            </div>
-            <div style={{ color: "#8ea8ca", fontSize: 13, marginTop: 8 }}>
-              {filters.review === "Needs Review"
-                ? "Focus the items that still need confirmation, then return to the full ledger."
-                : "Search stays upfront; advanced filters are only there when you truly need them."}
-            </div>
+          <div style={{ color: "white", fontSize: 22, fontWeight: 700 }}>
+            {selectedAccount ? `${selectedAccount} Transactions` : "Live Transaction Feed"}
           </div>
-          {filters.search ||
-          filters.category !== "All" ||
-          filters.account !== (selectedAccount || "All") ||
-          filters.direction !== "All" ||
-          filters.source !== "All" ||
-          filters.review !== "All" ? (
+          <div style={{ display: "flex", gap: 12 }}>
             <button
-              type="button"
-              onClick={clearFilters}
+              onClick={() => setShowFilters((current) => !current)}
               style={{
-                background: "rgba(0,136,255,.10)",
-                border: "1px solid rgba(0,216,255,.20)",
-                borderRadius: 8,
+                background: "rgba(0,136,255,.12)",
+                border: "1px solid rgba(0,136,255,.28)",
                 color: "#d7ebff",
+                borderRadius: 8,
                 padding: "10px 14px",
                 cursor: "pointer",
-                fontWeight: 800,
               }}
             >
-              Clear current view
+              {showFilters ? "Hide Filters" : "Filter"}
             </button>
-          ) : null}
+            <button
+              onClick={exportFilteredTransactions}
+              style={{
+                background: "rgba(0,136,255,.12)",
+                border: "1px solid rgba(0,136,255,.28)",
+                color: "#d7ebff",
+                borderRadius: 8,
+                padding: "10px 14px",
+                cursor: "pointer",
+              }}
+            >
+              Export
+            </button>
+          </div>
         </div>
 
         {showFilters ? (
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(5, minmax(0, 1fr)) auto",
+              gridTemplateColumns: "1.4fr 1fr 1fr 1fr 1fr 1fr auto",
               gap: 10,
               marginBottom: 18,
               padding: 16,
@@ -1038,6 +1000,34 @@ export function TransactionsView({
               alignItems: "end",
             }}
           >
+            <label style={{ display: "grid", gap: 7 }}>
+              <span
+                style={{
+                  color: "#8fb1d9",
+                  fontSize: 11,
+                  textTransform: "uppercase",
+                  letterSpacing: 0.8,
+                  fontWeight: 900,
+                }}
+              >
+                Search
+              </span>
+              <input
+                type="text"
+                value={filters.search}
+                onChange={(event) => updateFilters("search", event.target.value)}
+                placeholder="Merchant, category, account..."
+                style={{
+                  color: "#eaf3ff",
+                  background: "rgba(0,136,255,.08)",
+                  border: "1px solid rgba(0,216,255,.18)",
+                  borderRadius: 8,
+                  padding: "10px 11px",
+                  outline: "none",
+                  fontWeight: 700,
+                }}
+              />
+            </label>
             <label style={{ display: "grid", gap: 7 }}>
               <span
                 style={{
@@ -1247,7 +1237,7 @@ export function TransactionsView({
         <div style={{ maxHeight: "62vh", overflowY: "auto", paddingRight: 4 }}>
           {visibleTransactions.length > 0 ? (
             filteredTransactions.map((tx, index) => {
-              const rowKey = buildTransactionRowKey(tx);
+              const rowKey = `${tx.id || tx.date}-${tx.merchant}-${tx.account}-${tx.amount}`;
               const isSelectedRow = selectedTransactionKey === rowKey;
               const defaultRowBackground = tx.needsReview
                 ? "rgba(255,159,28,.06)"
