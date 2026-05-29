@@ -8,7 +8,6 @@ import { AccountRemoveConfirmModal } from "./AccountRemoveConfirmModal.jsx";
 import { HouseholdProfilesControl } from "./Common.jsx";
 
 const TRANSACTION_FEED_GRID_COLUMNS = "140px 1.4fr minmax(270px,1.1fr) minmax(180px,0.9fr) 160px";
-const REVIEW_QUEUE_PREVIEW_COUNT = 4;
 
 function formatManualDate(value) {
   if (!value) return "";
@@ -297,17 +296,11 @@ export function TransactionsView({
       return true;
     });
   }, [filters, selectedAccount, visibleTransactions]);
-  const monthlySpend = currentMonthSnapshot?.monthlySpend || 0;
-  const cashInflow = filteredTransactions
-    .filter((tx) => tx.amount > 0)
-    .reduce((sum, tx) => sum + tx.amount, 0);
   const reviewScopeTransactions = selectedAccount
     ? visibleTransactions.filter((tx) => tx.account === selectedAccount)
     : visibleTransactions;
-  const reviewQueueTransactions = reviewScopeTransactions.filter((tx) => tx.needsReview);
-  const reviewQueueCount = reviewQueueTransactions.length;
+  const reviewQueueCount = reviewScopeTransactions.filter((tx) => tx.needsReview).length;
   const reviewedTransactionCount = Math.max(reviewScopeTransactions.length - reviewQueueCount, 0);
-  const reviewQueuePreview = reviewQueueTransactions.slice(0, REVIEW_QUEUE_PREVIEW_COUNT);
   const selectedCategory = manualForm.category;
   const accountProfile = buildAccountProfile(selectedAccountRecord, accounts);
   const isSelectedNonTransactionalAccount = selectedAccountRecord
@@ -343,11 +336,6 @@ export function TransactionsView({
 
   const setReviewPreset = (review) => {
     setFilters((current) => ({ ...current, review }));
-  };
-
-  const focusReviewTransaction = (transaction) => {
-    setReviewPreset("Needs Review");
-    setSelectedTransactionKey(buildTransactionRowKey(transaction));
   };
 
   const submitManualTransaction = (event) => {
@@ -430,87 +418,6 @@ export function TransactionsView({
           </button>
         </div>
       </header>
-
-      <div
-        style={{
-          ...styles.panel,
-          padding: 24,
-          marginBottom: 18,
-          position: "relative",
-          overflow: "hidden",
-        }}
-      >
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            background:
-              "radial-gradient(circle at top right, rgba(0,216,255,.14), transparent 35%)",
-          }}
-        />
-        <div
-          style={{
-            position: "relative",
-            display: "grid",
-            gridTemplateColumns: "repeat(5,minmax(0,1fr))",
-            gap: 14,
-          }}
-        >
-          {plaidIntegration?.error ? (
-            <div
-              style={{
-                gridColumn: "1 / -1",
-                color: "#ff9a76",
-                border: "1px solid rgba(255,154,118,.2)",
-                background: "rgba(60,16,7,.26)",
-                borderRadius: 12,
-                padding: "12px 14px",
-                marginBottom: 2,
-              }}
-            >
-              {plaidIntegration.error}
-            </div>
-          ) : null}
-          {[
-            ["Connected Accounts", String(accounts.length)],
-            ["Monthly Spend", money(monthlySpend)],
-            ["Visible Transactions", String(filteredTransactions.length)],
-            ["Needs Review", String(reviewQueueCount)],
-            ["Reviewed", String(reviewedTransactionCount)],
-            [
-              plaidIntegration?.lastSyncAt ? "Last Plaid Sync" : "Cash Inflow",
-              plaidIntegration?.lastSyncAt
-                ? new Date(plaidIntegration.lastSyncAt).toLocaleDateString()
-                : money(cashInflow),
-            ],
-          ].map((item) => (
-            <div
-              key={item[0]}
-              style={{
-                border: "1px solid rgba(0,136,255,.22)",
-                borderRadius: 14,
-                background: "rgba(3,17,32,.72)",
-                padding: "16px 14px",
-              }}
-            >
-              <div
-                style={{
-                  color: "#8fb1d9",
-                  fontSize: 12,
-                  textTransform: "uppercase",
-                  marginBottom: 8,
-                  letterSpacing: 0.8,
-                }}
-              >
-                {item[0]}
-              </div>
-              <div style={{ color: "white", fontSize: 23, fontWeight: 800, lineHeight: 1.15 }}>
-                {item[1]}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
 
       <div
         style={{
@@ -646,105 +553,6 @@ export function TransactionsView({
             Export
           </button>
         </div>
-      </div>
-
-      <div
-        style={{
-          ...styles.panel,
-          padding: 20,
-          marginBottom: 18,
-          border: "1px solid rgba(255,159,28,.18)",
-          background: "linear-gradient(180deg, rgba(20,16,8,.22), rgba(3,17,32,.82))",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            gap: 18,
-            alignItems: "flex-start",
-            flexWrap: "wrap",
-          }}
-        >
-          <div>
-            <div
-              style={{
-                color: "#ffd08a",
-                fontSize: 12,
-                textTransform: "uppercase",
-                letterSpacing: 0.9,
-                fontWeight: 900,
-              }}
-            >
-              Review Queue
-            </div>
-            <div style={{ color: "white", fontSize: 24, fontWeight: 900, marginTop: 8 }}>
-              {reviewQueueCount > 0
-                ? `${reviewQueueCount} transactions need a closer look`
-                : "All visible transactions are reviewed"}
-            </div>
-            <div style={{ color: "#c8d7ea", lineHeight: 1.6, marginTop: 10, maxWidth: 720 }}>
-              Keep low-confidence categories and AI guesses in one clear queue, then use the full
-              ledger only when you need deeper filtering.
-            </div>
-          </div>
-          {reviewQueueCount > 0 ? (
-            <button
-              type="button"
-              onClick={() => setReviewPreset("Needs Review")}
-              style={{
-                background: "rgba(255,159,28,.12)",
-                border: "1px solid rgba(255,159,28,.28)",
-                color: "#fff2db",
-                borderRadius: 10,
-                padding: "11px 14px",
-                cursor: "pointer",
-                fontWeight: 800,
-              }}
-            >
-              Open review mode
-            </button>
-          ) : null}
-        </div>
-
-        {reviewQueuePreview.length > 0 ? (
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-              gap: 12,
-              marginTop: 18,
-            }}
-          >
-            {reviewQueuePreview.map((transaction) => (
-              <button
-                key={buildTransactionRowKey(transaction)}
-                type="button"
-                onClick={() => focusReviewTransaction(transaction)}
-                style={{
-                  textAlign: "left",
-                  border: "1px solid rgba(255,159,28,.18)",
-                  borderRadius: 14,
-                  background: "rgba(255,159,28,.06)",
-                  padding: "14px 14px 16px",
-                  cursor: "pointer",
-                  color: "#eef6ff",
-                }}
-              >
-                <div style={{ fontWeight: 800, fontSize: 15 }}>{transaction.merchant}</div>
-                <div style={{ color: "#8fb1d9", fontSize: 12, marginTop: 6 }}>
-                  {transaction.date} • {accountDisplayNames[transaction.account] || transaction.account}
-                </div>
-                <div style={{ color: "#ffcf82", fontSize: 12, marginTop: 10, fontWeight: 700 }}>
-                  {formatCategorySourceLabel(transaction)}
-                </div>
-                <div style={{ color: "#c8d7ea", fontSize: 12, marginTop: 8 }}>
-                  Current category: {transaction.category || "Other"}
-                </div>
-              </button>
-            ))}
-          </div>
-        ) : null}
       </div>
 
       {showManualEntry ? (
