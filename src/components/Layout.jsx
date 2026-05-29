@@ -1,8 +1,26 @@
-import { navMain, navTools } from "../data/constants.jsx";
+import { APP_TABS, navMain, navTools } from "../data/constants.jsx";
 import { styles } from "../styles.js";
 import { HouseholdProfilesControl, SideItem } from "./Common.jsx";
 
 export function AppSidebar({ activeTab, setActiveTab, onBackHome, sessionControls = null }) {
+  const actionItems = [
+    {
+      label: "Review transactions",
+      note: "Catch uncategorized and recent activity.",
+      tab: APP_TABS.TRANSACTIONS,
+    },
+    {
+      label: "Tune the budget",
+      note: "Adjust categories and monthly pressure.",
+      tab: APP_TABS.BUDGET_COMMAND_CENTER,
+    },
+    {
+      label: "Update accounts",
+      note: "Refresh balances and add missing assets.",
+      tab: APP_TABS.ADD_ACCOUNTS,
+    },
+  ];
+
   return (
     <aside style={styles.sidebar}>
       <div
@@ -203,27 +221,40 @@ export function AppSidebar({ activeTab, setActiveTab, onBackHome, sessionControl
       ) : null}
 
       <div style={{ ...styles.panel, marginTop: 48, padding: 20 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div
-            style={{ color: "#00d8ff", fontSize: 34, textShadow: "0 0 12px rgba(0,216,255,.9)" }}
-          >
-            ◇
-          </div>
-          <div style={{ fontWeight: 800 }}>Forward Freedom PRIME</div>
+        <div style={{ color: "#8feaff", fontSize: 12, fontWeight: 900, letterSpacing: 1.1 }}>
+          ACTION CENTER
         </div>
-        <div style={{ color: "#c8d7ea", fontSize: 12, marginTop: 14 }}>All systems operational</div>
-        <button
-          style={{
-            marginTop: 20,
-            color: "#d9ecff",
-            background: "rgba(0,108,255,.08)",
-            border: "1px solid rgba(86,157,255,.28)",
-            borderRadius: 6,
-            padding: "10px 18px",
-          }}
-        >
-          View Status
-        </button>
+        <div style={{ color: "white", fontSize: 18, fontWeight: 800, marginTop: 8 }}>
+          Jump back into the highest-value work.
+        </div>
+        <div style={{ color: "#c8d7ea", fontSize: 12, lineHeight: 1.6, marginTop: 10 }}>
+          Keep the command center feel, but focus this space on useful next actions instead of status
+          chrome.
+        </div>
+        <div style={{ display: "grid", gap: 10, marginTop: 18 }}>
+          {actionItems.map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              onClick={() => setActiveTab(item.tab)}
+              style={{
+                textAlign: "left",
+                padding: "12px 14px",
+                borderRadius: 10,
+                border: "1px solid rgba(0,216,255,.16)",
+                background:
+                  activeTab === item.tab
+                    ? "linear-gradient(90deg, rgba(0,119,255,.2), rgba(0,216,255,.16))"
+                    : "rgba(0,108,255,.06)",
+                color: "#eaf3ff",
+                cursor: "pointer",
+              }}
+            >
+              <div style={{ fontWeight: 800, fontSize: 13 }}>{item.label}</div>
+              <div style={{ color: "#9fb0c9", fontSize: 11, marginTop: 4 }}>{item.note}</div>
+            </button>
+          ))}
+        </div>
       </div>
     </aside>
   );

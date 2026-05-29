@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { usePlaidLink } from "react-plaid-link";
-import { APP_TABS, budgetMonths } from "./data/constants.jsx";
+import { APP_TABS, budgetMonths, navMain, navTools } from "./data/constants.jsx";
 import { styles } from "./styles.js";
 import { getBudgetPeriodAtOffset, getCurrentTimestamp } from "./utils/date.js";
 import { money, parseMoney } from "./utils/format.js";
@@ -74,6 +74,7 @@ const LIQUID_ACCOUNT_TYPES = new Set(["Checking", "Savings", "Manual Cash"]);
 const CRYPTO_PRICE_SOURCE = "CoinGecko";
 const THIRTY_DAY_WINDOW = 30;
 const SNAPSHOT_RETENTION_DAYS = 400;
+const SUPPORTED_APP_TABS = new Set([...navMain, ...navTools].map((item) => item.label));
 const EMPTY_USER_STATE = Object.freeze({
   id: null,
   name: "",
@@ -440,6 +441,12 @@ function ForwardFreedomDashboard({
   const setActiveTab = (valueOrUpdater) => setActiveUserField("activeTab", valueOrUpdater);
   const setActiveRange = (valueOrUpdater) => setActiveUserField("activeRange", valueOrUpdater);
   const syncedAccounts = syncDerivedAccountValues(accounts);
+
+  useEffect(() => {
+    if (!SUPPORTED_APP_TABS.has(activeTab)) {
+      setActiveTab(APP_TABS.DASHBOARD);
+    }
+  }, [activeTab, setActiveTab]);
   const categorizedTransactions = categorizeTransactions(transactions, {
     budgetRows,
     merchantCategoryRules,
