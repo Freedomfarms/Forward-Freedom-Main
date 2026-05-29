@@ -41,7 +41,7 @@ function buildInputStyle() {
   };
 }
 
-export function AuthScreen() {
+export function AuthScreen({ initialMode = "login", initialForm = null, onBackHome = null }) {
   const {
     error,
     notice,
@@ -53,10 +53,10 @@ export function AuthScreen() {
     signInWithGoogle,
     signUpWithEmail,
   } = useAuth();
-  const [mode, setMode] = useState("login");
+  const [mode, setMode] = useState(initialMode);
   const [form, setForm] = useState({
-    fullName: "",
-    email: "",
+    fullName: initialForm?.fullName || "",
+    email: initialForm?.email || "",
     password: "",
   });
   const [agreedToLegal, setAgreedToLegal] = useState(false);
@@ -224,6 +224,23 @@ export function AuthScreen() {
             boxShadow: "0 0 45px rgba(0,100,220,.16)",
           }}
         >
+          {typeof onBackHome === "function" ? (
+            <button
+              type="button"
+              onClick={onBackHome}
+              style={{
+                background: "transparent",
+                border: "none",
+                color: "#8feaff",
+                cursor: "pointer",
+                padding: 0,
+                marginBottom: 18,
+                fontWeight: 800,
+              }}
+            >
+              ← Back to Home
+            </button>
+          ) : null}
           <div style={{ display: "flex", gap: 10, marginBottom: 24 }}>
             {[
               ["login", "Sign In"],

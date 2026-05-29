@@ -2,7 +2,7 @@ import { navMain, navTools } from "../data/constants.jsx";
 import { styles } from "../styles.js";
 import { HouseholdProfilesControl, SideItem } from "./Common.jsx";
 
-export function AppSidebar({ activeTab, setActiveTab, onBackHome }) {
+export function AppSidebar({ activeTab, setActiveTab, onBackHome, sessionControls = null }) {
   return (
     <aside style={styles.sidebar}>
       <div
@@ -121,6 +121,86 @@ export function AppSidebar({ activeTab, setActiveTab, onBackHome }) {
         <span style={{ fontSize: 18 }}>⌂</span>
         Back to Home
       </button>
+
+      {sessionControls ? (
+        <div style={{ ...styles.panel, marginBottom: 18, padding: 16 }}>
+          {sessionControls.workspaceStatus ? (
+            <div style={{ color: "#8feaff", fontSize: 12, lineHeight: 1.5 }}>
+              {sessionControls.workspaceStatus}
+            </div>
+          ) : null}
+          {!sessionControls.isEmailVerified && typeof sessionControls.onResendVerification === "function" ? (
+            <button
+              type="button"
+              disabled={sessionControls.isBusy}
+              onClick={sessionControls.onResendVerification}
+              style={{
+                marginTop: 10,
+                width: "100%",
+                borderRadius: 8,
+                border: "1px solid rgba(0,216,255,.24)",
+                background: "rgba(0,136,255,.08)",
+                color: "#eef6ff",
+                padding: "10px 12px",
+                cursor: sessionControls.isBusy ? "wait" : "pointer",
+                fontWeight: 700,
+              }}
+            >
+              {sessionControls.isBusy ? "Sending email..." : "Resend Verification Email"}
+            </button>
+          ) : null}
+          {sessionControls.notice ? (
+            <div
+              style={{
+                marginTop: 10,
+                color: "#dff7ff",
+                background: "rgba(0,136,255,.10)",
+                border: "1px solid rgba(0,216,255,.22)",
+                borderRadius: 8,
+                padding: "10px 11px",
+                fontSize: 12,
+                lineHeight: 1.45,
+              }}
+            >
+              {sessionControls.notice}
+            </div>
+          ) : null}
+          {sessionControls.error ? (
+            <div
+              style={{
+                marginTop: 10,
+                color: "#ffd9df",
+                background: "rgba(255,36,77,.08)",
+                border: "1px solid rgba(255,93,122,.22)",
+                borderRadius: 8,
+                padding: "10px 11px",
+                fontSize: 12,
+                lineHeight: 1.45,
+              }}
+            >
+              {sessionControls.error}
+            </div>
+          ) : null}
+          <button
+            type="button"
+            disabled={sessionControls.isBusy}
+            onClick={sessionControls.onSignOut}
+            style={{
+              width: "100%",
+              marginTop: 10,
+              borderRadius: 8,
+              border: "1px solid rgba(0,216,255,.24)",
+              background: "rgba(0,136,255,.08)",
+              color: "#eef6ff",
+              padding: "10px 12px",
+              cursor: sessionControls.isBusy ? "wait" : "pointer",
+              fontWeight: 800,
+            }}
+          >
+            {sessionControls.isBusy ? "Signing out..." : "Sign Out"}
+          </button>
+        </div>
+      ) : null}
 
       <div style={{ ...styles.panel, marginTop: 48, padding: 20 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
