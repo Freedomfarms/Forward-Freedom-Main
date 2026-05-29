@@ -1,5 +1,5 @@
 import { useState } from "react";
-import forwardFreedomLogo from "../assets/forward-freedom-logo-main.jpeg";
+import forwardFreedomLogo from "../assets/forward-freedom-logo.svg";
 import { LEGAL_CONTENT } from "../content/legalContent.js";
 import { LegalModal } from "./LegalDocuments.jsx";
 
@@ -18,6 +18,9 @@ function buildPrimaryButtonStyle(isSecondary = false) {
     boxShadow: isSecondary ? "none" : "0 0 24px rgba(0,136,255,.32)",
   };
 }
+
+const HERO_LOGO_MASK =
+  "radial-gradient(circle at center, rgba(0,0,0,1) 0%, rgba(0,0,0,1) 52%, rgba(0,0,0,.96) 66%, rgba(0,0,0,.72) 78%, rgba(0,0,0,.28) 86%, rgba(0,0,0,0) 94%)";
 
 export function LandingPage({ enterApp }) {
   const [activeDocument, setActiveDocument] = useState(null);
@@ -96,25 +99,21 @@ export function LandingPage({ enterApp }) {
         <nav
           style={{
             display: "grid",
-            gridTemplateColumns: "minmax(180px, 228px) 1fr auto",
+            gridTemplateColumns: "minmax(220px, 280px) 1fr auto",
             alignItems: "center",
-            marginBottom: 84,
+            marginBottom: 108,
             gap: 24,
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", minHeight: 88 }}>
+          <div style={{ display: "flex", alignItems: "center", minHeight: 118 }}>
             <img
               src={forwardFreedomLogo}
               alt="Forward Freedom Financial logo"
               style={{
-                width: 96,
-                height: 96,
+                width: 110,
+                maxWidth: "100%",
                 display: "block",
-                objectFit: "cover",
-                objectPosition: "center",
-                borderRadius: 24,
-                border: "1px solid rgba(125,220,255,.32)",
-                boxShadow: "0 18px 36px rgba(0, 0, 0, 0.34), 0 0 30px rgba(0, 136, 255, 0.12)",
+                objectFit: "contain",
               }}
             />
           </div>
@@ -162,10 +161,10 @@ export function LandingPage({ enterApp }) {
           id="home"
           style={{
             display: "grid",
-            gridTemplateColumns: "minmax(0, 1fr) minmax(360px, 500px)",
-            gap: 40,
+            gridTemplateColumns: "minmax(0, 1fr) minmax(400px, 560px)",
+            gap: 48,
             alignItems: "center",
-            marginBottom: 40,
+            marginBottom: 52,
           }}
         >
           <div style={{ maxWidth: 700 }}>
@@ -202,8 +201,9 @@ export function LandingPage({ enterApp }) {
                 margin: "18px 0 30px",
               }}
             >
-              Build a client workspace, return to your saved dashboard, and review the legal terms
-              that govern account access, planning data, and connected financial tools.
+              Forward Freedom Financial is a financial command center that gives you complete
+              visibility and control of your money. Track, plan, and execute with confidence using
+              real-time data, forecasting, and powerful financial insights.
             </p>
 
             <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
@@ -234,15 +234,15 @@ export function LandingPage({ enterApp }) {
               justifyContent: "center",
               justifySelf: "center",
               width: "100%",
-              minHeight: 460,
-              padding: "8px 0",
+              minHeight: 560,
+              padding: "18px 0",
             }}
           >
             <div
               style={{
                 position: "relative",
                 width: "100%",
-                maxWidth: 520,
+                maxWidth: 640,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -253,59 +253,51 @@ export function LandingPage({ enterApp }) {
                 aria-hidden="true"
                 style={{
                   position: "absolute",
-                  inset: "4%",
+                  inset: "12% 6%",
                   background:
-                    "radial-gradient(circle at 50% 42%, rgba(7,166,255,.3) 0%, rgba(5,96,214,.18) 32%, rgba(2,7,17,0) 74%)",
-                  filter: "blur(34px)",
-                  opacity: 0.92,
-                  transform: "scale(1.02)",
+                    "radial-gradient(circle at 50% 46%, rgba(7,166,255,.26) 0%, rgba(5,96,214,.16) 28%, rgba(2,7,17,0) 72%)",
+                  filter: "blur(28px)",
+                  opacity: 0.95,
+                  transform: "scale(1.04)",
                 }}
               />
               <div
                 aria-hidden="true"
                 style={{
                   position: "absolute",
-                  inset: "11%",
+                  inset: "6%",
                   backgroundImage: `url(${forwardFreedomLogo})`,
                   backgroundPosition: "center",
                   backgroundRepeat: "no-repeat",
-                  backgroundSize: "cover",
-                  opacity: 0.3,
-                  filter: "blur(44px) saturate(1.1)",
-                  transform: "scale(1.06)",
-                  borderRadius: 36,
+                  backgroundSize: "contain",
+                  opacity: 0.22,
+                  filter: "blur(34px) saturate(1.15)",
+                  transform: "scale(1.02)",
                 }}
               />
-              <div
+              <img
+                src={forwardFreedomLogo}
+                alt="Forward Freedom Financial logo"
                 style={{
+                  width: "min(100%, 620px)",
+                  maxWidth: "100%",
                   position: "relative",
                   zIndex: 1,
-                  width: "100%",
-                  padding: 20,
-                  borderRadius: 36,
-                  border: "1px solid rgba(125,220,255,.16)",
-                  background:
-                    "linear-gradient(180deg, rgba(8, 20, 38, 0.94), rgba(5, 15, 29, 0.84))",
-                  boxShadow:
-                    "0 28px 70px rgba(0, 0, 0, 0.36), inset 0 1px 0 rgba(255, 255, 255, 0.03)",
+                  display: "block",
+                  margin: "0 auto",
+                  objectFit: "contain",
+                  objectPosition: "center",
+                  filter: "drop-shadow(0 0 10px rgba(0,136,255,.08))",
+                  WebkitMaskImage: HERO_LOGO_MASK,
+                  maskImage: HERO_LOGO_MASK,
+                  WebkitMaskRepeat: "no-repeat",
+                  maskRepeat: "no-repeat",
+                  WebkitMaskPosition: "center",
+                  maskPosition: "center",
+                  WebkitMaskSize: "100% 100%",
+                  maskSize: "100% 100%",
                 }}
-              >
-                <img
-                  src={forwardFreedomLogo}
-                  alt="Forward Freedom Financial logo"
-                  style={{
-                    width: "100%",
-                    maxWidth: "100%",
-                    aspectRatio: "1 / 1",
-                    display: "block",
-                    margin: "0 auto",
-                    objectFit: "cover",
-                    objectPosition: "center",
-                    borderRadius: 28,
-                    filter: "saturate(1.03) contrast(1.02)",
-                  }}
-                />
-              </div>
+              />
             </div>
           </div>
         </section>
@@ -647,17 +639,6 @@ export function LandingPage({ enterApp }) {
           </div>
           <div style={{ color: "white", fontSize: 28, fontWeight: 900, marginTop: 10 }}>
             Support, onboarding, and legal review
-          </div>
-          <div style={{ color: "#c6d2e1", lineHeight: 1.7, marginTop: 12, maxWidth: 760 }}>
-            For support, onboarding assistance, or policy questions, please contact Forward Freedom
-            Financial at{" "}
-            <a
-              href="mailto:forwardfreedomfinancial@gmail.com"
-              style={{ color: "#8feaff", textDecoration: "none", fontWeight: 700 }}
-            >
-              forwardfreedomfinancial@gmail.com
-            </a>
-            .
           </div>
           <div
             style={{
