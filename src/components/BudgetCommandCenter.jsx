@@ -13,6 +13,61 @@ function buildHeatBarWidth(value, maxValue) {
   return `${Math.max(12, (safeValue / safeMax) * 100)}%`;
 }
 
+const BUDGET_SORT_OPTIONS = [
+  {
+    value: "manual",
+    label: "Manual Order",
+    description: "Keep the category order you set by dragging rows.",
+  },
+  {
+    value: "budget_desc",
+    label: "Largest Budget",
+    description: "Highest assigned budget first.",
+  },
+  {
+    value: "budget_asc",
+    label: "Smallest Budget",
+    description: "Lowest assigned budget first.",
+  },
+  {
+    value: "spent_desc",
+    label: "Most Spent",
+    description: "Highest spending activity first.",
+  },
+  {
+    value: "remaining_asc",
+    label: "Most Over Budget",
+    description: "Most overspent categories first.",
+  },
+  {
+    value: "remaining_desc",
+    label: "Most Remaining",
+    description: "Most dollars still available first.",
+  },
+];
+
+function sortBudgetRows(rows, sortMode) {
+  if (!Array.isArray(rows) || sortMode === "manual") return rows;
+
+  const comparators = {
+    budget_desc: (left, right) => (Number(right.budget) || 0) - (Number(left.budget) || 0),
+    budget_asc: (left, right) => (Number(left.budget) || 0) - (Number(right.budget) || 0),
+    spent_desc: (left, right) => (Number(right.spent) || 0) - (Number(left.spent) || 0),
+    remaining_asc: (left, right) => (Number(left.remaining) || 0) - (Number(right.remaining) || 0),
+    remaining_desc: (left, right) => (Number(right.remaining) || 0) - (Number(left.remaining) || 0),
+  };
+  const compare = comparators[sortMode];
+  if (!compare) return rows;
+
+  return rows
+    .map((row, index) => ({ row, index }))
+    .sort((left, right) => {
+      const sorted = compare(left.row, right.row);
+      return sorted !== 0 ? sorted : left.index - right.index;
+    })
+    .map((entry) => entry.row);
+}
+
 function moveBudgetRowById(rows, draggedId, targetId) {
   if (!Array.isArray(rows) || !draggedId || !targetId || draggedId === targetId) return rows;
 
@@ -91,6 +146,10 @@ export function BudgetCommandCenter({
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [activeBudgetRowId, setActiveBudgetRowId] = useState(null);
   const [pointerDragBudgetRowId, setPointerDragBudgetRowId] = useState(null);
+  const [isSortModalOpen, setIsSortModalOpen] = useState(false);
+  const [activeSortMode, setActiveSortMode] = useState("manual");
+  const [pendingSortMode, setPendingSortMode] = useState("manual");
+  const [isBudgetWorkflowVisible, setIsBudgetWorkflowVisible] = useState(true);
   const [activeBudgetDate, setActiveBudgetDate] = useState(() => ({
     monthIndex: currentBudgetPeriod.monthIndex,
     year: currentPlanYear,
@@ -132,6 +191,7 @@ export function BudgetCommandCenter({
     }
   );
   const budgetRowsWithSpend = activeBudgetSnapshot.rows;
+  const sortedBudgetRowsWithSpend = sortBudgetRows(budgetRowsWithSpend, activeSortMode);
   const budgetTotal = activeBudgetSnapshot.monthlyBudget;
   const planningIncomeStreams = getIncomeStreamsForYear(activeBudgetDate.year);
   const monthIncomeTotal = planningIncomeStreams
@@ -310,6 +370,16 @@ export function BudgetCommandCenter({
     };
   }, [activateBudgetRow, pointerDragBudgetRowId, reorderBudgetRows]);
 
+  const openSortModal = () => {
+    setPendingSortMode(activeSortMode);
+    setIsSortModalOpen(true);
+  };
+
+  const applySortSelection = () => {
+    setActiveSortMode(pendingSortMode);
+    setIsSortModalOpen(false);
+  };
+
   return (
     <>
       <header style={{ ...styles.pageHeader, marginBottom: 20 }}>
@@ -326,7 +396,7 @@ export function BudgetCommandCenter({
         style={{
           ...styles.panel,
           minHeight: 165,
-          padding: "26px 40px",
+          padding: "26px 40px 86px",
           borderRadius: 32,
           display: "grid",
           gridTemplateColumns: "1fr minmax(280px, 340px) 1fr",
@@ -651,99 +721,148 @@ export function BudgetCommandCenter({
             </button>
           </div>
         </div>
-      </section>
-
-      <section
-        style={{
-          ...styles.panel,
-          padding: "22px 24px",
-          marginBottom: 30,
-          borderRadius: 24,
-          display: "grid",
-          gap: 18,
-        }}
-      >
         <div
           style={{
-            border: "1px solid rgba(0,136,255,.16)",
-            borderRadius: 18,
-            background: "rgba(0,22,48,.32)",
-            padding: "16px 18px 18px",
+            position: "absolute",
+            right: 24,
+            bottom: 16,
+            zIndex: 2,
+            display: "flex",
+            gap: 10,
+          }}
+        >
+          <button
+            type="button"
+            onClick={openSortModal}
+            style={{
+              border: "1px solid rgba(0,216,255,.26)",
+              borderRadius: 10,
+              background: "rgba(0,136,255,.12)",
+              color: "#dff7ff",
+              padding: "10px 16px",
+              fontSize: 13,
+              fontWeight: 800,
+              letterSpacing: 0.4,
+              cursor: "pointer",
+            }}
+          >
+            Sort
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsBudgetWorkflowVisible((current) => !current)}
+            style={{
+              border: "1px solid rgba(0,216,255,.26)",
+              borderRadius: 10,
+              background: isBudgetWorkflowVisible
+                ? "rgba(0,136,255,.16)"
+                : "rgba(4,22,43,.75)",
+              color: "#dff7ff",
+              padding: "10px 16px",
+              fontSize: 13,
+              fontWeight: 800,
+              letterSpacing: 0.4,
+              cursor: "pointer",
+            }}
+          >
+            Budget Workflow
+          </button>
+        </div>
+      </section>
+
+      {isBudgetWorkflowVisible ? (
+        <section
+          style={{
+            ...styles.panel,
+            padding: "22px 24px",
+            marginBottom: 30,
+            borderRadius: 24,
+            display: "grid",
+            gap: 18,
           }}
         >
           <div
             style={{
-              color: "#8feaff",
-              fontSize: 12,
-              fontWeight: 900,
-              textTransform: "uppercase",
-              letterSpacing: 0.9,
+              border: "1px solid rgba(0,136,255,.16)",
+              borderRadius: 18,
+              background: "rgba(0,22,48,.32)",
+              padding: "16px 18px 18px",
             }}
           >
-            Budget Workflow
-          </div>
-          <div style={{ color: "white", fontSize: 22, fontWeight: 800, marginTop: 8 }}>
-            {attentionRows.length > 0
-              ? "Categories that need a decision next"
-              : "This month is funded and clean"}
-          </div>
-          <div style={{ color: "#9fb0c9", lineHeight: 1.6, marginTop: 8 }}>
-            Use this row as the budgeting workflow entry point: assign what is left, fix overspending,
-            and keep available dollars visible by category.
-          </div>
-          {attentionRows.length > 0 ? (
             <div
               style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-                gap: 12,
-                marginTop: 16,
+                color: "#8feaff",
+                fontSize: 12,
+                fontWeight: 900,
+                textTransform: "uppercase",
+                letterSpacing: 0.9,
               }}
             >
-              {attentionRows.map((row) => {
-                const status = buildBudgetWorkflowStatus(row);
-                return (
-                  <button
-                    key={row.id}
-                    type="button"
-                    onClick={() => activateBudgetRow(row.id)}
-                    style={{
-                      textAlign: "left",
-                      border: "1px solid rgba(0,136,255,.18)",
-                      borderRadius: 14,
-                      background: "rgba(3,17,32,.62)",
-                      padding: "14px 14px 16px",
-                      cursor: "pointer",
-                      color: "#eef6ff",
-                    }}
-                  >
-                    <div style={{ fontWeight: 800 }}>{row.name}</div>
-                    <div style={{ color: "#9fb0c9", fontSize: 12, marginTop: 8 }}>
-                      Activity {money(row.spent)} • Available {money(row.remaining)}
-                    </div>
-                    <div
+              Budget Workflow
+            </div>
+            <div style={{ color: "white", fontSize: 22, fontWeight: 800, marginTop: 8 }}>
+              {attentionRows.length > 0
+                ? "Categories that need a decision next"
+                : "This month is funded and clean"}
+            </div>
+            <div style={{ color: "#9fb0c9", lineHeight: 1.6, marginTop: 8 }}>
+              Use this row as the budgeting workflow entry point: assign what is left, fix
+              overspending, and keep available dollars visible by category.
+            </div>
+            {attentionRows.length > 0 ? (
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+                  gap: 12,
+                  marginTop: 16,
+                }}
+              >
+                {attentionRows.map((row) => {
+                  const status = buildBudgetWorkflowStatus(row);
+                  return (
+                    <button
+                      key={row.id}
+                      type="button"
+                      onClick={() => activateBudgetRow(row.id)}
                       style={{
-                        display: "inline-flex",
-                        marginTop: 10,
-                        borderRadius: 999,
-                        padding: "5px 10px",
-                        fontSize: 11,
-                        fontWeight: 900,
-                        letterSpacing: 0.4,
-                        color: status.color,
-                        background: status.background,
-                        border: status.border,
+                        textAlign: "left",
+                        border: "1px solid rgba(0,136,255,.18)",
+                        borderRadius: 14,
+                        background: "rgba(3,17,32,.62)",
+                        padding: "14px 14px 16px",
+                        cursor: "pointer",
+                        color: "#eef6ff",
                       }}
                     >
-                      {status.label}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          ) : null}
-        </div>
-      </section>
+                      <div style={{ fontWeight: 800 }}>{row.name}</div>
+                      <div style={{ color: "#9fb0c9", fontSize: 12, marginTop: 8 }}>
+                        Activity {money(row.spent)} • Available {money(row.remaining)}
+                      </div>
+                      <div
+                        style={{
+                          display: "inline-flex",
+                          marginTop: 10,
+                          borderRadius: 999,
+                          padding: "5px 10px",
+                          fontSize: 11,
+                          fontWeight: 900,
+                          letterSpacing: 0.4,
+                          color: status.color,
+                          background: status.background,
+                          border: status.border,
+                        }}
+                      >
+                        {status.label}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
 
       <section style={{ padding: "0 8px" }}>
         <div
@@ -766,7 +885,7 @@ export function BudgetCommandCenter({
           <div style={{ textAlign: "center", padding: "8px 10px" }}>Assigned</div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {budgetRowsWithSpend.map((item) => (
+          {sortedBudgetRowsWithSpend.map((item) => (
             <div
               key={item.id}
               style={{
@@ -1104,6 +1223,114 @@ export function BudgetCommandCenter({
                 }}
               >
                 Delete Category
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {isSortModalOpen ? (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,5,14,.72)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 9999,
+          }}
+        >
+          <div
+            style={{
+              ...styles.panel,
+              width: 520,
+              maxWidth: "calc(100vw - 32px)",
+              padding: 24,
+              boxShadow: "0 0 55px rgba(0,136,255,.34)",
+            }}
+          >
+            <div
+              style={{
+                color: "#8feaff",
+                fontSize: 12,
+                textTransform: "uppercase",
+                letterSpacing: 1.2,
+                marginBottom: 10,
+                fontWeight: 900,
+              }}
+            >
+              Sort Budget Categories
+            </div>
+            <div style={{ color: "white", fontSize: 24, fontWeight: 900, lineHeight: 1.2 }}>
+              Choose how to sort the category list
+            </div>
+            <div style={{ display: "grid", gap: 10, marginTop: 18 }}>
+              {BUDGET_SORT_OPTIONS.map((option) => (
+                <label
+                  key={option.value}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "auto 1fr",
+                    alignItems: "start",
+                    gap: 12,
+                    border: "1px solid rgba(0,216,255,.20)",
+                    borderRadius: 10,
+                    padding: "12px 14px",
+                    cursor: "pointer",
+                    background:
+                      pendingSortMode === option.value
+                        ? "rgba(0,136,255,.18)"
+                        : "rgba(0,136,255,.06)",
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="budget-sort-mode"
+                    checked={pendingSortMode === option.value}
+                    onChange={() => setPendingSortMode(option.value)}
+                    style={{ marginTop: 3 }}
+                  />
+                  <span>
+                    <span style={{ color: "white", fontWeight: 800, display: "block" }}>
+                      {option.label}
+                    </span>
+                    <span style={{ color: "#9fb0c9", fontSize: 13 }}>{option.description}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: 12, justifyContent: "flex-end", marginTop: 24 }}>
+              <button
+                type="button"
+                onClick={() => setIsSortModalOpen(false)}
+                style={{
+                  background: "rgba(0,136,255,.10)",
+                  border: "1px solid rgba(0,216,255,.28)",
+                  color: "#d7ebff",
+                  borderRadius: 8,
+                  padding: "11px 16px",
+                  cursor: "pointer",
+                  fontWeight: 800,
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={applySortSelection}
+                style={{
+                  background: "linear-gradient(90deg,#0077ff,#00d8ff)",
+                  border: "1px solid rgba(120,220,255,.45)",
+                  color: "white",
+                  borderRadius: 8,
+                  padding: "11px 16px",
+                  cursor: "pointer",
+                  fontWeight: 900,
+                  boxShadow: "0 0 18px rgba(0,136,255,.28)",
+                }}
+              >
+                Done
               </button>
             </div>
           </div>
