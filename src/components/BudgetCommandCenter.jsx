@@ -719,11 +719,10 @@ export function BudgetCommandCenter({
             style={{
               gridColumn: "1 / -1",
               display: "flex",
-              justifyContent: "flex-end",
+              justifyContent: "center",
               alignItems: "center",
               gap: 10,
               alignSelf: "end",
-              paddingRight: 18,
             }}
           >
             <button
