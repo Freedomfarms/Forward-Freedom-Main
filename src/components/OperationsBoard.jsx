@@ -70,6 +70,98 @@ function buildScorecardYLabels(max, min, count = 5) {
   });
 }
 
+const CALENDAR_WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function parseTransactionDateParts(value) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return {
+    year: parsed.getFullYear(),
+    monthIndex: parsed.getMonth(),
+    day: parsed.getDate(),
+  };
+}
+
+function buildCashFlowCalendarModel({
+  year,
+  monthIndex,
+  transactions,
+  plannedIncome,
+  plannedBudget,
+  openingTrueCash,
+  currentDate = new Date(),
+}) {
+  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+  const firstWeekday = new Date(year, monthIndex, 1).getDay();
+  const monthNetPlan = finiteMoney(plannedIncome) - finiteMoney(plannedBudget);
+  const dailyPlanPulse = daysInMonth > 0 ? monthNetPlan / daysInMonth : 0;
+  const dailyActualNet = Array.from({ length: daysInMonth }, () => 0);
+
+  transactions.forEach((tx) => {
+    const parsedDate = parseTransactionDateParts(tx.date);
+    if (!parsedDate) return;
+    if (parsedDate.year !== year || parsedDate.monthIndex !== monthIndex) return;
+    const dayIndex = parsedDate.day - 1;
+    if (dayIndex < 0 || dayIndex >= daysInMonth) return;
+    dailyActualNet[dayIndex] += finiteMoney(tx.amount);
+  });
+
+  let cumulativeActual = 0;
+  let strongestInflow = { day: null, value: 0 };
+  let strongestOutflow = { day: null, value: 0 };
+  let lowestForecast = { day: 1, value: openingTrueCash + monthNetPlan };
+
+  const days = Array.from({ length: daysInMonth }, (_, index) => {
+    const day = index + 1;
+    const actualNet = dailyActualNet[index];
+    cumulativeActual += actualNet;
+    const planToDate = dailyPlanPulse * day;
+    const varianceToPlan = cumulativeActual - planToDate;
+    const runningBalance = openingTrueCash + cumulativeActual;
+    const monthEndForecast = runningBalance + dailyPlanPulse * (daysInMonth - day);
+
+    if (actualNet > strongestInflow.value) strongestInflow = { day, value: actualNet };
+    if (actualNet < strongestOutflow.value) strongestOutflow = { day, value: actualNet };
+    if (monthEndForecast < lowestForecast.value) {
+      lowestForecast = { day, value: monthEndForecast };
+    }
+
+    const isToday =
+      currentDate.getFullYear() === year &&
+      currentDate.getMonth() === monthIndex &&
+      currentDate.getDate() === day;
+
+    return {
+      day,
+      actualNet,
+      cumulativeActual,
+      varianceToPlan,
+      runningBalance,
+      monthEndForecast,
+      isToday,
+    };
+  });
+
+  const paddedDays = [...Array(firstWeekday).fill(null), ...days];
+  while (paddedDays.length % 7 !== 0) paddedDays.push(null);
+
+  const weeks = [];
+  for (let index = 0; index < paddedDays.length; index += 7) {
+    weeks.push(paddedDays.slice(index, index + 7));
+  }
+
+  return {
+    weeks,
+    days,
+    dailyPlanPulse,
+    monthNetPlan,
+    monthNetActual: cumulativeActual,
+    strongestInflow,
+    strongestOutflow,
+    lowestForecast,
+  };
+}
+
 export function OperationsBoard({
   subscriptions,
   transactions,
@@ -86,6 +178,9 @@ export function OperationsBoard({
   setPlanningAnchorForYear,
 }) {
   const [hoveredCommandMonth, setHoveredCommandMonth] = useState(null);
+  const [calendarMonthIndex, setCalendarMonthIndex] = useState(() =>
+    currentPlanYear === getCurrentBudgetPeriod().year ? getCurrentBudgetPeriod().monthIndex : 0
+  );
   const currentBudgetPeriod = getCurrentBudgetPeriod();
   const [activePlanningYear, setActivePlanningYear] = useState(currentPlanYear);
   const safeTransactions = Array.isArray(transactions) ? transactions : [];
@@ -221,6 +316,26 @@ export function OperationsBoard({
   });
   const trueCashYearEndValue = getLastNonNullValue(trueCashValues, trueCash);
   const projectedYearEndTrueCash = getLastNonNullValue(projectedTrueCashValues, trueCashYearEndValue);
+  const safeCalendarMonthIndex = Math.max(0, Math.min(budgetMonths.length - 1, calendarMonthIndex));
+  const calendarMonthData = dynamicYearlyOpsData[safeCalendarMonthIndex] || dynamicYearlyOpsData[0];
+  const priorActualTrueCash = getLastNonNullValue(
+    trueCashValues.slice(0, safeCalendarMonthIndex),
+    null
+  );
+  const priorProjectedTrueCash = getLastNonNullValue(
+    projectedTrueCashValues.slice(0, safeCalendarMonthIndex),
+    null
+  );
+  const calendarOpeningTrueCash =
+    priorActualTrueCash ?? priorProjectedTrueCash ?? anchorStartingTrueCash;
+  const cashFlowCalendar = buildCashFlowCalendarModel({
+    year: activePlanningYear,
+    monthIndex: safeCalendarMonthIndex,
+    transactions: safeTransactions,
+    plannedIncome: calendarMonthData?.plannedIncome ?? 0,
+    plannedBudget: calendarMonthData?.budget ?? 0,
+    openingTrueCash: calendarOpeningTrueCash,
+  });
   const scorecardMonths = dynamicYearlyOpsData.map((month, index) => {
     const plannedIncome = finiteMoney(month.plannedIncome ?? month.income);
     const actualIncome = finiteMoney(month.actualIncome);
@@ -715,6 +830,215 @@ export function OperationsBoard({
               </div>
             </div>
           </div>
+        </div>
+      </section>
+
+      <section style={{ ...styles.panel, padding: 22, marginBottom: 18 }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: 14,
+            gap: 12,
+            flexWrap: "wrap",
+          }}
+        >
+          <div>
+            <div style={{ color: "white", fontSize: 22, fontWeight: 900 }}>Cash-Flow Calendar</div>
+            <div style={{ color: "#9fb0c9", marginTop: 6, lineHeight: 1.45 }}>
+              Daily flow view that blends posted activity with plan intelligence for the month.
+            </div>
+          </div>
+          <select
+            value={safeCalendarMonthIndex}
+            onChange={(event) => setCalendarMonthIndex(Number(event.target.value))}
+            style={{
+              color: "#00d8ff",
+              background: "rgba(0,104,255,.18)",
+              border: "1px solid rgba(0,216,255,.55)",
+              borderRadius: 7,
+              padding: "10px 12px",
+              minWidth: 112,
+              fontWeight: 900,
+              boxShadow: "0 0 18px rgba(0,136,255,.22)",
+            }}
+          >
+            {budgetMonths.map((month, index) => (
+              <option key={month} value={index} style={{ background: "#061224", color: "#eaf3ff" }}>
+                {month} {activePlanningYear}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+            gap: 10,
+            marginBottom: 14,
+          }}
+        >
+          {[
+            ["Opening True Cash", wholeDollars(calendarOpeningTrueCash), "#8feaff"],
+            ["Plan Net", money(cashFlowCalendar.monthNetPlan), cashFlowCalendar.monthNetPlan >= 0 ? "#00f59b" : "#ff9a76"],
+            ["Actual Net", money(cashFlowCalendar.monthNetActual), cashFlowCalendar.monthNetActual >= 0 ? "#00f59b" : "#ff9a76"],
+            ["Daily Plan Pulse", money(cashFlowCalendar.dailyPlanPulse), "#ffd08a"],
+          ].map(([label, value, color]) => (
+            <div
+              key={label}
+              style={{
+                border: "1px solid rgba(0,136,255,.18)",
+                borderRadius: 12,
+                background: "rgba(2,16,34,.65)",
+                padding: "10px 12px",
+              }}
+            >
+              <div style={{ color: "#8ea8ca", fontSize: 11, textTransform: "uppercase", letterSpacing: 0.8 }}>
+                {label}
+              </div>
+              <div style={{ color, fontSize: 18, fontWeight: 900, marginTop: 6 }}>{value}</div>
+            </div>
+          ))}
+        </div>
+
+        <div
+          style={{
+            border: "1px solid rgba(0,136,255,.2)",
+            borderRadius: 14,
+            background: "rgba(2,14,28,.56)",
+            boxShadow: "inset 0 0 20px rgba(0,80,160,.08)",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(7, minmax(0, 1fr))",
+              borderBottom: "1px solid rgba(0,136,255,.14)",
+            }}
+          >
+            {CALENDAR_WEEKDAY_LABELS.map((weekday) => (
+              <div
+                key={weekday}
+                style={{
+                  color: "#7ea6d8",
+                  fontSize: 12,
+                  fontWeight: 800,
+                  textTransform: "uppercase",
+                  letterSpacing: 0.7,
+                  padding: "10px 12px",
+                  borderRight: "1px solid rgba(0,136,255,.08)",
+                }}
+              >
+                {weekday}
+              </div>
+            ))}
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 0 }}>
+            {cashFlowCalendar.weeks.map((week, weekIndex) => (
+              <div
+                key={`week-${weekIndex}`}
+                style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))" }}
+              >
+                {week.map((day, dayIndex) => (
+                  <div
+                    key={`${weekIndex}-${dayIndex}-${day?.day || "blank"}`}
+                    style={{
+                      minHeight: 88,
+                      borderRight: "1px solid rgba(0,136,255,.08)",
+                      borderBottom: "1px solid rgba(0,136,255,.08)",
+                      padding: "8px 10px",
+                      background: day
+                        ? day.isToday
+                          ? "rgba(0,216,255,.12)"
+                          : "rgba(3,17,32,.42)"
+                        : "rgba(1,10,22,.38)",
+                    }}
+                  >
+                    {day ? (
+                      <div style={{ display: "grid", gap: 6 }}>
+                        <div style={{ color: day.isToday ? "#dff7ff" : "#8ea8ca", fontSize: 12, fontWeight: 900 }}>
+                          {day.day}
+                        </div>
+                        <div
+                          style={{
+                            color:
+                              day.actualNet > 0
+                                ? "#00f59b"
+                                : day.actualNet < 0
+                                  ? "#ff9a76"
+                                  : "#5f7394",
+                            fontSize: 12,
+                            fontWeight: 800,
+                          }}
+                        >
+                          {day.actualNet === 0 ? "No posted flow" : money(day.actualNet)}
+                        </div>
+                        <div style={{ color: "#9fb0c9", fontSize: 11 }}>
+                          Run: {wholeDollars(day.runningBalance)}
+                        </div>
+                        <div style={{ color: "#7ea6d8", fontSize: 11 }}>
+                          Forecast: {wholeDollars(day.monthEndForecast)}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div
+          style={{
+            marginTop: 12,
+            display: "grid",
+            gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+            gap: 10,
+          }}
+        >
+          {[
+            [
+              "Strongest Inflow Day",
+              cashFlowCalendar.strongestInflow.day
+                ? `${budgetMonths[safeCalendarMonthIndex]} ${cashFlowCalendar.strongestInflow.day}`
+                : "No inflow day",
+              cashFlowCalendar.strongestInflow.day ? money(cashFlowCalendar.strongestInflow.value) : "—",
+              "#00f59b",
+            ],
+            [
+              "Largest Outflow Day",
+              cashFlowCalendar.strongestOutflow.day
+                ? `${budgetMonths[safeCalendarMonthIndex]} ${cashFlowCalendar.strongestOutflow.day}`
+                : "No outflow day",
+              cashFlowCalendar.strongestOutflow.day ? money(cashFlowCalendar.strongestOutflow.value) : "—",
+              "#ff9a76",
+            ],
+            [
+              "Lowest Forecast Point",
+              `${budgetMonths[safeCalendarMonthIndex]} ${cashFlowCalendar.lowestForecast.day}`,
+              wholeDollars(cashFlowCalendar.lowestForecast.value),
+              "#8feaff",
+            ],
+          ].map(([label, dayLabel, value, color]) => (
+            <div
+              key={label}
+              style={{
+                border: "1px solid rgba(0,136,255,.16)",
+                borderRadius: 12,
+                background: "rgba(3,17,32,.48)",
+                padding: "10px 12px",
+              }}
+            >
+              <div style={{ color: "#8ea8ca", fontSize: 11, textTransform: "uppercase", letterSpacing: 0.8 }}>
+                {label}
+              </div>
+              <div style={{ color: "white", fontWeight: 800, marginTop: 6 }}>{dayLabel}</div>
+              <div style={{ color, fontSize: 14, fontWeight: 900, marginTop: 4 }}>{value}</div>
+            </div>
+          ))}
         </div>
       </section>
 
