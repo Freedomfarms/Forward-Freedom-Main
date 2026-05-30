@@ -147,11 +147,6 @@ export function BudgetCommandCenter({
           2
         )}%, rgba(255,255,255,.08) ${normalizedBudgetUsedPercent.toFixed(2)}% 100%)`
       : "conic-gradient(#ff5d7a 0 100%)";
-  const readyToAssign = monthIncomeTotal - budgetTotal;
-  const availableToSpend = budgetRowsWithSpend.reduce(
-    (sum, row) => sum + Math.max(Number(row.remaining) || 0, 0),
-    0
-  );
   const overBudgetRows = budgetRowsWithSpend
     .filter((row) => (Number(row.remaining) || 0) < 0)
     .sort((left, right) => (Number(left.remaining) || 0) - (Number(right.remaining) || 0));
@@ -164,7 +159,6 @@ export function BudgetCommandCenter({
       (row) => !overBudgetRows.some((candidate) => candidate.id === row.id)
     ),
   ].slice(0, 4);
-  const assignedCategoryCount = budgetRowsWithSpend.filter((row) => (Number(row.budget) || 0) > 0).length;
   const scorecardBarMax = Math.max(
     Math.abs(monthIncomeTotal),
     Math.abs(budgetTotal),
