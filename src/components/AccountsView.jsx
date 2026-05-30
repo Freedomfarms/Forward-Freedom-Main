@@ -1100,6 +1100,7 @@ export function AccountsView({
                   {grouped.map((account) => {
                     const { isBankLinked, badgeLabel } = accountBankLinkPresentation(account);
                     const metaLine = [account.institution || "—", account.type, account.status].join(" · ");
+                    const isSelected = selectedCardId === account.id;
                     return (
                       <div
                         key={account.id}
@@ -1110,18 +1111,15 @@ export function AccountsView({
                           setSelectedCardId((current) => (current === account.id ? null : account.id));
                         }}
                         style={{
-                          border: selectedCardId === account.id
-                            ? "1px solid rgba(0,216,255,.42)"
-                            : "1px solid rgba(0,136,255,.11)",
-                          borderLeft: `2px solid ${
-                            isBankLinked ? "rgba(0,200,255,.68)" : "rgba(176,132,255,.72)"
-                          }`,
-                          background: selectedCardId === account.id
-                            ? "rgba(0,28,56,.94)"
-                            : "rgba(4,14,28,.82)",
+                          border: isSelected ? `1px solid ${gt.rail}` : `1px solid ${gt.line}`,
+                          borderLeft: `2px solid ${gt.rail}`,
+                          background: isSelected
+                            ? `linear-gradient(120deg, ${gt.tint}, rgba(4,14,28,.9) 62%)`
+                            : `linear-gradient(120deg, rgba(3,17,32,.52), rgba(4,14,28,.84))`,
                           borderRadius: 8,
                           padding: "7px 9px 8px",
                           cursor: "pointer",
+                          boxShadow: isSelected ? `inset 0 0 16px ${gt.tint}` : "none",
                         }}
                       >
                         <div
@@ -1206,7 +1204,7 @@ export function AccountsView({
                               >
                                 <span
                                   style={{
-                                    color: "#f0f6ff",
+                                    color: isSelected ? "#ffffff" : "#e7f4ff",
                                     fontSize: 13,
                                     fontWeight: 700,
                                     lineHeight: 1.2,
@@ -1252,7 +1250,7 @@ export function AccountsView({
                               flexShrink: 0,
                               fontSize: 14,
                               fontWeight: 700,
-                              color: account.balance < 0 ? "#ff6b8a" : "#eaf3ff",
+                                color: account.balance < 0 ? "#ff6b8a" : gt.rail,
                               letterSpacing: "-0.02em",
                               lineHeight: 1.1,
                               textAlign: "right",
@@ -1322,7 +1320,7 @@ export function AccountsView({
                               gap: 6,
                               marginTop: 8,
                               paddingTop: 7,
-                              borderTop: "1px solid rgba(0,136,255,.18)",
+                              borderTop: `1px solid ${gt.line}`,
                             }}
                           >
                             <button
@@ -1330,10 +1328,10 @@ export function AccountsView({
                               onClick={() => startRenaming(account)}
                               style={{
                                 flex: 1,
-                                background: "rgba(0,136,255,.1)",
-                                border: "1px solid rgba(0,216,255,.26)",
+                                background: gt.tint,
+                                border: `1px solid ${gt.line}`,
                                 borderRadius: 6,
-                                color: "#8ec8f0",
+                                color: gt.rail,
                                 fontSize: 11,
                                 fontWeight: 700,
                                 padding: "5px 6px",
@@ -1348,10 +1346,10 @@ export function AccountsView({
                               onClick={() => openAccountTransactions(account.name)}
                               style={{
                                 flex: 1,
-                                background: "rgba(0,136,255,.1)",
-                                border: "1px solid rgba(0,216,255,.26)",
+                                background: gt.tint,
+                                border: `1px solid ${gt.line}`,
                                 borderRadius: 6,
-                                color: "#8ec8f0",
+                                color: gt.rail,
                                 fontSize: 11,
                                 fontWeight: 700,
                                 padding: "5px 6px",
