@@ -28,7 +28,6 @@ function moveBudgetRowById(rows, draggedId, targetId) {
 
 function buildBudgetWorkflowStatus(row) {
   const budget = Number(row?.budget) || 0;
-  const spent = Number(row?.spent) || 0;
   const available = Number(row?.remaining) || 0;
 
   if (available < 0) {
@@ -49,21 +48,7 @@ function buildBudgetWorkflowStatus(row) {
     };
   }
 
-  if (spent <= 0) {
-    return {
-      label: "Funded",
-      color: "#dffcf1",
-      background: "rgba(0,201,111,.12)",
-      border: "1px solid rgba(0,245,155,.22)",
-    };
-  }
-
-  return {
-    label: "Active",
-    color: "#dff7ff",
-    background: "rgba(0,136,255,.10)",
-    border: "1px solid rgba(0,216,255,.20)",
-  };
+  return null;
 }
 
 function guessBudgetCategoryIcon(name) {
@@ -607,7 +592,7 @@ export function BudgetCommandCenter({
           style={{
             display: "grid",
             gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-            gap: 20,
+            gap: 14,
             alignItems: "start",
           }}
         >
@@ -684,74 +669,6 @@ export function BudgetCommandCenter({
           gap: 18,
         }}
       >
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-            gap: 14,
-          }}
-        >
-          {[
-            {
-              label: "Ready to Assign",
-              value: money(readyToAssign),
-              tone:
-                readyToAssign >= 0
-                  ? "linear-gradient(180deg, rgba(0,201,111,.10), rgba(3,17,32,.64))"
-                  : "linear-gradient(180deg, rgba(255,61,103,.10), rgba(3,17,32,.64))",
-              color: readyToAssign >= 0 ? "#dffcf1" : "#ffd9df",
-              note: readyToAssign >= 0 ? "still available to assign" : "budget exceeds income",
-            },
-            {
-              label: "Assigned",
-              value: money(budgetTotal),
-              tone: "linear-gradient(180deg, rgba(0,136,255,.10), rgba(3,17,32,.64))",
-              color: "#dff7ff",
-              note: `${assignedCategoryCount} funded categories`,
-            },
-            {
-              label: "Activity",
-              value: money(activeBudgetSnapshot.monthlySpend),
-              tone: "linear-gradient(180deg, rgba(255,159,28,.10), rgba(3,17,32,.64))",
-              color: "#fff2db",
-              note: `spent in ${budgetMonthNames[activeBudgetMonth]} ${activeBudgetDate.year}`,
-            },
-            {
-              label: "Available",
-              value: money(availableToSpend),
-              tone: "linear-gradient(180deg, rgba(0,216,255,.10), rgba(3,17,32,.64))",
-              color: "#dff7ff",
-              note: "remaining in funded categories",
-            },
-          ].map((card) => (
-            <div
-              key={card.label}
-              style={{
-                border: "1px solid rgba(0,136,255,.18)",
-                borderRadius: 18,
-                background: card.tone,
-                padding: "18px 16px",
-              }}
-            >
-              <div
-                style={{
-                  color: "#8fb1d9",
-                  fontSize: 11,
-                  textTransform: "uppercase",
-                  letterSpacing: 0.8,
-                  fontWeight: 900,
-                }}
-              >
-                {card.label}
-              </div>
-              <div style={{ color: card.color, fontSize: 28, fontWeight: 900, marginTop: 10 }}>
-                {card.value}
-              </div>
-              <div style={{ color: "#9fb0c9", fontSize: 12, marginTop: 10 }}>{card.note}</div>
-            </div>
-          ))}
-        </div>
-
         <div
           style={{
             border: "1px solid rgba(0,136,255,.16)",
@@ -838,9 +755,9 @@ export function BudgetCommandCenter({
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "1.15fr 120px 140px 120px",
+            gridTemplateColumns: "1.15fr 110px 1fr 120px",
             alignItems: "center",
-            columnGap: 32,
+            columnGap: 20,
             color: "#6d92c2",
             fontSize: 12,
             fontWeight: 800,
@@ -851,19 +768,19 @@ export function BudgetCommandCenter({
         >
           <div aria-hidden="true" />
           <div style={{ textAlign: "right", padding: "8px 10px" }}>Activity</div>
-          <div style={{ textAlign: "center", padding: "8px 10px" }}>Available</div>
+          <div style={{ textAlign: "center", padding: "8px 10px" }}>Progress</div>
           <div style={{ textAlign: "center", padding: "8px 10px" }}>Assigned</div>
         </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {budgetRowsWithSpend.map((item) => (
             <div
               key={item.id}
               style={{
                 display: "grid",
-                gridTemplateColumns: "1.15fr 120px 140px 120px",
+                gridTemplateColumns: "1.15fr 110px 1fr 120px",
                 alignItems: "center",
-                columnGap: 32,
-                borderRadius: 16,
+                columnGap: 20,
+                borderRadius: 14,
                 border:
                   activeBudgetRowId === item.id
                     ? pointerDragBudgetRowId === item.id
@@ -882,7 +799,7 @@ export function BudgetCommandCenter({
                       ? "0 0 30px rgba(0,136,255,.38), inset 0 0 28px rgba(0,216,255,.24)"
                       : "0 0 24px rgba(0,136,255,.28), inset 0 0 26px rgba(0,216,255,.17)"
                     : "inset 0 0 0 1px rgba(0,136,255,.04)",
-                padding: "14px 16px",
+                padding: "10px 12px",
                 cursor: pointerDragBudgetRowId === item.id ? "grabbing" : "grab",
                 opacity: 1,
                 userSelect: "none",
@@ -897,9 +814,9 @@ export function BudgetCommandCenter({
                   display: "grid",
                   gridTemplateColumns: "auto auto 1fr",
                   alignItems: "center",
-                  gap: 20,
+                  gap: 14,
                   color: "#e6efff",
-                  fontSize: 23,
+                  fontSize: 20,
                   fontWeight: 700,
                 }}
               >
@@ -929,7 +846,7 @@ export function BudgetCommandCenter({
                     alignItems: "center",
                     justifyContent: "center",
                     color: "#e6efff",
-                    fontSize: 20,
+                    fontSize: 18,
                     background: "rgba(0,136,255,.08)",
                     border: "1px solid rgba(0,216,255,.14)",
                     cursor: item.name === "Other" ? "default" : "pointer",
@@ -946,13 +863,13 @@ export function BudgetCommandCenter({
                     onFocus={() => activateBudgetRow(item.id)}
                     style={{
                       color: "#e6efff",
-                      fontSize: 23,
+                      fontSize: 20,
                       fontWeight: 700,
                       background: "transparent",
                       border: "1px solid transparent",
                       borderRadius: 8,
-                      padding: "6px 8px",
-                      width: 260,
+                      padding: "4px 6px",
+                      width: 240,
                       outline: "none",
                     }}
                     onFocus={(event) => {
@@ -993,10 +910,10 @@ export function BudgetCommandCenter({
               <div
                 style={{
                   color: "#e6efff",
-                  fontSize: 22,
+                  fontSize: 20,
                   fontWeight: 800,
                   textAlign: "right",
-                  padding: "8px 10px",
+                  padding: "6px 8px",
                   width: "100%",
                 }}
               >
@@ -1006,13 +923,13 @@ export function BudgetCommandCenter({
                 style={{
                   display: "grid",
                   justifyItems: "center",
-                  gap: 8,
+                  gap: 6,
                 }}
               >
                 <div
                   style={{
                     color: (Number(item.remaining) || 0) < 0 ? "#ffd9df" : "#dffcf1",
-                    fontSize: 20,
+                    fontSize: 18,
                     fontWeight: 900,
                     textAlign: "center",
                   }}
@@ -1021,18 +938,54 @@ export function BudgetCommandCenter({
                 </div>
                 <div
                   style={{
+                    width: "100%",
+                    height: 10,
                     borderRadius: 999,
-                    padding: "5px 10px",
-                    fontSize: 11,
-                    fontWeight: 900,
-                    letterSpacing: 0.4,
-                    color: buildBudgetWorkflowStatus(item).color,
-                    background: buildBudgetWorkflowStatus(item).background,
-                    border: buildBudgetWorkflowStatus(item).border,
+                    background: "rgba(8,28,49,.95)",
+                    position: "relative",
+                    overflow: "hidden",
                   }}
                 >
-                  {buildBudgetWorkflowStatus(item).label}
+                  <div
+                    style={{
+                      width:
+                        Math.min(
+                          100,
+                          item.budget > 0 ? Math.round((item.spent / item.budget) * 100) : 0
+                        ) + "%",
+                      height: "100%",
+                      borderRadius: 999,
+                      background: item.color,
+                      boxShadow: `0 0 14px ${item.color}`,
+                    }}
+                  />
+                  {item.spent > item.budget ? (
+                    <div
+                      style={{
+                        position: "absolute",
+                        inset: 0,
+                        border: "2px solid rgba(255,58,68,.95)",
+                        borderRadius: 999,
+                      }}
+                    />
+                  ) : null}
                 </div>
+                {buildBudgetWorkflowStatus(item) ? (
+                  <div
+                    style={{
+                      borderRadius: 999,
+                      padding: "4px 9px",
+                      fontSize: 10,
+                      fontWeight: 900,
+                      letterSpacing: 0.4,
+                      color: buildBudgetWorkflowStatus(item).color,
+                      background: buildBudgetWorkflowStatus(item).background,
+                      border: buildBudgetWorkflowStatus(item).border,
+                    }}
+                  >
+                    {buildBudgetWorkflowStatus(item).label}
+                  </div>
+                ) : null}
               </div>
               <input
                 value={money(item.budget)}
@@ -1040,13 +993,13 @@ export function BudgetCommandCenter({
                 onFocus={() => activateBudgetRow(item.id)}
                 style={{
                   color: "#e6efff",
-                  fontSize: 22,
+                  fontSize: 20,
                   fontWeight: 800,
                   textAlign: "center",
                   background: "transparent",
                   border: "1px solid transparent",
                   borderRadius: 10,
-                  padding: "8px 10px",
+                  padding: "6px 8px",
                   width: "100%",
                   outline: "none",
                 }}
