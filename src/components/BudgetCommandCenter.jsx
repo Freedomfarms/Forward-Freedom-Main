@@ -26,46 +26,6 @@ function moveBudgetRowById(rows, draggedId, targetId) {
   return nextRows;
 }
 
-function buildBudgetWorkflowStatus(row) {
-  const budget = Number(row?.budget) || 0;
-  const spent = Number(row?.spent) || 0;
-  const available = Number(row?.remaining) || 0;
-
-  if (available < 0) {
-    return {
-      label: "Overspent",
-      color: "#ffd9df",
-      background: "rgba(255,61,103,.12)",
-      border: "1px solid rgba(255,93,122,.28)",
-    };
-  }
-
-  if (budget <= 0) {
-    return {
-      label: "Unassigned",
-      color: "#ffe4a8",
-      background: "rgba(255,159,28,.12)",
-      border: "1px solid rgba(255,159,28,.24)",
-    };
-  }
-
-  if (spent <= 0) {
-    return {
-      label: "Funded",
-      color: "#dffcf1",
-      background: "rgba(0,201,111,.12)",
-      border: "1px solid rgba(0,245,155,.22)",
-    };
-  }
-
-  return {
-    label: "Active",
-    color: "#dff7ff",
-    background: "rgba(0,136,255,.10)",
-    border: "1px solid rgba(0,216,255,.20)",
-  };
-}
-
 export function BudgetCommandCenter({
   transactions,
   householdProfilesProps,
@@ -128,24 +88,6 @@ export function BudgetCommandCenter({
     .filter((stream) => (stream.months || budgetMonths).includes(activeBudgetMonth))
     .reduce((sum, stream) => sum + parseMoney(stream.amount), 0);
   const monthCashFlow = monthIncomeTotal - budgetTotal;
-  const readyToAssign = monthIncomeTotal - budgetTotal;
-  const availableToSpend = budgetRowsWithSpend.reduce(
-    (sum, row) => sum + Math.max(Number(row.remaining) || 0, 0),
-    0
-  );
-  const overBudgetRows = budgetRowsWithSpend
-    .filter((row) => (Number(row.remaining) || 0) < 0)
-    .sort((left, right) => (Number(left.remaining) || 0) - (Number(right.remaining) || 0));
-  const unassignedRows = budgetRowsWithSpend.filter(
-    (row) => (Number(row.budget) || 0) <= 0 && (Number(row.spent) || 0) <= 0
-  );
-  const attentionRows = [
-    ...overBudgetRows,
-    ...unassignedRows.filter(
-      (row) => !overBudgetRows.some((candidate) => candidate.id === row.id)
-    ),
-  ].slice(0, 4);
-  const assignedCategoryCount = budgetRowsWithSpend.filter((row) => (Number(row.budget) || 0) > 0).length;
   const scorecardBarMax = Math.max(
     Math.abs(monthIncomeTotal),
     Math.abs(budgetTotal),
@@ -353,34 +295,7 @@ export function BudgetCommandCenter({
             ))}
           </select>
         </div>
-        <div style={{ textAlign: "center", display: "grid", justifyItems: "center" }}>
-          <div style={{ color: "#e9f3ff", fontSize: 38, fontWeight: 800 }}>{money(monthIncomeTotal)}</div>
-          <div style={{ color: "#668ab9", fontSize: 26, fontWeight: 700, marginTop: 16 }}>
-            income in {activeBudgetLabel}
-          </div>
-          <button
-            type="button"
-            onClick={() => shiftBudgetMonth(-1)}
-            aria-label="Go to previous month"
-            style={{
-              marginTop: 12,
-              height: 40,
-              minWidth: 108,
-              borderRadius: 999,
-              border: "1px solid rgba(0,216,255,.28)",
-              background: "linear-gradient(180deg, rgba(0,136,255,.18), rgba(0,43,87,.28))",
-              color: "#dff7ff",
-              cursor: "pointer",
-              fontSize: 15,
-              fontWeight: 700,
-              letterSpacing: 0.35,
-              boxShadow:
-                "0 0 18px rgba(0,136,255,.18), inset 0 0 16px rgba(143,234,255,.08)",
-            }}
-          >
-            ← Prev
-          </button>
-        </div>
+        <div aria-hidden="true" />
         <div style={{ display: "flex", justifyContent: "center" }}>
           <div
             style={{
@@ -519,195 +434,74 @@ export function BudgetCommandCenter({
             </div>
           </div>
         </div>
-        <div style={{ textAlign: "center", display: "grid", justifyItems: "center" }}>
-          <div style={{ color: "#e9f3ff", fontSize: 38, fontWeight: 800 }}>
-            {money(budgetTotal)}
-          </div>
-          <div style={{ color: "#668ab9", fontSize: 26, fontWeight: 700, marginTop: 16 }}>
-            budget in {activeBudgetLabel}
-          </div>
-          <button
-            type="button"
-            onClick={() => shiftBudgetMonth(1)}
-            aria-label="Go to next month"
-            style={{
-              marginTop: 12,
-              height: 40,
-              minWidth: 108,
-              borderRadius: 999,
-              border: "1px solid rgba(0,216,255,.28)",
-              background: "linear-gradient(180deg, rgba(0,136,255,.18), rgba(0,43,87,.28))",
-              color: "#dff7ff",
-              cursor: "pointer",
-              fontSize: 15,
-              fontWeight: 700,
-              letterSpacing: 0.35,
-              boxShadow:
-                "0 0 18px rgba(0,136,255,.18), inset 0 0 16px rgba(143,234,255,.08)",
-            }}
-          >
-            Next →
-          </button>
-        </div>
-      </section>
-
-      <section
-        style={{
-          ...styles.panel,
-          padding: "22px 24px",
-          marginBottom: 30,
-          borderRadius: 24,
-          display: "grid",
-          gap: 18,
-        }}
-      >
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-            gap: 14,
+            justifyItems: "end",
+            gap: 18,
           }}
         >
-          {[
-            {
-              label: "Ready to Assign",
-              value: money(readyToAssign),
-              tone:
-                readyToAssign >= 0
-                  ? "linear-gradient(180deg, rgba(0,201,111,.10), rgba(3,17,32,.64))"
-                  : "linear-gradient(180deg, rgba(255,61,103,.10), rgba(3,17,32,.64))",
-              color: readyToAssign >= 0 ? "#dffcf1" : "#ffd9df",
-              note: readyToAssign >= 0 ? "still available to assign" : "budget exceeds income",
-            },
-            {
-              label: "Assigned",
-              value: money(budgetTotal),
-              tone: "linear-gradient(180deg, rgba(0,136,255,.10), rgba(3,17,32,.64))",
-              color: "#dff7ff",
-              note: `${assignedCategoryCount} funded categories`,
-            },
-            {
-              label: "Activity",
-              value: money(activeBudgetSnapshot.monthlySpend),
-              tone: "linear-gradient(180deg, rgba(255,159,28,.10), rgba(3,17,32,.64))",
-              color: "#fff2db",
-              note: `spent in ${activeBudgetLabel}`,
-            },
-            {
-              label: "Available",
-              value: money(availableToSpend),
-              tone: "linear-gradient(180deg, rgba(0,216,255,.10), rgba(3,17,32,.64))",
-              color: "#dff7ff",
-              note: "remaining in funded categories",
-            },
-          ].map((card) => (
-            <div
-              key={card.label}
+          <div style={{ textAlign: "right", display: "grid", justifyItems: "end" }}>
+            <div style={{ color: "#e9f3ff", fontSize: 38, fontWeight: 800 }}>
+              {money(monthIncomeTotal)}
+            </div>
+            <div style={{ color: "#668ab9", fontSize: 18, fontWeight: 700, marginTop: 10 }}>
+              {budgetMonthNames[activeBudgetMonth]} Income
+            </div>
+            <button
+              type="button"
+              onClick={() => shiftBudgetMonth(-1)}
+              aria-label="Go to previous month"
               style={{
-                border: "1px solid rgba(0,136,255,.18)",
-                borderRadius: 18,
-                background: card.tone,
-                padding: "18px 16px",
+                marginTop: 12,
+                height: 40,
+                minWidth: 108,
+                borderRadius: 999,
+                border: "1px solid rgba(0,216,255,.28)",
+                background: "linear-gradient(180deg, rgba(0,136,255,.18), rgba(0,43,87,.28))",
+                color: "#dff7ff",
+                cursor: "pointer",
+                fontSize: 15,
+                fontWeight: 700,
+                letterSpacing: 0.35,
+                boxShadow:
+                  "0 0 18px rgba(0,136,255,.18), inset 0 0 16px rgba(143,234,255,.08)",
               }}
             >
-              <div
-                style={{
-                  color: "#8fb1d9",
-                  fontSize: 11,
-                  textTransform: "uppercase",
-                  letterSpacing: 0.8,
-                  fontWeight: 900,
-                }}
-              >
-                {card.label}
-              </div>
-              <div style={{ color: card.color, fontSize: 28, fontWeight: 900, marginTop: 10 }}>
-                {card.value}
-              </div>
-              <div style={{ color: "#9fb0c9", fontSize: 12, marginTop: 10 }}>{card.note}</div>
-            </div>
-          ))}
-        </div>
+              ← Prev
+            </button>
+          </div>
 
-        <div
-          style={{
-            border: "1px solid rgba(0,136,255,.16)",
-            borderRadius: 18,
-            background: "rgba(0,22,48,.32)",
-            padding: "16px 18px 18px",
-          }}
-        >
-          <div
-            style={{
-              color: "#8feaff",
-              fontSize: 12,
-              fontWeight: 900,
-              textTransform: "uppercase",
-              letterSpacing: 0.9,
-            }}
-          >
-            Budget Workflow
-          </div>
-          <div style={{ color: "white", fontSize: 22, fontWeight: 800, marginTop: 8 }}>
-            {attentionRows.length > 0
-              ? "Categories that need a decision next"
-              : "This month is funded and clean"}
-          </div>
-          <div style={{ color: "#9fb0c9", lineHeight: 1.6, marginTop: 8 }}>
-            Use this row as the budgeting workflow entry point: assign what is left, fix overspending,
-            and keep available dollars visible by category.
-          </div>
-          {attentionRows.length > 0 ? (
-            <div
+          <div style={{ textAlign: "right", display: "grid", justifyItems: "end" }}>
+            <div style={{ color: "#e9f3ff", fontSize: 38, fontWeight: 800 }}>
+              {money(budgetTotal)}
+            </div>
+            <div style={{ color: "#668ab9", fontSize: 18, fontWeight: 700, marginTop: 10 }}>
+              {budgetMonthNames[activeBudgetMonth]} Budget
+            </div>
+            <button
+              type="button"
+              onClick={() => shiftBudgetMonth(1)}
+              aria-label="Go to next month"
               style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-                gap: 12,
-                marginTop: 16,
+                marginTop: 12,
+                height: 40,
+                minWidth: 108,
+                borderRadius: 999,
+                border: "1px solid rgba(0,216,255,.28)",
+                background: "linear-gradient(180deg, rgba(0,136,255,.18), rgba(0,43,87,.28))",
+                color: "#dff7ff",
+                cursor: "pointer",
+                fontSize: 15,
+                fontWeight: 700,
+                letterSpacing: 0.35,
+                boxShadow:
+                  "0 0 18px rgba(0,136,255,.18), inset 0 0 16px rgba(143,234,255,.08)",
               }}
             >
-              {attentionRows.map((row) => {
-                const status = buildBudgetWorkflowStatus(row);
-                return (
-                  <button
-                    key={row.id}
-                    type="button"
-                    onClick={() => activateBudgetRow(row.id)}
-                    style={{
-                      textAlign: "left",
-                      border: "1px solid rgba(0,136,255,.18)",
-                      borderRadius: 14,
-                      background: "rgba(3,17,32,.62)",
-                      padding: "14px 14px 16px",
-                      cursor: "pointer",
-                      color: "#eef6ff",
-                    }}
-                  >
-                    <div style={{ fontWeight: 800 }}>{row.name}</div>
-                    <div style={{ color: "#9fb0c9", fontSize: 12, marginTop: 8 }}>
-                      Activity {money(row.spent)} • Available {money(row.remaining)}
-                    </div>
-                    <div
-                      style={{
-                        display: "inline-flex",
-                        marginTop: 10,
-                        borderRadius: 999,
-                        padding: "5px 10px",
-                        fontSize: 11,
-                        fontWeight: 900,
-                        letterSpacing: 0.4,
-                        color: status.color,
-                        background: status.background,
-                        border: status.border,
-                      }}
-                    >
-                      {status.label}
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          ) : null}
+              Next →
+            </button>
+          </div>
         </div>
       </section>
 
@@ -715,7 +509,7 @@ export function BudgetCommandCenter({
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "1.15fr 120px 140px 120px",
+            gridTemplateColumns: "1.15fr 120px 1fr 120px",
             alignItems: "center",
             columnGap: 32,
             color: "#6d92c2",
@@ -727,9 +521,9 @@ export function BudgetCommandCenter({
           }}
         >
           <div aria-hidden="true" />
-          <div style={{ textAlign: "right", padding: "8px 10px" }}>Activity</div>
-          <div style={{ textAlign: "center", padding: "8px 10px" }}>Available</div>
-          <div style={{ textAlign: "center", padding: "8px 10px" }}>Assigned</div>
+          <div style={{ textAlign: "right", padding: "8px 10px" }}>Spent</div>
+          <div aria-hidden="true" />
+          <div style={{ textAlign: "center", padding: "8px 10px" }}>Budget</div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
           {budgetRowsWithSpend.map((item) => (
@@ -737,7 +531,7 @@ export function BudgetCommandCenter({
               key={item.id}
               style={{
                 display: "grid",
-                gridTemplateColumns: "1.15fr 120px 140px 120px",
+                gridTemplateColumns: "1.15fr 120px 1fr 120px",
                 alignItems: "center",
                 columnGap: 32,
                 borderRadius: 16,
@@ -881,35 +675,36 @@ export function BudgetCommandCenter({
               </div>
               <div
                 style={{
-                  display: "grid",
-                  justifyItems: "center",
-                  gap: 8,
+                  height: 11,
+                  borderRadius: 999,
+                  background: "rgba(8,28,49,.95)",
+                  position: "relative",
+                  overflow: "hidden",
                 }}
               >
                 <div
                   style={{
-                    color: (Number(item.remaining) || 0) < 0 ? "#ffd9df" : "#dffcf1",
-                    fontSize: 20,
-                    fontWeight: 900,
-                    textAlign: "center",
-                  }}
-                >
-                  {money(item.remaining)}
-                </div>
-                <div
-                  style={{
+                    width:
+                      Math.min(
+                        100,
+                        item.budget > 0 ? Math.round((item.spent / item.budget) * 100) : 0
+                      ) + "%",
+                    height: "100%",
                     borderRadius: 999,
-                    padding: "5px 10px",
-                    fontSize: 11,
-                    fontWeight: 900,
-                    letterSpacing: 0.4,
-                    color: buildBudgetWorkflowStatus(item).color,
-                    background: buildBudgetWorkflowStatus(item).background,
-                    border: buildBudgetWorkflowStatus(item).border,
+                    background: item.color,
+                    boxShadow: `0 0 14px ${item.color}`,
                   }}
-                >
-                  {buildBudgetWorkflowStatus(item).label}
-                </div>
+                />
+                {item.spent > item.budget ? (
+                  <div
+                    style={{
+                      position: "absolute",
+                      inset: 0,
+                      border: "2px solid rgba(255,58,68,.95)",
+                      borderRadius: 999,
+                    }}
+                  />
+                ) : null}
               </div>
               <input
                 value={money(item.budget)}
