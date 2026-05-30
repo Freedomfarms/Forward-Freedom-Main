@@ -1,6 +1,5 @@
 import { useState } from "react";
-import forwardFreedomLogo from "../assets/forward-freedom-logo.svg";
-import { LEGAL_CONTENT } from "../content/legalContent.js";
+import forwardFreedomLogo from "../assets/forward-freedom-logo-main.jpeg";
 import { LegalModal } from "./LegalDocuments.jsx";
 
 function buildPrimaryButtonStyle(isSecondary = false) {
@@ -19,47 +18,36 @@ function buildPrimaryButtonStyle(isSecondary = false) {
   };
 }
 
-const HERO_LOGO_MASK =
-  "radial-gradient(circle at center, rgba(0,0,0,1) 0%, rgba(0,0,0,1) 52%, rgba(0,0,0,.96) 66%, rgba(0,0,0,.72) 78%, rgba(0,0,0,.28) 86%, rgba(0,0,0,0) 94%)";
+const CREATE_ACCESS_POINTS = [
+  "Build a protected Forward Freedom workspace",
+  "See budgets, transactions, and forecasts together",
+  "Start with a cleaner command-center experience",
+];
+
+const LOGIN_POINTS = [
+  "Resume planning and budgeting",
+  "Review synced accounts and transactions",
+  "Continue household profile setup",
+];
+
+const CONTACT_CARDS = [
+  [
+    "Client onboarding",
+    "Guide new households into planning, account setup, and their first budgeting workflow.",
+  ],
+  [
+    "Email support",
+    "Reach Forward Freedom Financial directly when you need help or want a guided next step.",
+  ],
+  [
+    "Workspace support",
+    "Help returning clients access their saved planning workspace and continue with confidence.",
+  ],
+];
 
 export function LandingPage({ enterApp }) {
   const [activeDocument, setActiveDocument] = useState(null);
-  const [createAccount, setCreateAccount] = useState({
-    fullName: "",
-    email: "",
-    agreedToTerms: false,
-  });
-  const [createError, setCreateError] = useState("");
-
-  const updateCreateAccount = (field, value) => {
-    setCreateAccount((current) => ({ ...current, [field]: value }));
-  };
-
-  const handleCreateAccount = (event) => {
-    event.preventDefault();
-
-    if (!createAccount.fullName.trim()) {
-      setCreateError("Enter your full name to create your workspace.");
-      return;
-    }
-
-    if (!createAccount.email.trim() || !/\S+@\S+\.\S+/.test(createAccount.email.trim())) {
-      setCreateError("Enter a valid email address.");
-      return;
-    }
-
-    if (!createAccount.agreedToTerms) {
-      setCreateError("You need to agree to the Terms of Service and Privacy Policy to continue.");
-      return;
-    }
-
-    setCreateError("");
-    enterApp({
-      mode: "create-account",
-      primaryUserName: createAccount.fullName.trim(),
-      email: createAccount.email.trim(),
-    });
-  };
+  const openCreateAccess = () => enterApp({ mode: "create-account" });
 
   return (
     <div
@@ -99,21 +87,25 @@ export function LandingPage({ enterApp }) {
         <nav
           style={{
             display: "grid",
-            gridTemplateColumns: "minmax(220px, 280px) 1fr auto",
+            gridTemplateColumns: "minmax(180px, 228px) 1fr auto",
             alignItems: "center",
-            marginBottom: 108,
+            marginBottom: 84,
             gap: 24,
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", minHeight: 118 }}>
+          <div style={{ display: "flex", alignItems: "center", minHeight: 88 }}>
             <img
               src={forwardFreedomLogo}
               alt="Forward Freedom Financial logo"
               style={{
-                width: 110,
-                maxWidth: "100%",
+                width: 96,
+                height: 96,
                 display: "block",
-                objectFit: "contain",
+                objectFit: "cover",
+                objectPosition: "center",
+                borderRadius: 24,
+                border: "1px solid rgba(125,220,255,.32)",
+                boxShadow: "0 18px 36px rgba(0, 0, 0, 0.34), 0 0 30px rgba(0, 136, 255, 0.12)",
               }}
             />
           </div>
@@ -137,9 +129,20 @@ export function LandingPage({ enterApp }) {
             <a href="#account-access" style={{ color: "#cfe7ff", textDecoration: "none" }}>
               Access
             </a>
-            <a href="#legal" style={{ color: "#cfe7ff", textDecoration: "none" }}>
+            <button
+              type="button"
+              onClick={() => setActiveDocument("terms")}
+              style={{
+                color: "#cfe7ff",
+                background: "transparent",
+                border: "none",
+                padding: 0,
+                cursor: "pointer",
+                font: "inherit",
+              }}
+            >
               Legal
-            </a>
+            </button>
             <a href="#contact" style={{ color: "#cfe7ff", textDecoration: "none" }}>
               Contact
             </a>
@@ -151,9 +154,9 @@ export function LandingPage({ enterApp }) {
             <button onClick={enterApp} style={buildPrimaryButtonStyle(true)}>
               Client Login
             </button>
-            <a href="#account-access" style={{ textDecoration: "none" }}>
-              <button style={buildPrimaryButtonStyle()}>Create Account</button>
-            </a>
+            <button onClick={openCreateAccess} style={buildPrimaryButtonStyle()}>
+              Create Access
+            </button>
           </div>
         </nav>
 
@@ -161,10 +164,10 @@ export function LandingPage({ enterApp }) {
           id="home"
           style={{
             display: "grid",
-            gridTemplateColumns: "minmax(0, 1fr) minmax(400px, 560px)",
-            gap: 48,
+            gridTemplateColumns: "minmax(0, 1fr) minmax(360px, 500px)",
+            gap: 40,
             alignItems: "center",
-            marginBottom: 52,
+            marginBottom: 40,
           }}
         >
           <div style={{ maxWidth: 700 }}>
@@ -201,27 +204,20 @@ export function LandingPage({ enterApp }) {
                 margin: "18px 0 30px",
               }}
             >
-              Build a client workspace, return to your saved dashboard, and review the legal terms
-              that govern account access, planning data, and connected financial tools.
+              Forward Freedom Financial is a financial command center that gives you complete
+              visibility and control of your money. Track, plan, and execute with confidence using
+              real-time data, forecasting, and powerful financial insights.
             </p>
 
             <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
-              <a href="#account-access" style={{ textDecoration: "none" }}>
-                <button style={{ ...buildPrimaryButtonStyle(), minWidth: 220 }}>
-                  Create Account
-                </button>
-              </a>
+              <button onClick={openCreateAccess} style={{ ...buildPrimaryButtonStyle(), minWidth: 220 }}>
+                Create Access
+              </button>
               <button
                 onClick={enterApp}
                 style={{ ...buildPrimaryButtonStyle(true), minWidth: 220 }}
               >
                 Client Login
-              </button>
-              <button
-                onClick={() => setActiveDocument("terms")}
-                style={{ ...buildPrimaryButtonStyle(true), minWidth: 220 }}
-              >
-                Review Terms
               </button>
             </div>
           </div>
@@ -233,15 +229,15 @@ export function LandingPage({ enterApp }) {
               justifyContent: "center",
               justifySelf: "center",
               width: "100%",
-              minHeight: 560,
-              padding: "18px 0",
+              minHeight: 460,
+              padding: "8px 0",
             }}
           >
             <div
               style={{
                 position: "relative",
                 width: "100%",
-                maxWidth: 640,
+                maxWidth: 520,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -252,51 +248,59 @@ export function LandingPage({ enterApp }) {
                 aria-hidden="true"
                 style={{
                   position: "absolute",
-                  inset: "12% 6%",
+                  inset: "4%",
                   background:
-                    "radial-gradient(circle at 50% 46%, rgba(7,166,255,.26) 0%, rgba(5,96,214,.16) 28%, rgba(2,7,17,0) 72%)",
-                  filter: "blur(28px)",
-                  opacity: 0.95,
-                  transform: "scale(1.04)",
+                    "radial-gradient(circle at 50% 42%, rgba(7,166,255,.3) 0%, rgba(5,96,214,.18) 32%, rgba(2,7,17,0) 74%)",
+                  filter: "blur(34px)",
+                  opacity: 0.92,
+                  transform: "scale(1.02)",
                 }}
               />
               <div
                 aria-hidden="true"
                 style={{
                   position: "absolute",
-                  inset: "6%",
+                  inset: "11%",
                   backgroundImage: `url(${forwardFreedomLogo})`,
                   backgroundPosition: "center",
                   backgroundRepeat: "no-repeat",
-                  backgroundSize: "contain",
-                  opacity: 0.22,
-                  filter: "blur(34px) saturate(1.15)",
-                  transform: "scale(1.02)",
+                  backgroundSize: "cover",
+                  opacity: 0.3,
+                  filter: "blur(44px) saturate(1.1)",
+                  transform: "scale(1.06)",
+                  borderRadius: 36,
                 }}
               />
-              <img
-                src={forwardFreedomLogo}
-                alt="Forward Freedom Financial logo"
+              <div
                 style={{
-                  width: "min(100%, 620px)",
-                  maxWidth: "100%",
                   position: "relative",
                   zIndex: 1,
-                  display: "block",
-                  margin: "0 auto",
-                  objectFit: "contain",
-                  objectPosition: "center",
-                  filter: "drop-shadow(0 0 10px rgba(0,136,255,.08))",
-                  WebkitMaskImage: HERO_LOGO_MASK,
-                  maskImage: HERO_LOGO_MASK,
-                  WebkitMaskRepeat: "no-repeat",
-                  maskRepeat: "no-repeat",
-                  WebkitMaskPosition: "center",
-                  maskPosition: "center",
-                  WebkitMaskSize: "100% 100%",
-                  maskSize: "100% 100%",
+                  width: "100%",
+                  padding: 20,
+                  borderRadius: 36,
+                  border: "1px solid rgba(125,220,255,.16)",
+                  background:
+                    "linear-gradient(180deg, rgba(8, 20, 38, 0.94), rgba(5, 15, 29, 0.84))",
+                  boxShadow:
+                    "0 28px 70px rgba(0, 0, 0, 0.36), inset 0 1px 0 rgba(255, 255, 255, 0.03)",
                 }}
-              />
+              >
+                <img
+                  src={forwardFreedomLogo}
+                  alt="Forward Freedom Financial logo"
+                  style={{
+                    width: "100%",
+                    maxWidth: "100%",
+                    aspectRatio: "1 / 1",
+                    display: "block",
+                    margin: "0 auto",
+                    objectFit: "cover",
+                    objectPosition: "center",
+                    borderRadius: 28,
+                    filter: "saturate(1.03) contrast(1.02)",
+                  }}
+                />
+              </div>
             </div>
           </div>
         </section>
@@ -355,13 +359,12 @@ export function LandingPage({ enterApp }) {
           id="account-access"
           style={{
             display: "grid",
-            gridTemplateColumns: "1.15fr .85fr",
+            gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
             gap: 22,
             marginBottom: 30,
           }}
         >
-          <form
-            onSubmit={handleCreateAccount}
+          <div
             style={{
               border: "1px solid rgba(0,136,255,.24)",
               borderRadius: 14,
@@ -380,134 +383,38 @@ export function LandingPage({ enterApp }) {
                 marginBottom: 10,
               }}
             >
-              Create Account
+              Create Access
             </div>
             <div style={{ color: "white", fontSize: 28, fontWeight: 900 }}>
-              Open a new workspace
+              Start a new workspace
             </div>
             <p style={{ color: "#bcd1e8", lineHeight: 1.65, marginTop: 12, maxWidth: 640 }}>
-              Start a private planning workspace for your household. This version launches a fresh
-              local client workspace on this device so you can begin budgeting, forecasting, and
-              account setup immediately.
+              Create protected access and begin building your financial command center with
+              budgeting, forecasting, account visibility, and a clearer picture of where your money
+              is going.
             </p>
-
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                gap: 14,
-                marginTop: 18,
-              }}
-            >
-              <label style={{ display: "grid", gap: 8 }}>
-                <span style={{ color: "#8fb1d9", fontSize: 12, fontWeight: 800 }}>Full Name</span>
-                <input
-                  value={createAccount.fullName}
-                  onChange={(event) => updateCreateAccount("fullName", event.target.value)}
-                  placeholder="Enter your full name"
+            <div style={{ display: "grid", gap: 12, marginTop: 18 }}>
+              {CREATE_ACCESS_POINTS.map((item) => (
+                <div
+                  key={item}
                   style={{
-                    color: "#eaf3ff",
-                    background: "rgba(0,136,255,.08)",
-                    border: "1px solid rgba(0,216,255,.18)",
-                    borderRadius: 10,
+                    border: "1px solid rgba(0,136,255,.14)",
+                    borderRadius: 12,
+                    background: "rgba(3,17,32,.58)",
                     padding: "12px 14px",
-                    outline: "none",
+                    color: "#d9e8f8",
                   }}
-                />
-              </label>
-              <label style={{ display: "grid", gap: 8 }}>
-                <span style={{ color: "#8fb1d9", fontSize: 12, fontWeight: 800 }}>
-                  Email Address
-                </span>
-                <input
-                  value={createAccount.email}
-                  onChange={(event) => updateCreateAccount("email", event.target.value)}
-                  placeholder="name@example.com"
-                  style={{
-                    color: "#eaf3ff",
-                    background: "rgba(0,136,255,.08)",
-                    border: "1px solid rgba(0,216,255,.18)",
-                    borderRadius: 10,
-                    padding: "12px 14px",
-                    outline: "none",
-                  }}
-                />
-              </label>
+                >
+                  {item}
+                </div>
+              ))}
             </div>
-
-            <label
-              style={{
-                display: "flex",
-                alignItems: "flex-start",
-                gap: 12,
-                marginTop: 18,
-                color: "#d5e2f2",
-                lineHeight: 1.6,
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={createAccount.agreedToTerms}
-                onChange={(event) => updateCreateAccount("agreedToTerms", event.target.checked)}
-                style={{ marginTop: 4 }}
-              />
-              <span>
-                I agree to the{" "}
-                <button
-                  type="button"
-                  onClick={() => setActiveDocument("terms")}
-                  style={{
-                    color: "#8feaff",
-                    background: "transparent",
-                    border: "none",
-                    padding: 0,
-                    cursor: "pointer",
-                  }}
-                >
-                  Terms of Service
-                </button>{" "}
-                and{" "}
-                <button
-                  type="button"
-                  onClick={() => setActiveDocument("privacy")}
-                  style={{
-                    color: "#8feaff",
-                    background: "transparent",
-                    border: "none",
-                    padding: 0,
-                    cursor: "pointer",
-                  }}
-                >
-                  Privacy Policy
-                </button>
-                .
-              </span>
-            </label>
-
-            {createError ? (
-              <div
-                style={{
-                  marginTop: 14,
-                  color: "#ff9a76",
-                  border: "1px solid rgba(255,154,118,.18)",
-                  background: "rgba(62,16,9,.24)",
-                  borderRadius: 10,
-                  padding: "10px 12px",
-                }}
-              >
-                {createError}
-              </div>
-            ) : null}
-
             <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginTop: 22 }}>
-              <button type="submit" style={buildPrimaryButtonStyle()}>
-                Create Account
-              </button>
-              <button type="button" onClick={enterApp} style={buildPrimaryButtonStyle(true)}>
-                Skip to Client Workspace
+              <button type="button" onClick={openCreateAccess} style={buildPrimaryButtonStyle()}>
+                Create Access
               </button>
             </div>
-          </form>
+          </div>
 
           <div
             style={{
@@ -533,15 +440,11 @@ export function LandingPage({ enterApp }) {
               Return to your workspace
             </div>
             <p style={{ color: "#c6d2e1", lineHeight: 1.65, marginTop: 12 }}>
-              Existing clients can continue into the planning workspace saved on this device and
-              review linked accounts, budgets, forecast plans, and household profiles.
+              Existing clients can jump straight back into their command center to review accounts,
+              transactions, budgets, forecasts, and household progress.
             </p>
             <div style={{ display: "grid", gap: 12, marginTop: 18 }}>
-              {[
-                "Resume planning and budgeting",
-                "Review synced accounts and transactions",
-                "Continue household profile setup",
-              ].map((item) => (
+              {LOGIN_POINTS.map((item) => (
                 <div
                   key={item}
                   style={{
@@ -566,56 +469,6 @@ export function LandingPage({ enterApp }) {
         </section>
 
         <section
-          id="legal"
-          style={{
-            border: "1px solid rgba(0,136,255,.18)",
-            background: "linear-gradient(90deg, rgba(3,17,32,.86), rgba(3,17,32,.45))",
-            borderRadius: 10,
-            padding: "24px 32px",
-            display: "grid",
-            gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-            gap: 18,
-            marginBottom: 30,
-          }}
-        >
-          {Object.entries(LEGAL_CONTENT).map(([key, document]) => (
-            <div
-              key={key}
-              style={{
-                border: "1px solid rgba(0,136,255,.16)",
-                borderRadius: 14,
-                background: "rgba(3,17,32,.64)",
-                padding: 20,
-              }}
-            >
-              <div
-                style={{
-                  color: "#8feaff",
-                  textTransform: "uppercase",
-                  letterSpacing: 1.1,
-                  fontWeight: 900,
-                  fontSize: 12,
-                }}
-              >
-                {document.updated}
-              </div>
-              <div style={{ color: "white", fontSize: 24, fontWeight: 900, marginTop: 10 }}>
-                {document.title}
-              </div>
-              <div style={{ color: "#c6d2e1", lineHeight: 1.65, marginTop: 12 }}>
-                {document.sections[0].body}
-              </div>
-              <button
-                onClick={() => setActiveDocument(key)}
-                style={{ ...buildPrimaryButtonStyle(true), marginTop: 18 }}
-              >
-                View Full {document.title}
-              </button>
-            </div>
-          ))}
-        </section>
-
-        <section
           id="contact"
           style={{
             border: "1px solid rgba(0,136,255,.18)",
@@ -637,7 +490,18 @@ export function LandingPage({ enterApp }) {
             Contact & Footer
           </div>
           <div style={{ color: "white", fontSize: 28, fontWeight: 900, marginTop: 10 }}>
-            Support, onboarding, and legal review
+            Support and onboarding
+          </div>
+          <div style={{ color: "#c6d2e1", lineHeight: 1.7, marginTop: 12, maxWidth: 760 }}>
+            For support, onboarding assistance, or policy questions, please contact Forward Freedom
+            Financial at{' '}
+            <a
+              href="mailto:forwardfreedomfinancial@gmail.com"
+              style={{ color: "#8feaff", textDecoration: "none", fontWeight: 700 }}
+            >
+              forwardfreedomfinancial@gmail.com
+            </a>
+            .
           </div>
           <div
             style={{
@@ -647,20 +511,7 @@ export function LandingPage({ enterApp }) {
               marginTop: 20,
             }}
           >
-            {[
-              [
-                "Client onboarding",
-                "Guide new households into planning, account setup, and their first budgeting workflow.",
-              ],
-              [
-                "Policy questions",
-                "Make terms, privacy, and connected-account disclosures easy to review before launch.",
-              ],
-              [
-                "Workspace support",
-                "Help returning clients access their saved planning workspace and continue with confidence.",
-              ],
-            ].map(([title, text]) => (
+            {CONTACT_CARDS.map(([title, text]) => (
               <div
                 key={title}
                 style={{
@@ -713,9 +564,17 @@ export function LandingPage({ enterApp }) {
             >
               Privacy Policy
             </button>
-            <a href="#account-access" style={{ color: "#8feaff", textDecoration: "none" }}>
-              Create Account
-            </a>
+            <button
+              onClick={openCreateAccess}
+              style={{
+                background: "transparent",
+                border: "none",
+                color: "#8feaff",
+                cursor: "pointer",
+              }}
+            >
+              Create Access
+            </button>
             <button
               onClick={enterApp}
               style={{
