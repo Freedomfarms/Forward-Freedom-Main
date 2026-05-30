@@ -196,38 +196,6 @@ export function IncomeHub({
           position: "relative",
         }}
       >
-        <div
-          style={{
-            position: "absolute",
-            top: 18,
-            right: 24,
-            zIndex: 1,
-          }}
-        >
-          <select
-            value={activeIncomeDate.year}
-            onChange={(event) => updateIncomeDate("year", event.target.value)}
-            aria-label="Select income planning year"
-            style={{
-              color: "#8feaff",
-              background: "rgba(0,136,255,.12)",
-              border: "1px solid rgba(0,216,255,.32)",
-              borderRadius: 999,
-              padding: "10px 16px",
-              cursor: "pointer",
-              fontWeight: 900,
-              boxShadow: "0 0 14px rgba(0,136,255,.14)",
-              minWidth: 96,
-              textAlign: "center",
-            }}
-          >
-            {availablePlanningYears.map((year) => (
-              <option key={year} value={year} style={{ background: "#061224", color: "#eaf3ff" }}>
-                {year}
-              </option>
-            ))}
-          </select>
-        </div>
         <div style={{ display: "flex", justifyContent: "center" }}>
           <div
             style={{
@@ -451,6 +419,7 @@ export function IncomeHub({
             gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
             gap: 12,
             alignItems: "start",
+            alignSelf: "stretch",
           }}
         >
           <div style={{ textAlign: "center", display: "grid", justifyItems: "center" }}>
@@ -512,6 +481,40 @@ export function IncomeHub({
             >
               Next →
             </button>
+          </div>
+          <div
+            style={{
+              gridColumn: "1 / -1",
+              display: "flex",
+              justifyContent: "flex-end",
+              alignItems: "center",
+              alignSelf: "end",
+            }}
+          >
+            <select
+              value={activeIncomeDate.year}
+              onChange={(event) => updateIncomeDate("year", event.target.value)}
+              aria-label="Select income planning year"
+              style={{
+                color: "#8feaff",
+                background: "rgba(0,136,255,.12)",
+                border: "1px solid rgba(0,216,255,.32)",
+                borderRadius: 999,
+                padding: "8px 14px",
+                cursor: "pointer",
+                fontWeight: 900,
+                boxShadow: "0 0 14px rgba(0,136,255,.14)",
+                minWidth: 96,
+                height: 36,
+                textAlign: "center",
+              }}
+            >
+              {availablePlanningYears.map((year) => (
+                <option key={year} value={year} style={{ background: "#061224", color: "#eaf3ff" }}>
+                  {year}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
       </section>

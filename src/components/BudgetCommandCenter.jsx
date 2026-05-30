@@ -697,6 +697,7 @@ export function BudgetCommandCenter({
               alignItems: "center",
               gap: 10,
               alignSelf: "end",
+              paddingRight: 18,
             }}
           >
             <button
