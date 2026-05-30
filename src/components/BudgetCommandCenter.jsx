@@ -45,7 +45,6 @@ export function BudgetCommandCenter({
     year: currentPlanYear,
   }));
   const activeBudgetMonth = budgetMonths[activeBudgetDate.monthIndex];
-  const activeBudgetLabel = `${budgetMonthNames[activeBudgetMonth]} ${activeBudgetDate.year}`;
   const planningBudgetRows = getBudgetRowsForYear(activeBudgetDate.year);
   const updateBudgetDate = (field, value) => {
     const nextValue = Number(value);
@@ -88,15 +87,6 @@ export function BudgetCommandCenter({
     .filter((stream) => (stream.months || budgetMonths).includes(activeBudgetMonth))
     .reduce((sum, stream) => sum + parseMoney(stream.amount), 0);
   const monthCashFlow = monthIncomeTotal - budgetTotal;
-  const monthRemaining = budgetTotal - activeBudgetSnapshot.monthlySpend;
-  const budgetUsedPercent = budgetTotal > 0 ? (activeBudgetSnapshot.monthlySpend / budgetTotal) * 100 : 0;
-  const normalizedBudgetUsedPercent = Math.max(0, Math.min(100, budgetUsedPercent));
-  const budgetUsageGradient =
-    monthRemaining >= 0
-      ? `conic-gradient(#00d8ff 0 ${normalizedBudgetUsedPercent.toFixed(
-          2
-        )}%, rgba(255,255,255,.08) ${normalizedBudgetUsedPercent.toFixed(2)}% 100%)`
-      : "conic-gradient(#ff5d7a 0 100%)";
   const scorecardBarMax = Math.max(
     Math.abs(monthIncomeTotal),
     Math.abs(budgetTotal),
@@ -304,82 +294,33 @@ export function BudgetCommandCenter({
             ))}
           </select>
         </div>
-        <div style={{ display: "flex", justifyContent: "center" }}>
-          <div
+        <div style={{ textAlign: "center", display: "grid", justifyItems: "center" }}>
+          <div style={{ color: "#e9f3ff", fontSize: 38, fontWeight: 800 }}>{money(monthIncomeTotal)}</div>
+          <div style={{ color: "#668ab9", fontSize: 26, fontWeight: 700, marginTop: 16 }}>
+            income in {activeBudgetLabel}
+          </div>
+          <button
+            type="button"
+            onClick={() => shiftBudgetMonth(-1)}
+            aria-label="Go to previous month"
             style={{
-              width: 220,
-              height: 220,
-              borderRadius: "50%",
-              position: "relative",
-              display: "grid",
-              placeItems: "center",
-              background: budgetUsageGradient,
+              marginTop: 12,
+              height: 40,
+              minWidth: 108,
+              borderRadius: 999,
+              border: "1px solid rgba(0,216,255,.28)",
+              background: "linear-gradient(180deg, rgba(0,136,255,.18), rgba(0,43,87,.28))",
+              color: "#dff7ff",
+              cursor: "pointer",
+              fontSize: 15,
+              fontWeight: 700,
+              letterSpacing: 0.35,
               boxShadow:
-                monthRemaining >= 0
-                  ? "0 0 34px rgba(0,216,255,.18), inset 0 0 42px rgba(0,216,255,.08)"
-                  : "0 0 34px rgba(255,93,122,.2), inset 0 0 42px rgba(255,93,122,.1)",
+                "0 0 18px rgba(0,136,255,.18), inset 0 0 16px rgba(143,234,255,.08)",
             }}
           >
-            <div
-              style={{
-                position: "absolute",
-                inset: 14,
-                borderRadius: "50%",
-                background:
-                  "radial-gradient(circle at 30% 25%, rgba(255,255,255,.08), rgba(3,16,31,.98) 62%)",
-                border:
-                  monthRemaining >= 0
-                    ? "1px solid rgba(0,216,255,.24)"
-                    : "1px solid rgba(255,93,122,.28)",
-              }}
-            />
-            <div
-              style={{
-                position: "relative",
-                zIndex: 1,
-                display: "grid",
-                justifyItems: "center",
-                textAlign: "center",
-                gap: 8,
-                width: 140,
-              }}
-            >
-              <div
-                style={{
-                  color: monthRemaining >= 0 ? "#8feaff" : "#ffb3c1",
-                  fontSize: 11,
-                  fontWeight: 900,
-                  textTransform: "uppercase",
-                  letterSpacing: 1,
-                }}
-              >
-                Budget Used
-              </div>
-              <div
-                style={{
-                  color: "white",
-                  fontSize: 30,
-                  fontWeight: 900,
-                  lineHeight: 1,
-                }}
-              >
-                {Math.round(monthRemaining >= 0 ? normalizedBudgetUsedPercent : budgetUsedPercent)}%
-              </div>
-              <div
-                style={{
-                  color: monthRemaining >= 0 ? "#dff7ff" : "#ffd9df",
-                  fontSize: 24,
-                  fontWeight: 900,
-                  lineHeight: 1.1,
-                }}
-              >
-                {money(monthRemaining)}
-              </div>
-              <div style={{ color: "#7fa1ca", fontSize: 11, lineHeight: 1.4 }}>
-                {monthRemaining >= 0 ? "remaining this month" : "over budget this month"}
-              </div>
-            </div>
-          </div>
+            ← Prev
+          </button>
         </div>
         <div style={{ display: "flex", justifyContent: "center" }}>
           <div
@@ -519,74 +460,35 @@ export function BudgetCommandCenter({
             </div>
           </div>
         </div>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-            gap: 20,
-            alignItems: "start",
-          }}
-        >
-          <div style={{ textAlign: "center", display: "grid", justifyItems: "center" }}>
-            <div style={{ color: "#e9f3ff", fontSize: 30, fontWeight: 800 }}>
-              {money(monthIncomeTotal)}
-            </div>
-            <div style={{ color: "#668ab9", fontSize: 18, fontWeight: 700, marginTop: 10 }}>
-              {budgetMonthNames[activeBudgetMonth]} Income
-            </div>
-            <button
-              type="button"
-              onClick={() => shiftBudgetMonth(-1)}
-              aria-label="Go to previous month"
-              style={{
-                marginTop: 12,
-                height: 40,
-                minWidth: 108,
-                borderRadius: 999,
-                border: "1px solid rgba(0,216,255,.28)",
-                background: "linear-gradient(180deg, rgba(0,136,255,.18), rgba(0,43,87,.28))",
-                color: "#dff7ff",
-                cursor: "pointer",
-                fontSize: 15,
-                fontWeight: 700,
-                letterSpacing: 0.35,
-                boxShadow:
-                  "0 0 18px rgba(0,136,255,.18), inset 0 0 16px rgba(143,234,255,.08)",
-              }}
-            >
-              ← Prev
-            </button>
+        <div style={{ textAlign: "center", display: "grid", justifyItems: "center" }}>
+          <div style={{ color: "#e9f3ff", fontSize: 38, fontWeight: 800 }}>
+            {money(budgetTotal)}
           </div>
-          <div style={{ textAlign: "center", display: "grid", justifyItems: "center" }}>
-            <div style={{ color: "#e9f3ff", fontSize: 30, fontWeight: 800 }}>
-              {money(budgetTotal)}
-            </div>
-            <div style={{ color: "#668ab9", fontSize: 18, fontWeight: 700, marginTop: 10 }}>
-              {budgetMonthNames[activeBudgetMonth]} Budget
-            </div>
-            <button
-              type="button"
-              onClick={() => shiftBudgetMonth(1)}
-              aria-label="Go to next month"
-              style={{
-                marginTop: 12,
-                height: 40,
-                minWidth: 108,
-                borderRadius: 999,
-                border: "1px solid rgba(0,216,255,.28)",
-                background: "linear-gradient(180deg, rgba(0,136,255,.18), rgba(0,43,87,.28))",
-                color: "#dff7ff",
-                cursor: "pointer",
-                fontSize: 15,
-                fontWeight: 700,
-                letterSpacing: 0.35,
-                boxShadow:
-                  "0 0 18px rgba(0,136,255,.18), inset 0 0 16px rgba(143,234,255,.08)",
-              }}
-            >
-              Next →
-            </button>
+          <div style={{ color: "#668ab9", fontSize: 26, fontWeight: 700, marginTop: 16 }}>
+            budget in {activeBudgetLabel}
           </div>
+          <button
+            type="button"
+            onClick={() => shiftBudgetMonth(1)}
+            aria-label="Go to next month"
+            style={{
+              marginTop: 12,
+              height: 40,
+              minWidth: 108,
+              borderRadius: 999,
+              border: "1px solid rgba(0,216,255,.28)",
+              background: "linear-gradient(180deg, rgba(0,136,255,.18), rgba(0,43,87,.28))",
+              color: "#dff7ff",
+              cursor: "pointer",
+              fontSize: 15,
+              fontWeight: 700,
+              letterSpacing: 0.35,
+              boxShadow:
+                "0 0 18px rgba(0,136,255,.18), inset 0 0 16px rgba(143,234,255,.08)",
+            }}
+          >
+            Next →
+          </button>
         </div>
       </section>
 
