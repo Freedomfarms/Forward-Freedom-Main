@@ -172,7 +172,7 @@ export function IncomeHub({
   ];
 
   return (
-    <div>
+    <div style={{ fontFamily: styles.page.fontFamily }}>
       <header style={{ ...styles.pageHeader, marginBottom: 20 }}>
         <div>
           <h1 style={styles.pageTitle}>Income Hub</h1>

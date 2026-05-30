@@ -46,6 +46,18 @@ const BUDGET_SORT_OPTIONS = [
   },
 ];
 
+const BUDGET_WORKFLOW_VISIBILITY_KEY = "ff_budget_workflow_visible";
+
+function readBudgetWorkflowVisibilityPreference() {
+  try {
+    const rawValue = localStorage.getItem(BUDGET_WORKFLOW_VISIBILITY_KEY);
+    if (rawValue === null) return true;
+    return rawValue === "true";
+  } catch {
+    return true;
+  }
+}
+
 function sortBudgetRows(rows, sortMode) {
   if (!Array.isArray(rows) || sortMode === "manual") return rows;
 
@@ -149,7 +161,9 @@ export function BudgetCommandCenter({
   const [isSortModalOpen, setIsSortModalOpen] = useState(false);
   const [activeSortMode, setActiveSortMode] = useState("manual");
   const [pendingSortMode, setPendingSortMode] = useState("manual");
-  const [isBudgetWorkflowVisible, setIsBudgetWorkflowVisible] = useState(true);
+  const [isBudgetWorkflowVisible, setIsBudgetWorkflowVisible] = useState(
+    readBudgetWorkflowVisibilityPreference
+  );
   const [activeBudgetDate, setActiveBudgetDate] = useState(() => ({
     monthIndex: currentBudgetPeriod.monthIndex,
     year: currentPlanYear,
@@ -370,6 +384,14 @@ export function BudgetCommandCenter({
     };
   }, [activateBudgetRow, pointerDragBudgetRowId, reorderBudgetRows]);
 
+  useEffect(() => {
+    try {
+      localStorage.setItem(BUDGET_WORKFLOW_VISIBILITY_KEY, String(isBudgetWorkflowVisible));
+    } catch {
+      // If storage is unavailable, we keep in-memory behavior.
+    }
+  }, [isBudgetWorkflowVisible]);
+
   const openSortModal = () => {
     setPendingSortMode(activeSortMode);
     setIsSortModalOpen(true);
@@ -380,8 +402,12 @@ export function BudgetCommandCenter({
     setIsSortModalOpen(false);
   };
 
+  const toggleBudgetWorkflow = () => {
+    setIsBudgetWorkflowVisible((current) => !current);
+  };
+
   return (
-    <>
+    <div style={{ fontFamily: styles.page.fontFamily }}>
       <header style={{ ...styles.pageHeader, marginBottom: 20 }}>
         <div>
           <h1 style={styles.pageTitle}>Budget Strategy Lab</h1>
@@ -719,7 +745,7 @@ export function BudgetCommandCenter({
             </button>
             <button
               type="button"
-              onClick={() => setIsBudgetWorkflowVisible((current) => !current)}
+              onClick={toggleBudgetWorkflow}
               style={{
                 border: "1px solid rgba(0,216,255,.26)",
                 borderRadius: 10,
@@ -1330,6 +1356,6 @@ export function BudgetCommandCenter({
           </div>
         </div>
       ) : null}
-    </>
+    </div>
   );
 }
