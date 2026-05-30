@@ -714,7 +714,7 @@ export function BudgetCommandCenter({
               value: money(activeBudgetSnapshot.monthlySpend),
               tone: "linear-gradient(180deg, rgba(255,159,28,.10), rgba(3,17,32,.64))",
               color: "#fff2db",
-              note: `spent in ${activeBudgetLabel}`,
+              note: `spent in ${budgetMonthNames[activeBudgetMonth]} ${activeBudgetDate.year}`,
             },
             {
               label: "Available",
