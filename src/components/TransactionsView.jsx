@@ -187,6 +187,7 @@ function buildAccountProfile(account, accounts) {
 export function TransactionsView({
   accounts,
   budgetRows,
+  currentMonthSnapshot,
   selectedAccount,
   visibleTransactions,
   setActiveTab,
@@ -291,6 +292,11 @@ export function TransactionsView({
       return true;
     });
   }, [filters, selectedAccount, visibleTransactions]);
+  const monthlySpend = currentMonthSnapshot?.monthlySpend || 0;
+  const cashInflow = filteredTransactions
+    .filter((tx) => tx.amount > 0)
+    .reduce((sum, tx) => sum + tx.amount, 0);
+  const reviewQueueCount = visibleTransactions.filter((tx) => tx.needsReview).length;
   const selectedCategory = manualForm.category;
   const accountProfile = buildAccountProfile(selectedAccountRecord, accounts);
   const isSelectedNonTransactionalAccount = selectedAccountRecord
@@ -303,6 +309,7 @@ export function TransactionsView({
     accountOptions.includes(manualAccountValue) &&
     Number.isFinite(parseManualAmount(manualForm.amount)) &&
     parseManualAmount(manualForm.amount) !== 0;
+  const canOpenManualEntry = accountOptions.length > 0;
 
   const updateManualForm = (field, value) => {
     setManualForm((current) => ({ ...current, [field]: value }));
@@ -403,6 +410,120 @@ export function TransactionsView({
           </button>
         </div>
       </header>
+
+      <div
+        style={{
+          ...styles.panel,
+          padding: 24,
+          marginBottom: 18,
+          position: "relative",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            background:
+              "radial-gradient(circle at top right, rgba(0,216,255,.14), transparent 35%)",
+          }}
+        />
+        <div
+          style={{
+            position: "relative",
+            display: "grid",
+            gridTemplateColumns: "repeat(6,minmax(0,1fr))",
+            gap: 14,
+          }}
+        >
+          {plaidIntegration?.error ? (
+            <div
+              style={{
+                gridColumn: "1 / -1",
+                color: "#ff9a76",
+                border: "1px solid rgba(255,154,118,.2)",
+                background: "rgba(60,16,7,.26)",
+                borderRadius: 12,
+                padding: "12px 14px",
+                marginBottom: 2,
+              }}
+            >
+              {plaidIntegration.error}
+            </div>
+          ) : null}
+          {[
+            ["Connected Accounts", String(accounts.length)],
+            ["Monthly Spend", money(monthlySpend)],
+            ["Visible Transactions", String(filteredTransactions.length)],
+            ["Needs Review", String(reviewQueueCount)],
+            [
+              plaidIntegration?.lastSyncAt ? "Last Plaid Sync" : "Cash Inflow",
+              plaidIntegration?.lastSyncAt
+                ? new Date(plaidIntegration.lastSyncAt).toLocaleDateString()
+                : money(cashInflow),
+            ],
+          ].map((item) => (
+            <div
+              key={item[0]}
+              style={{
+                border: "1px solid rgba(0,136,255,.22)",
+                borderRadius: 14,
+                background: "rgba(3,17,32,.72)",
+                padding: "16px 14px",
+              }}
+            >
+              <div
+                style={{
+                  color: "#8fb1d9",
+                  fontSize: 12,
+                  textTransform: "uppercase",
+                  marginBottom: 8,
+                  letterSpacing: 0.8,
+                }}
+              >
+                {item[0]}
+              </div>
+              <div style={{ color: "white", fontSize: 23, fontWeight: 800, lineHeight: 1.15 }}>
+                {item[1]}
+              </div>
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={() => setShowManualEntry(true)}
+            disabled={!canOpenManualEntry}
+            style={{
+              border: "1px solid rgba(255,159,28,.32)",
+              borderRadius: 14,
+              background: canOpenManualEntry
+                ? "linear-gradient(180deg, rgba(255,159,28,.14), rgba(56,22,0,.22))"
+                : "rgba(48,55,68,.28)",
+              padding: "16px 14px",
+              textAlign: "left",
+              cursor: canOpenManualEntry ? "pointer" : "not-allowed",
+              boxShadow: canOpenManualEntry ? "0 0 24px rgba(255,159,28,.12)" : "none",
+              color: "white",
+              opacity: canOpenManualEntry ? 1 : 0.6,
+            }}
+          >
+            <div
+              style={{
+                color: "#ffd08a",
+                fontSize: 12,
+                textTransform: "uppercase",
+                marginBottom: 8,
+                letterSpacing: 0.8,
+                fontWeight: 900,
+              }}
+            >
+              Manual Entry
+            </div>
+            <div style={{ fontSize: 22, fontWeight: 900, lineHeight: 1.15 }}>
+              {canOpenManualEntry ? "Transaction" : "No Account"}
+            </div>
+          </button>
+        </div>
+      </div>
 
       {showManualEntry ? (
         <div
@@ -837,6 +958,25 @@ export function TransactionsView({
             {selectedAccount ? `${selectedAccount} Transactions` : "Live Transaction Feed"}
           </div>
           <div style={{ display: "flex", gap: 12 }}>
+            <button
+              onClick={() => setShowManualEntry(true)}
+              disabled={!canOpenManualEntry}
+              style={{
+                background: canOpenManualEntry
+                  ? "rgba(255,159,28,.12)"
+                  : "rgba(120,130,150,.12)",
+                border: canOpenManualEntry
+                  ? "1px solid rgba(255,159,28,.28)"
+                  : "1px solid rgba(160,175,200,.16)",
+                color: canOpenManualEntry ? "#fff2db" : "#7f93ad",
+                borderRadius: 8,
+                padding: "10px 14px",
+                cursor: canOpenManualEntry ? "pointer" : "not-allowed",
+                fontWeight: 800,
+              }}
+            >
+              + Manual Transaction
+            </button>
             <button
               onClick={() => setShowFilters((current) => !current)}
               style={{
