@@ -395,8 +395,8 @@ export function BudgetCommandCenter({
       <section
         style={{
           ...styles.panel,
-          minHeight: 165,
-          padding: "26px 40px 86px",
+          minHeight: 0,
+          padding: "20px 26px 22px",
           borderRadius: 32,
           display: "grid",
           gridTemplateColumns: "1fr minmax(280px, 340px) 1fr",
@@ -440,8 +440,8 @@ export function BudgetCommandCenter({
         <div style={{ display: "flex", justifyContent: "center" }}>
           <div
             style={{
-              width: 220,
-              height: 220,
+              width: 192,
+              height: 192,
               borderRadius: "50%",
               position: "relative",
               display: "grid",
@@ -456,7 +456,7 @@ export function BudgetCommandCenter({
             <div
               style={{
                 position: "absolute",
-                inset: 14,
+                inset: 12,
                 borderRadius: "50%",
                 background:
                   "radial-gradient(circle at 30% 25%, rgba(255,255,255,.08), rgba(3,16,31,.98) 62%)",
@@ -474,7 +474,7 @@ export function BudgetCommandCenter({
                 justifyItems: "center",
                 textAlign: "center",
                 gap: 8,
-                width: 140,
+                width: 128,
               }}
             >
               <div
@@ -491,7 +491,7 @@ export function BudgetCommandCenter({
               <div
                 style={{
                   color: "white",
-                  fontSize: 30,
+                  fontSize: 26,
                   fontWeight: 900,
                   lineHeight: 1,
                 }}
@@ -501,7 +501,7 @@ export function BudgetCommandCenter({
               <div
                 style={{
                   color: monthRemaining >= 0 ? "#dff7ff" : "#ffd9df",
-                  fontSize: 24,
+                  fontSize: 20,
                   fontWeight: 900,
                   lineHeight: 1.1,
                 }}
@@ -518,9 +518,9 @@ export function BudgetCommandCenter({
           <div
             style={{
               width: "100%",
-              maxWidth: 320,
+              maxWidth: 300,
               borderRadius: 24,
-              padding: "14px 14px 14px",
+              padding: "12px",
               border: "1px solid rgba(0,216,255,.22)",
               background:
                 "linear-gradient(180deg, rgba(4,22,43,.96), rgba(2,11,24,.94))",
@@ -554,14 +554,14 @@ export function BudgetCommandCenter({
                   background:
                     "linear-gradient(180deg, rgba(8,31,58,.95), rgba(3,18,36,.92))",
                   boxShadow: "inset 0 0 18px rgba(0,216,255,.05)",
-                  padding: "10px 10px 8px",
+                  padding: "8px 10px 7px",
                   textAlign: "center",
                 }}
               >
                 <div
                   style={{
                     color: "white",
-                    fontSize: 20,
+                    fontSize: 18,
                     fontWeight: 700,
                     letterSpacing: 0.2,
                     textShadow: "0 0 14px rgba(0,216,255,.16)",
@@ -656,15 +656,15 @@ export function BudgetCommandCenter({
           style={{
             display: "grid",
             gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-            gap: 14,
+            gap: 12,
             alignItems: "start",
           }}
         >
           <div style={{ textAlign: "center", display: "grid", justifyItems: "center" }}>
-            <div style={{ color: "#e9f3ff", fontSize: 30, fontWeight: 800 }}>
+            <div style={{ color: "#e9f3ff", fontSize: 26, fontWeight: 800 }}>
               {money(monthIncomeTotal)}
             </div>
-            <div style={{ color: "#668ab9", fontSize: 18, fontWeight: 700, marginTop: 10 }}>
+            <div style={{ color: "#668ab9", fontSize: 16, fontWeight: 700, marginTop: 8 }}>
               {budgetMonthNames[activeBudgetMonth]} Income
             </div>
             <button
@@ -672,15 +672,15 @@ export function BudgetCommandCenter({
               onClick={() => shiftBudgetMonth(-1)}
               aria-label="Go to previous month"
               style={{
-                marginTop: 12,
-                height: 40,
-                minWidth: 108,
+                marginTop: 10,
+                height: 36,
+                minWidth: 100,
                 borderRadius: 999,
                 border: "1px solid rgba(0,216,255,.28)",
                 background: "linear-gradient(180deg, rgba(0,136,255,.18), rgba(0,43,87,.28))",
                 color: "#dff7ff",
                 cursor: "pointer",
-                fontSize: 15,
+                fontSize: 14,
                 fontWeight: 700,
                 letterSpacing: 0.35,
                 boxShadow:
@@ -691,10 +691,10 @@ export function BudgetCommandCenter({
             </button>
           </div>
           <div style={{ textAlign: "center", display: "grid", justifyItems: "center" }}>
-            <div style={{ color: "#e9f3ff", fontSize: 30, fontWeight: 800 }}>
+            <div style={{ color: "#e9f3ff", fontSize: 26, fontWeight: 800 }}>
               {money(budgetTotal)}
             </div>
-            <div style={{ color: "#668ab9", fontSize: 18, fontWeight: 700, marginTop: 10 }}>
+            <div style={{ color: "#668ab9", fontSize: 16, fontWeight: 700, marginTop: 8 }}>
               {budgetMonthNames[activeBudgetMonth]} Budget
             </div>
             <button
@@ -702,15 +702,15 @@ export function BudgetCommandCenter({
               onClick={() => shiftBudgetMonth(1)}
               aria-label="Go to next month"
               style={{
-                marginTop: 12,
-                height: 40,
-                minWidth: 108,
+                marginTop: 10,
+                height: 36,
+                minWidth: 100,
                 borderRadius: 999,
                 border: "1px solid rgba(0,216,255,.28)",
                 background: "linear-gradient(180deg, rgba(0,136,255,.18), rgba(0,43,87,.28))",
                 color: "#dff7ff",
                 cursor: "pointer",
-                fontSize: 15,
+                fontSize: 14,
                 fontWeight: 700,
                 letterSpacing: 0.35,
                 boxShadow:
@@ -720,53 +720,52 @@ export function BudgetCommandCenter({
               Next →
             </button>
           </div>
-        </div>
-        <div
-          style={{
-            position: "absolute",
-            right: 24,
-            bottom: 16,
-            zIndex: 2,
-            display: "flex",
-            gap: 10,
-          }}
-        >
-          <button
-            type="button"
-            onClick={openSortModal}
+          <div
             style={{
-              border: "1px solid rgba(0,216,255,.26)",
-              borderRadius: 10,
-              background: "rgba(0,136,255,.12)",
-              color: "#dff7ff",
-              padding: "10px 16px",
-              fontSize: 13,
-              fontWeight: 800,
-              letterSpacing: 0.4,
-              cursor: "pointer",
+              gridColumn: "1 / -1",
+              display: "flex",
+              justifyContent: "flex-end",
+              gap: 10,
+              marginTop: 2,
             }}
           >
-            Sort
-          </button>
-          <button
-            type="button"
-            onClick={() => setIsBudgetWorkflowVisible((current) => !current)}
-            style={{
-              border: "1px solid rgba(0,216,255,.26)",
-              borderRadius: 10,
-              background: isBudgetWorkflowVisible
-                ? "rgba(0,136,255,.16)"
-                : "rgba(4,22,43,.75)",
-              color: "#dff7ff",
-              padding: "10px 16px",
-              fontSize: 13,
-              fontWeight: 800,
-              letterSpacing: 0.4,
-              cursor: "pointer",
-            }}
-          >
-            Budget Workflow
-          </button>
+            <button
+              type="button"
+              onClick={openSortModal}
+              style={{
+                border: "1px solid rgba(0,216,255,.26)",
+                borderRadius: 10,
+                background: "rgba(0,136,255,.12)",
+                color: "#dff7ff",
+                padding: "8px 14px",
+                fontSize: 13,
+                fontWeight: 800,
+                letterSpacing: 0.4,
+                cursor: "pointer",
+              }}
+            >
+              Sort
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsBudgetWorkflowVisible((current) => !current)}
+              style={{
+                border: "1px solid rgba(0,216,255,.26)",
+                borderRadius: 10,
+                background: isBudgetWorkflowVisible
+                  ? "rgba(0,136,255,.16)"
+                  : "rgba(4,22,43,.75)",
+                color: "#dff7ff",
+                padding: "8px 14px",
+                fontSize: 13,
+                fontWeight: 800,
+                letterSpacing: 0.4,
+                cursor: "pointer",
+              }}
+            >
+              Budget Workflow
+            </button>
+          </div>
         </div>
       </section>
 
