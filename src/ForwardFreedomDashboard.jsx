@@ -58,6 +58,7 @@ import { IncomeHub } from "./components/IncomeHub.jsx";
 import { LandingPage } from "./components/LandingPage.jsx";
 import { AppSidebar, ModulePlaceholder } from "./components/Layout.jsx";
 import { OperationsBoard } from "./components/OperationsBoard.jsx";
+import { ObjectivesBoard } from "./components/ObjectivesBoard.jsx";
 import { RecurringSubscriptions } from "./components/RecurringSubscriptions.jsx";
 import { TransactionsView } from "./components/TransactionsView.jsx";
 import { LegalModal } from "./components/LegalDocuments.jsx";
@@ -85,6 +86,7 @@ const EMPTY_USER_STATE = Object.freeze({
   budgetRows: [],
   incomeStreams: [],
   projectionAdjustments: {},
+  objectives: [],
   subscriptions: [],
   plaidItems: [],
   plaidNicknames: {},
@@ -433,6 +435,7 @@ function ForwardFreedomDashboard({
   const incomeStreams = activeUser.incomeStreams;
   const projectionAdjustments = activeUser.projectionAdjustments;
   const subscriptions = activeUser.subscriptions;
+  const objectives = Array.isArray(activeUser.objectives) ? activeUser.objectives : [];
   const plaidItems = activeUser.plaidItems;
   const lastPlaidSyncAt = activeUser.lastPlaidSyncAt;
   const merchantCategoryRules = activeUser.merchantCategoryRules || {};
@@ -465,6 +468,7 @@ function ForwardFreedomDashboard({
   const setProjectionAdjustments = (valueOrUpdater) =>
     setActiveUserField("projectionAdjustments", valueOrUpdater);
   const setSubscriptions = (valueOrUpdater) => setActiveUserField("subscriptions", valueOrUpdater);
+  const setObjectives = (valueOrUpdater) => setActiveUserField("objectives", valueOrUpdater);
   const setMerchantCategoryRules = (valueOrUpdater) =>
     setActiveUserField("merchantCategoryRules", valueOrUpdater);
   const setActiveTab = (valueOrUpdater) => setActiveUserField("activeTab", valueOrUpdater);
@@ -1625,6 +1629,20 @@ function ForwardFreedomDashboard({
               accounts={syncedAccounts}
               subscriptions={subscriptions}
               setSubscriptions={setSubscriptions}
+              householdProfilesProps={householdProfilesProps}
+            />
+          ) : activeTab === APP_TABS.OBJECTIVES ? (
+            <ObjectivesBoard
+              objectives={objectives}
+              setObjectives={setObjectives}
+              transactions={categorizedTransactions}
+              subscriptions={subscriptions}
+              trueCash={trueCash}
+              totalNetWorth={totalNetWorth}
+              currentMonthSnapshot={currentMonthSpendSnapshot}
+              monthlyFlow={monthlyFlow}
+              metricSnapshots={trackedMetricSnapshots}
+              currentMonthIncome={currentMonthIncome}
               householdProfilesProps={householdProfilesProps}
             />
           ) : (
