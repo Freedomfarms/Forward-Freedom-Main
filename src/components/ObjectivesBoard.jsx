@@ -348,17 +348,30 @@ export function ObjectivesBoard({
     [transactions]
   );
 
-  const context = {
-    now,
-    transactionRows,
-    currentMonthSnapshot,
-    monthlyFlow,
-    metricSnapshots,
-    trueCash,
-    totalNetWorth,
-    currentMonthIncome,
-    activeMonthlySubscriptions,
-  };
+  const context = useMemo(
+    () => ({
+      now,
+      transactionRows,
+      currentMonthSnapshot,
+      monthlyFlow,
+      metricSnapshots,
+      trueCash,
+      totalNetWorth,
+      currentMonthIncome,
+      activeMonthlySubscriptions,
+    }),
+    [
+      now,
+      transactionRows,
+      currentMonthSnapshot,
+      monthlyFlow,
+      metricSnapshots,
+      trueCash,
+      totalNetWorth,
+      currentMonthIncome,
+      activeMonthlySubscriptions,
+    ]
+  );
 
   const evaluatedObjectives = useMemo(
     () => normalizedObjectives.map((goal) => evaluateObjective(goal, context)),
