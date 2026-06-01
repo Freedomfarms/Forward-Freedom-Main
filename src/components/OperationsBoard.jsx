@@ -959,8 +959,8 @@ export function OperationsBoard({
               Calendar cash flow
             </div>
             <div style={{ color: "#eaf6ff", fontSize: 14, lineHeight: 1.55, marginTop: 10 }}>
-              Futuristic cash-flow heatmap that blends posted activity, live plan pulse, and daily
-              forecast stability.
+              Cash-flow heatmap that blends posted activity, live plan pulse, and daily forecast
+              stability.
             </div>
             {focusedCalendarDay ? (
               <div
@@ -1045,6 +1045,7 @@ export function OperationsBoard({
                     fontWeight: 900,
                     lineHeight: 1,
                     cursor: "pointer",
+                    padding: 0,
                     width: 38,
                     height: 38,
                     borderRadius: "50%",
@@ -1056,7 +1057,15 @@ export function OperationsBoard({
                   }}
                   aria-label="Previous calendar month"
                 >
-                  ‹
+                  <svg viewBox="0 0 16 16" width="15" height="15" fill="none" aria-hidden="true">
+                    <path
+                      d="M10.5 2.5L5 8l5.5 5.5"
+                      stroke="currentColor"
+                      strokeWidth="2.2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
                 </button>
                 <div
                   style={{
@@ -1082,6 +1091,7 @@ export function OperationsBoard({
                     fontWeight: 900,
                     lineHeight: 1,
                     cursor: "pointer",
+                    padding: 0,
                     width: 38,
                     height: 38,
                     borderRadius: "50%",
@@ -1093,7 +1103,15 @@ export function OperationsBoard({
                   }}
                   aria-label="Next calendar month"
                 >
-                  ›
+                  <svg viewBox="0 0 16 16" width="15" height="15" fill="none" aria-hidden="true">
+                    <path
+                      d="M5.5 2.5L11 8l-5.5 5.5"
+                      stroke="currentColor"
+                      strokeWidth="2.2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
                 </button>
               </div>
 
