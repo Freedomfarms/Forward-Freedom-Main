@@ -122,7 +122,18 @@ function getCashFlowHeatStyle(value, maxAbsValue) {
 }
 
 function parseTransactionDateParts(value) {
-  const parsed = new Date(value);
+  const rawValue = String(value || "");
+  const isoDateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(rawValue);
+  if (isoDateMatch) {
+    const [, yearText, monthText, dayText] = isoDateMatch;
+    return {
+      year: Number(yearText),
+      monthIndex: Number(monthText) - 1,
+      day: Number(dayText),
+    };
+  }
+
+  const parsed = new Date(rawValue);
   if (Number.isNaN(parsed.getTime())) return null;
   return {
     year: parsed.getFullYear(),
@@ -168,10 +179,11 @@ function buildCashFlowCalendarModel({
   const days = Array.from({ length: daysInMonth }, (_, index) => {
     const day = index + 1;
     const actualNet = dailyActualNet[index];
+    const dayOpeningBalance = openingTrueCash + cumulativeActual;
     cumulativeActual += actualNet;
     const planToDate = dailyPlanPulse * day;
     const varianceToPlan = cumulativeActual - planToDate;
-    const runningBalance = openingTrueCash + cumulativeActual;
+    const runningBalance = dayOpeningBalance + actualNet;
     const monthEndForecast = runningBalance + dailyPlanPulse * (daysInMonth - day);
     const varianceScoreBase = Math.max(Math.abs(planToDate), 90);
     const variancePenalty = clampNumber((Math.abs(varianceToPlan) / varianceScoreBase) * 28, 0, 35);
@@ -1006,7 +1018,7 @@ export function OperationsBoard({
                   {formatCompactSignedMoney(focusedCalendarDay.actualNet)} posted
                 </div>
                 <div style={{ color: "#9fb0c9", fontSize: 12, marginTop: 4 }}>
-                  Run {wholeDollars(focusedCalendarDay.runningBalance)} · Forecast{" "}
+                  TC {wholeDollars(focusedCalendarDay.runningBalance)} · Forecast{" "}
                   {wholeDollars(focusedCalendarDay.monthEndForecast)}
                 </div>
               </div>
