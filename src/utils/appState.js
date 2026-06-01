@@ -10,6 +10,7 @@ import {
 import { normalizeAccount } from "./accounts.js";
 import { getCurrentBudgetPeriod } from "./date.js";
 import { buildPlanYearData, normalizePlansByYear } from "./planning.js";
+import { buildSeedObjectives, normalizeObjectives } from "./objectives.js";
 
 export const APP_STATE_STORAGE_KEY = "fff-app-state-v1";
 export const LEGACY_METRIC_SNAPSHOT_STORAGE_KEY = "fff-dashboard-metric-snapshots-v1";
@@ -79,6 +80,7 @@ function buildUserState({
   return {
     id,
     name,
+    createdAt: new Date().toISOString(),
     selectedAccount,
     accounts: useSeedData
       ? cloneSeed(initialAccounts).map((account, index) => normalizeAccount(account, index))
@@ -87,6 +89,7 @@ function buildUserState({
     budgetRows: cloneSeed(currentPlanData.budgetRows),
     incomeStreams: cloneSeed(currentPlanData.incomeStreams),
     projectionAdjustments: cloneSeed(currentPlanData.projectionAdjustments),
+    objectives: buildSeedObjectives(),
     plansByYear: {
       [String(currentYear)]: buildPlanYearData(currentPlanData),
     },
@@ -119,6 +122,10 @@ function normalizeUserState(rawUser, fallbackName, useSeedData = true) {
     name:
       typeof rawUser?.name === "string" && rawUser.name.trim() ? rawUser.name.trim() : fallbackName,
     selectedAccount: typeof rawUser?.selectedAccount === "string" ? rawUser.selectedAccount : null,
+    createdAt:
+      typeof rawUser?.createdAt === "string" && !Number.isNaN(new Date(rawUser.createdAt).getTime())
+        ? rawUser.createdAt
+        : defaults.createdAt,
     accounts: Array.isArray(rawUser?.accounts)
       ? rawUser.accounts.map((account, index) => normalizeAccount(account, index))
       : defaults.accounts,
@@ -133,6 +140,7 @@ function normalizeUserState(rawUser, fallbackName, useSeedData = true) {
       rawUser?.projectionAdjustments && typeof rawUser.projectionAdjustments === "object"
         ? rawUser.projectionAdjustments
         : defaults.projectionAdjustments,
+    objectives: normalizeObjectives(rawUser?.objectives, defaults.objectives),
     plansByYear: normalizePlansByYear(rawUser?.plansByYear, {
       budgetRows: Array.isArray(rawUser?.budgetRows) ? rawUser.budgetRows : defaults.budgetRows,
       incomeStreams: Array.isArray(rawUser?.incomeStreams)

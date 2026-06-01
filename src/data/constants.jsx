@@ -11,6 +11,7 @@ export const APP_TABS = {
   TRANSACTIONS: "Transactions",
   DEBT_PAYOFF_TRACKER: "Debt Payoff Tracker",
   RECURRING_SUBSCRIPTIONS: "Recurring Subscriptions",
+  OBJECTIVES: "Objectives",
   INVESTMENTS: "Investments",
   REPORTS: "Reports",
   SETTINGS: "Settings",
@@ -30,6 +31,7 @@ export const navMain = [
 
 export const navTools = [
   { icon: "▤", label: APP_TABS.RECURRING_SUBSCRIPTIONS },
+  { icon: "◎", label: APP_TABS.OBJECTIVES },
 ];
 
 export const yAxis = ["$100K", "$80K", "$60K", "$40K", "$20K", "$0"];

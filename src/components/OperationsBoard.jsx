@@ -122,7 +122,18 @@ function getCashFlowHeatStyle(value, maxAbsValue) {
 }
 
 function parseTransactionDateParts(value) {
-  const parsed = new Date(value);
+  const rawValue = String(value || "");
+  const isoDateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(rawValue);
+  if (isoDateMatch) {
+    const [, yearText, monthText, dayText] = isoDateMatch;
+    return {
+      year: Number(yearText),
+      monthIndex: Number(monthText) - 1,
+      day: Number(dayText),
+    };
+  }
+
+  const parsed = new Date(rawValue);
   if (Number.isNaN(parsed.getTime())) return null;
   return {
     year: parsed.getFullYear(),
@@ -168,10 +179,11 @@ function buildCashFlowCalendarModel({
   const days = Array.from({ length: daysInMonth }, (_, index) => {
     const day = index + 1;
     const actualNet = dailyActualNet[index];
+    const dayOpeningBalance = openingTrueCash + cumulativeActual;
     cumulativeActual += actualNet;
     const planToDate = dailyPlanPulse * day;
     const varianceToPlan = cumulativeActual - planToDate;
-    const runningBalance = openingTrueCash + cumulativeActual;
+    const runningBalance = dayOpeningBalance + actualNet;
     const monthEndForecast = runningBalance + dailyPlanPulse * (daysInMonth - day);
     const varianceScoreBase = Math.max(Math.abs(planToDate), 90);
     const variancePenalty = clampNumber((Math.abs(varianceToPlan) / varianceScoreBase) * 28, 0, 35);
@@ -363,7 +375,7 @@ export function OperationsBoard({
   const adjustmentValues = budgetMonths.map((month) =>
     parseMoney(planningProjectionAdjustments[month])
   );
-  const anchorStartingMonth = currentBudgetPeriod.month;
+  const anchorStartingMonth = planningAnchor.startingMonth || currentBudgetPeriod.month;
   const anchorStartingTrueCash =
     planningAnchor.startingTrueCash !== undefined && planningAnchor.startingTrueCash !== null
       ? Number(planningAnchor.startingTrueCash) || 0
@@ -949,18 +961,16 @@ export function OperationsBoard({
           <div>
             <div
               style={{
-                color: "#8feaff",
-                fontSize: 11,
+                color: "white",
+                fontSize: 22,
                 fontWeight: 900,
-                textTransform: "uppercase",
-                letterSpacing: 1,
               }}
             >
-              1. Holographic Calendar Cash Flow
+              Calendar Cash Flow
             </div>
             <div style={{ color: "#eaf6ff", fontSize: 14, lineHeight: 1.55, marginTop: 10 }}>
-              Futuristic cash-flow heatmap that blends posted activity, live plan pulse, and daily
-              forecast stability.
+              Cash-flow heatmap that blends posted activity, live plan pulse, and daily forecast
+              stability.
             </div>
             {focusedCalendarDay ? (
               <div
@@ -985,11 +995,28 @@ export function OperationsBoard({
                 <div style={{ color: "white", fontWeight: 900, marginTop: 6 }}>
                   {budgetMonths[safeCalendarMonthIndex]} {focusedCalendarDay.day}
                 </div>
-                <div style={{ color: "#7dffd5", marginTop: 4, fontWeight: 800 }}>
+                <div
+                  style={{
+                    color:
+                      focusedCalendarDay.actualNet < 0
+                        ? "#ff4f8a"
+                        : focusedCalendarDay.actualNet > 0
+                          ? "#7dffd5"
+                          : "#8feaff",
+                    marginTop: 4,
+                    fontWeight: 800,
+                    textShadow:
+                      focusedCalendarDay.actualNet < 0
+                        ? "0 0 14px rgba(255,79,138,.65)"
+                        : focusedCalendarDay.actualNet > 0
+                          ? "0 0 14px rgba(125,255,213,.55)"
+                          : "none",
+                  }}
+                >
                   {formatCompactSignedMoney(focusedCalendarDay.actualNet)} posted
                 </div>
                 <div style={{ color: "#9fb0c9", fontSize: 12, marginTop: 4 }}>
-                  Run {wholeDollars(focusedCalendarDay.runningBalance)} · Forecast{" "}
+                  TC {wholeDollars(focusedCalendarDay.runningBalance)} · Forecast{" "}
                   {wholeDollars(focusedCalendarDay.monthEndForecast)}
                 </div>
               </div>
@@ -1010,7 +1037,7 @@ export function OperationsBoard({
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "42px 42px 1fr 42px 42px",
+                  gridTemplateColumns: "58px 1fr 58px",
                   alignItems: "center",
                   borderBottom: "1px solid rgba(0,216,255,.18)",
                   minHeight: 48,
@@ -1020,17 +1047,36 @@ export function OperationsBoard({
                   type="button"
                   onClick={() => shiftCalendarMonth(-1)}
                   style={{
-                    background: "transparent",
-                    border: "none",
-                    color: "#59dfff",
-                    fontSize: 20,
+                    background:
+                      "radial-gradient(circle at 30% 20%, rgba(0,216,255,.34), rgba(0,75,126,.2) 48%, rgba(0,24,48,.14) 100%)",
+                    border: "1px solid rgba(0,216,255,.42)",
+                    color: "#93ecff",
+                    fontSize: 24,
+                    fontWeight: 900,
+                    lineHeight: 1,
                     cursor: "pointer",
+                    padding: 0,
+                    width: 38,
+                    height: 38,
+                    borderRadius: "50%",
+                    display: "grid",
+                    placeItems: "center",
+                    margin: "0 auto",
+                    boxShadow:
+                      "0 0 16px rgba(0,216,255,.26), inset 0 0 9px rgba(143,234,255,.26)",
                   }}
                   aria-label="Previous calendar month"
                 >
-                  ‹
+                  <svg viewBox="0 0 16 16" width="15" height="15" fill="none" aria-hidden="true">
+                    <path
+                      d="M10.5 2.5L5 8l5.5 5.5"
+                      stroke="currentColor"
+                      strokeWidth="2.2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
                 </button>
-                <div style={{ color: "#59dfff", textAlign: "center", fontSize: 20 }}>‹</div>
                 <div
                   style={{
                     color: "#eaf7ff",
@@ -1043,20 +1089,39 @@ export function OperationsBoard({
                 >
                   {budgetMonths[safeCalendarMonthIndex]} {activePlanningYear}
                 </div>
-                <div style={{ color: "#59dfff", textAlign: "center", fontSize: 20 }}>›</div>
                 <button
                   type="button"
                   onClick={() => shiftCalendarMonth(1)}
                   style={{
-                    background: "transparent",
-                    border: "none",
-                    color: "#59dfff",
-                    fontSize: 20,
+                    background:
+                      "radial-gradient(circle at 30% 20%, rgba(0,216,255,.34), rgba(0,75,126,.2) 48%, rgba(0,24,48,.14) 100%)",
+                    border: "1px solid rgba(0,216,255,.42)",
+                    color: "#93ecff",
+                    fontSize: 24,
+                    fontWeight: 900,
+                    lineHeight: 1,
                     cursor: "pointer",
+                    padding: 0,
+                    width: 38,
+                    height: 38,
+                    borderRadius: "50%",
+                    display: "grid",
+                    placeItems: "center",
+                    margin: "0 auto",
+                    boxShadow:
+                      "0 0 16px rgba(0,216,255,.26), inset 0 0 9px rgba(143,234,255,.26)",
                   }}
                   aria-label="Next calendar month"
                 >
-                  ›
+                  <svg viewBox="0 0 16 16" width="15" height="15" fill="none" aria-hidden="true">
+                    <path
+                      d="M5.5 2.5L11 8l-5.5 5.5"
+                      stroke="currentColor"
+                      strokeWidth="2.2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
                 </button>
               </div>
 
