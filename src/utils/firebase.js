@@ -5,6 +5,7 @@ import {
   createUserWithEmailAndPassword,
   getAuth,
   onAuthStateChanged,
+  reload,
   sendEmailVerification,
   sendPasswordResetEmail,
   setPersistence,
@@ -12,6 +13,7 @@ import {
   signInWithPopup,
   signOut,
   updateProfile,
+  verifyBeforeUpdateEmail,
 } from "firebase/auth";
 
 const firebaseClientConfig = {
@@ -111,6 +113,39 @@ export async function requestPasswordReset({ email }) {
 
     throw error;
   }
+}
+
+export async function updateCurrentUserDisplayName({ displayName }) {
+  const auth = await getReadyFirebaseAuth();
+  if (!auth.currentUser) {
+    throw new Error("Sign in before updating your profile.");
+  }
+
+  const normalizedName = String(displayName || "").trim();
+  if (!normalizedName) {
+    throw new Error("Enter a profile name before saving.");
+  }
+
+  await updateProfile(auth.currentUser, { displayName: normalizedName });
+  await reload(auth.currentUser);
+}
+
+export async function requestCurrentUserEmailChange({ nextEmail }) {
+  const auth = await getReadyFirebaseAuth();
+  if (!auth.currentUser) {
+    throw new Error("Sign in before changing your email.");
+  }
+
+  const normalizedEmail = String(nextEmail || "").trim();
+  if (!normalizedEmail) {
+    throw new Error("Enter the new email address before saving.");
+  }
+
+  if (auth.currentUser.email && auth.currentUser.email === normalizedEmail) {
+    throw new Error("That is already your current email address.");
+  }
+
+  await verifyBeforeUpdateEmail(auth.currentUser, normalizedEmail);
 }
 
 export async function resendCurrentUserVerification() {

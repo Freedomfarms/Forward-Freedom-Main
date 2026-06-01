@@ -63,8 +63,10 @@ function AuthenticatedWorkspaceApp({
   signOut,
   isBusy,
   authNotice,
+  requestEmailChange,
   resendVerificationEmail,
   requestPasswordReset,
+  updateProfileName,
 }) {
   const storageKey = useMemo(() => buildScopedAppStateStorageKey(user.uid), [user.uid]);
   const [workspaceSeedState, setWorkspaceSeedState] = useState(null);
@@ -238,7 +240,7 @@ function AuthenticatedWorkspaceApp({
     return <AppLoadingScreen />;
   }
 
-  const sessionUser = workspaceProfile || user;
+  const sessionUser = user || workspaceProfile;
   const sessionEmail = sessionUser?.email || user?.email || "";
   const sessionControls = {
     user: sessionUser,
@@ -246,6 +248,14 @@ function AuthenticatedWorkspaceApp({
     isBusy,
     isEmailVerified: Boolean(sessionUser?.emailVerified),
     onResendVerification: () => void resendVerificationEmail(),
+    onUpdateProfileName:
+      typeof updateProfileName === "function"
+        ? ({ displayName }) => updateProfileName({ displayName })
+        : null,
+    onRequestEmailChange:
+      typeof requestEmailChange === "function"
+        ? ({ nextEmail }) => requestEmailChange({ nextEmail })
+        : null,
     onRequestPasswordReset:
       typeof requestPasswordReset === "function" && sessionEmail
         ? () => void requestPasswordReset({ email: sessionEmail })
@@ -273,9 +283,11 @@ function AppContent() {
     isBusy,
     notice,
     ready,
+    requestEmailChange,
     requestPasswordReset,
     resendVerificationEmail,
     signOut,
+    updateProfileName,
     user,
   } = useAuth();
   const [publicView, setPublicView] = useState("landing");
@@ -333,8 +345,10 @@ function AppContent() {
       }}
       isBusy={isBusy}
       authNotice={notice}
+      requestEmailChange={requestEmailChange}
       resendVerificationEmail={resendVerificationEmail}
       requestPasswordReset={requestPasswordReset}
+      updateProfileName={updateProfileName}
     />
   );
 }

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { APP_TABS, budgetMonthNames, budgetMonths, chartSets } from "../data/constants.jsx";
 import { buildMonthlyBudgetReview } from "../utils/budgetReview.js";
 import { getCurrentBudgetPeriod } from "../utils/date.js";
@@ -245,6 +245,11 @@ export function DashboardView({
   const [hoverState, setHoverState] = useState(null);
   const [netWorthHistoryRange, setNetWorthHistoryRange] = useState("30D");
   const [isAccountPanelOpen, setIsAccountPanelOpen] = useState(false);
+  const [isEditingProfileName, setIsEditingProfileName] = useState(false);
+  const [isEditingEmail, setIsEditingEmail] = useState(false);
+  const [profileNameDraft, setProfileNameDraft] = useState("");
+  const [emailDraft, setEmailDraft] = useState("");
+  const [accountPanelError, setAccountPanelError] = useState("");
   const sessionUser = sessionControls?.user || null;
   const sessionLabel = sessionUser?.displayName?.trim() || sessionUser?.email || "Account";
   const sessionEmail = sessionUser?.email || "";
@@ -256,6 +261,32 @@ export function DashboardView({
     if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
     return `${parts[0][0] || ""}${parts[1][0] || ""}`.toUpperCase();
   })();
+  useEffect(() => {
+    if (!isAccountPanelOpen) return;
+    setProfileNameDraft(sessionUser?.displayName || "");
+    setEmailDraft(sessionEmail || "");
+    setAccountPanelError("");
+  }, [isAccountPanelOpen, sessionEmail, sessionUser?.displayName]);
+  const handleProfileNameSave = async () => {
+    if (typeof sessionControls?.onUpdateProfileName !== "function") return;
+    setAccountPanelError("");
+    try {
+      await sessionControls.onUpdateProfileName({ displayName: profileNameDraft });
+      setIsEditingProfileName(false);
+    } catch (error) {
+      setAccountPanelError(error?.message || "Unable to update profile name right now.");
+    }
+  };
+  const handleEmailSave = async () => {
+    if (typeof sessionControls?.onRequestEmailChange !== "function") return;
+    setAccountPanelError("");
+    try {
+      await sessionControls.onRequestEmailChange({ nextEmail: emailDraft });
+      setIsEditingEmail(false);
+    } catch (error) {
+      setAccountPanelError(error?.message || "Unable to request email change right now.");
+    }
+  };
   const allocationGradient = buildAllocationGradient(dynamicAllocations);
   const allocationTotal = dynamicAllocations.reduce(
     (sum, item) => sum + Number(item.valueNumber || 0),
@@ -503,10 +534,102 @@ export function DashboardView({
                 >
                   Account hub
                 </div>
-                <div style={{ color: "white", fontWeight: 800, marginTop: 8 }}>{sessionLabel}</div>
-                <div style={{ color: "#9fb0c9", fontSize: 12, marginTop: 4 }}>
-                  {sessionEmail || "No email on file"}
+                <div style={{ color: "#9fb0c9", fontSize: 11, marginTop: 8, textTransform: "uppercase" }}>
+                  Profile name
                 </div>
+                {isEditingProfileName ? (
+                  <div style={{ marginTop: 6 }}>
+                    <input
+                      type="text"
+                      value={profileNameDraft}
+                      onChange={(event) => setProfileNameDraft(event.target.value)}
+                      placeholder="Your profile name"
+                      style={accountEditInputStyle}
+                    />
+                    <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                      <button
+                        type="button"
+                        onClick={handleProfileNameSave}
+                        disabled={sessionControls?.isBusy}
+                        style={headerMenuButtonStyle}
+                      >
+                        Save name
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsEditingProfileName(false);
+                          setProfileNameDraft(sessionUser?.displayName || "");
+                        }}
+                        style={headerMenuButtonStyle}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginTop: 4 }}>
+                    <div style={{ color: "white", fontWeight: 800 }}>{sessionLabel}</div>
+                    {typeof sessionControls?.onUpdateProfileName === "function" ? (
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingProfileName(true)}
+                        style={headerInlineActionStyle}
+                      >
+                        Edit
+                      </button>
+                    ) : null}
+                  </div>
+                )}
+                <div style={{ color: "#9fb0c9", fontSize: 11, marginTop: 10, textTransform: "uppercase" }}>
+                  Email
+                </div>
+                {isEditingEmail ? (
+                  <div style={{ marginTop: 6 }}>
+                    <input
+                      type="email"
+                      value={emailDraft}
+                      onChange={(event) => setEmailDraft(event.target.value)}
+                      placeholder="name@email.com"
+                      style={accountEditInputStyle}
+                    />
+                    <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                      <button
+                        type="button"
+                        onClick={handleEmailSave}
+                        disabled={sessionControls?.isBusy}
+                        style={headerMenuButtonStyle}
+                      >
+                        Save email
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsEditingEmail(false);
+                          setEmailDraft(sessionEmail || "");
+                        }}
+                        style={headerMenuButtonStyle}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginTop: 4 }}>
+                    <div style={{ color: "#d9eaff", fontSize: 12, wordBreak: "break-all" }}>
+                      {sessionEmail || "No email on file"}
+                    </div>
+                    {typeof sessionControls?.onRequestEmailChange === "function" ? (
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingEmail(true)}
+                        style={headerInlineActionStyle}
+                      >
+                        Edit
+                      </button>
+                    ) : null}
+                  </div>
+                )}
                 <div style={{ color: "#9fb0c9", fontSize: 12, marginTop: 4 }}>
                   {sessionControls?.isEmailVerified ? "Verified account" : "Email verification pending"}
                 </div>
@@ -555,6 +678,11 @@ export function DashboardView({
                   {sessionControls?.error ? (
                     <div style={{ color: "#ffd0d6", fontSize: 12, lineHeight: 1.4 }}>
                       {sessionControls.error}
+                    </div>
+                  ) : null}
+                  {accountPanelError ? (
+                    <div style={{ color: "#ffd0d6", fontSize: 12, lineHeight: 1.4 }}>
+                      {accountPanelError}
                     </div>
                   ) : null}
                   <button
@@ -1332,3 +1460,26 @@ export function DashboardView({
     </>
   );
 }
+
+const accountEditInputStyle = {
+  width: "100%",
+  borderRadius: 10,
+  border: "1px solid rgba(0,216,255,.24)",
+  background: "rgba(2,16,36,.9)",
+  color: "#eff8ff",
+  padding: "8px 10px",
+  fontSize: 12,
+};
+
+const headerInlineActionStyle = {
+  border: "1px solid rgba(0,216,255,.24)",
+  borderRadius: 999,
+  background: "rgba(0,136,255,.08)",
+  color: "#9fdaff",
+  fontSize: 11,
+  lineHeight: 1,
+  padding: "5px 10px",
+  cursor: "pointer",
+  fontWeight: 700,
+  height: "fit-content",
+};
