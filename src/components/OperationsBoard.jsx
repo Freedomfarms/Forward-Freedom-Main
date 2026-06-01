@@ -966,7 +966,7 @@ export function OperationsBoard({
                 fontWeight: 900,
               }}
             >
-              Calendar cash flow
+              Calendar Cash Flow
             </div>
             <div style={{ color: "#eaf6ff", fontSize: 14, lineHeight: 1.55, marginTop: 10 }}>
               Cash-flow heatmap that blends posted activity, live plan pulse, and daily forecast
