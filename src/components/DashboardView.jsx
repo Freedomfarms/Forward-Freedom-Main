@@ -30,6 +30,18 @@ const MONTH_END_X = {
   Dec: 972,
 };
 
+const headerMenuButtonStyle = {
+  borderRadius: 10,
+  border: "1px solid rgba(0,216,255,.24)",
+  background: "rgba(0,136,255,.08)",
+  color: "#eef6ff",
+  padding: "9px 11px",
+  fontSize: 12,
+  fontWeight: 700,
+  textAlign: "left",
+  cursor: "pointer",
+};
+
 function getMonthStartX(month) {
   const monthIndex = budgetMonths.indexOf(month);
   if (monthIndex <= 0) return 0;
@@ -217,6 +229,7 @@ export function DashboardView({
   activeRange,
   setActiveRange,
   setActiveTab,
+  sessionControls,
   trueCash,
   transactions,
   incomeStreams,
@@ -231,6 +244,18 @@ export function DashboardView({
 }) {
   const [hoverState, setHoverState] = useState(null);
   const [netWorthHistoryRange, setNetWorthHistoryRange] = useState("30D");
+  const [isAccountPanelOpen, setIsAccountPanelOpen] = useState(false);
+  const sessionUser = sessionControls?.user || null;
+  const sessionLabel = sessionUser?.displayName?.trim() || sessionUser?.email || "Account";
+  const sessionEmail = sessionUser?.email || "";
+  const profileChipLabel = (() => {
+    const normalizedLabel = String(sessionLabel).replace(/[^a-zA-Z0-9 ]/g, " ").trim();
+    if (!normalizedLabel) return "KP";
+    const parts = normalizedLabel.split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return "KP";
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return `${parts[0][0] || ""}${parts[1][0] || ""}`.toUpperCase();
+  })();
   const allocationGradient = buildAllocationGradient(dynamicAllocations);
   const allocationTotal = dynamicAllocations.reduce(
     (sum, item) => sum + Number(item.valueNumber || 0),
@@ -418,25 +443,28 @@ export function DashboardView({
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
           <HouseholdProfilesControl {...householdProfilesProps} />
-          <div style={{ display: "flex", alignItems: "center", gap: 28, fontSize: 20 }}>
-            <span>⌕</span>
-            <span>♧</span>
-            <div
+          <div style={{ position: "relative" }}>
+            <button
+              type="button"
+              onClick={() => setIsAccountPanelOpen((current) => !current)}
+              aria-label="Open account menu"
               style={{
-                position: "relative",
+                border: "1px solid #148cff",
+                background: "rgba(2,16,36,.72)",
+                cursor: "pointer",
                 width: 48,
                 height: 48,
                 borderRadius: 999,
-                border: "1px solid #148cff",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
                 color: "#19d5ff",
                 fontSize: 16,
+                fontWeight: 800,
                 boxShadow: "0 0 22px rgba(0,120,255,.45)",
               }}
             >
-              KP
+              {profileChipLabel}
               <span
                 style={{
                   position: "absolute",
@@ -448,7 +476,98 @@ export function DashboardView({
                   background: "#00de86",
                 }}
               />
-            </div>
+            </button>
+            {isAccountPanelOpen ? (
+              <div
+                style={{
+                  position: "absolute",
+                  top: 58,
+                  right: 0,
+                  width: 290,
+                  borderRadius: 14,
+                  border: "1px solid rgba(0,216,255,.24)",
+                  background: "rgba(4,16,31,.96)",
+                  boxShadow: "0 10px 32px rgba(0,70,170,.3)",
+                  padding: 14,
+                  zIndex: 30,
+                }}
+              >
+                <div
+                  style={{
+                    color: "#8feaff",
+                    fontSize: 11,
+                    letterSpacing: 1,
+                    textTransform: "uppercase",
+                    fontWeight: 900,
+                  }}
+                >
+                  Account hub
+                </div>
+                <div style={{ color: "white", fontWeight: 800, marginTop: 8 }}>{sessionLabel}</div>
+                <div style={{ color: "#9fb0c9", fontSize: 12, marginTop: 4 }}>
+                  {sessionEmail || "No email on file"}
+                </div>
+                <div style={{ color: "#9fb0c9", fontSize: 12, marginTop: 4 }}>
+                  {sessionControls?.isEmailVerified ? "Verified account" : "Email verification pending"}
+                </div>
+                <div style={{ display: "grid", gap: 8, marginTop: 12 }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveTab(APP_TABS.ADD_ACCOUNTS);
+                      setIsAccountPanelOpen(false);
+                    }}
+                    style={headerMenuButtonStyle}
+                  >
+                    Manage accounts
+                  </button>
+                  {typeof sessionControls?.onRequestPasswordReset === "function" ? (
+                    <button
+                      type="button"
+                      onClick={sessionControls.onRequestPasswordReset}
+                      disabled={sessionControls?.isBusy}
+                      style={headerMenuButtonStyle}
+                    >
+                      {sessionControls?.isBusy ? "Sending reset..." : "Send password reset email"}
+                    </button>
+                  ) : null}
+                  {!sessionControls?.isEmailVerified &&
+                  typeof sessionControls?.onResendVerification === "function" ? (
+                    <button
+                      type="button"
+                      onClick={sessionControls.onResendVerification}
+                      disabled={sessionControls?.isBusy}
+                      style={headerMenuButtonStyle}
+                    >
+                      {sessionControls?.isBusy ? "Sending..." : "Resend verification email"}
+                    </button>
+                  ) : null}
+                  {sessionControls?.workspaceStatus ? (
+                    <div style={{ color: "#8feaff", fontSize: 12, lineHeight: 1.4 }}>
+                      {sessionControls.workspaceStatus}
+                    </div>
+                  ) : null}
+                  {sessionControls?.notice ? (
+                    <div style={{ color: "#dff7ff", fontSize: 12, lineHeight: 1.4 }}>
+                      {sessionControls.notice}
+                    </div>
+                  ) : null}
+                  {sessionControls?.error ? (
+                    <div style={{ color: "#ffd0d6", fontSize: 12, lineHeight: 1.4 }}>
+                      {sessionControls.error}
+                    </div>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={sessionControls?.onSignOut}
+                    disabled={sessionControls?.isBusy}
+                    style={headerMenuButtonStyle}
+                  >
+                    {sessionControls?.isBusy ? "Signing out..." : "Sign out"}
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
       </header>

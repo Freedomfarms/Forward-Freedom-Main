@@ -1581,6 +1581,7 @@ function ForwardFreedomDashboard({
               activeRange={activeRange}
               setActiveRange={setActiveRange}
               setActiveTab={setActiveTab}
+              sessionControls={sessionControls}
               trueCash={trueCash}
               transactions={categorizedTransactions}
               subscriptions={subscriptions}
