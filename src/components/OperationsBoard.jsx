@@ -956,7 +956,7 @@ export function OperationsBoard({
                 letterSpacing: 1,
               }}
             >
-              1. Holographic Calendar Cash Flow
+              Calendar cash flow
             </div>
             <div style={{ color: "#eaf6ff", fontSize: 14, lineHeight: 1.55, marginTop: 10 }}>
               Futuristic cash-flow heatmap that blends posted activity, live plan pulse, and daily
@@ -985,7 +985,24 @@ export function OperationsBoard({
                 <div style={{ color: "white", fontWeight: 900, marginTop: 6 }}>
                   {budgetMonths[safeCalendarMonthIndex]} {focusedCalendarDay.day}
                 </div>
-                <div style={{ color: "#7dffd5", marginTop: 4, fontWeight: 800 }}>
+                <div
+                  style={{
+                    color:
+                      focusedCalendarDay.actualNet < 0
+                        ? "#ff4f8a"
+                        : focusedCalendarDay.actualNet > 0
+                          ? "#7dffd5"
+                          : "#8feaff",
+                    marginTop: 4,
+                    fontWeight: 800,
+                    textShadow:
+                      focusedCalendarDay.actualNet < 0
+                        ? "0 0 14px rgba(255,79,138,.65)"
+                        : focusedCalendarDay.actualNet > 0
+                          ? "0 0 14px rgba(125,255,213,.55)"
+                          : "none",
+                  }}
+                >
                   {formatCompactSignedMoney(focusedCalendarDay.actualNet)} posted
                 </div>
                 <div style={{ color: "#9fb0c9", fontSize: 12, marginTop: 4 }}>
@@ -1010,7 +1027,7 @@ export function OperationsBoard({
               <div
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "42px 42px 1fr 42px 42px",
+                  gridTemplateColumns: "58px 1fr 58px",
                   alignItems: "center",
                   borderBottom: "1px solid rgba(0,216,255,.18)",
                   minHeight: 48,
@@ -1020,17 +1037,27 @@ export function OperationsBoard({
                   type="button"
                   onClick={() => shiftCalendarMonth(-1)}
                   style={{
-                    background: "transparent",
-                    border: "none",
-                    color: "#59dfff",
-                    fontSize: 20,
+                    background:
+                      "radial-gradient(circle at 30% 20%, rgba(0,216,255,.34), rgba(0,75,126,.2) 48%, rgba(0,24,48,.14) 100%)",
+                    border: "1px solid rgba(0,216,255,.42)",
+                    color: "#93ecff",
+                    fontSize: 24,
+                    fontWeight: 900,
+                    lineHeight: 1,
                     cursor: "pointer",
+                    width: 38,
+                    height: 38,
+                    borderRadius: "50%",
+                    display: "grid",
+                    placeItems: "center",
+                    margin: "0 auto",
+                    boxShadow:
+                      "0 0 16px rgba(0,216,255,.26), inset 0 0 9px rgba(143,234,255,.26)",
                   }}
                   aria-label="Previous calendar month"
                 >
                   ‹
                 </button>
-                <div style={{ color: "#59dfff", textAlign: "center", fontSize: 20 }}>‹</div>
                 <div
                   style={{
                     color: "#eaf7ff",
@@ -1043,16 +1070,26 @@ export function OperationsBoard({
                 >
                   {budgetMonths[safeCalendarMonthIndex]} {activePlanningYear}
                 </div>
-                <div style={{ color: "#59dfff", textAlign: "center", fontSize: 20 }}>›</div>
                 <button
                   type="button"
                   onClick={() => shiftCalendarMonth(1)}
                   style={{
-                    background: "transparent",
-                    border: "none",
-                    color: "#59dfff",
-                    fontSize: 20,
+                    background:
+                      "radial-gradient(circle at 30% 20%, rgba(0,216,255,.34), rgba(0,75,126,.2) 48%, rgba(0,24,48,.14) 100%)",
+                    border: "1px solid rgba(0,216,255,.42)",
+                    color: "#93ecff",
+                    fontSize: 24,
+                    fontWeight: 900,
+                    lineHeight: 1,
                     cursor: "pointer",
+                    width: 38,
+                    height: 38,
+                    borderRadius: "50%",
+                    display: "grid",
+                    placeItems: "center",
+                    margin: "0 auto",
+                    boxShadow:
+                      "0 0 16px rgba(0,216,255,.26), inset 0 0 9px rgba(143,234,255,.26)",
                   }}
                   aria-label="Next calendar month"
                 >
