@@ -324,6 +324,13 @@ export function TransactionsView({
     });
   };
 
+  const toggleNeedsReviewQuickFilter = () => {
+    setFilters((current) => ({
+      ...current,
+      review: current.review === "Needs Review" ? "All" : "Needs Review",
+    }));
+  };
+
   const submitManualTransaction = (event) => {
     event.preventDefault();
     if (!canAddManualTransaction) return;
@@ -856,6 +863,26 @@ export function TransactionsView({
               }}
             >
               + Manual Transaction
+            </button>
+            <button
+              onClick={toggleNeedsReviewQuickFilter}
+              style={{
+                background:
+                  filters.review === "Needs Review"
+                    ? "rgba(255,159,28,.18)"
+                    : "rgba(255,159,28,.10)",
+                border:
+                  filters.review === "Needs Review"
+                    ? "1px solid rgba(255,159,28,.44)"
+                    : "1px solid rgba(255,159,28,.28)",
+                color: "#fff2db",
+                borderRadius: 8,
+                padding: "10px 14px",
+                cursor: "pointer",
+                fontWeight: 800,
+              }}
+            >
+              Needs Review
             </button>
             <button
               onClick={() => setShowFilters((current) => !current)}

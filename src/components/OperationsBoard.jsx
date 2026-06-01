@@ -70,6 +70,173 @@ function buildScorecardYLabels(max, min, count = 5) {
   });
 }
 
+const CALENDAR_WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+function clampNumber(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function formatCompactMoney(value) {
+  const amount = Number(value) || 0;
+  const absolute = Math.abs(amount);
+  if (absolute >= 1_000_000) return `$${(amount / 1_000_000).toFixed(1)}M`;
+  if (absolute >= 1_000) return `$${(amount / 1_000).toFixed(1)}K`;
+  return `$${Math.round(amount)}`;
+}
+
+function formatCompactSignedMoney(value) {
+  const amount = Number(value) || 0;
+  if (amount === 0) return "$0";
+  const prefix = amount > 0 ? "+" : "-";
+  return `${prefix}${formatCompactMoney(Math.abs(amount))}`;
+}
+
+function getCashFlowHeatStyle(value, maxAbsValue) {
+  const numericValue = Number(value) || 0;
+  const intensity = clampNumber(Math.abs(numericValue) / Math.max(maxAbsValue || 1, 1), 0, 1);
+
+  if (numericValue > 0) {
+    return {
+      background: `linear-gradient(155deg, rgba(0,82,122,.72), rgba(0,245,155,${0.3 + intensity * 0.34}))`,
+      border: `1px solid rgba(72,255,207,${0.18 + intensity * 0.34})`,
+      boxShadow: `0 0 ${8 + intensity * 14}px rgba(0,245,155,${0.2 + intensity * 0.4})`,
+      valueColor: "#7dffd5",
+    };
+  }
+
+  if (numericValue < 0) {
+    return {
+      background: `linear-gradient(155deg, rgba(48,20,92,.74), rgba(255,88,173,${0.24 + intensity * 0.3}))`,
+      border: `1px solid rgba(255,126,205,${0.18 + intensity * 0.3})`,
+      boxShadow: `0 0 ${8 + intensity * 14}px rgba(221,88,255,${0.16 + intensity * 0.34})`,
+      valueColor: "#ffb2e8",
+    };
+  }
+
+  return {
+    background: "linear-gradient(155deg, rgba(5,26,52,.74), rgba(5,26,52,.55))",
+    border: "1px solid rgba(84,124,184,.18)",
+    boxShadow: "none",
+    valueColor: "#7ea6d8",
+  };
+}
+
+function parseTransactionDateParts(value) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return {
+    year: parsed.getFullYear(),
+    monthIndex: parsed.getMonth(),
+    day: parsed.getDate(),
+  };
+}
+
+function buildCashFlowCalendarModel({
+  year,
+  monthIndex,
+  transactions,
+  plannedIncome,
+  plannedBudget,
+  openingTrueCash,
+  currentDate = new Date(),
+}) {
+  const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+  const firstWeekday = (new Date(year, monthIndex, 1).getDay() + 6) % 7;
+  const monthNetPlan = finiteMoney(plannedIncome) - finiteMoney(plannedBudget);
+  const dailyPlanPulse = daysInMonth > 0 ? monthNetPlan / daysInMonth : 0;
+  const dailyActualNet = Array.from({ length: daysInMonth }, () => 0);
+
+  transactions.forEach((tx) => {
+    const parsedDate = parseTransactionDateParts(tx.date);
+    if (!parsedDate) return;
+    if (parsedDate.year !== year || parsedDate.monthIndex !== monthIndex) return;
+    const dayIndex = parsedDate.day - 1;
+    if (dayIndex < 0 || dayIndex >= daysInMonth) return;
+    dailyActualNet[dayIndex] += finiteMoney(tx.amount);
+  });
+
+  let cumulativeActual = 0;
+  let strongestInflow = { day: null, value: 0 };
+  let strongestOutflow = { day: null, value: 0 };
+  let lowestForecast = { day: 1, value: openingTrueCash + monthNetPlan };
+  let totalInflow = 0;
+  let totalOutflow = 0;
+  let sustainabilityTotal = 0;
+  let sustainabilityCount = 0;
+  let riskDays = 0;
+
+  const days = Array.from({ length: daysInMonth }, (_, index) => {
+    const day = index + 1;
+    const actualNet = dailyActualNet[index];
+    cumulativeActual += actualNet;
+    const planToDate = dailyPlanPulse * day;
+    const varianceToPlan = cumulativeActual - planToDate;
+    const runningBalance = openingTrueCash + cumulativeActual;
+    const monthEndForecast = runningBalance + dailyPlanPulse * (daysInMonth - day);
+    const varianceScoreBase = Math.max(Math.abs(planToDate), 90);
+    const variancePenalty = clampNumber((Math.abs(varianceToPlan) / varianceScoreBase) * 28, 0, 35);
+    const outflowPenalty = actualNet < 0 ? clampNumber(Math.abs(actualNet) / 160, 0, 20) : 0;
+    const riskPenalty = monthEndForecast < 0 ? 26 : monthEndForecast < openingTrueCash * 0.55 ? 12 : 0;
+    const sustainabilityScore = clampNumber(
+      Math.round(100 - variancePenalty - outflowPenalty - riskPenalty),
+      18,
+      100
+    );
+
+    if (actualNet > 0) totalInflow += actualNet;
+    if (actualNet < 0) totalOutflow += Math.abs(actualNet);
+    if (monthEndForecast < openingTrueCash * 0.55) riskDays += 1;
+    sustainabilityTotal += sustainabilityScore;
+    sustainabilityCount += 1;
+
+    if (actualNet > strongestInflow.value) strongestInflow = { day, value: actualNet };
+    if (actualNet < strongestOutflow.value) strongestOutflow = { day, value: actualNet };
+    if (monthEndForecast < lowestForecast.value) {
+      lowestForecast = { day, value: monthEndForecast };
+    }
+
+    const isToday =
+      currentDate.getFullYear() === year &&
+      currentDate.getMonth() === monthIndex &&
+      currentDate.getDate() === day;
+
+    return {
+      day,
+      actualNet,
+      cumulativeActual,
+      varianceToPlan,
+      runningBalance,
+      monthEndForecast,
+      sustainabilityScore,
+      isToday,
+    };
+  });
+
+  const paddedDays = [...Array(firstWeekday).fill(null), ...days];
+  while (paddedDays.length % 7 !== 0) paddedDays.push(null);
+
+  const weeks = [];
+  for (let index = 0; index < paddedDays.length; index += 7) {
+    weeks.push(paddedDays.slice(index, index + 7));
+  }
+
+  return {
+    weeks,
+    days,
+    dailyPlanPulse,
+    monthNetPlan,
+    monthNetActual: cumulativeActual,
+    totalInflow,
+    totalOutflow,
+    sustainabilityAverage:
+      sustainabilityCount > 0 ? Math.round(sustainabilityTotal / sustainabilityCount) : 0,
+    riskDays,
+    strongestInflow,
+    strongestOutflow,
+    lowestForecast,
+  };
+}
+
 export function OperationsBoard({
   subscriptions,
   transactions,
@@ -86,6 +253,10 @@ export function OperationsBoard({
   setPlanningAnchorForYear,
 }) {
   const [hoveredCommandMonth, setHoveredCommandMonth] = useState(null);
+  const [hoveredCalendarDay, setHoveredCalendarDay] = useState(null);
+  const [calendarMonthIndex, setCalendarMonthIndex] = useState(() =>
+    currentPlanYear === getCurrentBudgetPeriod().year ? getCurrentBudgetPeriod().monthIndex : 0
+  );
   const currentBudgetPeriod = getCurrentBudgetPeriod();
   const [activePlanningYear, setActivePlanningYear] = useState(currentPlanYear);
   const safeTransactions = Array.isArray(transactions) ? transactions : [];
@@ -103,6 +274,7 @@ export function OperationsBoard({
     const nextValue = Number(value);
     ensurePlanningYear(nextValue);
     setHoveredCommandMonth(null);
+    setHoveredCalendarDay(null);
     setActivePlanningYear(nextValue);
   };
   const updatePlanningAnchor = (field, value) => {
@@ -221,6 +393,43 @@ export function OperationsBoard({
   });
   const trueCashYearEndValue = getLastNonNullValue(trueCashValues, trueCash);
   const projectedYearEndTrueCash = getLastNonNullValue(projectedTrueCashValues, trueCashYearEndValue);
+  const safeCalendarMonthIndex = Math.max(0, Math.min(budgetMonths.length - 1, calendarMonthIndex));
+  const calendarMonthData = dynamicYearlyOpsData[safeCalendarMonthIndex] || dynamicYearlyOpsData[0];
+  const priorActualTrueCash = getLastNonNullValue(
+    trueCashValues.slice(0, safeCalendarMonthIndex),
+    null
+  );
+  const priorProjectedTrueCash = getLastNonNullValue(
+    projectedTrueCashValues.slice(0, safeCalendarMonthIndex),
+    null
+  );
+  const calendarOpeningTrueCash =
+    priorActualTrueCash ?? priorProjectedTrueCash ?? anchorStartingTrueCash;
+  const cashFlowCalendar = buildCashFlowCalendarModel({
+    year: activePlanningYear,
+    monthIndex: safeCalendarMonthIndex,
+    transactions: safeTransactions,
+    plannedIncome: calendarMonthData?.plannedIncome ?? 0,
+    plannedBudget: calendarMonthData?.budget ?? 0,
+    openingTrueCash: calendarOpeningTrueCash,
+  });
+  const shiftCalendarMonth = (delta) => {
+    setHoveredCalendarDay(null);
+    setCalendarMonthIndex((current) =>
+      (current + Number(delta || 0) + budgetMonths.length) % budgetMonths.length
+    );
+  };
+  const focusedCalendarDay =
+    cashFlowCalendar.days.find((day) => day.day === hoveredCalendarDay) ||
+    cashFlowCalendar.days.find((day) => day.isToday) ||
+    cashFlowCalendar.days[0] ||
+    null;
+  const cashFlowHeatMax = Math.max(
+    ...cashFlowCalendar.days.map((day) => Math.abs(day.actualNet)),
+    Math.abs(cashFlowCalendar.dailyPlanPulse),
+    1
+  );
+  const sustainabilityRing = clampNumber(cashFlowCalendar.sustainabilityAverage, 0, 100);
   const scorecardMonths = dynamicYearlyOpsData.map((month, index) => {
     const plannedIncome = finiteMoney(month.plannedIncome ?? month.income);
     const actualIncome = finiteMoney(month.actualIncome);
@@ -712,6 +921,351 @@ export function OperationsBoard({
                     })}
                   </svg>
                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section
+        style={{
+          ...styles.panel,
+          padding: 22,
+          marginBottom: 18,
+          background:
+            "radial-gradient(circle at 15% 12%, rgba(0,216,255,.18), rgba(2,11,24,.96) 44%), linear-gradient(180deg, rgba(2,11,26,.96), rgba(1,7,18,.98))",
+          boxShadow:
+            "0 0 45px rgba(0,136,255,.18), inset 0 0 40px rgba(0,216,255,.06), inset 0 0 0 1px rgba(0,216,255,.13)",
+        }}
+      >
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "220px minmax(0, 1fr) 190px",
+            gap: 16,
+            alignItems: "start",
+          }}
+        >
+          <div>
+            <div
+              style={{
+                color: "#8feaff",
+                fontSize: 11,
+                fontWeight: 900,
+                textTransform: "uppercase",
+                letterSpacing: 1,
+              }}
+            >
+              1. Holographic Calendar Cash Flow
+            </div>
+            <div style={{ color: "#eaf6ff", fontSize: 14, lineHeight: 1.55, marginTop: 10 }}>
+              Futuristic cash-flow heatmap that blends posted activity, live plan pulse, and daily
+              forecast stability.
+            </div>
+            {focusedCalendarDay ? (
+              <div
+                style={{
+                  marginTop: 16,
+                  border: "1px solid rgba(0,216,255,.24)",
+                  borderRadius: 12,
+                  background: "rgba(3,18,36,.72)",
+                  padding: "10px 12px",
+                }}
+              >
+                <div
+                  style={{
+                    color: "#8ea8ca",
+                    fontSize: 11,
+                    textTransform: "uppercase",
+                    letterSpacing: 0.8,
+                  }}
+                >
+                  Focus Day
+                </div>
+                <div style={{ color: "white", fontWeight: 900, marginTop: 6 }}>
+                  {budgetMonths[safeCalendarMonthIndex]} {focusedCalendarDay.day}
+                </div>
+                <div style={{ color: "#7dffd5", marginTop: 4, fontWeight: 800 }}>
+                  {formatCompactSignedMoney(focusedCalendarDay.actualNet)} posted
+                </div>
+                <div style={{ color: "#9fb0c9", fontSize: 12, marginTop: 4 }}>
+                  Run {wholeDollars(focusedCalendarDay.runningBalance)} · Forecast{" "}
+                  {wholeDollars(focusedCalendarDay.monthEndForecast)}
+                </div>
+              </div>
+            ) : null}
+          </div>
+
+          <div>
+            <div
+              style={{
+                border: "1px solid rgba(0,216,255,.28)",
+                borderRadius: 16,
+                overflow: "hidden",
+                background:
+                  "linear-gradient(180deg, rgba(0,80,130,.20), rgba(2,15,34,.92) 12%, rgba(1,8,20,.96) 100%)",
+                boxShadow: "0 0 28px rgba(0,136,255,.24), inset 0 0 24px rgba(0,216,255,.08)",
+              }}
+            >
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "42px 42px 1fr 42px 42px",
+                  alignItems: "center",
+                  borderBottom: "1px solid rgba(0,216,255,.18)",
+                  minHeight: 48,
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => shiftCalendarMonth(-1)}
+                  style={{
+                    background: "transparent",
+                    border: "none",
+                    color: "#59dfff",
+                    fontSize: 20,
+                    cursor: "pointer",
+                  }}
+                  aria-label="Previous calendar month"
+                >
+                  ‹
+                </button>
+                <div style={{ color: "#59dfff", textAlign: "center", fontSize: 20 }}>‹</div>
+                <div
+                  style={{
+                    color: "#eaf7ff",
+                    textAlign: "center",
+                    fontWeight: 900,
+                    fontSize: 30,
+                    letterSpacing: 0.8,
+                    textTransform: "uppercase",
+                  }}
+                >
+                  {budgetMonths[safeCalendarMonthIndex]} {activePlanningYear}
+                </div>
+                <div style={{ color: "#59dfff", textAlign: "center", fontSize: 20 }}>›</div>
+                <button
+                  type="button"
+                  onClick={() => shiftCalendarMonth(1)}
+                  style={{
+                    background: "transparent",
+                    border: "none",
+                    color: "#59dfff",
+                    fontSize: 20,
+                    cursor: "pointer",
+                  }}
+                  aria-label="Next calendar month"
+                >
+                  ›
+                </button>
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(7, minmax(0, 1fr))",
+                  borderBottom: "1px solid rgba(0,216,255,.12)",
+                }}
+              >
+                {CALENDAR_WEEKDAY_LABELS.map((weekday) => (
+                  <div
+                    key={weekday}
+                    style={{
+                      color: "#8fb9ea",
+                      fontSize: 11,
+                      fontWeight: 900,
+                      letterSpacing: 0.8,
+                      textTransform: "uppercase",
+                      textAlign: "center",
+                      padding: "9px 4px",
+                      borderRight: "1px solid rgba(0,216,255,.08)",
+                    }}
+                  >
+                    {weekday}
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 0 }}>
+                {cashFlowCalendar.weeks.map((week, weekIndex) => (
+                  <div
+                    key={`week-${weekIndex}`}
+                    style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))" }}
+                  >
+                    {week.map((day, dayIndex) => {
+                      const heat = day
+                        ? getCashFlowHeatStyle(day.actualNet, cashFlowHeatMax)
+                        : {
+                            background: "rgba(2,12,28,.45)",
+                            border: "1px solid transparent",
+                            boxShadow: "none",
+                            valueColor: "#6c88b1",
+                          };
+                      const isFocused = day && focusedCalendarDay && focusedCalendarDay.day === day.day;
+                      return (
+                        <div
+                          key={`${weekIndex}-${dayIndex}-${day?.day || "blank"}`}
+                          onMouseEnter={() => setHoveredCalendarDay(day?.day || null)}
+                          style={{
+                            minHeight: 80,
+                            padding: "7px 8px",
+                            borderRight: "1px solid rgba(0,216,255,.07)",
+                            borderBottom: "1px solid rgba(0,216,255,.07)",
+                            background: day ? heat.background : "rgba(2,12,28,.45)",
+                            boxShadow: day ? heat.boxShadow : "none",
+                            border: isFocused ? "1px solid rgba(124,255,223,.52)" : heat.border,
+                            cursor: day ? "pointer" : "default",
+                            transition: "box-shadow 140ms ease, transform 140ms ease, border-color 140ms ease",
+                            transform: isFocused ? "translateY(-2px)" : "none",
+                          }}
+                        >
+                          {day ? (
+                            <div style={{ display: "grid", gap: 5 }}>
+                              <div
+                                style={{
+                                  color: day.isToday ? "#eaf7ff" : "#9bb6dc",
+                                  fontSize: 12,
+                                  fontWeight: 900,
+                                }}
+                              >
+                                {day.day}
+                              </div>
+                              <div style={{ color: heat.valueColor, fontSize: 15, fontWeight: 900 }}>
+                                {formatCompactSignedMoney(day.actualNet)}
+                              </div>
+                              <div style={{ color: "#8fb1d9", fontSize: 10 }}>
+                                F {formatCompactMoney(day.monthEndForecast)}
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div
+              style={{
+                marginTop: 12,
+                border: "1px solid rgba(0,216,255,.22)",
+                borderRadius: 12,
+                display: "grid",
+                gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+                overflow: "hidden",
+                background: "rgba(2,12,28,.68)",
+              }}
+            >
+              {[
+                ["Total Inflow", formatCompactMoney(cashFlowCalendar.totalInflow), "#7dffd5"],
+                ["Total Outflow", formatCompactMoney(-cashFlowCalendar.totalOutflow), "#ff8ccc"],
+                ["Net Cash Flow", formatCompactSignedMoney(cashFlowCalendar.monthNetActual), cashFlowCalendar.monthNetActual >= 0 ? "#7dffd5" : "#ff8ccc"],
+                ["Sustainability Avg", `${cashFlowCalendar.sustainabilityAverage}/100`, "#8feaff"],
+              ].map(([label, value, color]) => (
+                <div
+                  key={label}
+                  style={{
+                    padding: "11px 12px",
+                    borderRight: "1px solid rgba(0,216,255,.08)",
+                  }}
+                >
+                  <div style={{ color: "#7ea6d8", fontSize: 10, textTransform: "uppercase", letterSpacing: 0.7 }}>
+                    {label}
+                  </div>
+                  <div style={{ color, fontSize: 20, fontWeight: 900, marginTop: 6 }}>{value}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gap: 12 }}>
+            <div
+              style={{
+                border: "1px solid rgba(0,216,255,.22)",
+                borderRadius: 14,
+                background: "rgba(2,15,32,.72)",
+                padding: "14px 14px 16px",
+              }}
+            >
+              <div
+                style={{
+                  color: "#dff7ff",
+                  fontWeight: 900,
+                  fontSize: 12,
+                  textTransform: "uppercase",
+                  letterSpacing: 0.9,
+                }}
+              >
+                Cash Flow
+              </div>
+              <div style={{ marginTop: 10, color: "#8ea8ca", fontSize: 12, textAlign: "center" }}>
+                High Inflow
+              </div>
+              <div
+                style={{
+                  margin: "10px auto",
+                  height: 170,
+                  width: 18,
+                  borderRadius: 999,
+                  background:
+                    "linear-gradient(180deg, rgba(125,255,213,1) 0%, rgba(74,180,255,.92) 50%, rgba(255,98,196,.92) 100%)",
+                  boxShadow: "0 0 18px rgba(0,216,255,.26)",
+                }}
+              />
+              <div style={{ color: "#8ea8ca", fontSize: 12, textAlign: "center" }}>High Outflow</div>
+            </div>
+
+            <div
+              style={{
+                border: "1px solid rgba(0,216,255,.22)",
+                borderRadius: 14,
+                background: "rgba(2,15,32,.72)",
+                padding: "14px 14px 16px",
+              }}
+            >
+              <div
+                style={{
+                  color: "#dff7ff",
+                  fontWeight: 900,
+                  fontSize: 12,
+                  textTransform: "uppercase",
+                  letterSpacing: 0.9,
+                  marginBottom: 10,
+                }}
+              >
+                Stability Score
+              </div>
+              <div
+                style={{
+                  width: 122,
+                  height: 122,
+                  borderRadius: "50%",
+                  margin: "0 auto",
+                  background: `conic-gradient(#00f59b 0 ${sustainabilityRing}%, rgba(255,255,255,.08) ${sustainabilityRing}% 100%)`,
+                  display: "grid",
+                  placeItems: "center",
+                  boxShadow: "0 0 25px rgba(0,216,255,.22)",
+                }}
+              >
+                <div
+                  style={{
+                    width: 88,
+                    height: 88,
+                    borderRadius: "50%",
+                    background: "rgba(2,12,28,.92)",
+                    display: "grid",
+                    placeItems: "center",
+                    color: "#eaf7ff",
+                    fontWeight: 900,
+                    fontSize: 34,
+                  }}
+                >
+                  {sustainabilityRing}
+                </div>
+              </div>
+              <div style={{ color: "#8ea8ca", fontSize: 12, textAlign: "center", marginTop: 8 }}>
+                {cashFlowCalendar.riskDays} risk days · pulse {formatCompactSignedMoney(cashFlowCalendar.dailyPlanPulse)}
               </div>
             </div>
           </div>

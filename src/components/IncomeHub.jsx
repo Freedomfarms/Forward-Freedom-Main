@@ -2,8 +2,8 @@ import { useState } from "react";
 import { styles } from "../styles.js";
 import { budgetMonths, budgetMonthNames } from "../data/constants.jsx";
 import { getCurrentBudgetPeriod } from "../utils/date.js";
-import { money, parseMoney } from "../utils/format.js";
-import { buildIncomeStreamsWithReceived } from "../utils/budgetReview.js";
+import { money, parseMoney, wholeDollars } from "../utils/format.js";
+import { buildIncomeStreamsWithReceived, sumActualIncomeForMonth } from "../utils/budgetReview.js";
 import { HouseholdProfilesControl, MonthCoverageEditor } from "./Common.jsx";
 
 function buildHeatBarWidth(value, maxValue) {
@@ -120,6 +120,20 @@ export function IncomeHub({
   const monthIncomeTotal = planningIncomeStreams
     .filter((stream) => (stream.months || budgetMonths).includes(activeIncomeMonth))
     .reduce((sum, stream) => sum + parseMoney(stream.amount), 0);
+  const monthIncomeEarned = sumActualIncomeForMonth(
+    transactions,
+    activeIncomeMonth,
+    activeIncomeDate.year
+  );
+  const incomeRemainingToGoal = monthIncomeTotal - monthIncomeEarned;
+  const incomeEarnedPercent = monthIncomeTotal > 0 ? (monthIncomeEarned / monthIncomeTotal) * 100 : 0;
+  const normalizedIncomeEarnedPercent = Math.max(0, Math.min(100, incomeEarnedPercent));
+  const incomeEarnedGradient =
+    monthIncomeTotal <= 0
+      ? "conic-gradient(rgba(255,255,255,.10) 0 100%)"
+      : `conic-gradient(#00f59b 0 ${normalizedIncomeEarnedPercent.toFixed(
+          2
+        )}%, rgba(255,255,255,.08) ${normalizedIncomeEarnedPercent.toFixed(2)}% 100%)`;
   const monthBudgetTotal = planningBudgetRows
     .filter((category) => (category.months || budgetMonths).includes(activeIncomeMonth))
     .reduce((sum, category) => sum + Number(category.budget || 0), 0);
@@ -158,7 +172,7 @@ export function IncomeHub({
   ];
 
   return (
-    <div>
+    <div style={{ fontFamily: styles.page.fontFamily }}>
       <header style={{ ...styles.pageHeader, marginBottom: 20 }}>
         <div>
           <h1 style={styles.pageTitle}>Income Hub</h1>
@@ -172,8 +186,8 @@ export function IncomeHub({
       <section
         style={{
           ...styles.panel,
-          minHeight: 165,
-          padding: "26px 40px",
+          minHeight: 0,
+          padding: "20px 26px 22px",
           borderRadius: 32,
           display: "grid",
           gridTemplateColumns: "1fr minmax(280px, 340px) 1fr",
@@ -182,73 +196,92 @@ export function IncomeHub({
           position: "relative",
         }}
       >
-        <div
-          style={{
-            position: "absolute",
-            top: 18,
-            right: 24,
-            zIndex: 1,
-          }}
-        >
-          <select
-            value={activeIncomeDate.year}
-            onChange={(event) => updateIncomeDate("year", event.target.value)}
-            aria-label="Select income planning year"
+        <div style={{ display: "flex", justifyContent: "center" }}>
+          <div
             style={{
-              color: "#8feaff",
-              background: "rgba(0,136,255,.12)",
-              border: "1px solid rgba(0,216,255,.32)",
-              borderRadius: 999,
-              padding: "10px 16px",
-              cursor: "pointer",
-              fontWeight: 900,
-              boxShadow: "0 0 14px rgba(0,136,255,.14)",
-              minWidth: 96,
-              textAlign: "center",
-            }}
-          >
-            {availablePlanningYears.map((year) => (
-              <option key={year} value={year} style={{ background: "#061224", color: "#eaf3ff" }}>
-                {year}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div style={{ textAlign: "center", display: "grid", justifyItems: "center" }}>
-          <div style={{ color: "#e9f3ff", fontSize: 38, fontWeight: 800 }}>{money(monthIncomeTotal)}</div>
-          <div style={{ color: "#668ab9", fontSize: 26, fontWeight: 700, marginTop: 16 }}>
-            income in {activeIncomeLabel}
-          </div>
-          <button
-            type="button"
-            onClick={() => shiftIncomeMonth(-1)}
-            aria-label="Go to previous month"
-            style={{
-              marginTop: 12,
-              height: 40,
-              minWidth: 108,
-              borderRadius: 999,
-              border: "1px solid rgba(0,216,255,.28)",
-              background: "linear-gradient(180deg, rgba(0,136,255,.18), rgba(0,43,87,.28))",
-              color: "#dff7ff",
-              cursor: "pointer",
-              fontSize: 15,
-              fontWeight: 700,
-              letterSpacing: 0.35,
+              width: 192,
+              height: 192,
+              borderRadius: "50%",
+              position: "relative",
+              display: "grid",
+              placeItems: "center",
+              background: incomeEarnedGradient,
               boxShadow:
-                "0 0 18px rgba(0,136,255,.18), inset 0 0 16px rgba(143,234,255,.08)",
+                incomeRemainingToGoal > 0
+                  ? "0 0 34px rgba(0,216,255,.18), inset 0 0 42px rgba(0,216,255,.08)"
+                  : "0 0 34px rgba(0,245,155,.2), inset 0 0 42px rgba(0,245,155,.1)",
             }}
           >
-            ← Prev
-          </button>
+            <div
+              style={{
+                position: "absolute",
+                inset: 12,
+                borderRadius: "50%",
+                background:
+                  "radial-gradient(circle at 30% 25%, rgba(255,255,255,.08), rgba(3,16,31,.98) 62%)",
+                border:
+                  incomeRemainingToGoal > 0
+                    ? "1px solid rgba(0,216,255,.24)"
+                    : "1px solid rgba(0,245,155,.28)",
+              }}
+            />
+            <div
+              style={{
+                position: "relative",
+                zIndex: 1,
+                display: "grid",
+                justifyItems: "center",
+                textAlign: "center",
+                gap: 8,
+                width: 128,
+              }}
+            >
+              <div
+                style={{
+                  color: incomeRemainingToGoal > 0 ? "#8feaff" : "#a7ffd9",
+                  fontSize: 11,
+                  fontWeight: 900,
+                  textTransform: "uppercase",
+                  letterSpacing: 1,
+                }}
+              >
+                Income Earned
+              </div>
+              <div
+                style={{
+                  color: "white",
+                  fontSize: 26,
+                  fontWeight: 900,
+                  lineHeight: 1,
+                }}
+              >
+                {Math.round(monthIncomeTotal > 0 ? normalizedIncomeEarnedPercent : 0)}%
+              </div>
+              <div
+                style={{
+                  color: incomeRemainingToGoal > 0 ? "#dff7ff" : "#a7ffd9",
+                  fontSize: 20,
+                  fontWeight: 900,
+                  lineHeight: 1.1,
+                }}
+              >
+                {incomeRemainingToGoal > 0
+                  ? wholeDollars(incomeRemainingToGoal)
+                  : `+${wholeDollars(Math.abs(incomeRemainingToGoal))}`}
+              </div>
+              <div style={{ color: "#7fa1ca", fontSize: 11, lineHeight: 1.4 }}>
+                {incomeRemainingToGoal > 0 ? "remaining to plan" : "above plan this month"}
+              </div>
+            </div>
+          </div>
         </div>
         <div style={{ display: "flex", justifyContent: "center" }}>
           <div
             style={{
               width: "100%",
-              maxWidth: 320,
+              maxWidth: 300,
               borderRadius: 24,
-              padding: "14px 14px 14px",
+              padding: "12px",
               border: "1px solid rgba(0,216,255,.22)",
               background:
                 "linear-gradient(180deg, rgba(4,22,43,.96), rgba(2,11,24,.94))",
@@ -282,14 +315,14 @@ export function IncomeHub({
                   background:
                     "linear-gradient(180deg, rgba(8,31,58,.95), rgba(3,18,36,.92))",
                   boxShadow: "inset 0 0 18px rgba(0,216,255,.05)",
-                  padding: "10px 10px 8px",
+                  padding: "8px 10px 7px",
                   textAlign: "center",
                 }}
               >
                 <div
                   style={{
                     color: "white",
-                    fontSize: 20,
+                    fontSize: 18,
                     fontWeight: 700,
                     letterSpacing: 0.2,
                     textShadow: "0 0 14px rgba(0,216,255,.16)",
@@ -380,35 +413,109 @@ export function IncomeHub({
             </div>
           </div>
         </div>
-        <div style={{ textAlign: "center", display: "grid", justifyItems: "center" }}>
-          <div style={{ color: "#e9f3ff", fontSize: 38, fontWeight: 800 }}>
-            {money(monthBudgetTotal)}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+            gap: 12,
+            alignItems: "start",
+            alignSelf: "stretch",
+          }}
+        >
+          <div style={{ textAlign: "center", display: "grid", justifyItems: "center" }}>
+            <div style={{ color: "#e9f3ff", fontSize: 26, fontWeight: 800 }}>
+              {money(monthIncomeEarned)}
+            </div>
+            <div style={{ color: "#668ab9", fontSize: 16, fontWeight: 700, marginTop: 8 }}>
+              {budgetMonthNames[activeIncomeMonth]} Earned
+            </div>
+            <button
+              type="button"
+              onClick={() => shiftIncomeMonth(-1)}
+              aria-label="Go to previous month"
+              style={{
+                marginTop: 10,
+                height: 36,
+                minWidth: 100,
+                borderRadius: 999,
+                border: "1px solid rgba(0,216,255,.28)",
+                background: "linear-gradient(180deg, rgba(0,136,255,.18), rgba(0,43,87,.28))",
+                color: "#dff7ff",
+                cursor: "pointer",
+                fontSize: 14,
+                fontWeight: 700,
+                letterSpacing: 0.35,
+                boxShadow:
+                  "0 0 18px rgba(0,136,255,.18), inset 0 0 16px rgba(143,234,255,.08)",
+              }}
+            >
+              ← Prev
+            </button>
           </div>
-          <div style={{ color: "#668ab9", fontSize: 26, fontWeight: 700, marginTop: 16 }}>
-            budget in {activeIncomeLabel}
+          <div style={{ textAlign: "center", display: "grid", justifyItems: "center" }}>
+            <div style={{ color: "#e9f3ff", fontSize: 26, fontWeight: 800 }}>
+              {money(monthIncomeTotal)}
+            </div>
+            <div style={{ color: "#668ab9", fontSize: 16, fontWeight: 700, marginTop: 8 }}>
+              {budgetMonthNames[activeIncomeMonth]} Planned
+            </div>
+            <button
+              type="button"
+              onClick={() => shiftIncomeMonth(1)}
+              aria-label="Go to next month"
+              style={{
+                marginTop: 10,
+                height: 36,
+                minWidth: 100,
+                borderRadius: 999,
+                border: "1px solid rgba(0,216,255,.28)",
+                background: "linear-gradient(180deg, rgba(0,136,255,.18), rgba(0,43,87,.28))",
+                color: "#dff7ff",
+                cursor: "pointer",
+                fontSize: 14,
+                fontWeight: 700,
+                letterSpacing: 0.35,
+                boxShadow:
+                  "0 0 18px rgba(0,136,255,.18), inset 0 0 16px rgba(143,234,255,.08)",
+              }}
+            >
+              Next →
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={() => shiftIncomeMonth(1)}
-            aria-label="Go to next month"
+          <div
             style={{
-              marginTop: 12,
-              height: 40,
-              minWidth: 108,
-              borderRadius: 999,
-              border: "1px solid rgba(0,216,255,.28)",
-              background: "linear-gradient(180deg, rgba(0,136,255,.18), rgba(0,43,87,.28))",
-              color: "#dff7ff",
-              cursor: "pointer",
-              fontSize: 15,
-              fontWeight: 700,
-              letterSpacing: 0.35,
-              boxShadow:
-                "0 0 18px rgba(0,136,255,.18), inset 0 0 16px rgba(143,234,255,.08)",
+              gridColumn: "1 / -1",
+              display: "flex",
+              justifyContent: "flex-end",
+              alignItems: "center",
+              alignSelf: "end",
             }}
           >
-            Next →
-          </button>
+            <select
+              value={activeIncomeDate.year}
+              onChange={(event) => updateIncomeDate("year", event.target.value)}
+              aria-label="Select income planning year"
+              style={{
+                color: "#8feaff",
+                background: "rgba(0,136,255,.12)",
+                border: "1px solid rgba(0,216,255,.32)",
+                borderRadius: 999,
+                padding: "8px 14px",
+                cursor: "pointer",
+                fontWeight: 900,
+                boxShadow: "0 0 14px rgba(0,136,255,.14)",
+                minWidth: 96,
+                height: 36,
+                textAlign: "center",
+              }}
+            >
+              {availablePlanningYears.map((year) => (
+                <option key={year} value={year} style={{ background: "#061224", color: "#eaf3ff" }}>
+                  {year}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       </section>
 
