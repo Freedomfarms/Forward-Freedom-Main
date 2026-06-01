@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { APP_TABS, budgetMonthNames, budgetMonths, chartSets } from "../data/constants.jsx";
 import { buildMonthlyBudgetReview } from "../utils/budgetReview.js";
 import { getCurrentBudgetPeriod } from "../utils/date.js";
@@ -261,12 +261,19 @@ export function DashboardView({
     if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
     return `${parts[0][0] || ""}${parts[1][0] || ""}`.toUpperCase();
   })();
-  useEffect(() => {
-    if (!isAccountPanelOpen) return;
-    setProfileNameDraft(sessionUser?.displayName || "");
-    setEmailDraft(sessionEmail || "");
-    setAccountPanelError("");
-  }, [isAccountPanelOpen, sessionEmail, sessionUser?.displayName]);
+  const toggleAccountPanel = () => {
+    setIsAccountPanelOpen((current) => {
+      const nextOpen = !current;
+      if (nextOpen) {
+        setProfileNameDraft(sessionUser?.displayName || "");
+        setEmailDraft(sessionEmail || "");
+        setIsEditingProfileName(false);
+        setIsEditingEmail(false);
+        setAccountPanelError("");
+      }
+      return nextOpen;
+    });
+  };
   const handleProfileNameSave = async () => {
     if (typeof sessionControls?.onUpdateProfileName !== "function") return;
     setAccountPanelError("");
@@ -477,7 +484,7 @@ export function DashboardView({
           <div style={{ position: "relative" }}>
             <button
               type="button"
-              onClick={() => setIsAccountPanelOpen((current) => !current)}
+              onClick={toggleAccountPanel}
               aria-label="Open account menu"
               style={{
                 border: "1px solid #148cff",
