@@ -1301,6 +1301,64 @@ function ForwardFreedomDashboard({
     );
   };
 
+  const updateManualTransaction = (transactionId, updates) => {
+    const transactionToUpdate = transactions.find(
+      (transaction) => transaction.id === transactionId && transaction.source === "manual"
+    );
+    if (!transactionToUpdate) return false;
+
+    const nextAccountName = String(updates.account ?? transactionToUpdate.account).trim();
+    const nextAccount = accounts.find((account) => account.name === nextAccountName);
+    const nextAmount = roundCurrency(updates.amount ?? transactionToUpdate.amount);
+    const nextMerchant = String(updates.merchant ?? transactionToUpdate.merchant).trim();
+    const nextDate = String(updates.date ?? transactionToUpdate.date).trim();
+
+    if (!nextAccount || !accountSupportsTransactions(nextAccount)) return false;
+    if (!Number.isFinite(nextAmount) || nextAmount === 0) return false;
+    if (!nextMerchant || !nextDate) return false;
+
+    const categoryProvided =
+      updates.category !== undefined && updates.category !== null && String(updates.category).trim() !== "";
+    const nextCategory = categoryProvided ? String(updates.category).trim() : transactionToUpdate.category;
+
+    setTransactions((current) =>
+      current.map((transaction) =>
+        transaction.id === transactionId && transaction.source === "manual"
+          ? {
+              ...transaction,
+              date: nextDate,
+              merchant: nextMerchant,
+              account: nextAccountName,
+              amount: nextAmount,
+              category: nextCategory,
+              categorySource: nextCategory ? "manual" : transaction.categorySource,
+              categoryConfidence: nextCategory ? 100 : transaction.categoryConfidence,
+              needsReview: nextCategory ? false : transaction.needsReview,
+            }
+          : transaction
+      )
+    );
+
+    setAccounts((current) =>
+      current.map((account) => {
+        let balanceDelta = 0;
+        if (account.name === transactionToUpdate.account) {
+          balanceDelta -= transactionToUpdate.amount;
+        }
+        if (account.name === nextAccountName) {
+          balanceDelta += nextAmount;
+        }
+        if (balanceDelta === 0) return account;
+        return {
+          ...account,
+          balance: roundCurrency(account.balance + balanceDelta),
+        };
+      })
+    );
+
+    return true;
+  };
+
   const updateTransactionCategory = (transactionToUpdate, nextCategory) => {
     if (!transactionToUpdate) return;
 
@@ -1607,6 +1665,7 @@ function ForwardFreedomDashboard({
               connectPlaidAccount={connectPlaidAccount}
               addManualTransaction={addManualTransaction}
               deleteManualTransaction={deleteManualTransaction}
+              updateManualTransaction={updateManualTransaction}
               updateTransactionCategory={updateTransactionCategory}
               householdProfilesProps={householdProfilesProps}
               plaidIntegration={plaidIntegration}
