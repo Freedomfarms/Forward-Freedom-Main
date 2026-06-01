@@ -952,7 +952,7 @@ export function OperationsBoard({
                 color: "#8feaff",
                 fontSize: 11,
                 fontWeight: 900,
-                textTransform: "uppercase",
+                textTransform: "none",
                 letterSpacing: 1,
               }}
             >
