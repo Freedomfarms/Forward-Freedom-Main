@@ -961,11 +961,9 @@ export function OperationsBoard({
           <div>
             <div
               style={{
-                color: "#8feaff",
-                fontSize: 11,
+                color: "white",
+                fontSize: 22,
                 fontWeight: 900,
-                textTransform: "none",
-                letterSpacing: 1,
               }}
             >
               Calendar cash flow
