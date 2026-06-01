@@ -363,7 +363,7 @@ export function OperationsBoard({
   const adjustmentValues = budgetMonths.map((month) =>
     parseMoney(planningProjectionAdjustments[month])
   );
-  const anchorStartingMonth = currentBudgetPeriod.month;
+  const anchorStartingMonth = planningAnchor.startingMonth || currentBudgetPeriod.month;
   const anchorStartingTrueCash =
     planningAnchor.startingTrueCash !== undefined && planningAnchor.startingTrueCash !== null
       ? Number(planningAnchor.startingTrueCash) || 0

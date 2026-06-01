@@ -78,6 +78,7 @@ const SUPPORTED_APP_TABS = new Set([...navMain, ...navTools].map((item) => item.
 const EMPTY_USER_STATE = Object.freeze({
   id: null,
   name: "",
+  createdAt: null,
   selectedAccount: null,
   accounts: [],
   transactions: [],
@@ -99,6 +100,32 @@ function getLocalDateKey(date = new Date()) {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function parseSnapshotDateKey(dateKey) {
+  const [year, month, day] = String(dateKey || "")
+    .split("-")
+    .map(Number);
+  if (!year || !month || !day) return null;
+  return new Date(year, month - 1, day);
+}
+
+function resolveUserAnchorStartingMonth(user, fallbackMonth) {
+  const createdAt =
+    typeof user?.createdAt === "string" ? new Date(user.createdAt) : null;
+  if (createdAt && !Number.isNaN(createdAt.getTime())) {
+    return getBudgetPeriodAtOffset(0, createdAt).month;
+  }
+
+  const earliestSnapshotDate = Object.keys(user?.metricSnapshots || {})
+    .map((dateKey) => parseSnapshotDateKey(dateKey))
+    .filter((date) => date && !Number.isNaN(date.getTime()))
+    .sort((a, b) => a - b)[0];
+  if (earliestSnapshotDate) {
+    return getBudgetPeriodAtOffset(0, earliestSnapshotDate).month;
+  }
+
+  return fallbackMonth;
 }
 
 function trimMetricSnapshots(snapshots) {
@@ -160,12 +187,9 @@ function buildTrackedTrueCashMeta(snapshots, currentTrueCash, increaseIsGood = t
     .reverse()
     .find((key) => {
       const snap = snapshots[key];
-      return (
-        key <= thresholdKey &&
-        snap &&
-        typeof snap.liquidCash === "number" &&
-        typeof snap.creditCardDebt === "number"
-      );
+      if (!(key <= thresholdKey && snap)) return false;
+      if (typeof snap.trueCash === "number") return true;
+      return typeof snap.liquidCash === "number" && typeof snap.creditCardDebt === "number";
     });
 
   if (!comparisonKey) {
@@ -178,9 +202,10 @@ function buildTrackedTrueCashMeta(snapshots, currentTrueCash, increaseIsGood = t
   }
 
   const previousSnapshot = snapshots[comparisonKey];
-  const previousValue = roundCurrency(
-    Number(previousSnapshot.liquidCash) - Number(previousSnapshot.creditCardDebt)
-  );
+  const previousValue =
+    typeof previousSnapshot.trueCash === "number"
+      ? roundCurrency(previousSnapshot.trueCash)
+      : roundCurrency(Number(previousSnapshot.liquidCash) - Number(previousSnapshot.creditCardDebt));
   const delta = roundCurrency(currentTrueCash - previousValue);
   const changeIcon = delta > 0 ? "↑" : delta < 0 ? "↓" : "→";
 
@@ -226,11 +251,12 @@ function syncDerivedAccountValues(accounts) {
   });
 }
 
-function buildTodayMetricSnapshot(liquidCash, creditCardDebt, totalNetWorth) {
+function buildTodayMetricSnapshot(liquidCash, creditCardDebt, totalNetWorth, trueCash) {
   return {
     liquidCash: roundCurrency(liquidCash),
     creditCardDebt: roundCurrency(creditCardDebt),
     totalNetWorth: roundCurrency(totalNetWorth),
+    trueCash: roundCurrency(trueCash),
   };
 }
 
@@ -242,7 +268,8 @@ function ensureTodayMetricSnapshot(metricSnapshots, nextSnapshot) {
     existing &&
     existing.liquidCash === nextSnapshot.liquidCash &&
     existing.creditCardDebt === nextSnapshot.creditCardDebt &&
-    existing.totalNetWorth === nextSnapshot.totalNetWorth
+    existing.totalNetWorth === nextSnapshot.totalNetWorth &&
+    existing.trueCash === nextSnapshot.trueCash
   ) {
     return metricSnapshots;
   }
@@ -482,6 +509,7 @@ function ForwardFreedomDashboard({
     .reduce((sum, account) => sum + account.balance, 0);
 
   const currentMonth = currentBudgetPeriod.month;
+  const anchorStartingMonth = resolveUserAnchorStartingMonth(activeUser, currentMonth);
   const currentMonthSpendSnapshot = buildMonthlySpendSnapshot(categorizedTransactions, budgetRows, {
     month: currentBudgetPeriod.month,
     year: currentBudgetPeriod.year,
@@ -498,7 +526,7 @@ function ForwardFreedomDashboard({
     budgetRows: activeUser.budgetRows,
     incomeStreams: activeUser.incomeStreams,
     projectionAdjustments: activeUser.projectionAdjustments,
-    startingMonth: currentMonth,
+    startingMonth: anchorStartingMonth,
     startingTrueCash:
       currentYearPlanState?.startingTrueCash && currentYearPlanState.startingTrueCash !== 0
         ? currentYearPlanState.startingTrueCash
@@ -524,7 +552,7 @@ function ForwardFreedomDashboard({
   const pct = (v) => `${((v / totalNetWorth) * 100).toFixed(1)}%`;
   const trackedMetricSnapshots = ensureTodayMetricSnapshot(
     metricSnapshots,
-    buildTodayMetricSnapshot(liquidCash, creditCardDebt, totalNetWorth)
+    buildTodayMetricSnapshot(liquidCash, creditCardDebt, totalNetWorth, trueCash)
   );
   const ensurePlanningYear = (targetYear) => {
     setActiveUserField("plansByYear", (currentPlansByYear) =>
@@ -627,7 +655,6 @@ function ForwardFreedomDashboard({
     });
   };
   const setPlanningAnchorForYear = (targetYear, nextAnchor) => {
-    const liveStartingMonth = getBudgetPeriodAtOffset(0).month;
     setActiveUserField("plansByYear", (currentPlansByYear) => {
       const nextPlansByYear = ensurePlanYearData(
         currentPlansByYear,
@@ -636,13 +663,14 @@ function ForwardFreedomDashboard({
       );
       const yearKey = String(targetYear);
       const currentPlan = nextPlansByYear[yearKey] || buildPlanYearData(baseCurrentPlanData);
+      const stableStartingMonth = currentPlan.startingMonth || baseCurrentPlanData.startingMonth;
 
       return {
         ...nextPlansByYear,
         [yearKey]: {
           ...currentPlan,
           ...nextAnchor,
-          startingMonth: liveStartingMonth,
+          startingMonth: stableStartingMonth,
         },
       };
     });

@@ -195,6 +195,24 @@ function buildNetWorthHistory(metricSnapshots, range) {
   };
 }
 
+function buildMonthlyTrueCashActuals(metricSnapshots, targetYear, liveCurrentTrueCash, currentMonthIndex) {
+  const monthlyValues = Array.from({ length: budgetMonths.length }, () => null);
+  Object.entries(metricSnapshots || {})
+    .sort(([a], [b]) => a.localeCompare(b))
+    .forEach(([dateKey, snapshot]) => {
+      if (!snapshot || typeof snapshot.trueCash !== "number") return;
+      const date = parseSnapshotDate(dateKey);
+      if (!date || date.getFullYear() !== targetYear) return;
+      monthlyValues[date.getMonth()] = Number(snapshot.trueCash);
+    });
+
+  if (targetYear === getCurrentBudgetPeriod().year) {
+    monthlyValues[currentMonthIndex] = Number(liveCurrentTrueCash) || 0;
+  }
+
+  return monthlyValues;
+}
+
 export function DashboardView({
   activeRange,
   setActiveRange,
@@ -225,7 +243,9 @@ export function DashboardView({
       year: getCurrentBudgetPeriod().year,
     });
   const netWorthHistory = buildNetWorthHistory(metricSnapshots, netWorthHistoryRange);
-  const projectionStartMonth = getCurrentBudgetPeriod().month;
+  const currentBudgetPeriod = getCurrentBudgetPeriod();
+  const projectionStartMonth = planningAnchor?.startingMonth || currentBudgetPeriod.month;
+  const projectionStartMonthIndex = Math.max(0, budgetMonths.indexOf(projectionStartMonth));
   const initialChartValues = buildSyncedTrueCashChart(chartSets[activeRange], trueCash);
   const initialProjectionYear = parseChartDate(initialChartValues.date).year;
   const chartValues =
@@ -247,6 +267,12 @@ export function DashboardView({
     startingTrueCash: projectionStartingTrueCash,
   });
   const projectionYear = projectionSchedule[0]?.year || parseChartDate(chartValues.date).year;
+  const monthlyTrueCashActuals = buildMonthlyTrueCashActuals(
+    metricSnapshots,
+    projectionYear,
+    trueCash,
+    currentBudgetPeriod.monthIndex
+  );
   const reconciledTrueCashSeries = chartValues.supportsProjection
     ? buildReconciledTrueCashSeries({
         targetYear: projectionYear,
@@ -258,11 +284,24 @@ export function DashboardView({
         liveCurrentTrueCash: trueCash,
       })
     : [];
+  const anchoredTrueCashSeries = chartValues.supportsProjection
+    ? reconciledTrueCashSeries.map((entry, index) => {
+        if (entry.value === null) return entry;
+        if (projectionYear !== currentBudgetPeriod.year) return entry;
+        if (index < projectionStartMonthIndex || index > currentBudgetPeriod.monthIndex) return entry;
+        const recordedValue = monthlyTrueCashActuals[index];
+        if (recordedValue === null || recordedValue === undefined) return entry;
+        return {
+          ...entry,
+          value: recordedValue,
+        };
+      })
+    : [];
   const anchoredActualValues = chartValues.supportsProjection
-    ? reconciledTrueCashSeries.map((entry) => entry.value).filter((value) => value !== null)
+    ? anchoredTrueCashSeries.map((entry) => entry.value).filter((value) => value !== null)
     : chartValues.values.map((value) => parseMoney(value));
   const anchoredActualDates = chartValues.supportsProjection
-    ? reconciledTrueCashSeries
+    ? anchoredTrueCashSeries
         .filter((entry) => entry.value !== null)
         .map((entry) => `${entry.month} ${entry.year} True Cash`)
     : chartValues.dates;
@@ -283,7 +322,7 @@ export function DashboardView({
   ]);
   const yAxisLabels = buildYAxisLabels(chartMax);
   const actualChartPoints = chartValues.supportsProjection
-    ? reconciledTrueCashSeries
+    ? anchoredTrueCashSeries
         .filter((entry) => entry.value !== null && MONTH_END_X[entry.month])
         .map((entry) => [MONTH_END_X[entry.month], trueCashToChartY(entry.value, chartMax)])
     : chartValues.points.map((point, index) => [

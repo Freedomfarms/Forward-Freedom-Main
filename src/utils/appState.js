@@ -79,6 +79,7 @@ function buildUserState({
   return {
     id,
     name,
+    createdAt: new Date().toISOString(),
     selectedAccount,
     accounts: useSeedData
       ? cloneSeed(initialAccounts).map((account, index) => normalizeAccount(account, index))
@@ -119,6 +120,10 @@ function normalizeUserState(rawUser, fallbackName, useSeedData = true) {
     name:
       typeof rawUser?.name === "string" && rawUser.name.trim() ? rawUser.name.trim() : fallbackName,
     selectedAccount: typeof rawUser?.selectedAccount === "string" ? rawUser.selectedAccount : null,
+    createdAt:
+      typeof rawUser?.createdAt === "string" && !Number.isNaN(new Date(rawUser.createdAt).getTime())
+        ? rawUser.createdAt
+        : defaults.createdAt,
     accounts: Array.isArray(rawUser?.accounts)
       ? rawUser.accounts.map((account, index) => normalizeAccount(account, index))
       : defaults.accounts,
