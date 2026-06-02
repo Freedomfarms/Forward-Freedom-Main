@@ -209,6 +209,7 @@ export function TransactionsView({
   deleteManualTransaction,
   updateManualTransaction,
   updatePlaidTransactionDateNickname,
+  addRecurringSubscriptionFromTransaction,
   updateTransactionCategory,
   householdProfilesProps,
   plaidIntegration,
@@ -238,6 +239,7 @@ export function TransactionsView({
   const [editTarget, setEditTarget] = useState(null);
   const [plaidDateEditTarget, setPlaidDateEditTarget] = useState(null);
   const [plaidDateEditFormValue, setPlaidDateEditFormValue] = useState(getIsoDateInputValue());
+  const [recurringTrackingMessage, setRecurringTrackingMessage] = useState("");
   const [editForm, setEditForm] = useState({
     date: getIsoDateInputValue(),
     merchant: "",
@@ -449,6 +451,20 @@ export function TransactionsView({
     const didClear = updatePlaidTransactionDateNickname(plaidDateEditTarget.id, null);
     if (!didClear) return;
     setPlaidDateEditTarget(null);
+  };
+
+  const trackTransactionAsRecurring = (transaction, event) => {
+    event.stopPropagation();
+    if (typeof addRecurringSubscriptionFromTransaction !== "function") return;
+
+    const result = addRecurringSubscriptionFromTransaction(transaction, { source: "transaction" });
+    const baseName = transaction.merchant || transaction.category || "Transaction";
+    setRecurringTrackingMessage(
+      result?.added
+        ? `${baseName} is now tracked in Recurring.`
+        : result?.reason || `${baseName} is already tracked as recurring.`
+    );
+    window.setTimeout(() => setRecurringTrackingMessage(""), 2200);
   };
 
   const exportFilteredTransactions = () => {
@@ -1238,6 +1254,22 @@ export function TransactionsView({
           </div>
         ) : null}
 
+        {recurringTrackingMessage ? (
+          <div
+            style={{
+              margin: "0 8px 12px",
+              padding: "9px 12px",
+              borderRadius: 10,
+              color: "#c7eeff",
+              fontSize: 12,
+              border: "1px solid rgba(143,234,255,.35)",
+              background: "rgba(0,136,255,.09)",
+            }}
+          >
+            {recurringTrackingMessage}
+          </div>
+        ) : null}
+
         <div
           style={{
             display: "grid",
@@ -1384,6 +1416,27 @@ export function TransactionsView({
                     {formatCategorySourceLabel(tx)}
                     {tx.needsReview ? " • Needs review" : ""}
                   </div>
+                  {tx.amount < 0 ? (
+                    <button
+                      type="button"
+                      onClick={(event) => trackTransactionAsRecurring(tx, event)}
+                      onDoubleClick={(event) => event.stopPropagation()}
+                      style={{
+                        border: "1px solid rgba(0,216,255,.22)",
+                        background: "rgba(0,136,255,.12)",
+                        color: "#9fe6ff",
+                        borderRadius: 999,
+                        padding: "5px 9px",
+                        cursor: "pointer",
+                        fontSize: 11,
+                        fontWeight: 700,
+                        whiteSpace: "nowrap",
+                      }}
+                      title="Track this expense in Recurring"
+                    >
+                      Track recurring
+                    </button>
+                  ) : null}
                 </div>
                 <div style={{ color: "#7ebeff", paddingLeft: 14 }}>
                   {accountDisplayNames[tx.account] || tx.account}

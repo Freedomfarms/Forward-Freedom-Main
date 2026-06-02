@@ -41,6 +41,10 @@ import {
   normalizePlaidNicknameMap,
 } from "./utils/plaidNicknames.js";
 import {
+  buildRecurringSubscriptionFromTransaction,
+  normalizeRecurringPreferences,
+} from "./utils/recurringSuggestions.js";
+import {
   calculateCryptoBalance,
   fetchCryptoQuotes,
   isCryptoPriceStale,
@@ -88,6 +92,7 @@ const EMPTY_USER_STATE = Object.freeze({
   projectionAdjustments: {},
   objectives: [],
   subscriptions: [],
+  recurringPreferences: normalizeRecurringPreferences(null),
   plaidItems: [],
   plaidNicknames: {},
   lastPlaidSyncAt: null,
@@ -290,6 +295,12 @@ function sortTransactionsByDate(transactions) {
   return [...transactions].sort((a, b) => new Date(b.date) - new Date(a.date));
 }
 
+function normalizeRecurringMatchToken(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase();
+}
+
 function mergePlaidSyncIntoUser(user, syncPayload) {
   const hasLivePlaidItems = Array.isArray(user.plaidItems) && user.plaidItems.length > 0;
   const shouldReplaceDemoSyncedData = !hasLivePlaidItems;
@@ -450,6 +461,7 @@ function ForwardFreedomDashboard({
   const incomeStreams = activeUser.incomeStreams;
   const projectionAdjustments = activeUser.projectionAdjustments;
   const subscriptions = activeUser.subscriptions;
+  const recurringPreferences = normalizeRecurringPreferences(activeUser.recurringPreferences);
   const objectives = Array.isArray(activeUser.objectives) ? activeUser.objectives : [];
   const plaidItems = activeUser.plaidItems;
   const lastPlaidSyncAt = activeUser.lastPlaidSyncAt;
@@ -483,6 +495,14 @@ function ForwardFreedomDashboard({
   const setProjectionAdjustments = (valueOrUpdater) =>
     setActiveUserField("projectionAdjustments", valueOrUpdater);
   const setSubscriptions = (valueOrUpdater) => setActiveUserField("subscriptions", valueOrUpdater);
+  const setRecurringPreferences = (valueOrUpdater) =>
+    setActiveUserField("recurringPreferences", (currentValue) =>
+      normalizeRecurringPreferences(
+        typeof valueOrUpdater === "function"
+          ? valueOrUpdater(normalizeRecurringPreferences(currentValue))
+          : valueOrUpdater
+      )
+    );
   const setObjectives = (valueOrUpdater) => setActiveUserField("objectives", valueOrUpdater);
   const setMerchantCategoryRules = (valueOrUpdater) =>
     setActiveUserField("merchantCategoryRules", valueOrUpdater);
@@ -1414,6 +1434,50 @@ function ForwardFreedomDashboard({
     return true;
   };
 
+  const addRecurringSubscriptionFromTransaction = (transaction, options = {}) => {
+    const draft = buildRecurringSubscriptionFromTransaction(transaction, options);
+    if (!draft) {
+      return { added: false, reason: "Only spend transactions can be tracked as recurring." };
+    }
+
+    const normalizedDraftName = normalizeRecurringMatchToken(draft.name);
+    const normalizedDraftAccount = normalizeRecurringMatchToken(draft.account);
+    let wasAdded = false;
+
+    setSubscriptions((currentSubscriptions) => {
+      const subscriptionList = Array.isArray(currentSubscriptions) ? currentSubscriptions : [];
+      const alreadyExists = subscriptionList.some(
+        (subscription) =>
+          normalizeRecurringMatchToken(subscription.name) === normalizedDraftName &&
+          normalizeRecurringMatchToken(subscription.account) === normalizedDraftAccount &&
+          subscription.status !== "Cancelled"
+      );
+      if (alreadyExists) return subscriptionList;
+
+      wasAdded = true;
+      const nextSubscription = {
+        ...draft,
+        id: `sub-custom-${Date.now()}-${subscriptionList.length + 1}`,
+      };
+      return [...subscriptionList, nextSubscription];
+    });
+
+    if (!wasAdded) {
+      return { added: false, reason: "That recurring expense is already being tracked." };
+    }
+
+    if (options?.suggestionKey) {
+      setRecurringPreferences((currentPreferences) => ({
+        ...currentPreferences,
+        dismissedSuggestionKeys: (currentPreferences.dismissedSuggestionKeys || []).filter(
+          (key) => key !== options.suggestionKey
+        ),
+      }));
+    }
+
+    return { added: true };
+  };
+
   const updateTransactionCategory = (transactionToUpdate, nextCategory) => {
     if (!transactionToUpdate) return;
 
@@ -1723,6 +1787,7 @@ function ForwardFreedomDashboard({
               deleteManualTransaction={deleteManualTransaction}
               updateManualTransaction={updateManualTransaction}
               updatePlaidTransactionDateNickname={updatePlaidTransactionDateNickname}
+              addRecurringSubscriptionFromTransaction={addRecurringSubscriptionFromTransaction}
               updateTransactionCategory={updateTransactionCategory}
               householdProfilesProps={householdProfilesProps}
               plaidIntegration={plaidIntegration}
@@ -1745,6 +1810,10 @@ function ForwardFreedomDashboard({
               accounts={syncedAccounts}
               subscriptions={subscriptions}
               setSubscriptions={setSubscriptions}
+              transactions={categorizedTransactions}
+              recurringPreferences={recurringPreferences}
+              setRecurringPreferences={setRecurringPreferences}
+              addRecurringSubscriptionFromTransaction={addRecurringSubscriptionFromTransaction}
               householdProfilesProps={householdProfilesProps}
             />
           ) : activeTab === APP_TABS.OBJECTIVES ? (

@@ -11,6 +11,7 @@ import { normalizeAccount } from "./accounts.js";
 import { getCurrentBudgetPeriod } from "./date.js";
 import { buildPlanYearData, normalizePlansByYear } from "./planning.js";
 import { buildSeedObjectives, normalizeObjectives } from "./objectives.js";
+import { normalizeRecurringPreferences } from "./recurringSuggestions.js";
 
 export const APP_STATE_STORAGE_KEY = "fff-app-state-v1";
 export const LEGACY_METRIC_SNAPSHOT_STORAGE_KEY = "fff-dashboard-metric-snapshots-v1";
@@ -94,6 +95,7 @@ function buildUserState({
       [String(currentYear)]: buildPlanYearData(currentPlanData),
     },
     subscriptions: useSeedData ? cloneSeed(initialSubscriptions) : [],
+    recurringPreferences: normalizeRecurringPreferences(null),
     plaidItems: [],
     plaidNicknames: {},
     lastPlaidSyncAt: null,
@@ -154,6 +156,7 @@ function normalizeUserState(rawUser, fallbackName, useSeedData = true) {
     subscriptions: Array.isArray(rawUser?.subscriptions)
       ? rawUser.subscriptions
       : defaults.subscriptions,
+    recurringPreferences: normalizeRecurringPreferences(rawUser?.recurringPreferences),
     plaidItems: Array.isArray(rawUser?.plaidItems) ? rawUser.plaidItems : defaults.plaidItems,
     plaidNicknames:
       rawUser?.plaidNicknames && typeof rawUser.plaidNicknames === "object"
