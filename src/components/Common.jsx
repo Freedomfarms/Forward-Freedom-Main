@@ -513,15 +513,17 @@ export function MetricCard({ metric }) {
             borderRadius: 9,
             border: "1px solid rgba(0,179,255,.55)",
             background: "rgba(0,104,255,.16)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
+            display: "grid",
+            placeItems: "center",
             color: "#23d7ff",
             fontSize: 26,
             boxShadow: "0 0 24px rgba(0,128,255,.35)",
+            lineHeight: 0,
           }}
         >
-          {metric.icon}
+          <div style={{ display: "grid", placeItems: "center", width: "100%", height: "100%" }}>
+            {metric.icon}
+          </div>
         </div>
         <div>
           <div

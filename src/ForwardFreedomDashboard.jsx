@@ -81,6 +81,42 @@ const CRYPTO_PRICE_SOURCE = "CoinGecko";
 const THIRTY_DAY_WINDOW = 30;
 const SNAPSHOT_RETENTION_DAYS = 400;
 const SUPPORTED_APP_TABS = new Set([...navMain, ...navTools].map((item) => item.label));
+
+const METRIC_ICONS = {
+  trueCash: (
+    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" aria-hidden="true">
+      <rect x="3.5" y="5.5" width="17" height="13" rx="2.5" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="12" cy="12" r="2.5" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M3.5 9.2h17M3.5 14.8h17" stroke="currentColor" strokeWidth="1.4" opacity="0.85" />
+    </svg>
+  ),
+  liquidCash: (
+    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" aria-hidden="true">
+      <path
+        d="M12 3.8L18.5 8v8L12 20.2 5.5 16V8L12 3.8Z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinejoin="round"
+      />
+      <path d="M8.8 12h6.4M10.2 14.5h3.6M10.2 9.5h3.6" stroke="currentColor" strokeWidth="1.6" />
+    </svg>
+  ),
+  creditCardDebt: (
+    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" aria-hidden="true">
+      <rect x="3.5" y="6.5" width="17" height="11" rx="2.4" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M3.5 10.2h17" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M8 14h3.2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <path d="M13.6 13.2l2.6 2.6M16.2 13.2l-2.6 2.6" stroke="currentColor" strokeWidth="1.6" />
+    </svg>
+  ),
+  monthlyFlow: (
+    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" aria-hidden="true">
+      <path d="M4 15.2c2.1 0 2.1-6.4 4.2-6.4s2.1 6.4 4.2 6.4 2.1-6.4 4.2-6.4S18.7 15.2 21 15.2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M4 19.2h17" stroke="currentColor" strokeWidth="1.6" opacity="0.85" />
+    </svg>
+  ),
+};
+
 const EMPTY_USER_STATE = Object.freeze({
   id: null,
   name: "",
@@ -1094,28 +1130,28 @@ function ForwardFreedomDashboard({
 
   const dynamicMetrics = [
     {
-      icon: "▧",
+      icon: METRIC_ICONS.trueCash,
       title: "TRUE CASH",
       value: money(trueCash),
       ...buildTrackedTrueCashMeta(trackedMetricSnapshots, trueCash, true),
       onClick: () => setActiveTab(APP_TABS.ADD_ACCOUNTS),
     },
     {
-      icon: "▱",
+      icon: METRIC_ICONS.liquidCash,
       title: "LIQUID CASH",
       value: money(liquidCash),
       ...buildTrackedMetricMeta(trackedMetricSnapshots, "liquidCash", liquidCash, true),
       onClick: () => setActiveTab(APP_TABS.ADD_ACCOUNTS),
     },
     {
-      icon: "▭",
+      icon: METRIC_ICONS.creditCardDebt,
       title: "CREDIT CARD DEBT",
       value: money(creditCardDebt),
       ...buildTrackedMetricMeta(trackedMetricSnapshots, "creditCardDebt", creditCardDebt, false),
       onClick: () => setActiveTab(APP_TABS.ADD_ACCOUNTS),
     },
     {
-      icon: "⌁",
+      icon: METRIC_ICONS.monthlyFlow,
       title: "CURRENT MONTH CASH FLOW",
       value: money(monthlyFlow),
       change: monthlyFlow >= 0 ? "Projected surplus" : "Projected deficit",

@@ -42,6 +42,14 @@ const headerMenuButtonStyle = {
   cursor: "pointer",
 };
 
+const TRUE_CASH_TITLE_ICON = (
+  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true">
+    <rect x="3.5" y="5.5" width="17" height="13" rx="2.5" stroke="currentColor" strokeWidth="1.8" />
+    <circle cx="12" cy="12" r="2.5" stroke="currentColor" strokeWidth="1.8" />
+    <path d="M3.5 9.2h17M3.5 14.8h17" stroke="currentColor" strokeWidth="1.4" opacity="0.85" />
+  </svg>
+);
+
 function getMonthStartX(month) {
   const monthIndex = budgetMonths.indexOf(month);
   if (monthIndex <= 0) return 0;
@@ -719,7 +727,23 @@ export function DashboardView({
           <div
             style={{ display: "flex", alignItems: "center", gap: 12, textTransform: "uppercase" }}
           >
-            <span style={{ color: "#00d8ff", fontSize: 24 }}>▧</span> TRUE CASH <InfoDot />
+            <span
+              style={{
+                width: 28,
+                height: 28,
+                borderRadius: 8,
+                border: "1px solid rgba(0,216,255,.34)",
+                background: "rgba(0,104,255,.14)",
+                color: "#00d8ff",
+                display: "grid",
+                placeItems: "center",
+                lineHeight: 0,
+                boxShadow: "0 0 16px rgba(0,136,255,.2)",
+              }}
+            >
+              {TRUE_CASH_TITLE_ICON}
+            </span>
+            TRUE CASH <InfoDot />
           </div>
           <div style={{ display: "flex", gap: 12 }}>
             <button
