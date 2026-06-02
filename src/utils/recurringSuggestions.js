@@ -2,17 +2,6 @@ import { getCurrentTimestamp } from "./date.js";
 
 const DEFAULT_INCLUDE_CATEGORIES = [];
 const DEFAULT_EXCLUDE_CATEGORIES = ["Income", "Transfers"];
-const RECURRING_KEYWORDS = [
-  "subscription",
-  "recurring",
-  "phone",
-  "mobile",
-  "wireless",
-  "internet",
-  "stream",
-  "membership",
-  "utility",
-];
 
 export const DEFAULT_RECURRING_PREFERENCES = Object.freeze({
   autoDetectEnabled: true,
@@ -83,19 +72,11 @@ function inferIcon(category) {
 }
 
 function buildSuggestionKey(transaction) {
+  const absoluteAmount = Math.abs(Number(transaction?.amount) || 0);
   return [
     normalizeToken(transaction?.merchant),
-    normalizeToken(transaction?.account),
-    normalizeToken(transaction?.category),
+    Number.isFinite(absoluteAmount) ? absoluteAmount.toFixed(2) : "",
   ].join("|");
-}
-
-function isRecurringCategoryHint(transaction, includeCategorySet) {
-  const categoryToken = normalizeToken(transaction?.category);
-  const merchantToken = normalizeToken(transaction?.merchant);
-  if (includeCategorySet.has(categoryToken)) return true;
-  const content = `${categoryToken} ${merchantToken}`;
-  return RECURRING_KEYWORDS.some((keyword) => content.includes(keyword));
 }
 
 function buildExistingSubscriptionKey(subscription) {
@@ -147,9 +128,6 @@ export function buildRecurringSuggestions(transactions, subscriptions, recurring
   const normalizedPreferences = normalizeRecurringPreferences(recurringPreferences);
   if (!normalizedPreferences.autoDetectEnabled) return [];
 
-  const includeCategorySet = new Set(
-    normalizedPreferences.includeCategories.map((category) => normalizeToken(category))
-  );
   const excludeCategorySet = new Set(
     normalizedPreferences.excludeCategories.map((category) => normalizeToken(category))
   );
@@ -177,16 +155,15 @@ export function buildRecurringSuggestions(transactions, subscriptions, recurring
   const suggestions = [];
   grouped.forEach((rows, suggestionKey) => {
     if (!rows.length || dismissedKeys.has(normalizeToken(suggestionKey))) return;
+    if (rows.length < 2) return;
     const sorted = [...rows].sort((a, b) => {
       const dateA = parseTransactionDate(a.date)?.getTime() || 0;
       const dateB = parseTransactionDate(b.date)?.getTime() || 0;
       return dateB - dateA;
     });
     const latest = sorted[0];
-    const recurringHint =
-      includeCategorySet.size === 0 ? true : isRecurringCategoryHint(latest, includeCategorySet);
     const detectedFrequency = detectFrequencyFromHistory(sorted);
-    if (!recurringHint && !detectedFrequency) return;
+    if (!detectedFrequency) return;
 
     const sample = sorted.slice(0, 3);
     const averageAmount =
@@ -199,11 +176,7 @@ export function buildRecurringSuggestions(transactions, subscriptions, recurring
     suggestions.push({
       id: `suggested-${suggestionKey}`,
       suggestionKey,
-      reason: recurringHint
-        ? detectedFrequency
-          ? "Recurring candidate detected (category scope + cadence)."
-          : "Recurring candidate detected from current category scope."
-        : "Cadence pattern detected across recent transactions.",
+      reason: "Recurring candidate detected from repeated same-amount merchant charges.",
       txCount: sorted.length,
       merchant: latest.merchant,
       account: latest.account,
