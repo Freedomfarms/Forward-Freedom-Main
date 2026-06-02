@@ -1,11 +1,7 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { styles } from "../styles.js";
 import { money } from "../utils/format.js";
 import { accountSupportsTransactions } from "../utils/accounts.js";
-import {
-  buildRecurringSuggestions,
-  normalizeRecurringPreferences,
-} from "../utils/recurringSuggestions.js";
 import {
   monthlyEquivalent,
   nextBillingDate,
@@ -15,12 +11,14 @@ import {
 import { HouseholdProfilesControl } from "./Common.jsx";
 
 const STATUS_COLORS = {
+  Suggested: "#8feaff",
   Active: "#00f59b",
   Paused: "#ffb65d",
   Cancelled: "#ff5d7a",
 };
 
 const STATUS_BG = {
+  Suggested: "rgba(143,234,255,.12)",
   Active: "rgba(0,245,155,.12)",
   Paused: "rgba(255,182,93,.12)",
   Cancelled: "rgba(255,93,122,.12)",
@@ -78,29 +76,13 @@ export function RecurringSubscriptions({
   accounts,
   subscriptions,
   setSubscriptions,
-  transactions,
-  recurringPreferences,
-  setRecurringPreferences,
-  addRecurringSubscriptionFromTransaction,
   householdProfilesProps,
 }) {
   const [showAddForm, setShowAddForm] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [filterStatus, setFilterStatus] = useState("All");
-  const [ruleNotice, setRuleNotice] = useState("");
-  const normalizedRecurringPreferences = normalizeRecurringPreferences(recurringPreferences);
-  const [includeCategoriesText, setIncludeCategoriesText] = useState(
-    () => normalizedRecurringPreferences.includeCategories.join(", ")
-  );
-  const [excludeCategoriesText, setExcludeCategoriesText] = useState(
-    () => normalizedRecurringPreferences.excludeCategories.join(", ")
-  );
   const accountOptions = accounts.filter((account) => accountSupportsTransactions(account));
-  const recurringSuggestions = useMemo(
-    () => buildRecurringSuggestions(transactions, subscriptions, normalizedRecurringPreferences),
-    [transactions, subscriptions, normalizedRecurringPreferences]
-  );
 
   const updateForm = (field, value) => setForm((f) => ({ ...f, [field]: value }));
 
@@ -118,71 +100,11 @@ export function RecurringSubscriptions({
         id: `sub-custom-${Date.now()}`,
         amount: Number(String(form.amount).replace(/[^0-9.]/g, "")),
         billing: Number(form.billing) || 1,
+        createdAt: new Date().toISOString(),
       },
     ]);
     setForm(EMPTY_FORM);
     setShowAddForm(false);
-  };
-
-  const parseCategoryRuleInput = (value) =>
-    String(value || "")
-      .split(",")
-      .map((item) => item.trim())
-      .filter(Boolean);
-
-  const saveRecurringRules = () => {
-    if (typeof setRecurringPreferences !== "function") return;
-    setRecurringPreferences((current) => ({
-      ...current,
-      includeCategories: parseCategoryRuleInput(includeCategoriesText),
-      excludeCategories: parseCategoryRuleInput(excludeCategoriesText),
-    }));
-    setRuleNotice("Recurring detection rules updated.");
-    window.setTimeout(() => setRuleNotice(""), 2200);
-  };
-
-  const toggleAutoDetect = () => {
-    if (typeof setRecurringPreferences !== "function") return;
-    setRecurringPreferences((current) => ({
-      ...current,
-      autoDetectEnabled: !current.autoDetectEnabled,
-    }));
-  };
-
-  const promoteSuggestion = (suggestion) => {
-    if (typeof addRecurringSubscriptionFromTransaction !== "function") return;
-    const result = addRecurringSubscriptionFromTransaction(
-      {
-        ...suggestion,
-        amount: -Math.abs(Number(suggestion.amount) || 0),
-      },
-      {
-        frequency: suggestion.frequency,
-        billing: suggestion.billing,
-        icon: suggestion.icon,
-        suggestionKey: suggestion.suggestionKey,
-        source: "auto-detected",
-      }
-    );
-    setRuleNotice(
-      result?.added
-        ? `${suggestion.merchant || suggestion.category} moved into recurring tracking.`
-        : result?.reason || "This recurring expense is already tracked."
-    );
-    window.setTimeout(() => setRuleNotice(""), 2200);
-  };
-
-  const dismissSuggestion = (suggestionKey) => {
-    if (typeof setRecurringPreferences !== "function") return;
-    setRecurringPreferences((current) => ({
-      ...current,
-      dismissedSuggestionKeys: [
-        ...(current.dismissedSuggestionKeys || []),
-        suggestionKey,
-      ].filter((value, index, list) => list.indexOf(value) === index),
-    }));
-    setRuleNotice("Suggestion dismissed.");
-    window.setTimeout(() => setRuleNotice(""), 1800);
   };
 
   const cycleStatus = (id) => {
@@ -203,8 +125,25 @@ export function RecurringSubscriptions({
     setDeleteTarget(null);
   };
 
-  const filtered =
-    filterStatus === "All" ? subscriptions : subscriptions.filter((s) => s.status === filterStatus);
+  const filtered = (filterStatus === "All"
+    ? subscriptions
+    : subscriptions.filter((subscription) => subscription.status === filterStatus)
+  )
+    .map((subscription, index) => ({ subscription, index }))
+    .sort((left, right) => {
+      const leftIsCustom = String(left.subscription.id || "").startsWith("sub-custom-");
+      const rightIsCustom = String(right.subscription.id || "").startsWith("sub-custom-");
+      if (leftIsCustom !== rightIsCustom) {
+        return leftIsCustom ? 1 : -1;
+      }
+      if (leftIsCustom && rightIsCustom) {
+        const leftCreated = new Date(left.subscription.createdAt || 0).getTime() || 0;
+        const rightCreated = new Date(right.subscription.createdAt || 0).getTime() || 0;
+        if (leftCreated !== rightCreated) return leftCreated - rightCreated;
+      }
+      return left.index - right.index;
+    })
+    .map((entry) => entry.subscription);
 
   const activeMonthly = subscriptions
     .filter((s) => s.status === "Active")
@@ -318,154 +257,6 @@ export function RecurringSubscriptions({
           ))}
         </div>
       </div>
-
-      <div
-        style={{
-          ...styles.panel,
-          padding: 18,
-          marginBottom: 16,
-          border: "1px solid rgba(0,216,255,.2)",
-        }}
-      >
-        <div style={{ color: "white", fontSize: 16, fontWeight: 900, marginBottom: 10 }}>
-          Auto-Detect Rules
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 10, alignItems: "end" }}>
-          <label style={{ display: "grid", gap: 7 }}>
-            <span style={{ color: "#8fb1d9", fontSize: 11, textTransform: "uppercase", fontWeight: 900 }}>
-              Include Categories
-            </span>
-            <input
-              type="text"
-              value={includeCategoriesText}
-              onChange={(event) => setIncludeCategoriesText(event.target.value)}
-              placeholder="Subscriptions, Utilities, Phone"
-              style={inputStyle}
-            />
-          </label>
-          <label style={{ display: "grid", gap: 7 }}>
-            <span style={{ color: "#8fb1d9", fontSize: 11, textTransform: "uppercase", fontWeight: 900 }}>
-              Exclude Categories
-            </span>
-            <input
-              type="text"
-              value={excludeCategoriesText}
-              onChange={(event) => setExcludeCategoriesText(event.target.value)}
-              placeholder="Transfers, Internal"
-              style={inputStyle}
-            />
-          </label>
-          <button
-            type="button"
-            onClick={saveRecurringRules}
-            style={{
-              background: "rgba(0,136,255,.12)",
-              border: "1px solid rgba(0,216,255,.3)",
-              borderRadius: 10,
-              color: "#d7ebff",
-              padding: "11px 14px",
-              fontWeight: 800,
-              cursor: "pointer",
-            }}
-          >
-            Save Rules
-          </button>
-        </div>
-        <div style={{ display: "flex", gap: 12, alignItems: "center", marginTop: 12 }}>
-          <button
-            type="button"
-            onClick={toggleAutoDetect}
-            style={{
-              background: normalizedRecurringPreferences.autoDetectEnabled
-                ? "linear-gradient(90deg,rgba(0,119,255,.42),rgba(0,216,255,.24))"
-                : "rgba(0,136,255,.08)",
-              border: normalizedRecurringPreferences.autoDetectEnabled
-                ? "1px solid rgba(0,216,255,.45)"
-                : "1px solid rgba(0,136,255,.24)",
-              borderRadius: 999,
-              color: normalizedRecurringPreferences.autoDetectEnabled ? "#eaf6ff" : "#8fb1d9",
-              padding: "7px 13px",
-              fontWeight: 800,
-              cursor: "pointer",
-              fontSize: 12,
-            }}
-          >
-            {normalizedRecurringPreferences.autoDetectEnabled ? "Auto-detect ON" : "Auto-detect OFF"}
-          </button>
-          {ruleNotice ? <span style={{ color: "#a2ebff", fontSize: 12 }}>{ruleNotice}</span> : null}
-        </div>
-      </div>
-
-      {normalizedRecurringPreferences.autoDetectEnabled && recurringSuggestions.length ? (
-        <div
-          style={{
-            ...styles.panel,
-            padding: 18,
-            marginBottom: 16,
-            border: "1px solid rgba(0,216,255,.2)",
-          }}
-        >
-          <div style={{ color: "white", fontSize: 16, fontWeight: 900, marginBottom: 12 }}>
-            Suggested Recurring Candidates
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(250px,1fr))", gap: 12 }}>
-            {recurringSuggestions.map((suggestion) => (
-              <div
-                key={suggestion.id}
-                style={{
-                  border: "1px solid rgba(0,136,255,.2)",
-                  borderRadius: 12,
-                  background: "rgba(5,20,40,.72)",
-                  padding: 14,
-                }}
-              >
-                <div style={{ color: "white", fontWeight: 800 }}>
-                  {suggestion.icon} {suggestion.merchant || suggestion.category || "Recurring expense"}
-                </div>
-                <div style={{ color: "#9dc4ea", fontSize: 12, marginTop: 5 }}>
-                  {money(suggestion.amount)} / {suggestion.frequency.toLowerCase()} · {suggestion.account || "—"}
-                </div>
-                <div style={{ color: "#8fb1d9", fontSize: 11, marginTop: 6, lineHeight: 1.45 }}>
-                  {suggestion.reason}
-                </div>
-                <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                  <button
-                    type="button"
-                    onClick={() => promoteSuggestion(suggestion)}
-                    style={{
-                      flex: 1,
-                      background: "linear-gradient(90deg,#0077ff,#00d8ff)",
-                      border: "1px solid rgba(0,216,255,.45)",
-                      borderRadius: 8,
-                      color: "white",
-                      padding: "8px 10px",
-                      fontWeight: 800,
-                      cursor: "pointer",
-                    }}
-                  >
-                    Track
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => dismissSuggestion(suggestion.suggestionKey)}
-                    style={{
-                      background: "rgba(0,136,255,.08)",
-                      border: "1px solid rgba(0,216,255,.2)",
-                      borderRadius: 8,
-                      color: "#9fbddd",
-                      padding: "8px 10px",
-                      cursor: "pointer",
-                      fontWeight: 700,
-                    }}
-                  >
-                    Dismiss
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
 
       {/* Add Form */}
       {showAddForm ? (

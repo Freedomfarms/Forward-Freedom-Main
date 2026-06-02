@@ -1,7 +1,7 @@
 import { getCurrentTimestamp } from "./date.js";
 
-const DEFAULT_INCLUDE_CATEGORIES = ["Subscriptions", "Utilities", "Phone", "Internet"];
-const DEFAULT_EXCLUDE_CATEGORIES = ["Transfers"];
+const DEFAULT_INCLUDE_CATEGORIES = [];
+const DEFAULT_EXCLUDE_CATEGORIES = ["Income", "Transfers"];
 const RECURRING_KEYWORDS = [
   "subscription",
   "recurring",
@@ -110,14 +110,9 @@ function parseBillingDay(dateValue) {
 export function normalizeRecurringPreferences(value) {
   const raw = value && typeof value === "object" ? value : {};
   return {
-    autoDetectEnabled:
-      typeof raw.autoDetectEnabled === "boolean"
-        ? raw.autoDetectEnabled
-        : DEFAULT_RECURRING_PREFERENCES.autoDetectEnabled,
-    includeCategories: normalizeList(
-      raw.includeCategories,
-      DEFAULT_RECURRING_PREFERENCES.includeCategories
-    ),
+    autoDetectEnabled: true,
+    // Auto-detect now scans all expense categories by default.
+    includeCategories: [],
     excludeCategories: normalizeList(
       raw.excludeCategories,
       DEFAULT_RECURRING_PREFERENCES.excludeCategories
@@ -162,7 +157,9 @@ export function buildRecurringSuggestions(transactions, subscriptions, recurring
     normalizedPreferences.dismissedSuggestionKeys.map((key) => normalizeToken(key))
   );
   const existingSubscriptionKeys = new Set(
-    (Array.isArray(subscriptions) ? subscriptions : []).map(buildExistingSubscriptionKey)
+    (Array.isArray(subscriptions) ? subscriptions : [])
+      .filter((subscription) => !subscription?.autoDetected && subscription?.status !== "Cancelled")
+      .map(buildExistingSubscriptionKey)
   );
 
   const grouped = new Map();
@@ -186,7 +183,8 @@ export function buildRecurringSuggestions(transactions, subscriptions, recurring
       return dateB - dateA;
     });
     const latest = sorted[0];
-    const recurringHint = isRecurringCategoryHint(latest, includeCategorySet);
+    const recurringHint =
+      includeCategorySet.size === 0 ? true : isRecurringCategoryHint(latest, includeCategorySet);
     const detectedFrequency = detectFrequencyFromHistory(sorted);
     if (!recurringHint && !detectedFrequency) return;
 
@@ -203,8 +201,8 @@ export function buildRecurringSuggestions(transactions, subscriptions, recurring
       suggestionKey,
       reason: recurringHint
         ? detectedFrequency
-          ? "Category hint + cadence pattern detected."
-          : "Category hint detected from transaction tagging."
+          ? "Recurring candidate detected (category scope + cadence)."
+          : "Recurring candidate detected from current category scope."
         : "Cadence pattern detected across recent transactions.",
       txCount: sorted.length,
       merchant: latest.merchant,
@@ -223,5 +221,5 @@ export function buildRecurringSuggestions(transactions, subscriptions, recurring
       if (b.txCount !== a.txCount) return b.txCount - a.txCount;
       return b.amount - a.amount;
     })
-    .slice(0, 12);
+    .slice(0, 120);
 }

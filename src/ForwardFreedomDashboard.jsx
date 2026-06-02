@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePlaidLink } from "react-plaid-link";
 import { APP_TABS, budgetMonths, navMain, navTools } from "./data/constants.jsx";
 import { styles } from "./styles.js";
@@ -41,6 +41,7 @@ import {
   normalizePlaidNicknameMap,
 } from "./utils/plaidNicknames.js";
 import {
+  buildRecurringSuggestions,
   buildRecurringSubscriptionFromTransaction,
   normalizeRecurringPreferences,
 } from "./utils/recurringSuggestions.js";
@@ -301,6 +302,96 @@ function normalizeRecurringMatchToken(value) {
     .toLowerCase();
 }
 
+function resolveAutoDetectedSubscriptionStatus(category, currentStatus = "Suggested") {
+  const normalizedCategory = normalizeRecurringMatchToken(category);
+  if (currentStatus === "Cancelled") return "Cancelled";
+  if (normalizedCategory === "subscriptions") {
+    return "Active";
+  }
+  if (currentStatus === "Active" || currentStatus === "Paused") {
+    return currentStatus;
+  }
+  return "Suggested";
+}
+
+function syncAutoDetectedSubscriptions(currentSubscriptions, recurringSuggestions) {
+  const subscriptionList = Array.isArray(currentSubscriptions) ? currentSubscriptions : [];
+  const suggestionsByKey = new Map(
+    recurringSuggestions.map((suggestion) => [suggestion.suggestionKey, suggestion])
+  );
+  const manualTrackedKeys = new Set(
+    subscriptionList
+      .filter((subscription) => !subscription.autoDetected)
+      .map(
+        (subscription) =>
+          `${normalizeRecurringMatchToken(subscription.name)}|${normalizeRecurringMatchToken(
+            subscription.account
+          )}`
+      )
+  );
+
+  const nextSubscriptions = [];
+  let hasChanges = false;
+
+  subscriptionList.forEach((subscription) => {
+    if (!subscription.autoDetected || !subscription.suggestionKey) {
+      nextSubscriptions.push(subscription);
+      return;
+    }
+
+    const suggestion = suggestionsByKey.get(subscription.suggestionKey);
+    if (!suggestion) {
+      hasChanges = true;
+      return;
+    }
+
+    const normalizedStatus = resolveAutoDetectedSubscriptionStatus(
+      suggestion.category,
+      subscription.status
+    );
+    const updatedSubscription = {
+      ...subscription,
+      name: suggestion.merchant || suggestion.category || subscription.name,
+      amount: Number(suggestion.amount || subscription.amount || 0),
+      category: suggestion.category || subscription.category,
+      account: suggestion.account || subscription.account,
+      billing: Number(suggestion.billing || subscription.billing || 1),
+      frequency: suggestion.frequency || subscription.frequency || "Monthly",
+      icon: suggestion.icon || subscription.icon || "💳",
+      status: normalizedStatus,
+    };
+    if (JSON.stringify(updatedSubscription) !== JSON.stringify(subscription)) {
+      hasChanges = true;
+    }
+    nextSubscriptions.push(updatedSubscription);
+    suggestionsByKey.delete(subscription.suggestionKey);
+  });
+
+  suggestionsByKey.forEach((suggestion) => {
+    const manualKey = `${normalizeRecurringMatchToken(suggestion.merchant)}|${normalizeRecurringMatchToken(
+      suggestion.account
+    )}`;
+    if (manualTrackedKeys.has(manualKey)) return;
+    hasChanges = true;
+    nextSubscriptions.push({
+      id: `sub-auto-${Date.now()}-${nextSubscriptions.length + 1}`,
+      name: suggestion.merchant || suggestion.category || "Recurring Expense",
+      amount: Number(suggestion.amount || 0),
+      frequency: suggestion.frequency || "Monthly",
+      category: suggestion.category || "Other",
+      billing: Number(suggestion.billing || 1),
+      account: suggestion.account || "",
+      icon: suggestion.icon || "💳",
+      status: resolveAutoDetectedSubscriptionStatus(suggestion.category),
+      autoDetected: true,
+      suggestionKey: suggestion.suggestionKey,
+      createdAt: getCurrentTimestamp(),
+    });
+  });
+
+  return hasChanges ? nextSubscriptions : subscriptionList;
+}
+
 function mergePlaidSyncIntoUser(user, syncPayload) {
   const hasLivePlaidItems = Array.isArray(user.plaidItems) && user.plaidItems.length > 0;
   const shouldReplaceDemoSyncedData = !hasLivePlaidItems;
@@ -514,6 +605,26 @@ function ForwardFreedomDashboard({
     budgetRows,
     merchantCategoryRules,
   });
+  const recurringSuggestions = useMemo(
+    () => buildRecurringSuggestions(categorizedTransactions, subscriptions, recurringPreferences),
+    [categorizedTransactions, subscriptions, recurringPreferences]
+  );
+
+  useEffect(() => {
+    if (!activeUser?.id || !recurringPreferences.autoDetectEnabled) return;
+    setUsers((currentUsers) =>
+      currentUsers.map((user) => {
+        if (user.id !== activeUser.id) return user;
+        const nextSubscriptions = syncAutoDetectedSubscriptions(
+          user.subscriptions,
+          recurringSuggestions
+        );
+        return nextSubscriptions === user.subscriptions
+          ? user
+          : { ...user, subscriptions: nextSubscriptions };
+      })
+    );
+  }, [activeUser?.id, recurringPreferences.autoDetectEnabled, recurringSuggestions]);
 
   const liquidCash = syncedAccounts
     .filter((account) => LIQUID_ACCOUNT_TYPES.has(account.type))
@@ -1810,10 +1921,6 @@ function ForwardFreedomDashboard({
               accounts={syncedAccounts}
               subscriptions={subscriptions}
               setSubscriptions={setSubscriptions}
-              transactions={categorizedTransactions}
-              recurringPreferences={recurringPreferences}
-              setRecurringPreferences={setRecurringPreferences}
-              addRecurringSubscriptionFromTransaction={addRecurringSubscriptionFromTransaction}
               householdProfilesProps={householdProfilesProps}
             />
           ) : activeTab === APP_TABS.OBJECTIVES ? (
