@@ -23,6 +23,19 @@ function formatManualDate(value) {
   });
 }
 
+function toManualInputDate(value) {
+  if (!value) return getIsoDateInputValue();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(value))) return String(value);
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return getIsoDateInputValue();
+
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, "0");
+  const day = String(parsed.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function parseManualAmount(value) {
   const parsed = Number(String(value).replace(/[^0-9.-]/g, ""));
   return Number.isFinite(parsed) ? parsed : 0;
@@ -194,6 +207,9 @@ export function TransactionsView({
   connectPlaidAccount,
   addManualTransaction,
   deleteManualTransaction,
+  updateManualTransaction,
+  updatePlaidTransactionDateNickname,
+  addRecurringSubscriptionFromTransaction,
   updateTransactionCategory,
   householdProfilesProps,
   plaidIntegration,
@@ -220,6 +236,17 @@ export function TransactionsView({
   });
   const [showManualEntry, setShowManualEntry] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [editTarget, setEditTarget] = useState(null);
+  const [plaidDateEditTarget, setPlaidDateEditTarget] = useState(null);
+  const [plaidDateEditFormValue, setPlaidDateEditFormValue] = useState(getIsoDateInputValue());
+  const [recurringTrackingMessage, setRecurringTrackingMessage] = useState("");
+  const [editForm, setEditForm] = useState({
+    date: getIsoDateInputValue(),
+    merchant: "",
+    account: defaultTransactionalAccount,
+    amount: "",
+    category: "",
+  });
   const [showFilters, setShowFilters] = useState(false);
   const [selectedTransactionKey, setSelectedTransactionKey] = useState(null);
   const [accountRemoveTarget, setAccountRemoveTarget] = useState(null);
@@ -284,7 +311,9 @@ export function TransactionsView({
       if (filters.review === "Reviewed" && tx.needsReview) return false;
       if (
         search &&
-        !`${tx.date} ${tx.merchant} ${tx.category} ${tx.account}`.toLowerCase().includes(search)
+        !`${tx.date} ${tx.plaidPostedDate || ""} ${tx.merchant} ${tx.category} ${tx.account}`
+          .toLowerCase()
+          .includes(search)
       ) {
         return false;
       }
@@ -304,6 +333,14 @@ export function TransactionsView({
     Number.isFinite(parseManualAmount(manualForm.amount)) &&
     parseManualAmount(manualForm.amount) !== 0;
   const canOpenManualEntry = accountOptions.length > 0;
+  const canSaveManualEdit =
+    editForm.date &&
+    editForm.merchant.trim() &&
+    editForm.account.trim() &&
+    accountOptions.includes(editForm.account.trim()) &&
+    Number.isFinite(parseManualAmount(editForm.amount)) &&
+    parseManualAmount(editForm.amount) !== 0;
+  const canSavePlaidDateEdit = Boolean(plaidDateEditFormValue);
 
   const updateManualForm = (field, value) => {
     setManualForm((current) => ({ ...current, [field]: value }));
@@ -352,6 +389,82 @@ export function TransactionsView({
       category: current.category,
     }));
     setShowManualEntry(false);
+  };
+
+  const openManualTransactionEditor = (transaction) => {
+    if (!transaction || transaction.source !== "manual") return;
+    setEditTarget(transaction);
+    setEditForm({
+      date: toManualInputDate(transaction.date),
+      merchant: transaction.merchant || "",
+      account: transaction.account || defaultTransactionalAccount,
+      amount: String(transaction.amount ?? ""),
+      category: transaction.category || "",
+    });
+  };
+
+  const openPlaidDateEditor = (transaction) => {
+    if (!transaction || transaction.source !== "plaid") return;
+    setPlaidDateEditTarget(transaction);
+    setPlaidDateEditFormValue(toManualInputDate(transaction.dateNickname || transaction.date));
+  };
+
+  const openTransactionEditor = (transaction) => {
+    if (!transaction) return;
+    if (transaction.source === "manual") {
+      openManualTransactionEditor(transaction);
+      return;
+    }
+    if (transaction.source === "plaid") {
+      openPlaidDateEditor(transaction);
+    }
+  };
+
+  const submitManualTransactionEdit = (event) => {
+    event.preventDefault();
+    if (!editTarget || !canSaveManualEdit) return;
+
+    const didUpdate = updateManualTransaction(editTarget.id, {
+      date: formatManualDate(editForm.date),
+      merchant: editForm.merchant.trim(),
+      account: editForm.account.trim(),
+      amount: parseManualAmount(editForm.amount),
+      category: editForm.category || undefined,
+    });
+
+    if (!didUpdate) return;
+    setEditTarget(null);
+  };
+
+  const submitPlaidDateNicknameEdit = (event) => {
+    event.preventDefault();
+    if (!plaidDateEditTarget || !canSavePlaidDateEdit) return;
+
+    const nicknameDate = formatManualDate(plaidDateEditFormValue);
+    const didUpdate = updatePlaidTransactionDateNickname(plaidDateEditTarget.id, nicknameDate);
+    if (!didUpdate) return;
+    setPlaidDateEditTarget(null);
+  };
+
+  const clearPlaidDateNickname = () => {
+    if (!plaidDateEditTarget) return;
+    const didClear = updatePlaidTransactionDateNickname(plaidDateEditTarget.id, null);
+    if (!didClear) return;
+    setPlaidDateEditTarget(null);
+  };
+
+  const trackTransactionAsRecurring = (transaction, event) => {
+    event.stopPropagation();
+    if (typeof addRecurringSubscriptionFromTransaction !== "function") return;
+
+    const result = addRecurringSubscriptionFromTransaction(transaction, { source: "transaction" });
+    const baseName = transaction.merchant || transaction.category || "Transaction";
+    setRecurringTrackingMessage(
+      result?.added
+        ? `${baseName} is now tracked in Recurring.`
+        : result?.reason || `${baseName} is already tracked as recurring.`
+    );
+    window.setTimeout(() => setRecurringTrackingMessage(""), 2200);
   };
 
   const exportFilteredTransactions = () => {
@@ -1141,6 +1254,22 @@ export function TransactionsView({
           </div>
         ) : null}
 
+        {recurringTrackingMessage ? (
+          <div
+            style={{
+              margin: "0 8px 12px",
+              padding: "9px 12px",
+              borderRadius: 10,
+              color: "#c7eeff",
+              fontSize: 12,
+              border: "1px solid rgba(143,234,255,.35)",
+              background: "rgba(0,136,255,.09)",
+            }}
+          >
+            {recurringTrackingMessage}
+          </div>
+        ) : null}
+
         <div
           style={{
             display: "grid",
@@ -1166,8 +1295,14 @@ export function TransactionsView({
             filteredTransactions.map((tx, index) => {
               const rowKey = `${tx.id || tx.date}-${tx.merchant}-${tx.account}-${tx.amount}`;
               const isSelectedRow = selectedTransactionKey === rowKey;
+              const hasPlaidDateNickname =
+                tx.source === "plaid" &&
+                typeof tx.dateNickname === "string" &&
+                tx.dateNickname.trim().length > 0;
               const defaultRowBackground = tx.needsReview
                 ? "rgba(255,159,28,.06)"
+                : hasPlaidDateNickname
+                  ? "rgba(143,234,255,.08)"
                 : index % 2 === 0
                   ? "rgba(255,255,255,.01)"
                   : "transparent";
@@ -1175,7 +1310,15 @@ export function TransactionsView({
                 <div
                   key={rowKey}
                   onClick={() => setSelectedTransactionKey(rowKey)}
+                  onDoubleClick={() => openTransactionEditor(tx)}
                   onFocusCapture={() => setSelectedTransactionKey(rowKey)}
+                  title={
+                    tx.source === "manual"
+                      ? "Double click to edit or delete manual transaction"
+                      : tx.source === "plaid"
+                        ? "Double click to set a nickname date"
+                      : undefined
+                  }
                   style={{
                     display: "grid",
                     gridTemplateColumns: TRANSACTION_FEED_GRID_COLUMNS,
@@ -1194,30 +1337,29 @@ export function TransactionsView({
                       ? "3px solid rgba(0,216,255,1)"
                       : tx.needsReview
                         ? "2px solid rgba(255,159,28,.45)"
+                        : hasPlaidDateNickname
+                          ? "2px solid rgba(143,234,255,.4)"
                         : "2px solid transparent",
                     boxShadow: isSelectedRow
                       ? "0 0 32px rgba(0,136,255,.45), inset 0 0 30px rgba(0,216,255,.24)"
                       : "none",
-                    cursor: "pointer",
+                    cursor: tx.source === "manual" || tx.source === "plaid" ? "pointer" : "default",
                     transition: "border-color 120ms ease, box-shadow 160ms ease, background 160ms ease",
                     columnGap: 10,
                   }}
                 >
                 <div
-                  onDoubleClick={(event) => {
-                    if (tx.source !== "manual") return;
-                    event.preventDefault();
-                    event.stopPropagation();
-                    setDeleteTarget(tx);
-                  }}
-                  title={tx.source === "manual" ? "Double click to delete manual transaction" : ""}
                   style={{
-                    color: tx.source === "manual" ? "#ffd08a" : "#8fb1d9",
+                    color: "#8fb1d9",
                     fontSize: 14,
-                    cursor: tx.source === "manual" ? "pointer" : "default",
                   }}
                 >
-                  {tx.date}
+                  <div>{tx.date}</div>
+                  {hasPlaidDateNickname ? (
+                    <div style={{ color: "#9ce9ff", fontSize: 11, marginTop: 2 }}>
+                      Posted {tx.plaidPostedDate || "Plaid date"}
+                    </div>
+                  ) : null}
                 </div>
                 <div style={{ color: "white", fontWeight: 700 }}>{tx.merchant}</div>
                 <div
@@ -1274,6 +1416,27 @@ export function TransactionsView({
                     {formatCategorySourceLabel(tx)}
                     {tx.needsReview ? " • Needs review" : ""}
                   </div>
+                  {tx.amount < 0 ? (
+                    <button
+                      type="button"
+                      onClick={(event) => trackTransactionAsRecurring(tx, event)}
+                      onDoubleClick={(event) => event.stopPropagation()}
+                      style={{
+                        border: "1px solid rgba(0,216,255,.22)",
+                        background: "rgba(0,136,255,.12)",
+                        color: "#9fe6ff",
+                        borderRadius: 999,
+                        padding: "5px 9px",
+                        cursor: "pointer",
+                        fontSize: 11,
+                        fontWeight: 700,
+                        whiteSpace: "nowrap",
+                      }}
+                      title="Track this expense in Recurring"
+                    >
+                      Track recurring
+                    </button>
+                  ) : null}
                 </div>
                 <div style={{ color: "#7ebeff", paddingLeft: 14 }}>
                   {accountDisplayNames[tx.account] || tx.account}
@@ -1324,6 +1487,335 @@ export function TransactionsView({
           )}
         </div>
       </div>
+
+      {editTarget ? (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,5,14,.72)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 9998,
+            padding: "24px 24px 18px",
+          }}
+        >
+          <form
+            onSubmit={submitManualTransactionEdit}
+            style={{
+              ...styles.panel,
+              width: "min(880px, 100%)",
+              padding: 24,
+              border: "1px solid rgba(0,216,255,.26)",
+              boxShadow: "0 0 38px rgba(0,136,255,.22), inset 0 0 20px rgba(0,216,255,.08)",
+              borderRadius: 18,
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: 16,
+                marginBottom: 14,
+              }}
+            >
+              <div>
+                <div style={{ color: "white", fontSize: 20, fontWeight: 900 }}>
+                  Edit Manual Transaction
+                </div>
+                <div style={{ color: "#8ea8ca", fontSize: 13, marginTop: 6 }}>
+                  Update details or delete this manual transaction.
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 10 }}>
+                <button
+                  type="button"
+                  onClick={() => setEditTarget(null)}
+                  style={{
+                    background: "rgba(0,136,255,.10)",
+                    border: "1px solid rgba(0,216,255,.24)",
+                    borderRadius: 10,
+                    color: "#d7ebff",
+                    padding: "10px 14px",
+                    fontWeight: 800,
+                    cursor: "pointer",
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={!canSaveManualEdit}
+                  style={{
+                    background: canSaveManualEdit
+                      ? "linear-gradient(90deg,#0077ff,#00d8ff)"
+                      : "rgba(120,130,150,.18)",
+                    border: canSaveManualEdit
+                      ? "1px solid rgba(120,220,255,.45)"
+                      : "1px solid rgba(160,175,200,.16)",
+                    borderRadius: 10,
+                    color: canSaveManualEdit ? "white" : "#7f93ad",
+                    padding: "10px 14px",
+                    fontWeight: 900,
+                    cursor: canSaveManualEdit ? "pointer" : "not-allowed",
+                  }}
+                >
+                  Save Changes
+                </button>
+              </div>
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "140px minmax(150px,1fr) 140px 120px 160px",
+                gap: 10,
+                alignItems: "center",
+              }}
+            >
+              <input
+                type="date"
+                value={editForm.date}
+                onChange={(event) => setEditForm((current) => ({ ...current, date: event.target.value }))}
+                style={{
+                  color: "#eaf3ff",
+                  background: "rgba(0,136,255,.08)",
+                  border: "1px solid rgba(0,216,255,.18)",
+                  borderRadius: 8,
+                  padding: "10px 11px",
+                  outline: "none",
+                  fontWeight: 800,
+                  colorScheme: "dark",
+                }}
+              />
+              <input
+                type="text"
+                value={editForm.merchant}
+                onChange={(event) =>
+                  setEditForm((current) => ({ ...current, merchant: event.target.value }))
+                }
+                placeholder="Merchant name"
+                style={{
+                  color: "#eaf3ff",
+                  background: "rgba(0,136,255,.08)",
+                  border: "1px solid rgba(0,216,255,.18)",
+                  borderRadius: 8,
+                  padding: "10px 11px",
+                  outline: "none",
+                  fontWeight: 800,
+                  minWidth: 0,
+                }}
+              />
+              <input
+                type="text"
+                value={editForm.amount}
+                onChange={(event) =>
+                  setEditForm((current) => ({ ...current, amount: event.target.value }))
+                }
+                placeholder="-45.00"
+                style={{
+                  color: "#eaf3ff",
+                  background: "rgba(0,136,255,.08)",
+                  border: "1px solid rgba(0,216,255,.18)",
+                  borderRadius: 8,
+                  padding: "10px 11px",
+                  outline: "none",
+                  fontWeight: 800,
+                  minWidth: 0,
+                }}
+              />
+              <select
+                value={editForm.account}
+                onChange={(event) => setEditForm((current) => ({ ...current, account: event.target.value }))}
+                style={{
+                  color: "#eaf3ff",
+                  background: "rgba(0,136,255,.08)",
+                  border: "1px solid rgba(0,216,255,.18)",
+                  borderRadius: 8,
+                  padding: "10px 11px",
+                  outline: "none",
+                  fontWeight: 800,
+                  minWidth: 0,
+                }}
+              >
+                {accountOptions.map((accountName) => (
+                  <option key={accountName} value={accountName} style={{ background: "#061224" }}>
+                    {accountDisplayNames[accountName] || accountName}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={editForm.category}
+                onChange={(event) =>
+                  setEditForm((current) => ({ ...current, category: event.target.value }))
+                }
+                style={{
+                  color: "#eaf3ff",
+                  background: "rgba(0,136,255,.08)",
+                  border: "1px solid rgba(0,216,255,.18)",
+                  borderRadius: 8,
+                  padding: "10px 11px",
+                  outline: "none",
+                  fontWeight: 800,
+                  minWidth: 0,
+                }}
+              >
+                <option value="" style={{ background: "#061224" }}>
+                  Keep existing category
+                </option>
+                {categoryOptions.map((category) => (
+                  <option key={category} value={category} style={{ background: "#061224" }}>
+                    {category}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setDeleteTarget(editTarget);
+                  setEditTarget(null);
+                }}
+                style={{
+                  background: "linear-gradient(90deg,#ff244d,#ff5d7a)",
+                  border: "1px solid rgba(255,93,122,.55)",
+                  color: "white",
+                  borderRadius: 8,
+                  padding: "10px 14px",
+                  cursor: "pointer",
+                  fontWeight: 900,
+                  boxShadow: "0 0 18px rgba(255,36,77,.28)",
+                }}
+              >
+                Delete Transaction
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+
+      {plaidDateEditTarget ? (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,5,14,.72)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 9998,
+            padding: "24px",
+          }}
+        >
+          <form
+            onSubmit={submitPlaidDateNicknameEdit}
+            style={{
+              ...styles.panel,
+              width: "min(560px, 100%)",
+              padding: 24,
+              border: "1px solid rgba(0,216,255,.26)",
+              boxShadow: "0 0 38px rgba(0,136,255,.22), inset 0 0 20px rgba(0,216,255,.08)",
+              borderRadius: 18,
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: 14,
+                marginBottom: 14,
+              }}
+            >
+              <div>
+                <div style={{ color: "white", fontSize: 20, fontWeight: 900 }}>
+                  Nickname Plaid Date
+                </div>
+                <div style={{ color: "#8ea8ca", fontSize: 13, marginTop: 6, lineHeight: 1.5 }}>
+                  Keep Plaid linked. This only changes month attribution inside your workspace.
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPlaidDateEditTarget(null)}
+                style={{
+                  background: "rgba(0,136,255,.10)",
+                  border: "1px solid rgba(0,216,255,.24)",
+                  borderRadius: 10,
+                  color: "#d7ebff",
+                  padding: "10px 14px",
+                  fontWeight: 800,
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+
+            <div style={{ color: "#9bc0e6", fontSize: 13, marginBottom: 10 }}>
+              {plaidDateEditTarget.merchant} · Posted{" "}
+              {plaidDateEditTarget.plaidPostedDate || plaidDateEditTarget.date}
+            </div>
+            <input
+              type="date"
+              value={plaidDateEditFormValue}
+              onChange={(event) => setPlaidDateEditFormValue(event.target.value)}
+              style={{
+                width: "100%",
+                color: "#eaf3ff",
+                background: "rgba(0,136,255,.08)",
+                border: "1px solid rgba(0,216,255,.18)",
+                borderRadius: 8,
+                padding: "10px 11px",
+                outline: "none",
+                fontWeight: 800,
+                colorScheme: "dark",
+              }}
+            />
+
+            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 18, gap: 12 }}>
+              <button
+                type="button"
+                onClick={clearPlaidDateNickname}
+                style={{
+                  background: "rgba(0,136,255,.10)",
+                  border: "1px solid rgba(0,216,255,.24)",
+                  borderRadius: 10,
+                  color: "#d7ebff",
+                  padding: "10px 14px",
+                  fontWeight: 800,
+                  cursor: "pointer",
+                }}
+              >
+                Clear nickname date
+              </button>
+              <button
+                type="submit"
+                disabled={!canSavePlaidDateEdit}
+                style={{
+                  background: canSavePlaidDateEdit
+                    ? "linear-gradient(90deg,#0077ff,#00d8ff)"
+                    : "rgba(120,130,150,.18)",
+                  border: canSavePlaidDateEdit
+                    ? "1px solid rgba(120,220,255,.45)"
+                    : "1px solid rgba(160,175,200,.16)",
+                  borderRadius: 10,
+                  color: canSavePlaidDateEdit ? "white" : "#7f93ad",
+                  padding: "10px 14px",
+                  fontWeight: 900,
+                  cursor: canSavePlaidDateEdit ? "pointer" : "not-allowed",
+                }}
+              >
+                Save Nickname Date
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
 
       {deleteTarget ? (
         <div

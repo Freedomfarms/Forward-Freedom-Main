@@ -1,7 +1,7 @@
 import { budgetMonthNames, budgetMonths } from "../data/constants.jsx";
 
 export const SUBSCRIPTION_FREQUENCIES = ["Monthly", "Annual", "Quarterly", "Weekly"];
-export const SUBSCRIPTION_STATUSES = ["Active", "Paused", "Cancelled"];
+export const SUBSCRIPTION_STATUSES = ["Suggested", "Active", "Paused", "Cancelled"];
 
 export function monthlyEquivalent(amount, frequency) {
   const numericAmount = Number(amount) || 0;

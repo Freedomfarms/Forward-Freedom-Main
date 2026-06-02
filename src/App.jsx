@@ -58,7 +58,16 @@ function buildWorkspaceStatus(syncState) {
   return "Loading server-backed workspace";
 }
 
-function AuthenticatedWorkspaceApp({ user, signOut, isBusy, authNotice, resendVerificationEmail }) {
+function AuthenticatedWorkspaceApp({
+  user,
+  signOut,
+  isBusy,
+  authNotice,
+  requestEmailChange,
+  resendVerificationEmail,
+  requestPasswordReset,
+  updateProfileName,
+}) {
   const storageKey = useMemo(() => buildScopedAppStateStorageKey(user.uid), [user.uid]);
   const [workspaceSeedState, setWorkspaceSeedState] = useState(null);
   const [workspaceError, setWorkspaceError] = useState("");
@@ -231,11 +240,26 @@ function AuthenticatedWorkspaceApp({ user, signOut, isBusy, authNotice, resendVe
     return <AppLoadingScreen />;
   }
 
+  const sessionUser = user || workspaceProfile;
+  const sessionEmail = sessionUser?.email || user?.email || "";
   const sessionControls = {
+    user: sessionUser,
     onSignOut: () => void signOut(),
     isBusy,
-    isEmailVerified: Boolean((workspaceProfile || user)?.emailVerified),
+    isEmailVerified: Boolean(sessionUser?.emailVerified),
     onResendVerification: () => void resendVerificationEmail(),
+    onUpdateProfileName:
+      typeof updateProfileName === "function"
+        ? ({ displayName }) => updateProfileName({ displayName })
+        : null,
+    onRequestEmailChange:
+      typeof requestEmailChange === "function"
+        ? ({ nextEmail }) => requestEmailChange({ nextEmail })
+        : null,
+    onRequestPasswordReset:
+      typeof requestPasswordReset === "function" && sessionEmail
+        ? () => void requestPasswordReset({ email: sessionEmail })
+        : null,
     workspaceStatus: buildWorkspaceStatus(workspaceSyncState),
     notice: authNotice,
     error: workspaceError,
@@ -254,7 +278,18 @@ function AuthenticatedWorkspaceApp({ user, signOut, isBusy, authNotice, resendVe
 }
 
 function AppContent() {
-  const { configured, isBusy, notice, ready, resendVerificationEmail, signOut, user } = useAuth();
+  const {
+    configured,
+    isBusy,
+    notice,
+    ready,
+    requestEmailChange,
+    requestPasswordReset,
+    resendVerificationEmail,
+    signOut,
+    updateProfileName,
+    user,
+  } = useAuth();
   const [publicView, setPublicView] = useState("landing");
   const [authScreenConfig, setAuthScreenConfig] = useState({
     mode: "login",
@@ -310,7 +345,10 @@ function AppContent() {
       }}
       isBusy={isBusy}
       authNotice={notice}
+      requestEmailChange={requestEmailChange}
       resendVerificationEmail={resendVerificationEmail}
+      requestPasswordReset={requestPasswordReset}
+      updateProfileName={updateProfileName}
     />
   );
 }

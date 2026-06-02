@@ -5,11 +5,13 @@ import {
   getFirebaseClientConfig,
   onAuthStateChanged,
   registerWithEmail,
+  requestCurrentUserEmailChange,
   requestPasswordReset,
   resendCurrentUserVerification,
   signInWithEmail,
   signInWithGooglePopup,
   signOutCurrentUser,
+  updateCurrentUserDisplayName,
 } from "../utils/firebase.js";
 
 const AuthContext = createContext(null);
@@ -37,6 +39,9 @@ function mapFirebaseError(error) {
   }
   if (code.includes("too-many-requests")) {
     return "Too many attempts right now. Wait a moment and try again.";
+  }
+  if (code.includes("requires-recent-login")) {
+    return "For security, sign out and sign back in before changing that account detail.";
   }
   if (code.includes("network-request-failed")) {
     return "Network issue detected. Please check your connection and try again.";
@@ -124,6 +129,15 @@ export function AuthProvider({ children }) {
         runAuthAction(() => requestPasswordReset(payload), {
           successMessage:
             "If that email has an account, a password reset link is now on the way.",
+        }),
+      updateProfileName: (payload) =>
+        runAuthAction(() => updateCurrentUserDisplayName(payload), {
+          successMessage: "Profile name updated.",
+        }),
+      requestEmailChange: (payload) =>
+        runAuthAction(() => requestCurrentUserEmailChange(payload), {
+          successMessage:
+            "Check the new email inbox for a confirmation link to finish this email change.",
         }),
       resendVerificationEmail: () =>
         runAuthAction(() => resendCurrentUserVerification(), {

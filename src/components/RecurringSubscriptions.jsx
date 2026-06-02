@@ -11,12 +11,14 @@ import {
 import { HouseholdProfilesControl } from "./Common.jsx";
 
 const STATUS_COLORS = {
+  Suggested: "#8feaff",
   Active: "#00f59b",
   Paused: "#ffb65d",
   Cancelled: "#ff5d7a",
 };
 
 const STATUS_BG = {
+  Suggested: "rgba(143,234,255,.12)",
   Active: "rgba(0,245,155,.12)",
   Paused: "rgba(255,182,93,.12)",
   Cancelled: "rgba(255,93,122,.12)",
@@ -98,6 +100,7 @@ export function RecurringSubscriptions({
         id: `sub-custom-${Date.now()}`,
         amount: Number(String(form.amount).replace(/[^0-9.]/g, "")),
         billing: Number(form.billing) || 1,
+        createdAt: new Date().toISOString(),
       },
     ]);
     setForm(EMPTY_FORM);
@@ -122,8 +125,25 @@ export function RecurringSubscriptions({
     setDeleteTarget(null);
   };
 
-  const filtered =
-    filterStatus === "All" ? subscriptions : subscriptions.filter((s) => s.status === filterStatus);
+  const filtered = (filterStatus === "All"
+    ? subscriptions
+    : subscriptions.filter((subscription) => subscription.status === filterStatus)
+  )
+    .map((subscription, index) => ({ subscription, index }))
+    .sort((left, right) => {
+      const leftIsCustom = String(left.subscription.id || "").startsWith("sub-custom-");
+      const rightIsCustom = String(right.subscription.id || "").startsWith("sub-custom-");
+      if (leftIsCustom !== rightIsCustom) {
+        return leftIsCustom ? 1 : -1;
+      }
+      if (leftIsCustom && rightIsCustom) {
+        const leftCreated = new Date(left.subscription.createdAt || 0).getTime() || 0;
+        const rightCreated = new Date(right.subscription.createdAt || 0).getTime() || 0;
+        if (leftCreated !== rightCreated) return leftCreated - rightCreated;
+      }
+      return left.index - right.index;
+    })
+    .map((entry) => entry.subscription);
 
   const activeMonthly = subscriptions
     .filter((s) => s.status === "Active")

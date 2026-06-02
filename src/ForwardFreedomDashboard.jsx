@@ -41,6 +41,11 @@ import {
   normalizePlaidNicknameMap,
 } from "./utils/plaidNicknames.js";
 import {
+  buildRecurringSuggestions,
+  buildRecurringSubscriptionFromTransaction,
+  normalizeRecurringPreferences,
+} from "./utils/recurringSuggestions.js";
+import {
   calculateCryptoBalance,
   fetchCryptoQuotes,
   isCryptoPriceStale,
@@ -76,6 +81,42 @@ const CRYPTO_PRICE_SOURCE = "CoinGecko";
 const THIRTY_DAY_WINDOW = 30;
 const SNAPSHOT_RETENTION_DAYS = 400;
 const SUPPORTED_APP_TABS = new Set([...navMain, ...navTools].map((item) => item.label));
+
+const METRIC_ICONS = {
+  trueCash: (
+    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" aria-hidden="true">
+      <rect x="3.5" y="5.5" width="17" height="13" rx="2.5" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="12" cy="12" r="2.5" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M3.5 9.2h17M3.5 14.8h17" stroke="currentColor" strokeWidth="1.4" opacity="0.85" />
+    </svg>
+  ),
+  liquidCash: (
+    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" aria-hidden="true">
+      <path
+        d="M12 3.8L18.5 8v8L12 20.2 5.5 16V8L12 3.8Z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinejoin="round"
+      />
+      <path d="M8.8 12h6.4M10.2 14.5h3.6M10.2 9.5h3.6" stroke="currentColor" strokeWidth="1.6" />
+    </svg>
+  ),
+  creditCardDebt: (
+    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" aria-hidden="true">
+      <rect x="3.5" y="6.5" width="17" height="11" rx="2.4" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M3.5 10.2h17" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M8 14h3.2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <path d="M13.6 13.2l2.6 2.6M16.2 13.2l-2.6 2.6" stroke="currentColor" strokeWidth="1.6" />
+    </svg>
+  ),
+  monthlyFlow: (
+    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" aria-hidden="true">
+      <path d="M4 15.2c2.1 0 2.1-6.4 4.2-6.4s2.1 6.4 4.2 6.4 2.1-6.4 4.2-6.4S18.7 15.2 21 15.2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M4 19.2h17" stroke="currentColor" strokeWidth="1.6" opacity="0.85" />
+    </svg>
+  ),
+};
+
 const EMPTY_USER_STATE = Object.freeze({
   id: null,
   name: "",
@@ -88,6 +129,7 @@ const EMPTY_USER_STATE = Object.freeze({
   projectionAdjustments: {},
   objectives: [],
   subscriptions: [],
+  recurringPreferences: normalizeRecurringPreferences(null),
   plaidItems: [],
   plaidNicknames: {},
   lastPlaidSyncAt: null,
@@ -290,6 +332,102 @@ function sortTransactionsByDate(transactions) {
   return [...transactions].sort((a, b) => new Date(b.date) - new Date(a.date));
 }
 
+function normalizeRecurringMatchToken(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase();
+}
+
+function resolveAutoDetectedSubscriptionStatus(category, currentStatus = "Suggested") {
+  const normalizedCategory = normalizeRecurringMatchToken(category);
+  if (currentStatus === "Cancelled") return "Cancelled";
+  if (normalizedCategory === "subscriptions") {
+    return "Active";
+  }
+  if (currentStatus === "Active" || currentStatus === "Paused") {
+    return currentStatus;
+  }
+  return "Suggested";
+}
+
+function syncAutoDetectedSubscriptions(currentSubscriptions, recurringSuggestions) {
+  const subscriptionList = Array.isArray(currentSubscriptions) ? currentSubscriptions : [];
+  const suggestionsByKey = new Map(
+    recurringSuggestions.map((suggestion) => [suggestion.suggestionKey, suggestion])
+  );
+  const manualTrackedKeys = new Set(
+    subscriptionList
+      .filter((subscription) => !subscription.autoDetected)
+      .map(
+        (subscription) =>
+          `${normalizeRecurringMatchToken(subscription.name)}|${normalizeRecurringMatchToken(
+            subscription.account
+          )}`
+      )
+  );
+
+  const nextSubscriptions = [];
+  let hasChanges = false;
+
+  subscriptionList.forEach((subscription) => {
+    if (!subscription.autoDetected || !subscription.suggestionKey) {
+      nextSubscriptions.push(subscription);
+      return;
+    }
+
+    const suggestion = suggestionsByKey.get(subscription.suggestionKey);
+    if (!suggestion) {
+      hasChanges = true;
+      return;
+    }
+
+    const normalizedStatus = resolveAutoDetectedSubscriptionStatus(
+      suggestion.category,
+      subscription.status
+    );
+    const updatedSubscription = {
+      ...subscription,
+      name: suggestion.merchant || suggestion.category || subscription.name,
+      amount: Number(suggestion.amount || subscription.amount || 0),
+      category: suggestion.category || subscription.category,
+      account: suggestion.account || subscription.account,
+      billing: Number(suggestion.billing || subscription.billing || 1),
+      frequency: suggestion.frequency || subscription.frequency || "Monthly",
+      icon: suggestion.icon || subscription.icon || "💳",
+      status: normalizedStatus,
+    };
+    if (JSON.stringify(updatedSubscription) !== JSON.stringify(subscription)) {
+      hasChanges = true;
+    }
+    nextSubscriptions.push(updatedSubscription);
+    suggestionsByKey.delete(subscription.suggestionKey);
+  });
+
+  suggestionsByKey.forEach((suggestion) => {
+    const manualKey = `${normalizeRecurringMatchToken(suggestion.merchant)}|${normalizeRecurringMatchToken(
+      suggestion.account
+    )}`;
+    if (manualTrackedKeys.has(manualKey)) return;
+    hasChanges = true;
+    nextSubscriptions.push({
+      id: `sub-auto-${Date.now()}-${nextSubscriptions.length + 1}`,
+      name: suggestion.merchant || suggestion.category || "Recurring Expense",
+      amount: Number(suggestion.amount || 0),
+      frequency: suggestion.frequency || "Monthly",
+      category: suggestion.category || "Other",
+      billing: Number(suggestion.billing || 1),
+      account: suggestion.account || "",
+      icon: suggestion.icon || "💳",
+      status: resolveAutoDetectedSubscriptionStatus(suggestion.category),
+      autoDetected: true,
+      suggestionKey: suggestion.suggestionKey,
+      createdAt: getCurrentTimestamp(),
+    });
+  });
+
+  return hasChanges ? nextSubscriptions : subscriptionList;
+}
+
 function mergePlaidSyncIntoUser(user, syncPayload) {
   const hasLivePlaidItems = Array.isArray(user.plaidItems) && user.plaidItems.length > 0;
   const shouldReplaceDemoSyncedData = !hasLivePlaidItems;
@@ -316,9 +454,10 @@ function mergePlaidSyncIntoUser(user, syncPayload) {
     const existing = existingPlaidTransactions.get(transaction.id);
     if (!existing) return transaction;
 
+    let mergedTransaction = transaction;
     if (existing.categorySource === "user" || existing.categorySource === "manual") {
-      return {
-        ...transaction,
+      mergedTransaction = {
+        ...mergedTransaction,
         category: existing.category,
         categorySource: existing.categorySource,
         categoryConfidence: existing.categoryConfidence,
@@ -326,7 +465,21 @@ function mergePlaidSyncIntoUser(user, syncPayload) {
       };
     }
 
-    return transaction;
+    const nicknameDate =
+      typeof existing.dateNickname === "string" && existing.dateNickname.trim()
+        ? existing.dateNickname.trim()
+        : "";
+    if (!nicknameDate) {
+      return mergedTransaction;
+    }
+
+    return {
+      ...mergedTransaction,
+      plaidPostedDate: transaction.plaidPostedDate || existing.plaidPostedDate || transaction.date,
+      date: nicknameDate,
+      dateNickname: nicknameDate,
+      dateNicknameUpdatedAt: existing.dateNicknameUpdatedAt || null,
+    };
   });
   const retainedAccounts = user.accounts.filter((account) => {
     if (account.syncSource === "Plaid" || account.plaidAccountId) return false;
@@ -434,7 +587,8 @@ function ForwardFreedomDashboard({
   const budgetRows = activeUser.budgetRows;
   const incomeStreams = activeUser.incomeStreams;
   const projectionAdjustments = activeUser.projectionAdjustments;
-  const subscriptions = activeUser.subscriptions;
+  const rawSubscriptions = activeUser.subscriptions;
+  const recurringPreferences = normalizeRecurringPreferences(activeUser.recurringPreferences);
   const objectives = Array.isArray(activeUser.objectives) ? activeUser.objectives : [];
   const plaidItems = activeUser.plaidItems;
   const lastPlaidSyncAt = activeUser.lastPlaidSyncAt;
@@ -467,7 +621,16 @@ function ForwardFreedomDashboard({
   const setIncomeStreams = (valueOrUpdater) => setActiveUserField("incomeStreams", valueOrUpdater);
   const setProjectionAdjustments = (valueOrUpdater) =>
     setActiveUserField("projectionAdjustments", valueOrUpdater);
-  const setSubscriptions = (valueOrUpdater) => setActiveUserField("subscriptions", valueOrUpdater);
+  const setSubscriptionsBase = (valueOrUpdater) =>
+    setActiveUserField("subscriptions", valueOrUpdater);
+  const setRecurringPreferences = (valueOrUpdater) =>
+    setActiveUserField("recurringPreferences", (currentValue) =>
+      normalizeRecurringPreferences(
+        typeof valueOrUpdater === "function"
+          ? valueOrUpdater(normalizeRecurringPreferences(currentValue))
+          : valueOrUpdater
+      )
+    );
   const setObjectives = (valueOrUpdater) => setActiveUserField("objectives", valueOrUpdater);
   const setMerchantCategoryRules = (valueOrUpdater) =>
     setActiveUserField("merchantCategoryRules", valueOrUpdater);
@@ -479,6 +642,22 @@ function ForwardFreedomDashboard({
     budgetRows,
     merchantCategoryRules,
   });
+  const recurringSuggestions = buildRecurringSuggestions(
+    categorizedTransactions,
+    rawSubscriptions,
+    recurringPreferences
+  );
+  const subscriptions = syncAutoDetectedSubscriptions(rawSubscriptions, recurringSuggestions);
+  const setSubscriptions = (valueOrUpdater) =>
+    setSubscriptionsBase((currentSubscriptions) => {
+      const syncedSubscriptions = syncAutoDetectedSubscriptions(
+        currentSubscriptions,
+        recurringSuggestions
+      );
+      return typeof valueOrUpdater === "function"
+        ? valueOrUpdater(syncedSubscriptions)
+        : valueOrUpdater;
+    });
 
   const liquidCash = syncedAccounts
     .filter((account) => LIQUID_ACCOUNT_TYPES.has(account.type))
@@ -951,30 +1130,35 @@ function ForwardFreedomDashboard({
 
   const dynamicMetrics = [
     {
-      icon: "▧",
+      icon: METRIC_ICONS.trueCash,
       title: "TRUE CASH",
       value: money(trueCash),
+      infoText: "True Cash equals liquid cash minus credit card debt.",
       ...buildTrackedTrueCashMeta(trackedMetricSnapshots, trueCash, true),
       onClick: () => setActiveTab(APP_TABS.ADD_ACCOUNTS),
     },
     {
-      icon: "▱",
+      icon: METRIC_ICONS.liquidCash,
       title: "LIQUID CASH",
       value: money(liquidCash),
+      infoText:
+        "Liquid Cash is your immediately available cash across checking, savings, and manual cash accounts.",
       ...buildTrackedMetricMeta(trackedMetricSnapshots, "liquidCash", liquidCash, true),
       onClick: () => setActiveTab(APP_TABS.ADD_ACCOUNTS),
     },
     {
-      icon: "▭",
+      icon: METRIC_ICONS.creditCardDebt,
       title: "CREDIT CARD DEBT",
       value: money(creditCardDebt),
+      infoText: "Credit Card Debt is the total outstanding balance across all connected credit cards.",
       ...buildTrackedMetricMeta(trackedMetricSnapshots, "creditCardDebt", creditCardDebt, false),
       onClick: () => setActiveTab(APP_TABS.ADD_ACCOUNTS),
     },
     {
-      icon: "⌁",
+      icon: METRIC_ICONS.monthlyFlow,
       title: "CURRENT MONTH CASH FLOW",
       value: money(monthlyFlow),
+      infoText: "Current Month Cash Flow is planned income minus planned spend for this month.",
       change: monthlyFlow >= 0 ? "Projected surplus" : "Projected deficit",
       changeColor: monthlyFlow >= 0 ? "#00f59b" : "#ff355d",
       changeIcon: monthlyFlow >= 0 ? "↑" : "↓",
@@ -1301,6 +1485,148 @@ function ForwardFreedomDashboard({
     );
   };
 
+  const updateManualTransaction = (transactionId, updates) => {
+    const transactionToUpdate = transactions.find(
+      (transaction) => transaction.id === transactionId && transaction.source === "manual"
+    );
+    if (!transactionToUpdate) return false;
+
+    const nextAccountName = String(updates.account ?? transactionToUpdate.account).trim();
+    const nextAccount = accounts.find((account) => account.name === nextAccountName);
+    const nextAmount = roundCurrency(updates.amount ?? transactionToUpdate.amount);
+    const nextMerchant = String(updates.merchant ?? transactionToUpdate.merchant).trim();
+    const nextDate = String(updates.date ?? transactionToUpdate.date).trim();
+
+    if (!nextAccount || !accountSupportsTransactions(nextAccount)) return false;
+    if (!Number.isFinite(nextAmount) || nextAmount === 0) return false;
+    if (!nextMerchant || !nextDate) return false;
+
+    const categoryProvided =
+      updates.category !== undefined && updates.category !== null && String(updates.category).trim() !== "";
+    const nextCategory = categoryProvided ? String(updates.category).trim() : transactionToUpdate.category;
+
+    setTransactions((current) =>
+      current.map((transaction) =>
+        transaction.id === transactionId && transaction.source === "manual"
+          ? {
+              ...transaction,
+              date: nextDate,
+              merchant: nextMerchant,
+              account: nextAccountName,
+              amount: nextAmount,
+              category: nextCategory,
+              categorySource: nextCategory ? "manual" : transaction.categorySource,
+              categoryConfidence: nextCategory ? 100 : transaction.categoryConfidence,
+              needsReview: nextCategory ? false : transaction.needsReview,
+            }
+          : transaction
+      )
+    );
+
+    setAccounts((current) =>
+      current.map((account) => {
+        let balanceDelta = 0;
+        if (account.name === transactionToUpdate.account) {
+          balanceDelta -= transactionToUpdate.amount;
+        }
+        if (account.name === nextAccountName) {
+          balanceDelta += nextAmount;
+        }
+        if (balanceDelta === 0) return account;
+        return {
+          ...account,
+          balance: roundCurrency(account.balance + balanceDelta),
+        };
+      })
+    );
+
+    return true;
+  };
+
+  const updatePlaidTransactionDateNickname = (transactionId, nicknameDate) => {
+    const transactionToUpdate = transactions.find(
+      (transaction) => transaction.id === transactionId && transaction.source === "plaid"
+    );
+    if (!transactionToUpdate) return false;
+
+    const nicknameDateText =
+      nicknameDate === null || nicknameDate === undefined ? "" : String(nicknameDate).trim();
+    if (nicknameDateText) {
+      const parsedNicknameDate = new Date(nicknameDateText);
+      if (Number.isNaN(parsedNicknameDate.getTime())) return false;
+    }
+
+    setTransactions((current) =>
+      current.map((transaction) => {
+        if (transaction.id !== transactionId || transaction.source !== "plaid") return transaction;
+        const postedDate = transaction.plaidPostedDate || transaction.date;
+
+        if (!nicknameDateText) {
+          return {
+            ...transaction,
+            date: postedDate,
+            dateNickname: undefined,
+            dateNicknameUpdatedAt: undefined,
+          };
+        }
+
+        return {
+          ...transaction,
+          date: nicknameDateText,
+          dateNickname: nicknameDateText,
+          plaidPostedDate: postedDate,
+          dateNicknameUpdatedAt: getCurrentTimestamp(),
+        };
+      })
+    );
+
+    return true;
+  };
+
+  const addRecurringSubscriptionFromTransaction = (transaction, options = {}) => {
+    const draft = buildRecurringSubscriptionFromTransaction(transaction, options);
+    if (!draft) {
+      return { added: false, reason: "Only spend transactions can be tracked as recurring." };
+    }
+
+    const normalizedDraftName = normalizeRecurringMatchToken(draft.name);
+    const normalizedDraftAccount = normalizeRecurringMatchToken(draft.account);
+    let wasAdded = false;
+
+    setSubscriptions((currentSubscriptions) => {
+      const subscriptionList = Array.isArray(currentSubscriptions) ? currentSubscriptions : [];
+      const alreadyExists = subscriptionList.some(
+        (subscription) =>
+          normalizeRecurringMatchToken(subscription.name) === normalizedDraftName &&
+          normalizeRecurringMatchToken(subscription.account) === normalizedDraftAccount &&
+          subscription.status !== "Cancelled"
+      );
+      if (alreadyExists) return subscriptionList;
+
+      wasAdded = true;
+      const nextSubscription = {
+        ...draft,
+        id: `sub-custom-${Date.now()}-${subscriptionList.length + 1}`,
+      };
+      return [...subscriptionList, nextSubscription];
+    });
+
+    if (!wasAdded) {
+      return { added: false, reason: "That recurring expense is already being tracked." };
+    }
+
+    if (options?.suggestionKey) {
+      setRecurringPreferences((currentPreferences) => ({
+        ...currentPreferences,
+        dismissedSuggestionKeys: (currentPreferences.dismissedSuggestionKeys || []).filter(
+          (key) => key !== options.suggestionKey
+        ),
+      }));
+    }
+
+    return { added: true };
+  };
+
   const updateTransactionCategory = (transactionToUpdate, nextCategory) => {
     if (!transactionToUpdate) return;
 
@@ -1523,6 +1849,7 @@ function ForwardFreedomDashboard({
               activeRange={activeRange}
               setActiveRange={setActiveRange}
               setActiveTab={setActiveTab}
+              sessionControls={sessionControls}
               trueCash={trueCash}
               transactions={categorizedTransactions}
               subscriptions={subscriptions}
@@ -1607,6 +1934,9 @@ function ForwardFreedomDashboard({
               connectPlaidAccount={connectPlaidAccount}
               addManualTransaction={addManualTransaction}
               deleteManualTransaction={deleteManualTransaction}
+              updateManualTransaction={updateManualTransaction}
+              updatePlaidTransactionDateNickname={updatePlaidTransactionDateNickname}
+              addRecurringSubscriptionFromTransaction={addRecurringSubscriptionFromTransaction}
               updateTransactionCategory={updateTransactionCategory}
               householdProfilesProps={householdProfilesProps}
               plaidIntegration={plaidIntegration}

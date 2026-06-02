@@ -30,6 +30,26 @@ const MONTH_END_X = {
   Dec: 972,
 };
 
+const headerMenuButtonStyle = {
+  borderRadius: 10,
+  border: "1px solid rgba(0,216,255,.24)",
+  background: "rgba(0,136,255,.08)",
+  color: "#eef6ff",
+  padding: "9px 11px",
+  fontSize: 12,
+  fontWeight: 700,
+  textAlign: "left",
+  cursor: "pointer",
+};
+
+const TRUE_CASH_TITLE_ICON = (
+  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" aria-hidden="true">
+    <rect x="3.5" y="5.5" width="17" height="13" rx="2.5" stroke="currentColor" strokeWidth="1.8" />
+    <circle cx="12" cy="12" r="2.5" stroke="currentColor" strokeWidth="1.8" />
+    <path d="M3.5 9.2h17M3.5 14.8h17" stroke="currentColor" strokeWidth="1.4" opacity="0.85" />
+  </svg>
+);
+
 function getMonthStartX(month) {
   const monthIndex = budgetMonths.indexOf(month);
   if (monthIndex <= 0) return 0;
@@ -217,6 +237,7 @@ export function DashboardView({
   activeRange,
   setActiveRange,
   setActiveTab,
+  sessionControls,
   trueCash,
   transactions,
   incomeStreams,
@@ -231,6 +252,56 @@ export function DashboardView({
 }) {
   const [hoverState, setHoverState] = useState(null);
   const [netWorthHistoryRange, setNetWorthHistoryRange] = useState("30D");
+  const [isAccountPanelOpen, setIsAccountPanelOpen] = useState(false);
+  const [isEditingProfileName, setIsEditingProfileName] = useState(false);
+  const [isEditingEmail, setIsEditingEmail] = useState(false);
+  const [profileNameDraft, setProfileNameDraft] = useState("");
+  const [emailDraft, setEmailDraft] = useState("");
+  const [accountPanelError, setAccountPanelError] = useState("");
+  const sessionUser = sessionControls?.user || null;
+  const sessionLabel = sessionUser?.displayName?.trim() || sessionUser?.email || "Account";
+  const sessionEmail = sessionUser?.email || "";
+  const profileChipLabel = (() => {
+    const normalizedLabel = String(sessionLabel).replace(/[^a-zA-Z0-9 ]/g, " ").trim();
+    if (!normalizedLabel) return "KP";
+    const parts = normalizedLabel.split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return "KP";
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return `${parts[0][0] || ""}${parts[1][0] || ""}`.toUpperCase();
+  })();
+  const toggleAccountPanel = () => {
+    setIsAccountPanelOpen((current) => {
+      const nextOpen = !current;
+      if (nextOpen) {
+        setProfileNameDraft(sessionUser?.displayName || "");
+        setEmailDraft(sessionEmail || "");
+        setIsEditingProfileName(false);
+        setIsEditingEmail(false);
+        setAccountPanelError("");
+      }
+      return nextOpen;
+    });
+  };
+  const handleProfileNameSave = async () => {
+    if (typeof sessionControls?.onUpdateProfileName !== "function") return;
+    setAccountPanelError("");
+    try {
+      await sessionControls.onUpdateProfileName({ displayName: profileNameDraft });
+      setIsEditingProfileName(false);
+    } catch (error) {
+      setAccountPanelError(error?.message || "Unable to update profile name right now.");
+    }
+  };
+  const handleEmailSave = async () => {
+    if (typeof sessionControls?.onRequestEmailChange !== "function") return;
+    setAccountPanelError("");
+    try {
+      await sessionControls.onRequestEmailChange({ nextEmail: emailDraft });
+      setIsEditingEmail(false);
+    } catch (error) {
+      setAccountPanelError(error?.message || "Unable to request email change right now.");
+    }
+  };
   const allocationGradient = buildAllocationGradient(dynamicAllocations);
   const allocationTotal = dynamicAllocations.reduce(
     (sum, item) => sum + Number(item.valueNumber || 0),
@@ -418,25 +489,28 @@ export function DashboardView({
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
           <HouseholdProfilesControl {...householdProfilesProps} />
-          <div style={{ display: "flex", alignItems: "center", gap: 28, fontSize: 20 }}>
-            <span>⌕</span>
-            <span>♧</span>
-            <div
+          <div style={{ position: "relative" }}>
+            <button
+              type="button"
+              onClick={toggleAccountPanel}
+              aria-label="Open account menu"
               style={{
-                position: "relative",
+                border: "1px solid #148cff",
+                background: "rgba(2,16,36,.72)",
+                cursor: "pointer",
                 width: 48,
                 height: 48,
                 borderRadius: 999,
-                border: "1px solid #148cff",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
                 color: "#19d5ff",
                 fontSize: 16,
+                fontWeight: 800,
                 boxShadow: "0 0 22px rgba(0,120,255,.45)",
               }}
             >
-              KP
+              {profileChipLabel}
               <span
                 style={{
                   position: "absolute",
@@ -448,7 +522,195 @@ export function DashboardView({
                   background: "#00de86",
                 }}
               />
-            </div>
+            </button>
+            {isAccountPanelOpen ? (
+              <div
+                style={{
+                  position: "absolute",
+                  top: 58,
+                  right: 0,
+                  width: 290,
+                  borderRadius: 14,
+                  border: "1px solid rgba(0,216,255,.24)",
+                  background: "rgba(4,16,31,.96)",
+                  boxShadow: "0 10px 32px rgba(0,70,170,.3)",
+                  padding: 14,
+                  zIndex: 30,
+                }}
+              >
+                <div
+                  style={{
+                    color: "#8feaff",
+                    fontSize: 11,
+                    letterSpacing: 1,
+                    textTransform: "uppercase",
+                    fontWeight: 900,
+                  }}
+                >
+                  Account hub
+                </div>
+                <div style={{ color: "#9fb0c9", fontSize: 11, marginTop: 8, textTransform: "uppercase" }}>
+                  Profile name
+                </div>
+                {isEditingProfileName ? (
+                  <div style={{ marginTop: 6 }}>
+                    <input
+                      type="text"
+                      value={profileNameDraft}
+                      onChange={(event) => setProfileNameDraft(event.target.value)}
+                      placeholder="Your profile name"
+                      style={accountEditInputStyle}
+                    />
+                    <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                      <button
+                        type="button"
+                        onClick={handleProfileNameSave}
+                        disabled={sessionControls?.isBusy}
+                        style={headerMenuButtonStyle}
+                      >
+                        Save name
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsEditingProfileName(false);
+                          setProfileNameDraft(sessionUser?.displayName || "");
+                        }}
+                        style={headerMenuButtonStyle}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginTop: 4 }}>
+                    <div style={{ color: "white", fontWeight: 800 }}>{sessionLabel}</div>
+                    {typeof sessionControls?.onUpdateProfileName === "function" ? (
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingProfileName(true)}
+                        style={headerInlineActionStyle}
+                      >
+                        Edit
+                      </button>
+                    ) : null}
+                  </div>
+                )}
+                <div style={{ color: "#9fb0c9", fontSize: 11, marginTop: 10, textTransform: "uppercase" }}>
+                  Email
+                </div>
+                {isEditingEmail ? (
+                  <div style={{ marginTop: 6 }}>
+                    <input
+                      type="email"
+                      value={emailDraft}
+                      onChange={(event) => setEmailDraft(event.target.value)}
+                      placeholder="name@email.com"
+                      style={accountEditInputStyle}
+                    />
+                    <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                      <button
+                        type="button"
+                        onClick={handleEmailSave}
+                        disabled={sessionControls?.isBusy}
+                        style={headerMenuButtonStyle}
+                      >
+                        Save email
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsEditingEmail(false);
+                          setEmailDraft(sessionEmail || "");
+                        }}
+                        style={headerMenuButtonStyle}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, marginTop: 4 }}>
+                    <div style={{ color: "#d9eaff", fontSize: 12, wordBreak: "break-all" }}>
+                      {sessionEmail || "No email on file"}
+                    </div>
+                    {typeof sessionControls?.onRequestEmailChange === "function" ? (
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingEmail(true)}
+                        style={headerInlineActionStyle}
+                      >
+                        Edit
+                      </button>
+                    ) : null}
+                  </div>
+                )}
+                <div style={{ color: "#9fb0c9", fontSize: 12, marginTop: 4 }}>
+                  {sessionControls?.isEmailVerified ? "Verified account" : "Email verification pending"}
+                </div>
+                <div style={{ display: "grid", gap: 8, marginTop: 12 }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveTab(APP_TABS.ADD_ACCOUNTS);
+                      setIsAccountPanelOpen(false);
+                    }}
+                    style={headerMenuButtonStyle}
+                  >
+                    Manage accounts
+                  </button>
+                  {typeof sessionControls?.onRequestPasswordReset === "function" ? (
+                    <button
+                      type="button"
+                      onClick={sessionControls.onRequestPasswordReset}
+                      disabled={sessionControls?.isBusy}
+                      style={headerMenuButtonStyle}
+                    >
+                      {sessionControls?.isBusy ? "Sending reset..." : "Send password reset email"}
+                    </button>
+                  ) : null}
+                  {!sessionControls?.isEmailVerified &&
+                  typeof sessionControls?.onResendVerification === "function" ? (
+                    <button
+                      type="button"
+                      onClick={sessionControls.onResendVerification}
+                      disabled={sessionControls?.isBusy}
+                      style={headerMenuButtonStyle}
+                    >
+                      {sessionControls?.isBusy ? "Sending..." : "Resend verification email"}
+                    </button>
+                  ) : null}
+                  {sessionControls?.workspaceStatus ? (
+                    <div style={{ color: "#8feaff", fontSize: 12, lineHeight: 1.4 }}>
+                      {sessionControls.workspaceStatus}
+                    </div>
+                  ) : null}
+                  {sessionControls?.notice ? (
+                    <div style={{ color: "#dff7ff", fontSize: 12, lineHeight: 1.4 }}>
+                      {sessionControls.notice}
+                    </div>
+                  ) : null}
+                  {sessionControls?.error ? (
+                    <div style={{ color: "#ffd0d6", fontSize: 12, lineHeight: 1.4 }}>
+                      {sessionControls.error}
+                    </div>
+                  ) : null}
+                  {accountPanelError ? (
+                    <div style={{ color: "#ffd0d6", fontSize: 12, lineHeight: 1.4 }}>
+                      {accountPanelError}
+                    </div>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={sessionControls?.onSignOut}
+                    disabled={sessionControls?.isBusy}
+                    style={headerMenuButtonStyle}
+                  >
+                    {sessionControls?.isBusy ? "Signing out..." : "Sign out"}
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
       </header>
@@ -465,7 +727,23 @@ export function DashboardView({
           <div
             style={{ display: "flex", alignItems: "center", gap: 12, textTransform: "uppercase" }}
           >
-            <span style={{ color: "#00d8ff", fontSize: 24 }}>▧</span> TRUE CASH <InfoDot />
+            <span
+              style={{
+                width: 28,
+                height: 28,
+                borderRadius: 8,
+                border: "1px solid rgba(0,216,255,.34)",
+                background: "rgba(0,104,255,.14)",
+                color: "#00d8ff",
+                display: "grid",
+                placeItems: "center",
+                lineHeight: 0,
+                boxShadow: "0 0 16px rgba(0,136,255,.2)",
+              }}
+            >
+              {TRUE_CASH_TITLE_ICON}
+            </span>
+            TRUE CASH <InfoDot tooltip="True Cash chart tracks liquid cash minus credit card debt over time." />
           </div>
           <div style={{ display: "flex", gap: 12 }}>
             <button
@@ -1213,3 +1491,26 @@ export function DashboardView({
     </>
   );
 }
+
+const accountEditInputStyle = {
+  width: "100%",
+  borderRadius: 10,
+  border: "1px solid rgba(0,216,255,.24)",
+  background: "rgba(2,16,36,.9)",
+  color: "#eff8ff",
+  padding: "8px 10px",
+  fontSize: 12,
+};
+
+const headerInlineActionStyle = {
+  border: "1px solid rgba(0,216,255,.24)",
+  borderRadius: 999,
+  background: "rgba(0,136,255,.08)",
+  color: "#9fdaff",
+  fontSize: 11,
+  lineHeight: 1,
+  padding: "5px 10px",
+  cursor: "pointer",
+  fontWeight: 700,
+  height: "fit-content",
+};
