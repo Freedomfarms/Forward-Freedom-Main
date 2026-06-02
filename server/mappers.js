@@ -225,6 +225,8 @@ export function mapPlaidTransactionsToAppTransactions(rawTransactions, accountsB
       if (!mappedAccount) return null;
 
       const date = formatAppDate(transaction.authorized_date || transaction.date);
+      const postedDate = formatAppDate(transaction.date);
+      const authorizedDate = formatAppDate(transaction.authorized_date);
       if (!date) return null;
 
       const isLiabilityPayment = isLiabilityPaymentTransaction(transaction, mappedAccount);
@@ -236,6 +238,8 @@ export function mapPlaidTransactionsToAppTransactions(rawTransactions, accountsB
         source: "plaid",
         syncSource: "Plaid",
         date,
+        plaidPostedDate: postedDate,
+        plaidAuthorizedDate: authorizedDate,
         merchant: transaction.merchant_name || transaction.name || "Plaid Transaction",
         category: isLiabilityPayment
           ? "Transfers"

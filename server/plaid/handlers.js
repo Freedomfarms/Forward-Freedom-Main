@@ -146,6 +146,8 @@ function serializeStoredAccount(accountRecord) {
 }
 
 function serializeStoredTransaction(transactionRecord) {
+  const postedDate = formatAppDate(transactionRecord.postedAt);
+  const authorizedDate = formatAppDate(transactionRecord.authorizedAt);
   return {
     id: transactionRecord.plaidTransactionId
       ? `plaid-${transactionRecord.plaidTransactionId}`
@@ -153,7 +155,9 @@ function serializeStoredTransaction(transactionRecord) {
     plaidTransactionId: transactionRecord.plaidTransactionId,
     source: "plaid",
     syncSource: "Plaid",
-    date: formatAppDate(transactionRecord.postedAt),
+    date: postedDate,
+    plaidPostedDate: postedDate,
+    plaidAuthorizedDate: authorizedDate,
     merchant: transactionRecord.merchant || "Plaid Transaction",
     category: transactionRecord.category || "Other",
     account: transactionRecord.account?.name || "Plaid Account",

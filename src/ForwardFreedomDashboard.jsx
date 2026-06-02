@@ -316,9 +316,10 @@ function mergePlaidSyncIntoUser(user, syncPayload) {
     const existing = existingPlaidTransactions.get(transaction.id);
     if (!existing) return transaction;
 
+    let mergedTransaction = transaction;
     if (existing.categorySource === "user" || existing.categorySource === "manual") {
-      return {
-        ...transaction,
+      mergedTransaction = {
+        ...mergedTransaction,
         category: existing.category,
         categorySource: existing.categorySource,
         categoryConfidence: existing.categoryConfidence,
@@ -326,7 +327,21 @@ function mergePlaidSyncIntoUser(user, syncPayload) {
       };
     }
 
-    return transaction;
+    const nicknameDate =
+      typeof existing.dateNickname === "string" && existing.dateNickname.trim()
+        ? existing.dateNickname.trim()
+        : "";
+    if (!nicknameDate) {
+      return mergedTransaction;
+    }
+
+    return {
+      ...mergedTransaction,
+      plaidPostedDate: transaction.plaidPostedDate || existing.plaidPostedDate || transaction.date,
+      date: nicknameDate,
+      dateNickname: nicknameDate,
+      dateNicknameUpdatedAt: existing.dateNicknameUpdatedAt || null,
+    };
   });
   const retainedAccounts = user.accounts.filter((account) => {
     if (account.syncSource === "Plaid" || account.plaidAccountId) return false;
@@ -1359,6 +1374,46 @@ function ForwardFreedomDashboard({
     return true;
   };
 
+  const updatePlaidTransactionDateNickname = (transactionId, nicknameDate) => {
+    const transactionToUpdate = transactions.find(
+      (transaction) => transaction.id === transactionId && transaction.source === "plaid"
+    );
+    if (!transactionToUpdate) return false;
+
+    const nicknameDateText =
+      nicknameDate === null || nicknameDate === undefined ? "" : String(nicknameDate).trim();
+    if (nicknameDateText) {
+      const parsedNicknameDate = new Date(nicknameDateText);
+      if (Number.isNaN(parsedNicknameDate.getTime())) return false;
+    }
+
+    setTransactions((current) =>
+      current.map((transaction) => {
+        if (transaction.id !== transactionId || transaction.source !== "plaid") return transaction;
+        const postedDate = transaction.plaidPostedDate || transaction.date;
+
+        if (!nicknameDateText) {
+          return {
+            ...transaction,
+            date: postedDate,
+            dateNickname: undefined,
+            dateNicknameUpdatedAt: undefined,
+          };
+        }
+
+        return {
+          ...transaction,
+          date: nicknameDateText,
+          dateNickname: nicknameDateText,
+          plaidPostedDate: postedDate,
+          dateNicknameUpdatedAt: getCurrentTimestamp(),
+        };
+      })
+    );
+
+    return true;
+  };
+
   const updateTransactionCategory = (transactionToUpdate, nextCategory) => {
     if (!transactionToUpdate) return;
 
@@ -1667,6 +1722,7 @@ function ForwardFreedomDashboard({
               addManualTransaction={addManualTransaction}
               deleteManualTransaction={deleteManualTransaction}
               updateManualTransaction={updateManualTransaction}
+              updatePlaidTransactionDateNickname={updatePlaidTransactionDateNickname}
               updateTransactionCategory={updateTransactionCategory}
               householdProfilesProps={householdProfilesProps}
               plaidIntegration={plaidIntegration}
