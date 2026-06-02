@@ -2,9 +2,11 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { styles } from "../styles.js";
 
-export function InfoDot() {
+export function InfoDot({ tooltip = "" }) {
   return (
     <span
+      title={tooltip || undefined}
+      aria-label={tooltip || "Information"}
       style={{
         color: "#8dbdff",
         border: "1px solid #5c97e8",
@@ -15,6 +17,7 @@ export function InfoDot() {
         display: "inline-flex",
         alignItems: "center",
         justifyContent: "center",
+        textTransform: "none",
       }}
     >
       i
@@ -537,7 +540,7 @@ export function MetricCard({ metric }) {
             }}
           >
             {metric.title}
-            <InfoDot />
+            <InfoDot tooltip={metric.infoText} />
           </div>
           <div style={{ marginTop: 12, color: "white", fontSize: 25, fontWeight: 650 }}>
             {metric.value}

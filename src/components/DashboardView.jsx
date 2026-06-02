@@ -743,7 +743,7 @@ export function DashboardView({
             >
               {TRUE_CASH_TITLE_ICON}
             </span>
-            TRUE CASH <InfoDot />
+            TRUE CASH <InfoDot tooltip="True Cash chart tracks liquid cash minus credit card debt over time." />
           </div>
           <div style={{ display: "flex", gap: 12 }}>
             <button
