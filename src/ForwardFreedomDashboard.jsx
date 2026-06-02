@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { usePlaidLink } from "react-plaid-link";
 import { APP_TABS, budgetMonths, navMain, navTools } from "./data/constants.jsx";
 import { styles } from "./styles.js";
@@ -551,7 +551,7 @@ function ForwardFreedomDashboard({
   const budgetRows = activeUser.budgetRows;
   const incomeStreams = activeUser.incomeStreams;
   const projectionAdjustments = activeUser.projectionAdjustments;
-  const subscriptions = activeUser.subscriptions;
+  const rawSubscriptions = activeUser.subscriptions;
   const recurringPreferences = normalizeRecurringPreferences(activeUser.recurringPreferences);
   const objectives = Array.isArray(activeUser.objectives) ? activeUser.objectives : [];
   const plaidItems = activeUser.plaidItems;
@@ -585,7 +585,8 @@ function ForwardFreedomDashboard({
   const setIncomeStreams = (valueOrUpdater) => setActiveUserField("incomeStreams", valueOrUpdater);
   const setProjectionAdjustments = (valueOrUpdater) =>
     setActiveUserField("projectionAdjustments", valueOrUpdater);
-  const setSubscriptions = (valueOrUpdater) => setActiveUserField("subscriptions", valueOrUpdater);
+  const setSubscriptionsBase = (valueOrUpdater) =>
+    setActiveUserField("subscriptions", valueOrUpdater);
   const setRecurringPreferences = (valueOrUpdater) =>
     setActiveUserField("recurringPreferences", (currentValue) =>
       normalizeRecurringPreferences(
@@ -605,26 +606,22 @@ function ForwardFreedomDashboard({
     budgetRows,
     merchantCategoryRules,
   });
-  const recurringSuggestions = useMemo(
-    () => buildRecurringSuggestions(categorizedTransactions, subscriptions, recurringPreferences),
-    [categorizedTransactions, subscriptions, recurringPreferences]
+  const recurringSuggestions = buildRecurringSuggestions(
+    categorizedTransactions,
+    rawSubscriptions,
+    recurringPreferences
   );
-
-  useEffect(() => {
-    if (!activeUser?.id || !recurringPreferences.autoDetectEnabled) return;
-    setUsers((currentUsers) =>
-      currentUsers.map((user) => {
-        if (user.id !== activeUser.id) return user;
-        const nextSubscriptions = syncAutoDetectedSubscriptions(
-          user.subscriptions,
-          recurringSuggestions
-        );
-        return nextSubscriptions === user.subscriptions
-          ? user
-          : { ...user, subscriptions: nextSubscriptions };
-      })
-    );
-  }, [activeUser?.id, recurringPreferences.autoDetectEnabled, recurringSuggestions]);
+  const subscriptions = syncAutoDetectedSubscriptions(rawSubscriptions, recurringSuggestions);
+  const setSubscriptions = (valueOrUpdater) =>
+    setSubscriptionsBase((currentSubscriptions) => {
+      const syncedSubscriptions = syncAutoDetectedSubscriptions(
+        currentSubscriptions,
+        recurringSuggestions
+      );
+      return typeof valueOrUpdater === "function"
+        ? valueOrUpdater(syncedSubscriptions)
+        : valueOrUpdater;
+    });
 
   const liquidCash = syncedAccounts
     .filter((account) => LIQUID_ACCOUNT_TYPES.has(account.type))
