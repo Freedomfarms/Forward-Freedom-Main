@@ -239,6 +239,23 @@ function buildWeightedPool() {
 
 const WEIGHTED_VARIABLE_POOL = buildWeightedPool();
 
+function reserveDay(usedDays, preferredDay) {
+  if (!usedDays.has(preferredDay)) {
+    usedDays.add(preferredDay);
+    return preferredDay;
+  }
+
+  for (let day = 2; day <= 28; day += 1) {
+    if (!usedDays.has(day)) {
+      usedDays.add(day);
+      return day;
+    }
+  }
+
+  // More than 27 rows in one month — reuse a day (valid for busy months).
+  return preferredDay;
+}
+
 function buildMonthExpenseSchedule(month, monthIndex, variableSlots) {
   const schedule = RECURRING_EXPENSE_TEMPLATES.map((template, templateIndex) => ({
     ...template,
@@ -258,9 +275,8 @@ function buildMonthExpenseSchedule(month, monthIndex, variableSlots) {
     const poolEntry = WEIGHTED_VARIABLE_POOL[poolCursor % WEIGHTED_VARIABLE_POOL.length];
     poolCursor += 1;
 
-    let day = 2 + ((slot * 5 + monthIndex * 3) % 26);
-    while (usedDays.has(day)) day = (day % 28) + 2;
-    usedDays.add(day);
+    const preferredDay = 2 + ((slot * 5 + monthIndex * 3) % 26);
+    const day = reserveDay(usedDays, preferredDay);
 
     const amount = -roundMoney(
       (perSlot * 0.55 + poolEntry.base * 0.45) * monthJitter(monthIndex, poolEntry.entryIndex + slot, 0.22)

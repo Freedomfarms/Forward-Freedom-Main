@@ -1234,9 +1234,11 @@ function ForwardFreedomDashboard({
     return () => {
       cancelled = true;
     };
-  }, [accounts, activeUser.id]);
+  }, [accounts, activeUser.id, isDemoMode]);
 
   useEffect(() => {
+    if (isDemoMode) return;
+
     const staleCryptoAccounts = accounts.filter(
       (account) =>
         account.type === "Crypto" &&
