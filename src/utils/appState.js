@@ -2,16 +2,18 @@ import {
   APP_TAB_VALUES,
   APP_TABS,
   incomeStreamSeed,
-  initialAccounts,
   initialBudgetCategories,
   initialSubscriptions,
-  mockTransactions,
 } from "../data/constants.jsx";
 import { normalizeAccount } from "./accounts.js";
 import { getCurrentBudgetPeriod } from "./date.js";
 import { buildPlanYearData, normalizePlansByYear } from "./planning.js";
 import { buildSeedObjectives, normalizeObjectives } from "./objectives.js";
 import { normalizeRecurringPreferences } from "./recurringSuggestions.js";
+import {
+  HOUSEHOLD_DEMO_PLAN_ANCHOR,
+  buildHouseholdDemoDataset,
+} from "../data/householdDemoSeed.js";
 
 export const APP_STATE_STORAGE_KEY = "fff-app-state-v1";
 export const LEGACY_METRIC_SNAPSHOT_STORAGE_KEY = "fff-dashboard-metric-snapshots-v1";
@@ -48,21 +50,6 @@ function generateUserProfileId(index = 0) {
   return `user-profile-${Date.now()}-${index + 1}`;
 }
 
-function calculateSeedTrueCash() {
-  if (!initialAccounts.length) return 0;
-
-  const liquidCash = initialAccounts
-    .filter((account) => ["Checking", "Savings", "Manual Cash"].includes(account.type))
-    .reduce((sum, account) => sum + Number(account.balance || 0), 0);
-  const creditCardDebt = Math.abs(
-    initialAccounts
-      .filter((account) => account.type === "Credit Card")
-      .reduce((sum, account) => sum + Number(account.balance || 0), 0)
-  );
-
-  return liquidCash - creditCardDebt;
-}
-
 function buildUserState({
   id = generateUserProfileId(),
   name = "User 1",
@@ -70,23 +57,30 @@ function buildUserState({
   useSeedData = true,
 } = {}) {
   const currentYear = getCurrentBudgetPeriod().year;
+  const demoDataset = useSeedData ? buildHouseholdDemoDataset(currentYear) : null;
   const currentPlanData = buildPlanYearData({
     budgetRows: cloneSeed(initialBudgetCategories),
     incomeStreams: useSeedData ? cloneSeed(incomeStreamSeed) : [],
     projectionAdjustments: {},
-    startingMonth: getCurrentBudgetPeriod().month,
-    startingTrueCash: useSeedData ? calculateSeedTrueCash() : 0,
+    startingMonth: useSeedData
+      ? HOUSEHOLD_DEMO_PLAN_ANCHOR.startingMonth
+      : getCurrentBudgetPeriod().month,
+    startingTrueCash: useSeedData
+      ? HOUSEHOLD_DEMO_PLAN_ANCHOR.startingTrueCash
+      : 0,
   });
 
   return {
     id,
     name,
-    createdAt: new Date().toISOString(),
+    createdAt: useSeedData
+      ? `${currentYear}-01-01T12:00:00.000Z`
+      : new Date().toISOString(),
     selectedAccount,
     accounts: useSeedData
-      ? cloneSeed(initialAccounts).map((account, index) => normalizeAccount(account, index))
+      ? cloneSeed(demoDataset.accounts).map((account, index) => normalizeAccount(account, index))
       : [],
-    transactions: useSeedData ? cloneSeed(mockTransactions) : [],
+    transactions: useSeedData ? cloneSeed(demoDataset.transactions) : [],
     budgetRows: cloneSeed(currentPlanData.budgetRows),
     incomeStreams: cloneSeed(currentPlanData.incomeStreams),
     projectionAdjustments: cloneSeed(currentPlanData.projectionAdjustments),
@@ -102,7 +96,7 @@ function buildUserState({
     merchantCategoryRules: {},
     activeTab: APP_TABS.DASHBOARD,
     activeRange: DEFAULT_ACTIVE_RANGE,
-    metricSnapshots: {},
+    metricSnapshots: useSeedData ? demoDataset.metricSnapshots : {},
   };
 }
 
@@ -203,6 +197,19 @@ export function createEmptyAppState({ primaryUserName = "User 1" } = {}) {
   return {
     users: [defaultUser],
     activeUserId: defaultUser.id,
+  };
+}
+
+export function createDemoAppState() {
+  const demoUser = buildUserState({
+    id: "demo-user-profile",
+    name: "Demo Household",
+    useSeedData: true,
+  });
+
+  return {
+    users: [demoUser],
+    activeUserId: demoUser.id,
   };
 }
 

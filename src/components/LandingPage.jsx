@@ -45,9 +45,14 @@ const CONTACT_CARDS = [
   ],
 ];
 
-export function LandingPage({ enterApp }) {
+export function LandingPage({ enterApp, onEnterDemo }) {
   const [activeDocument, setActiveDocument] = useState(null);
   const openCreateAccess = () => enterApp({ mode: "create-account" });
+  const openDemoMode = () => {
+    if (typeof onEnterDemo === "function") {
+      onEnterDemo();
+    }
+  };
 
   return (
     <div
@@ -151,6 +156,11 @@ export function LandingPage({ enterApp }) {
           <div
             style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 14 }}
           >
+            {typeof onEnterDemo === "function" ? (
+              <button onClick={openDemoMode} style={buildPrimaryButtonStyle(true)}>
+                Enter Demo Mode
+              </button>
+            ) : null}
             <button onClick={enterApp} style={buildPrimaryButtonStyle(true)}>
               Client Login
             </button>
@@ -213,6 +223,14 @@ export function LandingPage({ enterApp }) {
               <button onClick={openCreateAccess} style={{ ...buildPrimaryButtonStyle(), minWidth: 220 }}>
                 Create Access
               </button>
+              {typeof onEnterDemo === "function" ? (
+                <button
+                  onClick={openDemoMode}
+                  style={{ ...buildPrimaryButtonStyle(true), minWidth: 220 }}
+                >
+                  Enter Demo Mode
+                </button>
+              ) : null}
               <button
                 onClick={enterApp}
                 style={{ ...buildPrimaryButtonStyle(true), minWidth: 220 }}
@@ -459,12 +477,16 @@ export function LandingPage({ enterApp }) {
                 </div>
               ))}
             </div>
-            <button
-              onClick={enterApp}
-              style={{ ...buildPrimaryButtonStyle(), marginTop: 22, width: "100%" }}
-            >
-              Client Login
-            </button>
+            <div style={{ display: "grid", gap: 12, marginTop: 22 }}>
+              {typeof onEnterDemo === "function" ? (
+                <button onClick={openDemoMode} style={{ ...buildPrimaryButtonStyle(true), width: "100%" }}>
+                  Enter Demo Mode
+                </button>
+              ) : null}
+              <button onClick={enterApp} style={{ ...buildPrimaryButtonStyle(), width: "100%" }}>
+                Client Login
+              </button>
+            </div>
           </div>
         </section>
 
