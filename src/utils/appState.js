@@ -2,10 +2,8 @@ import {
   APP_TAB_VALUES,
   APP_TABS,
   incomeStreamSeed,
-  initialAccounts,
   initialBudgetCategories,
   initialSubscriptions,
-  mockTransactions,
 } from "../data/constants.jsx";
 import { normalizeAccount } from "./accounts.js";
 import { getCurrentBudgetPeriod } from "./date.js";
@@ -14,7 +12,7 @@ import { buildSeedObjectives, normalizeObjectives } from "./objectives.js";
 import { normalizeRecurringPreferences } from "./recurringSuggestions.js";
 import {
   HOUSEHOLD_DEMO_PLAN_ANCHOR,
-  buildHouseholdDemoMetricSnapshots,
+  buildHouseholdDemoDataset,
 } from "../data/householdDemoSeed.js";
 
 export const APP_STATE_STORAGE_KEY = "fff-app-state-v1";
@@ -59,6 +57,7 @@ function buildUserState({
   useSeedData = true,
 } = {}) {
   const currentYear = getCurrentBudgetPeriod().year;
+  const demoDataset = useSeedData ? buildHouseholdDemoDataset(currentYear) : null;
   const currentPlanData = buildPlanYearData({
     budgetRows: cloneSeed(initialBudgetCategories),
     incomeStreams: useSeedData ? cloneSeed(incomeStreamSeed) : [],
@@ -74,12 +73,14 @@ function buildUserState({
   return {
     id,
     name,
-    createdAt: useSeedData ? "2026-01-01T12:00:00.000Z" : new Date().toISOString(),
+    createdAt: useSeedData
+      ? `${currentYear}-01-01T12:00:00.000Z`
+      : new Date().toISOString(),
     selectedAccount,
     accounts: useSeedData
-      ? cloneSeed(initialAccounts).map((account, index) => normalizeAccount(account, index))
+      ? cloneSeed(demoDataset.accounts).map((account, index) => normalizeAccount(account, index))
       : [],
-    transactions: useSeedData ? cloneSeed(mockTransactions) : [],
+    transactions: useSeedData ? cloneSeed(demoDataset.transactions) : [],
     budgetRows: cloneSeed(currentPlanData.budgetRows),
     incomeStreams: cloneSeed(currentPlanData.incomeStreams),
     projectionAdjustments: cloneSeed(currentPlanData.projectionAdjustments),
@@ -95,7 +96,7 @@ function buildUserState({
     merchantCategoryRules: {},
     activeTab: APP_TABS.DASHBOARD,
     activeRange: DEFAULT_ACTIVE_RANGE,
-    metricSnapshots: useSeedData ? buildHouseholdDemoMetricSnapshots() : {},
+    metricSnapshots: useSeedData ? demoDataset.metricSnapshots : {},
   };
 }
 

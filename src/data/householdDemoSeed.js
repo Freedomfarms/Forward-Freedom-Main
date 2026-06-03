@@ -3,7 +3,7 @@
  * Transactions: 30 per month, Jan–Aug 2026 (240 total).
  */
 
-const DEMO_YEAR = 2026;
+const DEFAULT_DEMO_YEAR = 2026;
 const DEMO_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug"];
 const DEMO_MONTH_INDEX = Object.fromEntries(DEMO_MONTHS.map((month, index) => [month, index]));
 
@@ -16,8 +16,48 @@ function roundMoney(value) {
   return Number((Number(value) || 0).toFixed(2));
 }
 
-function formatDemoDate(month, day) {
-  return `${month} ${day}, ${DEMO_YEAR}`;
+function formatDemoDate(month, day, year = DEFAULT_DEMO_YEAR) {
+  return `${month} ${day}, ${year}`;
+}
+
+function formatDemoChartDate(month, day, year = DEFAULT_DEMO_YEAR) {
+  return formatDemoDate(month, day, year);
+}
+
+function buildDemoChartHistoryDates(year = DEFAULT_DEMO_YEAR) {
+  return [
+    [1, 1],
+    [1, 5],
+    [1, 10],
+    [1, 15],
+    [1, 20],
+    [1, 25],
+    [1, 31],
+    [2, 5],
+    [2, 10],
+    [2, 15],
+    [2, 20],
+    [2, 25],
+    [3, 1],
+    [3, 5],
+    [3, 10],
+    [3, 15],
+    [3, 20],
+    [3, 25],
+    [3, 31],
+    [4, 5],
+    [4, 10],
+    [4, 15],
+    [4, 20],
+    [4, 25],
+    [4, 30],
+    [5, 3],
+    [5, 6],
+    [5, 9],
+    [5, 12],
+    [5, 20],
+    [5, 31],
+  ].map(([monthIndex, day]) => formatDemoChartDate(DEMO_MONTHS[monthIndex - 1] || "Jan", day, year));
 }
 
 function monthJitter(monthIndex, salt, spread = 0.12) {
@@ -43,40 +83,6 @@ const MONTHLY_TRUE_CASH_CLOSING = {
   Jul: 60440,
   Aug: 62510,
 };
-
-const DEMO_CHART_HISTORY_DATES = [
-  "Jan 1, 2026",
-  "Jan 5, 2026",
-  "Jan 10, 2026",
-  "Jan 15, 2026",
-  "Jan 20, 2026",
-  "Jan 25, 2026",
-  "Jan 31, 2026",
-  "Feb 5, 2026",
-  "Feb 10, 2026",
-  "Feb 15, 2026",
-  "Feb 20, 2026",
-  "Feb 25, 2026",
-  "Mar 1, 2026",
-  "Mar 5, 2026",
-  "Mar 10, 2026",
-  "Mar 15, 2026",
-  "Mar 20, 2026",
-  "Mar 25, 2026",
-  "Mar 31, 2026",
-  "Apr 5, 2026",
-  "Apr 10, 2026",
-  "Apr 15, 2026",
-  "Apr 20, 2026",
-  "Apr 25, 2026",
-  "Apr 30, 2026",
-  "May 3, 2026",
-  "May 6, 2026",
-  "May 9, 2026",
-  "May 12, 2026",
-  "May 20, 2026",
-  "May 31, 2026",
-];
 
 /** Target monthly gross income (~$100k/yr across 8 logged months). */
 const MONTHLY_INCOME_TARGETS = {
@@ -420,7 +426,7 @@ function addSavingsTransfer(month, monthIndex, transactions) {
   });
 }
 
-export function generateHouseholdDemoTransactions() {
+export function generateHouseholdDemoTransactions(year = DEFAULT_DEMO_YEAR) {
   const transactions = [];
   let sequence = 1;
 
@@ -439,8 +445,8 @@ export function generateHouseholdDemoTransactions() {
       .sort((left, right) => right.day - left.day || right.amount - left.amount)
       .forEach((row) => {
         transactions.push({
-          id: `tx-demo-${DEMO_YEAR}-${month.toLowerCase()}-${String(sequence).padStart(3, "0")}`,
-          date: formatDemoDate(month, row.day),
+          id: `tx-demo-${year}-${month.toLowerCase()}-${String(sequence).padStart(3, "0")}`,
+          date: formatDemoDate(month, row.day, year),
           merchant: row.merchant,
           category: row.category,
           account: row.account,
@@ -568,7 +574,7 @@ export const householdDemoIncomeStreams = [
       "Nov",
       "Dec",
     ],
-    transactionMerchants: ["Payroll", "Salary", "ADP", "Gusto"],
+    transactionMerchants: ["Payroll Deposit", "Payroll", "Salary", "ADP", "Gusto"],
   },
   {
     id: "income-consulting",
@@ -583,21 +589,38 @@ export const householdDemoIncomeStreams = [
   },
 ];
 
+function buildHouseholdDemoYearlyOps() {
+  const monthPlans = [
+    ["Jan", 8420, 8420, 0, 7100, 6380],
+    ["Feb", 7980, 7600, 380, 7200, 7020],
+    ["Mar", 9240, 8720, 520, 7050, 6680],
+    ["Apr", 8150, 8150, 0, 7150, 6910],
+    ["May", 9270, 8890, 380, 7300, 7240],
+    ["Jun", 8830, 8310, 520, 7000, 6520],
+    ["Jul", 9180, 9180, 0, 7600, 7880],
+    ["Aug", 8780, 8260, 520, 7050, 6710],
+    ["Sep", 8350, 8350, 0, 7100, 0],
+    ["Oct", 8500, 8500, 0, 7150, 0],
+    ["Nov", 8870, 8350, 520, 7200, 0],
+    ["Dec", 9100, 8580, 520, 7400, 0],
+  ];
+
+  return monthPlans.map(([month, income, recurringIncome, oneTimeIncome, budget, spent]) => {
+    const actualIncome = MONTHLY_INCOME_TARGETS[month] ?? income;
+    return {
+      month,
+      income,
+      actualIncome,
+      recurringIncome,
+      oneTimeIncome,
+      budget,
+      spent,
+    };
+  });
+}
+
 /** Fallback ops-board seed; live Jan–Aug values come from transactions when configured. */
-export const householdDemoYearlyOps = [
-  { month: "Jan", income: 8420, recurringIncome: 8420, oneTimeIncome: 0, budget: 7100, spent: 6380 },
-  { month: "Feb", income: 7980, recurringIncome: 7600, oneTimeIncome: 380, budget: 7200, spent: 7020 },
-  { month: "Mar", income: 9240, recurringIncome: 8720, oneTimeIncome: 520, budget: 7050, spent: 6680 },
-  { month: "Apr", income: 8150, recurringIncome: 8150, oneTimeIncome: 0, budget: 7150, spent: 6910 },
-  { month: "May", income: 9270, recurringIncome: 8890, oneTimeIncome: 380, budget: 7300, spent: 7240 },
-  { month: "Jun", income: 8830, recurringIncome: 8310, oneTimeIncome: 520, budget: 7000, spent: 6520 },
-  { month: "Jul", income: 9180, recurringIncome: 9180, oneTimeIncome: 0, budget: 7600, spent: 7880 },
-  { month: "Aug", income: 8780, recurringIncome: 8260, oneTimeIncome: 520, budget: 7050, spent: 6710 },
-  { month: "Sep", income: 8350, recurringIncome: 8350, oneTimeIncome: 0, budget: 7100, spent: 0 },
-  { month: "Oct", income: 8500, recurringIncome: 8500, oneTimeIncome: 0, budget: 7150, spent: 0 },
-  { month: "Nov", income: 8870, recurringIncome: 8350, oneTimeIncome: 520, budget: 7200, spent: 0 },
-  { month: "Dec", income: 9100, recurringIncome: 8580, oneTimeIncome: 520, budget: 7400, spent: 0 },
-];
+export const householdDemoYearlyOps = buildHouseholdDemoYearlyOps();
 
 function formatMoneyLabel(value) {
   return `$${Number(value).toLocaleString("en-US", {
@@ -636,14 +659,14 @@ function buildDemoChartPoints(values) {
   });
 }
 
-export function buildHouseholdDemoMetricSnapshots() {
+export function buildHouseholdDemoMetricSnapshots(year = DEFAULT_DEMO_YEAR) {
   const creditCardDebt = 4186.44;
   const snapshots = {};
 
   Object.entries(MONTHLY_TRUE_CASH_CLOSING).forEach(([month, trueCash]) => {
     const monthIndex = DEMO_MONTH_INDEX[month];
-    const lastDay = new Date(DEMO_YEAR, monthIndex + 1, 0).getDate();
-    const dateKey = `${DEMO_YEAR}-${String(monthIndex + 1).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+    const lastDay = new Date(year, monthIndex + 1, 0).getDate();
+    const dateKey = `${year}-${String(monthIndex + 1).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
     snapshots[dateKey] = {
       liquidCash: roundMoney(trueCash + creditCardDebt),
       creditCardDebt: roundMoney(creditCardDebt),
@@ -655,39 +678,57 @@ export function buildHouseholdDemoMetricSnapshots() {
   return snapshots;
 }
 
-const demoHistoryValues = interpolateTrueCashHistoryValues(
-  DEMO_CHART_HISTORY_DATES,
-  HOUSEHOLD_DEMO_STARTING_TRUE_CASH,
-  MONTHLY_TRUE_CASH_CLOSING.May
-);
+export function buildHouseholdDemoTrueCashChartHistory(year = DEFAULT_DEMO_YEAR) {
+  const chartDates = buildDemoChartHistoryDates(year);
+  const demoHistoryValues = interpolateTrueCashHistoryValues(
+    chartDates,
+    HOUSEHOLD_DEMO_STARTING_TRUE_CASH,
+    MONTHLY_TRUE_CASH_CLOSING.May
+  );
+  const yearSuffix = String(year).slice(-2);
 
-export const householdDemoTrueCashChartHistory = {
-  value: formatMoneyLabel(MONTHLY_TRUE_CASH_CLOSING.May),
-  change: `${formatMoneyLabel(MONTHLY_TRUE_CASH_CLOSING.May - HOUSEHOLD_DEMO_STARTING_TRUE_CASH)} (${(
-    ((MONTHLY_TRUE_CASH_CLOSING.May - HOUSEHOLD_DEMO_STARTING_TRUE_CASH) /
-      HOUSEHOLD_DEMO_STARTING_TRUE_CASH) *
-    100
-  ).toFixed(2)}%)`,
-  date: "May 31, 2026",
-  dateRange: "Jan 1, 2026 - May 31 actual / Dec 31 projected",
-  supportsProjection: true,
-  xAxis: [
-    "Jan '26",
-    "Feb '26",
-    "Mar '26",
-    "Apr '26",
-    "May '26",
-    "Jun '26",
-    "Jul '26",
-    "Aug '26",
-    "Sep '26",
-    "Oct '26",
-    "Nov '26",
-    "Dec '26",
-  ],
-  points: buildDemoChartPoints(demoHistoryValues),
-  dates: DEMO_CHART_HISTORY_DATES,
-  values: demoHistoryValues,
-};
+  return {
+    value: formatMoneyLabel(MONTHLY_TRUE_CASH_CLOSING.May),
+    change: `${formatMoneyLabel(MONTHLY_TRUE_CASH_CLOSING.May - HOUSEHOLD_DEMO_STARTING_TRUE_CASH)} (${(
+      ((MONTHLY_TRUE_CASH_CLOSING.May - HOUSEHOLD_DEMO_STARTING_TRUE_CASH) /
+        HOUSEHOLD_DEMO_STARTING_TRUE_CASH) *
+      100
+    ).toFixed(2)}%)`,
+    date: formatDemoDate("May", 31, year),
+    dateRange: `Jan 1, ${year} - May 31 actual / Dec 31 projected`,
+    supportsProjection: true,
+    xAxis: [
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec",
+    ].map((month) => `${month} '${yearSuffix}`),
+    points: buildDemoChartPoints(demoHistoryValues),
+    dates: chartDates,
+    values: demoHistoryValues,
+  };
+}
 
+export function buildHouseholdDemoDataset(year = DEFAULT_DEMO_YEAR) {
+  return {
+    accounts: householdDemoAccounts,
+    transactions: generateHouseholdDemoTransactions(year),
+    subscriptions: householdDemoSubscriptions,
+    incomeStreams: householdDemoIncomeStreams,
+    yearlyOps: householdDemoYearlyOps,
+    trueCashChartHistory: buildHouseholdDemoTrueCashChartHistory(year),
+    metricSnapshots: buildHouseholdDemoMetricSnapshots(year),
+    planAnchor: HOUSEHOLD_DEMO_PLAN_ANCHOR,
+  };
+}
+
+export const householdDemoTrueCashChartHistory = buildHouseholdDemoTrueCashChartHistory();
 export const householdDemoTransactions = generateHouseholdDemoTransactions();
