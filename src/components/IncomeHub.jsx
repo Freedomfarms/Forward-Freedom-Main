@@ -5,6 +5,8 @@ import { getCurrentBudgetPeriod } from "../utils/date.js";
 import { money, parseMoney, wholeDollars } from "../utils/format.js";
 import { buildIncomeStreamsWithReceived, sumActualIncomeForMonth } from "../utils/budgetReview.js";
 import { HouseholdProfilesControl, MonthCoverageEditor } from "./Common.jsx";
+import { YearlyPlanningHistoryPanel } from "./YearlyPlanningHistoryPanel.jsx";
+import { yearlyOpsData } from "../data/constants.jsx";
 
 function buildHeatBarWidth(value, maxValue) {
   const safeValue = Math.abs(Number(value) || 0);
@@ -182,6 +184,23 @@ export function IncomeHub({
         </div>
         <HouseholdProfilesControl {...householdProfilesProps} />
       </header>
+
+      <YearlyPlanningHistoryPanel
+        title="Income History"
+        subtitle="Monthly planned vs earned income. Jan–Jun reflect demo transaction activity."
+        transactions={transactions}
+        budgetRows={planningBudgetRows}
+        incomeStreams={planningIncomeStreams}
+        yearlyOpsSeed={yearlyOpsData}
+        year={activeIncomeDate.year}
+        historyEndMonth="Jun"
+        onSelectMonth={(month) => {
+          const monthIndex = budgetMonths.indexOf(month);
+          if (monthIndex < 0) return;
+          ensurePlanningYear(activeIncomeDate.year);
+          setActiveIncomeDate({ monthIndex, year: activeIncomeDate.year });
+        }}
+      />
 
       <section
         style={{
