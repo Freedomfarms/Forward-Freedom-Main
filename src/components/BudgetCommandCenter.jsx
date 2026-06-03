@@ -5,8 +5,6 @@ import { buildMonthlySpendSnapshot } from "../utils/budgetReview.js";
 import { getCurrentBudgetPeriod } from "../utils/date.js";
 import { budgetMonths, budgetMonthNames } from "../data/constants.jsx";
 import { HouseholdProfilesControl, MonthCoverageEditor } from "./Common.jsx";
-import { YearlyPlanningHistoryPanel } from "./YearlyPlanningHistoryPanel.jsx";
-import { yearlyOpsData } from "../data/constants.jsx";
 
 function buildHeatBarWidth(value, maxValue) {
   const safeValue = Math.abs(Number(value) || 0);
@@ -419,23 +417,6 @@ export function BudgetCommandCenter({
         </div>
         <HouseholdProfilesControl {...householdProfilesProps} />
       </header>
-
-      <YearlyPlanningHistoryPanel
-        title="Budget History"
-        subtitle="Monthly planned budget vs actual spending. Jan–Jun reflect demo transaction activity."
-        transactions={transactions}
-        budgetRows={planningBudgetRows}
-        incomeStreams={planningIncomeStreams}
-        yearlyOpsSeed={yearlyOpsData}
-        year={activeBudgetDate.year}
-        historyEndMonth="Jun"
-        onSelectMonth={(month) => {
-          const monthIndex = budgetMonths.indexOf(month);
-          if (monthIndex < 0) return;
-          ensurePlanningYear(activeBudgetDate.year);
-          setActiveBudgetDate({ monthIndex, year: activeBudgetDate.year });
-        }}
-      />
 
       <section
         style={{

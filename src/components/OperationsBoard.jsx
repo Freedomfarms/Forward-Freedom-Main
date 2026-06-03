@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { styles } from "../styles.js";
-import { buildYearlyPlanningMetrics } from "../utils/yearlyPlanningMetrics.js";
+import { buildBudgetMonthlySpendSeries, buildMonthlyActualIncomeSeries } from "../utils/budgetReview.js";
 import { getCurrentBudgetPeriod } from "../utils/date.js";
 import {
   buildAreaPath,
@@ -276,6 +276,12 @@ export function OperationsBoard({
   const planningIncomeStreams = getIncomeStreamsForYear(activePlanningYear);
   const planningProjectionAdjustments = getProjectionAdjustmentsForYear(activePlanningYear);
   const planningAnchor = getPlanningAnchorForYear(activePlanningYear);
+  const monthlySpendSeries = buildBudgetMonthlySpendSeries(
+    safeTransactions,
+    planningBudgetRows,
+    activePlanningYear
+  );
+  const monthlyActualIncomeSeries = buildMonthlyActualIncomeSeries(safeTransactions, activePlanningYear);
   const updatePlanningYear = (value) => {
     const nextValue = Number(value);
     ensurePlanningYear(nextValue);
@@ -294,12 +300,53 @@ export function OperationsBoard({
     planningIncomeStreams.length > 0 ||
     planningBudgetRows.some((row) => finiteMoney(row.budget) > 0);
 
-  const dynamicYearlyOpsData = buildYearlyPlanningMetrics({
-    transactions: safeTransactions,
-    budgetRows: planningBudgetRows,
-    incomeStreams: planningIncomeStreams,
-    yearlyOpsSeed: yearlyOpsData,
-    year: activePlanningYear,
+  const dynamicYearlyOpsData = yearlyOpsData.map((seedMonth) => {
+    const activeStreams = planningIncomeStreams.filter((stream) =>
+      (stream.months || budgetMonths).includes(seedMonth.month)
+    );
+    const plannedFromStreams = activeStreams.reduce((sum, stream) => sum + parseMoney(stream.amount), 0);
+    const oneTimeFromStreams = activeStreams
+      .filter((stream) => stream.type === "One-Time")
+      .reduce((sum, stream) => sum + parseMoney(stream.amount), 0);
+
+    const activeBudgetCategories = planningBudgetRows.filter((category) =>
+      (category.months || budgetMonths).includes(seedMonth.month)
+    );
+
+    const budgetFromRows = activeBudgetCategories.reduce(
+      (sum, category) => sum + finiteMoney(category.budget),
+      0
+    );
+
+    const spentLive =
+      monthlySpendSeries.find((entry) => entry.month === seedMonth.month)?.spent || 0;
+    const actualIncome =
+      monthlyActualIncomeSeries.find((entry) => entry.month === seedMonth.month)?.actualIncome || 0;
+
+    const plannedIncome = planConfigured
+      ? finiteMoney(plannedFromStreams)
+      : finiteMoney(seedMonth.income);
+    const budget = planConfigured ? finiteMoney(budgetFromRows) : finiteMoney(seedMonth.budget);
+    const spent = planConfigured ? finiteMoney(spentLive) : finiteMoney(seedMonth.spent);
+    const oneTimeIncome = planConfigured
+      ? finiteMoney(oneTimeFromStreams)
+      : finiteMoney(seedMonth.oneTimeIncome);
+    const recurringIncome = planConfigured
+      ? plannedIncome - oneTimeIncome
+      : finiteMoney(seedMonth.recurringIncome);
+
+    return {
+      ...seedMonth,
+      income: plannedIncome,
+      plannedIncome,
+      actualIncome: finiteMoney(actualIncome),
+      budget,
+      spent,
+      baseBudget: budget,
+      profit: plannedIncome - budget,
+      recurringIncome,
+      oneTimeIncome,
+    };
   });
 
   const yearlyIncome = dynamicYearlyOpsData.reduce((sum, month) => sum + month.income, 0);
