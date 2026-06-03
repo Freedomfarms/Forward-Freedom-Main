@@ -41,9 +41,12 @@ import {
   normalizePlaidNicknameMap,
 } from "./utils/plaidNicknames.js";
 import {
+  acceptRecurringSuggestionKey,
   buildRecurringSuggestions,
   buildRecurringSubscriptionFromTransaction,
+  dismissRecurringSuggestionKeys,
   normalizeRecurringPreferences,
+  resolveSubscriptionSuggestionKey,
 } from "./utils/recurringSuggestions.js";
 import {
   calculateCryptoBalance,
@@ -658,6 +661,48 @@ function ForwardFreedomDashboard({
         ? valueOrUpdater(syncedSubscriptions)
         : valueOrUpdater;
     });
+
+  const removeSubscription = (subscription) => {
+    if (!subscription?.id || !activeUser?.id) return;
+
+    const suggestionKey = resolveSubscriptionSuggestionKey(subscription);
+    setUsers((currentUsers) =>
+      currentUsers.map((user) => {
+        if (user.id !== activeUser.id) return user;
+
+        const preferences = normalizeRecurringPreferences(user.recurringPreferences);
+        const nextPreferences = suggestionKey
+          ? dismissRecurringSuggestionKeys(preferences, suggestionKey)
+          : preferences;
+        const userCategorizedTransactions = categorizeTransactions(user.transactions, {
+          budgetRows: user.budgetRows,
+          merchantCategoryRules: user.merchantCategoryRules || {},
+        });
+        const suggestions = buildRecurringSuggestions(
+          userCategorizedTransactions,
+          user.subscriptions,
+          nextPreferences
+        );
+        const syncedSubscriptions = syncAutoDetectedSubscriptions(
+          user.subscriptions,
+          suggestions
+        );
+        const nextSubscriptions = syncedSubscriptions.filter((sub) => sub.id !== subscription.id);
+        const preferencesChanged =
+          JSON.stringify(nextPreferences) !== JSON.stringify(preferences);
+        const subscriptionsChanged =
+          JSON.stringify(nextSubscriptions) !== JSON.stringify(user.subscriptions);
+
+        if (!preferencesChanged && !subscriptionsChanged) return user;
+
+        return {
+          ...user,
+          recurringPreferences: nextPreferences,
+          subscriptions: nextSubscriptions,
+        };
+      })
+    );
+  };
 
   const liquidCash = syncedAccounts
     .filter((account) => LIQUID_ACCOUNT_TYPES.has(account.type))
@@ -1616,12 +1661,9 @@ function ForwardFreedomDashboard({
     }
 
     if (options?.suggestionKey) {
-      setRecurringPreferences((currentPreferences) => ({
-        ...currentPreferences,
-        dismissedSuggestionKeys: (currentPreferences.dismissedSuggestionKeys || []).filter(
-          (key) => key !== options.suggestionKey
-        ),
-      }));
+      setRecurringPreferences((currentPreferences) =>
+        acceptRecurringSuggestionKey(currentPreferences, options.suggestionKey)
+      );
     }
 
     return { added: true };
@@ -1959,6 +2001,7 @@ function ForwardFreedomDashboard({
               accounts={syncedAccounts}
               subscriptions={subscriptions}
               setSubscriptions={setSubscriptions}
+              removeSubscription={removeSubscription}
               householdProfilesProps={householdProfilesProps}
             />
           ) : activeTab === APP_TABS.OBJECTIVES ? (

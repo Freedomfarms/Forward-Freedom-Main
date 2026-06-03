@@ -102,6 +102,57 @@ export function normalizeRecurringPreferences(value) {
   };
 }
 
+export function resolveSubscriptionSuggestionKey(subscription) {
+  const explicitKey = String(subscription?.suggestionKey || "").trim();
+  if (explicitKey) return explicitKey;
+  if (!subscription?.autoDetected) return null;
+
+  const amount = Math.abs(Number(subscription?.amount) || 0);
+  if (!amount) return null;
+
+  return [
+    normalizeToken(subscription?.name),
+    amount.toFixed(2),
+  ].join("|");
+}
+
+export function dismissRecurringSuggestionKeys(preferences, suggestionKeys) {
+  const normalizedPreferences = normalizeRecurringPreferences(preferences);
+  const keysToDismiss = (Array.isArray(suggestionKeys) ? suggestionKeys : [suggestionKeys])
+    .map((key) => String(key || "").trim())
+    .filter(Boolean);
+  if (!keysToDismiss.length) return normalizedPreferences;
+
+  const dismissedSet = new Set(
+    normalizedPreferences.dismissedSuggestionKeys.map((key) => normalizeToken(key))
+  );
+  const nextDismissedKeys = [...normalizedPreferences.dismissedSuggestionKeys];
+  keysToDismiss.forEach((key) => {
+    const normalizedKey = normalizeToken(key);
+    if (!normalizedKey || dismissedSet.has(normalizedKey)) return;
+    dismissedSet.add(normalizedKey);
+    nextDismissedKeys.push(key);
+  });
+
+  return {
+    ...normalizedPreferences,
+    dismissedSuggestionKeys: nextDismissedKeys,
+  };
+}
+
+export function acceptRecurringSuggestionKey(preferences, suggestionKey) {
+  const normalizedKey = normalizeToken(suggestionKey);
+  if (!normalizedKey) return normalizeRecurringPreferences(preferences);
+
+  const normalizedPreferences = normalizeRecurringPreferences(preferences);
+  return {
+    ...normalizedPreferences,
+    dismissedSuggestionKeys: normalizedPreferences.dismissedSuggestionKeys.filter(
+      (key) => normalizeToken(key) !== normalizedKey
+    ),
+  };
+}
+
 export function buildRecurringSubscriptionFromTransaction(transaction, options = {}) {
   const amount = Math.abs(Number(transaction?.amount) || 0);
   if (!amount) return null;
