@@ -557,6 +557,9 @@ function ForwardFreedomDashboard({
   onPersistedStateChange,
   sessionControls,
   persistLocally = true,
+  isDemoMode = false,
+  onEnterDemo,
+  onExitDemo,
 } = {}) {
   const [initialAppState] = useState(() => initialAppStateOverride || loadPersistedAppState(storageKey));
   const [currentView, setCurrentView] = useState(initialView);
@@ -1356,6 +1359,12 @@ function ForwardFreedomDashboard({
   };
 
   const requestPlaidLinkConsent = ({ plaidItemId = null } = {}) => {
+    if (isDemoMode) {
+      setPlaidError(
+        "Bank connections are disabled in demo mode. Create an account to link your own accounts."
+      );
+      return;
+    }
     setPlaidConsentPrompt({ plaidItemId });
     setHasAcceptedPlaidConsent(false);
     setPlaidConsentError("");
@@ -1363,6 +1372,12 @@ function ForwardFreedomDashboard({
   };
 
   const connectPlaidAccount = () => {
+    if (isDemoMode) {
+      setPlaidError(
+        "Bank connections are disabled in demo mode. Create an account to link your own accounts."
+      );
+      return;
+    }
     requestPlaidLinkConsent();
   };
 
@@ -1830,8 +1845,16 @@ function ForwardFreedomDashboard({
   };
 
   if (currentView === "landing") {
-    return <LandingPage enterApp={handleEnterApp} />;
+    return <LandingPage enterApp={handleEnterApp} onEnterDemo={onEnterDemo} />;
   }
+
+  const handleBackHome = () => {
+    if (isDemoMode && typeof onExitDemo === "function") {
+      onExitDemo();
+      return;
+    }
+    setCurrentView("landing");
+  };
 
   return (
     <div style={styles.page}>
@@ -1839,11 +1862,63 @@ function ForwardFreedomDashboard({
         <AppSidebar
           activeTab={activeTab}
           setActiveTab={setActiveTab}
-          onBackHome={() => setCurrentView("landing")}
+          onBackHome={handleBackHome}
           sessionControls={sessionControls}
         />
 
         <main style={styles.main}>
+          {isDemoMode ? (
+            <div
+              style={{
+                marginBottom: 18,
+                border: "1px solid rgba(0,216,255,.28)",
+                borderRadius: 12,
+                background: "linear-gradient(90deg, rgba(0,119,255,.16), rgba(0,216,255,.08))",
+                padding: "14px 18px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 16,
+                flexWrap: "wrap",
+              }}
+            >
+              <div>
+                <div
+                  style={{
+                    color: "#8feaff",
+                    fontSize: 11,
+                    fontWeight: 900,
+                    letterSpacing: 1.1,
+                    textTransform: "uppercase",
+                    marginBottom: 6,
+                  }}
+                >
+                  Demo Mode
+                </div>
+                <div style={{ color: "#eef6ff", fontSize: 15, lineHeight: 1.5 }}>
+                  You are exploring sample data in a sandbox. Changes are not saved.
+                </div>
+              </div>
+              {typeof onExitDemo === "function" ? (
+                <button
+                  type="button"
+                  onClick={onExitDemo}
+                  style={{
+                    border: "1px solid rgba(0,216,255,.35)",
+                    borderRadius: 8,
+                    background: "rgba(0,136,255,.12)",
+                    color: "#eef6ff",
+                    padding: "10px 14px",
+                    cursor: "pointer",
+                    fontWeight: 800,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  Exit Demo
+                </button>
+              ) : null}
+            </div>
+          ) : null}
           {activeTab === APP_TABS.DASHBOARD ? (
             <DashboardView
               activeRange={activeRange}

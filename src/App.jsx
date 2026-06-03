@@ -3,6 +3,7 @@ import ForwardFreedomDashboard from "./ForwardFreedomDashboard.jsx";
 import { AuthProvider, useAuth } from "./context/AuthContext.jsx";
 import { AuthScreen } from "./components/AuthScreen.jsx";
 import { LandingPage } from "./components/LandingPage.jsx";
+import { DemoWorkspaceApp } from "./components/DemoWorkspaceApp.jsx";
 import {
   buildScopedAppStateStorageKey,
   createEmptyAppState,
@@ -277,6 +278,30 @@ function AuthenticatedWorkspaceApp({
   );
 }
 
+function UnconfiguredPublicApp() {
+  const [publicView, setPublicView] = useState("landing");
+  const [demoSessionKey, setDemoSessionKey] = useState(0);
+
+  if (publicView === "demo") {
+    return (
+      <DemoWorkspaceApp
+        key={demoSessionKey}
+        onExit={() => setPublicView("landing")}
+      />
+    );
+  }
+
+  return (
+    <ForwardFreedomDashboard
+      initialView="landing"
+      onEnterDemo={() => {
+        setDemoSessionKey((current) => current + 1);
+        setPublicView("demo");
+      }}
+    />
+  );
+}
+
 function AppContent() {
   const {
     configured,
@@ -291,13 +316,14 @@ function AppContent() {
     user,
   } = useAuth();
   const [publicView, setPublicView] = useState("landing");
+  const [demoSessionKey, setDemoSessionKey] = useState(0);
   const [authScreenConfig, setAuthScreenConfig] = useState({
     mode: "login",
     initialForm: null,
   });
 
   if (!configured) {
-    return <ForwardFreedomDashboard initialView="landing" />;
+    return <UnconfiguredPublicApp />;
   }
 
   if (!ready) {
@@ -305,6 +331,15 @@ function AppContent() {
   }
 
   if (!user) {
+    if (publicView === "demo") {
+      return (
+        <DemoWorkspaceApp
+          key={demoSessionKey}
+          onExit={() => setPublicView("landing")}
+        />
+      );
+    }
+
     if (publicView === "auth") {
       return (
         <AuthScreen
@@ -329,6 +364,10 @@ function AppContent() {
                 : null,
           });
           setPublicView("auth");
+        }}
+        onEnterDemo={() => {
+          setDemoSessionKey((current) => current + 1);
+          setPublicView("demo");
         }}
       />
     );

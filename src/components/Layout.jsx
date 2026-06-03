@@ -215,7 +215,11 @@ export function AppSidebar({ activeTab, setActiveTab, onBackHome, sessionControl
               fontWeight: 800,
             }}
           >
-            {sessionControls.isBusy ? "Signing out..." : "Sign Out"}
+            {sessionControls.isBusy
+              ? "Signing out..."
+              : sessionControls.isDemoMode
+                ? "Exit Demo"
+                : "Sign Out"}
           </button>
         </div>
       ) : null}

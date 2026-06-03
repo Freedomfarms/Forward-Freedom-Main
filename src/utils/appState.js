@@ -206,6 +206,19 @@ export function createEmptyAppState({ primaryUserName = "User 1" } = {}) {
   };
 }
 
+export function createDemoAppState() {
+  const demoUser = buildUserState({
+    id: "demo-user-profile",
+    name: "Demo Household",
+    useSeedData: true,
+  });
+
+  return {
+    users: [demoUser],
+    activeUserId: demoUser.id,
+  };
+}
+
 function buildDefaultAppStateRecord(defaults) {
   const defaultUser = {
     ...defaults.users[0],
