@@ -12,6 +12,10 @@ import { getCurrentBudgetPeriod } from "./date.js";
 import { buildPlanYearData, normalizePlansByYear } from "./planning.js";
 import { buildSeedObjectives, normalizeObjectives } from "./objectives.js";
 import { normalizeRecurringPreferences } from "./recurringSuggestions.js";
+import {
+  HOUSEHOLD_DEMO_PLAN_ANCHOR,
+  buildHouseholdDemoMetricSnapshots,
+} from "../data/householdDemoSeed.js";
 
 export const APP_STATE_STORAGE_KEY = "fff-app-state-v1";
 export const LEGACY_METRIC_SNAPSHOT_STORAGE_KEY = "fff-dashboard-metric-snapshots-v1";
@@ -48,21 +52,6 @@ function generateUserProfileId(index = 0) {
   return `user-profile-${Date.now()}-${index + 1}`;
 }
 
-function calculateSeedTrueCash() {
-  if (!initialAccounts.length) return 0;
-
-  const liquidCash = initialAccounts
-    .filter((account) => ["Checking", "Savings", "Manual Cash"].includes(account.type))
-    .reduce((sum, account) => sum + Number(account.balance || 0), 0);
-  const creditCardDebt = Math.abs(
-    initialAccounts
-      .filter((account) => account.type === "Credit Card")
-      .reduce((sum, account) => sum + Number(account.balance || 0), 0)
-  );
-
-  return liquidCash - creditCardDebt;
-}
-
 function buildUserState({
   id = generateUserProfileId(),
   name = "User 1",
@@ -74,14 +63,18 @@ function buildUserState({
     budgetRows: cloneSeed(initialBudgetCategories),
     incomeStreams: useSeedData ? cloneSeed(incomeStreamSeed) : [],
     projectionAdjustments: {},
-    startingMonth: getCurrentBudgetPeriod().month,
-    startingTrueCash: useSeedData ? calculateSeedTrueCash() : 0,
+    startingMonth: useSeedData
+      ? HOUSEHOLD_DEMO_PLAN_ANCHOR.startingMonth
+      : getCurrentBudgetPeriod().month,
+    startingTrueCash: useSeedData
+      ? HOUSEHOLD_DEMO_PLAN_ANCHOR.startingTrueCash
+      : 0,
   });
 
   return {
     id,
     name,
-    createdAt: new Date().toISOString(),
+    createdAt: useSeedData ? "2026-01-01T12:00:00.000Z" : new Date().toISOString(),
     selectedAccount,
     accounts: useSeedData
       ? cloneSeed(initialAccounts).map((account, index) => normalizeAccount(account, index))
@@ -102,7 +95,7 @@ function buildUserState({
     merchantCategoryRules: {},
     activeTab: APP_TABS.DASHBOARD,
     activeRange: DEFAULT_ACTIVE_RANGE,
-    metricSnapshots: {},
+    metricSnapshots: useSeedData ? buildHouseholdDemoMetricSnapshots() : {},
   };
 }
 

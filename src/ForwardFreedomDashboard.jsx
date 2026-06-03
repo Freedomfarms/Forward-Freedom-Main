@@ -1299,7 +1299,7 @@ function ForwardFreedomDashboard({
     return () => {
       cancelled = true;
     };
-  }, [accounts, activeUser.id]);
+  }, [accounts, activeUser.id, isDemoMode]);
 
   const startPlaidLinkFlow = async ({ plaidItemId = null } = {}) => {
     if (!activeUser?.id) return;

@@ -25,6 +25,59 @@ function monthJitter(monthIndex, salt, spread = 0.12) {
   return 1 + ((hash - 50) / 50) * spread;
 }
 
+/** Jan 1 opening balance; month-end closes follow income minus expense targets below. */
+export const HOUSEHOLD_DEMO_STARTING_TRUE_CASH = 48000;
+
+export const HOUSEHOLD_DEMO_PLAN_ANCHOR = {
+  startingMonth: "Jan",
+  startingTrueCash: HOUSEHOLD_DEMO_STARTING_TRUE_CASH,
+};
+
+const MONTHLY_TRUE_CASH_CLOSING = {
+  Jan: 50040,
+  Feb: 51000,
+  Mar: 53560,
+  Apr: 54800,
+  May: 56830,
+  Jun: 59140,
+  Jul: 60440,
+  Aug: 62510,
+};
+
+const DEMO_CHART_HISTORY_DATES = [
+  "Jan 1, 2026",
+  "Jan 5, 2026",
+  "Jan 10, 2026",
+  "Jan 15, 2026",
+  "Jan 20, 2026",
+  "Jan 25, 2026",
+  "Jan 31, 2026",
+  "Feb 5, 2026",
+  "Feb 10, 2026",
+  "Feb 15, 2026",
+  "Feb 20, 2026",
+  "Feb 25, 2026",
+  "Mar 1, 2026",
+  "Mar 5, 2026",
+  "Mar 10, 2026",
+  "Mar 15, 2026",
+  "Mar 20, 2026",
+  "Mar 25, 2026",
+  "Mar 31, 2026",
+  "Apr 5, 2026",
+  "Apr 10, 2026",
+  "Apr 15, 2026",
+  "Apr 20, 2026",
+  "Apr 25, 2026",
+  "Apr 30, 2026",
+  "May 3, 2026",
+  "May 6, 2026",
+  "May 9, 2026",
+  "May 12, 2026",
+  "May 20, 2026",
+  "May 31, 2026",
+];
+
 /** Target monthly gross income (~$100k/yr across 8 logged months). */
 const MONTHLY_INCOME_TARGETS = {
   Jan: 8420,
@@ -545,5 +598,96 @@ export const householdDemoYearlyOps = [
   { month: "Nov", income: 8870, recurringIncome: 8350, oneTimeIncome: 520, budget: 7200, spent: 0 },
   { month: "Dec", income: 9100, recurringIncome: 8580, oneTimeIncome: 520, budget: 7400, spent: 0 },
 ];
+
+function formatMoneyLabel(value) {
+  return `$${Number(value).toLocaleString("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  })}`;
+}
+
+function interpolateTrueCashHistoryValues(dates, startValue, endValue) {
+  const lastIndex = Math.max(dates.length - 1, 1);
+  return dates.map((_, index) => {
+    const progress = index / lastIndex;
+    const jitter = 1 + Math.sin(index * 1.7) * 0.012;
+    const value = startValue + (endValue - startValue) * progress;
+    return formatMoneyLabel(value * jitter);
+  });
+}
+
+function buildDemoChartPoints(values) {
+  const numericValues = values.map((value) =>
+    Number(String(value).replace(/[^0-9.-]/g, ""))
+  );
+  const highest = Math.max(...numericValues, 1);
+  const chartMax = Math.ceil((highest * 1.4) / 1000) * 1000;
+  const chartHeight = 300;
+
+  return numericValues.map((value, index) => {
+    const x =
+      index === 0
+        ? 0
+        : index === numericValues.length - 1
+          ? 972
+          : (index / (numericValues.length - 1)) * 972;
+    const y = Math.max(0, Math.min(chartHeight, chartHeight - (value / chartMax) * chartHeight));
+    return [x, y];
+  });
+}
+
+export function buildHouseholdDemoMetricSnapshots() {
+  const creditCardDebt = 4186.44;
+  const snapshots = {};
+
+  Object.entries(MONTHLY_TRUE_CASH_CLOSING).forEach(([month, trueCash]) => {
+    const monthIndex = DEMO_MONTH_INDEX[month];
+    const lastDay = new Date(DEMO_YEAR, monthIndex + 1, 0).getDate();
+    const dateKey = `${DEMO_YEAR}-${String(monthIndex + 1).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+    snapshots[dateKey] = {
+      liquidCash: roundMoney(trueCash + creditCardDebt),
+      creditCardDebt: roundMoney(creditCardDebt),
+      totalNetWorth: 502000,
+      trueCash: roundMoney(trueCash),
+    };
+  });
+
+  return snapshots;
+}
+
+const demoHistoryValues = interpolateTrueCashHistoryValues(
+  DEMO_CHART_HISTORY_DATES,
+  HOUSEHOLD_DEMO_STARTING_TRUE_CASH,
+  MONTHLY_TRUE_CASH_CLOSING.May
+);
+
+export const householdDemoTrueCashChartHistory = {
+  value: formatMoneyLabel(MONTHLY_TRUE_CASH_CLOSING.May),
+  change: `${formatMoneyLabel(MONTHLY_TRUE_CASH_CLOSING.May - HOUSEHOLD_DEMO_STARTING_TRUE_CASH)} (${(
+    ((MONTHLY_TRUE_CASH_CLOSING.May - HOUSEHOLD_DEMO_STARTING_TRUE_CASH) /
+      HOUSEHOLD_DEMO_STARTING_TRUE_CASH) *
+    100
+  ).toFixed(2)}%)`,
+  date: "May 31, 2026",
+  dateRange: "Jan 1, 2026 - May 31 actual / Dec 31 projected",
+  supportsProjection: true,
+  xAxis: [
+    "Jan '26",
+    "Feb '26",
+    "Mar '26",
+    "Apr '26",
+    "May '26",
+    "Jun '26",
+    "Jul '26",
+    "Aug '26",
+    "Sep '26",
+    "Oct '26",
+    "Nov '26",
+    "Dec '26",
+  ],
+  points: buildDemoChartPoints(demoHistoryValues),
+  dates: DEMO_CHART_HISTORY_DATES,
+  values: demoHistoryValues,
+};
 
 export const householdDemoTransactions = generateHouseholdDemoTransactions();
