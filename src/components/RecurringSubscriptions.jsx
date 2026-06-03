@@ -76,6 +76,7 @@ export function RecurringSubscriptions({
   accounts,
   subscriptions,
   setSubscriptions,
+  removeSubscription,
   householdProfilesProps,
 }) {
   const [showAddForm, setShowAddForm] = useState(false);
@@ -121,7 +122,11 @@ export function RecurringSubscriptions({
   };
 
   const confirmDelete = () => {
-    setSubscriptions((current) => current.filter((sub) => sub.id !== deleteTarget.id));
+    if (removeSubscription) {
+      removeSubscription(deleteTarget);
+    } else {
+      setSubscriptions((current) => current.filter((sub) => sub.id !== deleteTarget.id));
+    }
     setDeleteTarget(null);
   };
 
