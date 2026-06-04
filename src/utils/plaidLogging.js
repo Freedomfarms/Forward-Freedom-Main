@@ -22,6 +22,10 @@ function sanitizeValue(value) {
 }
 
 export function logPlaidClientEvent(event, fields = {}, level = "info") {
+  if (import.meta.env.PROD) {
+    return;
+  }
+
   const payload = sanitizeValue({
     scope: "plaid-client",
     event,

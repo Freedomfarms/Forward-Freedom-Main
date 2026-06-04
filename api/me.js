@@ -1,5 +1,8 @@
 import { authenticateRequest, AuthError } from "../server/auth/verifyAuth.js";
 import { getPrismaClient, isDatabaseConfigured } from "../server/db/prisma.js";
+import { respondInternalError } from "../server/http/errorHelpers.js";
+import { enforceRateLimit, generalApiRateLimit } from "../server/http/rateLimit.js";
+import { applySecurityHeaders } from "../server/http/responseHelpers.js";
 
 function buildUserPayload(decodedToken, userRecord = null) {
   return {
@@ -13,6 +16,9 @@ function buildUserPayload(decodedToken, userRecord = null) {
 }
 
 export default async function handler(request, response) {
+  applySecurityHeaders(response);
+  if (!(await enforceRateLimit(request, response, generalApiRateLimit))) return;
+
   if (request.method !== "GET") {
     return response.status(405).json({ error: true, message: "Method not allowed." });
   }
@@ -43,9 +49,6 @@ export default async function handler(request, response) {
 
     return response.status(200).json({
       user: buildUserPayload(decodedToken, userRecord),
-      services: {
-        databaseConfigured: isDatabaseConfigured(),
-      },
     });
   } catch (error) {
     if (error instanceof AuthError) {
@@ -55,9 +58,11 @@ export default async function handler(request, response) {
       });
     }
 
-    return response.status(500).json({
-      error: true,
-      message: error?.message || "Unable to load the authenticated workspace profile.",
-    });
+    return respondInternalError(
+      response,
+      "api/me",
+      error,
+      "Unable to load the authenticated workspace profile."
+    );
   }
 }

@@ -1,8 +1,10 @@
 import { handlePlaidStatus } from "../../server/plaid/handlers.js";
+import { enforceRateLimit, generalApiRateLimit } from "../../server/http/rateLimit.js";
 import { applySecurityHeaders, assertMethod } from "../../server/http/responseHelpers.js";
 
-export default function handler(request, response) {
+export default async function handler(request, response) {
   applySecurityHeaders(response);
   if (!assertMethod(request, response, "GET")) return;
+  if (!(await enforceRateLimit(request, response, generalApiRateLimit))) return;
   return handlePlaidStatus(request, response);
 }

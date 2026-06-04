@@ -1365,9 +1365,7 @@ function ForwardFreedomDashboard({
     if (!activeUser?.id) return;
 
     if (!plaidStatus.configured) {
-      setPlaidError(
-        "Plaid is not configured yet. Add PLAID_CLIENT_ID and PLAID_SECRET to enable live account linking."
-      );
+      setPlaidError("Plaid is not configured yet. Live account linking is unavailable.");
       return;
     }
 
