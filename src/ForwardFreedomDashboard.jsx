@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { usePlaidLink } from "react-plaid-link";
 import { APP_TABS, budgetMonths, navMain, navTools } from "./data/constants.jsx";
 import { styles } from "./styles.js";
@@ -586,6 +586,7 @@ function ForwardFreedomDashboard({
   const [activeLegalDocument, setActiveLegalDocument] = useState(null);
   const [plaidError, setPlaidError] = useState("");
   const [isPlaidSyncing, setIsPlaidSyncing] = useState(false);
+  const plaidRecoverySyncUserIdsRef = useRef(new Set());
   const activeUser = users.find((user) => user.id === activeUserId) || users[0] || EMPTY_USER_STATE;
   const accounts = activeUser.accounts;
   const transactions = activeUser.transactions;
@@ -1044,6 +1045,20 @@ function ForwardFreedomDashboard({
     },
     [activeUser.id, plaidStatus.configured]
   );
+
+  useEffect(() => {
+    if (!plaidStatus.configured || !activeUser?.id || plaidItems.length > 0) return;
+    if (plaidRecoverySyncUserIdsRef.current.has(activeUser.id)) return;
+
+    plaidRecoverySyncUserIdsRef.current.add(activeUser.id);
+    const timeoutId = window.setTimeout(() => {
+      void syncLinkedPlaidAccounts(activeUser.id, { silent: true });
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [activeUser?.id, plaidItems.length, plaidStatus.configured, syncLinkedPlaidAccounts]);
 
   useEffect(() => {
     if (!plaidStatus.configured || !activeUser?.id || plaidItems.length === 0) return;
