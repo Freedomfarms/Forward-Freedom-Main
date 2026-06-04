@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { sanitizeWorkspaceStateForPersistence } from "../src/utils/workspacePersistence.js";
 
-test("workspace persistence strips synced Plaid data but keeps repair metadata", () => {
+test("workspace persistence preserves ledger data while stripping sensitive fields", () => {
   const input = {
     users: [
       {
@@ -21,6 +21,8 @@ test("workspace persistence strips synced Plaid data but keeps repair metadata",
             syncSource: "Plaid",
             plaidAccountId: "acc-1",
             plaidItemId: "item-1",
+            plaidMask: "1234",
+            accessTokenCiphertext: "encrypted-secret",
           },
           {
             id: "demo-1",
@@ -32,7 +34,13 @@ test("workspace persistence strips synced Plaid data but keeps repair metadata",
         ],
         transactions: [
           { id: "manual-tx", account: "Cash", amount: 10, source: "manual" },
-          { id: "plaid-tx", account: "Plaid Checking", amount: -25, source: "plaid" },
+          {
+            id: "plaid-tx",
+            account: "Plaid Checking",
+            amount: -25,
+            source: "plaid",
+            raw: { merchant_name: "Sensitive Raw Payload" },
+          },
           { id: "demo-tx", account: "Demo Credit Card", amount: -40 },
         ],
         plaidItems: [
@@ -53,11 +61,17 @@ test("workspace persistence strips synced Plaid data but keeps repair metadata",
   const sanitized = sanitizeWorkspaceStateForPersistence(input);
   const [user] = sanitized.users;
 
-  assert.equal(user.accounts.length, 1);
-  assert.equal(user.accounts[0].name, "Cash");
-  assert.equal(user.transactions.length, 1);
-  assert.equal(user.transactions[0].id, "manual-tx");
-  assert.equal(user.selectedAccount, null);
+  assert.equal(user.accounts.length, 3);
+  assert.deepEqual(
+    user.accounts.map((account) => account.name),
+    ["Cash", "Plaid Checking", "Demo Credit Card"]
+  );
+  assert.equal(Object.hasOwn(user.accounts[1], "plaidMask"), false);
+  assert.equal(Object.hasOwn(user.accounts[1], "accessTokenCiphertext"), false);
+  assert.equal(user.transactions.length, 3);
+  assert.equal(user.transactions[1].id, "plaid-tx");
+  assert.equal(Object.hasOwn(user.transactions[1], "raw"), false);
+  assert.equal(user.selectedAccount, "Plaid Checking");
   assert.deepEqual(user.plaidItems, [
     {
       itemId: "item-1",

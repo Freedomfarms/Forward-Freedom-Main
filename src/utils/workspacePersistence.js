@@ -1,24 +1,3 @@
-function isLinkedPlaidAccount(account) {
-  if (!account || typeof account !== "object") return false;
-
-  return Boolean(
-    account.syncSource === "Plaid" ||
-      account.plaidAccountId ||
-      account.plaidItemId ||
-      account.status === "Synced"
-  );
-}
-
-function isPlaidBackedTransaction(transaction, linkedAccountNames) {
-  if (!transaction || typeof transaction !== "object") return false;
-
-  return Boolean(
-    transaction.source === "plaid" ||
-      transaction.syncSource === "Plaid" ||
-      linkedAccountNames.has(transaction.account)
-  );
-}
-
 function sanitizePlaidItems(items) {
   if (!Array.isArray(items)) return [];
 
@@ -33,6 +12,30 @@ function sanitizePlaidItems(items) {
     }));
 }
 
+const SENSITIVE_WORKSPACE_FIELDS = new Set([
+  "accessToken",
+  "accessTokenCiphertext",
+  "plaidMask",
+  "publicToken",
+  "raw",
+]);
+
+function omitSensitiveWorkspaceFields(record) {
+  if (!record || typeof record !== "object" || Array.isArray(record)) return record;
+
+  return Object.fromEntries(
+    Object.entries(record).filter(([key]) => !SENSITIVE_WORKSPACE_FIELDS.has(key))
+  );
+}
+
+function sanitizeAccountForPersistence(account) {
+  return omitSensitiveWorkspaceFields(account);
+}
+
+function sanitizeTransactionForPersistence(transaction) {
+  return omitSensitiveWorkspaceFields(transaction);
+}
+
 export function sanitizeWorkspaceStateForPersistence(state) {
   if (!state || typeof state !== "object" || Array.isArray(state)) {
     return state;
@@ -41,25 +44,16 @@ export function sanitizeWorkspaceStateForPersistence(state) {
   const users = Array.isArray(state.users)
     ? state.users.map((user) => {
         const accounts = Array.isArray(user?.accounts) ? user.accounts : [];
-        const removedPlaidAccountNames = new Set(
-          accounts.filter(isLinkedPlaidAccount).map((account) => account.name).filter(Boolean)
-        );
-        const retainedAccounts = accounts.filter((account) => !isLinkedPlaidAccount(account));
         const retainedTransactions = Array.isArray(user?.transactions)
-          ? user.transactions.filter(
-              (transaction) => !isPlaidBackedTransaction(transaction, removedPlaidAccountNames)
-            )
+          ? user.transactions.map(sanitizeTransactionForPersistence)
           : [];
-        const selectedAccount = removedPlaidAccountNames.has(user?.selectedAccount)
-          ? null
-          : user?.selectedAccount || null;
 
         return {
           ...user,
-          accounts: retainedAccounts,
+          accounts: accounts.map(sanitizeAccountForPersistence),
           transactions: retainedTransactions,
           plaidItems: sanitizePlaidItems(user?.plaidItems),
-          selectedAccount,
+          selectedAccount: user?.selectedAccount || null,
         };
       })
     : state.users;
