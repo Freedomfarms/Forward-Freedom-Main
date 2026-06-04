@@ -146,7 +146,7 @@ export function LandingPage({ enterApp, onEnterDemo }) {
                 font: "inherit",
               }}
             >
-              Legal
+              LEGAL
             </button>
             <a href="#contact" style={{ color: "#cfe7ff", textDecoration: "none" }}>
               Contact
@@ -571,9 +571,12 @@ export function LandingPage({ enterApp, onEnterDemo }) {
                 border: "none",
                 color: "#8feaff",
                 cursor: "pointer",
+                fontWeight: 800,
+                letterSpacing: 0.6,
+                textTransform: "uppercase",
               }}
             >
-              Terms of Service
+              TERMS OF SERVICE
             </button>
             <button
               onClick={() => setActiveDocument("privacy")}
@@ -582,9 +585,12 @@ export function LandingPage({ enterApp, onEnterDemo }) {
                 border: "none",
                 color: "#8feaff",
                 cursor: "pointer",
+                fontWeight: 800,
+                letterSpacing: 0.6,
+                textTransform: "uppercase",
               }}
             >
-              Privacy Policy
+              PRIVACY POLICY
             </button>
             <button
               onClick={openCreateAccess}
