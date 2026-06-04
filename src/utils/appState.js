@@ -213,10 +213,12 @@ export function createDemoAppState() {
   };
 }
 
-function buildDefaultAppStateRecord(defaults) {
+function buildDefaultAppStateRecord(defaults, { includeLegacyMetricSnapshots = true } = {}) {
   const defaultUser = {
     ...defaults.users[0],
-    metricSnapshots: readLegacyMetricSnapshots(),
+    metricSnapshots: includeLegacyMetricSnapshots
+      ? readLegacyMetricSnapshots()
+      : defaults.users[0].metricSnapshots,
   };
 
   return {
@@ -230,10 +232,13 @@ function buildDefaultAppStateRecord(defaults) {
   };
 }
 
-function normalizePersistedAppState(rawState) {
+function normalizePersistedAppState(
+  rawState,
+  { includeLegacyMetricSnapshots = true, useSeedData = true } = {}
+) {
   if (Array.isArray(rawState?.users) && rawState.users.length > 0) {
     const users = rawState.users.map((user, index) =>
-      normalizeUserState(user, `User ${index + 1}`, true)
+      normalizeUserState(user, `User ${index + 1}`, useSeedData)
     );
     const activeUserId = users.some((user) => user.id === rawState?.activeUserId)
       ? rawState.activeUserId
@@ -250,10 +255,12 @@ function normalizePersistedAppState(rawState) {
       metricSnapshots:
         rawState?.metricSnapshots && typeof rawState.metricSnapshots === "object"
           ? rawState.metricSnapshots
-          : readLegacyMetricSnapshots(),
+          : includeLegacyMetricSnapshots
+            ? readLegacyMetricSnapshots()
+            : {},
     },
     "User 1",
-    true
+    useSeedData
   );
 
   return {
@@ -291,8 +298,13 @@ export function createEmptyUserProfile({ name = "User", id } = {}) {
   });
 }
 
-export function loadPersistedAppStateRecord(storageKey = APP_STATE_STORAGE_KEY) {
-  const defaults = buildDefaultAppState();
+export function loadPersistedAppStateRecord(storageKey = APP_STATE_STORAGE_KEY, options = {}) {
+  const {
+    fallbackToDefaultStorageKey = true,
+    includeLegacyMetricSnapshots = true,
+    useSeedData = true,
+  } = options;
+  const defaults = useSeedData ? buildDefaultAppState() : createEmptyAppState();
   if (typeof window === "undefined") {
     return {
       state: defaults,
@@ -305,22 +317,27 @@ export function loadPersistedAppStateRecord(storageKey = APP_STATE_STORAGE_KEY) 
   try {
     const stored =
       window.localStorage.getItem(storageKey) ||
-      (storageKey !== APP_STATE_STORAGE_KEY ? window.localStorage.getItem(APP_STATE_STORAGE_KEY) : null);
+      (fallbackToDefaultStorageKey && storageKey !== APP_STATE_STORAGE_KEY
+        ? window.localStorage.getItem(APP_STATE_STORAGE_KEY)
+        : null);
     if (!stored) {
-      return buildDefaultAppStateRecord(defaults);
+      return buildDefaultAppStateRecord(defaults, { includeLegacyMetricSnapshots });
     }
 
     const parsed = JSON.parse(stored);
     const unwrapped = unwrapPersistedAppState(parsed);
 
     return {
-      state: normalizePersistedAppState(unwrapped.rawState),
+      state: normalizePersistedAppState(unwrapped.rawState, {
+        includeLegacyMetricSnapshots,
+        useSeedData,
+      }),
       hasPersistedState: true,
       persistedAt: unwrapped.persistedAt,
       mode: unwrapped.mode,
     };
   } catch {
-    return buildDefaultAppStateRecord(defaults);
+    return buildDefaultAppStateRecord(defaults, { includeLegacyMetricSnapshots });
   }
 }
 

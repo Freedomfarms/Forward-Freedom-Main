@@ -263,6 +263,7 @@ export function OperationsBoard({
   ensurePlanningYear,
   getPlanningAnchorForYear,
   setPlanningAnchorForYear,
+  isDemoMode = false,
 }) {
   const [hoveredCommandMonth, setHoveredCommandMonth] = useState(null);
   const [hoveredCalendarDay, setHoveredCalendarDay] = useState(null);
@@ -297,7 +298,8 @@ export function OperationsBoard({
     transactions: safeTransactions,
     budgetRows: planningBudgetRows,
     incomeStreams: planningIncomeStreams,
-    yearlyOpsSeed: yearlyOpsData,
+    yearlyOpsSeed: isDemoMode ? yearlyOpsData : [],
+    useSeedFallback: isDemoMode,
     year: activePlanningYear,
   });
 
@@ -605,7 +607,7 @@ export function OperationsBoard({
                 <div style={{ color: "white", fontSize: 22, fontWeight: 900 }}>Monthly Scorecard</div>
                 <div style={{ color: "#9fb0c9", marginTop: 6, lineHeight: 1.5 }}>
                   Spending Intelligence-style trend surface for plan vs actual execution.
-                  {!planConfigured ? (
+                  {!planConfigured && isDemoMode ? (
                     <span style={{ display: "block", marginTop: 8, color: "#94a3b8", fontSize: 13 }}>
                       No plan data set for {activePlanningYear}; sample planned/budget/spent values are
                       shown while actual income remains live from transactions.
