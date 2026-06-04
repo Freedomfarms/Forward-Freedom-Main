@@ -4,7 +4,10 @@ import { parseMoney } from "./format.js";
 import { isSpendTransaction, sumSpendTransactions } from "./transactions.js";
 
 const monthNameToBudgetMonth = Object.fromEntries(
-  budgetMonths.map((month) => [budgetMonthNames[month], month])
+  budgetMonths.flatMap((month) => [
+    [budgetMonthNames[month], month],
+    [month, month],
+  ])
 );
 
 export function parseBudgetReviewDate(value) {
