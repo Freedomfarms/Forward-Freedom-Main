@@ -2014,6 +2014,7 @@ function ForwardFreedomDashboard({
               currentPlanBaseData={baseCurrentPlanData}
               getPlanningAnchorForYear={getPlanningAnchorForYear}
               setPlanningAnchorForYear={setPlanningAnchorForYear}
+              isDemoMode={isDemoMode}
             />
           ) : activeTab === APP_TABS.INCOME_HUB ? (
             <IncomeHub

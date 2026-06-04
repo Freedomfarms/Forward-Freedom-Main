@@ -10,11 +10,10 @@ function finiteMoney(value) {
   return Number.isFinite(amount) ? amount : 0;
 }
 
-/** Prefer live transaction totals; fall back to demo seed when the month has no matches. */
-function resolveActualValue(liveValue, seedValue) {
+function resolveActualValue(liveValue, seedValue, useSeedFallback) {
   const live = finiteMoney(liveValue);
   const seed = finiteMoney(seedValue);
-  return live > 0 ? live : seed;
+  return live > 0 ? live : useSeedFallback ? seed : 0;
 }
 
 export function buildYearlyPlanningMetrics({
@@ -22,6 +21,7 @@ export function buildYearlyPlanningMetrics({
   budgetRows = [],
   incomeStreams = [],
   yearlyOpsSeed = [],
+  useSeedFallback = false,
   year,
 }) {
   const safeTransactions = Array.isArray(transactions) ? transactions : [];
@@ -54,20 +54,34 @@ export function buildYearlyPlanningMetrics({
 
     const plannedIncome = planConfigured
       ? finiteMoney(plannedFromStreams)
-      : finiteMoney(seedMonth.income);
-    const budget = planConfigured ? finiteMoney(budgetFromRows) : finiteMoney(seedMonth.budget);
+      : useSeedFallback
+        ? finiteMoney(seedMonth.income)
+        : 0;
+    const budget = planConfigured
+      ? finiteMoney(budgetFromRows)
+      : useSeedFallback
+        ? finiteMoney(seedMonth.budget)
+        : 0;
     const spent = planConfigured
-      ? resolveActualValue(spentLive, seedMonth.spent)
-      : finiteMoney(seedMonth.spent);
+      ? resolveActualValue(spentLive, seedMonth.spent, useSeedFallback)
+      : useSeedFallback
+        ? finiteMoney(seedMonth.spent)
+        : 0;
     const actualIncome = planConfigured
-      ? resolveActualValue(actualIncomeLive, seedActualIncome)
-      : finiteMoney(seedActualIncome);
+      ? resolveActualValue(actualIncomeLive, seedActualIncome, useSeedFallback)
+      : useSeedFallback
+        ? finiteMoney(seedActualIncome)
+        : 0;
     const oneTimeIncome = planConfigured
       ? finiteMoney(oneTimeFromStreams)
-      : finiteMoney(seedMonth.oneTimeIncome);
+      : useSeedFallback
+        ? finiteMoney(seedMonth.oneTimeIncome)
+        : 0;
     const recurringIncome = planConfigured
       ? plannedIncome - oneTimeIncome
-      : finiteMoney(seedMonth.recurringIncome);
+      : useSeedFallback
+        ? finiteMoney(seedMonth.recurringIncome)
+        : 0;
 
     return {
       ...seedMonth,

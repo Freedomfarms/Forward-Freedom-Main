@@ -93,7 +93,11 @@ function AuthenticatedWorkspaceApp({
 
   useEffect(() => {
     let cancelled = false;
-    const cachedWorkspaceRecord = loadPersistedAppStateRecord(storageKey);
+    const cachedWorkspaceRecord = loadPersistedAppStateRecord(storageKey, {
+      fallbackToDefaultStorageKey: false,
+      includeLegacyMetricSnapshots: false,
+      useSeedData: false,
+    });
     const emptyWorkspaceState = createEmptyAppState({
       primaryUserName: user.displayName || user.email || "User 1",
     });
