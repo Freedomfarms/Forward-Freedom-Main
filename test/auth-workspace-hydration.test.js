@@ -1,13 +1,20 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createServer } from "vite";
 
-import {
-  APP_STATE_STORAGE_KEY,
-  LEGACY_METRIC_SNAPSHOT_STORAGE_KEY,
-  buildScopedAppStateStorageKey,
-  loadPersistedAppStateRecord,
-  persistAppState,
-} from "../src/utils/appState.js";
+async function loadAppStateModule() {
+  const server = await createServer({
+    appType: "custom",
+    logLevel: "silent",
+    server: { hmr: false, middlewareMode: true },
+  });
+
+  try {
+    return await server.ssrLoadModule("/src/utils/appState.js");
+  } finally {
+    await server.close();
+  }
+}
 
 function installLocalStorage() {
   const store = new Map();
@@ -26,7 +33,13 @@ function installLocalStorage() {
   return store;
 }
 
-test("scoped authenticated workspace does not hydrate unscoped demo cache", () => {
+test("scoped authenticated workspace does not hydrate unscoped demo cache", async () => {
+  const {
+    APP_STATE_STORAGE_KEY,
+    buildScopedAppStateStorageKey,
+    loadPersistedAppStateRecord,
+    persistAppState,
+  } = await loadAppStateModule();
   installLocalStorage();
   persistAppState(
     {
@@ -59,7 +72,9 @@ test("scoped authenticated workspace does not hydrate unscoped demo cache", () =
   assert.deepEqual(user.metricSnapshots, {});
 });
 
-test("authenticated normalization does not fill missing fields with demo data", () => {
+test("authenticated normalization does not fill missing fields with demo data", async () => {
+  const { buildScopedAppStateStorageKey, loadPersistedAppStateRecord, persistAppState } =
+    await loadAppStateModule();
   installLocalStorage();
   const scopedKey = buildScopedAppStateStorageKey("auth-user");
   persistAppState(
@@ -89,7 +104,12 @@ test("authenticated normalization does not fill missing fields with demo data", 
   assert.deepEqual(user.metricSnapshots, {});
 });
 
-test("authenticated legacy snapshots do not inherit legacy metric chart data", () => {
+test("authenticated legacy snapshots do not inherit legacy metric chart data", async () => {
+  const {
+    LEGACY_METRIC_SNAPSHOT_STORAGE_KEY,
+    buildScopedAppStateStorageKey,
+    loadPersistedAppStateRecord,
+  } = await loadAppStateModule();
   installLocalStorage();
   const scopedKey = buildScopedAppStateStorageKey("auth-user");
   window.localStorage.setItem(

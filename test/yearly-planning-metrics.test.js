@@ -1,7 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-
-import { buildYearlyPlanningMetrics } from "../src/utils/yearlyPlanningMetrics.js";
+import { createServer } from "vite";
 
 const seed = [
   {
@@ -30,7 +29,22 @@ const incomeStreams = [
   },
 ];
 
-test("yearly planning metrics do not show demo actuals without live transactions", () => {
+async function loadMetricsModule() {
+  const server = await createServer({
+    appType: "custom",
+    logLevel: "silent",
+    server: { hmr: false, middlewareMode: true },
+  });
+
+  try {
+    return await server.ssrLoadModule("/src/utils/yearlyPlanningMetrics.js");
+  } finally {
+    await server.close();
+  }
+}
+
+test("yearly planning metrics do not show demo actuals without live transactions", async () => {
+  const { buildYearlyPlanningMetrics } = await loadMetricsModule();
   const [january] = buildYearlyPlanningMetrics({
     transactions: [],
     budgetRows,
@@ -45,7 +59,8 @@ test("yearly planning metrics do not show demo actuals without live transactions
   assert.equal(january.spent, 0);
 });
 
-test("yearly planning metrics can explicitly use demo fallback actuals", () => {
+test("yearly planning metrics can explicitly use demo fallback actuals", async () => {
+  const { buildYearlyPlanningMetrics } = await loadMetricsModule();
   const [january] = buildYearlyPlanningMetrics({
     transactions: [],
     budgetRows,
