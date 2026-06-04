@@ -263,54 +263,54 @@ async function persistPlaidAccounts({
   const accountLookup = new Map();
 
   for (const account of mappedAccounts) {
-    const accountRecord = await prisma.account.upsert({
-      where: {
-        plaidAccountId: account.plaidAccountId,
+    const accountFields = {
+      workspaceUserId,
+      plaidItemRecordId,
+      name: account.name,
+      type: account.type,
+      institution: account.institution,
+      status: account.status,
+      balance: String(Number(account.balance || 0).toFixed(2)),
+      syncSource: account.syncSource,
+      plaidType: account.plaidType || null,
+      plaidSubtype: account.plaidSubtype || null,
+      plaidMask: null,
+      lastSyncedAt: account.plaidLastSyncAt ? new Date(account.plaidLastSyncAt) : new Date(),
+      metadata: {
+        loanCategory: account.loanCategory || "",
+        interestRate: account.interestRate || "",
+        monthlyPayment: account.monthlyPayment || "",
+        plaidItemId: account.plaidItemId || "",
       },
-      update: {
-        userId,
-        workspaceUserId,
-        plaidItemRecordId,
-        name: account.name,
-        type: account.type,
-        institution: account.institution,
-        status: account.status,
-        balance: String(Number(account.balance || 0).toFixed(2)),
-        syncSource: account.syncSource,
-        plaidType: account.plaidType || null,
-        plaidSubtype: account.plaidSubtype || null,
-        plaidMask: null,
-        lastSyncedAt: account.plaidLastSyncAt ? new Date(account.plaidLastSyncAt) : new Date(),
-        metadata: {
-          loanCategory: account.loanCategory || "",
-          interestRate: account.interestRate || "",
-          monthlyPayment: account.monthlyPayment || "",
-          plaidItemId: account.plaidItemId || "",
-        },
-      },
-      create: {
-        userId,
-        workspaceUserId,
-        plaidItemRecordId,
-        plaidAccountId: account.plaidAccountId,
-        name: account.name,
-        type: account.type,
-        institution: account.institution,
-        status: account.status,
-        balance: String(Number(account.balance || 0).toFixed(2)),
-        syncSource: account.syncSource,
-        plaidType: account.plaidType || null,
-        plaidSubtype: account.plaidSubtype || null,
-        plaidMask: null,
-        lastSyncedAt: account.plaidLastSyncAt ? new Date(account.plaidLastSyncAt) : new Date(),
-        metadata: {
-          loanCategory: account.loanCategory || "",
-          interestRate: account.interestRate || "",
-          monthlyPayment: account.monthlyPayment || "",
-          plaidItemId: account.plaidItemId || "",
-        },
-      },
+    };
+    const existingAccount = await prisma.account.findUnique({
+      where: { plaidAccountId: account.plaidAccountId },
     });
+
+    let accountRecord;
+    if (existingAccount) {
+      if (existingAccount.userId !== userId) {
+        logPlaidServerEvent("warn", "account_ownership_conflict", {
+          userId,
+          plaidAccountId: account.plaidAccountId,
+          existingUserId: existingAccount.userId,
+        });
+        continue;
+      }
+
+      accountRecord = await prisma.account.update({
+        where: { id: existingAccount.id, userId },
+        data: accountFields,
+      });
+    } else {
+      accountRecord = await prisma.account.create({
+        data: {
+          userId,
+          plaidAccountId: account.plaidAccountId,
+          ...accountFields,
+        },
+      });
+    }
 
     accountLookup.set(account.plaidAccountId, accountRecord);
   }
@@ -341,39 +341,46 @@ async function persistPlaidTransactions({
 
     if (!mappedTransaction) continue;
 
-    await prisma.transaction.upsert({
-      where: {
-        plaidTransactionId: transaction.transaction_id,
-      },
-      update: {
+    const transactionFields = {
+      workspaceUserId,
+      plaidItemRecordId,
+      accountId: accountRecord?.id || null,
+      syncSource: "Plaid",
+      merchant: mappedTransaction.merchant,
+      category: mappedTransaction.category,
+      amount: String(Number(mappedTransaction.amount || 0).toFixed(2)),
+      postedAt: toPlaidDate(transaction.date),
+      authorizedAt: toPlaidDate(transaction.authorized_date),
+      pending: Boolean(transaction.pending),
+      raw: null,
+    };
+    const existingTransaction = await prisma.transaction.findUnique({
+      where: { plaidTransactionId: transaction.transaction_id },
+    });
+
+    if (existingTransaction) {
+      if (existingTransaction.userId !== userId) {
+        logPlaidServerEvent("warn", "transaction_ownership_conflict", {
+          userId,
+          plaidTransactionId: transaction.transaction_id,
+          existingUserId: existingTransaction.userId,
+        });
+        continue;
+      }
+
+      await prisma.transaction.update({
+        where: { id: existingTransaction.id, userId },
+        data: transactionFields,
+      });
+      continue;
+    }
+
+    await prisma.transaction.create({
+      data: {
         userId,
-        workspaceUserId,
-        plaidItemRecordId,
-        accountId: accountRecord?.id || null,
-        syncSource: "Plaid",
-        merchant: mappedTransaction.merchant,
-        category: mappedTransaction.category,
-        amount: String(Number(mappedTransaction.amount || 0).toFixed(2)),
-        postedAt: toPlaidDate(transaction.date),
-        authorizedAt: toPlaidDate(transaction.authorized_date),
-        pending: Boolean(transaction.pending),
-        raw: null,
-      },
-      create: {
-        userId,
-        workspaceUserId,
-        plaidItemRecordId,
-        accountId: accountRecord?.id || null,
         plaidTransactionId: transaction.transaction_id,
         source: "PLAID",
-        syncSource: "Plaid",
-        merchant: mappedTransaction.merchant,
-        category: mappedTransaction.category,
-        amount: String(Number(mappedTransaction.amount || 0).toFixed(2)),
-        postedAt: toPlaidDate(transaction.date),
-        authorizedAt: toPlaidDate(transaction.authorized_date),
-        pending: Boolean(transaction.pending),
-        raw: null,
+        ...transactionFields,
       },
     });
   }
@@ -522,7 +529,7 @@ async function syncPlaidWorkspace({ prisma, plaidClient, userId, workspaceUserId
         message: details.message,
       });
       await prisma.plaidItem.update({
-        where: { id: item.id },
+        where: { id: item.id, userId },
         data: {
           status: "REQUIRES_ATTENTION",
           lastSyncError: details.message,
@@ -555,7 +562,7 @@ async function syncPlaidWorkspace({ prisma, plaidClient, userId, workspaceUserId
           message: details.message,
         });
         await prisma.plaidItem.update({
-          where: { id: item.id },
+          where: { id: item.id, userId },
           data: {
             status: "REQUIRES_ATTENTION",
             lastSyncError: details.message,
@@ -585,7 +592,7 @@ async function syncPlaidWorkspace({ prisma, plaidClient, userId, workspaceUserId
           message: details.message,
         });
         await prisma.plaidItem.update({
-          where: { id: item.id },
+          where: { id: item.id, userId },
           data: {
             status: "REQUIRES_ATTENTION",
             lastSyncError: details.message,
@@ -620,7 +627,7 @@ async function syncPlaidWorkspace({ prisma, plaidClient, userId, workspaceUserId
     });
 
     await prisma.plaidItem.update({
-      where: { id: item.id },
+      where: { id: item.id, userId },
       data: {
         cursor: transactionsCursor,
         status: "CONNECTED",
@@ -676,6 +683,7 @@ async function deletePlaidItems({ prisma, userId, plaidItems }) {
         id: {
           in: plaidItemIds,
         },
+        userId,
       },
     });
   }
@@ -851,44 +859,36 @@ export async function handleExchangePlaidPublicToken(request, response) {
         .json(buildErrorResponse("This institution is already linked to a different account."));
     }
 
-    await prisma.plaidItem.upsert({
-      where: {
-        itemId,
+    const plaidItemFields = {
+      workspaceUserId,
+      institutionId,
+      institutionName,
+      environment: getPlaidConfig().environment,
+      accessTokenCiphertext: encryptSensitiveValue(accessToken),
+      cursor: null,
+      status: "CONNECTED",
+      products: {
+        products: itemResponse.data.item.available_products || [],
+        billedProducts: itemResponse.data.item.billed_products || [],
       },
-      update: {
-        userId: decodedToken.uid,
-        workspaceUserId,
-        institutionId,
-        institutionName,
-        environment: getPlaidConfig().environment,
-        accessTokenCiphertext: encryptSensitiveValue(accessToken),
-        cursor: null,
-        status: "CONNECTED",
-        products: {
-          products: itemResponse.data.item.available_products || [],
-          billedProducts: itemResponse.data.item.billed_products || [],
+      lastSyncAt: null,
+      lastSyncError: "",
+    };
+
+    if (existingItem) {
+      await prisma.plaidItem.update({
+        where: { id: existingItem.id, userId: decodedToken.uid },
+        data: plaidItemFields,
+      });
+    } else {
+      await prisma.plaidItem.create({
+        data: {
+          userId: decodedToken.uid,
+          itemId,
+          ...plaidItemFields,
         },
-        lastSyncAt: null,
-        lastSyncError: "",
-      },
-      create: {
-        userId: decodedToken.uid,
-        workspaceUserId,
-        itemId,
-        institutionId,
-        institutionName,
-        environment: getPlaidConfig().environment,
-        accessTokenCiphertext: encryptSensitiveValue(accessToken),
-        cursor: null,
-        status: "CONNECTED",
-        products: {
-          products: itemResponse.data.item.available_products || [],
-          billedProducts: itemResponse.data.item.billed_products || [],
-        },
-        lastSyncAt: null,
-        lastSyncError: "",
-      },
-    });
+      });
+    }
 
     const syncPayload = await syncPlaidWorkspace({
       prisma,
