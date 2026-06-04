@@ -18,7 +18,6 @@ import {
   isSensitiveEncryptionConfigured,
 } from "../security/encryption.js";
 import { authenticateRequest, authenticateVerifiedRequest, AuthError } from "../auth/verifyAuth.js";
-import { respondInternalError } from "../http/errorHelpers.js";
 
 function buildErrorResponse(message, extra = {}) {
   return {
@@ -216,7 +215,7 @@ function getPrismaOrThrow() {
 
 function assertPlaidRuntimeReady() {
   if (!isPlaidConfigured()) {
-    const error = new Error("Plaid is not configured yet.");
+    const error = new Error("Plaid is not configured yet. Add PLAID_CLIENT_ID and PLAID_SECRET.");
     error.status = 503;
     throw error;
   }
@@ -639,6 +638,54 @@ async function syncPlaidWorkspace({ prisma, plaidClient, userId, workspaceUserId
   return buildWorkspaceSyncPayload(prisma, userId, workspaceUserId);
 }
 
+export async function syncPlaidWorkspaceForWebhookItem(itemId) {
+  if (!itemId) {
+    return { synced: false, reason: "missing_item_id" };
+  }
+
+  if (!isDatabaseConfigured()) {
+    return { synced: false, reason: "database_not_configured" };
+  }
+
+  if (!isPlaidConfigured() || !isSensitiveEncryptionConfigured()) {
+    return { synced: false, reason: "plaid_runtime_not_ready" };
+  }
+
+  const prisma = getPrismaClient();
+  if (!prisma) {
+    return { synced: false, reason: "database_client_unavailable" };
+  }
+
+  const item = await prisma.plaidItem.findUnique({
+    where: { itemId },
+    select: {
+      itemId: true,
+      userId: true,
+      workspaceUserId: true,
+    },
+  });
+
+  if (!item) {
+    return { synced: false, reason: "item_not_found" };
+  }
+
+  const plaidClient = getPlaidClient();
+  await syncPlaidWorkspace({
+    prisma,
+    plaidClient,
+    userId: item.userId,
+    workspaceUserId: item.workspaceUserId,
+    restrictToItemId: item.itemId,
+  });
+
+  return {
+    synced: true,
+    itemId: item.itemId,
+    userId: item.userId,
+    workspaceUserId: item.workspaceUserId,
+  };
+}
+
 async function deletePlaidItems({ prisma, userId, plaidItems }) {
   const plaidClient =
     isPlaidConfigured() && isSensitiveEncryptionConfigured() ? getPlaidClient() : null;
@@ -687,19 +734,20 @@ export async function handlePlaidStatus(request, response) {
     await authenticateRequest(request);
     const plaidConfig = getPlaidConfig();
     return response.status(200).json({
-      configured: isPlaidConfigured() && isSensitiveEncryptionConfigured(),
-      environment: plaidConfig.environment,
-      products: plaidConfig.products,
-      optionalProducts: plaidConfig.optionalProducts,
-      capabilities: plaidConfig.capabilities,
-      notes: plaidConfig.notes,
+      ...plaidConfig,
+      capabilities: {
+        ...plaidConfig.capabilities,
+        authenticatedRoutes: true,
+        secureTokenStorage: isSensitiveEncryptionConfigured(),
+        databasePersistence: isDatabaseConfigured(),
+      },
     });
   } catch (error) {
     if (error instanceof AuthError) {
       return response.status(error.status).json(buildErrorResponse(error.message));
     }
 
-    return respondInternalError(response, "plaid/status", error, "Unable to load Plaid status.");
+    return response.status(500).json(buildErrorResponse("Unable to load Plaid status."));
   }
 }
 
@@ -977,7 +1025,7 @@ export async function handleDeletePlaidWorkspace(request, response) {
 
     return response
       .status(error.status || 500)
-      .json(buildErrorResponse("Unable to delete Plaid data for this workspace."));
+      .json(buildErrorResponse(error?.message || "Unable to delete Plaid data for this workspace."));
   }
 }
 
@@ -1028,7 +1076,9 @@ export async function handleDeletePlaidItem(request, response) {
     return response
       .status(error.status || 500)
       .json(
-buildErrorResponse("Unable to remove this linked Plaid institution right now.")
+        buildErrorResponse(
+          error?.message || "Unable to remove this linked Plaid institution right now."
+        )
       );
   }
 }
