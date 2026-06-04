@@ -146,7 +146,7 @@ export function LandingPage({ enterApp, onEnterDemo }) {
                 font: "inherit",
               }}
             >
-              Legal
+              LEGAL
             </button>
             <a href="#contact" style={{ color: "#cfe7ff", textDecoration: "none" }}>
               Contact
