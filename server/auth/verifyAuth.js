@@ -1,4 +1,5 @@
 import { getFirebaseAdminAuth, isFirebaseAdminConfigured } from "./firebaseAdmin.js";
+import { getPrismaClient, isDatabaseConfigured } from "../db/prisma.js";
 
 export class AuthError extends Error {
   constructor(message, status = 401) {
@@ -31,8 +32,26 @@ export async function authenticateRequest(request) {
   }
 
   try {
-    return await adminAuth.verifyIdToken(token);
+    const decodedToken = await adminAuth.verifyIdToken(token);
+
+    if (isDatabaseConfigured()) {
+      const prisma = getPrismaClient();
+      if (prisma) {
+        const userRecord = await prisma.user.findUnique({
+          where: { id: decodedToken.uid },
+          select: { isDisabled: true },
+        });
+        if (userRecord?.isDisabled) {
+          throw new AuthError("This account has been disabled.", 403);
+        }
+      }
+    }
+
+    return decodedToken;
   } catch (error) {
+    if (error instanceof AuthError) {
+      throw error;
+    }
     throw new AuthError(error?.message || "Unable to verify the provided auth token.", 401);
   }
 }

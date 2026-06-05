@@ -63,3 +63,26 @@ export function sanitizeWorkspaceStateForPersistence(state) {
     users,
   };
 }
+
+export function sanitizeWorkspaceStateForBrowserCache(state) {
+  const sanitized = sanitizeWorkspaceStateForPersistence(state);
+  if (!sanitized || typeof sanitized !== "object" || Array.isArray(sanitized)) {
+    return sanitized;
+  }
+
+  if (!Array.isArray(sanitized.users)) {
+    return sanitized;
+  }
+
+  return {
+    ...sanitized,
+    users: sanitized.users.map((user) => ({
+      ...user,
+      transactions: [],
+      accounts: Array.isArray(user?.accounts)
+        ? user.accounts.filter((account) => account?.syncSource !== "Plaid")
+        : [],
+      plaidItems: [],
+    })),
+  };
+}

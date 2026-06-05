@@ -10,7 +10,10 @@ import {
   loadPersistedAppStateRecord,
   persistAppState,
 } from "./utils/appState.js";
-import { sanitizeWorkspaceStateForPersistence } from "./utils/workspacePersistence.js";
+import {
+  sanitizeWorkspaceStateForBrowserCache,
+  sanitizeWorkspaceStateForPersistence,
+} from "./utils/workspacePersistence.js";
 import {
   fetchAuthenticatedUserProfile,
   fetchWorkspaceSnapshot,
@@ -80,7 +83,7 @@ function AuthenticatedWorkspaceApp({
   const cacheWorkspaceState = useCallback(
     (state, cacheState = "browser-cache") => {
       if (!state) return;
-      const sanitizedState = sanitizeWorkspaceStateForPersistence(state);
+      const sanitizedState = sanitizeWorkspaceStateForBrowserCache(state);
 
       persistAppState(sanitizedState, storageKey, {
         mode: "cache",

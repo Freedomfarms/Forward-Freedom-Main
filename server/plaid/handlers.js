@@ -645,6 +645,54 @@ async function syncPlaidWorkspace({ prisma, plaidClient, userId, workspaceUserId
   return buildWorkspaceSyncPayload(prisma, userId, workspaceUserId);
 }
 
+export async function syncPlaidWorkspaceForWebhookItem(itemId) {
+  if (!itemId) {
+    return { synced: false, reason: "missing_item_id" };
+  }
+
+  if (!isDatabaseConfigured()) {
+    return { synced: false, reason: "database_not_configured" };
+  }
+
+  if (!isPlaidConfigured() || !isSensitiveEncryptionConfigured()) {
+    return { synced: false, reason: "plaid_runtime_not_ready" };
+  }
+
+  const prisma = getPrismaClient();
+  if (!prisma) {
+    return { synced: false, reason: "database_client_unavailable" };
+  }
+
+  const item = await prisma.plaidItem.findUnique({
+    where: { itemId },
+    select: {
+      itemId: true,
+      userId: true,
+      workspaceUserId: true,
+    },
+  });
+
+  if (!item) {
+    return { synced: false, reason: "item_not_found" };
+  }
+
+  const plaidClient = getPlaidClient();
+  await syncPlaidWorkspace({
+    prisma,
+    plaidClient,
+    userId: item.userId,
+    workspaceUserId: item.workspaceUserId,
+    restrictToItemId: item.itemId,
+  });
+
+  return {
+    synced: true,
+    itemId: item.itemId,
+    userId: item.userId,
+    workspaceUserId: item.workspaceUserId,
+  };
+}
+
 async function deletePlaidItems({ prisma, userId, plaidItems }) {
   const plaidClient =
     isPlaidConfigured() && isSensitiveEncryptionConfigured() ? getPlaidClient() : null;

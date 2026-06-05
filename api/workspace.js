@@ -1,5 +1,12 @@
 import { authenticateRequest, AuthError } from "../server/auth/verifyAuth.js";
 import { getPrismaClient, isDatabaseConfigured } from "../server/db/prisma.js";
+import { respondInternalError } from "../server/http/errorHelpers.js";
+import {
+  enforceRateLimit,
+  generalApiRateLimit,
+  workspaceWriteRateLimit,
+} from "../server/http/rateLimit.js";
+import { applySecurityHeaders } from "../server/http/responseHelpers.js";
 import { sanitizeWorkspaceStateForPersistence } from "../src/utils/workspacePersistence.js";
 
 async function readJsonBody(request) {
@@ -26,18 +33,24 @@ function buildErrorResponse(message) {
 }
 
 export default async function handler(request, response) {
+  applySecurityHeaders(response);
+
   if (!["GET", "PUT"].includes(request.method || "")) {
     return response.status(405).json(buildErrorResponse("Method not allowed."));
   }
 
-  if (!isDatabaseConfigured()) {
-    return response
-      .status(503)
-      .json(buildErrorResponse("Database is not configured for workspace persistence yet."));
-  }
+  const rateLimiter = request.method === "PUT" ? workspaceWriteRateLimit : generalApiRateLimit;
+  if (!(await enforceRateLimit(request, response, rateLimiter))) return;
 
   try {
     const decodedToken = await authenticateRequest(request);
+
+    if (!isDatabaseConfigured()) {
+      return response
+        .status(503)
+        .json(buildErrorResponse("Database is not configured for workspace persistence yet."));
+    }
+
     const prisma = getPrismaClient();
     if (!prisma) {
       return response
@@ -100,10 +113,11 @@ export default async function handler(request, response) {
       return response.status(error.status).json(buildErrorResponse(error.message));
     }
 
-    return response
-      .status(500)
-      .json(
-        buildErrorResponse(error?.message || "Unable to read or update the workspace snapshot.")
-      );
+    return respondInternalError(
+      response,
+      "api/workspace",
+      error,
+      "Unable to read or update the workspace snapshot."
+    );
   }
 }
