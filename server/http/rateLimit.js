@@ -1,4 +1,31 @@
-import { rateLimit } from "express-rate-limit";
+import { ipKeyGenerator, rateLimit } from "express-rate-limit";
+
+function readHeader(request, name) {
+  const headers = request.headers || {};
+  const target = name.toLowerCase();
+
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() === target) {
+      return Array.isArray(value) ? value[0] : value;
+    }
+  }
+
+  return undefined;
+}
+
+function getClientIp(request) {
+  const forwarded = readHeader(request, "x-forwarded-for");
+  if (typeof forwarded === "string" && forwarded.trim()) {
+    return forwarded.split(",")[0].trim();
+  }
+
+  const realIp = readHeader(request, "x-real-ip");
+  if (typeof realIp === "string" && realIp.trim()) {
+    return realIp.trim();
+  }
+
+  return request.ip || request.socket?.remoteAddress || "127.0.0.1";
+}
 
 function runRateLimit(limiter, request, response) {
   return new Promise((resolve) => {
@@ -15,6 +42,12 @@ export async function enforceRateLimit(request, response, limiter) {
 const baseRateLimitOptions = {
   standardHeaders: true,
   legacyHeaders: false,
+  validate: {
+    xForwardedForHeader: false,
+    trustProxy: false,
+    forwardedHeader: false,
+  },
+  keyGenerator: (request) => ipKeyGenerator(getClientIp(request)),
   handler: (request, response) => {
     response.status(429).json({
       error: true,
