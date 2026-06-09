@@ -1060,32 +1060,10 @@ function ForwardFreedomDashboard({
     };
   }, [activeUser?.id, plaidItems.length, plaidStatus.configured, syncLinkedPlaidAccounts]);
 
-  useEffect(() => {
-    if (!plaidStatus.configured || !activeUser?.id || plaidItems.length === 0) return;
-
-    const timeoutId = window.setTimeout(() => {
-      syncLinkedPlaidAccounts(activeUser.id, { silent: true });
-    }, 0);
-
-    return () => {
-      window.clearTimeout(timeoutId);
-    };
-  }, [activeUser?.id, plaidItems.length, plaidStatus.configured, syncLinkedPlaidAccounts]);
-
-  useEffect(() => {
-    if (!plaidStatus.configured || !activeUser?.id || plaidItems.length === 0) return;
-
-    const intervalId = window.setInterval(
-      () => {
-        void syncLinkedPlaidAccounts(activeUser.id, { silent: true });
-      },
-      30 * 60 * 1000
-    );
-
-    return () => {
-      window.clearInterval(intervalId);
-    };
-  }, [activeUser?.id, plaidItems.length, plaidStatus.configured, syncLinkedPlaidAccounts]);
+  // Plaid resync is on-demand only (the Accounts "Refresh" button) to avoid
+  // billing on every login and on a recurring timer. The empty-state recovery
+  // sync above still runs once when no accounts are loaded yet, and inbound
+  // Plaid webhooks continue to refresh data when the bank reports changes.
 
   const resetPlaidLinkState = () => {
     setPlaidShouldOpen(false);
@@ -1867,6 +1845,7 @@ function ForwardFreedomDashboard({
     lastSyncAt: lastPlaidSyncAt,
     connectedItemCount: plaidItems.length,
     items: plaidItems,
+    onRefresh: () => syncLinkedPlaidAccounts(activeUser?.id),
   };
   const householdProfilesProps = {
     users,
