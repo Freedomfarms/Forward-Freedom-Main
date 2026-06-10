@@ -70,6 +70,294 @@ function buildScorecardYLabels(max, min, count = 5) {
   });
 }
 
+function ScorecardChart({
+  chartId,
+  title,
+  note,
+  legend,
+  months,
+  yLabels,
+  lines,
+  dotPoints,
+  dotColor,
+  hovered,
+  setHovered,
+  trueCashValues,
+  adjustmentValues,
+  projectedTrueCashValues,
+}) {
+  const focusX = hovered ? SCORECARD_MONTH_X[hovered.data.month] : null;
+
+  return (
+    <section
+      style={{
+        ...styles.panel,
+        padding: 22,
+        marginBottom: 18,
+        position: "relative",
+        overflow: "visible",
+        zIndex: 2,
+      }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          background: "radial-gradient(circle at top right, rgba(0,216,255,.13), transparent 36%)",
+        }}
+      />
+      <div style={{ position: "relative", display: "grid", gap: 22 }}>
+        <div>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: 18,
+              flexWrap: "wrap",
+              marginBottom: 18,
+            }}
+          >
+            <div>
+              <div style={{ color: "white", fontSize: 22, fontWeight: 900 }}>{title}</div>
+              <div style={{ color: "#9fb0c9", marginTop: 6, lineHeight: 1.5 }}>{note}</div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+              {legend.map(([label, color, type, glow]) => (
+                <div key={label} style={{ display: "flex", alignItems: "center", gap: 8, color: "#9fb0c9" }}>
+                  <div
+                    style={{
+                      width: 24,
+                      borderTop: `2px ${type === "dashed" ? "dashed" : "solid"} ${color}`,
+                      boxShadow: `0 0 10px ${glow}`,
+                    }}
+                  />
+                  {label}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div
+            onMouseLeave={() => setHovered(null)}
+            style={{
+              position: "relative",
+              borderRadius: 14,
+              border: "1px solid rgba(0,216,255,.2)",
+              background: "rgba(2,16,34,.7)",
+              boxShadow: "inset 0 0 28px rgba(0,136,255,.08)",
+              padding: "18px 16px 6px",
+            }}
+          >
+            {hovered ? (
+              <div
+                style={{
+                  position: "absolute",
+                  top: 14,
+                  left: `${Math.min(
+                    88,
+                    Math.max(14, ((hovered.index + 0.5) / months.length) * 100)
+                  )}%`,
+                  transform: "translateX(-50%)",
+                  zIndex: 6,
+                  minWidth: 220,
+                  border: "1px solid rgba(0,216,255,.3)",
+                  borderRadius: 10,
+                  background: "rgba(4,16,31,0.96)",
+                  boxShadow: "0 14px 30px rgba(0,0,0,0.45)",
+                  padding: "12px 14px",
+                  pointerEvents: "none",
+                  backdropFilter: "blur(6px)",
+                }}
+              >
+                <div
+                  style={{
+                    color: "#e2f4ff",
+                    fontSize: 13,
+                    marginBottom: 8,
+                    fontWeight: 800,
+                    borderBottom: "1px solid rgba(0,216,255,.16)",
+                    paddingBottom: 7,
+                  }}
+                >
+                  {hovered.data.month}
+                </div>
+                {[
+                  ["Planned income", hovered.data.plannedIncome ?? hovered.data.income, "#5eead4"],
+                  ["Actual income", hovered.data.actualIncome, "#00f59b"],
+                  ["Budget", hovered.data.budget, "#fdba74"],
+                  ["Spent", hovered.data.spent, "#ff7a45"],
+                  ["True Cash", trueCashValues[hovered.index], "#38bdf8"],
+                  [
+                    "Profit",
+                    (hovered.data.plannedIncome ?? hovered.data.income) - hovered.data.budget,
+                    (hovered.data.plannedIncome ?? hovered.data.income) - hovered.data.budget >= 0
+                      ? "#4ade80"
+                      : "#f87171",
+                  ],
+                  [
+                    "Adjustments",
+                    adjustmentValues[hovered.index],
+                    adjustmentValues[hovered.index] >= 0 ? "#fbbf24" : "#f97316",
+                  ],
+                  ["Projected Cash", projectedTrueCashValues[hovered.index], "#fbbf24"],
+                ].map(([label, value, color]) => (
+                  <div
+                    key={label}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      gap: 16,
+                      color: "#cbd5e1",
+                      fontSize: 12,
+                      fontWeight: 700,
+                      marginTop: 6,
+                    }}
+                  >
+                    <span style={{ color: "#8ea8ca" }}>{label}</span>
+                    <span style={{ color }}>
+                      {(label === "Profit" || label === "Adjustments") && value >= 0 ? "+" : ""}
+                      {(label === "Projected Cash" || label === "True Cash") && value === null
+                        ? "—"
+                        : label === "Adjustments"
+                          ? formatAdjustmentValue(value)
+                          : label === "Projected Cash" || label === "True Cash"
+                            ? wholeDollars(value)
+                            : money(value)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            <div style={{ display: "flex", gap: 0 }}>
+              <div
+                style={{
+                  width: 72,
+                  flexShrink: 0,
+                  display: "flex",
+                  flexDirection: "column",
+                  justifyContent: "space-between",
+                  paddingBottom: 44,
+                }}
+              >
+                {yLabels.map((label) => (
+                  <span key={label} style={{ color: "#5e7da0", fontSize: 11, textAlign: "right" }}>
+                    {label}
+                  </span>
+                ))}
+              </div>
+
+              <div style={{ flex: 1, position: "relative" }}>
+                <svg viewBox={`0 0 ${SCORECARD_CHART_W} ${SCORECARD_CHART_H + 40}`} style={{ width: "100%" }}>
+                  <defs>
+                    <linearGradient id={`${chartId}AreaGradient`} x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={dotColor} stopOpacity="0.4" />
+                      <stop offset="100%" stopColor={dotColor} stopOpacity="0.06" />
+                    </linearGradient>
+                  </defs>
+
+                  {yLabels.map((_, index) => {
+                    const y = (index / (yLabels.length - 1)) * SCORECARD_CHART_H;
+                    return (
+                      <line
+                        key={index}
+                        x1={0}
+                        y1={y}
+                        x2={SCORECARD_CHART_W}
+                        y2={y}
+                        stroke="rgba(0,136,255,.1)"
+                        strokeWidth={1}
+                      />
+                    );
+                  })}
+
+                  {months.map((entry) => (
+                    <line
+                      key={`v-${entry.month.month}`}
+                      x1={SCORECARD_MONTH_X[entry.month.month]}
+                      y1={0}
+                      x2={SCORECARD_MONTH_X[entry.month.month]}
+                      y2={SCORECARD_CHART_H}
+                      stroke="rgba(0,136,255,.06)"
+                      strokeWidth={1}
+                    />
+                  ))}
+
+                  {lines.map((line, index) => (
+                    <g key={index}>
+                      {line.area && line.points.length > 1 ? (
+                        <path d={buildAreaPath(line.points)} fill={`url(#${chartId}AreaGradient)`} />
+                      ) : null}
+                      {line.stroke && line.points.length > 1 ? (
+                        <path
+                          d={buildLinePath(line.points)}
+                          fill="none"
+                          stroke={line.stroke}
+                          strokeWidth={line.width}
+                          strokeDasharray={line.dashed ? "7 5" : undefined}
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      ) : null}
+                    </g>
+                  ))}
+
+                  {focusX != null ? (
+                    <line
+                      x1={focusX}
+                      y1={0}
+                      x2={focusX}
+                      y2={SCORECARD_CHART_H}
+                      stroke="rgba(0,216,255,.42)"
+                      strokeWidth={1}
+                      strokeDasharray="3 4"
+                    />
+                  ) : null}
+
+                  {months.map((entry, index) => {
+                    const [x, y] = dotPoints[index];
+                    const isActive = hovered?.data?.month === entry.month.month;
+
+                    return (
+                      <g key={entry.month.month}>
+                        <circle
+                          cx={x}
+                          cy={y}
+                          r={isActive ? 6.2 : 4.8}
+                          fill={dotColor}
+                          stroke="rgba(255,255,255,.9)"
+                          strokeWidth={isActive ? 1.6 : 1.2}
+                          style={{ cursor: "pointer" }}
+                          onMouseEnter={() => setHovered({ data: entry.month, index: entry.index })}
+                        />
+                        <text
+                          x={x}
+                          y={SCORECARD_CHART_H + 24}
+                          textAnchor="middle"
+                          style={{
+                            fill: isActive ? "#eaf3ff" : "#5e7da0",
+                            fontSize: 11,
+                            fontWeight: isActive ? 800 : 500,
+                            cursor: "pointer",
+                          }}
+                          onMouseEnter={() => setHovered({ data: entry.month, index: entry.index })}
+                        >
+                          {entry.month.month}
+                        </text>
+                      </g>
+                    );
+                  })}
+                </svg>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 const CALENDAR_WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 function clampNumber(value, min, max) {
@@ -413,39 +701,44 @@ export function OperationsBoard({
       trueCash: trueCashValues[index],
     };
   });
-  const scorecardChartValues = scorecardMonths.flatMap((entry) => [
+  const scorecardBudgetValues = scorecardMonths.flatMap((entry) => [entry.budget, entry.spent]);
+  const { max: budgetChartMax, min: budgetChartMin } = buildScorecardRange(scorecardBudgetValues);
+  const budgetChartYLabels = buildScorecardYLabels(budgetChartMax, budgetChartMin);
+  const budgetLinePoints = scorecardMonths.map((entry) => [
+    SCORECARD_MONTH_X[entry.month.month],
+    scorecardToY(entry.budget, budgetChartMax, budgetChartMin),
+  ]);
+  const spentLinePoints = scorecardMonths.map((entry) => [
+    SCORECARD_MONTH_X[entry.month.month],
+    scorecardToY(entry.spent, budgetChartMax, budgetChartMin),
+  ]);
+
+  const scorecardIncomeValues = scorecardMonths.flatMap((entry) => [
     entry.plannedIncome,
     entry.actualIncome,
-    entry.budget,
-    entry.spent,
   ]);
-  const { max: scorecardChartMax, min: scorecardChartMin } = buildScorecardRange(scorecardChartValues);
-  const scorecardYLabels = buildScorecardYLabels(scorecardChartMax, scorecardChartMin);
-  const scorecardPlannedPoints = scorecardMonths.map((entry) => [
+  const { max: incomeChartMax, min: incomeChartMin } = buildScorecardRange(scorecardIncomeValues);
+  const incomeChartYLabels = buildScorecardYLabels(incomeChartMax, incomeChartMin);
+  const plannedLinePoints = scorecardMonths.map((entry) => [
     SCORECARD_MONTH_X[entry.month.month],
-    scorecardToY(entry.plannedIncome, scorecardChartMax, scorecardChartMin),
+    scorecardToY(entry.plannedIncome, incomeChartMax, incomeChartMin),
   ]);
-  const scorecardActualPoints = scorecardMonths.map((entry) => [
+  const actualLinePoints = scorecardMonths.map((entry) => [
     SCORECARD_MONTH_X[entry.month.month],
-    scorecardToY(entry.actualIncome, scorecardChartMax, scorecardChartMin),
+    scorecardToY(entry.actualIncome, incomeChartMax, incomeChartMin),
   ]);
-  const scorecardBudgetPoints = scorecardMonths.map((entry) => [
-    SCORECARD_MONTH_X[entry.month.month],
-    scorecardToY(entry.budget, scorecardChartMax, scorecardChartMin),
-  ]);
-  const scorecardSpentPoints = scorecardMonths.map((entry) => [
-    SCORECARD_MONTH_X[entry.month.month],
-    scorecardToY(entry.spent, scorecardChartMax, scorecardChartMin),
-  ]);
-  const scorecardPlannedPath =
-    scorecardPlannedPoints.length > 1 ? buildLinePath(scorecardPlannedPoints) : "";
-  const scorecardActualPath =
-    scorecardActualPoints.length > 1 ? buildLinePath(scorecardActualPoints) : "";
-  const scorecardBudgetPath =
-    scorecardBudgetPoints.length > 1 ? buildLinePath(scorecardBudgetPoints) : "";
-  const scorecardSpentPath = scorecardSpentPoints.length > 1 ? buildLinePath(scorecardSpentPoints) : "";
-  const scorecardSpentArea = scorecardSpentPoints.length > 1 ? buildAreaPath(scorecardSpentPoints) : "";
-  const scorecardFocusX = hoveredCommandMonth ? SCORECARD_MONTH_X[hoveredCommandMonth.data.month] : null;
+
+  const scorecardNote = (
+    <>
+      Spending Intelligence-style trend surface for plan vs actual execution.
+      {!planConfigured && isDemoMode ? (
+        <span style={{ display: "block", marginTop: 8, color: "#94a3b8", fontSize: 13 }}>
+          No plan data set for {activePlanningYear}; sample planned/budget/spent values are shown
+          while actual income remains live from transactions.
+        </span>
+      ) : null}
+    </>
+  );
 
   return (
     <div>
@@ -567,331 +860,52 @@ export function OperationsBoard({
         </div>
       </section>
 
-      <section
-        style={{
-          ...styles.panel,
-          padding: 22,
-          marginBottom: 18,
-          position: "relative",
-          overflow: "visible",
-          zIndex: 2,
-        }}
-      >
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            background:
-              "radial-gradient(circle at top right, rgba(0,216,255,.13), transparent 36%)",
-          }}
-        />
-        <div
-          style={{
-            position: "relative",
-            display: "grid",
-            gap: 22,
-          }}
-        >
-          <div>
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                gap: 18,
-                flexWrap: "wrap",
-                marginBottom: 18,
-              }}
-            >
-              <div>
-                <div style={{ color: "white", fontSize: 22, fontWeight: 900 }}>Monthly Scorecard</div>
-                <div style={{ color: "#9fb0c9", marginTop: 6, lineHeight: 1.5 }}>
-                  Spending Intelligence-style trend surface for plan vs actual execution.
-                  {!planConfigured && isDemoMode ? (
-                    <span style={{ display: "block", marginTop: 8, color: "#94a3b8", fontSize: 13 }}>
-                      No plan data set for {activePlanningYear}; sample planned/budget/spent values are
-                      shown while actual income remains live from transactions.
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-                {[
-                  ["Planned Income", "rgba(0,245,155,.9)", "dashed", "rgba(0,245,155,.24)"],
-                  ["Earned Income", "rgba(0,245,155,.9)", "solid", "rgba(0,245,155,.24)"],
-                  ["Budget", "rgba(0,216,255,.95)", "dashed", "rgba(0,216,255,.3)"],
-                  ["Spent", "rgba(0,216,255,.95)", "solid", "rgba(0,216,255,.3)"],
-                ].map(([label, color, type, glow]) => (
-                  <div key={label} style={{ display: "flex", alignItems: "center", gap: 8, color: "#9fb0c9" }}>
-                    <div
-                      style={{
-                        width: 24,
-                        borderTop: `2px ${type === "dashed" ? "dashed" : "solid"} ${color}`,
-                        boxShadow: `0 0 10px ${glow}`,
-                      }}
-                    />
-                    {label}
-                  </div>
-                ))}
-              </div>
-            </div>
+      <ScorecardChart
+        chartId="opsScorecardBudget"
+        title="Monthly Scorecard - Budget"
+        note={scorecardNote}
+        legend={[
+          ["Budget", "rgba(0,216,255,.95)", "dashed", "rgba(0,216,255,.3)"],
+          ["Spent", "rgba(0,216,255,.95)", "solid", "rgba(0,216,255,.3)"],
+        ]}
+        months={scorecardMonths}
+        yLabels={budgetChartYLabels}
+        lines={[
+          { points: spentLinePoints, area: true },
+          { points: budgetLinePoints, stroke: "#00d8ff", width: 2, dashed: true },
+          { points: spentLinePoints, stroke: "#00d8ff", width: 3 },
+        ]}
+        dotPoints={spentLinePoints}
+        dotColor="#00d8ff"
+        hovered={hoveredCommandMonth}
+        setHovered={setHoveredCommandMonth}
+        trueCashValues={trueCashValues}
+        adjustmentValues={adjustmentValues}
+        projectedTrueCashValues={projectedTrueCashValues}
+      />
 
-            <div
-              onMouseLeave={() => setHoveredCommandMonth(null)}
-              style={{
-                position: "relative",
-                borderRadius: 14,
-                border: "1px solid rgba(0,216,255,.2)",
-                background: "rgba(2,16,34,.7)",
-                boxShadow: "inset 0 0 28px rgba(0,136,255,.08)",
-                padding: "18px 16px 6px",
-              }}
-            >
-              {hoveredCommandMonth ? (
-                <div
-                  style={{
-                    position: "absolute",
-                    top: 14,
-                    left: `${Math.min(
-                      88,
-                      Math.max(14, ((hoveredCommandMonth.index + 0.5) / scorecardMonths.length) * 100)
-                    )}%`,
-                    transform: "translateX(-50%)",
-                    zIndex: 6,
-                    minWidth: 220,
-                    border: "1px solid rgba(0,216,255,.3)",
-                    borderRadius: 10,
-                    background: "rgba(4,16,31,0.96)",
-                    boxShadow: "0 14px 30px rgba(0,0,0,0.45)",
-                    padding: "12px 14px",
-                    pointerEvents: "none",
-                    backdropFilter: "blur(6px)",
-                  }}
-                >
-                  <div
-                    style={{
-                      color: "#e2f4ff",
-                      fontSize: 13,
-                      marginBottom: 8,
-                      fontWeight: 800,
-                      borderBottom: "1px solid rgba(0,216,255,.16)",
-                      paddingBottom: 7,
-                    }}
-                  >
-                    {hoveredCommandMonth.data.month}
-                  </div>
-                  {[
-                    [
-                      "Planned income",
-                      hoveredCommandMonth.data.plannedIncome ?? hoveredCommandMonth.data.income,
-                      "#5eead4",
-                    ],
-                    ["Actual income", hoveredCommandMonth.data.actualIncome, "#00f59b"],
-                    ["Budget", hoveredCommandMonth.data.budget, "#fdba74"],
-                    ["Spent", hoveredCommandMonth.data.spent, "#ff7a45"],
-                    ["True Cash", trueCashValues[hoveredCommandMonth.index], "#38bdf8"],
-                    [
-                      "Profit",
-                      (hoveredCommandMonth.data.plannedIncome ?? hoveredCommandMonth.data.income) -
-                        hoveredCommandMonth.data.budget,
-                      (hoveredCommandMonth.data.plannedIncome ?? hoveredCommandMonth.data.income) -
-                        hoveredCommandMonth.data.budget >=
-                      0
-                        ? "#4ade80"
-                        : "#f87171",
-                    ],
-                    [
-                      "Adjustments",
-                      adjustmentValues[hoveredCommandMonth.index],
-                      adjustmentValues[hoveredCommandMonth.index] >= 0 ? "#fbbf24" : "#f97316",
-                    ],
-                    [
-                      "Projected Cash",
-                      projectedTrueCashValues[hoveredCommandMonth.index],
-                      "#fbbf24",
-                    ],
-                  ].map(([label, value, color]) => (
-                    <div
-                      key={label}
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        gap: 16,
-                        color: "#cbd5e1",
-                        fontSize: 12,
-                        fontWeight: 700,
-                        marginTop: 6,
-                      }}
-                    >
-                      <span style={{ color: "#8ea8ca" }}>{label}</span>
-                      <span style={{ color }}>
-                        {(label === "Profit" || label === "Adjustments") && value >= 0 ? "+" : ""}
-                        {(label === "Projected Cash" || label === "True Cash") && value === null
-                          ? "—"
-                          : label === "Adjustments"
-                            ? formatAdjustmentValue(value)
-                            : label === "Projected Cash" || label === "True Cash"
-                              ? wholeDollars(value)
-                              : money(value)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-
-              <div style={{ display: "flex", gap: 0 }}>
-                <div
-                  style={{
-                    width: 72,
-                    flexShrink: 0,
-                    display: "flex",
-                    flexDirection: "column",
-                    justifyContent: "space-between",
-                    paddingBottom: 44,
-                  }}
-                >
-                  {scorecardYLabels.map((label) => (
-                    <span key={label} style={{ color: "#5e7da0", fontSize: 11, textAlign: "right" }}>
-                      {label}
-                    </span>
-                  ))}
-                </div>
-
-                <div style={{ flex: 1, position: "relative" }}>
-                  <svg viewBox={`0 0 ${SCORECARD_CHART_W} ${SCORECARD_CHART_H + 40}`} style={{ width: "100%" }}>
-                    <defs>
-                      <linearGradient id="opsScorecardAreaGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#00d8ff" stopOpacity="0.4" />
-                        <stop offset="100%" stopColor="#00d8ff" stopOpacity="0.06" />
-                      </linearGradient>
-                    </defs>
-
-                    {scorecardYLabels.map((_, index) => {
-                      const y = (index / (scorecardYLabels.length - 1)) * SCORECARD_CHART_H;
-                      return (
-                        <line
-                          key={index}
-                          x1={0}
-                          y1={y}
-                          x2={SCORECARD_CHART_W}
-                          y2={y}
-                          stroke="rgba(0,136,255,.1)"
-                          strokeWidth={1}
-                        />
-                      );
-                    })}
-
-                    {scorecardMonths.map((entry) => (
-                      <line
-                        key={`v-${entry.month.month}`}
-                        x1={SCORECARD_MONTH_X[entry.month.month]}
-                        y1={0}
-                        x2={SCORECARD_MONTH_X[entry.month.month]}
-                        y2={SCORECARD_CHART_H}
-                        stroke="rgba(0,136,255,.06)"
-                        strokeWidth={1}
-                      />
-                    ))}
-
-                    {scorecardSpentArea ? (
-                      <path d={scorecardSpentArea} fill="url(#opsScorecardAreaGradient)" />
-                    ) : null}
-                    {scorecardBudgetPath ? (
-                      <path
-                        d={scorecardBudgetPath}
-                        fill="none"
-                        stroke="#00d8ff"
-                        strokeWidth={2}
-                        strokeDasharray="7 5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    ) : null}
-                    {scorecardActualPath ? (
-                      <path
-                        d={scorecardActualPath}
-                        fill="none"
-                        stroke="#00f59b"
-                        strokeWidth={2.4}
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    ) : null}
-                    {scorecardSpentPath ? (
-                      <path
-                        d={scorecardSpentPath}
-                        fill="none"
-                        stroke="#00d8ff"
-                        strokeWidth={3}
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    ) : null}
-                    {scorecardPlannedPath ? (
-                      <path
-                        d={scorecardPlannedPath}
-                        fill="none"
-                        stroke="#00f59b"
-                        strokeWidth={2.2}
-                        strokeDasharray="7 5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    ) : null}
-
-                    {scorecardFocusX != null ? (
-                      <line
-                        x1={scorecardFocusX}
-                        y1={0}
-                        x2={scorecardFocusX}
-                        y2={SCORECARD_CHART_H}
-                        stroke="rgba(0,216,255,.42)"
-                        strokeWidth={1}
-                        strokeDasharray="3 4"
-                      />
-                    ) : null}
-
-                    {scorecardMonths.map((entry) => {
-                      const x = SCORECARD_MONTH_X[entry.month.month];
-                      const spentY = scorecardToY(entry.spent, scorecardChartMax, scorecardChartMin);
-                      const isActive = hoveredCommandMonth?.data?.month === entry.month.month;
-
-                      return (
-                        <g key={entry.month.month}>
-                          <circle
-                            cx={x}
-                            cy={spentY}
-                            r={isActive ? 6.2 : 4.8}
-                            fill="#00d8ff"
-                            stroke="rgba(255,255,255,.9)"
-                            strokeWidth={isActive ? 1.6 : 1.2}
-                            style={{ cursor: "pointer" }}
-                            onMouseEnter={() => setHoveredCommandMonth({ data: entry.month, index: entry.index })}
-                          />
-                          <text
-                            x={x}
-                            y={SCORECARD_CHART_H + 24}
-                            textAnchor="middle"
-                            style={{
-                              fill: isActive ? "#eaf3ff" : "#5e7da0",
-                              fontSize: 11,
-                              fontWeight: isActive ? 800 : 500,
-                              cursor: "pointer",
-                            }}
-                            onMouseEnter={() => setHoveredCommandMonth({ data: entry.month, index: entry.index })}
-                          >
-                            {entry.month.month}
-                          </text>
-                        </g>
-                      );
-                    })}
-                  </svg>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
+      <ScorecardChart
+        chartId="opsScorecardIncome"
+        title="Monthly Scorecard - Income"
+        note={scorecardNote}
+        legend={[
+          ["Planned Income", "rgba(0,245,155,.9)", "dashed", "rgba(0,245,155,.24)"],
+          ["Earned Income", "rgba(0,245,155,.9)", "solid", "rgba(0,245,155,.24)"],
+        ]}
+        months={scorecardMonths}
+        yLabels={incomeChartYLabels}
+        lines={[
+          { points: actualLinePoints, stroke: "#00f59b", width: 2.4 },
+          { points: plannedLinePoints, stroke: "#00f59b", width: 2.2, dashed: true },
+        ]}
+        dotPoints={actualLinePoints}
+        dotColor="#00f59b"
+        hovered={hoveredCommandMonth}
+        setHovered={setHoveredCommandMonth}
+        trueCashValues={trueCashValues}
+        adjustmentValues={adjustmentValues}
+        projectedTrueCashValues={projectedTrueCashValues}
+      />
 
       <section
         style={{
