@@ -191,10 +191,9 @@ export function HouseholdProfilesControl({
                 onSelectUser(user.id);
               }}
               onDoubleClick={() => {
-                setMenuUserId(null);
-                onStartEditingUser(user.id);
+                setMenuUserId((currentUserId) => (currentUserId === user.id ? null : user.id));
               }}
-              title="Double-click to rename"
+              title="Double-click for rename or delete options"
               style={{
                 color: isActive ? "#f4fbff" : "#9fb0c9",
                 background: isActive ? "rgba(0,136,255,.18)" : "rgba(0,136,255,.06)",
@@ -211,32 +210,6 @@ export function HouseholdProfilesControl({
               }}
             >
               {label}
-            </button>
-            <button
-              type="button"
-              aria-haspopup="menu"
-              aria-expanded={menuUserId === user.id}
-              title={`Profile actions for ${label}`}
-              onClick={(event) => {
-                event.stopPropagation();
-                setMenuUserId((currentUserId) => (currentUserId === user.id ? null : user.id));
-              }}
-              style={{
-                width: 34,
-                height: 34,
-                borderRadius: 999,
-                border: isActive
-                  ? "1px solid rgba(0,216,255,.35)"
-                  : "1px solid rgba(0,216,255,.18)",
-                background: isActive ? "rgba(0,136,255,.12)" : "rgba(0,136,255,.05)",
-                color: isActive ? "#eaf7ff" : "#9fb0c9",
-                cursor: "pointer",
-                fontSize: 18,
-                fontWeight: 900,
-                lineHeight: 1,
-              }}
-            >
-              ⋯
             </button>
             {menuUserId === user.id ? (
               <div
