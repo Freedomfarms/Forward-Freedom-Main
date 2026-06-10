@@ -832,6 +832,32 @@ export function AccountsView({
                   gap: 8,
                 }}
               >
+                {plaidIntegration?.configured && plaidIntegration?.connectedItemCount > 0 ? (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      plaidIntegration?.onRefresh?.();
+                    }}
+                    disabled={plaidIntegration?.isSyncing}
+                    title="Pull the latest balances and transactions from Plaid"
+                    style={{
+                      background: "rgba(0,200,140,.12)",
+                      border: "1px solid rgba(0,224,160,.4)",
+                      borderRadius: 8,
+                      color: "#d6ffe9",
+                      padding: "8px 14px",
+                      fontWeight: 700,
+                      boxShadow: "0 0 14px rgba(0,200,140,.12)",
+                      cursor: plaidIntegration?.isSyncing ? "progress" : "pointer",
+                      fontSize: 12,
+                      opacity: plaidIntegration?.isSyncing ? 0.72 : 1,
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {plaidIntegration?.isSyncing ? "↻ Refreshing..." : "↻ Refresh"}
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   onClick={(e) => {
