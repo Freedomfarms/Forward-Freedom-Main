@@ -16,8 +16,31 @@ function roundMoney(value) {
   return Number((Number(value) || 0).toFixed(2));
 }
 
+const DEMO_MONTH_FULL_NAMES = {
+  Jan: "January",
+  Feb: "February",
+  Mar: "March",
+  Apr: "April",
+  May: "May",
+  Jun: "June",
+  Jul: "July",
+  Aug: "August",
+  Sep: "September",
+  Oct: "October",
+  Nov: "November",
+  Dec: "December",
+};
+
 function formatDemoDate(month, day, year = DEFAULT_DEMO_YEAR) {
   return `${month} ${day}, ${year}`;
+}
+
+// Transaction dates must use full month names to match the format produced by
+// the Plaid mapper and manual entry. parseBudgetReviewDate only recognizes full
+// names, so abbreviated months (every month except "May") were silently dropped
+// from Spending Intelligence, Budget Lab, and Income Hub in demo mode.
+function formatDemoTransactionDate(month, day, year = DEFAULT_DEMO_YEAR) {
+  return `${DEMO_MONTH_FULL_NAMES[month] || month} ${day}, ${year}`;
 }
 
 function formatDemoChartDate(month, day, year = DEFAULT_DEMO_YEAR) {
@@ -446,7 +469,7 @@ export function generateHouseholdDemoTransactions(year = DEFAULT_DEMO_YEAR) {
       .forEach((row) => {
         transactions.push({
           id: `tx-demo-${year}-${month.toLowerCase()}-${String(sequence).padStart(3, "0")}`,
-          date: formatDemoDate(month, row.day, year),
+          date: formatDemoTransactionDate(month, row.day, year),
           merchant: row.merchant,
           category: row.category,
           account: row.account,
