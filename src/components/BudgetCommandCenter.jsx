@@ -211,7 +211,13 @@ export function BudgetCommandCenter({
   const monthIncomeTotal = planningIncomeStreams
     .filter((stream) => (stream.months || budgetMonths).includes(activeBudgetMonth))
     .reduce((sum, stream) => sum + parseMoney(stream.amount), 0);
-  const monthCashFlow = monthIncomeTotal - budgetTotal;
+  // Assume every category lands at budget; only categories that run over budget
+  // reduce projected cash flow by their overage.
+  const projectedOutflow = budgetRowsWithSpend.reduce(
+    (sum, row) => sum + Math.max(Number(row.budget) || 0, Number(row.spent) || 0),
+    0
+  );
+  const monthCashFlow = monthIncomeTotal - projectedOutflow;
   const monthRemaining = budgetTotal - activeBudgetSnapshot.monthlySpend;
   const budgetUsedPercent = budgetTotal > 0 ? (activeBudgetSnapshot.monthlySpend / budgetTotal) * 100 : 0;
   const normalizedBudgetUsedPercent = Math.max(0, Math.min(100, budgetUsedPercent));
