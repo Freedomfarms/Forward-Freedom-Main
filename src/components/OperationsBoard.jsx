@@ -926,6 +926,7 @@ export function OperationsBoard({
         months={scorecardMonths}
         yLabels={incomeChartYLabels}
         lines={[
+          { points: actualLinePoints, area: true },
           { points: actualLinePoints, stroke: "#00f59b", width: 2.4 },
           { points: plannedLinePoints, stroke: "#00f59b", width: 2.2, dashed: true },
         ]}
