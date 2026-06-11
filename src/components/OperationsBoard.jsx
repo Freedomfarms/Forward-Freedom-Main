@@ -409,6 +409,14 @@ function getCashFlowHeatStyle(value, maxAbsValue) {
   };
 }
 
+function getStabilityBand(score) {
+  const value = Number(score) || 0;
+  if (value >= 80) return { label: "Elite", color: "#00f59b", range: "80–100" };
+  if (value >= 60) return { label: "Solid", color: "#38e0c0", range: "60–79" };
+  if (value >= 40) return { label: "Steady", color: "#ffb65d", range: "40–59" };
+  return { label: "At Risk", color: "#ff5d7a", range: "0–39" };
+}
+
 function parseTransactionDateParts(value) {
   const rawValue = String(value || "");
   const isoDateMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(rawValue);
@@ -555,6 +563,7 @@ export function OperationsBoard({
 }) {
   const [hoveredCommandMonth, setHoveredCommandMonth] = useState(null);
   const [hoveredCalendarDay, setHoveredCalendarDay] = useState(null);
+  const [showStabilityInfo, setShowStabilityInfo] = useState(false);
   const [calendarMonthIndex, setCalendarMonthIndex] = useState(() =>
     currentPlanYear === getCurrentBudgetPeriod().year ? getCurrentBudgetPeriod().monthIndex : 0
   );
@@ -684,6 +693,7 @@ export function OperationsBoard({
     1
   );
   const sustainabilityRing = clampNumber(cashFlowCalendar.sustainabilityAverage, 0, 100);
+  const stabilityBand = getStabilityBand(sustainabilityRing);
   const scorecardMonths = dynamicYearlyOpsData.map((month, index) => {
     const plannedIncome = finiteMoney(month.plannedIncome ?? month.income);
     const actualIncome = finiteMoney(month.actualIncome);
@@ -1259,15 +1269,72 @@ export function OperationsBoard({
             >
               <div
                 style={{
-                  color: "#dff7ff",
-                  fontWeight: 900,
-                  fontSize: 12,
-                  textTransform: "uppercase",
-                  letterSpacing: 0.9,
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
                   marginBottom: 10,
                 }}
               >
-                Stability Score
+                <div
+                  style={{
+                    color: "#dff7ff",
+                    fontWeight: 900,
+                    fontSize: 12,
+                    textTransform: "uppercase",
+                    letterSpacing: 0.9,
+                  }}
+                >
+                  Stability Score
+                </div>
+                <div
+                  onMouseEnter={() => setShowStabilityInfo(true)}
+                  onMouseLeave={() => setShowStabilityInfo(false)}
+                  style={{ position: "relative", cursor: "help", lineHeight: 0 }}
+                >
+                  <span
+                    style={{
+                      width: 16,
+                      height: 16,
+                      borderRadius: "50%",
+                      border: "1px solid rgba(0,216,255,.55)",
+                      color: "#8feaff",
+                      fontSize: 11,
+                      fontWeight: 900,
+                      fontStyle: "italic",
+                      display: "grid",
+                      placeItems: "center",
+                    }}
+                  >
+                    i
+                  </span>
+                  {showStabilityInfo ? (
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: "calc(100% + 8px)",
+                        right: 0,
+                        width: 244,
+                        zIndex: 30,
+                        background: "rgba(3,16,34,.98)",
+                        border: "1px solid rgba(0,216,255,.32)",
+                        borderRadius: 10,
+                        padding: "10px 12px",
+                        color: "#cfe6ff",
+                        fontSize: 11,
+                        fontWeight: 500,
+                        lineHeight: 1.5,
+                        letterSpacing: 0,
+                        textTransform: "none",
+                        boxShadow: "0 12px 30px rgba(0,0,0,.55)",
+                      }}
+                    >
+                      Daily average of how steady your cash flow is. Each day starts at 100 and
+                      loses points when actual cash flow drifts from your planned daily pace, when a
+                      day has heavy net outflow, and when the projected month-end balance risks
+                      dropping too low. Higher is steadier.
+                    </div>
+                  ) : null}
+                </div>
               </div>
               <div
                 style={{
@@ -1296,6 +1363,49 @@ export function OperationsBoard({
                 >
                   {sustainabilityRing}
                 </div>
+              </div>
+              <div style={{ textAlign: "center", marginTop: 10 }}>
+                <span
+                  style={{
+                    color: stabilityBand.color,
+                    fontWeight: 950,
+                    fontSize: 15,
+                    letterSpacing: 0.5,
+                    textShadow: `0 0 14px ${stabilityBand.color}55`,
+                  }}
+                >
+                  {stabilityBand.label}
+                </span>
+                <span style={{ color: "#8ea8ca", fontSize: 11, marginLeft: 6 }}>
+                  {stabilityBand.range}
+                </span>
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  justifyContent: "center",
+                  gap: "2px 8px",
+                  marginTop: 8,
+                }}
+              >
+                {[
+                  { label: "Elite", color: "#00f59b", range: "80–100" },
+                  { label: "Solid", color: "#38e0c0", range: "60–79" },
+                  { label: "Steady", color: "#ffb65d", range: "40–59" },
+                  { label: "At Risk", color: "#ff5d7a", range: "0–39" },
+                ].map((tier) => (
+                  <span
+                    key={tier.label}
+                    style={{
+                      color: tier.label === stabilityBand.label ? tier.color : "#6f88aa",
+                      fontSize: 10,
+                      fontWeight: tier.label === stabilityBand.label ? 900 : 600,
+                    }}
+                  >
+                    {tier.label} {tier.range}
+                  </span>
+                ))}
               </div>
               <div style={{ color: "#8ea8ca", fontSize: 12, textAlign: "center", marginTop: 8 }}>
                 {cashFlowCalendar.riskDays} risk days · pulse {formatCompactSignedMoney(cashFlowCalendar.dailyPlanPulse)}
