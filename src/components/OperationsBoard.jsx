@@ -402,10 +402,10 @@ function getCashFlowHeatStyle(value, maxAbsValue) {
   }
 
   return {
-    background: "linear-gradient(155deg, rgba(5,26,52,.74), rgba(5,26,52,.55))",
-    border: "1px solid rgba(84,124,184,.18)",
-    boxShadow: "none",
-    valueColor: "#7ea6d8",
+    background: "linear-gradient(155deg, rgba(0,86,134,.62), rgba(0,216,255,.30))",
+    border: "1px solid rgba(0,216,255,.34)",
+    boxShadow: "0 0 8px rgba(0,216,255,.20)",
+    valueColor: "#9fe9ff",
   };
 }
 
@@ -444,6 +444,7 @@ function buildCashFlowCalendarModel({
   const monthNetPlan = finiteMoney(plannedIncome) - finiteMoney(plannedBudget);
   const dailyPlanPulse = daysInMonth > 0 ? monthNetPlan / daysInMonth : 0;
   const dailyActualNet = Array.from({ length: daysInMonth }, () => 0);
+  const dailyTransactions = Array.from({ length: daysInMonth }, () => []);
 
   transactions.forEach((tx) => {
     const parsedDate = parseTransactionDateParts(tx.date);
@@ -452,6 +453,7 @@ function buildCashFlowCalendarModel({
     const dayIndex = parsedDate.day - 1;
     if (dayIndex < 0 || dayIndex >= daysInMonth) return;
     dailyActualNet[dayIndex] += finiteMoney(tx.amount);
+    dailyTransactions[dayIndex].push(tx);
   });
 
   let cumulativeActual = 0;
@@ -509,6 +511,7 @@ function buildCashFlowCalendarModel({
       monthEndForecast,
       sustainabilityScore,
       isToday,
+      transactions: dailyTransactions[index],
     };
   });
 
@@ -986,6 +989,74 @@ export function OperationsBoard({
                 <div style={{ color: "#9fb0c9", fontSize: 12, marginTop: 4 }}>
                   TC {wholeDollars(focusedCalendarDay.runningBalance)} · Forecast{" "}
                   {wholeDollars(focusedCalendarDay.monthEndForecast)}
+                </div>
+                <div
+                  style={{
+                    marginTop: 10,
+                    paddingTop: 10,
+                    borderTop: "1px solid rgba(0,216,255,.16)",
+                  }}
+                >
+                  <div
+                    style={{
+                      color: "#8ea8ca",
+                      fontSize: 11,
+                      textTransform: "uppercase",
+                      letterSpacing: 0.8,
+                      marginBottom: 8,
+                    }}
+                  >
+                    Transactions
+                  </div>
+                  {focusedCalendarDay.transactions && focusedCalendarDay.transactions.length > 0 ? (
+                    <div style={{ display: "grid", gap: 8, maxHeight: 196, overflowY: "auto" }}>
+                      {focusedCalendarDay.transactions.map((tx, txIndex) => {
+                        const amount = Number(tx.amount) || 0;
+                        return (
+                          <div
+                            key={tx.id || `${tx.merchant || "tx"}-${txIndex}`}
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              gap: 10,
+                              alignItems: "baseline",
+                            }}
+                          >
+                            <div style={{ minWidth: 0 }}>
+                              <div
+                                style={{
+                                  color: "#eaf6ff",
+                                  fontSize: 12,
+                                  fontWeight: 700,
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                {tx.merchant || tx.category || "Transaction"}
+                              </div>
+                              <div style={{ color: "#8ea8ca", fontSize: 10 }}>
+                                {tx.category || "Uncategorized"}
+                              </div>
+                            </div>
+                            <div
+                              style={{
+                                color: amount < 0 ? "#ff8ccc" : "#7dffd5",
+                                fontSize: 12,
+                                fontWeight: 800,
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {amount < 0 ? "-" : "+"}
+                              {money(Math.abs(amount))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div style={{ color: "#8ea8ca", fontSize: 12 }}>No transactions</div>
+                  )}
                 </div>
               </div>
             ) : null}
