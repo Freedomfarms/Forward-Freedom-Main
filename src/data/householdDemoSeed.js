@@ -89,7 +89,7 @@ function monthJitter(monthIndex, salt, spread = 0.12) {
 }
 
 /** Jan 1 opening balance; month-end closes follow income minus expense targets below. */
-export const HOUSEHOLD_DEMO_STARTING_TRUE_CASH = 48000;
+export const HOUSEHOLD_DEMO_STARTING_TRUE_CASH = 20000;
 
 export const HOUSEHOLD_DEMO_PLAN_ANCHOR = {
   startingMonth: "Jan",
