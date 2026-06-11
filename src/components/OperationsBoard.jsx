@@ -622,6 +622,24 @@ export function OperationsBoard({
     planningAnchor.startingTrueCash !== undefined && planningAnchor.startingTrueCash !== null
       ? Number(planningAnchor.startingTrueCash) || 0
       : trueCash;
+  // Reality-anchored year-end profit: realized net so far (live true cash vs. the
+  // year's starting cash, which already reflects over/underspend and any added
+  // accounts) plus the projected net for the rest of the year. The current month
+  // is assumed to finish at budget, matching the Command Center cash-flow logic.
+  const isCurrentPlanYear = activePlanningYear === currentBudgetPeriod.year;
+  const currentMonthOps = dynamicYearlyOpsData[currentBudgetPeriod.monthIndex];
+  const currentMonthRemainingNet = currentMonthOps
+    ? Math.max(
+        0,
+        finiteMoney(currentMonthOps.income) - finiteMoney(currentMonthOps.actualIncome)
+      ) - Math.max(0, finiteMoney(currentMonthOps.budget) - finiteMoney(currentMonthOps.spent))
+    : 0;
+  const remainingMonthsProjectedNet = dynamicYearlyOpsData
+    .slice(currentBudgetPeriod.monthIndex + 1)
+    .reduce((sum, month) => sum + (finiteMoney(month.income) - finiteMoney(month.budget)), 0);
+  const dynamicYearlySurplus = isCurrentPlanYear
+    ? trueCash - anchorStartingTrueCash + currentMonthRemainingNet + remainingMonthsProjectedNet
+    : yearlySurplus;
   const baseTrueCashSeries = buildProjectedTrueCashSeries({
     targetYear: activePlanningYear,
     incomeStreams: planningIncomeStreams,
@@ -785,7 +803,7 @@ export function OperationsBoard({
         {[
           ["Total Income Earned", wholeDollars(yearlyActualIncome), "#00f59b"],
           ["Total Spent", wholeDollars(yearlySpent), "#00d8ff"],
-          ["Projected Yearly Profit", wholeDollars(yearlySurplus), yearlySurplus >= 0 ? "#00f59b" : "#ff5d7a"],
+          ["Projected Year-End Profit", wholeDollars(dynamicYearlySurplus), dynamicYearlySurplus >= 0 ? "#00f59b" : "#ff5d7a"],
           [
             "Recurring Commitments",
             wholeDollars(subscriptionOverview.activeMonthly),
