@@ -7,7 +7,8 @@ import { accountSupportsTransactions } from "../utils/accounts.js";
 import { AccountRemoveConfirmModal } from "./AccountRemoveConfirmModal.jsx";
 import { HouseholdProfilesControl } from "./Common.jsx";
 
-const TRANSACTION_FEED_GRID_COLUMNS = "140px 1.4fr minmax(270px,1.1fr) minmax(180px,0.9fr) 160px";
+const TRANSACTION_FEED_GRID_COLUMNS =
+  "130px minmax(150px,1fr) minmax(200px,1.15fr) minmax(140px,0.85fr) 120px";
 
 function formatManualDate(value) {
   if (!value) return "";
@@ -249,6 +250,7 @@ export function TransactionsView({
   });
   const [showFilters, setShowFilters] = useState(false);
   const [selectedTransactionKey, setSelectedTransactionKey] = useState(null);
+  const [actionMenu, setActionMenu] = useState(null);
   const [accountRemoveTarget, setAccountRemoveTarget] = useState(null);
   const [accountRemoveError, setAccountRemoveError] = useState("");
   const [isRemovingAccount, setIsRemovingAccount] = useState(false);
@@ -453,8 +455,7 @@ export function TransactionsView({
     setPlaidDateEditTarget(null);
   };
 
-  const trackTransactionAsRecurring = (transaction, event) => {
-    event.stopPropagation();
+  const trackTransactionAsRecurring = (transaction) => {
     if (typeof addRecurringSubscriptionFromTransaction !== "function") return;
 
     const result = addRecurringSubscriptionFromTransaction(transaction, { source: "transaction" });
@@ -1310,15 +1311,19 @@ export function TransactionsView({
                 <div
                   key={rowKey}
                   onClick={() => setSelectedTransactionKey(rowKey)}
-                  onDoubleClick={() => openTransactionEditor(tx)}
+                  onDoubleClick={(event) => {
+                    event.preventDefault();
+                    setSelectedTransactionKey(rowKey);
+                    const menuWidth = 210;
+                    setActionMenu({
+                      rowKey,
+                      tx,
+                      top: event.clientY,
+                      left: Math.min(event.clientX, window.innerWidth - menuWidth - 12),
+                    });
+                  }}
                   onFocusCapture={() => setSelectedTransactionKey(rowKey)}
-                  title={
-                    tx.source === "manual"
-                      ? "Double click to edit or delete manual transaction"
-                      : tx.source === "plaid"
-                        ? "Double click to set a nickname date"
-                      : undefined
-                  }
+                  title="Double click for transaction actions"
                   style={{
                     display: "grid",
                     gridTemplateColumns: TRANSACTION_FEED_GRID_COLUMNS,
@@ -1416,27 +1421,6 @@ export function TransactionsView({
                     {formatCategorySourceLabel(tx)}
                     {tx.needsReview ? " • Needs review" : ""}
                   </div>
-                  {tx.amount < 0 ? (
-                    <button
-                      type="button"
-                      onClick={(event) => trackTransactionAsRecurring(tx, event)}
-                      onDoubleClick={(event) => event.stopPropagation()}
-                      style={{
-                        border: "1px solid rgba(0,216,255,.22)",
-                        background: "rgba(0,136,255,.12)",
-                        color: "#9fe6ff",
-                        borderRadius: 999,
-                        padding: "5px 9px",
-                        cursor: "pointer",
-                        fontSize: 11,
-                        fontWeight: 700,
-                        whiteSpace: "nowrap",
-                      }}
-                      title="Track this expense in Recurring"
-                    >
-                      Track recurring
-                    </button>
-                  ) : null}
                 </div>
                 <div style={{ color: "#7ebeff", paddingLeft: 14 }}>
                   {accountDisplayNames[tx.account] || tx.account}
@@ -1487,6 +1471,109 @@ export function TransactionsView({
           )}
         </div>
       </div>
+
+      {actionMenu ? (
+        <div
+          style={{ position: "fixed", inset: 0, zIndex: 9990 }}
+          onClick={() => setActionMenu(null)}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            setActionMenu(null);
+          }}
+        >
+          <div
+            role="menu"
+            onClick={(event) => event.stopPropagation()}
+            style={{
+              position: "fixed",
+              top: actionMenu.top,
+              left: actionMenu.left,
+              minWidth: 200,
+              borderRadius: 14,
+              border: "1px solid rgba(0,216,255,.24)",
+              background: "#081423",
+              boxShadow: "0 18px 42px rgba(0,8,18,.72), 0 0 28px rgba(0,136,255,.2)",
+              padding: 8,
+              display: "grid",
+              gap: 6,
+            }}
+          >
+            <div
+              style={{
+                color: "#8fb1d9",
+                fontSize: 11,
+                fontWeight: 800,
+                textTransform: "uppercase",
+                letterSpacing: 0.8,
+                padding: "2px 4px 4px",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                maxWidth: 220,
+              }}
+            >
+              {actionMenu.tx.merchant || actionMenu.tx.category || "Transaction"}
+            </div>
+            {actionMenu.tx.amount < 0 ? (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  trackTransactionAsRecurring(actionMenu.tx);
+                  setActionMenu(null);
+                }}
+                style={{
+                  background: "rgba(0,136,255,.08)",
+                  border: "1px solid rgba(0,216,255,.16)",
+                  color: "#9fe6ff",
+                  borderRadius: 10,
+                  padding: "10px 12px",
+                  cursor: "pointer",
+                  fontWeight: 800,
+                  textAlign: "left",
+                }}
+              >
+                Track in Recurring
+              </button>
+            ) : null}
+            {actionMenu.tx.source === "manual" || actionMenu.tx.source === "plaid" ? (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  openTransactionEditor(actionMenu.tx);
+                  setActionMenu(null);
+                }}
+                style={{
+                  background: "rgba(0,136,255,.08)",
+                  border: "1px solid rgba(0,216,255,.16)",
+                  color: "#eaf3ff",
+                  borderRadius: 10,
+                  padding: "10px 12px",
+                  cursor: "pointer",
+                  fontWeight: 800,
+                  textAlign: "left",
+                }}
+              >
+                {actionMenu.tx.source === "manual" ? "Edit transaction" : "Set nickname date"}
+              </button>
+            ) : null}
+            {actionMenu.tx.amount >= 0 ? (
+              <div
+                style={{
+                  color: "#7ea6d8",
+                  fontSize: 11,
+                  lineHeight: 1.45,
+                  padding: "0 4px 2px",
+                }}
+              >
+                Recurring tracking is available on expense transactions, or add one in the Recurring
+                tab.
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
 
       {editTarget ? (
         <div
