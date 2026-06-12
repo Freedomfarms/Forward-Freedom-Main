@@ -65,7 +65,7 @@ export const generalApiRateLimit = rateLimit({
 export const workspaceWriteRateLimit = rateLimit({
   ...baseRateLimitOptions,
   windowMs: 15 * 60 * 1000,
-  max: 60,
+  max: 240,
 });
 
 export const plaidLinkRateLimit = rateLimit({
