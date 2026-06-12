@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import ForwardFreedomDashboard from "./ForwardFreedomDashboard.jsx";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AuthProvider, useAuth } from "./context/AuthContext.jsx";
-import { AuthScreen } from "./components/AuthScreen.jsx";
 import { LandingPage } from "./components/LandingPage.jsx";
-import { DemoWorkspaceApp } from "./components/DemoWorkspaceApp.jsx";
+
+const ForwardFreedomDashboard = lazy(() => import("./ForwardFreedomDashboard.jsx"));
+const AuthScreen = lazy(() => import("./components/AuthScreen.jsx"));
+const DemoWorkspaceApp = lazy(() => import("./components/DemoWorkspaceApp.jsx"));
 import {
   buildScopedAppStateStorageKey,
   createEmptyAppState,
@@ -36,7 +37,7 @@ function getWorkspaceRateLimitRetryDelayMs(error) {
   return WORKSPACE_RATE_LIMIT_RETRY_MS;
 }
 
-function AppLoadingScreen() {
+function AppLoadingScreen({ message = "Loading secure workspace..." }) {
   return (
     <div
       style={{
@@ -60,10 +61,14 @@ function AppLoadingScreen() {
         >
           Forward Freedom Financial
         </div>
-        <div style={{ marginTop: 10, fontSize: 28, fontWeight: 900 }}>Loading secure workspace...</div>
+        <div style={{ marginTop: 10, fontSize: 28, fontWeight: 900 }}>{message}</div>
       </div>
     </div>
   );
+}
+
+function LazyRouteBoundary({ message, children }) {
+  return <Suspense fallback={<AppLoadingScreen message={message} />}>{children}</Suspense>;
 }
 
 function buildWorkspaceStatus(syncState) {
@@ -317,14 +322,16 @@ function AuthenticatedWorkspaceApp({
   };
 
   return (
-    <ForwardFreedomDashboard
-      initialView="app"
-      storageKey={storageKey}
-      initialAppStateOverride={workspaceSeedState}
-      onPersistedStateChange={handlePersistedStateChange}
-      sessionControls={sessionControls}
-      persistLocally={false}
-    />
+    <LazyRouteBoundary message="Loading secure workspace...">
+      <ForwardFreedomDashboard
+        initialView="app"
+        storageKey={storageKey}
+        initialAppStateOverride={workspaceSeedState}
+        onPersistedStateChange={handlePersistedStateChange}
+        sessionControls={sessionControls}
+        persistLocally={false}
+      />
+    </LazyRouteBoundary>
   );
 }
 
@@ -334,21 +341,25 @@ function UnconfiguredPublicApp() {
 
   if (publicView === "demo") {
     return (
-      <DemoWorkspaceApp
-        key={demoSessionKey}
-        onExit={() => setPublicView("landing")}
-      />
+      <LazyRouteBoundary message="Loading demo workspace...">
+        <DemoWorkspaceApp
+          key={demoSessionKey}
+          onExit={() => setPublicView("landing")}
+        />
+      </LazyRouteBoundary>
     );
   }
 
   return (
-    <ForwardFreedomDashboard
-      initialView="landing"
-      onEnterDemo={() => {
-        setDemoSessionKey((current) => current + 1);
-        setPublicView("demo");
-      }}
-    />
+    <LazyRouteBoundary message="Loading workspace...">
+      <ForwardFreedomDashboard
+        initialView="landing"
+        onEnterDemo={() => {
+          setDemoSessionKey((current) => current + 1);
+          setPublicView("demo");
+        }}
+      />
+    </LazyRouteBoundary>
   );
 }
 
@@ -376,27 +387,27 @@ function AppContent() {
     return <UnconfiguredPublicApp />;
   }
 
-  if (!ready) {
-    return <AppLoadingScreen />;
-  }
-
   if (!user) {
     if (publicView === "demo") {
       return (
-        <DemoWorkspaceApp
-          key={demoSessionKey}
-          onExit={() => setPublicView("landing")}
-        />
+        <LazyRouteBoundary message="Loading demo workspace...">
+          <DemoWorkspaceApp
+            key={demoSessionKey}
+            onExit={() => setPublicView("landing")}
+          />
+        </LazyRouteBoundary>
       );
     }
 
     if (publicView === "auth") {
       return (
-        <AuthScreen
-          initialMode={authScreenConfig.mode}
-          initialForm={authScreenConfig.initialForm}
-          onBackHome={() => setPublicView("landing")}
-        />
+        <LazyRouteBoundary message="Loading sign-in...">
+          <AuthScreen
+            initialMode={authScreenConfig.mode}
+            initialForm={authScreenConfig.initialForm}
+            onBackHome={() => setPublicView("landing")}
+          />
+        </LazyRouteBoundary>
       );
     }
 
@@ -421,6 +432,10 @@ function AppContent() {
         }}
       />
     );
+  }
+
+  if (!ready) {
+    return <AppLoadingScreen />;
   }
 
   return (

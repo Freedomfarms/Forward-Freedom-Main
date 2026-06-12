@@ -1,5 +1,5 @@
 import { useState } from "react";
-import forwardFreedomLogo from "../assets/forward-freedom-logo-main.jpeg";
+import forwardFreedomLogo from "../assets/forward-freedom-logo.svg";
 import { LegalModal } from "./LegalDocuments.jsx";
 
 function buildPrimaryButtonStyle(isSecondary = false) {
@@ -102,11 +102,15 @@ export function LandingPage({ enterApp, onEnterDemo }) {
             <img
               src={forwardFreedomLogo}
               alt="Forward Freedom Financial logo"
+              width={96}
+              height={96}
+              decoding="async"
+              fetchPriority="high"
               style={{
                 width: 96,
                 height: 96,
                 display: "block",
-                objectFit: "cover",
+                objectFit: "contain",
                 objectPosition: "center",
                 borderRadius: 24,
                 border: "1px solid rgba(125,220,255,.32)",
