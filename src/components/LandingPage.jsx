@@ -1,5 +1,5 @@
 import { useState } from "react";
-import forwardFreedomLogo from "../assets/forward-freedom-logo.svg";
+import forwardFreedomLogo from "../assets/forward-freedom-logo-main.jpeg";
 import { LegalModal } from "./LegalDocuments.jsx";
 
 function buildPrimaryButtonStyle(isSecondary = false) {
@@ -110,7 +110,7 @@ export function LandingPage({ enterApp, onEnterDemo }) {
                 width: 96,
                 height: 96,
                 display: "block",
-                objectFit: "contain",
+                objectFit: "cover",
                 objectPosition: "center",
                 borderRadius: 24,
                 border: "1px solid rgba(125,220,255,.32)",
