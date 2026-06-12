@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AuthProvider, useAuth } from "./context/AuthContext.jsx";
+import { ErrorBoundary } from "./components/ErrorBoundary.jsx";
 import { LandingPage } from "./components/LandingPage.jsx";
 
 const ForwardFreedomDashboard = lazy(() => import("./ForwardFreedomDashboard.jsx"));
@@ -72,7 +73,17 @@ function AppLoadingScreen({ message = "Loading secure workspace..." }) {
 }
 
 function LazyRouteBoundary({ message, children }) {
-  return <Suspense fallback={<AppLoadingScreen message={message} />}>{children}</Suspense>;
+  return (
+    <ErrorBoundary>
+      <Suspense fallback={<AppLoadingScreen message={message} />}>{children}</Suspense>
+    </ErrorBoundary>
+  );
+}
+
+function ConfigurationErrorScreen() {
+  return (
+    <AppLoadingScreen message="This deployment is missing authentication configuration. Please contact support." />
+  );
 }
 
 function buildWorkspaceStatus(syncState) {
@@ -104,6 +115,7 @@ function AuthenticatedWorkspaceApp({
   const [workspaceSyncState, setWorkspaceSyncState] = useState("idle");
   const [latestPersistedState, setLatestPersistedState] = useState(null);
   const [workspaceProfile, setWorkspaceProfile] = useState(null);
+  const [workspaceBootstrapComplete, setWorkspaceBootstrapComplete] = useState(false);
   const lastServerSnapshotRef = useRef("");
   const lastQueuedPersistedStateRef = useRef("");
   const rateLimitRetryTimeoutRef = useRef(null);
@@ -136,11 +148,18 @@ function AuthenticatedWorkspaceApp({
       : emptyWorkspaceState;
 
     const bootstrapWorkspace = async () => {
+      setWorkspaceBootstrapComplete(false);
+
       try {
-        const [profilePayload, workspacePayload] = await Promise.all([
-          fetchAuthenticatedUserProfile(),
-          fetchWorkspaceSnapshot(),
-        ]);
+        const workspacePayload = await fetchWorkspaceSnapshot();
+        let profilePayload = null;
+
+        try {
+          profilePayload = await fetchAuthenticatedUserProfile();
+        } catch (profileError) {
+          console.warn("[workspace] Profile sync unavailable during bootstrap.", profileError);
+        }
+
         const remoteSnapshot = workspacePayload?.snapshot || null;
         const remoteState = remoteSnapshot?.state
           ? sanitizeWorkspaceStateForPersistence(remoteSnapshot.state)
@@ -150,18 +169,17 @@ function AuthenticatedWorkspaceApp({
         if (cancelled) return;
 
         setWorkspaceProfile(profilePayload?.user || null);
-        setWorkspaceSeedState(nextSeedState);
         setWorkspaceError("");
 
         if (remoteState) {
+          setWorkspaceSeedState(nextSeedState);
           lastServerSnapshotRef.current = JSON.stringify(remoteState);
           cacheWorkspaceState(remoteState, "server-snapshot");
           setWorkspaceSyncState("server-primary");
+          setWorkspaceBootstrapComplete(true);
           return;
         }
 
-        const serializedSeedState = JSON.stringify(nextSeedState);
-        lastServerSnapshotRef.current = serializedSeedState;
         cacheWorkspaceState(
           nextSeedState,
           cachedWorkspaceRecord.hasPersistedState ? "restored-cache" : "seed-default"
@@ -186,6 +204,7 @@ function AuthenticatedWorkspaceApp({
         cacheWorkspaceState(sanitizedConfirmedState, "server-confirmed");
         setWorkspaceSeedState(sanitizedConfirmedState);
         setWorkspaceSyncState("synced");
+        setWorkspaceBootstrapComplete(true);
       } catch (error) {
         if (cancelled) return;
 
@@ -196,6 +215,7 @@ function AuthenticatedWorkspaceApp({
           cachedWorkspaceRecord.hasPersistedState ? "cache-fallback" : "seed-default"
         );
         setWorkspaceSyncState("cache-fallback");
+        setWorkspaceBootstrapComplete(true);
         setWorkspaceError(
           error?.message ||
             "Workspace server sync is unavailable right now. Using a temporary browser cache until the database is reachable again."
@@ -221,7 +241,7 @@ function AuthenticatedWorkspaceApp({
   }, []);
 
   useEffect(() => {
-    if (!latestPersistedState || !workspaceSeedState) {
+    if (!latestPersistedState || !workspaceSeedState || !workspaceBootstrapComplete) {
       return undefined;
     }
 
@@ -294,10 +314,10 @@ function AuthenticatedWorkspaceApp({
         rateLimitRetryTimeoutRef.current = null;
       }
     };
-  }, [cacheWorkspaceState, latestPersistedState, workspaceSeedState]);
+  }, [cacheWorkspaceState, latestPersistedState, workspaceBootstrapComplete, workspaceSeedState]);
 
   if (!workspaceSeedState) {
-    return <AppLoadingScreen />;
+    return <AppLoadingScreen message={buildWorkspaceStatus(workspaceSyncState)} />;
   }
 
   const sessionUser = user || workspaceProfile;
@@ -388,10 +408,17 @@ function AppContent() {
   });
 
   if (!configured) {
+    if (import.meta.env.PROD) {
+      return <ConfigurationErrorScreen />;
+    }
     return <UnconfiguredPublicApp />;
   }
 
   if (!user) {
+    if (!ready) {
+      return <AppLoadingScreen message="Restoring your session..." />;
+    }
+
     if (publicView === "demo") {
       return (
         <LazyRouteBoundary message="Loading demo workspace...">
@@ -463,8 +490,10 @@ function AppContent() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <AppContent />
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <AppContent />
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }

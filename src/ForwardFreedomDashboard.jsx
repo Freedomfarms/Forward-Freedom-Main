@@ -583,6 +583,7 @@ function ForwardFreedomDashboard({
   const [plaidConsentPrompt, setPlaidConsentPrompt] = useState(null);
   const [hasAcceptedPlaidConsent, setHasAcceptedPlaidConsent] = useState(false);
   const [plaidConsentError, setPlaidConsentError] = useState("");
+  const [emailVerificationPromptOpen, setEmailVerificationPromptOpen] = useState(false);
   const [activeLegalDocument, setActiveLegalDocument] = useState(null);
   const [plaidError, setPlaidError] = useState("");
   const [isPlaidSyncing, setIsPlaidSyncing] = useState(false);
@@ -1078,6 +1079,13 @@ function ForwardFreedomDashboard({
     setPlaidConsentError("");
   };
 
+  const closeEmailVerificationPrompt = () => {
+    setEmailVerificationPromptOpen(false);
+  };
+
+  const requiresEmailVerificationForPlaid =
+    !isDemoMode && sessionControls && sessionControls.isEmailVerified === false;
+
   const { open: openPlaidLink, ready: isPlaidReady } = usePlaidLink({
     token: plaidLinkToken,
     onSuccess: async (publicToken, metadata) => {
@@ -1385,6 +1393,13 @@ function ForwardFreedomDashboard({
         },
         "warn"
       );
+      if (
+        typeof error?.message === "string" &&
+        error.message.toLowerCase().includes("email verification is required")
+      ) {
+        setEmailVerificationPromptOpen(true);
+        return;
+      }
       setPlaidError(
         error.message ||
           (plaidItemId
@@ -1401,6 +1416,10 @@ function ForwardFreedomDashboard({
       setPlaidError(
         "Bank connections are disabled in demo mode. Create an account to link your own accounts."
       );
+      return;
+    }
+    if (requiresEmailVerificationForPlaid) {
+      setEmailVerificationPromptOpen(true);
       return;
     }
     setPlaidConsentPrompt({ plaidItemId });
@@ -1889,6 +1908,10 @@ function ForwardFreedomDashboard({
       onExitDemo();
       return;
     }
+    if (sessionControls?.onSignOut) {
+      void sessionControls.onSignOut();
+      return;
+    }
     setCurrentView("landing");
   };
 
@@ -2096,6 +2119,97 @@ function ForwardFreedomDashboard({
           )}
         </main>
       </div>
+
+      {emailVerificationPromptOpen ? (
+        <div
+          onClick={(event) => {
+            if (event.target === event.currentTarget) closeEmailVerificationPrompt();
+          }}
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 9999,
+            background: "rgba(1,8,18,.78)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 24,
+          }}
+        >
+          <div
+            style={{
+              width: "min(560px, 100%)",
+              borderRadius: 18,
+              border: "1px solid rgba(0,174,255,.24)",
+              background: "linear-gradient(180deg, rgba(5,19,37,.98), rgba(3,12,24,.98))",
+              boxShadow: "0 0 50px rgba(0,136,255,.22)",
+              padding: 24,
+              display: "grid",
+              gap: 16,
+            }}
+          >
+            <div>
+              <div
+                style={{
+                  color: "#8feaff",
+                  textTransform: "uppercase",
+                  letterSpacing: 1.2,
+                  fontSize: 12,
+                  fontWeight: 900,
+                }}
+              >
+                Email verification required
+              </div>
+              <div style={{ color: "white", fontSize: 26, fontWeight: 900, marginTop: 10 }}>
+                Verify your email before connecting Plaid
+              </div>
+              <div style={{ color: "#c6d7ea", lineHeight: 1.7, marginTop: 10 }}>
+                For security, bank linking is only available after your email address is verified.
+                If you just created your account, check your inbox and spam folder for the
+                verification email we sent during sign-up.
+              </div>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={closeEmailVerificationPrompt}
+                style={{
+                  background: "rgba(2,16,34,.62)",
+                  border: "1px solid rgba(125,220,255,.24)",
+                  borderRadius: 10,
+                  color: "white",
+                  padding: "11px 15px",
+                  cursor: "pointer",
+                  fontWeight: 800,
+                }}
+              >
+                Close
+              </button>
+              {typeof sessionControls?.onResendVerification === "function" ? (
+                <button
+                  type="button"
+                  disabled={sessionControls?.isBusy}
+                  onClick={() => {
+                    void sessionControls.onResendVerification();
+                  }}
+                  style={{
+                    background: "linear-gradient(90deg,#0077ff,#00aaff)",
+                    border: "1px solid rgba(125,220,255,.45)",
+                    borderRadius: 10,
+                    color: "white",
+                    padding: "11px 15px",
+                    cursor: sessionControls?.isBusy ? "wait" : "pointer",
+                    fontWeight: 800,
+                  }}
+                >
+                  {sessionControls?.isBusy ? "Sending..." : "Resend verification email"}
+                </button>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {plaidConsentPrompt ? (
         <div
