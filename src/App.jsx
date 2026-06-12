@@ -15,10 +15,26 @@ import {
   sanitizeWorkspaceStateForPersistence,
 } from "./utils/workspacePersistence.js";
 import {
+  ApiRequestError,
   fetchAuthenticatedUserProfile,
   fetchWorkspaceSnapshot,
   saveWorkspaceSnapshot,
 } from "./utils/api.js";
+
+const WORKSPACE_SAVE_DEBOUNCE_MS = 4000;
+const WORKSPACE_RATE_LIMIT_RETRY_MS = 30000;
+
+function isWorkspaceRateLimitError(error) {
+  return error instanceof ApiRequestError && error.status === 429;
+}
+
+function getWorkspaceRateLimitRetryDelayMs(error) {
+  if (error?.retryAfterMs > 0) {
+    return error.retryAfterMs;
+  }
+
+  return WORKSPACE_RATE_LIMIT_RETRY_MS;
+}
 
 function AppLoadingScreen() {
   return (
@@ -54,6 +70,7 @@ function buildWorkspaceStatus(syncState) {
   if (syncState === "hydrating-cache") return "Restoring cached workspace into the database";
   if (syncState === "initializing-server") return "Creating your first server-backed workspace";
   if (syncState === "syncing") return "Syncing workspace changes to the database";
+  if (syncState === "rate-limited") return "Saving paused briefly — retrying automatically";
   if (syncState === "cache-fallback") return "Using a temporary browser cache until the database returns";
   if (syncState === "synced" || syncState === "server-primary") {
     return "Database-backed workspace active";
@@ -80,6 +97,7 @@ function AuthenticatedWorkspaceApp({
   const [workspaceProfile, setWorkspaceProfile] = useState(null);
   const lastServerSnapshotRef = useRef("");
   const lastQueuedPersistedStateRef = useRef("");
+  const rateLimitRetryTimeoutRef = useRef(null);
   const cacheWorkspaceState = useCallback(
     (state, cacheState = "browser-cache") => {
       if (!state) return;
@@ -208,7 +226,7 @@ function AuthenticatedWorkspaceApp({
 
     let cancelled = false;
 
-    const timeoutId = window.setTimeout(() => {
+    const attemptSave = () => {
       if (cancelled) return;
       setWorkspaceSyncState("syncing");
       void saveWorkspaceSnapshot({
@@ -228,6 +246,25 @@ function AuthenticatedWorkspaceApp({
         })
         .catch((error) => {
           if (cancelled) return;
+
+          if (isWorkspaceRateLimitError(error)) {
+            cacheWorkspaceState(latestPersistedState, "working-cache");
+            setWorkspaceSyncState("rate-limited");
+            setWorkspaceError(
+              "Saving paused briefly due to high activity. Your changes are cached locally and will sync automatically."
+            );
+
+            if (rateLimitRetryTimeoutRef.current) {
+              window.clearTimeout(rateLimitRetryTimeoutRef.current);
+            }
+
+            rateLimitRetryTimeoutRef.current = window.setTimeout(() => {
+              rateLimitRetryTimeoutRef.current = null;
+              attemptSave();
+            }, getWorkspaceRateLimitRetryDelayMs(error));
+            return;
+          }
+
           lastQueuedPersistedStateRef.current = "";
           cacheWorkspaceState(latestPersistedState, "cache-fallback");
           setWorkspaceSyncState("cache-fallback");
@@ -236,11 +273,17 @@ function AuthenticatedWorkspaceApp({
               "Workspace changes are being held in a temporary browser cache until the database is available again."
           );
         });
-    }, 900);
+    };
+
+    const timeoutId = window.setTimeout(attemptSave, WORKSPACE_SAVE_DEBOUNCE_MS);
 
     return () => {
       cancelled = true;
       window.clearTimeout(timeoutId);
+      if (rateLimitRetryTimeoutRef.current) {
+        window.clearTimeout(rateLimitRetryTimeoutRef.current);
+        rateLimitRetryTimeoutRef.current = null;
+      }
     };
   }, [cacheWorkspaceState, latestPersistedState, workspaceSeedState]);
 
