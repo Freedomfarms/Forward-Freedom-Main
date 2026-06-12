@@ -1889,6 +1889,10 @@ function ForwardFreedomDashboard({
       onExitDemo();
       return;
     }
+    if (sessionControls?.onSignOut) {
+      void sessionControls.onSignOut();
+      return;
+    }
     setCurrentView("landing");
   };
 
