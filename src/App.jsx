@@ -3,8 +3,12 @@ import { AuthProvider, useAuth } from "./context/AuthContext.jsx";
 import { LandingPage } from "./components/LandingPage.jsx";
 
 const ForwardFreedomDashboard = lazy(() => import("./ForwardFreedomDashboard.jsx"));
-const AuthScreen = lazy(() => import("./components/AuthScreen.jsx"));
-const DemoWorkspaceApp = lazy(() => import("./components/DemoWorkspaceApp.jsx"));
+const AuthScreen = lazy(() =>
+  import("./components/AuthScreen.jsx").then((module) => ({ default: module.AuthScreen }))
+);
+const DemoWorkspaceApp = lazy(() =>
+  import("./components/DemoWorkspaceApp.jsx").then((module) => ({ default: module.DemoWorkspaceApp }))
+);
 import {
   buildScopedAppStateStorageKey,
   createEmptyAppState,
