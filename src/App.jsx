@@ -80,12 +80,6 @@ function LazyRouteBoundary({ message, children }) {
   );
 }
 
-function ConfigurationErrorScreen() {
-  return (
-    <AppLoadingScreen message="This deployment is missing authentication configuration. Please contact support." />
-  );
-}
-
 function buildWorkspaceStatus(syncState) {
   if (syncState === "hydrating-cache") return "Restoring cached workspace into the database";
   if (syncState === "initializing-server") return "Creating your first server-backed workspace";
@@ -408,9 +402,6 @@ function AppContent() {
   });
 
   if (!configured) {
-    if (import.meta.env.PROD) {
-      return <ConfigurationErrorScreen />;
-    }
     return <UnconfiguredPublicApp />;
   }
 
