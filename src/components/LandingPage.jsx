@@ -1,5 +1,5 @@
 import { useState } from "react";
-import forwardFreedomLogo from "../assets/forward-freedom-logo-main.jpeg";
+import { ForwardFreedomWordmark } from "./ForwardFreedomWordmark.jsx";
 import { LegalModal } from "./LegalDocuments.jsx";
 
 function buildPrimaryButtonStyle(isSecondary = false) {
@@ -99,24 +99,7 @@ export function LandingPage({ enterApp, onEnterDemo }) {
           }}
         >
           <div style={{ display: "flex", alignItems: "center", minHeight: 88 }}>
-            <img
-              src={forwardFreedomLogo}
-              alt="Forward Freedom Financial logo"
-              width={96}
-              height={96}
-              decoding="async"
-              fetchPriority="high"
-              style={{
-                width: 96,
-                height: 96,
-                display: "block",
-                objectFit: "cover",
-                objectPosition: "center",
-                borderRadius: 24,
-                border: "1px solid rgba(125,220,255,.32)",
-                boxShadow: "0 18px 36px rgba(0, 0, 0, 0.34), 0 0 30px rgba(0, 136, 255, 0.12)",
-              }}
-            />
+            <ForwardFreedomWordmark size="nav" />
           </div>
 
           <div
@@ -279,49 +262,24 @@ export function LandingPage({ enterApp, onEnterDemo }) {
                 }}
               />
               <div
-                aria-hidden="true"
-                style={{
-                  position: "absolute",
-                  inset: "11%",
-                  backgroundImage: `url(${forwardFreedomLogo})`,
-                  backgroundPosition: "center",
-                  backgroundRepeat: "no-repeat",
-                  backgroundSize: "cover",
-                  opacity: 0.3,
-                  filter: "blur(44px) saturate(1.1)",
-                  transform: "scale(1.06)",
-                  borderRadius: 36,
-                }}
-              />
-              <div
                 style={{
                   position: "relative",
                   zIndex: 1,
                   width: "100%",
-                  padding: 20,
+                  padding: "36px 28px",
                   borderRadius: 36,
                   border: "1px solid rgba(125,220,255,.16)",
                   background:
                     "linear-gradient(180deg, rgba(8, 20, 38, 0.94), rgba(5, 15, 29, 0.84))",
                   boxShadow:
                     "0 28px 70px rgba(0, 0, 0, 0.36), inset 0 1px 0 rgba(255, 255, 255, 0.03)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  minHeight: 360,
                 }}
               >
-                <img
-                  src={forwardFreedomLogo}
-                  alt="Forward Freedom Financial logo"
-                  style={{
-                    width: "100%",
-                    maxWidth: "100%",
-                    aspectRatio: "1 / 1",
-                    display: "block",
-                    margin: "0 auto",
-                    objectFit: "cover",
-                    objectPosition: "center",
-                    borderRadius: 28,
-                    filter: "saturate(1.03) contrast(1.02)",
-                  }}
-                />
+                <ForwardFreedomWordmark size="hero" />
               </div>
             </div>
           </div>
