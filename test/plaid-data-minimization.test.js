@@ -8,22 +8,36 @@ import { getPlaidConfig, getPlaidLinkTokenRequest } from "../server/plaidClient.
 test("Plaid config only enables transactions and liabilities", () => {
   const config = getPlaidConfig();
 
-  assert.deepEqual(config.products, ["transactions", "liabilities"]);
-  assert.deepEqual(config.optionalProducts, []);
+  assert.deepEqual(config.products, ["transactions"]);
+  assert.deepEqual(config.optionalProducts, ["liabilities"]);
   assert.equal(config.capabilities.transactions, true);
   assert.equal(config.capabilities.liabilities, true);
   assert.equal(config.capabilities.investments, false);
 });
 
-test("Link token request does not ask for optional products", () => {
+test("Link token request treats liabilities as optional and supports OAuth redirect", () => {
   const request = getPlaidLinkTokenRequest({
     userId: "user-123",
     userName: "Taylor User",
+    redirectUri: "https://www.forwardfreedomfinancial.com/plaid-oauth.html",
   });
 
-  assert.deepEqual(request.products, ["transactions", "liabilities"]);
-  assert.equal("optional_products" in request, false);
+  assert.deepEqual(request.products, ["transactions"]);
+  assert.deepEqual(request.optional_products, ["liabilities"]);
+  assert.equal(request.redirect_uri, "https://www.forwardfreedomfinancial.com/plaid-oauth.html");
   assert.deepEqual(request.transactions, { days_requested: 365 });
+});
+
+test("Link token repair mode can request additional accounts from an existing item", () => {
+  const request = getPlaidLinkTokenRequest({
+    userId: "user-123",
+    userName: "Taylor User",
+    accessToken: "access-token",
+    enableAccountSelection: true,
+  });
+
+  assert.equal(request.access_token, "access-token");
+  assert.deepEqual(request.update, { account_selection_enabled: true });
 });
 
 test("Mapped Plaid accounts keep payment details but omit account masks", () => {

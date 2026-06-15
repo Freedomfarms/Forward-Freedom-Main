@@ -33,6 +33,14 @@ import {
   normalizePlansByYear,
 } from "./utils/planning.js";
 import {
+  clearOAuthStateFromUrl,
+  clearPendingPlaidLinkState,
+  consumeOAuthReceivedRedirectUri,
+  hasOAuthStateInUrl,
+  loadPendingPlaidLinkState,
+  savePendingPlaidLinkState,
+} from "./utils/plaidOAuth.js";
+import {
   createPlaidLinkToken,
   deletePlaidItem,
   deletePlaidUser,
@@ -593,8 +601,12 @@ function ForwardFreedomDashboard({
   const [activeLegalDocument, setActiveLegalDocument] = useState(null);
   const [plaidError, setPlaidError] = useState("");
   const [isPlaidSyncing, setIsPlaidSyncing] = useState(false);
+  const [plaidOAuthRedirectUri, setPlaidOAuthRedirectUri] = useState(() =>
+    consumeOAuthReceivedRedirectUri()
+  );
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const plaidRecoverySyncUserIdsRef = useRef(new Set());
+  const plaidOAuthResumeAttemptedRef = useRef(false);
   const activeUser = users.find((user) => user.id === activeUserId) || users[0] || EMPTY_USER_STATE;
   const accounts = activeUser.accounts;
   const transactions = activeUser.transactions;
@@ -1023,6 +1035,24 @@ function ForwardFreedomDashboard({
     };
   }, []);
 
+  useEffect(() => {
+    if (!plaidStatus.configured || plaidOAuthResumeAttemptedRef.current) return;
+
+    const pendingLink = loadPendingPlaidLinkState();
+    const receivedRedirectUri =
+      plaidOAuthRedirectUri || (hasOAuthStateInUrl() ? window.location.href : null);
+    if (!pendingLink?.linkToken || !receivedRedirectUri) return;
+
+    plaidOAuthResumeAttemptedRef.current = true;
+    setPlaidLinkToken(pendingLink.linkToken);
+    setPlaidTargetUserId(pendingLink.targetUserId || activeUser.id);
+    setPlaidTargetItemId(pendingLink.plaidItemId || null);
+    setPlaidOAuthRedirectUri(receivedRedirectUri);
+    setPlaidShouldOpen(true);
+    setPlaidError("");
+    clearOAuthStateFromUrl();
+  }, [activeUser.id, plaidOAuthRedirectUri, plaidStatus.configured]);
+
   const applyPlaidSyncPayload = (userId, syncPayload) => {
     setUsers((currentUsers) =>
       currentUsers.map((user) =>
@@ -1078,6 +1108,9 @@ function ForwardFreedomDashboard({
     setPlaidLinkToken(null);
     setPlaidTargetUserId(null);
     setPlaidTargetItemId(null);
+    setPlaidOAuthRedirectUri(null);
+    clearPendingPlaidLinkState();
+    clearOAuthStateFromUrl();
   };
 
   const closePlaidConsentPrompt = () => {
@@ -1095,6 +1128,7 @@ function ForwardFreedomDashboard({
 
   const { open: openPlaidLink, ready: isPlaidReady } = usePlaidLink({
     token: plaidLinkToken,
+    receivedRedirectUri: plaidOAuthRedirectUri || undefined,
     onSuccess: async (publicToken, metadata) => {
       const targetUserId = plaidTargetUserId || activeUser.id;
       const isRepairFlow = Boolean(plaidTargetItemId);
@@ -1382,6 +1416,12 @@ function ForwardFreedomDashboard({
       setPlaidLinkToken(linkToken);
       setPlaidTargetUserId(activeUser.id);
       setPlaidTargetItemId(plaidItemId);
+      setPlaidOAuthRedirectUri(null);
+      savePendingPlaidLinkState({
+        linkToken,
+        targetUserId: activeUser.id,
+        plaidItemId,
+      });
       setPlaidShouldOpen(true);
       logPlaidClientEvent("link_token_created", {
         mode: plaidItemId ? "update" : "connect",

@@ -4,7 +4,8 @@ import { Configuration, PlaidApi, PlaidEnvironments, Products } from "plaid";
 dotenv.config();
 
 const PLAID_ENV = (process.env.PLAID_ENV || "development").trim().toLowerCase();
-const DEFAULT_PRODUCTS = [Products.Transactions, Products.Liabilities];
+const REQUIRED_PRODUCTS = [Products.Transactions];
+const OPTIONAL_PRODUCTS = [Products.Liabilities];
 
 let cachedClient = null;
 
@@ -24,8 +25,8 @@ export function getPlaidConfig() {
   return {
     configured: isPlaidConfigured(),
     environment: PLAID_ENV,
-    products: DEFAULT_PRODUCTS.map(String),
-    optionalProducts: [],
+    products: REQUIRED_PRODUCTS.map(String),
+    optionalProducts: OPTIONAL_PRODUCTS.map(String),
     capabilities: {
       accounts: true,
       transactions: true,
@@ -65,7 +66,34 @@ export function getPlaidClient() {
   return cachedClient;
 }
 
-export function getPlaidLinkTokenRequest({ userId, userName, accessToken }) {
+function normalizeRedirectUri(value) {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim();
+  return normalized || undefined;
+}
+
+export function resolvePlaidOAuthRedirectUri(request) {
+  const configured = normalizeRedirectUri(process.env.PLAID_OAUTH_REDIRECT_URI);
+  if (configured) return configured;
+
+  const origin = request?.headers?.origin || request?.headers?.Origin;
+  if (typeof origin !== "string" || !origin.trim()) return undefined;
+
+  const base = origin.trim().replace(/\/$/, "");
+  if (base.startsWith("https://") || base.startsWith("http://localhost")) {
+    return `${base}/plaid-oauth.html`;
+  }
+
+  return undefined;
+}
+
+export function getPlaidLinkTokenRequest({
+  userId,
+  userName,
+  accessToken,
+  enableAccountSelection = false,
+  redirectUri,
+}) {
   const request = {
     user: {
       client_user_id: userId,
@@ -74,15 +102,26 @@ export function getPlaidLinkTokenRequest({ userId, userName, accessToken }) {
     client_name: "Forward Freedom",
     language: "en",
     country_codes: ["US"],
-    products: DEFAULT_PRODUCTS,
+    products: REQUIRED_PRODUCTS,
+    optional_products: OPTIONAL_PRODUCTS,
     transactions: {
       days_requested: 365,
     },
     webhook: process.env.PLAID_WEBHOOK_URL || undefined,
   };
 
+  const resolvedRedirectUri = normalizeRedirectUri(redirectUri);
+  if (resolvedRedirectUri) {
+    request.redirect_uri = resolvedRedirectUri;
+  }
+
   if (accessToken) {
     request.access_token = accessToken;
+    if (enableAccountSelection) {
+      request.update = {
+        account_selection_enabled: true,
+      };
+    }
   }
 
   return request;
