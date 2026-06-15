@@ -547,28 +547,6 @@ export function LandingPage({ enterApp, onEnterDemo }) {
             >
               PRIVACY POLICY
             </button>
-            <button
-              onClick={openCreateAccess}
-              style={{
-                background: "transparent",
-                border: "none",
-                color: "#8feaff",
-                cursor: "pointer",
-              }}
-            >
-              Create Access
-            </button>
-            <button
-              onClick={enterApp}
-              style={{
-                background: "transparent",
-                border: "none",
-                color: "#8feaff",
-                cursor: "pointer",
-              }}
-            >
-              Client Login
-            </button>
           </div>
         </footer>
       </div>
