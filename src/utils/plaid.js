@@ -64,6 +64,14 @@ async function parseApiResponse(response) {
   return payload;
 }
 
+export function shouldFetchPlaidStatus({
+  currentView = "landing",
+  isDemoMode = false,
+  sessionUser = null,
+} = {}) {
+  return currentView === "app" && !isDemoMode && Boolean(sessionUser);
+}
+
 export async function getPlaidStatus() {
   const response = await fetch("/api/plaid/status", {
     headers: await buildAuthenticatedHeaders(),

@@ -50,6 +50,7 @@ import {
   deletePlaidUser,
   exchangePlaidPublicToken,
   getPlaidStatus,
+  shouldFetchPlaidStatus,
   syncPlaidUser,
 } from "./utils/plaid.js";
 import { logPlaidClientEvent } from "./utils/plaidLogging.js";
@@ -1120,6 +1121,23 @@ function ForwardFreedomDashboard({
   useEffect(() => {
     let cancelled = false;
 
+    if (
+      !shouldFetchPlaidStatus({
+        currentView,
+        isDemoMode,
+        sessionUser: sessionControls?.user || null,
+      })
+    ) {
+      setPlaidStatus({
+        configured: false,
+        environment: "development",
+        notes: [],
+      });
+      return () => {
+        cancelled = true;
+      };
+    }
+
     getPlaidStatus()
       .then((status) => {
         if (!cancelled) setPlaidStatus(status);
@@ -1137,7 +1155,7 @@ function ForwardFreedomDashboard({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [currentView, isDemoMode, sessionControls?.user]);
 
   useEffect(() => {
     if (!plaidStatus.configured || plaidOAuthResumeAttemptedRef.current) return;
