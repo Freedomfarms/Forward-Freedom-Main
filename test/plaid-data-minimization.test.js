@@ -3,7 +3,11 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 
 import { mapPlaidAccountsToAppAccounts } from "../server/mappers.js";
-import { getPlaidConfig, getPlaidLinkTokenRequest } from "../server/plaidClient.js";
+import {
+  getPlaidConfig,
+  getPlaidLinkTokenRequest,
+  resolvePlaidOAuthRedirectUri,
+} from "../server/plaidClient.js";
 
 test("Plaid config only enables transactions and liabilities", () => {
   const config = getPlaidConfig();
@@ -26,6 +30,37 @@ test("Link token request treats liabilities as optional and supports OAuth redir
   assert.deepEqual(request.optional_products, ["liabilities"]);
   assert.equal(request.redirect_uri, "https://www.forwardfreedomfinancial.com/plaid-oauth.html");
   assert.deepEqual(request.transactions, { days_requested: 365 });
+});
+
+test("OAuth redirect URI is only used when explicitly configured", () => {
+  const previous = process.env.PLAID_OAUTH_REDIRECT_URI;
+
+  delete process.env.PLAID_OAUTH_REDIRECT_URI;
+  // Must not derive a redirect_uri from the request origin: an unregistered
+  // redirect_uri makes Plaid reject every link/token/create with INVALID_FIELD.
+  assert.equal(
+    resolvePlaidOAuthRedirectUri({ headers: { origin: "https://app.example.com" } }),
+    undefined
+  );
+
+  process.env.PLAID_OAUTH_REDIRECT_URI = "https://app.example.com/plaid-oauth.html";
+  assert.equal(resolvePlaidOAuthRedirectUri(), "https://app.example.com/plaid-oauth.html");
+
+  if (previous === undefined) {
+    delete process.env.PLAID_OAUTH_REDIRECT_URI;
+  } else {
+    process.env.PLAID_OAUTH_REDIRECT_URI = previous;
+  }
+});
+
+test("Link token request omits redirect_uri when none is configured", () => {
+  const request = getPlaidLinkTokenRequest({
+    userId: "user-123",
+    userName: "Taylor User",
+    redirectUri: resolvePlaidOAuthRedirectUri(),
+  });
+
+  assert.equal(Object.hasOwn(request, "redirect_uri"), false);
 });
 
 test("Link token repair mode can request additional accounts from an existing item", () => {

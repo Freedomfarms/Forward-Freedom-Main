@@ -72,19 +72,13 @@ function normalizeRedirectUri(value) {
   return normalized || undefined;
 }
 
-export function resolvePlaidOAuthRedirectUri(request) {
-  const configured = normalizeRedirectUri(process.env.PLAID_OAUTH_REDIRECT_URI);
-  if (configured) return configured;
-
-  const origin = request?.headers?.origin || request?.headers?.Origin;
-  if (typeof origin !== "string" || !origin.trim()) return undefined;
-
-  const base = origin.trim().replace(/\/$/, "");
-  if (base.startsWith("https://") || base.startsWith("http://localhost")) {
-    return `${base}/plaid-oauth.html`;
-  }
-
-  return undefined;
+// Plaid only accepts a redirect_uri that is already registered under
+// "Allowed redirect URIs" in the developer dashboard. Sending any other value
+// fails link/token/create with INVALID_FIELD, which breaks every connection
+// attempt (not just OAuth banks). We therefore only forward an explicitly
+// configured URI and never derive one from the request origin.
+export function resolvePlaidOAuthRedirectUri() {
+  return normalizeRedirectUri(process.env.PLAID_OAUTH_REDIRECT_URI);
 }
 
 export function getPlaidLinkTokenRequest({
