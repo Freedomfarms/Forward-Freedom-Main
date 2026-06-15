@@ -530,6 +530,16 @@ function mergePlaidSyncIntoUser(user, syncPayload) {
   };
 }
 
+export function isStalePlaidSyncError(message) {
+  const normalized = String(message || "").toLowerCase();
+  return (
+    normalized.includes("request blocked") ||
+    normalized.includes("request failed") ||
+    normalized.includes("unable to sync plaid") ||
+    normalized.includes("sign-in session is still restoring")
+  );
+}
+
 function removeManualAccountFromUser(user, targetAccount) {
   const targetAccountName = targetAccount.name;
   const nextAccounts = user.accounts
@@ -1193,6 +1203,9 @@ function ForwardFreedomDashboard({
       try {
         const payload = await syncPlaidUser(userId, { user: sessionControls?.user || null });
         applyPlaidSyncPayload(userId, payload);
+        setPlaidError((currentError) =>
+          silent && !isStalePlaidSyncError(currentError) ? currentError : ""
+        );
         return payload;
       } catch (error) {
         if (!silent) {
