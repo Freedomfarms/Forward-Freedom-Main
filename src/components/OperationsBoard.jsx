@@ -12,7 +12,6 @@ import {
 } from "../utils/format.js";
 import { budgetMonths, yearlyOpsData } from "../data/constants.jsx";
 import { buildProjectedTrueCashSeries, buildReconciledTrueCashSeries } from "../utils/planning.js";
-import { buildSubscriptionOverview } from "../utils/subscriptions.js";
 import { HouseholdProfilesControl } from "./Common.jsx";
 
 function formatAdjustmentValue(value) {
@@ -622,7 +621,7 @@ export function OperationsBoard({
     0
   );
   const yearlySurplus = yearlyIncome - yearlyBudget;
-  const subscriptionOverview = buildSubscriptionOverview(subscriptions);
+  const ytdCashFlow = yearlyActualIncome - yearlySpent;
   const incomeOutlookRows = planningIncomeStreams.map((stream) => {
     const monthlyValues = budgetMonths.map((month) =>
       (stream.months || budgetMonths).includes(month) ? parseMoney(stream.amount) : 0
@@ -825,13 +824,8 @@ export function OperationsBoard({
         {[
           ["Total Income Earned", wholeDollars(yearlyActualIncome), "#00f59b"],
           ["Total Spent", wholeDollars(yearlySpent), "#00d8ff"],
+          ["YTD Cash Flow", wholeDollars(ytdCashFlow), ytdCashFlow >= 0 ? "#00f59b" : "#ff5d7a"],
           ["Projected Year-End Profit", wholeDollars(dynamicYearlySurplus), dynamicYearlySurplus >= 0 ? "#00f59b" : "#ff5d7a"],
-          [
-            "Recurring Commitments",
-            wholeDollars(subscriptionOverview.activeMonthly),
-            "#ffb65d",
-            `${wholeDollars(subscriptionOverview.yearlyCommitment)} annualized`,
-          ],
         ].map((item) => (
           <div key={item[0]} style={{ ...styles.panel, padding: 20 }}>
             <div
