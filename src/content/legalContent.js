@@ -73,15 +73,16 @@ export const LEGAL_CONTENT = {
         body: "Forward Freedom Financial cannot:",
         bullets: [
           "Move money from your accounts",
-          "Transfer funds",
-          "Send payments",
+          "Transfer funds between accounts",
+          "Send payments on your behalf",
           "Change account settings",
           "Modify account ownership",
-          "Change banking credentials",
-          "Access your bank username or password",
+          "Open or close accounts",
+          "View or store your bank username or password",
+          "Access your online banking credentials",
         ],
         footer:
-          "Connected accounts are used solely to provide financial visibility, budgeting tools, and planning insights.",
+          "Connected accounts are used solely to provide budgeting, forecasting, financial planning, and account monitoring tools.\n\nYour connection is read-only and is designed to give you visibility into your finances—not control over your accounts.",
       },
       {
         heading: "🔐 Encryption & Security Controls",
