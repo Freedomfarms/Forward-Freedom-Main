@@ -145,20 +145,22 @@ button {
     width: 100% !important;
     min-width: 0;
     overflow-x: hidden !important;
-    padding: 14px 16px 22px !important;
+    padding: 86px 16px 22px !important;
   }
 
   .mobile-topbar {
     display: flex;
-    position: sticky;
+    position: fixed;
     top: 0;
-    z-index: 80;
+    left: 0;
+    right: 0;
+    z-index: 9000;
     align-items: center;
     gap: 12px;
-    margin: -2px 0 16px;
+    margin: 0;
     padding: 12px 14px;
     border: 1px solid rgba(0, 216, 255, 0.22);
-    border-radius: 14px;
+    border-radius: 0 0 14px 14px;
     background: rgba(2, 11, 22, 0.94);
     box-shadow: 0 12px 28px rgba(0, 8, 18, 0.24);
   }
@@ -540,7 +542,7 @@ button {
 
 @media (max-width: 767px) {
   .app-main {
-    padding: 12px 12px 20px !important;
+    padding: 84px 12px 20px !important;
   }
 
   .mobile-topbar-title {
