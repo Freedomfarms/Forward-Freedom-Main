@@ -51,12 +51,14 @@ export function LegalModal({ activeDocument, closeDocument }) {
                 fontWeight: 900,
               }}
             >
-              Legal notice
+              {document.eyebrow || "Legal notice"}
             </div>
             <div style={{ color: "white", fontSize: 30, fontWeight: 900, marginTop: 10 }}>
               {document.title}
             </div>
-            <div style={{ color: "#8fb0d0", marginTop: 8 }}>Updated {document.updated}</div>
+            {document.updated ? (
+              <div style={{ color: "#8fb0d0", marginTop: 8 }}>Updated {document.updated}</div>
+            ) : null}
           </div>
 
           <button
@@ -75,6 +77,16 @@ export function LegalModal({ activeDocument, closeDocument }) {
           </button>
         </div>
 
+        {Array.isArray(document.intro) && document.intro.length > 0 ? (
+          <div style={{ display: "grid", gap: 12, marginBottom: 16 }}>
+            {document.intro.map((paragraph, index) => (
+              <div key={index} style={{ color: "#c6d7ea", lineHeight: 1.7, fontSize: 15 }}>
+                {paragraph}
+              </div>
+            ))}
+          </div>
+        ) : null}
+
         <div style={{ display: "grid", gap: 16 }}>
           {document.sections.map((section) => (
             <section
@@ -87,7 +99,46 @@ export function LegalModal({ activeDocument, closeDocument }) {
               }}
             >
               <div style={{ color: "white", fontSize: 18, fontWeight: 900 }}>{section.heading}</div>
-              <div style={{ color: "#c6d7ea", lineHeight: 1.7, marginTop: 10 }}>{section.body}</div>
+              {section.body ? (
+                <div
+                  style={{
+                    color: "#c6d7ea",
+                    lineHeight: 1.7,
+                    marginTop: 10,
+                    whiteSpace: "pre-line",
+                  }}
+                >
+                  {section.body}
+                </div>
+              ) : null}
+              {Array.isArray(section.bullets) && section.bullets.length > 0 ? (
+                <ul
+                  style={{
+                    color: "#c6d7ea",
+                    lineHeight: 1.7,
+                    margin: "12px 0 0",
+                    paddingLeft: 22,
+                  }}
+                >
+                  {section.bullets.map((bullet) => (
+                    <li key={bullet} style={{ marginBottom: 4 }}>
+                      {bullet}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              {section.footer ? (
+                <div
+                  style={{
+                    color: "#c6d7ea",
+                    lineHeight: 1.7,
+                    marginTop: 12,
+                    whiteSpace: "pre-line",
+                  }}
+                >
+                  {section.footer}
+                </div>
+              ) : null}
             </section>
           ))}
         </div>

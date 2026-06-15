@@ -210,7 +210,11 @@ export function LandingPage({ enterApp, onEnterDemo }) {
               ) : (
                 <span />
               )}
-              <button type="button" style={buildPrimaryButtonStyle(true)}>
+              <button
+                type="button"
+                onClick={() => setActiveDocument("security")}
+                style={buildPrimaryButtonStyle(true)}
+              >
                 Security &amp; Privacy
               </button>
             </div>

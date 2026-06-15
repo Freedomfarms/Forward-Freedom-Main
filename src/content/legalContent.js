@@ -43,4 +43,74 @@ export const LEGAL_CONTENT = {
       },
     ],
   },
+  security: {
+    eyebrow: "Security",
+    title: "Your Financial Security Comes First",
+    intro: [
+      "Forward Freedom Financial was built to help individuals and families gain clarity, confidence, and control over their finances. Protecting your information is one of our highest priorities.",
+      "We understand that connecting financial accounts requires trust. That's why we've designed the platform to minimize data exposure and use secure, industry-standard technologies to protect your information.",
+    ],
+    sections: [
+      {
+        heading: "🔒 Secure Bank Connections Powered by Plaid",
+        body: "Forward Freedom Financial uses Plaid to securely connect your financial accounts.\n\nPlaid is one of the most trusted financial connectivity platforms in the world and is used by thousands of banks, financial institutions, and financial technology companies.\n\nYour banking credentials are never provided to or stored by Forward Freedom Financial.\n\nWhen connecting an account, your login information is entered through Plaid's secure connection process, not through Forward Freedom Financial.",
+      },
+      {
+        heading: "🏦 How Your Financial Data Is Used",
+        body: "To provide budgeting, forecasting, cash flow analysis, financial planning, and account monitoring tools, the platform securely processes information such as:",
+        bullets: [
+          "Account balances",
+          "Transaction history",
+          "Account names and account types",
+          "Liability information (when available)",
+          "Investment information (when available)",
+        ],
+        footer:
+          "This information is used exclusively to generate the dashboards, forecasts, reports, and financial insights available within your account.\n\nForward Freedom Financial does not monitor, review, or analyze individual user transactions for advertising, marketing, or sales purposes.\n\nYour financial information is used to operate the platform and deliver the services you request.",
+      },
+      {
+        heading: "🚫 What Forward Freedom Financial Cannot Do",
+        body: "Forward Freedom Financial cannot:",
+        bullets: [
+          "Move money from your accounts",
+          "Transfer funds",
+          "Send payments",
+          "Change account settings",
+          "Modify account ownership",
+          "Change banking credentials",
+          "Access your bank username or password",
+        ],
+        footer:
+          "Connected accounts are used solely to provide financial visibility, budgeting tools, and planning insights.",
+      },
+      {
+        heading: "🔐 Encryption & Security Controls",
+        body: "We use industry-standard security practices designed to protect your information.\n\nSecurity measures include:",
+        bullets: [
+          "Encrypted data transmission",
+          "Secure authentication systems",
+          "Protected infrastructure",
+          "Access controls",
+          "Ongoing monitoring and security improvements",
+        ],
+        footer:
+          "While no online system can guarantee absolute security, we are committed to implementing reasonable safeguards designed to protect user information.",
+      },
+      {
+        heading: "🛡 Privacy First",
+        body: "Your financial information belongs to you.\n\nForward Freedom Financial does not sell personal financial information to third parties.\n\nWe believe financial freedom begins with trust, and protecting your privacy is fundamental to our mission.\n\nYour data is used to operate the platform and improve your experience—not to build advertising profiles or sell personal information.",
+      },
+      {
+        heading: "👤 Control Over Your Information",
+        body: "You remain in control of your connected accounts and information.\n\nYou may:",
+        bullets: [
+          "Disconnect financial accounts",
+          "Remove connected institutions",
+          "Delete your account",
+          "Stop using account synchronization services",
+        ],
+        footer: "At any time.",
+      },
+    ],
+  },
 };
