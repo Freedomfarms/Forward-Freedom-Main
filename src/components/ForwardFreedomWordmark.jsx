@@ -1,27 +1,34 @@
 const SIZE_PRESETS = {
   nav: {
     diameter: 96,
-    forward: 9,
+    white: 8,
     freedom: 12,
-    financial: 8,
-    letterSpacing: 2.8,
+    forwardLetterSpacing: 3,
     freedomLetterSpacing: 3.2,
-    gap: 1,
+    financialLetterSpacing: 1.5,
+    gap: 2,
+    ringWidth: 2,
+    sweepWidth: 2,
   },
   hero: {
     diameter: 320,
-    forward: 30,
+    white: 26,
     freedom: 40,
-    financial: 22,
-    letterSpacing: 10,
+    forwardLetterSpacing: 14,
     freedomLetterSpacing: 12,
-    gap: 4,
+    financialLetterSpacing: 7,
+    gap: 6,
+    ringWidth: 3,
+    sweepWidth: 3,
   },
 };
 
 export function ForwardFreedomWordmark({ size = "nav", className = "" }) {
   const preset = SIZE_PRESETS[size] || SIZE_PRESETS.nav;
   const diameter = preset.diameter;
+  const isHero = size === "hero";
+
+  const ringMask = `radial-gradient(farthest-side, transparent calc(100% - ${preset.sweepWidth}px), #000 calc(100% - ${preset.sweepWidth}px))`;
 
   return (
     <div
@@ -37,48 +44,72 @@ export function ForwardFreedomWordmark({ size = "nav", className = "" }) {
         flexShrink: 0,
       }}
     >
+      {/* Pulsing core halo */}
       <div
         aria-hidden="true"
+        className="ff-logo-halo"
         style={{
           position: "absolute",
-          inset: 0,
+          inset: "-6%",
           borderRadius: "50%",
           background:
-            "radial-gradient(circle at 50% 38%, rgba(0,136,255,.16), rgba(2,7,17,0) 68%)",
+            "radial-gradient(circle at 50% 42%, rgba(0,170,255,.34), rgba(0,110,230,.14) 38%, rgba(2,7,17,0) 70%)",
+          filter: "blur(6px)",
         }}
       />
+
+      {/* Faint outer rim */}
       <div
         aria-hidden="true"
         style={{
           position: "absolute",
-          inset: size === "hero" ? "2%" : "4%",
+          inset: isHero ? "2%" : "4%",
           borderRadius: "50%",
-          border: "1px solid rgba(0,174,255,.28)",
-          boxShadow:
-            "0 0 28px rgba(0,136,255,.22), inset 0 0 24px rgba(0,136,255,.08)",
+          border: "1px solid rgba(0,174,255,.30)",
+          boxShadow: "0 0 32px rgba(0,136,255,.28), inset 0 0 26px rgba(0,136,255,.10)",
         }}
       />
+
+      {/* Rotating glow sweep (primary) */}
       <div
         aria-hidden="true"
+        className="ff-logo-sweep"
         style={{
           position: "absolute",
-          inset: size === "hero" ? "8%" : "10%",
+          inset: isHero ? "6%" : "8%",
           borderRadius: "50%",
-          border: "2px solid transparent",
-          borderTopColor: "rgba(0,216,255,.85)",
-          borderRightColor: "rgba(0,136,255,.45)",
-          borderBottomColor: "rgba(0,80,180,.12)",
-          transform: "rotate(-28deg)",
+          background:
+            "conic-gradient(from 0deg, rgba(0,216,255,0) 0deg, rgba(0,216,255,0) 232deg, rgba(0,176,255,.7) 300deg, rgba(140,244,255,1) 350deg, rgba(0,216,255,0) 360deg)",
+          WebkitMask: ringMask,
+          mask: ringMask,
+          filter: "drop-shadow(0 0 6px rgba(0,216,255,.75))",
         }}
       />
+
+      {/* Counter-rotating glow sweep (secondary, dimmer) */}
       <div
         aria-hidden="true"
+        className="ff-logo-sweep--slow"
         style={{
           position: "absolute",
-          inset: size === "hero" ? "14%" : "16%",
+          inset: isHero ? "11%" : "12%",
           borderRadius: "50%",
-          border: "1px dashed rgba(125,220,255,.22)",
-          transform: "rotate(18deg)",
+          background:
+            "conic-gradient(from 180deg, rgba(0,136,255,0) 0deg, rgba(0,136,255,0) 280deg, rgba(0,136,255,.55) 340deg, rgba(0,136,255,0) 360deg)",
+          WebkitMask: ringMask,
+          mask: ringMask,
+        }}
+      />
+
+      {/* Inner dashed tick ring (rotating) */}
+      <div
+        aria-hidden="true"
+        className="ff-logo-ring-dashed"
+        style={{
+          position: "absolute",
+          inset: isHero ? "15%" : "16%",
+          borderRadius: "50%",
+          border: "1px dashed rgba(125,220,255,.26)",
         }}
       />
 
@@ -87,30 +118,36 @@ export function ForwardFreedomWordmark({ size = "nav", className = "" }) {
           position: "relative",
           zIndex: 1,
           textAlign: "center",
-          lineHeight: 1.05,
+          lineHeight: 1.08,
           userSelect: "none",
         }}
       >
         <div
           style={{
             color: "#f4f8ff",
-            fontSize: preset.forward,
+            fontSize: preset.white,
             fontWeight: 800,
-            letterSpacing: preset.letterSpacing,
+            letterSpacing: preset.forwardLetterSpacing,
             textTransform: "uppercase",
+            textShadow: "0 0 12px rgba(140,200,255,.35)",
           }}
         >
           Forward
         </div>
         <div
           style={{
-            color: "#00aaff",
             fontSize: preset.freedom,
             fontWeight: 900,
             letterSpacing: preset.freedomLetterSpacing,
-            marginTop: preset.gap,
+            margin: `${preset.gap}px 0`,
             textTransform: "uppercase",
-            textShadow: "0 0 18px rgba(0,174,255,.55)",
+            backgroundImage:
+              "linear-gradient(180deg, #aef0ff 0%, #2bb8ff 48%, #0066d6 100%)",
+            WebkitBackgroundClip: "text",
+            backgroundClip: "text",
+            color: "transparent",
+            WebkitTextFillColor: "transparent",
+            filter: "drop-shadow(0 0 18px rgba(0,174,255,.65))",
           }}
         >
           Freedom
@@ -118,11 +155,11 @@ export function ForwardFreedomWordmark({ size = "nav", className = "" }) {
         <div
           style={{
             color: "#f4f8ff",
-            fontSize: preset.financial,
+            fontSize: preset.white,
             fontWeight: 800,
-            letterSpacing: preset.letterSpacing,
-            marginTop: preset.gap,
+            letterSpacing: preset.financialLetterSpacing,
             textTransform: "uppercase",
+            textShadow: "0 0 12px rgba(140,200,255,.35)",
           }}
         >
           Financial

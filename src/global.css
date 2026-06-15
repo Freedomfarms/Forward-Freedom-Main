@@ -33,6 +33,48 @@ button {
   user-select: none;
 }
 
+@keyframes ff-logo-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes ff-logo-spin-reverse {
+  to {
+    transform: rotate(-360deg);
+  }
+}
+@keyframes ff-logo-pulse {
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.95;
+    transform: scale(1.05);
+  }
+}
+.ff-logo-sweep {
+  animation: ff-logo-spin 7s linear infinite;
+}
+.ff-logo-sweep--slow {
+  animation: ff-logo-spin-reverse 26s linear infinite;
+}
+.ff-logo-ring-dashed {
+  animation: ff-logo-spin-reverse 38s linear infinite;
+}
+.ff-logo-halo {
+  animation: ff-logo-pulse 4.5s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ff-logo-sweep,
+  .ff-logo-sweep--slow,
+  .ff-logo-ring-dashed,
+  .ff-logo-halo {
+    animation: none;
+  }
+}
+
 .sidebar-nav-button {
   background: transparent;
   color: #c9d8ee;
