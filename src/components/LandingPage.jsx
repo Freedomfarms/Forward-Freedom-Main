@@ -92,7 +92,7 @@ export function LandingPage({ enterApp, onEnterDemo }) {
         <nav
           style={{
             display: "grid",
-            gridTemplateColumns: "minmax(180px, 228px) 1fr auto",
+            gridTemplateColumns: "minmax(180px, 228px) 1fr",
             alignItems: "center",
             marginBottom: 84,
             gap: 24,
@@ -138,22 +138,6 @@ export function LandingPage({ enterApp, onEnterDemo }) {
             <a href="#contact" style={{ color: "#cfe7ff", textDecoration: "none" }}>
               Contact
             </a>
-          </div>
-
-          <div
-            style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 14 }}
-          >
-            {typeof onEnterDemo === "function" ? (
-              <button onClick={openDemoMode} style={buildPrimaryButtonStyle(true)}>
-                Demo Mode
-              </button>
-            ) : null}
-            <button onClick={enterApp} style={buildPrimaryButtonStyle(true)}>
-              Client Login
-            </button>
-            <button onClick={openCreateAccess} style={buildPrimaryButtonStyle()}>
-              Create Access
-            </button>
           </div>
         </nav>
 
@@ -227,7 +211,7 @@ export function LandingPage({ enterApp, onEnterDemo }) {
                 <span />
               )}
               <button type="button" style={buildPrimaryButtonStyle(true)}>
-                Safety Overview
+                Security &amp; Privacy
               </button>
             </div>
           </div>
