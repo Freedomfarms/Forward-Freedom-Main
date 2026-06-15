@@ -50,7 +50,18 @@ function getPlaidErrorDetails(error) {
 
 function isPlaidProductUnavailable(error) {
   const code = error?.response?.data?.error_code;
-  return ["PRODUCT_NOT_READY", "PRODUCT_NOT_ENABLED", "NO_ACCOUNTS"].includes(code);
+  // These mean "this product simply isn't available for this Item" (e.g. a
+  // checking account with no loans), not that the connection is broken. They
+  // must not flag the whole Item as REQUIRES_ATTENTION when other products
+  // (transactions, balances) synced fine.
+  return [
+    "PRODUCT_NOT_READY",
+    "PRODUCT_NOT_ENABLED",
+    "NO_ACCOUNTS",
+    "NO_LIABILITY_ACCOUNTS",
+    "NO_AUTH_ACCOUNTS",
+    "NO_INVESTMENT_ACCOUNTS",
+  ].includes(code);
 }
 
 function normalizeWorkspaceUserId(value) {
