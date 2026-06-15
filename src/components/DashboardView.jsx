@@ -715,8 +715,12 @@ export function DashboardView({
         </div>
       </header>
 
-      <section style={{ ...styles.panel, padding: 20, width: "100%", overflow: "hidden" }}>
+      <section
+        className="dashboard-chart-panel"
+        style={{ ...styles.panel, padding: 20, width: "100%", overflow: "hidden" }}
+      >
         <div
+          className="dashboard-chart-toolbar"
           style={{
             display: "flex",
             justifyContent: "space-between",
@@ -745,7 +749,7 @@ export function DashboardView({
             </span>
             TRUE CASH <InfoDot tooltip="True Cash chart tracks liquid cash minus credit card debt over time." />
           </div>
-          <div style={{ display: "flex", gap: 12 }}>
+          <div className="dashboard-chart-actions" style={{ display: "flex", gap: 12 }}>
             <button
               style={{
                 color: "#f2f7ff",
@@ -772,6 +776,7 @@ export function DashboardView({
         </div>
 
         <div
+          className="dashboard-chart-summary"
           style={{
             display: "flex",
             justifyContent: "space-between",
@@ -779,7 +784,7 @@ export function DashboardView({
             marginBottom: 24,
           }}
         >
-          <div style={{ display: "flex", alignItems: "flex-end", gap: 12 }}>
+          <div className="dashboard-cash-value" style={{ display: "flex", alignItems: "flex-end", gap: 12 }}>
             <div style={{ color: "white", fontSize: 38, fontWeight: 720, letterSpacing: 0.4 }}>
               {money(trueCash)}
             </div>
@@ -800,6 +805,7 @@ export function DashboardView({
             </div>
           </div>
           <div
+            className="dashboard-range-controls"
             style={{
               display: "flex",
               alignItems: "center",
@@ -844,7 +850,10 @@ export function DashboardView({
           </div>
         </div>
 
-        <div style={{ position: "relative", height: 330, paddingLeft: 56, width: "100%" }}>
+        <div
+          className="dashboard-chart-frame"
+          style={{ position: "relative", height: 330, paddingLeft: 56, width: "100%" }}
+        >
           {yAxisLabels.map((label, index) => (
             <div
               key={label}
@@ -1131,6 +1140,7 @@ export function DashboardView({
       </section>
 
       <section
+        className="responsive-grid-4 dashboard-metrics-grid"
         style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginTop: 16 }}
       >
         {dynamicMetrics.map((metric) => (
@@ -1139,6 +1149,7 @@ export function DashboardView({
       </section>
 
       <section
+        className="responsive-two-column dashboard-overview-grid"
         style={{ display: "grid", gridTemplateColumns: "1fr 1.08fr", gap: 16, marginTop: 16 }}
       >
         <div style={{ ...styles.panel, padding: 20 }}>
@@ -1204,7 +1215,10 @@ export function DashboardView({
             </div>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14 }}>
+          <div
+            className="responsive-grid-3"
+            style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14 }}
+          >
             {[
               ["Budget", money(monthlyBudgetReview.monthlyBudget), "#8feaff"],
               ["Spent", money(monthlyBudgetReview.monthlySpent), "#ffb65d"],
@@ -1263,7 +1277,7 @@ export function DashboardView({
           >
             Net Worth Breakdown <InfoDot />
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 30 }}>
+          <div className="dashboard-net-worth-layout" style={{ display: "flex", alignItems: "center", gap: 30 }}>
             <div
               style={{
                 position: "relative",
@@ -1341,6 +1355,7 @@ export function DashboardView({
 
       <section style={{ ...styles.panel, padding: 20, marginTop: 16 }}>
         <div
+          className="dashboard-chart-toolbar"
           style={{
             display: "flex",
             justifyContent: "space-between",
@@ -1379,7 +1394,7 @@ export function DashboardView({
                 : "Daily history is building"}
             </div>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div className="dashboard-chart-actions" style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <div style={{ display: "flex", gap: 8 }}>
               {["30D", "90D", "YTD", "1Y"].map((range) => (
                 <button

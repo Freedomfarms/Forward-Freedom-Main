@@ -2,7 +2,14 @@ import { APP_TABS, navMain, navTools } from "../data/constants.jsx";
 import { styles } from "../styles.js";
 import { HouseholdProfilesControl, SideItem } from "./Common.jsx";
 
-export function AppSidebar({ activeTab, setActiveTab, onBackHome, sessionControls = null }) {
+export function AppSidebar({
+  activeTab,
+  setActiveTab,
+  onBackHome,
+  sessionControls = null,
+  className = "",
+  onNavigate,
+}) {
   const actionItems = [
     {
       label: "Review transactions",
@@ -22,7 +29,7 @@ export function AppSidebar({ activeTab, setActiveTab, onBackHome, sessionControl
   ];
 
   return (
-    <aside style={styles.sidebar}>
+    <aside className={`app-sidebar ${className}`.trim()} style={styles.sidebar}>
       <div
         style={{
           display: "flex",
@@ -97,7 +104,13 @@ export function AppSidebar({ activeTab, setActiveTab, onBackHome, sessionControl
         Main
       </div>
       {navMain.map((item) => (
-        <SideItem key={item.label} item={item} activeTab={activeTab} setActiveTab={setActiveTab} />
+        <SideItem
+          key={item.label}
+          item={item}
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          onNavigate={onNavigate}
+        />
       ))}
 
       <div
@@ -112,11 +125,20 @@ export function AppSidebar({ activeTab, setActiveTab, onBackHome, sessionControl
         Tools
       </div>
       {navTools.map((item) => (
-        <SideItem key={item.label} item={item} activeTab={activeTab} setActiveTab={setActiveTab} />
+        <SideItem
+          key={item.label}
+          item={item}
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          onNavigate={onNavigate}
+        />
       ))}
 
       <button
-        onClick={onBackHome}
+        onClick={() => {
+          onBackHome();
+          onNavigate?.();
+        }}
         style={{
           width: "100%",
           marginTop: 24,
@@ -240,7 +262,10 @@ export function AppSidebar({ activeTab, setActiveTab, onBackHome, sessionControl
             <button
               key={item.label}
               type="button"
-              onClick={() => setActiveTab(item.tab)}
+              onClick={() => {
+                setActiveTab(item.tab);
+                onNavigate?.();
+              }}
               style={{
                 textAlign: "left",
                 padding: "12px 14px",

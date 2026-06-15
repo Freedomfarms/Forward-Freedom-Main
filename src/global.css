@@ -109,3 +109,477 @@ button {
   color: white;
   box-shadow: 0 0 30px rgba(0, 120, 255, 0.28);
 }
+
+.mobile-topbar,
+.mobile-nav-backdrop,
+.mobile-nav-drawer,
+.profile-chip-menu-button,
+.transaction-row-menu-button {
+  display: none;
+}
+
+@media (max-width: 1023px) {
+  html,
+  body,
+  #root {
+    overflow-x: hidden;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    min-height: 44px;
+  }
+
+  .app-shell {
+    display: block !important;
+    min-height: 100vh;
+  }
+
+  .app-sidebar--desktop {
+    display: none !important;
+  }
+
+  .app-main {
+    width: 100% !important;
+    min-width: 0;
+    overflow-x: hidden !important;
+    padding: 14px 16px 22px !important;
+  }
+
+  .mobile-topbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: -2px 0 16px;
+    padding: 12px 14px;
+    border: 1px solid rgba(0, 216, 255, 0.22);
+    border-radius: 14px;
+    background: rgba(2, 11, 22, 0.94);
+    box-shadow: 0 12px 28px rgba(0, 8, 18, 0.24);
+  }
+
+  .mobile-menu-button {
+    width: 44px;
+    height: 44px;
+    border: 1px solid rgba(0, 216, 255, 0.28);
+    border-radius: 12px;
+    background: rgba(0, 136, 255, 0.12);
+    color: #eaf3ff;
+    cursor: pointer;
+    font-size: 20px;
+    font-weight: 900;
+  }
+
+  .mobile-topbar-eyebrow {
+    color: #8feaff;
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+
+  .mobile-topbar-title {
+    color: white;
+    font-size: 18px;
+    font-weight: 900;
+    line-height: 1.2;
+  }
+
+  .mobile-nav-backdrop.is-open {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 9980;
+    background: rgba(1, 8, 18, 0.72);
+  }
+
+  .mobile-nav-drawer {
+    display: block;
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 9990;
+    width: min(86vw, 340px);
+    pointer-events: none;
+    transform: translateX(-105%);
+    transition: transform 180ms ease;
+  }
+
+  .mobile-nav-drawer.is-open {
+    pointer-events: auto;
+    transform: translateX(0);
+  }
+
+  .mobile-nav-drawer .app-sidebar {
+    display: block !important;
+    width: 100% !important;
+    height: 100vh;
+    overflow-y: auto;
+    padding: 18px 14px !important;
+    border-right: 1px solid rgba(0, 216, 255, 0.24) !important;
+  }
+
+  .app-main > header,
+  .app-main header {
+    align-items: flex-start !important;
+    gap: 12px !important;
+  }
+
+  .app-main h1 {
+    overflow-wrap: anywhere;
+  }
+
+  .profile-chip-menu-button {
+    display: inline-flex !important;
+  }
+
+  .landing-page {
+    overflow-y: auto !important;
+    padding: 18px 18px 28px !important;
+  }
+
+  .landing-glow {
+    right: -120px !important;
+    top: 70px !important;
+    width: 360px !important;
+    height: 360px !important;
+  }
+
+  .landing-hero,
+  .auth-layout,
+  .forecast-layout,
+  .responsive-two-column,
+  .budget-hero,
+  .ops-calendar-grid,
+  .forecast-detail-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .landing-hero {
+    gap: 18px !important;
+  }
+
+  .landing-copy {
+    max-width: none !important;
+  }
+
+  .landing-intro {
+    font-size: 17px !important;
+    line-height: 1.55 !important;
+  }
+
+  .landing-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 12px !important;
+  }
+
+  .landing-wordmark-panel {
+    min-height: 210px !important;
+  }
+
+  .landing-info-panel,
+  .auth-marketing-panel,
+  .auth-form-panel {
+    padding: 20px !important;
+  }
+
+  .landing-section-title,
+  .auth-title {
+    font-size: 28px !important;
+  }
+
+  .auth-page {
+    place-items: start center !important;
+    padding: 16px !important;
+  }
+
+  .auth-feature-grid,
+  .responsive-grid-4,
+  .responsive-grid-3,
+  .ops-kpi-grid,
+  .forecast-metric-grid,
+  .accounts-quick-start-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .dashboard-chart-toolbar,
+  .dashboard-chart-summary,
+  .transactions-feed-toolbar,
+  .ops-yearly-header {
+    align-items: flex-start !important;
+    flex-direction: column !important;
+  }
+
+  .dashboard-chart-actions,
+  .dashboard-range-controls,
+  .transactions-feed-actions {
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+    width: 100%;
+  }
+
+  .dashboard-cash-value {
+    flex-wrap: wrap !important;
+  }
+
+  .dashboard-net-worth-layout {
+    align-items: flex-start !important;
+    flex-direction: column !important;
+  }
+
+  .budget-hero {
+    gap: 18px !important;
+    margin-bottom: 24px !important;
+    padding: 18px !important;
+  }
+
+  .budget-table-header {
+    display: none !important;
+  }
+
+  .budget-table-section {
+    padding: 0 !important;
+  }
+
+  .budget-row-card {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+    padding: 14px !important;
+    cursor: pointer !important;
+  }
+
+  .budget-row-title {
+    grid-template-columns: auto minmax(0, 1fr) !important;
+    gap: 10px !important;
+  }
+
+  .budget-row-name-controls {
+    align-items: stretch !important;
+    flex-direction: column !important;
+    gap: 8px !important;
+  }
+
+  .budget-row-name-controls input {
+    width: 100% !important;
+  }
+
+  .budget-row-activity {
+    display: flex !important;
+    justify-content: space-between;
+    text-align: left !important;
+    padding: 0 !important;
+  }
+
+  .budget-row-activity::before {
+    content: "Activity";
+    color: #8fb1d9;
+    font-size: 11px;
+    font-weight: 900;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+  }
+
+  .budget-row-assigned {
+    text-align: left !important;
+  }
+
+  .transactions-panel {
+    padding: 16px !important;
+  }
+
+  .transactions-account-profile-header,
+  .transactions-feed-toolbar {
+    flex-wrap: wrap !important;
+  }
+
+  .transactions-manual-grid,
+  .transactions-filter-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .transactions-feed-header {
+    display: none !important;
+  }
+
+  .transactions-feed-row {
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    grid-template-areas:
+      "merchant amount"
+      "date amount"
+      "category category"
+      "account menu";
+    gap: 8px 12px !important;
+    align-items: start !important;
+    margin: 8px 0 !important;
+    padding: 14px !important;
+  }
+
+  .transaction-date {
+    grid-area: date;
+    font-size: 12px !important;
+  }
+
+  .transaction-merchant {
+    grid-area: merchant;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .transaction-category {
+    grid-area: category;
+    align-items: stretch !important;
+    flex-direction: column !important;
+    padding-left: 0 !important;
+  }
+
+  .transaction-account {
+    grid-area: account;
+    padding-left: 0 !important;
+    overflow-wrap: anywhere;
+  }
+
+  .transaction-amount {
+    grid-area: amount;
+    white-space: nowrap;
+  }
+
+  .transaction-row-menu-button {
+    display: inline-flex !important;
+    grid-area: menu;
+    justify-self: end;
+  }
+
+  .transactions-action-menu {
+    inset: auto 12px 12px 12px !important;
+    left: 12px !important;
+    right: 12px !important;
+    top: auto !important;
+    min-width: 0 !important;
+  }
+
+  .ops-scorecard,
+  .ops-yearly-panel {
+    padding: 16px !important;
+  }
+
+  .ops-scorecard-chart,
+  .ops-yearly-scroll {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .ops-scorecard-svg,
+  .forecast-chart-svg {
+    min-width: 640px;
+  }
+
+  .ops-calendar-panel {
+    padding: 16px !important;
+  }
+
+  .forecast-sidebar {
+    order: 2;
+  }
+
+  .forecast-category-radar {
+    display: flex !important;
+    max-height: none !important;
+    overflow-x: auto !important;
+    padding-bottom: 4px;
+  }
+
+  .forecast-category-radar > button {
+    flex: 0 0 min(74vw, 260px);
+  }
+
+  .forecast-chart-panel {
+    padding: 18px 16px 0 !important;
+  }
+
+  .forecast-chart-frame {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .forecast-detail-grid > div:first-child {
+    overflow-x: auto;
+  }
+
+  .forecast-review-header,
+  .forecast-review-row,
+  .forecast-review-footer {
+    min-width: 560px;
+  }
+
+  .account-modal-backdrop {
+    align-items: stretch !important;
+    padding: 10px !important;
+  }
+
+  .account-modal-form {
+    width: 100% !important;
+    max-height: calc(100vh - 20px);
+    overflow-y: auto;
+    padding: 18px !important;
+  }
+
+  .account-modal-form div[style*="grid-template-columns: 1fr 1fr"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  .app-main [style*="grid-template-columns: repeat(6"],
+  .app-main [style*="grid-template-columns: repeat(5"],
+  .app-main [style*="grid-template-columns: repeat(4"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 767px) {
+  .app-main {
+    padding: 12px 12px 20px !important;
+  }
+
+  .mobile-topbar-title {
+    font-size: 16px;
+  }
+
+  .landing-actions,
+  .auth-feature-grid,
+  .responsive-grid-4,
+  .responsive-grid-3,
+  .responsive-grid-2,
+  .ops-kpi-grid,
+  .forecast-metric-grid,
+  .accounts-quick-start-grid,
+  .app-main [style*="grid-template-columns: repeat(6"],
+  .app-main [style*="grid-template-columns: repeat(5"],
+  .app-main [style*="grid-template-columns: repeat(4"],
+  .app-main [style*="grid-template-columns: repeat(3"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  .landing-section-title,
+  .auth-title {
+    font-size: 24px !important;
+  }
+
+  .dashboard-chart-panel,
+  .transactions-panel {
+    padding: 14px !important;
+  }
+
+  .dashboard-chart-frame {
+    height: 280px !important;
+    padding-left: 42px !important;
+  }
+
+  .budget-hero-stats {
+    grid-template-columns: 1fr !important;
+  }
+
+  .ops-scorecard-svg,
+  .forecast-chart-svg {
+    min-width: 560px;
+  }
+}
