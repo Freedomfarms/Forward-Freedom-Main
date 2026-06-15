@@ -60,7 +60,7 @@ export function LandingPage({ enterApp, onEnterDemo }) {
         minHeight: "100vh",
         position: "relative",
         overflow: "hidden",
-        padding: "28px 56px 60px",
+        padding: "24px 56px 36px",
         background: "#020711",
         color: "#eef6ff",
         fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
@@ -93,11 +93,11 @@ export function LandingPage({ enterApp, onEnterDemo }) {
           style={{
             display: "flex",
             alignItems: "center",
-            marginBottom: 84,
+            marginBottom: 28,
             gap: 24,
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", minHeight: 88 }}>
+          <div style={{ display: "flex", alignItems: "center", minHeight: 56 }}>
             <ForwardFreedomWordmark size="nav" />
           </div>
         </nav>
@@ -107,9 +107,9 @@ export function LandingPage({ enterApp, onEnterDemo }) {
           style={{
             display: "grid",
             gridTemplateColumns: "minmax(0, 1fr) minmax(360px, 500px)",
-            gap: 40,
+            gap: 32,
             alignItems: "center",
-            marginBottom: 40,
+            marginBottom: 28,
           }}
         >
           <div style={{ maxWidth: 700 }}>
@@ -141,9 +141,9 @@ export function LandingPage({ enterApp, onEnterDemo }) {
               style={{
                 color: "#f0f4fb",
                 fontSize: 20,
-                lineHeight: 1.65,
+                lineHeight: 1.6,
                 maxWidth: 620,
-                margin: "18px 0 30px",
+                margin: "14px 0 22px",
               }}
             >
               Forward Freedom Financial is a financial command center that gives you complete
@@ -188,8 +188,8 @@ export function LandingPage({ enterApp, onEnterDemo }) {
               justifyContent: "center",
               justifySelf: "center",
               width: "100%",
-              minHeight: 460,
-              padding: "8px 0",
+              minHeight: 300,
+              padding: "4px 0",
             }}
           >
             <div
@@ -218,10 +218,10 @@ export function LandingPage({ enterApp, onEnterDemo }) {
               <div
                 style={{
                   position: "relative",
-                  zIndex: 1,
-                  width: "100%",
-                  padding: "36px 28px",
-                  borderRadius: 36,
+                zIndex: 1,
+                width: "100%",
+                padding: "28px 24px",
+                borderRadius: 36,
                   border: "1px solid rgba(125,220,255,.16)",
                   background:
                     "linear-gradient(180deg, rgba(8, 20, 38, 0.94), rgba(5, 15, 29, 0.84))",
@@ -229,11 +229,11 @@ export function LandingPage({ enterApp, onEnterDemo }) {
                     "0 28px 70px rgba(0, 0, 0, 0.36), inset 0 1px 0 rgba(255, 255, 255, 0.03)",
                   display: "flex",
                   alignItems: "center",
-                  justifyContent: "center",
-                  minHeight: 360,
-                }}
-              >
-                <ForwardFreedomWordmark size="hero" />
+                justifyContent: "center",
+                minHeight: 260,
+              }}
+            >
+              <ForwardFreedomWordmark size="hero" />
               </div>
             </div>
           </div>
@@ -244,9 +244,9 @@ export function LandingPage({ enterApp, onEnterDemo }) {
             border: "1px solid rgba(0,136,255,.28)",
             background: "rgba(3,17,32,.68)",
             borderRadius: 10,
-            padding: "30px 36px 34px",
+            padding: "24px 32px 26px",
             boxShadow: "inset 0 0 42px rgba(0,70,150,.11)",
-            marginBottom: 30,
+            marginBottom: 22,
           }}
         >
           <div
@@ -295,7 +295,7 @@ export function LandingPage({ enterApp, onEnterDemo }) {
             display: "grid",
             gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
             gap: 22,
-            marginBottom: 30,
+            marginBottom: 22,
           }}
         >
           <div
@@ -413,7 +413,7 @@ export function LandingPage({ enterApp, onEnterDemo }) {
             background: "rgba(3,17,32,.58)",
             borderRadius: 14,
             padding: "24px 32px",
-            marginBottom: 26,
+            marginBottom: 22,
           }}
         >
           <div
