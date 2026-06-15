@@ -832,7 +832,7 @@ export async function handleCreatePlaidLinkToken(request, response) {
         userName,
         accessToken,
         enableAccountSelection: Boolean(plaidItemId),
-        redirectUri: resolvePlaidOAuthRedirectUri(request),
+        redirectUri: resolvePlaidOAuthRedirectUri(),
       })
     );
     logPlaidServerEvent("info", "link_token_created", {
