@@ -8,6 +8,7 @@ import {
   getPlaidConfig,
   getPlaidLinkTokenRequest,
   isPlaidConfigured,
+  resolvePlaidOAuthRedirectUri,
 } from "../plaidClient.js";
 import { detectDuplicatePlaidItem } from "./duplicateItemDetection.js";
 import { getPlaidRequestId, logPlaidServerEvent } from "./logging.js";
@@ -29,9 +30,21 @@ function buildErrorResponse(message, extra = {}) {
 
 function getPlaidErrorDetails(error) {
   const data = error?.response?.data;
+  const plaidError = data?.error && typeof data.error === "object" ? data.error : data;
+
   return {
-    code: data?.error_code || error?.code || "PLAID_REQUEST_FAILED",
-    message: data?.error_message || error?.message || "Plaid request failed.",
+    code:
+      plaidError?.error_code ||
+      data?.error_code ||
+      error?.code ||
+      "PLAID_REQUEST_FAILED",
+    message:
+      plaidError?.error_message ||
+      plaidError?.display_message ||
+      data?.error_message ||
+      data?.message ||
+      error?.message ||
+      "Plaid request failed.",
   };
 }
 
@@ -506,7 +519,29 @@ async function syncPlaidWorkspace({ prisma, plaidClient, userId, workspaceUserId
   const lastSyncAt = new Date();
 
   for (const item of items) {
-    const accessToken = decryptSensitiveValue(item.accessTokenCiphertext);
+    let accessToken;
+
+    try {
+      accessToken = decryptSensitiveValue(item.accessTokenCiphertext);
+    } catch (error) {
+      const details = getPlaidErrorDetails(error);
+      logPlaidServerEvent("warn", "access_token_decrypt_failed", {
+        itemId: item.itemId,
+        institutionId: item.institutionId,
+        code: details.code,
+        message: details.message,
+      });
+      await prisma.plaidItem.update({
+        where: { id: item.id, userId },
+        data: {
+          status: "REQUIRES_ATTENTION",
+          lastSyncError:
+            "Stored bank credentials could not be read. Repair this connection to link it again.",
+        },
+      });
+      continue;
+    }
+
     let accountsResponse;
 
     try {
@@ -796,6 +831,8 @@ export async function handleCreatePlaidLinkToken(request, response) {
         userId: buildPlaidClientUserId(decodedToken.uid, workspaceUserId),
         userName,
         accessToken,
+        enableAccountSelection: Boolean(plaidItemId),
+        redirectUri: resolvePlaidOAuthRedirectUri(request),
       })
     );
     logPlaidServerEvent("info", "link_token_created", {
@@ -866,7 +903,7 @@ export async function handleExchangePlaidPublicToken(request, response) {
         });
         return response.status(409).json(
           buildErrorResponse(
-            "This institution appears to already be linked in your workspace. Repair the existing connection instead of linking it again.",
+            "This institution is already linked in your workspace. Use Repair connection on that institution to add or update accounts instead of linking it again.",
             { code: "DUPLICATE_PLAID_ITEM" }
           )
         );

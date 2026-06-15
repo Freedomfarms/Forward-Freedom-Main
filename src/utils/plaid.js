@@ -1,11 +1,21 @@
 import { buildAuthenticatedHeaders } from "./api.js";
 
+function formatPlaidApiError(payload, fallbackMessage) {
+  const message = payload.message || fallbackMessage;
+  const code = payload.code || null;
+  if (code && message && !message.includes(code)) {
+    return { message: `${message} (${code})`, code, payload };
+  }
+  return { message, code, payload };
+}
+
 async function parseApiResponse(response) {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const error = new Error(payload.message || "Plaid request failed.");
-    error.code = payload.code || null;
-    error.payload = payload;
+    const formatted = formatPlaidApiError(payload, "Plaid request failed.");
+    const error = new Error(formatted.message);
+    error.code = formatted.code;
+    error.payload = formatted.payload;
     throw error;
   }
 
