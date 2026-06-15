@@ -89,19 +89,6 @@ export function LandingPage({ enterApp, onEnterDemo }) {
       />
 
       <div style={{ position: "relative", zIndex: 2 }}>
-        <nav
-          style={{
-            display: "flex",
-            alignItems: "center",
-            marginBottom: 28,
-            gap: 24,
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", minHeight: 56 }}>
-            <ForwardFreedomWordmark size="nav" />
-          </div>
-        </nav>
-
         <section
           id="home"
           style={{
