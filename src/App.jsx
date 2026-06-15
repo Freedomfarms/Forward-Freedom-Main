@@ -145,11 +145,11 @@ function AuthenticatedWorkspaceApp({
       setWorkspaceBootstrapComplete(false);
 
       try {
-        const workspacePayload = await fetchWorkspaceSnapshot();
+        const workspacePayload = await fetchWorkspaceSnapshot({ user });
         let profilePayload = null;
 
         try {
-          profilePayload = await fetchAuthenticatedUserProfile();
+          profilePayload = await fetchAuthenticatedUserProfile({ user });
         } catch (profileError) {
           console.warn("[workspace] Profile sync unavailable during bootstrap.", profileError);
         }
@@ -182,13 +182,16 @@ function AuthenticatedWorkspaceApp({
           cachedWorkspaceRecord.hasPersistedState ? "hydrating-cache" : "initializing-server"
         );
 
-        const payload = await saveWorkspaceSnapshot({
-          state: sanitizeWorkspaceStateForPersistence(nextSeedState),
-          source: cachedWorkspaceRecord.hasPersistedState
-            ? "phase-5-bootstrap-hydration"
-            : "phase-5-bootstrap-seed",
-          lastClientUpdatedAt: new Date().toISOString(),
-        });
+        const payload = await saveWorkspaceSnapshot(
+          {
+            state: sanitizeWorkspaceStateForPersistence(nextSeedState),
+            source: cachedWorkspaceRecord.hasPersistedState
+              ? "phase-5-bootstrap-hydration"
+              : "phase-5-bootstrap-seed",
+            lastClientUpdatedAt: new Date().toISOString(),
+          },
+          { user }
+        );
 
         if (cancelled) return;
 
@@ -222,7 +225,7 @@ function AuthenticatedWorkspaceApp({
     return () => {
       cancelled = true;
     };
-  }, [cacheWorkspaceState, storageKey, user.displayName, user.email]);
+  }, [cacheWorkspaceState, storageKey, user, user.displayName, user.email]);
 
   const handlePersistedStateChange = useCallback((nextState) => {
     const serializedState = JSON.stringify(nextState);
@@ -252,11 +255,14 @@ function AuthenticatedWorkspaceApp({
     const attemptSave = () => {
       if (cancelled) return;
       setWorkspaceSyncState("syncing");
-      void saveWorkspaceSnapshot({
-        state: sanitizedPersistedState,
-        source: "phase-5-server-primary",
-        lastClientUpdatedAt: new Date().toISOString(),
-      })
+      void saveWorkspaceSnapshot(
+        {
+          state: sanitizedPersistedState,
+          source: "phase-5-server-primary",
+          lastClientUpdatedAt: new Date().toISOString(),
+        },
+        { user }
+      )
         .then((payload) => {
           if (cancelled) return;
           const confirmedState = sanitizeWorkspaceStateForPersistence(
@@ -308,7 +314,7 @@ function AuthenticatedWorkspaceApp({
         rateLimitRetryTimeoutRef.current = null;
       }
     };
-  }, [cacheWorkspaceState, latestPersistedState, workspaceBootstrapComplete, workspaceSeedState]);
+  }, [cacheWorkspaceState, latestPersistedState, user, workspaceBootstrapComplete, workspaceSeedState]);
 
   if (!workspaceSeedState) {
     return <AppLoadingScreen message={buildWorkspaceStatus(workspaceSyncState)} />;

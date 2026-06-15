@@ -69,67 +69,67 @@ export function shouldFetchPlaidStatus({
   isDemoMode = false,
   sessionUser = null,
 } = {}) {
-  return currentView === "app" && !isDemoMode && Boolean(sessionUser);
+  return currentView === "app" && !isDemoMode && typeof sessionUser?.getIdToken === "function";
 }
 
-export async function getPlaidStatus() {
+export async function getPlaidStatus(options = {}) {
   const response = await fetch("/api/plaid/status", {
-    headers: await buildAuthenticatedHeaders(),
+    headers: await buildAuthenticatedHeaders({}, options),
   });
   return parseApiResponse(response);
 }
 
-export async function createPlaidLinkToken({ workspaceUserId, plaidItemId }) {
+export async function createPlaidLinkToken({ workspaceUserId, plaidItemId }, options = {}) {
   const response = await fetch("/api/plaid/link-token/create", {
     method: "POST",
-    headers: await buildAuthenticatedHeaders({
-      "Content-Type": "application/json",
-    }),
+    headers: await buildAuthenticatedHeaders(
+      {
+        "Content-Type": "application/json",
+      },
+      options
+    ),
     body: JSON.stringify({ workspaceUserId, plaidItemId }),
   });
 
   return parseApiResponse(response);
 }
 
-export async function exchangePlaidPublicToken({
-  workspaceUserId,
-  publicToken,
-  plaidItemId,
-  linkMetadata,
-}) {
+export async function exchangePlaidPublicToken(
+  { workspaceUserId, publicToken, plaidItemId, linkMetadata },
+  options = {}
+) {
   const response = await fetch("/api/plaid/exchange-public-token", {
     method: "POST",
-    headers: await buildAuthenticatedHeaders({
-      "Content-Type": "application/json",
-    }),
+    headers: await buildAuthenticatedHeaders(
+      {
+        "Content-Type": "application/json",
+      },
+      options
+    ),
     body: JSON.stringify({ workspaceUserId, publicToken, plaidItemId, linkMetadata }),
   });
 
   return parseApiResponse(response);
 }
 
-export async function syncPlaidUser(workspaceUserId) {
-  const search = workspaceUserId
-    ? `?workspaceUserId=${encodeURIComponent(workspaceUserId)}`
-    : "";
+export async function syncPlaidUser(workspaceUserId, options = {}) {
+  const search = workspaceUserId ? `?workspaceUserId=${encodeURIComponent(workspaceUserId)}` : "";
   const response = await fetch(`/api/plaid/sync${search}`, {
-    headers: await buildAuthenticatedHeaders(),
+    headers: await buildAuthenticatedHeaders({}, options),
   });
   return parseApiResponse(response);
 }
 
-export async function deletePlaidUser(workspaceUserId) {
-  const search = workspaceUserId
-    ? `?workspaceUserId=${encodeURIComponent(workspaceUserId)}`
-    : "";
+export async function deletePlaidUser(workspaceUserId, options = {}) {
+  const search = workspaceUserId ? `?workspaceUserId=${encodeURIComponent(workspaceUserId)}` : "";
   const response = await fetch(`/api/plaid/user${search}`, {
     method: "DELETE",
-    headers: await buildAuthenticatedHeaders(),
+    headers: await buildAuthenticatedHeaders({}, options),
   });
   return parseApiResponse(response);
 }
 
-export async function deletePlaidItem({ itemId, workspaceUserId }) {
+export async function deletePlaidItem({ itemId, workspaceUserId }, options = {}) {
   const searchParams = new URLSearchParams();
   if (itemId) searchParams.set("itemId", itemId);
   if (workspaceUserId) searchParams.set("workspaceUserId", workspaceUserId);
@@ -137,7 +137,7 @@ export async function deletePlaidItem({ itemId, workspaceUserId }) {
   const search = searchParams.toString() ? `?${searchParams.toString()}` : "";
   const response = await fetch(`/api/plaid/item${search}`, {
     method: "DELETE",
-    headers: await buildAuthenticatedHeaders(),
+    headers: await buildAuthenticatedHeaders({}, options),
   });
   return parseApiResponse(response);
 }

@@ -1138,7 +1138,7 @@ function ForwardFreedomDashboard({
       };
     }
 
-    getPlaidStatus()
+    getPlaidStatus({ user: sessionControls?.user || null })
       .then((status) => {
         if (!cancelled) setPlaidStatus(status);
       })
@@ -1191,7 +1191,7 @@ function ForwardFreedomDashboard({
       setIsPlaidSyncing(true);
 
       try {
-        const payload = await syncPlaidUser(userId);
+        const payload = await syncPlaidUser(userId, { user: sessionControls?.user || null });
         applyPlaidSyncPayload(userId, payload);
         return payload;
       } catch (error) {
@@ -1203,7 +1203,7 @@ function ForwardFreedomDashboard({
         setIsPlaidSyncing(false);
       }
     },
-    [activeUser.id, plaidStatus.configured]
+    [activeUser.id, plaidStatus.configured, sessionControls?.user]
   );
 
   useEffect(() => {
@@ -1274,22 +1274,25 @@ function ForwardFreedomDashboard({
       setIsPlaidSyncing(true);
 
       try {
-        const payload = await exchangePlaidPublicToken({
-          workspaceUserId: targetUserId,
-          publicToken,
-          plaidItemId: plaidTargetItemId,
-          linkMetadata: {
-            institution: metadata?.institution
-              ? {
-                  institution_id: metadata.institution.institution_id,
-                  name: metadata.institution.name,
-                }
-              : null,
-            accounts: plaidAccounts,
-            link_session_id: metadata?.link_session_id || null,
-            request_id: metadata?.request_id || null,
+        const payload = await exchangePlaidPublicToken(
+          {
+            workspaceUserId: targetUserId,
+            publicToken,
+            plaidItemId: plaidTargetItemId,
+            linkMetadata: {
+              institution: metadata?.institution
+                ? {
+                    institution_id: metadata.institution.institution_id,
+                    name: metadata.institution.name,
+                  }
+                : null,
+              accounts: plaidAccounts,
+              link_session_id: metadata?.link_session_id || null,
+              request_id: metadata?.request_id || null,
+            },
           },
-        });
+          { user: sessionControls?.user || null }
+        );
         applyPlaidSyncPayload(targetUserId, payload);
         if (targetUserId === activeUser.id && !isRepairFlow) {
           setActiveTab(APP_TABS.TRANSACTIONS);
@@ -1527,10 +1530,13 @@ function ForwardFreedomDashboard({
     });
 
     try {
-      const { linkToken } = await createPlaidLinkToken({
-        workspaceUserId: activeUser.id,
-        plaidItemId,
-      });
+      const { linkToken } = await createPlaidLinkToken(
+        {
+          workspaceUserId: activeUser.id,
+          plaidItemId,
+        },
+        { user: sessionControls?.user || null }
+      );
       setPlaidLinkToken(linkToken);
       setPlaidTargetUserId(activeUser.id);
       setPlaidTargetItemId(plaidItemId);
@@ -1962,7 +1968,7 @@ function ForwardFreedomDashboard({
 
     const targetUser = users[targetIndex];
     if ((targetUser.plaidItems || []).length > 0) {
-      await deletePlaidUser(userId);
+      await deletePlaidUser(userId, { user: sessionControls?.user || null });
     }
 
     const nextUsers = users.filter((user) => user.id !== userId);
@@ -1996,10 +2002,13 @@ function ForwardFreedomDashboard({
     if (!accountToDelete?.id || !activeUser?.id) return;
 
     if (accountToDelete.plaidItemId) {
-      await deletePlaidItem({
-        itemId: accountToDelete.plaidItemId,
-        workspaceUserId: activeUser.id,
-      });
+      await deletePlaidItem(
+        {
+          itemId: accountToDelete.plaidItemId,
+          workspaceUserId: activeUser.id,
+        },
+        { user: sessionControls?.user || null }
+      );
       setUsers((currentUsers) =>
         currentUsers.map((user) =>
           user.id === activeUser.id ? removePlaidItemFromUser(user, accountToDelete.plaidItemId) : user

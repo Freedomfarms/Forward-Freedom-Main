@@ -52,6 +52,15 @@ test("plaid status only loads for authenticated app sessions", async () => {
       isDemoMode: false,
       sessionUser: { uid: "auth-user" },
     }),
+    false
+  );
+
+  assert.equal(
+    shouldFetchPlaidStatus({
+      currentView: "app",
+      isDemoMode: false,
+      sessionUser: { uid: "auth-user", getIdToken: async () => "token" },
+    }),
     true
   );
 });
