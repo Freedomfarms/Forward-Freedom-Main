@@ -87,16 +87,6 @@ function moveBudgetRowById(rows, draggedId, targetId) {
 
 function buildBudgetWorkflowStatus(row) {
   const budget = Number(row?.budget) || 0;
-  const available = Number(row?.remaining) || 0;
-
-  if (available < 0) {
-    return {
-      label: "Overspent",
-      color: "#ffd9df",
-      background: "rgba(255,61,103,.12)",
-      border: "1px solid rgba(255,93,122,.28)",
-    };
-  }
 
   if (budget <= 0) {
     return {
@@ -703,7 +693,7 @@ export function BudgetCommandCenter({
             style={{
               gridColumn: "1 / -1",
               display: "flex",
-              justifyContent: "center",
+              justifyContent: "flex-end",
               alignItems: "center",
               gap: 10,
               alignSelf: "end",
@@ -816,7 +806,7 @@ export function BudgetCommandCenter({
                 key={row.id}
                 type="button"
                 onClick={() => activateBudgetRow(row.id)}
-                title={`${row.name} • Activity ${money(row.spent)} • Available ${money(
+                title={`${row.name} • Spent ${money(row.spent)} • Remaining ${money(
                   row.remaining
                 )}`}
                 style={{
@@ -882,8 +872,8 @@ export function BudgetCommandCenter({
           }}
         >
           <div aria-hidden="true" />
-          <div style={{ textAlign: "right", padding: "8px 10px" }}>Activity</div>
-          <div style={{ textAlign: "center", padding: "8px 10px" }}>Progress</div>
+          <div style={{ textAlign: "right", padding: "8px 10px" }}>Spent</div>
+          <div style={{ textAlign: "center", padding: "8px 10px" }}>Remaining</div>
           <div style={{ textAlign: "center", padding: "8px 10px" }}>Assigned</div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -1034,7 +1024,7 @@ export function BudgetCommandCenter({
               <div
                 className="budget-row-activity"
                 style={{
-                  color: "#e6efff",
+                  color: (Number(item.remaining) || 0) < 0 ? "#ff5d7a" : "#e6efff",
                   fontSize: 20,
                   fontWeight: 800,
                   textAlign: "right",
