@@ -65,21 +65,67 @@ export function LandingPage({ enterApp, onEnterDemo }) {
         <section
           id="home"
           style={{
-            display: "grid",
-            gridTemplateColumns: "minmax(0, 1fr) minmax(360px, 500px)",
-            gap: 32,
+            display: "flex",
+            flexDirection: "column",
             alignItems: "center",
+            textAlign: "center",
+            gap: 24,
             marginBottom: 28,
           }}
         >
-          <div style={{ maxWidth: 700 }}>
+          <div
+            style={{
+              position: "relative",
+              width: "100%",
+              maxWidth: 520,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              isolation: "isolate",
+            }}
+          >
+            <div
+              aria-hidden="true"
+              style={{
+                position: "absolute",
+                inset: "4%",
+                background:
+                  "radial-gradient(circle at 50% 42%, rgba(7,166,255,.3) 0%, rgba(5,96,214,.18) 32%, rgba(2,7,17,0) 74%)",
+                filter: "blur(34px)",
+                opacity: 0.92,
+                transform: "scale(1.02)",
+              }}
+            />
+            <div
+              style={{
+                position: "relative",
+                zIndex: 1,
+                width: "100%",
+                padding: "28px 24px",
+                borderRadius: 36,
+                border: "1px solid rgba(125,220,255,.16)",
+                background:
+                  "linear-gradient(180deg, rgba(8, 20, 38, 0.94), rgba(5, 15, 29, 0.84))",
+                boxShadow:
+                  "0 28px 70px rgba(0, 0, 0, 0.36), inset 0 1px 0 rgba(255, 255, 255, 0.03)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                minHeight: 260,
+              }}
+            >
+              <ForwardFreedomWordmark size="hero" />
+            </div>
+          </div>
+
+          <div style={{ maxWidth: 720, width: "100%" }}>
             <p
               style={{
                 color: "#f0f4fb",
                 fontSize: 20,
                 lineHeight: 1.6,
-                maxWidth: 620,
-                margin: "0 0 24px",
+                maxWidth: 640,
+                margin: "0 auto 24px",
               }}
             >
               <span style={{ color: "#00aaff", fontWeight: 800 }}>Forward Freedom Financial</span> is
@@ -93,6 +139,7 @@ export function LandingPage({ enterApp, onEnterDemo }) {
                 display: "grid",
                 gridTemplateColumns: "repeat(2, minmax(0, 220px))",
                 gap: 18,
+                justifyContent: "center",
               }}
             >
               <button onClick={openCreateAccess} style={buildPrimaryButtonStyle()}>
@@ -115,63 +162,6 @@ export function LandingPage({ enterApp, onEnterDemo }) {
               >
                 Security &amp; Privacy
               </button>
-            </div>
-          </div>
-
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              justifySelf: "center",
-              width: "100%",
-              minHeight: 300,
-              padding: "4px 0",
-            }}
-          >
-            <div
-              style={{
-                position: "relative",
-                width: "100%",
-                maxWidth: 520,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                isolation: "isolate",
-              }}
-            >
-              <div
-                aria-hidden="true"
-                style={{
-                  position: "absolute",
-                  inset: "4%",
-                  background:
-                    "radial-gradient(circle at 50% 42%, rgba(7,166,255,.3) 0%, rgba(5,96,214,.18) 32%, rgba(2,7,17,0) 74%)",
-                  filter: "blur(34px)",
-                  opacity: 0.92,
-                  transform: "scale(1.02)",
-                }}
-              />
-              <div
-                style={{
-                  position: "relative",
-                zIndex: 1,
-                width: "100%",
-                padding: "28px 24px",
-                borderRadius: 36,
-                  border: "1px solid rgba(125,220,255,.16)",
-                  background:
-                    "linear-gradient(180deg, rgba(8, 20, 38, 0.94), rgba(5, 15, 29, 0.84))",
-                  boxShadow:
-                    "0 28px 70px rgba(0, 0, 0, 0.36), inset 0 1px 0 rgba(255, 255, 255, 0.03)",
-                  display: "flex",
-                  alignItems: "center",
-                justifyContent: "center",
-                minHeight: 260,
-              }}
-            >
-              <ForwardFreedomWordmark size="hero" />
-              </div>
             </div>
           </div>
         </section>
