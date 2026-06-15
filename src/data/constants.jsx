@@ -226,6 +226,17 @@ export const budgetMonthNames = {
   Dec: "December",
 };
 
+export const UNCATEGORIZED_CATEGORY = "Uncategorized";
+
+export const LEGACY_UNCATEGORIZED_CATEGORIES = ["Other"];
+
+export function isUncategorizedCategoryName(name) {
+  const normalized = String(name || "").trim();
+  return (
+    normalized === UNCATEGORIZED_CATEGORY || LEGACY_UNCATEGORIZED_CATEGORIES.includes(normalized)
+  );
+}
+
 export const initialBudgetCategories = [
   {
     id: "budget-housing",
@@ -427,15 +438,15 @@ export const initialBudgetCategories = [
     id: "budget-other",
     dot: "#94a3b8",
     icon: "🧩",
-    name: "Other",
+    name: UNCATEGORIZED_CATEGORY,
     budget: 200,
     color: "#94a3b8",
-    transactionCategories: [],
+    transactionCategories: [...LEGACY_UNCATEGORIZED_CATEGORIES],
     months: budgetMonths,
   },
 ];
 
-export const transactionCategoryOptions = ["Income", "Transfers", "Other"];
+export const transactionCategoryOptions = ["Income", "Transfers", UNCATEGORIZED_CATEGORY];
 
 export const initialSubscriptions = householdDemoSubscriptions;
 

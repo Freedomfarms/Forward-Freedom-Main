@@ -1,4 +1,8 @@
-import { budgetMonthNames, budgetMonths } from "../data/constants.jsx";
+import {
+  budgetMonthNames,
+  budgetMonths,
+  isUncategorizedCategoryName,
+} from "../data/constants.jsx";
 import { getCurrentBudgetPeriod } from "./date.js";
 import { parseMoney } from "./format.js";
 import { isSpendTransaction, sumSpendTransactions } from "./transactions.js";
@@ -115,7 +119,7 @@ export function buildMonthlySpendSnapshot(
   const spendTransactions = activeMonthTransactions.filter((tx) => isSpendTransaction(tx));
   const matchedBudgetCategories = new Set(
     activeBudgetRows
-      .filter((row) => row.name !== "Other")
+      .filter((row) => !isUncategorizedCategoryName(row.name))
       .flatMap((row) => Array.from(buildBudgetCategorySet(row)))
   );
   const unmatchedTransactions = spendTransactions.filter(
@@ -127,7 +131,7 @@ export function buildMonthlySpendSnapshot(
       const rowCategorySet = buildBudgetCategorySet(row);
       const spent = spendTransactions
         .filter((tx) => {
-          if (row.name === "Other") return !matchedBudgetCategories.has(tx.category);
+          if (isUncategorizedCategoryName(row.name)) return !matchedBudgetCategories.has(tx.category);
           return rowCategorySet.has(tx.category);
         })
         .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);

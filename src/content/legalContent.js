@@ -43,4 +43,75 @@ export const LEGAL_CONTENT = {
       },
     ],
   },
+  security: {
+    eyebrow: "Security",
+    title: "Your Financial Security Comes First",
+    intro: [
+      "Forward Freedom Financial was built to help individuals and families gain clarity, confidence, and control over their finances. Protecting your information is one of our highest priorities.",
+      "We understand that connecting financial accounts requires trust. That's why we've designed the platform to minimize data exposure and use secure, industry-standard technologies to protect your information.",
+    ],
+    sections: [
+      {
+        heading: "🔒 Secure Bank Connections Powered by Plaid",
+        body: "Forward Freedom Financial uses Plaid to securely connect your financial accounts.\n\nPlaid is one of the most trusted financial connectivity platforms in the world and is used by thousands of banks, financial institutions, and financial technology companies.\n\nYour banking credentials are never provided to or stored by Forward Freedom Financial.\n\nWhen connecting an account, your login information is entered through Plaid's secure connection process, not through Forward Freedom Financial.",
+      },
+      {
+        heading: "🏦 How Your Financial Data Is Used",
+        body: "To provide budgeting, forecasting, cash flow analysis, financial planning, and account monitoring tools, the platform securely processes information such as:",
+        bullets: [
+          "Account balances",
+          "Transaction history",
+          "Account names and account types",
+          "Liability information (when available)",
+          "Investment information (when available)",
+        ],
+        footer:
+          "This information is used exclusively to generate the dashboards, forecasts, reports, and financial insights available within your account.\n\nForward Freedom Financial does not monitor, review, or analyze individual user transactions for advertising, marketing, or sales purposes.\n\nYour financial information is used to operate the platform and deliver the services you request.",
+      },
+      {
+        heading: "🚫 What Forward Freedom Financial Cannot Do",
+        body: "Forward Freedom Financial cannot:",
+        bullets: [
+          "Move money from your accounts",
+          "Transfer funds between accounts",
+          "Send payments on your behalf",
+          "Change account settings",
+          "Modify account ownership",
+          "Open or close accounts",
+          "View or store your bank username or password",
+          "Access your online banking credentials",
+        ],
+        footer:
+          "Connected accounts are used solely to provide budgeting, forecasting, financial planning, and account monitoring tools.\n\nYour connection is read-only and is designed to give you visibility into your finances—not control over your accounts.",
+      },
+      {
+        heading: "🔐 Encryption & Security Controls",
+        body: "We use industry-standard security practices designed to protect your information.\n\nSecurity measures include:",
+        bullets: [
+          "Encrypted data transmission",
+          "Secure authentication systems",
+          "Protected infrastructure",
+          "Access controls",
+          "Ongoing monitoring and security improvements",
+        ],
+        footer:
+          "While no online system can guarantee absolute security, we are committed to implementing reasonable safeguards designed to protect user information.",
+      },
+      {
+        heading: "🛡 Privacy Commitment",
+        body: "Your financial information belongs to you.\n\nForward Freedom Financial does not sell personal financial information, create advertising profiles, or use your financial data for marketing purposes.\n\nBank connections are powered by Plaid. Your banking credentials are never stored by Forward Freedom Financial, and the platform cannot move money, transfer funds, or initiate transactions on your behalf.\n\nYour financial data is used to operate the platform and deliver the services you request.\n\nWe are committed to protecting your privacy and handling your information responsibly.",
+      },
+      {
+        heading: "👤 Control Over Your Information",
+        body: "You remain in control of your connected accounts and information.\n\nYou may:",
+        bullets: [
+          "Disconnect financial accounts",
+          "Remove connected institutions",
+          "Delete your account",
+          "Stop using account synchronization services",
+        ],
+        footer: "At any time.",
+      },
+    ],
+  },
 };

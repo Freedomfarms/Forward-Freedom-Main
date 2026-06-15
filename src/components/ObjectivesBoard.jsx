@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { styles } from "../styles.js";
+import { isUncategorizedCategoryName } from "../data/constants.jsx";
 import { money } from "../utils/format.js";
 import {
   GOAL_CADENCE_OPTIONS,
@@ -239,9 +240,12 @@ function buildAiRecommendations(context, evaluatedObjectives) {
   const monthlyBudget = Number(context.currentMonthSnapshot?.monthlyBudget) || 0;
   const uncategorizedCount =
     Array.isArray(context.currentMonthSnapshot?.rows) &&
-    context.currentMonthSnapshot.rows.some((row) => row.name === "Other")
+    context.currentMonthSnapshot.rows.some((row) => isUncategorizedCategoryName(row.name))
       ? Number(
-          context.currentMonthSnapshot.rows.find((row) => row.name === "Other")?.spent > 0 ? 1 : 0
+          context.currentMonthSnapshot.rows.find((row) => isUncategorizedCategoryName(row.name))
+            ?.spent > 0
+            ? 1
+            : 0
         )
       : 0;
 

@@ -2,31 +2,25 @@
 
 ## Cursor Cloud specific instructions
 
-### Validation preference: minimal validation by default
+### Validation preference: no validation on edits by default
 
-Use a minimal validation workflow unless the user explicitly requests deeper testing.
+Do NOT validate edits unless the user explicitly asks for testing.
 
-For small UI/styling changes:
+For normal edits (including UI/styling changes):
 - Make the edit.
-- Run lint/build once only.
-- Perform one quick manual verification of the exact requested behavior.
 - Stop.
 
-Do not:
-- Record videos.
-- Repeat validations.
-- Prove hover vs click behavior unless explicitly requested.
-- Do extended walkthroughs.
-- Re-test unrelated areas.
-- Narrate validation in detail.
+Do not (unless explicitly requested):
+- Run lint or build.
+- Run automated tests.
+- Do manual/browser testing.
+- Record videos, take screenshots, or produce walkthroughs.
+- Re-test unrelated areas or narrate validation.
 
-Escalate testing only if:
-1. Build/lint fails.
-2. There is an actual runtime error.
-3. The change touches shared/core logic.
-4. The user explicitly asks for full QA.
+Only validate when:
+1. The user explicitly asks for testing/QA, or
+2. The user reports a runtime error/bug and asks for a fix (verify the fix only).
 
 Keep responses concise:
-- What changed.
-- Whether lint/build passed.
-- One-line verification result.
+- What changed (one or two lines).
+- No validation/testing sections unless testing was explicitly requested.

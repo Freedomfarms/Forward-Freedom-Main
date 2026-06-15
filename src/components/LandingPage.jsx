@@ -18,33 +18,6 @@ function buildPrimaryButtonStyle(isSecondary = false) {
   };
 }
 
-const CREATE_ACCESS_POINTS = [
-  "Build a protected Forward Freedom workspace",
-  "See budgets, transactions, and forecasts together",
-  "Start with a cleaner command-center experience",
-];
-
-const LOGIN_POINTS = [
-  "Resume planning and budgeting",
-  "Review synced accounts and transactions",
-  "Continue household profile setup",
-];
-
-const CONTACT_CARDS = [
-  [
-    "Client onboarding",
-    "Guide new households into planning, account setup, and their first budgeting workflow.",
-  ],
-  [
-    "Email support",
-    "Reach Forward Freedom Financial directly when you need help or want a guided next step.",
-  ],
-  [
-    "Workspace support",
-    "Help returning clients access their saved planning workspace and continue with confidence.",
-  ],
-];
-
 export function LandingPage({ enterApp, onEnterDemo }) {
   const [activeDocument, setActiveDocument] = useState(null);
   const openCreateAccess = () => enterApp({ mode: "create-account" });
@@ -60,7 +33,7 @@ export function LandingPage({ enterApp, onEnterDemo }) {
         minHeight: "100vh",
         position: "relative",
         overflow: "hidden",
-        padding: "28px 56px 60px",
+        padding: "24px 56px 36px",
         background: "#020711",
         color: "#eef6ff",
         fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif",
@@ -89,140 +62,58 @@ export function LandingPage({ enterApp, onEnterDemo }) {
       />
 
       <div style={{ position: "relative", zIndex: 2 }}>
-        <nav
-          style={{
-            display: "grid",
-            gridTemplateColumns: "minmax(180px, 228px) 1fr auto",
-            alignItems: "center",
-            marginBottom: 84,
-            gap: 24,
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", minHeight: 88 }}>
-            <ForwardFreedomWordmark size="nav" />
-          </div>
-
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 30,
-              color: "#f5f7fb",
-              fontSize: 14,
-              fontWeight: 800,
-              letterSpacing: 0.6,
-              textTransform: "uppercase",
-            }}
-          >
-            <a href="#home" style={{ color: "white", textDecoration: "none" }}>
-              Home
-            </a>
-            <a href="#account-access" style={{ color: "#cfe7ff", textDecoration: "none" }}>
-              Access
-            </a>
-            <button
-              type="button"
-              onClick={() => setActiveDocument("terms")}
-              style={{
-                color: "#cfe7ff",
-                background: "transparent",
-                border: "none",
-                padding: 0,
-                cursor: "pointer",
-                font: "inherit",
-              }}
-            >
-              LEGAL
-            </button>
-            <a href="#contact" style={{ color: "#cfe7ff", textDecoration: "none" }}>
-              Contact
-            </a>
-          </div>
-
-          <div
-            style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 14 }}
-          >
-            {typeof onEnterDemo === "function" ? (
-              <button onClick={openDemoMode} style={buildPrimaryButtonStyle(true)}>
-                Enter Demo Mode
-              </button>
-            ) : null}
-            <button onClick={enterApp} style={buildPrimaryButtonStyle(true)}>
-              Client Login
-            </button>
-            <button onClick={openCreateAccess} style={buildPrimaryButtonStyle()}>
-              Create Access
-            </button>
-          </div>
-        </nav>
-
         <section
           id="home"
           style={{
             display: "grid",
             gridTemplateColumns: "minmax(0, 1fr) minmax(360px, 500px)",
-            gap: 40,
+            gap: 32,
             alignItems: "center",
-            marginBottom: 40,
+            marginBottom: 28,
           }}
         >
           <div style={{ maxWidth: 700 }}>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 22,
-                color: "#00aaff",
-                fontSize: 36,
-                fontWeight: 900,
-                letterSpacing: 10,
-                textTransform: "uppercase",
-                marginBottom: 24,
-                textShadow: "0 0 24px rgba(0,170,255,.55)",
-              }}
-            >
-              Forward Freedom Financial
-              <span
-                style={{
-                  width: 180,
-                  height: 1,
-                  background: "linear-gradient(90deg,#00aaff,transparent)",
-                }}
-              />
-            </div>
-
             <p
               style={{
                 color: "#f0f4fb",
                 fontSize: 20,
-                lineHeight: 1.65,
+                lineHeight: 1.6,
                 maxWidth: 620,
-                margin: "18px 0 30px",
+                margin: "0 0 24px",
               }}
             >
-              Forward Freedom Financial is a financial command center that gives you complete
-              visibility and control of your money. Track, plan, and execute with confidence using
-              real-time data, forecasting, and powerful financial insights.
+              <span style={{ color: "#00aaff", fontWeight: 800 }}>Forward Freedom Financial</span> is
+              a financial command center that gives you complete visibility and control of your
+              money. Track, plan, and execute with confidence using real-time data, forecasting, and
+              powerful financial insights.
             </p>
 
-            <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
-              <button onClick={openCreateAccess} style={{ ...buildPrimaryButtonStyle(), minWidth: 220 }}>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(2, minmax(0, 220px))",
+                gap: 18,
+              }}
+            >
+              <button onClick={openCreateAccess} style={buildPrimaryButtonStyle()}>
                 Create Access
               </button>
-              {typeof onEnterDemo === "function" ? (
-                <button
-                  onClick={openDemoMode}
-                  style={{ ...buildPrimaryButtonStyle(true), minWidth: 220 }}
-                >
-                  Enter Demo Mode
-                </button>
-              ) : null}
-              <button
-                onClick={enterApp}
-                style={{ ...buildPrimaryButtonStyle(true), minWidth: 220 }}
-              >
+              <button onClick={enterApp} style={buildPrimaryButtonStyle(true)}>
                 Client Login
+              </button>
+              {typeof onEnterDemo === "function" ? (
+                <button onClick={openDemoMode} style={buildPrimaryButtonStyle(true)}>
+                  Demo Mode
+                </button>
+              ) : (
+                <span />
+              )}
+              <button
+                type="button"
+                onClick={() => setActiveDocument("security")}
+                style={buildPrimaryButtonStyle(true)}
+              >
+                Security &amp; Privacy
               </button>
             </div>
           </div>
@@ -234,8 +125,8 @@ export function LandingPage({ enterApp, onEnterDemo }) {
               justifyContent: "center",
               justifySelf: "center",
               width: "100%",
-              minHeight: 460,
-              padding: "8px 0",
+              minHeight: 300,
+              padding: "4px 0",
             }}
           >
             <div
@@ -266,7 +157,7 @@ export function LandingPage({ enterApp, onEnterDemo }) {
                   position: "relative",
                   zIndex: 1,
                   width: "100%",
-                  padding: "36px 28px",
+                  padding: "28px 24px",
                   borderRadius: 36,
                   border: "1px solid rgba(125,220,255,.16)",
                   background:
@@ -276,7 +167,7 @@ export function LandingPage({ enterApp, onEnterDemo }) {
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  minHeight: 360,
+                  minHeight: 260,
                 }}
               >
                 <ForwardFreedomWordmark size="hero" />
@@ -290,9 +181,9 @@ export function LandingPage({ enterApp, onEnterDemo }) {
             border: "1px solid rgba(0,136,255,.28)",
             background: "rgba(3,17,32,.68)",
             borderRadius: 10,
-            padding: "30px 36px 34px",
+            padding: "24px 32px 26px",
             boxShadow: "inset 0 0 42px rgba(0,70,150,.11)",
-            marginBottom: 30,
+            marginBottom: 22,
           }}
         >
           <div
@@ -312,143 +203,14 @@ export function LandingPage({ enterApp, onEnterDemo }) {
           </div>
           <div
             style={{
-              maxWidth: 1080,
               color: "#d6e2f0",
               fontSize: 17,
-              lineHeight: 1.85,
-              marginTop: 18,
+              lineHeight: 1.7,
+              marginTop: 12,
             }}
           >
-            <p style={{ margin: 0 }}>
-              Forward Freedom Financial exists to help people build unshakable financial foundations
-              through discipline, wisdom, and action.
-            </p>
-            <p style={{ margin: "18px 0 0" }}>
-              We believe financial leadership requires a wartime mindset: scanning the battlefield,
-              taking ownership, protecting and providing your family, and advancing with purpose no
-              matter the economic battlefield.
-            </p>
-            <p style={{ margin: "18px 0 0" }}>
-              Our mission is to turn fear into strategy, debt into freedom, and money into a tool
-              that empowers people to live boldly, give generously, and lead with conviction.
-            </p>
-          </div>
-        </section>
-
-        <section
-          id="account-access"
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-            gap: 22,
-            marginBottom: 30,
-          }}
-        >
-          <div
-            style={{
-              border: "1px solid rgba(0,136,255,.24)",
-              borderRadius: 14,
-              background: "rgba(3,17,32,.82)",
-              padding: 26,
-              boxShadow: "inset 0 0 34px rgba(0,70,150,.08)",
-            }}
-          >
-            <div
-              style={{
-                color: "#8feaff",
-                textTransform: "uppercase",
-                letterSpacing: 1.2,
-                fontWeight: 900,
-                fontSize: 12,
-                marginBottom: 10,
-              }}
-            >
-              Create Access
-            </div>
-            <div style={{ color: "white", fontSize: 28, fontWeight: 900 }}>
-              Start a new workspace
-            </div>
-            <p style={{ color: "#bcd1e8", lineHeight: 1.65, marginTop: 12, maxWidth: 640 }}>
-              Create protected access and begin building your financial command center with
-              budgeting, forecasting, account visibility, and a clearer picture of where your money
-              is going.
-            </p>
-            <div style={{ display: "grid", gap: 12, marginTop: 18 }}>
-              {CREATE_ACCESS_POINTS.map((item) => (
-                <div
-                  key={item}
-                  style={{
-                    border: "1px solid rgba(0,136,255,.14)",
-                    borderRadius: 12,
-                    background: "rgba(3,17,32,.58)",
-                    padding: "12px 14px",
-                    color: "#d9e8f8",
-                  }}
-                >
-                  {item}
-                </div>
-              ))}
-            </div>
-            <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginTop: 22 }}>
-              <button type="button" onClick={openCreateAccess} style={buildPrimaryButtonStyle()}>
-                Create Access
-              </button>
-            </div>
-          </div>
-
-          <div
-            style={{
-              border: "1px solid rgba(0,136,255,.18)",
-              borderRadius: 14,
-              background: "linear-gradient(180deg, rgba(5,19,37,.92), rgba(2,10,21,.86))",
-              padding: 24,
-            }}
-          >
-            <div
-              style={{
-                color: "#8feaff",
-                textTransform: "uppercase",
-                letterSpacing: 1.2,
-                fontWeight: 900,
-                fontSize: 12,
-                marginBottom: 10,
-              }}
-            >
-              Client Login
-            </div>
-            <div style={{ color: "white", fontSize: 26, fontWeight: 900 }}>
-              Return to your workspace
-            </div>
-            <p style={{ color: "#c6d2e1", lineHeight: 1.65, marginTop: 12 }}>
-              Existing clients can jump straight back into their command center to review accounts,
-              transactions, budgets, forecasts, and household progress.
-            </p>
-            <div style={{ display: "grid", gap: 12, marginTop: 18 }}>
-              {LOGIN_POINTS.map((item) => (
-                <div
-                  key={item}
-                  style={{
-                    border: "1px solid rgba(0,136,255,.14)",
-                    borderRadius: 12,
-                    background: "rgba(3,17,32,.58)",
-                    padding: "12px 14px",
-                    color: "#d9e8f8",
-                  }}
-                >
-                  {item}
-                </div>
-              ))}
-            </div>
-            <div style={{ display: "grid", gap: 12, marginTop: 22 }}>
-              {typeof onEnterDemo === "function" ? (
-                <button onClick={openDemoMode} style={{ ...buildPrimaryButtonStyle(true), width: "100%" }}>
-                  Enter Demo Mode
-                </button>
-              ) : null}
-              <button onClick={enterApp} style={{ ...buildPrimaryButtonStyle(), width: "100%" }}>
-                Client Login
-              </button>
-            </div>
+            Move Forward With Purpose. Turn Fear Into Strategy. Turn Debt Into Freedom. Turn Money
+            Into a Tool for the Mission.
           </div>
         </section>
 
@@ -459,7 +221,7 @@ export function LandingPage({ enterApp, onEnterDemo }) {
             background: "rgba(3,17,32,.58)",
             borderRadius: 14,
             padding: "24px 32px",
-            marginBottom: 26,
+            marginBottom: 22,
           }}
         >
           <div
@@ -471,7 +233,7 @@ export function LandingPage({ enterApp, onEnterDemo }) {
               fontWeight: 900,
             }}
           >
-            Contact & Footer
+            Contact
           </div>
           <div style={{ color: "white", fontSize: 28, fontWeight: 900, marginTop: 10 }}>
             Support and onboarding
@@ -486,29 +248,6 @@ export function LandingPage({ enterApp, onEnterDemo }) {
               forwardfreedomfinancial@gmail.com
             </a>
             .
-          </div>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-              gap: 16,
-              marginTop: 20,
-            }}
-          >
-            {CONTACT_CARDS.map(([title, text]) => (
-              <div
-                key={title}
-                style={{
-                  border: "1px solid rgba(0,136,255,.16)",
-                  borderRadius: 14,
-                  background: "rgba(2,12,24,.64)",
-                  padding: "18px 18px 20px",
-                }}
-              >
-                <div style={{ color: "white", fontWeight: 900, fontSize: 18 }}>{title}</div>
-                <div style={{ color: "#c6d2e1", lineHeight: 1.65, marginTop: 10 }}>{text}</div>
-              </div>
-            ))}
           </div>
         </section>
 
@@ -553,28 +292,6 @@ export function LandingPage({ enterApp, onEnterDemo }) {
               }}
             >
               PRIVACY POLICY
-            </button>
-            <button
-              onClick={openCreateAccess}
-              style={{
-                background: "transparent",
-                border: "none",
-                color: "#8feaff",
-                cursor: "pointer",
-              }}
-            >
-              Create Access
-            </button>
-            <button
-              onClick={enterApp}
-              style={{
-                background: "transparent",
-                border: "none",
-                color: "#8feaff",
-                cursor: "pointer",
-              }}
-            >
-              Client Login
             </button>
           </div>
         </footer>

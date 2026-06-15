@@ -1,5 +1,10 @@
 import { useState } from "react";
-import { budgetMonths } from "../data/constants.jsx";
+import {
+  LEGACY_UNCATEGORIZED_CATEGORIES,
+  UNCATEGORIZED_CATEGORY,
+  budgetMonths,
+  isUncategorizedCategoryName,
+} from "../data/constants.jsx";
 import { parseBudgetReviewDate } from "../utils/budgetReview.js";
 import { sumSpendTransactions } from "../utils/transactions.js";
 import { getCurrentBudgetPeriod } from "../utils/date.js";
@@ -56,7 +61,7 @@ function getLatestMonthWithSpend(monthlySeries, fallbackMonth) {
 
 function buildCategoryDefinitions(budgetRows, spendingTransactions) {
   const primaryBudgetCategories = budgetRows
-    .filter((row) => row.name !== "Other")
+    .filter((row) => !isUncategorizedCategoryName(row.name))
     .map((row, index) => ({
       id: `budget:${row.id || row.name}`,
       name: row.name,
@@ -67,12 +72,13 @@ function buildCategoryDefinitions(budgetRows, spendingTransactions) {
       description: "Budget-aligned category",
     }));
 
-  const otherBudgetRow = budgetRows.find((row) => row.name === "Other");
+  const otherBudgetRow = budgetRows.find((row) => isUncategorizedCategoryName(row.name));
   const matchedBudgetCategories = new Set(
     primaryBudgetCategories.flatMap((definition) => Array.from(definition.matcherSet))
   );
   if (otherBudgetRow) {
-    matchedBudgetCategories.add("Other");
+    matchedBudgetCategories.add(UNCATEGORIZED_CATEGORY);
+    LEGACY_UNCATEGORIZED_CATEGORIES.forEach((category) => matchedBudgetCategories.add(category));
   }
 
   const extraCategories = Array.from(
@@ -122,7 +128,7 @@ function buildCategoryDefinitions(budgetRows, spendingTransactions) {
 function matchesCategory(transaction, definition, budgetDefinitions) {
   if (!transaction || (Number(transaction.amount) || 0) >= 0) return false;
 
-  const category = transaction.category || "Other";
+  const category = transaction.category || UNCATEGORIZED_CATEGORY;
   if (definition.type === "all") return true;
   if (definition.type === "budget") return definition.matcherSet.has(category);
   if (definition.type === "budget-other") {
@@ -340,8 +346,8 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
       <div
         style={{
           ...styles.panel,
-          padding: 24,
-          marginBottom: 20,
+          padding: "14px 18px",
+          marginBottom: 14,
           background:
             "linear-gradient(135deg, rgba(4,18,34,.96), rgba(3,17,32,.9) 52%, rgba(2,10,22,.96))",
           border: "1px solid rgba(0,216,255,.24)",
@@ -369,12 +375,19 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
             >
               Spending Command Surface
             </div>
-            <div style={{ color: "white", fontSize: 30, fontWeight: 900, marginTop: 8 }}>
+            <div style={{ color: "white", fontSize: 22, fontWeight: 900, marginTop: 2 }}>
               {selectedCategory.name}
             </div>
-            <div style={{ color: "#9fb0c9", marginTop: 10, maxWidth: 760, lineHeight: 1.6 }}>
-              {selectedCategory.description}. Drill into a category on the left to review monthly
-              pacing, budget pressure, and the exact merchants shaping the trend.
+            <div
+              style={{
+                color: "#9fb0c9",
+                marginTop: 4,
+                lineHeight: 1.4,
+                fontSize: 13,
+              }}
+            >
+              {selectedCategory.description} — drill in to review pacing, budget pressure, and top
+              merchants.
             </div>
           </div>
           <div
