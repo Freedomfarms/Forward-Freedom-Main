@@ -30,6 +30,23 @@ function describeEdgeError(status) {
 async function parseApiResponse(response) {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
+    // A 401 here means the request carried no valid Firebase session (missing or
+    // expired/invalid token). The raw server text ("Missing bearer token.") is
+    // not actionable for users, and this is the common failure when the site is
+    // opened on a domain where you are not signed in (e.g. a custom domain that
+    // is not in Firebase Authentication > Authorized domains). Point at the fix.
+    if (response.status === 401) {
+      const error = new Error(
+        "You are not signed in on this site, so the bank connection request was rejected. " +
+          "Sign out and sign back in here, then try again. (If this only happens on your custom " +
+          "domain, add it to Firebase Authentication > Settings > Authorized domains.)"
+      );
+      error.code = payload.code || "UNAUTHENTICATED";
+      error.status = 401;
+      error.payload = payload;
+      throw error;
+    }
+
     // When the body has no JSON message the failure did not come from our API
     // handler (which always returns { message, code }); it is an edge/platform
     // error page. Surface the HTTP status and likely cause so it is diagnosable.
