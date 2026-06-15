@@ -9,6 +9,20 @@ function formatPlaidApiError(payload, fallbackMessage) {
   return { message, code, payload };
 }
 
+function buildOpaquePlaidFailureMessage(response) {
+  const supportCode = response.headers.get("x-vercel-id");
+  const supportSuffix = supportCode ? ` Support code: ${supportCode}.` : "";
+
+  if (response.status === 403) {
+    return (
+      "Plaid request was blocked before reaching the app (HTTP 403). " +
+      `Refresh, sign in again, or try another network.${supportSuffix}`
+    );
+  }
+
+  return `Plaid request failed (HTTP ${response.status}).${supportSuffix}`;
+}
+
 async function parseApiResponse(response) {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -17,7 +31,7 @@ async function parseApiResponse(response) {
     // error page. Surface the HTTP status so the cause is diagnosable.
     const fallbackMessage = payload.message
       ? "Plaid request failed."
-      : `Plaid request failed (HTTP ${response.status}).`;
+      : buildOpaquePlaidFailureMessage(response);
     const formatted = formatPlaidApiError(payload, fallbackMessage);
     const error = new Error(formatted.message);
     error.code = formatted.code;
