@@ -814,7 +814,6 @@ export async function handleCreatePlaidLinkToken(request, response) {
     const body = await readJsonBody(request);
     const workspaceUserId = normalizeWorkspaceUserId(body.workspaceUserId);
     const plaidItemId = normalizePlaidItemId(body.plaidItemId);
-    const userName = body.userName || decodedToken.name || decodedToken.email || undefined;
     let accessToken;
 
     if (plaidItemId) {
@@ -840,7 +839,6 @@ export async function handleCreatePlaidLinkToken(request, response) {
     const linkTokenResponse = await plaidClient.linkTokenCreate(
       getPlaidLinkTokenRequest({
         userId: buildPlaidClientUserId(decodedToken.uid, workspaceUserId),
-        userName,
         accessToken,
         enableAccountSelection: Boolean(plaidItemId),
         redirectUri: resolvePlaidOAuthRedirectUri(),

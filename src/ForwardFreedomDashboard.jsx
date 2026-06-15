@@ -1407,10 +1407,6 @@ function ForwardFreedomDashboard({
     try {
       const { linkToken } = await createPlaidLinkToken({
         workspaceUserId: activeUser.id,
-        userName: getDisplayUserName(
-          activeUser,
-          users.findIndex((user) => user.id === activeUser.id)
-        ),
         plaidItemId,
       });
       setPlaidLinkToken(linkToken);
