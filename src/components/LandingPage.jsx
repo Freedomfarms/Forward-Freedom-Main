@@ -91,8 +91,7 @@ export function LandingPage({ enterApp, onEnterDemo }) {
       <div style={{ position: "relative", zIndex: 2 }}>
         <nav
           style={{
-            display: "grid",
-            gridTemplateColumns: "minmax(180px, 228px) 1fr",
+            display: "flex",
             alignItems: "center",
             marginBottom: 84,
             gap: 24,
@@ -100,44 +99,6 @@ export function LandingPage({ enterApp, onEnterDemo }) {
         >
           <div style={{ display: "flex", alignItems: "center", minHeight: 88 }}>
             <ForwardFreedomWordmark size="nav" />
-          </div>
-
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 30,
-              color: "#f5f7fb",
-              fontSize: 14,
-              fontWeight: 800,
-              letterSpacing: 0.6,
-              textTransform: "uppercase",
-            }}
-          >
-            <a href="#home" style={{ color: "white", textDecoration: "none" }}>
-              Home
-            </a>
-            <a href="#account-access" style={{ color: "#cfe7ff", textDecoration: "none" }}>
-              Access
-            </a>
-            <button
-              type="button"
-              onClick={() => setActiveDocument("terms")}
-              style={{
-                color: "#cfe7ff",
-                background: "transparent",
-                border: "none",
-                padding: 0,
-                cursor: "pointer",
-                font: "inherit",
-              }}
-            >
-              LEGAL
-            </button>
-            <a href="#contact" style={{ color: "#cfe7ff", textDecoration: "none" }}>
-              Contact
-            </a>
           </div>
         </nav>
 
