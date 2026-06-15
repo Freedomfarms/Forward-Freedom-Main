@@ -12,9 +12,16 @@ function formatPlaidApiError(payload, fallbackMessage) {
 async function parseApiResponse(response) {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const formatted = formatPlaidApiError(payload, "Plaid request failed.");
+    // When the body has no JSON message the failure did not come from our API
+    // handler (which always returns { message, code }); it is an edge/platform
+    // error page. Surface the HTTP status so the cause is diagnosable.
+    const fallbackMessage = payload.message
+      ? "Plaid request failed."
+      : `Plaid request failed (HTTP ${response.status}).`;
+    const formatted = formatPlaidApiError(payload, fallbackMessage);
     const error = new Error(formatted.message);
     error.code = formatted.code;
+    error.status = response.status;
     error.payload = formatted.payload;
     throw error;
   }

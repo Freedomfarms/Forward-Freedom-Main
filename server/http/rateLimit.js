@@ -28,10 +28,26 @@ function getClientIp(request) {
 }
 
 function runRateLimit(limiter, request, response) {
+  // Fail open on any limiter/store error. A throwing limiter (e.g. an
+  // unexpected forwarded-IP format from a particular edge/proxy) must never
+  // turn into an opaque 500 that blocks all linking; that would surface to the
+  // client as a generic, non-JSON failure with no diagnosable message.
   return new Promise((resolve) => {
-    limiter(request, response, () => {
-      resolve(!response.headersSent);
-    });
+    try {
+      const result = limiter(request, response, (error) => {
+        if (error) {
+          resolve(true);
+          return;
+        }
+        resolve(!response.headersSent);
+      });
+
+      if (result && typeof result.catch === "function") {
+        result.catch(() => resolve(true));
+      }
+    } catch {
+      resolve(true);
+    }
   });
 }
 
