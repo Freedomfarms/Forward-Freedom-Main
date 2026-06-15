@@ -98,8 +98,8 @@ export const LEGAL_CONTENT = {
           "While no online system can guarantee absolute security, we are committed to implementing reasonable safeguards designed to protect user information.",
       },
       {
-        heading: "🛡 Privacy First",
-        body: "Your financial information belongs to you.\n\nForward Freedom Financial does not sell personal financial information to third parties.\n\nWe believe financial freedom begins with trust, and protecting your privacy is fundamental to our mission.\n\nYour data is used to operate the platform and improve your experience—not to build advertising profiles or sell personal information.",
+        heading: "🛡 Privacy Commitment",
+        body: "Your financial information belongs to you.\n\nForward Freedom Financial is designed so your stored financial data is encrypted before it is saved. This means account balances, transactions, budgets, income, and financial snapshots are not stored in readable form in our database.\n\nForward Freedom Financial does not sell personal financial information, create advertising profiles, or use your financial data for marketing purposes.\n\nBank connections are powered by Plaid. Your banking credentials are never stored by Forward Freedom Financial, and the platform cannot move money, transfer funds, or initiate transactions on your behalf.\n\nFinancial data may be processed temporarily during account synchronization in order to update your dashboard, but it is not stored in readable form.\n\nWe are committed to protecting your privacy and handling your information responsibly.",
       },
       {
         heading: "👤 Control Over Your Information",
