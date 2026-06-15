@@ -452,6 +452,7 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
         </div>
       ) : (
         <div
+          className="forecast-layout"
           style={{
             display: "grid",
             gridTemplateColumns: "320px minmax(0, 1fr)",
@@ -459,7 +460,7 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
             alignItems: "start",
           }}
         >
-          <aside style={{ display: "grid", gap: 18 }}>
+          <aside className="forecast-sidebar" style={{ display: "grid", gap: 18 }}>
             <div style={{ ...styles.panel, padding: 20 }}>
               <div
                 style={{
@@ -473,6 +474,7 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
                 Spend Snapshot
               </div>
               <div
+                className="responsive-grid-2"
                 style={{
                   display: "grid",
                   gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
@@ -522,7 +524,7 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
               >
                 Category Radar
               </div>
-              <div style={{ display: "grid", gap: 10, maxHeight: "68vh", overflowY: "auto" }}>
+              <div className="forecast-category-radar" style={{ display: "grid", gap: 10, maxHeight: "68vh", overflowY: "auto" }}>
                 {categoryCards.map((category) => {
                   const isActive = category.id === selectedCategory.id;
                   return (
@@ -597,6 +599,7 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
 
           <div style={{ display: "grid", gap: 20 }}>
             <div
+              className="responsive-grid-4 forecast-metric-grid"
               style={{
                 display: "grid",
                 gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
@@ -658,7 +661,7 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
               ))}
             </div>
 
-            <div style={{ ...styles.panel, padding: "24px 24px 0" }}>
+            <div className="forecast-chart-panel" style={{ ...styles.panel, padding: "24px 24px 0" }}>
               <div
                 style={{
                   display: "flex",
@@ -733,8 +736,8 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
                   ))}
                 </div>
 
-                <div style={{ flex: 1, position: "relative" }}>
-                  <svg viewBox={`0 0 ${CHART_W} ${CHART_H + 40}`} style={{ width: "100%" }}>
+                <div className="forecast-chart-frame" style={{ flex: 1, position: "relative" }}>
+                  <svg className="forecast-chart-svg" viewBox={`0 0 ${CHART_W} ${CHART_H + 40}`} style={{ width: "100%" }}>
                     <defs>
                       <linearGradient id="spendingAreaGradient" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="0%" stopColor={selectedCategory.color} stopOpacity="0.28" />
@@ -851,6 +854,7 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
             </div>
 
             <div
+              className="forecast-detail-grid"
               style={{
                 display: "grid",
                 gridTemplateColumns: "minmax(0, 1.15fr) minmax(300px, .85fr)",
@@ -870,6 +874,7 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
                   Monthly Review Grid
                 </div>
                 <div
+                  className="forecast-review-header"
                   style={{
                     display: "grid",
                     gridTemplateColumns: hasBudgetContext ? "90px 1fr 1fr 1fr 1fr" : "90px 1fr 1fr 1fr",
@@ -903,6 +908,7 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
                       <button
                         key={row.month}
                         type="button"
+                        className="forecast-review-row"
                         onClick={() => setFocusMonth(row.month)}
                         style={{
                           width: "100%",
@@ -956,6 +962,7 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
                 </div>
 
                 <div
+                  className="forecast-review-footer"
                   style={{
                     display: "grid",
                     gridTemplateColumns: hasBudgetContext ? "90px 1fr 1fr 1fr 1fr" : "90px 1fr 1fr 1fr",

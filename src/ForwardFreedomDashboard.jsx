@@ -604,6 +604,7 @@ function ForwardFreedomDashboard({
   const [plaidOAuthRedirectUri, setPlaidOAuthRedirectUri] = useState(() =>
     consumeOAuthReceivedRedirectUri()
   );
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const plaidRecoverySyncUserIdsRef = useRef(new Set());
   const plaidOAuthResumeAttemptedRef = useRef(false);
   const activeUser = users.find((user) => user.id === activeUserId) || users[0] || EMPTY_USER_STATE;
@@ -1952,26 +1953,56 @@ function ForwardFreedomDashboard({
   const handleBackHome = () => {
     if (isDemoMode && typeof onExitDemo === "function") {
       onExitDemo();
+      setIsMobileNavOpen(false);
       return;
     }
     if (sessionControls?.onSignOut) {
       void sessionControls.onSignOut();
+      setIsMobileNavOpen(false);
       return;
     }
     setCurrentView("landing");
+    setIsMobileNavOpen(false);
   };
 
   return (
-    <div style={styles.page}>
-      <div style={styles.shell}>
+    <div className="app-page" style={styles.page}>
+      <div className="app-shell" style={styles.shell}>
         <AppSidebar
+          className="app-sidebar--desktop"
           activeTab={activeTab}
           setActiveTab={setActiveTab}
           onBackHome={handleBackHome}
           sessionControls={sessionControls}
         />
 
-        <main style={styles.main}>
+        <div className={`mobile-nav-backdrop${isMobileNavOpen ? " is-open" : ""}`} onClick={() => setIsMobileNavOpen(false)} />
+        <div className={`mobile-nav-drawer${isMobileNavOpen ? " is-open" : ""}`}>
+          <AppSidebar
+            className="app-sidebar--mobile"
+            activeTab={activeTab}
+            setActiveTab={setActiveTab}
+            onBackHome={handleBackHome}
+            sessionControls={sessionControls}
+            onNavigate={() => setIsMobileNavOpen(false)}
+          />
+        </div>
+
+        <main className="app-main" style={styles.main}>
+          <div className="mobile-topbar">
+            <button
+              type="button"
+              className="mobile-menu-button"
+              onClick={() => setIsMobileNavOpen(true)}
+              aria-label="Open navigation"
+            >
+              ☰
+            </button>
+            <div>
+              <div className="mobile-topbar-eyebrow">Forward Freedom</div>
+              <div className="mobile-topbar-title">{activeTab}</div>
+            </div>
+          </div>
           {isDemoMode ? (
             <div
               style={{

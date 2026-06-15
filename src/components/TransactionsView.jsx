@@ -606,6 +606,7 @@ export function TransactionsView({
               </div>
             </div>
             <div
+              className="transactions-manual-grid"
               style={{
                 display: "grid",
                 gridTemplateColumns: "140px minmax(105px,.7fr) minmax(115px,.7fr) 88px 118px",
@@ -738,7 +739,7 @@ export function TransactionsView({
         </div>
       ) : null}
 
-      <div style={{ ...styles.panel, padding: 24 }}>
+      <div className="transactions-panel" style={{ ...styles.panel, padding: 24 }}>
         {selectedAccount ? (
           <>
             <div
@@ -786,7 +787,8 @@ export function TransactionsView({
             </div>
 
             {accountProfile ? (
-              <div
+            <div
+              className="transactions-account-profile"
                 style={{
                   border: "1px solid rgba(0,136,255,.22)",
                   borderRadius: 16,
@@ -796,7 +798,7 @@ export function TransactionsView({
                   boxShadow: "inset 0 0 24px rgba(0,80,160,.08)",
                 }}
               >
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 20 }}>
+                <div className="transactions-account-profile-header" style={{ display: "flex", justifyContent: "space-between", gap: 20 }}>
                   <div>
                     <div
                       style={{
@@ -829,6 +831,7 @@ export function TransactionsView({
                 </div>
 
                 <div
+                  className="responsive-grid-3"
                   style={{
                     display: "grid",
                     gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
@@ -948,6 +951,7 @@ export function TransactionsView({
           </>
         ) : null}
         <div
+          className="transactions-feed-toolbar"
           style={{
             display: "flex",
             justifyContent: "space-between",
@@ -958,7 +962,7 @@ export function TransactionsView({
           <div style={{ color: "white", fontSize: 22, fontWeight: 700 }}>
             {selectedAccount ? `${selectedAccount} Transactions` : "Live Transaction Feed"}
           </div>
-          <div style={{ display: "flex", gap: 12 }}>
+          <div className="transactions-feed-actions" style={{ display: "flex", gap: 12 }}>
             <button
               onClick={() => setShowManualEntry(true)}
               disabled={!canOpenManualEntry}
@@ -1029,6 +1033,7 @@ export function TransactionsView({
 
         {showFilters ? (
           <div
+            className="transactions-filter-grid"
             style={{
               display: "grid",
               gridTemplateColumns: "1.4fr 1fr 1fr 1fr 1fr 1fr auto",
@@ -1272,6 +1277,7 @@ export function TransactionsView({
         ) : null}
 
         <div
+          className="transactions-feed-header"
           style={{
             display: "grid",
             gridTemplateColumns: TRANSACTION_FEED_GRID_COLUMNS,
@@ -1310,6 +1316,7 @@ export function TransactionsView({
               return (
                 <div
                   key={rowKey}
+                  className="transactions-feed-row"
                   onClick={() => setSelectedTransactionKey(rowKey)}
                   onDoubleClick={(event) => {
                     event.preventDefault();
@@ -1354,6 +1361,7 @@ export function TransactionsView({
                   }}
                 >
                 <div
+                  className="transaction-date"
                   style={{
                     color: "#8fb1d9",
                     fontSize: 14,
@@ -1366,8 +1374,9 @@ export function TransactionsView({
                     </div>
                   ) : null}
                 </div>
-                <div style={{ color: "white", fontWeight: 700 }}>{tx.merchant}</div>
+                <div className="transaction-merchant" style={{ color: "white", fontWeight: 700 }}>{tx.merchant}</div>
                 <div
+                  className="transaction-category"
                   style={{
                     display: "flex",
                     alignItems: "center",
@@ -1422,10 +1431,11 @@ export function TransactionsView({
                     {tx.needsReview ? " • Needs review" : ""}
                   </div>
                 </div>
-                <div style={{ color: "#7ebeff", paddingLeft: 14 }}>
+                <div className="transaction-account" style={{ color: "#7ebeff", paddingLeft: 14 }}>
                   {accountDisplayNames[tx.account] || tx.account}
                 </div>
                 <div
+                  className="transaction-amount"
                   style={{
                     textAlign: "right",
                     color: tx.amount > 0 ? "#00f59b" : "#ff5d7a",
@@ -1436,6 +1446,37 @@ export function TransactionsView({
                   {tx.amount > 0 ? "+" : ""}$
                   {Math.abs(tx.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                 </div>
+                <button
+                  type="button"
+                  className="transaction-row-menu-button"
+                  aria-label={`Open actions for ${tx.merchant || "transaction"}`}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setSelectedTransactionKey(rowKey);
+                    const menuWidth = 210;
+                    setActionMenu({
+                      rowKey,
+                      tx,
+                      top: event.clientY,
+                      left: Math.min(event.clientX, window.innerWidth - menuWidth - 12),
+                    });
+                  }}
+                  style={{
+                    alignItems: "center",
+                    justifyContent: "center",
+                    width: 38,
+                    height: 38,
+                    borderRadius: 10,
+                    border: "1px solid rgba(0,216,255,.22)",
+                    background: "rgba(0,136,255,.12)",
+                    color: "#dff7ff",
+                    cursor: "pointer",
+                    fontWeight: 900,
+                  }}
+                >
+                  ⋯
+                </button>
               </div>
               );
             })
@@ -1482,6 +1523,7 @@ export function TransactionsView({
           }}
         >
           <div
+            className="transactions-action-menu"
             role="menu"
             onClick={(event) => event.stopPropagation()}
             style={{

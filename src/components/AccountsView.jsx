@@ -1030,6 +1030,7 @@ export function AccountsView({
             </div>
 
             <div
+              className="accounts-quick-start-grid responsive-grid-3"
               style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 12 }}
             >
               {QUICK_START_TEMPLATES.map((template) => (
@@ -1413,6 +1414,7 @@ export function AccountsView({
       {/* ── Add Account Modal ── */}
       {showModal ? (
         <div
+          className="account-modal-backdrop"
           style={{
             position: "fixed",
             inset: 0,
@@ -1427,6 +1429,7 @@ export function AccountsView({
           }}
         >
           <form
+            className="account-modal-form"
             onSubmit={handleSubmit}
             style={{
               ...styles.panel,

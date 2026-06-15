@@ -401,6 +401,7 @@ export function BudgetCommandCenter({
       </header>
 
       <section
+        className="budget-hero"
         style={{
           ...styles.panel,
           minHeight: 0,
@@ -629,6 +630,7 @@ export function BudgetCommandCenter({
           </div>
         </div>
         <div
+          className="budget-hero-stats"
           style={{
             display: "grid",
             gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
@@ -863,8 +865,9 @@ export function BudgetCommandCenter({
         </section>
       ) : null}
 
-      <section style={{ padding: "0 8px" }}>
+      <section className="budget-table-section" style={{ padding: "0 8px" }}>
         <div
+          className="budget-table-header"
           style={{
             display: "grid",
             gridTemplateColumns: "1.15fr 110px 1fr 120px",
@@ -887,6 +890,7 @@ export function BudgetCommandCenter({
           {sortedBudgetRowsWithSpend.map((item) => (
             <div
               key={item.id}
+              className="budget-row-card"
               style={{
                 display: "grid",
                 gridTemplateColumns: "1.15fr 110px 1fr 120px",
@@ -922,6 +926,7 @@ export function BudgetCommandCenter({
               data-budget-row-id={item.id}
             >
               <div
+                className="budget-row-title"
                 style={{
                   display: "grid",
                   gridTemplateColumns: "auto auto 1fr",
@@ -972,7 +977,10 @@ export function BudgetCommandCenter({
                 >
                   {item.icon}
                 </button>
-                <div style={{ display: "flex", alignItems: "center", gap: 14, width: "100%" }}>
+                <div
+                  className="budget-row-name-controls"
+                  style={{ display: "flex", alignItems: "center", gap: 14, width: "100%" }}
+                >
                   <input
                     value={item.name}
                     onChange={(event) => updateBudgetRow(item.id, "name", event.target.value)}
@@ -1024,6 +1032,7 @@ export function BudgetCommandCenter({
               </div>
 
               <div
+                className="budget-row-activity"
                 style={{
                   color: "#e6efff",
                   fontSize: 20,
@@ -1036,6 +1045,7 @@ export function BudgetCommandCenter({
                 {money(item.spent)}
               </div>
               <div
+                className="budget-row-progress"
                 style={{
                   display: "grid",
                   justifyItems: "center",
@@ -1104,6 +1114,7 @@ export function BudgetCommandCenter({
                 ) : null}
               </div>
               <input
+                className="budget-row-assigned"
                 value={money(item.budget)}
                 onChange={(event) => updateBudgetRow(item.id, "budget", event.target.value)}
                 onFocus={() => activateBudgetRow(item.id)}
