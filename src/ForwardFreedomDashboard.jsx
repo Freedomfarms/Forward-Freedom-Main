@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePlaidLink } from "react-plaid-link";
-import { APP_TABS, budgetMonths, navMain, navTools } from "./data/constants.jsx";
+import {
+  APP_TABS,
+  UNCATEGORIZED_CATEGORY,
+  budgetMonths,
+  navMain,
+  navTools,
+} from "./data/constants.jsx";
 import { styles } from "./styles.js";
 import { getBudgetPeriodAtOffset, getCurrentTimestamp } from "./utils/date.js";
 import { money, parseMoney } from "./utils/format.js";
@@ -417,7 +423,7 @@ function syncAutoDetectedSubscriptions(currentSubscriptions, recurringSuggestion
       name: suggestion.merchant || suggestion.category || "Recurring Expense",
       amount: Number(suggestion.amount || 0),
       frequency: suggestion.frequency || "Monthly",
-      category: suggestion.category || "Other",
+      category: suggestion.category || UNCATEGORIZED_CATEGORY,
       billing: Number(suggestion.billing || 1),
       account: suggestion.account || "",
       icon: suggestion.icon || "💳",

@@ -1,5 +1,10 @@
 import { useState } from "react";
-import { budgetMonths } from "../data/constants.jsx";
+import {
+  LEGACY_UNCATEGORIZED_CATEGORIES,
+  UNCATEGORIZED_CATEGORY,
+  budgetMonths,
+  isUncategorizedCategoryName,
+} from "../data/constants.jsx";
 import { parseBudgetReviewDate } from "../utils/budgetReview.js";
 import { sumSpendTransactions } from "../utils/transactions.js";
 import { getCurrentBudgetPeriod } from "../utils/date.js";
@@ -56,7 +61,7 @@ function getLatestMonthWithSpend(monthlySeries, fallbackMonth) {
 
 function buildCategoryDefinitions(budgetRows, spendingTransactions) {
   const primaryBudgetCategories = budgetRows
-    .filter((row) => row.name !== "Other")
+    .filter((row) => !isUncategorizedCategoryName(row.name))
     .map((row, index) => ({
       id: `budget:${row.id || row.name}`,
       name: row.name,
@@ -67,12 +72,13 @@ function buildCategoryDefinitions(budgetRows, spendingTransactions) {
       description: "Budget-aligned category",
     }));
 
-  const otherBudgetRow = budgetRows.find((row) => row.name === "Other");
+  const otherBudgetRow = budgetRows.find((row) => isUncategorizedCategoryName(row.name));
   const matchedBudgetCategories = new Set(
     primaryBudgetCategories.flatMap((definition) => Array.from(definition.matcherSet))
   );
   if (otherBudgetRow) {
-    matchedBudgetCategories.add("Other");
+    matchedBudgetCategories.add(UNCATEGORIZED_CATEGORY);
+    LEGACY_UNCATEGORIZED_CATEGORIES.forEach((category) => matchedBudgetCategories.add(category));
   }
 
   const extraCategories = Array.from(
@@ -122,7 +128,7 @@ function buildCategoryDefinitions(budgetRows, spendingTransactions) {
 function matchesCategory(transaction, definition, budgetDefinitions) {
   if (!transaction || (Number(transaction.amount) || 0) >= 0) return false;
 
-  const category = transaction.category || "Other";
+  const category = transaction.category || UNCATEGORIZED_CATEGORY;
   if (definition.type === "all") return true;
   if (definition.type === "budget") return definition.matcherSet.has(category);
   if (definition.type === "budget-other") {

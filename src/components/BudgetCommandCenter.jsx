@@ -3,7 +3,11 @@ import { styles } from "../styles.js";
 import { money, wholeDollars, cleanMoneyInput, parseMoney } from "../utils/format.js";
 import { buildMonthlySpendSnapshot } from "../utils/budgetReview.js";
 import { getCurrentBudgetPeriod } from "../utils/date.js";
-import { budgetMonths, budgetMonthNames } from "../data/constants.jsx";
+import {
+  budgetMonths,
+  budgetMonthNames,
+  isUncategorizedCategoryName,
+} from "../data/constants.jsx";
 import { HouseholdProfilesControl, MonthCoverageEditor } from "./Common.jsx";
 
 function buildHeatBarWidth(value, maxValue) {
@@ -970,12 +974,16 @@ export function BudgetCommandCenter({
                 <button
                   type="button"
                   onDoubleClick={(event) => {
-                    if (item.name === "Other") return;
+                    if (isUncategorizedCategoryName(item.name)) return;
                     event.preventDefault();
                     event.stopPropagation();
                     setDeleteTarget({ id: item.id, name: item.name });
                   }}
-                  title={item.name === "Other" ? "Other is required" : "Double click to delete category"}
+                  title={
+                    isUncategorizedCategoryName(item.name)
+                      ? `${item.name} is required`
+                      : "Double click to delete category"
+                  }
                   style={{
                     width: 34,
                     height: 34,
@@ -987,9 +995,9 @@ export function BudgetCommandCenter({
                     fontSize: 18,
                     background: "rgba(0,136,255,.08)",
                     border: "1px solid rgba(0,216,255,.14)",
-                    cursor: item.name === "Other" ? "default" : "pointer",
+                    cursor: isUncategorizedCategoryName(item.name) ? "default" : "pointer",
                     boxShadow: "inset 0 0 14px rgba(0,80,160,.05)",
-                    opacity: item.name === "Other" ? 0.68 : 1,
+                    opacity: isUncategorizedCategoryName(item.name) ? 0.68 : 1,
                   }}
                 >
                   {item.icon}

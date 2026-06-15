@@ -1,4 +1,4 @@
-import { transactionCategoryOptions } from "../data/constants.jsx";
+import { UNCATEGORIZED_CATEGORY, transactionCategoryOptions } from "../data/constants.jsx";
 
 const REVIEW_THRESHOLD = 70;
 const HIGH_CONFIDENCE = 85;
@@ -78,7 +78,7 @@ function buildValidCategorySet(budgetRows) {
     ...budgetRows.map((row) => row.name).filter(Boolean),
     "Income",
     "Transfers",
-    "Other",
+    UNCATEGORIZED_CATEGORY,
   ]);
 }
 
@@ -141,7 +141,9 @@ export function categorizeTransaction(transaction, { budgetRows, merchantCategor
   if (lockedByUser) {
     return buildCategorizedTransaction(
       transaction,
-      validCategories.has(normalizedTransactionCategory) ? normalizedTransactionCategory : "Other",
+      validCategories.has(normalizedTransactionCategory)
+        ? normalizedTransactionCategory
+        : UNCATEGORIZED_CATEGORY,
       "user",
       100
     );
@@ -150,7 +152,9 @@ export function categorizeTransaction(transaction, { budgetRows, merchantCategor
   if (lockedManual) {
     return buildCategorizedTransaction(
       transaction,
-      validCategories.has(normalizedTransactionCategory) ? normalizedTransactionCategory : "Other",
+      validCategories.has(normalizedTransactionCategory)
+        ? normalizedTransactionCategory
+        : UNCATEGORIZED_CATEGORY,
       "manual",
       100
     );
@@ -217,7 +221,7 @@ export function categorizeTransaction(transaction, { budgetRows, merchantCategor
     );
   }
 
-  return buildCategorizedTransaction(transaction, "Other", "ai", 42);
+  return buildCategorizedTransaction(transaction, UNCATEGORIZED_CATEGORY, "ai", 42);
 }
 
 export function categorizeTransactions(transactions, options) {
