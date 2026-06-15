@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { styles } from "../styles.js";
 import { money, wholeDollars, cleanMoneyInput, parseMoney } from "../utils/format.js";
 import { buildMonthlySpendSnapshot } from "../utils/budgetReview.js";
@@ -49,18 +49,6 @@ const BUDGET_SORT_OPTIONS = [
     description: "Most dollars still available first.",
   },
 ];
-
-const BUDGET_WORKFLOW_VISIBILITY_KEY = "ff_budget_workflow_visible";
-
-function readBudgetWorkflowVisibilityPreference() {
-  try {
-    const rawValue = localStorage.getItem(BUDGET_WORKFLOW_VISIBILITY_KEY);
-    if (rawValue === null) return true;
-    return rawValue === "true";
-  } catch {
-    return true;
-  }
-}
 
 function sortBudgetRows(rows, sortMode) {
   if (!Array.isArray(rows) || sortMode === "manual") return rows;
@@ -165,9 +153,7 @@ export function BudgetCommandCenter({
   const [isSortModalOpen, setIsSortModalOpen] = useState(false);
   const [activeSortMode, setActiveSortMode] = useState("manual");
   const [pendingSortMode, setPendingSortMode] = useState("manual");
-  const [isBudgetWorkflowVisible, setIsBudgetWorkflowVisible] = useState(
-    readBudgetWorkflowVisibilityPreference
-  );
+  const overspentScrollRef = useRef(null);
   const [activeBudgetDate, setActiveBudgetDate] = useState(() => ({
     monthIndex: currentBudgetPeriod.monthIndex,
     year: currentPlanYear,
@@ -231,18 +217,9 @@ export function BudgetCommandCenter({
           2
         )}%, rgba(255,255,255,.08) ${normalizedBudgetUsedPercent.toFixed(2)}% 100%)`
       : "conic-gradient(#ff5d7a 0 100%)";
-  const overBudgetRows = budgetRowsWithSpend
+  const overspentRows = budgetRowsWithSpend
     .filter((row) => (Number(row.remaining) || 0) < 0)
     .sort((left, right) => (Number(left.remaining) || 0) - (Number(right.remaining) || 0));
-  const unassignedRows = budgetRowsWithSpend.filter(
-    (row) => (Number(row.budget) || 0) <= 0 && (Number(row.spent) || 0) <= 0
-  );
-  const attentionRows = [
-    ...overBudgetRows,
-    ...unassignedRows.filter(
-      (row) => !overBudgetRows.some((candidate) => candidate.id === row.id)
-    ),
-  ].slice(0, 4);
   const scorecardBarMax = Math.max(
     Math.abs(monthIncomeTotal),
     Math.abs(budgetTotal),
@@ -394,14 +371,6 @@ export function BudgetCommandCenter({
     };
   }, [activateBudgetRow, pointerDragBudgetRowId, reorderBudgetRows]);
 
-  useEffect(() => {
-    try {
-      localStorage.setItem(BUDGET_WORKFLOW_VISIBILITY_KEY, String(isBudgetWorkflowVisible));
-    } catch {
-      // If storage is unavailable, we keep in-memory behavior.
-    }
-  }, [isBudgetWorkflowVisible]);
-
   const openSortModal = () => {
     setPendingSortMode(activeSortMode);
     setIsSortModalOpen(true);
@@ -412,8 +381,11 @@ export function BudgetCommandCenter({
     setIsSortModalOpen(false);
   };
 
-  const toggleBudgetWorkflow = () => {
-    setIsBudgetWorkflowVisible((current) => !current);
+  const scrollOverspent = (direction) => {
+    const container = overspentScrollRef.current;
+    if (!container) return;
+    const amount = Math.max(container.clientWidth * 0.8, 240);
+    container.scrollBy({ left: direction * amount, behavior: "smooth" });
   };
 
   return (
@@ -752,25 +724,6 @@ export function BudgetCommandCenter({
             >
               Sort
             </button>
-            <button
-              type="button"
-              onClick={toggleBudgetWorkflow}
-              style={{
-                border: "1px solid rgba(0,216,255,.26)",
-                borderRadius: 10,
-                background: isBudgetWorkflowVisible
-                  ? "rgba(0,136,255,.16)"
-                  : "rgba(4,22,43,.75)",
-                color: "#dff7ff",
-                padding: "8px 14px",
-                fontSize: 13,
-                fontWeight: 800,
-                letterSpacing: 0.4,
-                cursor: "pointer",
-              }}
-            >
-              Budget Workflow
-            </button>
             <select
               value={activeBudgetDate.year}
               onChange={(event) => updateBudgetDate("year", event.target.value)}
@@ -799,97 +752,114 @@ export function BudgetCommandCenter({
         </div>
       </section>
 
-      {isBudgetWorkflowVisible ? (
+      {overspentRows.length > 0 ? (
         <section
           style={{
             ...styles.panel,
-            padding: "22px 24px",
-            marginBottom: 30,
-            borderRadius: 24,
-            display: "grid",
-            gap: 18,
+            padding: "12px 14px",
+            marginBottom: 22,
+            borderRadius: 18,
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
           }}
         >
           <div
             style={{
-              border: "1px solid rgba(0,136,255,.16)",
-              borderRadius: 18,
-              background: "rgba(0,22,48,.32)",
-              padding: "16px 18px 18px",
+              color: "#ffd9df",
+              fontSize: 11,
+              fontWeight: 900,
+              textTransform: "uppercase",
+              letterSpacing: 0.9,
+              whiteSpace: "nowrap",
+              flexShrink: 0,
             }}
           >
-            <div
+            Overspent ({overspentRows.length})
+          </div>
+          {overspentRows.length > 1 ? (
+            <button
+              type="button"
+              aria-label="Scroll overspent categories left"
+              onClick={() => scrollOverspent(-1)}
               style={{
-                color: "#8feaff",
-                fontSize: 12,
+                flexShrink: 0,
+                width: 30,
+                height: 30,
+                borderRadius: 999,
+                border: "1px solid rgba(0,216,255,.26)",
+                background: "rgba(0,136,255,.12)",
+                color: "#dff7ff",
+                cursor: "pointer",
                 fontWeight: 900,
-                textTransform: "uppercase",
-                letterSpacing: 0.9,
+                lineHeight: 1,
               }}
             >
-              Budget Workflow
-            </div>
-            <div style={{ color: "white", fontSize: 22, fontWeight: 800, marginTop: 8 }}>
-              {attentionRows.length > 0
-                ? "Categories that need a decision next"
-                : "This month is funded and clean"}
-            </div>
-            <div style={{ color: "#9fb0c9", lineHeight: 1.6, marginTop: 8 }}>
-              Use this row as the budgeting workflow entry point: assign what is left, fix
-              overspending, and keep available dollars visible by category.
-            </div>
-            {attentionRows.length > 0 ? (
-              <div
+              ‹
+            </button>
+          ) : null}
+          <div
+            ref={overspentScrollRef}
+            style={{
+              display: "flex",
+              gap: 10,
+              overflowX: "auto",
+              flex: 1,
+              scrollbarWidth: "none",
+              padding: "2px 0",
+            }}
+          >
+            {overspentRows.map((row) => (
+              <button
+                key={row.id}
+                type="button"
+                onClick={() => activateBudgetRow(row.id)}
+                title={`${row.name} • Activity ${money(row.spent)} • Available ${money(
+                  row.remaining
+                )}`}
                 style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-                  gap: 12,
-                  marginTop: 16,
+                  flexShrink: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 10,
+                  textAlign: "left",
+                  border: "1px solid rgba(255,93,122,.28)",
+                  borderRadius: 12,
+                  background: "rgba(255,61,103,.10)",
+                  padding: "8px 12px",
+                  cursor: "pointer",
+                  color: "#eef6ff",
+                  whiteSpace: "nowrap",
                 }}
               >
-                {attentionRows.map((row) => {
-                  const status = buildBudgetWorkflowStatus(row);
-                  return (
-                    <button
-                      key={row.id}
-                      type="button"
-                      onClick={() => activateBudgetRow(row.id)}
-                      style={{
-                        textAlign: "left",
-                        border: "1px solid rgba(0,136,255,.18)",
-                        borderRadius: 14,
-                        background: "rgba(3,17,32,.62)",
-                        padding: "14px 14px 16px",
-                        cursor: "pointer",
-                        color: "#eef6ff",
-                      }}
-                    >
-                      <div style={{ fontWeight: 800 }}>{row.name}</div>
-                      <div style={{ color: "#9fb0c9", fontSize: 12, marginTop: 8 }}>
-                        Activity {money(row.spent)} • Available {money(row.remaining)}
-                      </div>
-                      <div
-                        style={{
-                          display: "inline-flex",
-                          marginTop: 10,
-                          borderRadius: 999,
-                          padding: "5px 10px",
-                          fontSize: 11,
-                          fontWeight: 900,
-                          letterSpacing: 0.4,
-                          color: status.color,
-                          background: status.background,
-                          border: status.border,
-                        }}
-                      >
-                        {status.label}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            ) : null}
+                <span style={{ fontWeight: 800, fontSize: 13 }}>{row.name}</span>
+                <span style={{ color: "#ff9fb0", fontSize: 12, fontWeight: 800 }}>
+                  {money(row.remaining)}
+                </span>
+              </button>
+            ))}
           </div>
+          {overspentRows.length > 1 ? (
+            <button
+              type="button"
+              aria-label="Scroll overspent categories right"
+              onClick={() => scrollOverspent(1)}
+              style={{
+                flexShrink: 0,
+                width: 30,
+                height: 30,
+                borderRadius: 999,
+                border: "1px solid rgba(0,216,255,.26)",
+                background: "rgba(0,136,255,.12)",
+                color: "#dff7ff",
+                cursor: "pointer",
+                fontWeight: 900,
+                lineHeight: 1,
+              }}
+            >
+              ›
+            </button>
+          ) : null}
         </section>
       ) : null}
 
