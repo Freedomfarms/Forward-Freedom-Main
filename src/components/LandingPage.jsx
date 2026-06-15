@@ -145,7 +145,7 @@ export function LandingPage({ enterApp, onEnterDemo }) {
           >
             {typeof onEnterDemo === "function" ? (
               <button onClick={openDemoMode} style={buildPrimaryButtonStyle(true)}>
-                Enter Demo Mode
+                Demo Mode
               </button>
             ) : null}
             <button onClick={enterApp} style={buildPrimaryButtonStyle(true)}>
@@ -206,23 +206,28 @@ export function LandingPage({ enterApp, onEnterDemo }) {
               real-time data, forecasting, and powerful financial insights.
             </p>
 
-            <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
-              <button onClick={openCreateAccess} style={{ ...buildPrimaryButtonStyle(), minWidth: 220 }}>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(2, minmax(0, 220px))",
+                gap: 18,
+              }}
+            >
+              <button onClick={openCreateAccess} style={buildPrimaryButtonStyle()}>
                 Create Access
               </button>
-              {typeof onEnterDemo === "function" ? (
-                <button
-                  onClick={openDemoMode}
-                  style={{ ...buildPrimaryButtonStyle(true), minWidth: 220 }}
-                >
-                  Enter Demo Mode
-                </button>
-              ) : null}
-              <button
-                onClick={enterApp}
-                style={{ ...buildPrimaryButtonStyle(true), minWidth: 220 }}
-              >
+              <button onClick={enterApp} style={buildPrimaryButtonStyle(true)}>
                 Client Login
+              </button>
+              {typeof onEnterDemo === "function" ? (
+                <button onClick={openDemoMode} style={buildPrimaryButtonStyle(true)}>
+                  Demo Mode
+                </button>
+              ) : (
+                <span />
+              )}
+              <button type="button" style={buildPrimaryButtonStyle(true)}>
+                Safety Overview
               </button>
             </div>
           </div>
@@ -442,7 +447,7 @@ export function LandingPage({ enterApp, onEnterDemo }) {
             <div style={{ display: "grid", gap: 12, marginTop: 22 }}>
               {typeof onEnterDemo === "function" ? (
                 <button onClick={openDemoMode} style={{ ...buildPrimaryButtonStyle(true), width: "100%" }}>
-                  Enter Demo Mode
+                  Demo Mode
                 </button>
               ) : null}
               <button onClick={enterApp} style={{ ...buildPrimaryButtonStyle(), width: "100%" }}>
