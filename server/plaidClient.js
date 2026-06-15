@@ -6,6 +6,9 @@ dotenv.config();
 const PLAID_ENV = (process.env.PLAID_ENV || "development").trim().toLowerCase();
 const REQUIRED_PRODUCTS = [Products.Transactions];
 const OPTIONAL_PRODUCTS = [Products.Liabilities];
+const PLAID_CLIENT_NAME = "Forward Freedom";
+const DEFAULT_PLAID_LEGAL_NAME = "Forward Freedom";
+const DEFAULT_PLAID_CONTACT_EMAIL = "forwardfreedomfinancial@gmail.com";
 
 let cachedClient = null;
 
@@ -72,6 +75,15 @@ function normalizeRedirectUri(value) {
   return normalized || undefined;
 }
 
+function getPlaidIdentity() {
+  // Keep Plaid-facing identity fixed to the business brand so personal profile
+  // names never leak into bank-sharing notices or Link verification flows.
+  return {
+    legalName: DEFAULT_PLAID_LEGAL_NAME,
+    emailAddress: DEFAULT_PLAID_CONTACT_EMAIL,
+  };
+}
+
 // Plaid only accepts a redirect_uri that is already registered under
 // "Allowed redirect URIs" in the developer dashboard. Sending any other value
 // fails link/token/create with INVALID_FIELD, which breaks every connection
@@ -83,17 +95,18 @@ export function resolvePlaidOAuthRedirectUri() {
 
 export function getPlaidLinkTokenRequest({
   userId,
-  userName,
   accessToken,
   enableAccountSelection = false,
   redirectUri,
 }) {
+  const plaidIdentity = getPlaidIdentity();
   const request = {
     user: {
       client_user_id: userId,
-      legal_name: userName || undefined,
+      legal_name: plaidIdentity.legalName,
+      email_address: plaidIdentity.emailAddress,
     },
-    client_name: "Forward Freedom",
+    client_name: PLAID_CLIENT_NAME,
     language: "en",
     country_codes: ["US"],
     products: REQUIRED_PRODUCTS,
