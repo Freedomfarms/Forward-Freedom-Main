@@ -6,6 +6,7 @@ const SIZE_PRESETS = {
     forwardLetterSpacing: 3,
     freedomLetterSpacing: 3.2,
     financialLetterSpacing: 1.5,
+    textOffsetX: 1.5,
     gap: 2,
     ringWidth: 2,
     sweepWidth: 2,
@@ -17,6 +18,7 @@ const SIZE_PRESETS = {
     forwardLetterSpacing: 14,
     freedomLetterSpacing: 12,
     financialLetterSpacing: 7,
+    textOffsetX: 5,
     gap: 6,
     ringWidth: 3,
     sweepWidth: 3,
@@ -168,8 +170,12 @@ export function ForwardFreedomWordmark({ size = "nav", className = "" }) {
         style={{
           position: "relative",
           zIndex: 1,
+          width: "100%",
+          display: "grid",
+          justifyItems: "center",
           textAlign: "center",
           lineHeight: 1.08,
+          transform: `translateX(${preset.textOffsetX}px)`,
           userSelect: "none",
         }}
       >
