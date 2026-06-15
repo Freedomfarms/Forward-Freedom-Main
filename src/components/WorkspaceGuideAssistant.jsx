@@ -178,8 +178,8 @@ export function WorkspaceGuideAssistant({
             </button>
           </div>
           <div style={{ color: "#9fb0c9", lineHeight: 1.55, marginTop: 10, fontSize: 13 }}>
-            I help with product navigation and feature questions only. I do not give financial
-            advice or recommendations.
+            I explain what each card, chart, and module does, walk you through tasks, and point you
+            to the right screen. I do not give financial advice or recommendations.
           </div>
         </div>
 

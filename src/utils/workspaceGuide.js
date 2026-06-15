@@ -61,21 +61,55 @@ function buildNextStepReply(context) {
 export function buildWorkspaceGuideWelcome(context) {
   const nextStep = buildNextStepReply(context);
   return {
-    text: `I can help you navigate Forward Freedom, explain features, and point you to the right screen. You are currently on ${context.activeTab}. ${nextStep.text}`,
+    text: `I can help you navigate Forward Freedom, explain what each card, chart, and module means, and walk you through tasks like deleting a transaction. You are currently on ${context.activeTab}. ${nextStep.text}`,
     actions: nextStep.actions,
   };
 }
 
 export function buildWorkspaceGuideSuggestions(context) {
-  const suggestions = ["What should I do next?", "How do I connect a bank?", "Why is a transaction uncategorized?"];
+  const suggestions = [
+    "What should I do next?",
+    "What is True Cash?",
+    "What does this chart show?",
+    "How do I delete a transaction?",
+  ];
 
   if (context.activeTab !== APP_TABS.INCOME_HUB) {
     suggestions.push("Where do I set income?");
   }
-  if (context.activeTab !== APP_TABS.BUDGET_COMMAND_CENTER) {
-    suggestions.push("Where do I set the budget?");
-  }
   return suggestions.slice(0, 4);
+}
+
+function buildChartReply(context) {
+  switch (context.activeTab) {
+    case APP_TABS.DASHBOARD:
+      return {
+        text:
+          "The True Cash chart on Command Center trends your True Cash (liquid cash minus credit card debt) over time. Use the range buttons (1M, 3M, 6M, YTD, 1Y, ALL) to zoom, and hover any point to read its value and date. The lighter forward section is a projection, not actual history.",
+        actions: [buildAction("Open Command Center", APP_TABS.DASHBOARD)],
+      };
+    case APP_TABS.OPERATIONS_BOARD:
+      return {
+        text:
+          "Operations Board charts: the scorecards compare budget vs. actual spend and planned vs. actual income by month, and the Yearly Outlook lays out monthly income, budget, profit, adjustments, and True Cash (plus projected True Cash) across the whole year.",
+        actions: [buildAction("Open Operations Board", APP_TABS.OPERATIONS_BOARD)],
+      };
+    case APP_TABS.FORECAST_LAB:
+      return {
+        text:
+          "Spending Intelligence charts show each category's monthly spend against its budget, so you can spot trends and see where your money is going.",
+        actions: [buildAction("Open Spending Intelligence", APP_TABS.FORECAST_LAB)],
+      };
+    default:
+      return {
+        text:
+          "Most charts here trend a metric over time. The main ones are the True Cash chart (Command Center), the scorecards and Yearly Outlook (Operations Board), and per-category spend vs. budget (Spending Intelligence). Tell me which screen you're on and I'll explain its chart.",
+        actions: [
+          buildAction("Open Command Center", APP_TABS.DASHBOARD),
+          buildAction("Open Spending Intelligence", APP_TABS.FORECAST_LAB),
+        ],
+      };
+  }
 }
 
 export function resolveWorkspaceGuideReply(question, context) {
@@ -109,6 +143,110 @@ export function resolveWorkspaceGuideReply(question, context) {
         buildAction("Open Command Center", APP_TABS.DASHBOARD),
         buildAction("Open Operations Board", APP_TABS.OPERATIONS_BOARD),
       ],
+    };
+  }
+
+  if (includesAny(text, ["true cash"])) {
+    return {
+      text:
+        "True Cash is your real spendable position: Liquid Cash (checking, savings, and manual cash) minus credit card debt. It's the headline card on Command Center, and the True Cash chart trends it over time. Keep your account balances current in Accounts to keep it accurate.",
+      actions: [
+        buildAction("Open Command Center", APP_TABS.DASHBOARD),
+        buildAction("Open Accounts", APP_TABS.ADD_ACCOUNTS),
+      ],
+    };
+  }
+
+  if (includesAny(text, ["liquid cash"])) {
+    return {
+      text:
+        "Liquid Cash is the money you can spend right now — the combined balance of your checking, savings, and manual cash accounts. It does not subtract any debt. You manage the underlying accounts in Accounts.",
+      actions: [buildAction("Open Accounts", APP_TABS.ADD_ACCOUNTS)],
+    };
+  }
+
+  if (includesAny(text, ["credit card debt", "card debt", "card balance"])) {
+    return {
+      text:
+        "Credit Card Debt is the total outstanding balance across all of your connected credit cards. True Cash subtracts this number from your Liquid Cash. Connect or update cards in Accounts.",
+      actions: [buildAction("Open Accounts", APP_TABS.ADD_ACCOUNTS)],
+    };
+  }
+
+  if (includesAny(text, ["cash flow"])) {
+    return {
+      text:
+        "Current Month Cash Flow is this month's planned income minus planned spend. A positive number is a projected surplus; a negative number is a projected deficit. You shape it in Income Hub (income) and Budget Strategy Lab (spending).",
+      actions: [
+        buildAction("Open Budget Strategy Lab", APP_TABS.BUDGET_COMMAND_CENTER),
+        buildAction("Open Income Hub", APP_TABS.INCOME_HUB),
+      ],
+    };
+  }
+
+  if (includesAny(text, ["net worth", "allocation", "asset mix"])) {
+    return {
+      text:
+        "Net worth and allocation views summarize your total assets and how they're split across cash, investments, retirement, and real estate. They're driven by the balances you keep in Accounts.",
+      actions: [buildAction("Open Accounts", APP_TABS.ADD_ACCOUNTS)],
+    };
+  }
+
+  if (
+    includesAny(text, ["transaction", "purchase", "charge", "expense"]) &&
+    includesAny(text, ["delete", "remove", "erase", "get rid"])
+  ) {
+    return {
+      text:
+        "You can delete manual transactions only — bank-synced (Plaid) transactions can't be removed. In Transactions, click the manual transaction (or use its ••• menu → Edit transaction) to open Edit Manual Transaction, click Delete Transaction, then confirm in the dialog.",
+      actions: [buildAction("Open Transactions", APP_TABS.TRANSACTIONS)],
+    };
+  }
+
+  if (
+    includesAny(text, ["account"]) &&
+    includesAny(text, ["delete", "remove", "disconnect", "unlink"])
+  ) {
+    return {
+      text:
+        "To remove an account, open Accounts, select the account, and choose Delete account, then confirm. Removing an account also clears its synced transactions.",
+      actions: [buildAction("Open Accounts", APP_TABS.ADD_ACCOUNTS)],
+    };
+  }
+
+  if (
+    includesAny(text, ["categor", "tag", "label"]) &&
+    includesAny(text, ["how", "change", "set", "fix", "recategor", "edit", "assign"])
+  ) {
+    return {
+      text:
+        "To categorize a transaction, open Transactions and pick a category from the category control on the row (or open the editor). Confirming a category also teaches the workspace that merchant for next time, so similar transactions auto-fill.",
+      actions: [buildAction("Open Transactions", APP_TABS.TRANSACTIONS)],
+    };
+  }
+
+  if (
+    includesAny(text, ["add transaction", "manual transaction", "log a", "record a transaction", "enter a transaction", "add a purchase"])
+  ) {
+    return {
+      text:
+        "To add a manual transaction, open Transactions and use the manual entry form to set the date, merchant, account, amount, and category.",
+      actions: [buildAction("Open Transactions", APP_TABS.TRANSACTIONS)],
+    };
+  }
+
+  if (includesAny(text, ["chart", "graph", "plot", "this show", "what does this"])) {
+    return buildChartReply(context);
+  }
+
+  if (
+    includesAny(text, ["card", "metric", "tile", "these numbers", "top numbers"]) &&
+    !includesAny(text, ["add", "connect", "link"])
+  ) {
+    return {
+      text:
+        "The four Command Center cards are: True Cash (Liquid Cash minus credit card debt), Liquid Cash (spendable cash across checking, savings, and manual cash), Credit Card Debt (total balance across connected cards), and Current Month Cash Flow (planned income minus planned spend this month). Ask me about any one for more detail.",
+      actions: [buildAction("Open Command Center", APP_TABS.DASHBOARD)],
     };
   }
 
@@ -218,7 +356,7 @@ export function resolveWorkspaceGuideReply(question, context) {
 
   return {
     text:
-      "I can help you navigate the workspace, explain a module, or point you to the next setup step. Ask about accounts, income, budget, transactions, dashboard, or what to do next.",
+      "I can explain any card or chart (like True Cash or the cash flow chart), walk you through tasks (like deleting a transaction or connecting a bank), or point you to the next setup step. Ask about a card, a chart, a module, or what to do next.",
     actions: [
       buildAction("Open Accounts", APP_TABS.ADD_ACCOUNTS),
       buildAction("Open Transactions", APP_TABS.TRANSACTIONS),
