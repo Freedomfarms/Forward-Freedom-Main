@@ -346,8 +346,8 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
       <div
         style={{
           ...styles.panel,
-          padding: 24,
-          marginBottom: 20,
+          padding: "14px 18px",
+          marginBottom: 14,
           background:
             "linear-gradient(135deg, rgba(4,18,34,.96), rgba(3,17,32,.9) 52%, rgba(2,10,22,.96))",
           border: "1px solid rgba(0,216,255,.24)",
@@ -375,12 +375,19 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
             >
               Spending Command Surface
             </div>
-            <div style={{ color: "white", fontSize: 30, fontWeight: 900, marginTop: 8 }}>
+            <div style={{ color: "white", fontSize: 22, fontWeight: 900, marginTop: 2 }}>
               {selectedCategory.name}
             </div>
-            <div style={{ color: "#9fb0c9", marginTop: 10, maxWidth: 760, lineHeight: 1.6 }}>
-              {selectedCategory.description}. Drill into a category on the left to review monthly
-              pacing, budget pressure, and the exact merchants shaping the trend.
+            <div
+              style={{
+                color: "#9fb0c9",
+                marginTop: 4,
+                lineHeight: 1.4,
+                fontSize: 13,
+              }}
+            >
+              {selectedCategory.description} — drill in to review pacing, budget pressure, and top
+              merchants.
             </div>
           </div>
           <div
