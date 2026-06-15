@@ -136,6 +136,7 @@ export function AuthScreen({ initialMode = "login", initialForm = null, onBackHo
 
   return (
     <div
+      className="auth-page"
       style={{
         minHeight: "100vh",
         background:
@@ -147,6 +148,7 @@ export function AuthScreen({ initialMode = "login", initialForm = null, onBackHo
       }}
     >
       <div
+        className="auth-layout"
         style={{
           width: "min(1080px, 100%)",
           display: "grid",
@@ -156,6 +158,7 @@ export function AuthScreen({ initialMode = "login", initialForm = null, onBackHo
         }}
       >
         <section
+          className="auth-marketing-panel"
           style={{
             borderRadius: 24,
             border: "1px solid rgba(0,216,255,.20)",
@@ -175,7 +178,10 @@ export function AuthScreen({ initialMode = "login", initialForm = null, onBackHo
           >
             Forward Freedom Financial
           </div>
-          <h1 style={{ margin: "16px 0 0", fontSize: 44, lineHeight: 1.1, color: "white" }}>
+          <h1
+            className="auth-title"
+            style={{ margin: "16px 0 0", fontSize: 44, lineHeight: 1.1, color: "white" }}
+          >
             Production workspace access is now protected.
           </h1>
           <p style={{ marginTop: 18, color: "#b7c9de", fontSize: 17, lineHeight: 1.75 }}>
@@ -185,6 +191,7 @@ export function AuthScreen({ initialMode = "login", initialForm = null, onBackHo
           </p>
 
           <div
+            className="auth-feature-grid"
             style={{
               display: "grid",
               gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
@@ -216,6 +223,7 @@ export function AuthScreen({ initialMode = "login", initialForm = null, onBackHo
         </section>
 
         <section
+          className="auth-form-panel"
           style={{
             borderRadius: 24,
             border: "1px solid rgba(0,216,255,.22)",

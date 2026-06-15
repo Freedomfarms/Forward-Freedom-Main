@@ -29,6 +29,7 @@ export function LandingPage({ enterApp, onEnterDemo }) {
 
   return (
     <div
+      className="landing-page"
       style={{
         minHeight: "100vh",
         position: "relative",
@@ -48,6 +49,7 @@ export function LandingPage({ enterApp, onEnterDemo }) {
         }}
       />
       <div
+        className="landing-glow"
         style={{
           position: "absolute",
           right: 72,
@@ -64,6 +66,7 @@ export function LandingPage({ enterApp, onEnterDemo }) {
       <div style={{ position: "relative", zIndex: 2 }}>
         <section
           id="home"
+          className="landing-hero"
           style={{
             display: "grid",
             gridTemplateColumns: "minmax(0, 1fr) minmax(360px, 500px)",
@@ -72,8 +75,9 @@ export function LandingPage({ enterApp, onEnterDemo }) {
             marginBottom: 28,
           }}
         >
-          <div style={{ maxWidth: 700 }}>
+          <div className="landing-copy" style={{ maxWidth: 700 }}>
             <p
+              className="landing-intro"
               style={{
                 color: "#f0f4fb",
                 fontSize: 20,
@@ -89,6 +93,7 @@ export function LandingPage({ enterApp, onEnterDemo }) {
             </p>
 
             <div
+              className="landing-actions"
               style={{
                 display: "grid",
                 gridTemplateColumns: "repeat(2, minmax(0, 220px))",
@@ -119,6 +124,7 @@ export function LandingPage({ enterApp, onEnterDemo }) {
           </div>
 
           <div
+            className="landing-wordmark-panel"
             style={{
               display: "flex",
               alignItems: "center",
@@ -177,6 +183,7 @@ export function LandingPage({ enterApp, onEnterDemo }) {
         </section>
 
         <section
+          className="landing-info-panel"
           style={{
             border: "1px solid rgba(0,136,255,.28)",
             background: "rgba(3,17,32,.68)",
@@ -198,7 +205,7 @@ export function LandingPage({ enterApp, onEnterDemo }) {
           >
             Our Mission
           </div>
-          <div style={{ color: "white", fontSize: 34, lineHeight: 1.18, fontWeight: 800 }}>
+          <div className="landing-section-title" style={{ color: "white", fontSize: 34, lineHeight: 1.18, fontWeight: 800 }}>
             Moving Forward with <span style={{ color: "#00aaff" }}>Financial Freedom</span>
           </div>
           <div
@@ -216,6 +223,7 @@ export function LandingPage({ enterApp, onEnterDemo }) {
 
         <section
           id="contact"
+          className="landing-info-panel"
           style={{
             border: "1px solid rgba(0,136,255,.18)",
             background: "rgba(3,17,32,.58)",
@@ -235,7 +243,7 @@ export function LandingPage({ enterApp, onEnterDemo }) {
           >
             Contact
           </div>
-          <div style={{ color: "white", fontSize: 28, fontWeight: 900, marginTop: 10 }}>
+          <div className="landing-section-title" style={{ color: "white", fontSize: 28, fontWeight: 900, marginTop: 10 }}>
             Support and onboarding
           </div>
           <div style={{ color: "#c6d2e1", lineHeight: 1.7, marginTop: 12, maxWidth: 760 }}>

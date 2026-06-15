@@ -25,13 +25,16 @@ export function InfoDot({ tooltip = "" }) {
   );
 }
 
-export function SideItem({ item, activeTab, setActiveTab }) {
+export function SideItem({ item, activeTab, setActiveTab, onNavigate }) {
   const isActive = activeTab === item.label;
 
   return (
     <button
       className={`sidebar-nav-button${isActive ? " sidebar-nav-button--active" : ""}`}
-      onClick={() => setActiveTab(item.label)}
+      onClick={() => {
+        setActiveTab(item.label);
+        onNavigate?.();
+      }}
       style={{
         display: "flex",
         alignItems: "center",
@@ -210,6 +213,29 @@ export function HouseholdProfilesControl({
               }}
             >
               {label}
+            </button>
+            <button
+              type="button"
+              className="profile-chip-menu-button"
+              aria-label={`Open profile options for ${label}`}
+              onClick={(event) => {
+                event.stopPropagation();
+                setMenuUserId((currentUserId) => (currentUserId === user.id ? null : user.id));
+              }}
+              style={{
+                alignItems: "center",
+                justifyContent: "center",
+                width: 34,
+                height: 34,
+                borderRadius: 999,
+                border: "1px solid rgba(0,216,255,.20)",
+                background: "rgba(0,136,255,.10)",
+                color: "#dff7ff",
+                cursor: "pointer",
+                fontWeight: 900,
+              }}
+            >
+              ⋯
             </button>
             {menuUserId === user.id ? (
               <div

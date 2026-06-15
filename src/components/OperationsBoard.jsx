@@ -90,6 +90,7 @@ function ScorecardChart({
 
   return (
     <section
+      className="ops-scorecard"
       style={{
         ...styles.panel,
         padding: 22,
@@ -139,6 +140,7 @@ function ScorecardChart({
           </div>
 
           <div
+            className="ops-scorecard-chart"
             onMouseLeave={() => setHovered(null)}
             style={{
               position: "relative",
@@ -249,7 +251,11 @@ function ScorecardChart({
               </div>
 
               <div style={{ flex: 1, position: "relative" }}>
-                <svg viewBox={`0 0 ${SCORECARD_CHART_W} ${SCORECARD_CHART_H + 40}`} style={{ width: "100%" }}>
+                <svg
+                  className="ops-scorecard-svg"
+                  viewBox={`0 0 ${SCORECARD_CHART_W} ${SCORECARD_CHART_H + 40}`}
+                  style={{ width: "100%" }}
+                >
                   <defs>
                     <linearGradient id={`${chartId}AreaGradient`} x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor={dotColor} stopOpacity="0.4" />
@@ -330,6 +336,7 @@ function ScorecardChart({
                           strokeWidth={isActive ? 1.6 : 1.2}
                           style={{ cursor: "pointer" }}
                           onMouseEnter={() => setHovered({ data: entry.month, index: entry.index })}
+                          onClick={() => setHovered({ data: entry.month, index: entry.index })}
                         />
                         <text
                           x={x}
@@ -342,6 +349,7 @@ function ScorecardChart({
                             cursor: "pointer",
                           }}
                           onMouseEnter={() => setHovered({ data: entry.month, index: entry.index })}
+                          onClick={() => setHovered({ data: entry.month, index: entry.index })}
                         >
                           {entry.month.month}
                         </text>
@@ -806,6 +814,7 @@ export function OperationsBoard({
       </header>
 
       <section
+        className="ops-kpi-grid"
         style={{
           display: "grid",
           gridTemplateColumns: "repeat(5, 1fr)",
@@ -940,6 +949,7 @@ export function OperationsBoard({
       />
 
       <section
+        className="ops-calendar-panel"
         style={{
           ...styles.panel,
           padding: 22,
@@ -951,6 +961,7 @@ export function OperationsBoard({
         }}
       >
         <div
+          className="ops-calendar-grid"
           style={{
             display: "grid",
             gridTemplateColumns: "220px minmax(0, 1fr) 190px",
@@ -1505,8 +1516,9 @@ export function OperationsBoard({
         </div>
       </section>
 
-      <section style={{ ...styles.panel, padding: 24, marginTop: 8 }}>
+      <section className="ops-yearly-panel" style={{ ...styles.panel, padding: 24, marginTop: 8 }}>
         <div
+          className="ops-yearly-header"
           style={{
             display: "flex",
             justifyContent: "space-between",
@@ -1537,6 +1549,7 @@ export function OperationsBoard({
         </div>
 
         <div
+          className="ops-yearly-scroll"
           style={{
             overflowX: "auto",
             border: "1px solid rgba(0,136,255,.18)",
