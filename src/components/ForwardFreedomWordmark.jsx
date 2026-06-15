@@ -27,6 +27,7 @@ export function ForwardFreedomWordmark({ size = "nav", className = "" }) {
   const preset = SIZE_PRESETS[size] || SIZE_PRESETS.nav;
   const diameter = preset.diameter;
   const isHero = size === "hero";
+  const arrowSize = isHero ? 6 : 3;
 
   const ringMask = `radial-gradient(farthest-side, transparent calc(100% - ${preset.sweepWidth}px), #000 calc(100% - ${preset.sweepWidth}px))`;
 
@@ -85,6 +86,32 @@ export function ForwardFreedomWordmark({ size = "nav", className = "" }) {
           filter: "drop-shadow(0 0 6px rgba(0,216,255,.75))",
         }}
       />
+
+      {/* Arrowhead riding the leading edge of the spinning arc (clockwise / forward) */}
+      <div
+        aria-hidden="true"
+        className="ff-logo-sweep"
+        style={{
+          position: "absolute",
+          inset: isHero ? "6%" : "8%",
+          borderRadius: "50%",
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            top: 0,
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            width: 0,
+            height: 0,
+            borderTop: `${arrowSize}px solid transparent`,
+            borderBottom: `${arrowSize}px solid transparent`,
+            borderLeft: `${arrowSize * 1.6}px solid #b6efff`,
+            filter: "drop-shadow(0 0 5px rgba(0,216,255,.95))",
+          }}
+        />
+      </div>
 
       {/* Counter-rotating glow sweep (secondary, dimmer) */}
       <div
