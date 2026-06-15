@@ -54,6 +54,15 @@ button {
     transform: scale(1.05);
   }
 }
+@keyframes ff-logo-shine {
+  0% {
+    left: -65%;
+  }
+  55%,
+  100% {
+    left: 125%;
+  }
+}
 .ff-logo-sweep {
   animation: ff-logo-spin 7s linear infinite;
 }
@@ -66,11 +75,15 @@ button {
 .ff-logo-halo {
   animation: ff-logo-pulse 4.5s ease-in-out infinite;
 }
+.ff-logo-shine {
+  animation: ff-logo-shine 4.8s ease-in-out infinite;
+}
 @media (prefers-reduced-motion: reduce) {
   .ff-logo-sweep,
   .ff-logo-sweep--slow,
   .ff-logo-ring-dashed,
-  .ff-logo-halo {
+  .ff-logo-halo,
+  .ff-logo-shine {
     animation: none;
   }
 }

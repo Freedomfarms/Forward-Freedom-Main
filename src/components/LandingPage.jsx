@@ -202,15 +202,13 @@ export function LandingPage({ enterApp, onEnterDemo }) {
           </div>
           <div
             style={{
-              maxWidth: 900,
               color: "#d6e2f0",
               fontSize: 17,
               lineHeight: 1.7,
-              marginTop: 14,
+              marginTop: 12,
             }}
           >
-            Turning fear into strategy, debt into freedom, and money into a tool that empowers you to
-            live boldly and lead with conviction.
+            Turning fear into strategy, debt into freedom, and money into a tool for bold living.
           </div>
         </section>
 

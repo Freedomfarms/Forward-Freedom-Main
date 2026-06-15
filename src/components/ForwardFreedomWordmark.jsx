@@ -113,6 +113,30 @@ export function ForwardFreedomWordmark({ size = "nav", className = "" }) {
         }}
       />
 
+      {/* Forward-moving light sweep (left -> right), clipped to the disc */}
+      <div
+        aria-hidden="true"
+        style={{
+          position: "absolute",
+          inset: isHero ? "2%" : "4%",
+          borderRadius: "50%",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          className="ff-logo-shine"
+          style={{
+            position: "absolute",
+            top: "-10%",
+            bottom: "-10%",
+            width: "42%",
+            transform: "skewX(-16deg)",
+            background:
+              "linear-gradient(100deg, rgba(140,220,255,0) 0%, rgba(150,225,255,.22) 50%, rgba(140,220,255,0) 100%)",
+          }}
+        />
+      </div>
+
       <div
         style={{
           position: "relative",
