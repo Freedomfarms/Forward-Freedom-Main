@@ -242,7 +242,6 @@ export function DashboardView({
   transactions,
   incomeStreams,
   budgetRows,
-  projectionAdjustments,
   dynamicMetrics,
   dynamicAllocations,
   metricSnapshots,
@@ -333,7 +332,6 @@ export function DashboardView({
     chart: chartValues,
     incomeStreams,
     budgetRows,
-    projectionAdjustments: {},
     startingMonth: projectionStartMonth,
     startingTrueCash: projectionStartingTrueCash,
   });
@@ -349,7 +347,6 @@ export function DashboardView({
         targetYear: projectionYear,
         incomeStreams,
         budgetRows,
-        projectionAdjustments,
         startingMonth: projectionStartMonth,
         startingTrueCash: projectionStartingTrueCash,
         liveCurrentTrueCash: trueCash,
@@ -428,7 +425,6 @@ export function DashboardView({
           date: `${projectionStartMonth} ${projectionSchedule[0]?.year || ""} Opening Balance`.trim(),
           value: wholeDollars(projectionStartingTrueCash),
           profit: 0,
-          adjustment: 0,
           type: "projected",
         }
       : null;
@@ -474,7 +470,6 @@ export function DashboardView({
       date: point.date,
       value: point.value,
       profit: point.profit,
-      adjustment: point.adjustment,
       type: point.type,
     })),
   ];
@@ -1048,9 +1043,6 @@ export function DashboardView({
                 <div style={{ color: "#a8bfdc", fontSize: 12, marginTop: 7 }}>
                   Monthly profit: {hoverState.point.profit >= 0 ? "+" : ""}
                   {money(hoverState.point.profit)}
-                  <br />
-                  Adjustment: {hoverState.point.adjustment >= 0 ? "+" : ""}
-                  {wholeDollars(hoverState.point.adjustment)}
                 </div>
               ) : null}
             </div>

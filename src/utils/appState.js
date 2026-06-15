@@ -66,7 +66,6 @@ function buildUserState({
   const currentPlanData = buildPlanYearData({
     budgetRows: cloneSeed(initialBudgetCategories),
     incomeStreams: useSeedData ? cloneSeed(incomeStreamSeed) : [],
-    projectionAdjustments: {},
     startingMonth: useSeedData
       ? HOUSEHOLD_DEMO_PLAN_ANCHOR.startingMonth
       : getCurrentBudgetPeriod().month,
@@ -88,7 +87,6 @@ function buildUserState({
     transactions: useSeedData ? cloneSeed(demoDataset.transactions) : [],
     budgetRows: cloneSeed(currentPlanData.budgetRows),
     incomeStreams: cloneSeed(currentPlanData.incomeStreams),
-    projectionAdjustments: cloneSeed(currentPlanData.projectionAdjustments),
     objectives: buildSeedObjectives(),
     plansByYear: {
       [String(currentYear)]: buildPlanYearData(currentPlanData),
@@ -138,20 +136,12 @@ function normalizeUserState(rawUser, fallbackName, useSeedData = true) {
     incomeStreams: Array.isArray(rawUser?.incomeStreams)
       ? rawUser.incomeStreams
       : defaults.incomeStreams,
-    projectionAdjustments:
-      rawUser?.projectionAdjustments && typeof rawUser.projectionAdjustments === "object"
-        ? rawUser.projectionAdjustments
-        : defaults.projectionAdjustments,
     objectives: normalizeObjectives(rawUser?.objectives, defaults.objectives),
     plansByYear: normalizePlansByYear(rawUser?.plansByYear, {
       budgetRows: Array.isArray(rawUser?.budgetRows) ? rawUser.budgetRows : defaults.budgetRows,
       incomeStreams: Array.isArray(rawUser?.incomeStreams)
         ? rawUser.incomeStreams
         : defaults.incomeStreams,
-      projectionAdjustments:
-        rawUser?.projectionAdjustments && typeof rawUser.projectionAdjustments === "object"
-          ? rawUser.projectionAdjustments
-          : defaults.projectionAdjustments,
     }),
     subscriptions: Array.isArray(rawUser?.subscriptions)
       ? rawUser.subscriptions

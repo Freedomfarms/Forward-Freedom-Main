@@ -153,7 +153,6 @@ const EMPTY_USER_STATE = Object.freeze({
   transactions: [],
   budgetRows: [],
   incomeStreams: [],
-  projectionAdjustments: {},
   objectives: [],
   subscriptions: [],
   recurringPreferences: normalizeRecurringPreferences(null),
@@ -635,7 +634,6 @@ function ForwardFreedomDashboard({
   const selectedAccount = activeUser.selectedAccount;
   const budgetRows = activeUser.budgetRows;
   const incomeStreams = activeUser.incomeStreams;
-  const projectionAdjustments = activeUser.projectionAdjustments;
   const rawSubscriptions = activeUser.subscriptions;
   const recurringPreferences = normalizeRecurringPreferences(activeUser.recurringPreferences);
   const objectives = Array.isArray(activeUser.objectives) ? activeUser.objectives : [];
@@ -669,8 +667,6 @@ function ForwardFreedomDashboard({
     setActiveUserField("selectedAccount", valueOrUpdater);
   const setBudgetRows = (valueOrUpdater) => setActiveUserField("budgetRows", valueOrUpdater);
   const setIncomeStreams = (valueOrUpdater) => setActiveUserField("incomeStreams", valueOrUpdater);
-  const setProjectionAdjustments = (valueOrUpdater) =>
-    setActiveUserField("projectionAdjustments", valueOrUpdater);
   const setSubscriptionsBase = (valueOrUpdater) =>
     setActiveUserField("subscriptions", valueOrUpdater);
   const setRecurringPreferences = (valueOrUpdater) =>
@@ -892,7 +888,6 @@ function ForwardFreedomDashboard({
   const baseCurrentPlanData = buildPlanYearData({
     budgetRows: activeUser.budgetRows,
     incomeStreams: activeUser.incomeStreams,
-    projectionAdjustments: activeUser.projectionAdjustments,
     startingMonth: anchorStartingMonth,
     startingTrueCash:
       currentYearPlanState?.startingTrueCash && currentYearPlanState.startingTrueCash !== 0
@@ -936,11 +931,6 @@ function ForwardFreedomDashboard({
       ? incomeStreams
       : ensurePlanYearData(plansByYear, targetYear, baseCurrentPlanData)[String(targetYear)]
           ?.incomeStreams || [];
-  const getProjectionAdjustmentsForYear = (targetYear) =>
-    targetYear === currentPlanYear
-      ? projectionAdjustments
-      : ensurePlanYearData(plansByYear, targetYear, baseCurrentPlanData)[String(targetYear)]
-          ?.projectionAdjustments || {};
   const getPlanningAnchorForYear = (targetYear) =>
     ensurePlanYearData(plansByYear, targetYear, baseCurrentPlanData)[String(targetYear)] || {};
   const setBudgetRowsForYear = (targetYear, valueOrUpdater) => {
@@ -995,32 +985,6 @@ function ForwardFreedomDashboard({
       };
     });
   };
-  const setProjectionAdjustmentsForYear = (targetYear, valueOrUpdater) => {
-    if (targetYear === currentPlanYear) {
-      setProjectionAdjustments(valueOrUpdater);
-      return;
-    }
-
-    setActiveUserField("plansByYear", (currentPlansByYear) => {
-      const nextPlansByYear = ensurePlanYearData(
-        currentPlansByYear,
-        targetYear,
-        baseCurrentPlanData
-      );
-      const yearKey = String(targetYear);
-      const currentValue = nextPlansByYear[yearKey]?.projectionAdjustments || {};
-      const nextValue =
-        typeof valueOrUpdater === "function" ? valueOrUpdater(currentValue) : valueOrUpdater;
-
-      return {
-        ...nextPlansByYear,
-        [yearKey]: {
-          ...nextPlansByYear[yearKey],
-          projectionAdjustments: nextValue,
-        },
-      };
-    });
-  };
   const setPlanningAnchorForYear = (targetYear, nextAnchor) => {
     setActiveUserField("plansByYear", (currentPlansByYear) => {
       const nextPlansByYear = ensurePlanYearData(
@@ -1056,7 +1020,6 @@ function ForwardFreedomDashboard({
             [String(currentPlanYear)]: buildPlanYearData({
               budgetRows,
               incomeStreams,
-              projectionAdjustments,
               startingMonth: baseCurrentPlanData.startingMonth,
               startingTrueCash: baseCurrentPlanData.startingTrueCash,
             }),
@@ -2290,7 +2253,6 @@ function ForwardFreedomDashboard({
               subscriptions={subscriptions}
               incomeStreams={incomeStreams}
               budgetRows={budgetRows}
-              projectionAdjustments={projectionAdjustments}
               dynamicMetrics={dynamicMetrics}
               dynamicAllocations={dynamicAllocations}
               metricSnapshots={trackedMetricSnapshots}
@@ -2308,8 +2270,6 @@ function ForwardFreedomDashboard({
               availablePlanningYears={availablePlanningYears}
               getBudgetRowsForYear={getBudgetRowsForYear}
               getIncomeStreamsForYear={getIncomeStreamsForYear}
-              getProjectionAdjustmentsForYear={getProjectionAdjustmentsForYear}
-              setProjectionAdjustmentsForYear={setProjectionAdjustmentsForYear}
               ensurePlanningYear={ensurePlanningYear}
               plansByYear={plansByYear}
               currentPlanBaseData={baseCurrentPlanData}
