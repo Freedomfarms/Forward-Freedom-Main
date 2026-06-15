@@ -2029,6 +2029,7 @@ function ForwardFreedomDashboard({
     onSaveUserName: saveUserName,
     onCancelUserRename: cancelUserRename,
     onAddUser: addUserProfile,
+    onOpenGuide: openGuide,
     onDeleteUser: deleteUserProfile,
   };
   const handleEnterApp = (payload = {}) => {
@@ -2115,7 +2116,18 @@ function ForwardFreedomDashboard({
               aria-label="Open guide assistant"
               style={{ marginLeft: "auto" }}
             >
-              ?
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path
+                  d="M12 2.8L13.95 8.05 19.2 10 13.95 11.95 12 17.2 10.05 11.95 4.8 10 10.05 8.05 12 2.8Z"
+                  fill="currentColor"
+                  opacity="0.98"
+                />
+                <path
+                  d="M18.2 15.2L19.05 17.45 21.3 18.3 19.05 19.15 18.2 21.4 17.35 19.15 15.1 18.3 17.35 17.45 18.2 15.2Z"
+                  fill="currentColor"
+                  opacity="0.82"
+                />
+              </svg>
             </button>
           </div>
           <div
@@ -2167,21 +2179,6 @@ function ForwardFreedomDashboard({
                   Resume setup
                 </button>
               ) : null}
-              <button
-                type="button"
-                onClick={openGuide}
-                style={{
-                  borderRadius: 10,
-                  border: "1px solid rgba(120,220,255,.45)",
-                  background: "linear-gradient(90deg,#0077ff,#00d8ff)",
-                  color: "white",
-                  padding: "10px 13px",
-                  cursor: "pointer",
-                  fontWeight: 900,
-                }}
-              >
-                Ask guide
-              </button>
             </div>
           </div>
           {isDemoMode ? (

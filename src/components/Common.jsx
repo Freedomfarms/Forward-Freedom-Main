@@ -68,6 +68,7 @@ export function HouseholdProfilesControl({
   onSaveUserName,
   onCancelUserRename,
   onAddUser,
+  onOpenGuide,
   onDeleteUser,
 }) {
   const [menuUserId, setMenuUserId] = useState(null);
@@ -336,8 +337,48 @@ export function HouseholdProfilesControl({
           whiteSpace: "nowrap",
         }}
       >
-        + Add User
+        + User
       </button>
+      {typeof onOpenGuide === "function" ? (
+        <button
+          type="button"
+          onClick={() => {
+            setMenuUserId(null);
+            onOpenGuide();
+          }}
+          aria-label="Open guide assistant"
+          title="Open guide assistant"
+          style={{
+            width: 38,
+            height: 38,
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            borderRadius: 999,
+            border: "1px solid rgba(120,220,255,.38)",
+            background:
+              "radial-gradient(circle at 32% 28%, rgba(185,245,255,.95), rgba(42,184,255,.9) 34%, rgba(0,86,255,.86) 72%, rgba(2,15,34,.96) 100%)",
+            boxShadow:
+              "0 0 18px rgba(0,136,255,.2), inset 0 0 12px rgba(255,255,255,.12)",
+            color: "#ffffff",
+            cursor: "pointer",
+            flexShrink: 0,
+          }}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path
+              d="M12 2.8L13.95 8.05 19.2 10 13.95 11.95 12 17.2 10.05 11.95 4.8 10 10.05 8.05 12 2.8Z"
+              fill="currentColor"
+              opacity="0.98"
+            />
+            <path
+              d="M18.2 15.2L19.05 17.45 21.3 18.3 19.05 19.15 18.2 21.4 17.35 19.15 15.1 18.3 17.35 17.45 18.2 15.2Z"
+              fill="currentColor"
+              opacity="0.82"
+            />
+          </svg>
+        </button>
+      ) : null}
       {deleteTarget ? (
         <div
           onClick={(event) => {
