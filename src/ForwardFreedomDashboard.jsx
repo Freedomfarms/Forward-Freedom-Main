@@ -11,6 +11,10 @@ import { styles } from "./styles.js";
 import { getBudgetPeriodAtOffset, getCurrentTimestamp } from "./utils/date.js";
 import { money, parseMoney } from "./utils/format.js";
 import {
+  createOnboardingState,
+  evaluateOnboardingProgress,
+} from "./utils/onboarding.js";
+import {
   accountSupportsTransactions,
   calculateRealEstateEquity,
   normalizeAccount,
@@ -79,10 +83,15 @@ import { ForecastLab } from "./components/ForecastLab.jsx";
 import { IncomeHub } from "./components/IncomeHub.jsx";
 import { LandingPage } from "./components/LandingPage.jsx";
 import { AppSidebar, ModulePlaceholder } from "./components/Layout.jsx";
+import {
+  SetupStepBanner,
+  SetupWelcomeModal,
+} from "./components/OnboardingExperience.jsx";
 import { OperationsBoard } from "./components/OperationsBoard.jsx";
 import { ObjectivesBoard } from "./components/ObjectivesBoard.jsx";
 import { RecurringSubscriptions } from "./components/RecurringSubscriptions.jsx";
 import { TransactionsView } from "./components/TransactionsView.jsx";
+import { WorkspaceGuideAssistant } from "./components/WorkspaceGuideAssistant.jsx";
 import { LegalModal } from "./components/LegalDocuments.jsx";
 
 function roundCurrency(value) {
@@ -151,6 +160,7 @@ const EMPTY_USER_STATE = Object.freeze({
   plaidNicknames: {},
   lastPlaidSyncAt: null,
   merchantCategoryRules: {},
+  onboarding: createOnboardingState(),
   activeTab: APP_TABS.DASHBOARD,
   activeRange: "ALL",
   metricSnapshots: {},
@@ -605,6 +615,7 @@ function ForwardFreedomDashboard({
     consumeOAuthReceivedRedirectUri()
   );
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+  const [isGuideOpen, setIsGuideOpen] = useState(false);
   const plaidRecoverySyncUserIdsRef = useRef(new Set());
   const plaidOAuthResumeAttemptedRef = useRef(false);
   const activeUser = users.find((user) => user.id === activeUserId) || users[0] || EMPTY_USER_STATE;
@@ -623,6 +634,7 @@ function ForwardFreedomDashboard({
   const activeTab = SUPPORTED_APP_TABS.has(activeUser.activeTab)
     ? activeUser.activeTab
     : APP_TABS.DASHBOARD;
+  const onboardingProgress = evaluateOnboardingProgress(activeUser, activeTab);
   const activeRange = activeUser.activeRange;
   const metricSnapshots = activeUser.metricSnapshots;
   const currentBudgetPeriod = getBudgetPeriodAtOffset(0);
@@ -661,8 +673,38 @@ function ForwardFreedomDashboard({
   const setObjectives = (valueOrUpdater) => setActiveUserField("objectives", valueOrUpdater);
   const setMerchantCategoryRules = (valueOrUpdater) =>
     setActiveUserField("merchantCategoryRules", valueOrUpdater);
+  const setOnboarding = (valueOrUpdater) => setActiveUserField("onboarding", valueOrUpdater);
   const setActiveTab = (valueOrUpdater) => setActiveUserField("activeTab", valueOrUpdater);
   const setActiveRange = (valueOrUpdater) => setActiveUserField("activeRange", valueOrUpdater);
+  const openGuide = () => setIsGuideOpen(true);
+  const closeGuide = () => setIsGuideOpen(false);
+  const openOnboardingStep = (step) => {
+    if (!step?.tab) return;
+    setOnboarding((currentValue) => ({
+      ...createOnboardingState(),
+      ...currentValue,
+      welcomeDismissedAt: currentValue?.welcomeDismissedAt || new Date().toISOString(),
+      skippedAt: null,
+      completedAt: null,
+    }));
+    setActiveTab(step.tab);
+    setIsMobileNavOpen(false);
+  };
+  const startOnboarding = () => {
+    if (onboardingProgress.currentStep) {
+      openOnboardingStep(onboardingProgress.currentStep);
+    }
+  };
+  const skipOnboarding = () => {
+    const timestamp = new Date().toISOString();
+    setOnboarding((currentValue) => ({
+      ...createOnboardingState(),
+      ...currentValue,
+      welcomeDismissedAt: currentValue?.welcomeDismissedAt || timestamp,
+      skippedAt: timestamp,
+      completedAt: currentValue?.completedAt || null,
+    }));
+  };
   const syncedAccounts = syncDerivedAccountValues(accounts);
 
   const categorizedTransactions = categorizeTransactions(transactions, {
@@ -685,6 +727,68 @@ function ForwardFreedomDashboard({
         ? valueOrUpdater(syncedSubscriptions)
         : valueOrUpdater;
     });
+
+  useEffect(() => {
+    if (!activeUser?.id) return;
+
+    const timestamp = new Date().toISOString();
+    const completedAtByStepId = onboardingProgress.steps
+      .filter((step) => step.derivedComplete && !step.completedAt)
+      .reduce((accumulator, step) => {
+        accumulator[step.id] = timestamp;
+        return accumulator;
+      }, {});
+    const shouldMarkComplete =
+      onboardingProgress.isComplete && !onboardingProgress.onboarding.completedAt;
+
+    if (Object.keys(completedAtByStepId).length === 0 && !shouldMarkComplete) return;
+
+    setOnboarding((currentValue) => {
+      const seed = createOnboardingState();
+      const base = {
+        ...seed,
+        ...currentValue,
+        steps: {
+          ...seed.steps,
+          ...(currentValue?.steps || {}),
+        },
+      };
+      let didChange = false;
+      const nextSteps = { ...base.steps };
+
+      for (const [stepId, completedAt] of Object.entries(completedAtByStepId)) {
+        if (!nextSteps[stepId]?.completedAt) {
+          nextSteps[stepId] = {
+            completedAt,
+          };
+          didChange = true;
+        }
+      }
+
+      const nextCompletedAt = shouldMarkComplete && !base.completedAt ? timestamp : base.completedAt;
+      if (nextCompletedAt !== base.completedAt) {
+        didChange = true;
+      }
+
+      const shouldDismissWelcome =
+        Boolean(base.welcomeDismissedAt) || Object.keys(completedAtByStepId).length > 0;
+      const nextWelcomeDismissedAt = shouldDismissWelcome
+        ? base.welcomeDismissedAt || timestamp
+        : base.welcomeDismissedAt;
+      if (nextWelcomeDismissedAt !== base.welcomeDismissedAt) {
+        didChange = true;
+      }
+
+      if (!didChange) return currentValue;
+
+      return {
+        ...base,
+        welcomeDismissedAt: nextWelcomeDismissedAt,
+        completedAt: nextCompletedAt,
+        steps: nextSteps,
+      };
+    });
+  }, [activeUser?.id, onboardingProgress]);
 
   const removeSubscription = (subscription) => {
     if (!subscription?.id || !activeUser?.id) return;
@@ -1970,6 +2074,9 @@ function ForwardFreedomDashboard({
           setActiveTab={setActiveTab}
           onBackHome={handleBackHome}
           sessionControls={sessionControls}
+          onboardingProgress={onboardingProgress}
+          onOpenSetupStep={openOnboardingStep}
+          onSkipSetup={skipOnboarding}
         />
 
         <div className={`mobile-nav-backdrop${isMobileNavOpen ? " is-open" : ""}`} onClick={() => setIsMobileNavOpen(false)} />
@@ -1980,6 +2087,9 @@ function ForwardFreedomDashboard({
             setActiveTab={setActiveTab}
             onBackHome={handleBackHome}
             sessionControls={sessionControls}
+            onboardingProgress={onboardingProgress}
+            onOpenSetupStep={openOnboardingStep}
+            onSkipSetup={skipOnboarding}
             onNavigate={() => setIsMobileNavOpen(false)}
           />
         </div>
@@ -1997,6 +2107,81 @@ function ForwardFreedomDashboard({
             <div>
               <div className="mobile-topbar-eyebrow">Forward Freedom</div>
               <div className="mobile-topbar-title">{activeTab}</div>
+            </div>
+            <button
+              type="button"
+              className="mobile-menu-button"
+              onClick={openGuide}
+              aria-label="Open guide assistant"
+              style={{ marginLeft: "auto" }}
+            >
+              ?
+            </button>
+          </div>
+          <div
+            style={{
+              marginBottom: 18,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 14,
+              flexWrap: "wrap",
+            }}
+          >
+            <div>
+              <div
+                style={{
+                  color: "#8feaff",
+                  textTransform: "uppercase",
+                  letterSpacing: 1,
+                  fontSize: 11,
+                  fontWeight: 900,
+                }}
+              >
+                Workspace help
+              </div>
+              <div style={{ color: "#d7e6f6", marginTop: 6, lineHeight: 1.5, fontSize: 13 }}>
+                {onboardingProgress.isActive && onboardingProgress.currentStep
+                  ? `Setup in progress: ${onboardingProgress.currentStep.label}.`
+                  : onboardingProgress.onboarding.skippedAt && !onboardingProgress.isComplete
+                    ? "Setup is paused. You can resume anytime."
+                    : "Ask the guide where to go next or what any module means."}
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              {onboardingProgress.currentStep &&
+              (!onboardingProgress.isActive || onboardingProgress.onboarding.skippedAt) ? (
+                <button
+                  type="button"
+                  onClick={startOnboarding}
+                  style={{
+                    borderRadius: 10,
+                    border: "1px solid rgba(0,216,255,.22)",
+                    background: "rgba(0,136,255,.08)",
+                    color: "#eef6ff",
+                    padding: "10px 13px",
+                    cursor: "pointer",
+                    fontWeight: 800,
+                  }}
+                >
+                  Resume setup
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={openGuide}
+                style={{
+                  borderRadius: 10,
+                  border: "1px solid rgba(120,220,255,.45)",
+                  background: "linear-gradient(90deg,#0077ff,#00d8ff)",
+                  color: "white",
+                  padding: "10px 13px",
+                  cursor: "pointer",
+                  fontWeight: 900,
+                }}
+              >
+                Ask guide
+              </button>
             </div>
           </div>
           {isDemoMode ? (
@@ -2051,6 +2236,12 @@ function ForwardFreedomDashboard({
               ) : null}
             </div>
           ) : null}
+          <SetupStepBanner
+            progress={onboardingProgress}
+            activeTab={activeTab}
+            onOpenStep={openOnboardingStep}
+            onSkip={skipOnboarding}
+          />
           {activeTab === APP_TABS.DASHBOARD ? (
             <DashboardView
               activeRange={activeRange}
@@ -2193,6 +2384,26 @@ function ForwardFreedomDashboard({
         </main>
       </div>
 
+      <SetupWelcomeModal
+        progress={onboardingProgress}
+        onStart={startOnboarding}
+        onSkip={skipOnboarding}
+      />
+      <WorkspaceGuideAssistant
+        open={isGuideOpen}
+        onClose={closeGuide}
+        activeTab={activeTab}
+        onboardingProgress={onboardingProgress}
+        accounts={syncedAccounts}
+        incomeStreams={incomeStreams}
+        budgetRows={budgetRows}
+        transactions={categorizedTransactions}
+        plaidIntegration={plaidIntegration}
+        onNavigateToTab={(tab) => {
+          setActiveTab(tab);
+          setIsMobileNavOpen(false);
+        }}
+      />
       {emailVerificationPromptOpen ? (
         <div
           onClick={(event) => {

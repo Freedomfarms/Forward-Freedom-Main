@@ -1,4 +1,5 @@
 import { APP_TABS, navMain, navTools } from "../data/constants.jsx";
+import { SetupChecklistPanel } from "./OnboardingExperience.jsx";
 import { styles } from "../styles.js";
 import { HouseholdProfilesControl, SideItem } from "./Common.jsx";
 
@@ -7,6 +8,9 @@ export function AppSidebar({
   setActiveTab,
   onBackHome,
   sessionControls = null,
+  onboardingProgress = null,
+  onOpenSetupStep = null,
+  onSkipSetup = null,
   className = "",
   onNavigate,
 }) {
@@ -246,7 +250,26 @@ export function AppSidebar({
         </div>
       ) : null}
 
-      <div style={{ ...styles.panel, marginTop: 48, padding: 20 }}>
+      <SetupChecklistPanel
+        progress={onboardingProgress}
+        activeTab={activeTab}
+        onOpenStep={(step) => {
+          onOpenSetupStep?.(step);
+          onNavigate?.();
+        }}
+        onSkip={() => {
+          onSkipSetup?.();
+          onNavigate?.();
+        }}
+      />
+
+      <div
+        style={{
+          ...styles.panel,
+          marginTop: onboardingProgress?.isActive ? 18 : 48,
+          padding: 20,
+        }}
+      >
         <div style={{ color: "#8feaff", fontSize: 12, fontWeight: 900, letterSpacing: 1.1 }}>
           ACTION CENTER
         </div>

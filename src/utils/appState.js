@@ -7,6 +7,11 @@ import {
 } from "../data/constants.jsx";
 import { normalizeAccount } from "./accounts.js";
 import { getCurrentBudgetPeriod } from "./date.js";
+import {
+  createOnboardingState,
+  getFirstOnboardingTab,
+  normalizeOnboardingState,
+} from "./onboarding.js";
 import { buildPlanYearData, normalizePlansByYear } from "./planning.js";
 import { buildSeedObjectives, normalizeObjectives } from "./objectives.js";
 import { normalizeRecurringPreferences } from "./recurringSuggestions.js";
@@ -94,7 +99,8 @@ function buildUserState({
     plaidNicknames: {},
     lastPlaidSyncAt: null,
     merchantCategoryRules: {},
-    activeTab: APP_TABS.DASHBOARD,
+    onboarding: createOnboardingState({ completed: useSeedData }),
+    activeTab: useSeedData ? APP_TABS.DASHBOARD : getFirstOnboardingTab(),
     activeRange: DEFAULT_ACTIVE_RANGE,
     metricSnapshots: useSeedData ? demoDataset.metricSnapshots : {},
   };
@@ -164,6 +170,13 @@ function normalizeUserState(rawUser, fallbackName, useSeedData = true) {
       rawUser?.merchantCategoryRules && typeof rawUser.merchantCategoryRules === "object"
         ? rawUser.merchantCategoryRules
         : defaults.merchantCategoryRules,
+    onboarding: normalizeOnboardingState(rawUser?.onboarding, {
+      user: {
+        ...defaults,
+        ...rawUser,
+      },
+      useSeedData,
+    }),
     activeTab: normalizeStoredActiveTab(rawUser?.activeTab) || defaults.activeTab,
     activeRange:
       typeof rawUser?.activeRange === "string" ? rawUser.activeRange : defaults.activeRange,
