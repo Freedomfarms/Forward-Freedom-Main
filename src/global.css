@@ -150,6 +150,9 @@ button {
 
   .mobile-topbar {
     display: flex;
+    position: sticky;
+    top: 0;
+    z-index: 80;
     align-items: center;
     gap: 12px;
     margin: -2px 0 16px;
