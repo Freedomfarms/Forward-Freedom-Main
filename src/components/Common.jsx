@@ -797,8 +797,8 @@ export function MonthCoverageEditor({
         style={{
           display: "inline-flex",
           alignItems: "center",
-          gap: 10,
-          padding: "7px 12px",
+          gap: 6,
+          padding: "6px 9px",
           borderRadius: 10,
           background: "rgba(0,136,255,.08)",
           border: "1px solid rgba(0,216,255,.18)",
@@ -811,11 +811,6 @@ export function MonthCoverageEditor({
         }}
       >
         <span>{summaryLabel}</span>
-        <span style={{ color: "#7ea6d8", fontSize: 10 }}>
-          {allSelected
-            ? "All active"
-            : `${activeMonths.length} active month${activeMonths.length === 1 ? "" : "s"}`}
-        </span>
         <span style={{ fontSize: 11 }}>{isOpen ? "▴" : "▾"}</span>
       </button>
       {popover}

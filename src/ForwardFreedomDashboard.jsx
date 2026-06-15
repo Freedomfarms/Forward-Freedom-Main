@@ -2180,26 +2180,6 @@ function ForwardFreedomDashboard({
               flexWrap: "wrap",
             }}
           >
-            <div>
-              <div
-                style={{
-                  color: "#8feaff",
-                  textTransform: "uppercase",
-                  letterSpacing: 1,
-                  fontSize: 11,
-                  fontWeight: 900,
-                }}
-              >
-                Workspace help
-              </div>
-              <div style={{ color: "#d7e6f6", marginTop: 6, lineHeight: 1.5, fontSize: 13 }}>
-                {onboardingProgress.isActive && onboardingProgress.currentStep
-                  ? `Setup in progress: ${onboardingProgress.currentStep.label}.`
-                  : onboardingProgress.onboarding.skippedAt && !onboardingProgress.isComplete
-                    ? "Setup is paused. You can resume anytime."
-                    : "Ask the guide where to go next or what any module means."}
-              </div>
-            </div>
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
               {onboardingProgress.currentStep &&
               (!onboardingProgress.isActive || onboardingProgress.onboarding.skippedAt) ? (
