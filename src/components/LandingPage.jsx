@@ -209,7 +209,8 @@ export function LandingPage({ enterApp, onEnterDemo }) {
               marginTop: 12,
             }}
           >
-            Turning fear into strategy, debt into freedom, and money into a tool for bold living.
+            Move Forward With Purpose. Turn Fear Into Strategy. Turn Debt Into Freedom. Turn Money
+            Into a Tool for the Mission.
           </div>
         </section>
 
