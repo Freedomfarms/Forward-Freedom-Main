@@ -95,6 +95,24 @@ export async function fetchWorkspaceSnapshot(options = {}) {
   return parseApiResponse(response);
 }
 
+export async function requestWorkspaceGuideReply(
+  { question, history = [], context = {} },
+  options = {}
+) {
+  const response = await fetch("/api/assistant", {
+    method: "POST",
+    headers: await buildAuthenticatedHeaders(
+      {
+        "Content-Type": "application/json",
+      },
+      options
+    ),
+    body: JSON.stringify({ question, history, context }),
+  });
+
+  return parseApiResponse(response);
+}
+
 export async function saveWorkspaceSnapshot({ state, source, lastClientUpdatedAt }, options = {}) {
   const response = await fetch("/api/workspace", {
     method: "PUT",
