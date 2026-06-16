@@ -13,15 +13,78 @@ import { monthlyEquivalent } from "../utils/subscriptions.js";
 import { HouseholdProfilesControl } from "./Common.jsx";
 
 const STATUS_THEME = {
-  completed: { label: "Completed", color: "#8f7dff", glow: "rgba(143,125,255,.38)" },
-  on_track: { label: "On Track", color: "#00f59b", glow: "rgba(0,245,155,.35)" },
-  at_risk: { label: "At Risk", color: "#ffb65d", glow: "rgba(255,182,93,.35)" },
-  off_track: { label: "Off Track", color: "#ff5d7a", glow: "rgba(255,93,122,.35)" },
+  completed: { label: "Complete", color: "#8f7dff", glow: "rgba(143,125,255,.45)" },
+  on_track: { label: "On Track", color: "#00f59b", glow: "rgba(0,245,155,.4)" },
+  at_risk: { label: "At Risk", color: "#ffb65d", glow: "rgba(255,182,93,.4)" },
+  off_track: { label: "Needs Focus", color: "#ff5d7a", glow: "rgba(255,93,122,.4)" },
 };
+
+function ProgressRing({ progress, color, size = 64, stroke = 6, track = "rgba(120,180,255,.14)", children }) {
+  const radius = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const clamped = Math.max(0, Math.min(100, Number(progress) || 0));
+  const dash = (clamped / 100) * circumference;
+  const center = size / 2;
+  return (
+    <div style={{ position: "relative", width: size, height: size, flexShrink: 0 }}>
+      <svg width={size} height={size} style={{ transform: "rotate(-90deg)", display: "block" }}>
+        <circle cx={center} cy={center} r={radius} fill="none" stroke={track} strokeWidth={stroke} />
+        <circle
+          cx={center}
+          cy={center}
+          r={radius}
+          fill="none"
+          stroke={color}
+          strokeWidth={stroke}
+          strokeLinecap="round"
+          strokeDasharray={`${dash} ${circumference}`}
+          style={{
+            filter: `drop-shadow(0 0 5px ${color})`,
+            transition: "stroke-dasharray .7s cubic-bezier(.4,0,.2,1)",
+          }}
+        />
+      </svg>
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 1,
+        }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
 
 const METRIC_LOOKUP = Object.fromEntries(
   GOAL_METRIC_LIBRARY.map((metric) => [metric.key, metric])
 );
+
+const FIELD_INPUT = {
+  color: "#eaf3ff",
+  background: "rgba(0,136,255,.08)",
+  border: "1px solid rgba(120,180,255,.22)",
+  borderRadius: 10,
+  padding: "11px 12px",
+  fontWeight: 600,
+  fontSize: 14,
+  width: "100%",
+  boxSizing: "border-box",
+  outline: "none",
+};
+
+const FIELD_CAPTION = {
+  color: "#7fa1ca",
+  fontSize: 11,
+  fontWeight: 800,
+  textTransform: "uppercase",
+  letterSpacing: 0.7,
+};
 
 const EMPTY_FORM = {
   title: "",
@@ -474,9 +537,9 @@ export function ObjectivesBoard({
     <div>
       <header style={styles.pageHeader}>
         <div>
-          <h1 style={styles.pageTitle}>Objectives</h1>
+          <h1 style={styles.pageTitle}>Goals</h1>
           <p style={styles.pageSubtitle}>
-            Turn budget data into missions, streaks, and clear wins you can track automatically.
+            The metrics that move your money — tracked automatically, live from your data.
           </p>
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
@@ -487,15 +550,16 @@ export function ObjectivesBoard({
             style={{
               background: "linear-gradient(90deg,#0077ff,#00d8ff)",
               border: "1px solid rgba(0,216,255,.45)",
-              borderRadius: 10,
+              borderRadius: 12,
               color: "white",
-              padding: "13px 18px",
-              fontWeight: 900,
+              padding: "12px 18px",
+              fontWeight: 800,
+              fontSize: 14,
               cursor: "pointer",
-              boxShadow: "0 0 22px rgba(0,136,255,.35)",
+              boxShadow: "0 8px 22px rgba(0,136,255,.32)",
             }}
           >
-            + Create Objective
+            + New Goal
           </button>
         </div>
       </header>
@@ -503,322 +567,383 @@ export function ObjectivesBoard({
       <section
         style={{
           ...styles.panel,
-          padding: 20,
+          padding: 24,
           marginBottom: 16,
+          position: "relative",
+          overflow: "hidden",
           background:
-            "radial-gradient(circle at top right, rgba(0,216,255,.14), rgba(2,10,26,.95) 40%), linear-gradient(180deg, rgba(2,12,28,.95), rgba(1,8,20,.98))",
+            "radial-gradient(circle at 85% 0%, rgba(0,216,255,.16), transparent 45%), linear-gradient(180deg, rgba(4,16,34,.95), rgba(1,8,20,.98))",
         }}
       >
         <div
           style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(6, minmax(0, 1fr))",
-            gap: 10,
+            display: "flex",
+            alignItems: "center",
+            gap: 30,
+            flexWrap: "wrap",
           }}
         >
-          {[
-            ["Total Objectives", summary.total, "#8feaff"],
-            ["Completed", summary.completed, "#8f7dff"],
-            ["On Track", summary.onTrack, "#00f59b"],
-            ["At Risk", summary.atRisk + summary.offTrack, "#ffb65d"],
-            ["Average Progress", `${summary.avgProgress}%`, "#00d8ff"],
-            ["Mission XP", summary.xp, "#ffd66b"],
-          ].map(([label, value, color]) => (
-            <div
-              key={label}
-              style={{
-                border: "1px solid rgba(0,216,255,.2)",
-                borderRadius: 12,
-                padding: "12px 13px",
-                background: "rgba(3,18,36,.66)",
-              }}
-            >
-              <div
-                style={{
-                  color: "#84a8d5",
-                  fontSize: 11,
-                  textTransform: "uppercase",
-                  letterSpacing: 0.8,
-                }}
-              >
-                {label}
+          <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
+            <ProgressRing progress={summary.avgProgress} color="#00d8ff" size={128} stroke={11}>
+              <div style={{ color: "#eaf6ff", fontSize: 30, fontWeight: 900, lineHeight: 1 }}>
+                {summary.avgProgress}%
               </div>
-              <div
-                style={{
-                  color,
-                  marginTop: 8,
-                  fontSize: 26,
-                  fontWeight: 900,
-                  textShadow: `0 0 14px ${color}55`,
-                }}
-              >
-                {value}
+              <div style={{ color: "#7fa1ca", fontSize: 10, textTransform: "uppercase", letterSpacing: 1 }}>
+                Avg
+              </div>
+            </ProgressRing>
+            <div>
+              <div style={{ color: "white", fontSize: 20, fontWeight: 900 }}>
+                {summary.completed} of {summary.total} hit
+              </div>
+              <div style={{ color: "#9fb0c9", fontSize: 13, marginTop: 4, maxWidth: 200, lineHeight: 1.45 }}>
+                {summary.total === 0
+                  ? "Create your first goal to start tracking."
+                  : summary.atRisk + summary.offTrack > 0
+                    ? `${summary.atRisk + summary.offTrack} goal${summary.atRisk + summary.offTrack === 1 ? "" : "s"} need attention.`
+                    : "Everything is trending the right way."}
               </div>
             </div>
-          ))}
+          </div>
+          <div
+            style={{
+              flex: 1,
+              minWidth: 280,
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
+              gap: 12,
+            }}
+          >
+            {[
+              ["Active", summary.total, "#00d8ff"],
+              ["On Track", summary.onTrack, "#00f59b"],
+              ["Needs Focus", summary.atRisk + summary.offTrack, "#ffb65d"],
+              ["Complete", summary.completed, "#8f7dff"],
+            ].map(([label, value, color]) => (
+              <div
+                key={label}
+                style={{
+                  border: "1px solid rgba(120,180,255,.16)",
+                  borderRadius: 14,
+                  padding: "14px 16px",
+                  background: "rgba(3,18,36,.55)",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                  <span
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: 999,
+                      background: color,
+                      boxShadow: `0 0 8px ${color}`,
+                    }}
+                  />
+                  <span style={{ color: "#84a8d5", fontSize: 11, textTransform: "uppercase", letterSpacing: 0.8 }}>
+                    {label}
+                  </span>
+                </div>
+                <div style={{ color: "#eaf6ff", fontSize: 28, fontWeight: 900, marginTop: 8 }}>
+                  {value}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
       {isFormOpen ? (
-        <section style={{ ...styles.panel, padding: 18, marginBottom: 16 }}>
-          <div style={{ color: "white", fontWeight: 900, fontSize: 18, marginBottom: 12 }}>
-            {editingId ? "Edit Objective" : "Create Objective"}
-          </div>
+        <section style={{ ...styles.panel, padding: 22, marginBottom: 16 }}>
           <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1.1fr 1fr 1fr 1fr",
-              gap: 10,
-            }}
-          >
-            <input
-              value={form.title}
-              onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
-              placeholder="Objective title"
-              style={{
-                color: "#eaf3ff",
-                background: "rgba(0,136,255,.08)",
-                border: "1px solid rgba(0,216,255,.2)",
-                borderRadius: 8,
-                padding: "10px 11px",
-                fontWeight: 700,
-              }}
-            />
-            <select
-              value={form.cadence}
-              onChange={(event) => setForm((current) => ({ ...current, cadence: event.target.value }))}
-              style={{
-                color: "#eaf3ff",
-                background: "rgba(0,136,255,.08)",
-                border: "1px solid rgba(0,216,255,.2)",
-                borderRadius: 8,
-                padding: "10px 11px",
-                fontWeight: 700,
-              }}
-            >
-              {GOAL_CADENCE_OPTIONS.map((cadence) => (
-                <option key={cadence} value={cadence} style={{ background: "#051326", color: "#eaf3ff" }}>
-                  {cadence}
-                </option>
-              ))}
-            </select>
-            <select
-              value={form.metricKey}
-              onChange={(event) => {
-                const metric = METRIC_LOOKUP[event.target.value] || GOAL_METRIC_LIBRARY[0];
-                setForm((current) => ({
-                  ...current,
-                  metricKey: metric.key,
-                  targetValue: metric.defaultTarget,
-                }));
-              }}
-              style={{
-                color: "#eaf3ff",
-                background: "rgba(0,136,255,.08)",
-                border: "1px solid rgba(0,216,255,.2)",
-                borderRadius: 8,
-                padding: "10px 11px",
-                fontWeight: 700,
-              }}
-            >
-              {GOAL_METRIC_LIBRARY.map((metric) => (
-                <option key={metric.key} value={metric.key} style={{ background: "#051326", color: "#eaf3ff" }}>
-                  {metric.label}
-                </option>
-              ))}
-            </select>
-            <input
-              type="number"
-              value={form.targetValue}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  targetValue: Number(event.target.value),
-                }))
-              }
-              style={{
-                color: "#eaf3ff",
-                background: "rgba(0,136,255,.08)",
-                border: "1px solid rgba(0,216,255,.2)",
-                borderRadius: 8,
-                padding: "10px 11px",
-                fontWeight: 700,
-              }}
-            />
-          </div>
-          <textarea
-            value={form.description}
-            onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))}
-            placeholder="Why this objective matters..."
-            rows={2}
-            style={{
-              marginTop: 10,
-              width: "100%",
-              color: "#eaf3ff",
-              background: "rgba(0,136,255,.08)",
-              border: "1px solid rgba(0,216,255,.2)",
-              borderRadius: 8,
-              padding: "10px 11px",
-              fontWeight: 700,
-              resize: "vertical",
-              boxSizing: "border-box",
-            }}
-          />
-          <label
             style={{
               display: "flex",
               alignItems: "center",
-              gap: 8,
-              color: "#9ec2eb",
-              fontSize: 12,
-              marginTop: 8,
+              justifyContent: "space-between",
+              gap: 12,
+              marginBottom: 16,
+              flexWrap: "wrap",
             }}
           >
-            <input
-              type="checkbox"
-              checked={form.aiSuggested}
-              onChange={(event) =>
-                setForm((current) => ({ ...current, aiSuggested: event.target.checked }))
-              }
-            />
-            Mark as AI objective
-          </label>
-          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 12 }}>
-            <div style={{ color: "#8fb1d9", fontSize: 12 }}>
-              Auto metric: {selectedMetric.label} ({selectedMetric.unit})
+            <div style={{ color: "white", fontWeight: 900, fontSize: 18 }}>
+              {editingId ? "Edit goal" : "New goal"}
             </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button
-                type="button"
-                onClick={resetForm}
-                style={{
-                  background: "rgba(0,136,255,.12)",
-                  border: "1px solid rgba(0,216,255,.22)",
-                  borderRadius: 8,
-                  color: "#d8ebff",
-                  padding: "9px 12px",
-                  cursor: "pointer",
-                  fontWeight: 700,
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleSave}
-                style={{
-                  background: "linear-gradient(90deg,#0077ff,#00d8ff)",
-                  border: "1px solid rgba(0,216,255,.45)",
-                  borderRadius: 8,
-                  color: "white",
-                  padding: "9px 12px",
-                  cursor: "pointer",
-                  fontWeight: 800,
-                }}
-              >
-                {editingId ? "Save Objective" : "Add Objective"}
-              </button>
+            <span
+              style={{
+                ...FIELD_CAPTION,
+                color: "#8feaff",
+                border: "1px solid rgba(0,216,255,.28)",
+                borderRadius: 999,
+                padding: "5px 11px",
+                background: "rgba(0,216,255,.08)",
+              }}
+            >
+              Tracks {selectedMetric.label}
+            </span>
+          </div>
+
+          <div style={{ display: "grid", gap: 14 }}>
+            <label style={{ display: "grid", gap: 6 }}>
+              <span style={FIELD_CAPTION}>Goal name</span>
+              <input
+                value={form.title}
+                onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
+                placeholder="e.g. Cash shield — never drop below $40k"
+                style={FIELD_INPUT}
+              />
+            </label>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                gap: 14,
+              }}
+            >
+              <label style={{ display: "grid", gap: 6 }}>
+                <span style={FIELD_CAPTION}>Timeframe</span>
+                <select
+                  value={form.cadence}
+                  onChange={(event) => setForm((current) => ({ ...current, cadence: event.target.value }))}
+                  style={FIELD_INPUT}
+                >
+                  {GOAL_CADENCE_OPTIONS.map((cadence) => (
+                    <option key={cadence} value={cadence} style={{ background: "#051326", color: "#eaf3ff" }}>
+                      {cadence}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label style={{ display: "grid", gap: 6 }}>
+                <span style={FIELD_CAPTION}>Metric</span>
+                <select
+                  value={form.metricKey}
+                  onChange={(event) => {
+                    const metric = METRIC_LOOKUP[event.target.value] || GOAL_METRIC_LIBRARY[0];
+                    setForm((current) => ({
+                      ...current,
+                      metricKey: metric.key,
+                      targetValue: metric.defaultTarget,
+                    }));
+                  }}
+                  style={FIELD_INPUT}
+                >
+                  {GOAL_METRIC_LIBRARY.map((metric) => (
+                    <option key={metric.key} value={metric.key} style={{ background: "#051326", color: "#eaf3ff" }}>
+                      {metric.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label style={{ display: "grid", gap: 6 }}>
+                <span style={FIELD_CAPTION}>Target ({selectedMetric.unit})</span>
+                <input
+                  type="number"
+                  value={form.targetValue}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      targetValue: Number(event.target.value),
+                    }))
+                  }
+                  style={FIELD_INPUT}
+                />
+              </label>
             </div>
+
+            <label style={{ display: "grid", gap: 6 }}>
+              <span style={FIELD_CAPTION}>Note (optional)</span>
+              <textarea
+                value={form.description}
+                onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))}
+                placeholder="Why this goal matters to you..."
+                rows={2}
+                style={{ ...FIELD_INPUT, resize: "vertical" }}
+              />
+            </label>
+
+            <label style={{ display: "flex", alignItems: "center", gap: 8, color: "#9ec2eb", fontSize: 13 }}>
+              <input
+                type="checkbox"
+                checked={form.aiSuggested}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, aiSuggested: event.target.checked }))
+                }
+              />
+              Mark as an AI-suggested goal
+            </label>
+          </div>
+
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 18 }}>
+            <button
+              type="button"
+              onClick={resetForm}
+              style={{
+                background: "rgba(0,136,255,.1)",
+                border: "1px solid rgba(120,180,255,.22)",
+                borderRadius: 10,
+                color: "#d8ebff",
+                padding: "11px 16px",
+                cursor: "pointer",
+                fontWeight: 700,
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleSave}
+              style={{
+                background: "linear-gradient(90deg,#0077ff,#00d8ff)",
+                border: "1px solid rgba(0,216,255,.45)",
+                borderRadius: 10,
+                color: "white",
+                padding: "11px 18px",
+                cursor: "pointer",
+                fontWeight: 800,
+                boxShadow: "0 8px 22px rgba(0,136,255,.3)",
+              }}
+            >
+              {editingId ? "Save goal" : "Add goal"}
+            </button>
           </div>
         </section>
       ) : null}
 
-      <section style={{ ...styles.panel, padding: 18, marginBottom: 16 }}>
-        <div style={{ color: "white", fontWeight: 900, fontSize: 18, marginBottom: 10 }}>
-          AI Goal Suggestions
-        </div>
-        <div style={{ color: "#9fb0c9", fontSize: 13, marginBottom: 12 }}>
-          Suggestions adapt to live budget and cash-flow signals.
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
-          {aiRecommendations.length === 0 ? (
-            <div
-              style={{
-                gridColumn: "1 / -1",
-                color: "#8fb1d9",
-                fontSize: 13,
-                border: "1px solid rgba(0,216,255,.14)",
-                borderRadius: 10,
-                padding: "11px 12px",
-                background: "rgba(0,136,255,.08)",
-              }}
-            >
-              AI does not see urgent new objectives right now. Current objective stack looks healthy.
-            </div>
-          ) : (
-            aiRecommendations.map((recommendation) => (
-              <div
+      {aiRecommendations.length > 0 ? (
+        <section style={{ ...styles.panel, padding: 18, marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+            <span style={{ fontSize: 15 }}>✨</span>
+            <div style={{ color: "white", fontWeight: 800, fontSize: 15 }}>Smart suggestions</div>
+            <span style={{ color: "#7fa1ca", fontSize: 12 }}>from your live budget & cash flow</span>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 10 }}>
+            {aiRecommendations.map((recommendation) => (
+              <button
                 key={recommendation.title}
+                type="button"
+                onClick={() => addAiRecommendation(recommendation)}
                 style={{
-                  border: "1px solid rgba(0,216,255,.2)",
-                  borderRadius: 10,
-                  padding: "11px 12px",
-                  background: "rgba(0,136,255,.08)",
+                  textAlign: "left",
+                  border: "1px solid rgba(143,125,255,.3)",
+                  borderRadius: 12,
+                  padding: "12px 14px",
+                  background: "rgba(143,125,255,.08)",
+                  cursor: "pointer",
+                  display: "grid",
+                  gap: 5,
                 }}
               >
-                <div style={{ color: "#8feaff", fontWeight: 900, fontSize: 13 }}>
-                  {recommendation.title}
+                <div style={{ color: "#cbbcff", fontWeight: 800, fontSize: 13 }}>
+                  + {recommendation.objective.title}
                 </div>
-                <div style={{ color: "#9fb0c9", fontSize: 12, marginTop: 6, lineHeight: 1.45 }}>
+                <div style={{ color: "#9fb0c9", fontSize: 12, lineHeight: 1.45 }}>
                   {recommendation.reason}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => addAiRecommendation(recommendation)}
-                  style={{
-                    marginTop: 8,
-                    borderRadius: 8,
-                    border: "1px solid rgba(0,216,255,.32)",
-                    background: "rgba(0,216,255,.14)",
-                    color: "#eaf6ff",
-                    padding: "8px 10px",
-                    cursor: "pointer",
-                    fontWeight: 800,
-                  }}
-                >
-                  Add Objective
-                </button>
-              </div>
-            ))
-          )}
-        </div>
-      </section>
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
-      <section
-        style={{
-          ...styles.panel,
-          padding: 16,
-          background:
-            "radial-gradient(circle at 18% 10%, rgba(0,216,255,.14), rgba(3,12,26,.96) 40%), linear-gradient(180deg, rgba(2,12,28,.97), rgba(1,8,20,.99))",
-        }}
-      >
-        <div style={{ display: "grid", gap: 10 }}>
+      {evaluatedObjectives.length === 0 ? (
+        <section style={{ ...styles.panel, padding: "56px 24px", textAlign: "center" }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>🎯</div>
+          <div style={{ color: "white", fontSize: 20, fontWeight: 900 }}>No goals yet</div>
+          <div style={{ color: "#9fb0c9", fontSize: 14, marginTop: 8, maxWidth: 360, marginInline: "auto", lineHeight: 1.5 }}>
+            Pick a metric, set a target, and Forward Freedom tracks your progress automatically.
+          </div>
+          <button
+            type="button"
+            onClick={openCreateForm}
+            style={{
+              marginTop: 18,
+              background: "linear-gradient(90deg,#0077ff,#00d8ff)",
+              border: "1px solid rgba(0,216,255,.45)",
+              borderRadius: 12,
+              color: "white",
+              padding: "12px 18px",
+              fontWeight: 800,
+              cursor: "pointer",
+              boxShadow: "0 8px 22px rgba(0,136,255,.32)",
+            }}
+          >
+            + Create your first goal
+          </button>
+        </section>
+      ) : (
+        <section
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))",
+            gap: 14,
+          }}
+        >
           {evaluatedObjectives.map((goal) => {
             const theme = STATUS_THEME[goal.status] || STATUS_THEME.off_track;
             return (
               <div
                 key={goal.id}
                 style={{
-                  border: "1px solid rgba(0,216,255,.18)",
-                  borderRadius: 12,
-                  padding: "12px 14px",
-                  background: "rgba(2,15,32,.74)",
-                  boxShadow: `0 0 20px ${theme.glow}`,
+                  position: "relative",
+                  border: `1px solid ${theme.color}38`,
+                  borderRadius: 16,
+                  padding: 18,
+                  background:
+                    "linear-gradient(180deg, rgba(5,20,40,.92), rgba(2,11,24,.96))",
+                  boxShadow: `0 10px 30px rgba(0,8,20,.45), inset 0 0 0 1px rgba(255,255,255,.02)`,
+                  display: "grid",
+                  gap: 16,
                 }}
               >
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-                  <div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                      <div style={{ color: "#f4f9ff", fontSize: 16, fontWeight: 900 }}>{goal.title}</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                  <ProgressRing progress={goal.progressForBar} color={theme.color} size={74} stroke={7}>
+                    <div style={{ color: "#eaf6ff", fontSize: 15, fontWeight: 900, lineHeight: 1 }}>
+                      {Math.round(goal.progress)}%
+                    </div>
+                  </ProgressRing>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
+                      title={goal.title}
+                      style={{
+                        color: "#f4f9ff",
+                        fontSize: 16,
+                        fontWeight: 800,
+                        lineHeight: 1.25,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        display: "-webkit-box",
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: "vertical",
+                      }}
+                    >
+                      {goal.title}
+                    </div>
+                    <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
                       <span
                         style={{
                           fontSize: 10,
+                          fontWeight: 800,
                           textTransform: "uppercase",
-                          letterSpacing: 0.8,
-                          color: "#8db0dd",
-                          border: "1px solid rgba(0,216,255,.22)",
+                          letterSpacing: 0.6,
+                          color: theme.color,
+                          border: `1px solid ${theme.color}55`,
+                          background: `${theme.color}12`,
                           borderRadius: 999,
-                          padding: "3px 7px",
+                          padding: "3px 8px",
+                        }}
+                      >
+                        {theme.label}
+                      </span>
+                      <span
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 700,
+                          textTransform: "uppercase",
+                          letterSpacing: 0.6,
+                          color: "#8db0dd",
+                          border: "1px solid rgba(120,180,255,.2)",
+                          borderRadius: 999,
+                          padding: "3px 8px",
                         }}
                       >
                         {goal.cadence}
@@ -827,125 +952,104 @@ export function ObjectivesBoard({
                         <span
                           style={{
                             fontSize: 10,
+                            fontWeight: 800,
                             textTransform: "uppercase",
-                            letterSpacing: 0.8,
-                            color: "#8f7dff",
-                            border: "1px solid rgba(143,125,255,.32)",
+                            letterSpacing: 0.6,
+                            color: "#cbbcff",
+                            border: "1px solid rgba(143,125,255,.4)",
+                            background: "rgba(143,125,255,.1)",
                             borderRadius: 999,
-                            padding: "3px 7px",
+                            padding: "3px 8px",
                           }}
                         >
                           AI
                         </span>
                       ) : null}
                     </div>
-                    <div style={{ color: "#9db5d5", fontSize: 12, marginTop: 4, lineHeight: 1.4 }}>
-                      {goal.description || goal.metric.description}
-                    </div>
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span
-                      style={{
-                        fontSize: 11,
-                        color: theme.color,
-                        border: `1px solid ${theme.color}66`,
-                        borderRadius: 999,
-                        padding: "4px 9px",
-                        fontWeight: 800,
-                      }}
-                    >
-                      {theme.label}
-                    </span>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                     <button
                       type="button"
+                      aria-label="Edit goal"
+                      title="Edit goal"
                       onClick={() => openEditForm(goal)}
                       style={{
-                        borderRadius: 7,
-                        border: "1px solid rgba(0,216,255,.24)",
-                        background: "rgba(0,136,255,.10)",
+                        width: 30,
+                        height: 30,
+                        borderRadius: 8,
+                        border: "1px solid rgba(120,180,255,.22)",
+                        background: "rgba(0,136,255,.1)",
                         color: "#d9edff",
-                        padding: "6px 8px",
                         cursor: "pointer",
                         fontWeight: 700,
+                        lineHeight: 1,
                       }}
                     >
-                      Edit
+                      ✎
                     </button>
                     <button
                       type="button"
+                      aria-label="Delete goal"
+                      title="Delete goal"
                       onClick={() => handleDelete(goal.id)}
                       style={{
-                        borderRadius: 7,
+                        width: 30,
+                        height: 30,
+                        borderRadius: 8,
                         border: "1px solid rgba(255,93,122,.3)",
                         background: "rgba(255,93,122,.1)",
                         color: "#ffd6df",
-                        padding: "6px 8px",
                         cursor: "pointer",
                         fontWeight: 700,
+                        lineHeight: 1,
                       }}
                     >
-                      Delete
+                      ✕
                     </button>
-                  </div>
-                </div>
-
-                <div style={{ marginTop: 10 }}>
-                  <div
-                    style={{
-                      height: 10,
-                      borderRadius: 999,
-                      background: "rgba(20,60,110,.45)",
-                      border: "1px solid rgba(0,216,255,.18)",
-                      overflow: "hidden",
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: `${goal.progressForBar}%`,
-                        height: "100%",
-                        background: `linear-gradient(90deg, ${theme.color}, #00d8ff)`,
-                        boxShadow: `0 0 16px ${theme.glow}`,
-                      }}
-                    />
                   </div>
                 </div>
 
                 <div
                   style={{
-                    marginTop: 8,
                     display: "grid",
-                    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-                    gap: 8,
-                    color: "#9db5d5",
-                    fontSize: 12,
+                    gridTemplateColumns: "1fr 1fr 1fr",
+                    gap: 10,
+                    paddingTop: 14,
+                    borderTop: "1px solid rgba(120,180,255,.12)",
                   }}
                 >
-                  <div>
-                    <span style={{ color: "#7397c8" }}>Metric</span>
-                    <div style={{ color: "#e6f2ff", marginTop: 2 }}>{goal.metric.label}</div>
-                  </div>
-                  <div>
-                    <span style={{ color: "#7397c8" }}>Current</span>
-                    <div style={{ color: "#e6f2ff", marginTop: 2 }}>
-                      {formatMetricValue(goal.currentValue, goal.metric.unit)}
+                  {[
+                    ["Now", formatMetricValue(goal.currentValue, goal.metric.unit), theme.color],
+                    ["Target", formatMetricValue(goal.targetValue, goal.metric.unit), "#e6f2ff"],
+                    ["Due", goal.dueLabel, "#e6f2ff"],
+                  ].map(([label, value]) => (
+                    <div key={label} style={{ minWidth: 0 }}>
+                      <div style={{ ...FIELD_CAPTION, color: "#6f8fbc" }}>{label}</div>
+                      <div
+                        style={{
+                          color: label === "Now" ? theme.color : "#e6f2ff",
+                          fontSize: 15,
+                          fontWeight: 800,
+                          marginTop: 4,
+                          whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                        }}
+                      >
+                        {value}
+                      </div>
                     </div>
-                  </div>
-                  <div>
-                    <span style={{ color: "#7397c8" }}>Target</span>
-                    <div style={{ color: "#e6f2ff", marginTop: 2 }}>
-                      {formatMetricValue(goal.targetValue, goal.metric.unit)}
-                    </div>
-                  </div>
-                  <div>
-                    <span style={{ color: "#7397c8" }}>Due</span>
-                    <div style={{ color: "#e6f2ff", marginTop: 2 }}>{goal.dueLabel}</div>
-                  </div>
+                  ))}
+                </div>
+
+                <div style={{ color: "#7f9bc2", fontSize: 11, marginTop: -4 }}>
+                  Tracking: {goal.metric.label}
                 </div>
               </div>
             );
           })}
-        </div>
-      </section>
+        </section>
+      )}
     </div>
   );
 }
