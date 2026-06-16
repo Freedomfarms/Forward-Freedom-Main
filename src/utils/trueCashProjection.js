@@ -49,7 +49,6 @@ export function buildTrueCashProjectionSchedule({
   chart,
   incomeStreams,
   budgetRows,
-  projectionAdjustments = {},
   startingMonth = budgetMonths[0],
   startingTrueCash,
 }) {
@@ -65,7 +64,6 @@ export function buildTrueCashProjectionSchedule({
     targetYear: projectionYear,
     incomeStreams,
     budgetRows,
-    projectionAdjustments,
     startingMonth,
     startingTrueCash: openingBalance,
   })
@@ -77,7 +75,6 @@ export function buildTrueCashProjectionSchedule({
       value: point.value,
       formattedValue: wholeDollars(point.value),
       profit: point.profit,
-      adjustment: point.adjustment,
       type: "projected",
     }));
 }
@@ -86,7 +83,6 @@ export function buildForwardTrueCashProjection({
   openingBalance,
   incomeStreams,
   budgetRows,
-  projectionAdjustments = {},
   startMonth = getCurrentBudgetPeriod().month,
   startYear = getCurrentBudgetPeriod().year,
 }) {
@@ -104,8 +100,7 @@ export function buildForwardTrueCashProjection({
       .filter((category) => (category.months || budgetMonths).includes(month))
       .reduce((sum, category) => sum + Number(category.budget || 0), 0);
     const profit = income - budget;
-    const adjustment = parseMoney(projectionAdjustments[month]);
-    projectedValue += profit + adjustment;
+    projectedValue += profit;
 
     return {
       month,
@@ -114,7 +109,6 @@ export function buildForwardTrueCashProjection({
       value: projectedValue,
       formattedValue: wholeDollars(projectedValue),
       profit,
-      adjustment,
       type: "projected",
     };
   });

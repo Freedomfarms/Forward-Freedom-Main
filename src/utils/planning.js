@@ -9,14 +9,12 @@ function cloneValue(value) {
 export function buildPlanYearData({
   budgetRows = [],
   incomeStreams = [],
-  projectionAdjustments = {},
   startingMonth = getCurrentBudgetPeriod().month,
   startingTrueCash = 0,
 } = {}) {
   return {
     budgetRows: cloneValue(budgetRows),
     incomeStreams: cloneValue(incomeStreams),
-    projectionAdjustments: cloneValue(projectionAdjustments),
     startingMonth,
     startingTrueCash: Number(startingTrueCash) || 0,
   };
@@ -97,7 +95,6 @@ export function buildPlanningYearOptions(plansByYear, currentYear = getCurrentBu
 function buildMonthlyProjectionInputs({
   incomeStreams = [],
   budgetRows = [],
-  projectionAdjustments = {},
   month,
 }) {
   const income = incomeStreams
@@ -107,14 +104,12 @@ function buildMonthlyProjectionInputs({
     .filter((row) => (row.months || budgetMonths).includes(month))
     .reduce((sum, row) => sum + Number(row.budget || 0), 0);
   const profit = income - budget;
-  const adjustment = parseMoney(projectionAdjustments?.[month]);
 
   return {
     income,
     budget,
     profit,
-    adjustment,
-    delta: profit + adjustment,
+    delta: profit,
   };
 }
 
@@ -122,7 +117,6 @@ export function buildProjectedTrueCashSeries({
   targetYear,
   incomeStreams = [],
   budgetRows = [],
-  projectionAdjustments = {},
   startingMonth = getCurrentBudgetPeriod().month,
   startingTrueCash = 0,
 }) {
@@ -136,14 +130,12 @@ export function buildProjectedTrueCashSeries({
         year: targetYear,
         value: null,
         profit: null,
-        adjustment: null,
       };
     }
 
-    const { profit, adjustment, delta } = buildMonthlyProjectionInputs({
+    const { profit, delta } = buildMonthlyProjectionInputs({
       incomeStreams,
       budgetRows,
-      projectionAdjustments,
       month,
     });
     runningBalance += delta;
@@ -153,7 +145,6 @@ export function buildProjectedTrueCashSeries({
       year: targetYear,
       value: runningBalance,
       profit,
-      adjustment,
     };
   });
 }
@@ -162,7 +153,6 @@ export function buildReconciledTrueCashSeries({
   targetYear,
   incomeStreams = [],
   budgetRows = [],
-  projectionAdjustments = {},
   startingMonth = getCurrentBudgetPeriod().month,
   startingTrueCash = 0,
   liveCurrentTrueCash = 0,
@@ -173,7 +163,6 @@ export function buildReconciledTrueCashSeries({
     targetYear,
     incomeStreams,
     budgetRows,
-    projectionAdjustments: {},
     startingMonth,
     startingTrueCash,
   });
@@ -200,12 +189,10 @@ export function buildReconciledTrueCashSeries({
           : 0;
     const reconciledValue =
       targetYear === currentYear ? entry.value + currentYearResidual * progress : entry.value;
-    const adjustment = parseMoney(projectionAdjustments[entry.month]);
 
     return {
       ...entry,
-      adjustment,
-      value: reconciledValue + adjustment,
+      value: reconciledValue,
     };
   });
 }
@@ -226,7 +213,6 @@ export function buildFullYearProjectionSeries({
     targetYear,
     incomeStreams: targetPlan.incomeStreams,
     budgetRows: targetPlan.budgetRows,
-    projectionAdjustments: targetPlan.projectionAdjustments,
     startingMonth: targetPlan.startingMonth,
     startingTrueCash: targetPlan.startingTrueCash,
   }).map(({ month, year, value }) => ({

@@ -14,21 +14,6 @@ import { budgetMonths, yearlyOpsData } from "../data/constants.jsx";
 import { buildProjectedTrueCashSeries, buildReconciledTrueCashSeries } from "../utils/planning.js";
 import { HouseholdProfilesControl } from "./Common.jsx";
 
-function formatAdjustmentValue(value) {
-  return String(Math.round(Number(value) || 0));
-}
-
-function normalizeAdjustmentInput(value) {
-  const rawValue = String(value);
-  const isNegative = rawValue.includes("-");
-  const digits = rawValue.replace(/\D/g, "");
-
-  if (!digits) return isNegative ? "-" : "";
-  if (isNegative && Number(digits) === 0) return "-";
-
-  return `${isNegative ? "-" : ""}${Number(digits)}`;
-}
-
 function getLastNonNullValue(values, fallback = 0) {
   const lastValue = [...values].reverse().find((value) => value !== null && value !== undefined);
   return lastValue ?? fallback;
@@ -82,7 +67,6 @@ function ScorecardChart({
   hovered,
   setHovered,
   trueCashValues,
-  adjustmentValues,
   projectedTrueCashValues,
 }) {
   const focusX = hovered ? SCORECARD_MONTH_X[hovered.data.month] : null;
@@ -196,11 +180,6 @@ function ScorecardChart({
                       ? "#4ade80"
                       : "#f87171",
                   ],
-                  [
-                    "Adjustments",
-                    adjustmentValues[hovered.index],
-                    adjustmentValues[hovered.index] >= 0 ? "#fbbf24" : "#f97316",
-                  ],
                   ["Projected Cash", projectedTrueCashValues[hovered.index], "#fbbf24"],
                 ].map(([label, value, color]) => (
                   <div
@@ -217,14 +196,12 @@ function ScorecardChart({
                   >
                     <span style={{ color: "#8ea8ca" }}>{label}</span>
                     <span style={{ color }}>
-                      {(label === "Profit" || label === "Adjustments") && value >= 0 ? "+" : ""}
+                      {label === "Profit" && value >= 0 ? "+" : ""}
                       {(label === "Projected Cash" || label === "True Cash") && value === null
                         ? "—"
-                        : label === "Adjustments"
-                          ? formatAdjustmentValue(value)
-                          : label === "Projected Cash" || label === "True Cash"
-                            ? wholeDollars(value)
-                            : money(value)}
+                        : label === "Projected Cash" || label === "True Cash"
+                          ? wholeDollars(value)
+                          : money(value)}
                     </span>
                   </div>
                 ))}
@@ -564,8 +541,6 @@ export function OperationsBoard({
   availablePlanningYears,
   getBudgetRowsForYear,
   getIncomeStreamsForYear,
-  getProjectionAdjustmentsForYear,
-  setProjectionAdjustmentsForYear,
   ensurePlanningYear,
   getPlanningAnchorForYear,
   setPlanningAnchorForYear,
@@ -582,7 +557,6 @@ export function OperationsBoard({
   const safeTransactions = Array.isArray(transactions) ? transactions : [];
   const planningBudgetRows = getBudgetRowsForYear(activePlanningYear);
   const planningIncomeStreams = getIncomeStreamsForYear(activePlanningYear);
-  const planningProjectionAdjustments = getProjectionAdjustmentsForYear(activePlanningYear);
   const planningAnchor = getPlanningAnchorForYear(activePlanningYear);
   const updatePlanningYear = (value) => {
     const nextValue = Number(value);
@@ -633,9 +607,6 @@ export function OperationsBoard({
       total: monthlyValues.reduce((sum, value) => sum + value, 0),
     };
   });
-  const adjustmentValues = budgetMonths.map((month) =>
-    parseMoney(planningProjectionAdjustments[month])
-  );
   const anchorStartingMonth = planningAnchor.startingMonth || currentBudgetPeriod.month;
   const anchorStartingTrueCash =
     planningAnchor.startingTrueCash !== undefined && planningAnchor.startingTrueCash !== null
@@ -663,7 +634,6 @@ export function OperationsBoard({
     targetYear: activePlanningYear,
     incomeStreams: planningIncomeStreams,
     budgetRows: planningBudgetRows,
-    projectionAdjustments: {},
     startingMonth: anchorStartingMonth,
     startingTrueCash: anchorStartingTrueCash,
   }).map((entry) => entry.value);
@@ -671,7 +641,6 @@ export function OperationsBoard({
     targetYear: activePlanningYear,
     incomeStreams: planningIncomeStreams,
     budgetRows: planningBudgetRows,
-    projectionAdjustments: planningProjectionAdjustments,
     startingMonth: anchorStartingMonth,
     startingTrueCash: anchorStartingTrueCash,
     liveCurrentTrueCash: trueCash,
@@ -914,7 +883,6 @@ export function OperationsBoard({
         hovered={hoveredCommandMonth}
         setHovered={setHoveredCommandMonth}
         trueCashValues={trueCashValues}
-        adjustmentValues={adjustmentValues}
         projectedTrueCashValues={projectedTrueCashValues}
       />
 
@@ -938,7 +906,6 @@ export function OperationsBoard({
         hovered={hoveredCommandMonth}
         setHovered={setHoveredCommandMonth}
         trueCashValues={trueCashValues}
-        adjustmentValues={adjustmentValues}
         projectedTrueCashValues={projectedTrueCashValues}
       />
 
@@ -1653,68 +1620,6 @@ export function OperationsBoard({
               >
                 {yearlySurplus >= 0 ? "+" : ""}
                 {money(yearlySurplus)}
-              </div>
-            </div>
-
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "120px repeat(12, 1fr) 120px",
-                padding: "14px 16px",
-                alignItems: "center",
-                borderTop: "1px solid rgba(255,159,28,.16)",
-                background: "rgba(255,159,28,.04)",
-              }}
-            >
-              <div style={{ color: "#ffb347", fontSize: 17, fontWeight: 950 }}>Adjustments</div>
-              {budgetMonths.map((month, index) => (
-                <input
-                  key={month}
-                  value={
-                    planningProjectionAdjustments[month] === undefined
-                      ? "0"
-                      : String(planningProjectionAdjustments[month])
-                  }
-                  onChange={(event) => {
-                    const nextValue = normalizeAdjustmentInput(event.target.value);
-                    setProjectionAdjustmentsForYear(activePlanningYear, (current) => ({
-                      ...current,
-                      [month]: nextValue,
-                    }));
-                  }}
-                  style={{
-                    color: adjustmentValues[index] >= 0 ? "#ffd08a" : "#ff9a76",
-                    textAlign: "right",
-                    fontSize: 14,
-                    fontWeight: 900,
-                    background: "transparent",
-                    border: "1px solid transparent",
-                    borderRadius: 7,
-                    padding: "6px 4px",
-                    outline: "none",
-                    width: "100%",
-                    boxSizing: "border-box",
-                  }}
-                  onFocus={(event) => {
-                    event.currentTarget.select();
-                    event.currentTarget.style.border = "1px solid rgba(255,159,28,.45)";
-                    event.currentTarget.style.background = "rgba(255,159,28,.08)";
-                  }}
-                  onBlur={(event) => {
-                    event.currentTarget.style.border = "1px solid transparent";
-                    event.currentTarget.style.background = "transparent";
-                  }}
-                />
-              ))}
-              <div
-                style={{
-                  color: "#ffb347",
-                  textAlign: "right",
-                  fontSize: 15,
-                  fontWeight: 950,
-                }}
-              >
-                {formatAdjustmentValue(adjustmentValues.reduce((sum, value) => sum + value, 0))}
               </div>
             </div>
 
