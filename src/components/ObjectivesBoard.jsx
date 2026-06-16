@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { styles } from "../styles.js";
 import { isUncategorizedCategoryName } from "../data/constants.jsx";
 import { money } from "../utils/format.js";
@@ -652,8 +653,34 @@ export function ObjectivesBoard({
         </div>
       </section>
 
-      {isFormOpen ? (
-        <section style={{ ...styles.panel, padding: 22, marginBottom: 16 }}>
+      {isFormOpen && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              onMouseDown={(event) => {
+                if (event.target === event.currentTarget) resetForm();
+              }}
+              style={{
+                position: "fixed",
+                inset: 0,
+                zIndex: 9999,
+                background: "rgba(1,7,17,.72)",
+                backdropFilter: "blur(2px)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: 16,
+                overflowY: "auto",
+              }}
+            >
+              <section
+                style={{
+                  ...styles.panel,
+                  padding: 22,
+                  width: "min(560px, 100%)",
+                  margin: "auto",
+                  boxShadow: "0 24px 60px rgba(0,8,20,.6), 0 0 30px rgba(0,136,255,.18)",
+                }}
+              >
           <div
             style={{
               display: "flex",
@@ -806,8 +833,11 @@ export function ObjectivesBoard({
               {editingId ? "Save goal" : "Add goal"}
             </button>
           </div>
-        </section>
-      ) : null}
+              </section>
+            </div>,
+            document.body
+          )
+        : null}
 
       {aiRecommendations.length > 0 ? (
         <section style={{ ...styles.panel, padding: 18, marginBottom: 16 }}>
