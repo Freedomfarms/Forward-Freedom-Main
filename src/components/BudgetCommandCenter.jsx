@@ -382,7 +382,19 @@ export function BudgetCommandCenter({
     <div style={{ fontFamily: styles.page.fontFamily }}>
       <header style={{ ...styles.pageHeader, marginBottom: 20 }}>
         <div>
-          <h1 style={styles.pageTitle}>Budget Strategy Lab</h1>
+          <h1
+            style={{
+              ...styles.pageTitle,
+              background: "linear-gradient(100deg,#a78bfa 0%, #38bdf8 48%, #5eead4 100%)",
+              WebkitBackgroundClip: "text",
+              backgroundClip: "text",
+              WebkitTextFillColor: "transparent",
+              color: "transparent",
+              letterSpacing: 0.2,
+            }}
+          >
+            Budget Strategy Lab
+          </h1>
           <p style={styles.pageSubtitle}>
             Mission-control view of monthly spending, budget pressure, and category risk.
           </p>
@@ -402,8 +414,26 @@ export function BudgetCommandCenter({
           alignItems: "center",
           marginBottom: 38,
           position: "relative",
+          overflow: "hidden",
+          border: "1px solid rgba(167,139,250,.26)",
+          background:
+            "linear-gradient(135deg, rgba(91,70,170,.20) 0%, rgba(8,22,46,.92) 42%, rgba(6,32,54,.94) 100%)",
+          boxShadow:
+            "0 24px 60px rgba(8,12,40,.55), inset 0 0 60px rgba(94,234,212,.06)",
+          backdropFilter: "blur(14px)",
+          WebkitBackdropFilter: "blur(14px)",
         }}
       >
+        <div
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            inset: 0,
+            background:
+              "radial-gradient(circle at 12% 0%, rgba(167,139,250,.20), transparent 40%), radial-gradient(circle at 88% 100%, rgba(94,234,212,.16), transparent 42%)",
+            pointerEvents: "none",
+          }}
+        />
         <div style={{ display: "flex", justifyContent: "center" }}>
           <div
             style={{
@@ -886,25 +916,25 @@ export function BudgetCommandCenter({
                 gridTemplateColumns: "1.15fr 110px 1fr 120px",
                 alignItems: "center",
                 columnGap: 20,
-                borderRadius: 14,
+                borderRadius: 16,
                 border:
                   activeBudgetRowId === item.id
                     ? pointerDragBudgetRowId === item.id
-                      ? "1px solid rgba(0,216,255,.78)"
-                      : "1px solid rgba(0,216,255,.54)"
-                    : "1px solid rgba(0,136,255,.10)",
+                      ? "1px solid rgba(167,139,250,.80)"
+                      : "1px solid rgba(94,234,212,.55)"
+                    : "1px solid rgba(148,163,255,.12)",
                 background:
                   activeBudgetRowId === item.id
                     ? pointerDragBudgetRowId === item.id
-                      ? "linear-gradient(95deg, rgba(0,136,255,.30), rgba(0,216,255,.19) 52%, rgba(4,20,40,.9))"
-                      : "linear-gradient(95deg, rgba(0,136,255,.20), rgba(0,216,255,.11) 52%, rgba(4,18,36,.85))"
-                    : "rgba(3,14,28,.42)",
+                      ? "linear-gradient(95deg, rgba(167,139,250,.30), rgba(94,234,212,.18) 52%, rgba(6,18,40,.9))"
+                      : "linear-gradient(95deg, rgba(124,99,210,.20), rgba(56,189,248,.12) 52%, rgba(5,18,36,.85))"
+                    : "linear-gradient(180deg, rgba(12,22,44,.55), rgba(4,12,26,.45))",
                 boxShadow:
                   activeBudgetRowId === item.id
                     ? pointerDragBudgetRowId === item.id
-                      ? "0 0 30px rgba(0,136,255,.38), inset 0 0 28px rgba(0,216,255,.24)"
-                      : "0 0 24px rgba(0,136,255,.28), inset 0 0 26px rgba(0,216,255,.17)"
-                    : "inset 0 0 0 1px rgba(0,136,255,.04)",
+                      ? "0 0 34px rgba(124,99,210,.40), inset 0 0 28px rgba(94,234,212,.22)"
+                      : "0 0 26px rgba(94,234,212,.24), inset 0 0 26px rgba(56,189,248,.14)"
+                    : "inset 0 0 0 1px rgba(148,163,255,.05)",
                 padding: "10px 12px",
                 cursor: pointerDragBudgetRowId === item.id ? "grabbing" : "grab",
                 opacity: 1,
@@ -1139,14 +1169,14 @@ export function BudgetCommandCenter({
           <button
             onClick={addBudgetCategory}
             style={{
-              background: "linear-gradient(90deg,#0077ff,#00d8ff)",
-              border: "1px solid rgba(120,220,255,.45)",
-              borderRadius: 10,
+              background: "linear-gradient(90deg,#7c63d2,#38bdf8 55%,#5eead4)",
+              border: "1px solid rgba(148,233,255,.45)",
+              borderRadius: 12,
               color: "white",
               padding: "14px 24px",
               fontWeight: 800,
               cursor: "pointer",
-              boxShadow: "0 0 28px rgba(0,136,255,.35)",
+              boxShadow: "0 0 30px rgba(124,99,210,.38)",
               letterSpacing: 0.4,
             }}
           >
