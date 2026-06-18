@@ -898,7 +898,7 @@ export function BudgetCommandCenter({
               Financial Readiness Condition
             </div>
             <div style={{ color: "#9fb6d6", fontSize: 13, marginTop: 4 }}>
-              Overall preparedness across every reserve fund
+              Overall preparedness across every reserve fund · funded vs. a 1-year target
             </div>
           </div>
           {reserveSnapshots.length ? (
@@ -1482,7 +1482,8 @@ export function BudgetCommandCenter({
             🛡️ Reserve Funds
           </span>
           <span style={{ color: "#6d92c2", fontSize: 12, fontWeight: 700 }}>
-            Preparedness funds that carry over month to month
+            The monthly amount is a contribution, not a spending limit · target = 12 months of
+            contributions
           </span>
         </div>
 
@@ -1504,8 +1505,18 @@ export function BudgetCommandCenter({
             >
               <div aria-hidden="true" />
               <div style={{ textAlign: "right", padding: "8px 10px" }}>Balance</div>
-              <div style={{ textAlign: "center", padding: "8px 10px" }}>Readiness</div>
-              <div style={{ textAlign: "center", padding: "8px 10px" }}>Monthly</div>
+              <div
+                style={{ textAlign: "center", padding: "8px 10px", cursor: "help" }}
+                title="Readiness = current balance vs. a 1-year reserve target"
+              >
+                Readiness
+              </div>
+              <div
+                style={{ textAlign: "center", padding: "8px 10px", cursor: "help" }}
+                title="Monthly contribution into the reserve — not a spending limit"
+              >
+                Monthly
+              </div>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               {reserveSnapshots.map((item) => (
@@ -1576,39 +1587,46 @@ export function BudgetCommandCenter({
                     >
                       {item.icon}
                     </button>
-                    <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-                      <input
-                        value={item.name}
-                        onChange={(event) => updateBudgetRow(item.id, "name", event.target.value)}
-                        onFocus={() => activateBudgetRow(item.id)}
-                        style={{
-                          color: "#e6efff",
-                          fontSize: 19,
-                          fontWeight: 700,
-                          background: "transparent",
-                          border: "1px solid transparent",
-                          borderRadius: 8,
-                          padding: "4px 6px",
-                          width: 210,
-                          outline: "none",
-                        }}
-                      />
-                      <CategoryTypeToggle
-                        value={item.type || BUDGET_CATEGORY_TYPES.OPERATING}
-                        onChange={(nextType) => setBudgetRowType(item.id, nextType)}
-                      />
-                      <MonthCoverageEditor
-                        allMonths={budgetMonths}
-                        selectedMonths={item.months || budgetMonths}
-                        onToggleMonth={(month) => toggleBudgetMonth(item.id, month)}
-                        quickActions={[
-                          { label: "All", onClick: () => setBudgetRowMonths(item.id, budgetMonths) },
-                          {
-                            label: `Only ${activeBudgetMonth}`,
-                            onClick: () => setBudgetRowMonths(item.id, [activeBudgetMonth]),
-                          },
-                        ]}
-                      />
+                    <div style={{ display: "grid", gap: 4, minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                        <input
+                          value={item.name}
+                          onChange={(event) => updateBudgetRow(item.id, "name", event.target.value)}
+                          onFocus={() => activateBudgetRow(item.id)}
+                          style={{
+                            color: "#e6efff",
+                            fontSize: 19,
+                            fontWeight: 700,
+                            background: "transparent",
+                            border: "1px solid transparent",
+                            borderRadius: 8,
+                            padding: "4px 6px",
+                            width: 210,
+                            outline: "none",
+                          }}
+                        />
+                        <CategoryTypeToggle
+                          value={item.type || BUDGET_CATEGORY_TYPES.OPERATING}
+                          onChange={(nextType) => setBudgetRowType(item.id, nextType)}
+                        />
+                        <MonthCoverageEditor
+                          allMonths={budgetMonths}
+                          selectedMonths={item.months || budgetMonths}
+                          onToggleMonth={(month) => toggleBudgetMonth(item.id, month)}
+                          quickActions={[
+                            { label: "All", onClick: () => setBudgetRowMonths(item.id, budgetMonths) },
+                            {
+                              label: `Only ${activeBudgetMonth}`,
+                              onClick: () => setBudgetRowMonths(item.id, [activeBudgetMonth]),
+                            },
+                          ]}
+                        />
+                      </div>
+                      <span style={{ color: "#6d92c2", fontSize: 11, fontWeight: 600 }}>
+                        {item.started
+                          ? `Tracking since ${budgetMonthNames[item.anchor.month]} ${item.anchor.year}`
+                          : "Set a monthly contribution to start this reserve"}
+                      </span>
                     </div>
                   </div>
 
@@ -1681,24 +1699,29 @@ export function BudgetCommandCenter({
                     ) : null}
                   </div>
 
-                  <input
-                    value={money(item.budget)}
-                    onChange={(event) => updateBudgetRow(item.id, "budget", event.target.value)}
-                    onFocus={() => activateBudgetRow(item.id)}
-                    title="Monthly reserve contribution"
-                    style={{
-                      color: "#e6efff",
-                      fontSize: 18,
-                      fontWeight: 800,
-                      textAlign: "center",
-                      background: "rgba(0,245,155,.06)",
-                      border: "1px solid rgba(94,234,212,.20)",
-                      borderRadius: 10,
-                      padding: "8px",
-                      width: "100%",
-                      outline: "none",
-                    }}
-                  />
+                  <div style={{ display: "grid", gap: 3, justifyItems: "center" }}>
+                    <input
+                      value={money(item.budget)}
+                      onChange={(event) => updateBudgetRow(item.id, "budget", event.target.value)}
+                      onFocus={() => activateBudgetRow(item.id)}
+                      title="Monthly reserve contribution — not a spending limit"
+                      style={{
+                        color: "#e6efff",
+                        fontSize: 18,
+                        fontWeight: 800,
+                        textAlign: "center",
+                        background: "rgba(0,245,155,.06)",
+                        border: "1px solid rgba(94,234,212,.20)",
+                        borderRadius: 10,
+                        padding: "8px",
+                        width: "100%",
+                        outline: "none",
+                      }}
+                    />
+                    <span style={{ color: "#6d92c2", fontSize: 10, fontWeight: 600 }}>
+                      contribution / mo
+                    </span>
+                  </div>
                 </div>
               ))}
             </div>

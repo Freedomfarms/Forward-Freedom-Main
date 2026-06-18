@@ -56,6 +56,15 @@ const RESERVE_STATUS_BANDS = [
   { key: "critical", label: "Critical", color: "#ff5d7a", min: 0 },
 ];
 
+// Neutral state for a reserve that has no monthly contribution set yet, so a
+// freshly-created fund reads as "not started" rather than a failing Critical/Red.
+export const RESERVE_NOT_STARTED = {
+  key: "notstarted",
+  label: "Not Started",
+  color: "#7fa1ca",
+  min: 0,
+};
+
 const FRC_BANDS = [
   { key: "green", label: "Green", color: "#00f59b", min: 90 },
   { key: "blue", label: "Blue", color: "#38bdf8", min: 75 },
@@ -131,9 +140,10 @@ export function buildReserveSnapshot(row, transactions, options = {}) {
 
   const balance = Math.max(0, contributions - netWithdrawals);
   const ratio = target > 0 ? balance / target : 0;
-  const status = getReserveStatus(ratio);
-  const readinessPercent = target > 0 ? Math.min(100, Math.round(ratio * 100)) : 0;
-  const fullyFunded = target > 0 && balance >= target;
+  const started = target > 0;
+  const status = started ? getReserveStatus(ratio) : RESERVE_NOT_STARTED;
+  const readinessPercent = started ? Math.min(100, Math.round(ratio * 100)) : 0;
+  const fullyFunded = started && balance >= target;
 
   return {
     ...row,
@@ -145,6 +155,7 @@ export function buildReserveSnapshot(row, transactions, options = {}) {
     ratio,
     readinessPercent,
     status,
+    started,
     fullyFunded,
     deployedThisMonth,
     anchor,

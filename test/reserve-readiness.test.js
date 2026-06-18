@@ -200,6 +200,17 @@ test("FRC is dollar-weighted across all reserves", async () => {
   assert.equal(frc.count, 3);
 });
 
+test("a reserve with no contribution set reads as Not Started, not Critical", async () => {
+  const { buildReserveSnapshot } = await loadReservesModule();
+  const reserve = homeReserve({ budget: 0 });
+
+  const snapshot = buildReserveSnapshot(reserve, [], { asOfMonth: "Mar", asOfYear: 2026 });
+
+  assert.equal(snapshot.started, false);
+  assert.equal(snapshot.status.label, "Not Started");
+  assert.equal(snapshot.readinessPercent, 0);
+});
+
 test("reserve status bands map readiness ratios correctly", async () => {
   const { getReserveStatus } = await loadReservesModule();
   assert.equal(getReserveStatus(0.49).label, "Critical");
