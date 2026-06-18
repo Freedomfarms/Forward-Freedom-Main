@@ -521,20 +521,28 @@ export function BudgetCommandCenter({
       </header>
 
       <section
-        className="budget-hero"
+        className="budget-summary-card"
         style={{
           ...styles.panel,
           minHeight: 0,
           padding: "16px 22px 18px",
           borderRadius: 24,
-          display: "grid",
-          gridTemplateColumns: "auto minmax(250px, 300px) minmax(0, 1fr)",
-          columnGap: 26,
-          alignItems: "center",
           marginBottom: 24,
           position: "relative",
+          display: "flex",
+          flexDirection: "column",
+          gap: 16,
         }}
       >
+        <div
+          className="budget-hero"
+          style={{
+            display: "grid",
+            gridTemplateColumns: "auto minmax(250px, 300px) minmax(0, 1fr)",
+            columnGap: 26,
+            alignItems: "center",
+          }}
+        >
         <div style={{ display: "flex", justifyContent: "center" }}>
           <div
             style={{
@@ -873,18 +881,15 @@ export function BudgetCommandCenter({
             </select>
           </div>
         </div>
-      </section>
+        </div>
 
-      <section
-        className="frc-panel"
-        style={{
-          ...styles.panel,
-          padding: "18px 22px",
-          marginBottom: 24,
-          borderRadius: 22,
-          border: `1px solid ${reserveSnapshots.length ? `${reserveReadiness.band.color}55` : "rgba(0,216,255,.22)"}`,
-        }}
-      >
+        <div
+          className="frc-row"
+          style={{
+            borderTop: "1px solid rgba(94,234,212,.16)",
+            paddingTop: 16,
+          }}
+        >
         <div
           style={{
             display: "flex",
@@ -1115,20 +1120,19 @@ export function BudgetCommandCenter({
             start building preparedness instead of just tracking spending.
           </div>
         )}
-      </section>
+        </div>
 
-      {overspentRows.length > 0 ? (
-        <section
-          style={{
-            ...styles.panel,
-            padding: "12px 14px",
-            marginBottom: 22,
-            borderRadius: 18,
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-          }}
-        >
+        {overspentRows.length > 0 ? (
+          <div
+            className="overspent-row"
+            style={{
+              borderTop: "1px solid rgba(255,93,122,.18)",
+              paddingTop: 14,
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+            }}
+          >
           <div
             style={{
               color: "#ffd9df",
@@ -1225,8 +1229,9 @@ export function BudgetCommandCenter({
               ›
             </button>
           ) : null}
-        </section>
-      ) : null}
+          </div>
+        ) : null}
+      </section>
 
       <section className="budget-table-section" style={{ padding: "0 8px" }}>
         <div
