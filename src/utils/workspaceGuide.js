@@ -184,10 +184,19 @@ export function resolveWorkspaceGuideReply(question, context) {
     };
   }
 
-  if (includesAny(text, ["profit", "year-end", "year end", "yearly surplus", "year end profit"])) {
+  if (
+    includesAny(text, [
+      "profit",
+      "year-end",
+      "year end",
+      "yearly surplus",
+      "year end profit",
+      "year-end cash flow",
+    ])
+  ) {
     return {
       text:
-        "Projected Year-End Profit (on the Operations Board) estimates where your year nets out. For the current year it equals your realized profit so far — today's True Cash minus the True Cash you started the year with — plus the projected net for the rest of the year: this month's remaining planned income minus its remaining budget, plus each upcoming month's planned income minus its budget. For other years it's simply that year's total planned income minus total planned budget. Shape the numbers in Income Hub and Budget Strategy Lab, and keep Accounts current so True Cash stays accurate.",
+        "Projected Year-End Cash Flow (on the Operations Board) projects this year's cash flow out to year end. For the current year it equals your realized cash flow so far — actual income earned minus actual spent (YTD Cash Flow) — plus the projected net for the rest of the year: this month's remaining planned income minus its remaining budget, plus each upcoming month's planned income minus its budget. For other years it's simply that year's total planned income minus total planned budget. Shape the numbers in Income Hub and Budget Strategy Lab.",
       actions: [
         buildAction("Open Operations Board", APP_TABS.OPERATIONS_BOARD),
         buildAction("Open Budget Strategy Lab", APP_TABS.BUDGET_COMMAND_CENTER),

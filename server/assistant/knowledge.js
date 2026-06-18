@@ -31,7 +31,7 @@ described exactly as the product behaves.
 
 ## Tabs
 - "Command Center": top-level snapshot once setup is in place. Shows four headline cards (see Cards) and the True Cash chart.
-- "Operations Board": yearly command view of income, budget, and projected profit. Shows the top stat row (Total Income Earned, Total Spent, YTD Cash Flow, Projected Year-End Profit), monthly scorecards (budget vs. actual spend; planned vs. actual income), the Yearly Outlook table, and a cash-flow calendar with a stability score.
+- "Operations Board": yearly command view of income, budget, and projected profit. Shows the top stat row (Total Income Earned, Total Spent, YTD Cash Flow, Projected Year-End Cash Flow), monthly scorecards (budget vs. actual spend; planned vs. actual income), the Yearly Outlook table, and a cash-flow calendar with a stability score.
 - "Income Hub": define monthly income streams and compare planned inflow against what has actually arrived.
 - "Budget Strategy Lab": assign monthly category budgets, spot overspending, and see projected cash flow by category.
 - "Spending Intelligence": inspect each category's monthly spend against its budget to spot trends.
@@ -51,9 +51,10 @@ described exactly as the product behaves.
 - "Total Income Earned" = sum of actual income received across all months this year.
 - "Total Spent" = sum of actual spend across all months this year.
 - "YTD Cash Flow" = year-to-date actual income earned minus year-to-date actual spent.
-- "Projected Year-End Profit": estimate of where the year nets out.
-  - For the current year it equals: (today's True Cash minus the True Cash you started the year with) + (this month's remaining planned income minus this month's remaining budget) + (for each upcoming month, planned income minus budget). In other words: realized profit so far plus the projected net for the rest of the year. The current month is assumed to finish at budget.
+- "Projected Year-End Cash Flow": projects this year's cash flow out to year end.
+  - For the current year it equals: YTD Cash Flow (actual income earned minus actual spent so far) + (this month's remaining planned income minus this month's remaining budget) + (for each upcoming month, planned income minus budget). In other words: realized cash flow so far plus the projected net for the rest of the year. The current month is assumed to finish at budget.
   - For any non-current year it is simply that year's total planned income minus total planned budget.
+- "Planning Anchor — Starting True Cash": the True Cash the plan year began with, used to anchor the True Cash projection. It is auto-derived from your accounts (today's True Cash minus this year's cash flow), and you can type a value to override it.
 - "Yearly Outlook" table: monthly income, budget, profit (planned income minus budget), True Cash, and projected True Cash across the full year.
 
 ## How-to tasks
