@@ -608,15 +608,17 @@ export function OperationsBoard({
     };
   });
   const anchorStartingMonth = planningAnchor.startingMonth || currentBudgetPeriod.month;
-  const anchorStartingTrueCash =
-    planningAnchor.startingTrueCash !== undefined && planningAnchor.startingTrueCash !== null
-      ? Number(planningAnchor.startingTrueCash) || 0
-      : trueCash;
-  // Reality-anchored year-end profit: realized net so far (live true cash vs. the
-  // year's starting cash, which already reflects over/underspend and any added
-  // accounts) plus the projected net for the rest of the year. The current month
-  // is assumed to finish at budget, matching the Command Center cash-flow logic.
   const isCurrentPlanYear = activePlanningYear === currentBudgetPeriod.year;
+  // Infer the year's starting True Cash from the accounts the user already
+  // connected: today's live True Cash minus the cash flow realized so far this
+  // year (todayTrueCash - ytdCashFlow) gives the balance the year began with. A
+  // manual override below always takes precedence when set.
+  const derivedStartingTrueCash = isCurrentPlanYear ? trueCash - ytdCashFlow : trueCash;
+  const hasManualStartingTrueCash =
+    planningAnchor.startingTrueCash !== undefined && planningAnchor.startingTrueCash !== null;
+  const anchorStartingTrueCash = hasManualStartingTrueCash
+    ? Number(planningAnchor.startingTrueCash) || 0
+    : derivedStartingTrueCash;
   const currentMonthOps = dynamicYearlyOpsData[currentBudgetPeriod.monthIndex];
   const currentMonthRemainingNet = currentMonthOps
     ? Math.max(
@@ -627,8 +629,13 @@ export function OperationsBoard({
   const remainingMonthsProjectedNet = dynamicYearlyOpsData
     .slice(currentBudgetPeriod.monthIndex + 1)
     .reduce((sum, month) => sum + (finiteMoney(month.income) - finiteMoney(month.budget)), 0);
-  const dynamicYearlySurplus = isCurrentPlanYear
-    ? trueCash - anchorStartingTrueCash + currentMonthRemainingNet + remainingMonthsProjectedNet
+  // Projected year-end cash flow: realized cash flow so far (actual income minus
+  // actual spend) plus the projected net for the rest of the year. The current
+  // month is assumed to finish at budget, matching the Command Center cash-flow
+  // logic. Non-current years have no actuals yet, so they fall back to the
+  // planned income-minus-budget total.
+  const projectedYearEndCashFlow = isCurrentPlanYear
+    ? ytdCashFlow + currentMonthRemainingNet + remainingMonthsProjectedNet
     : yearlySurplus;
   const baseTrueCashSeries = buildProjectedTrueCashSeries({
     targetYear: activePlanningYear,
@@ -794,7 +801,7 @@ export function OperationsBoard({
           ["Total Income Earned", wholeDollars(yearlyActualIncome), "#00f59b"],
           ["Total Spent", wholeDollars(yearlySpent), "#00d8ff"],
           ["YTD Cash Flow", wholeDollars(ytdCashFlow), ytdCashFlow >= 0 ? "#00f59b" : "#ff5d7a"],
-          ["Projected Year-End Profit", wholeDollars(dynamicYearlySurplus), dynamicYearlySurplus >= 0 ? "#00f59b" : "#ff5d7a"],
+          ["Projected Year-End Cash Flow", wholeDollars(projectedYearEndCashFlow), projectedYearEndCashFlow >= 0 ? "#00f59b" : "#ff5d7a"],
         ].map((item) => (
           <div key={item[0]} style={{ ...styles.panel, padding: 20 }}>
             <div
@@ -843,7 +850,7 @@ export function OperationsBoard({
                 Starting True Cash
               </span>
               <input
-                value={money(planningAnchor.startingTrueCash ?? trueCash)}
+                value={money(hasManualStartingTrueCash ? planningAnchor.startingTrueCash : derivedStartingTrueCash)}
                 onChange={(event) => updatePlanningAnchor("startingTrueCash", event.target.value)}
                 style={{
                   color: "#eaf3ff",
@@ -857,7 +864,9 @@ export function OperationsBoard({
               />
             </label>
             <div style={{ color: "#8ea8ca", fontSize: 12, lineHeight: 1.5, marginTop: 2 }}>
-              Enter the starting true-cash balance that will anchor the plan for this year
+              {hasManualStartingTrueCash
+                ? "Manual override for this year's starting true-cash balance."
+                : "Auto-derived from your accounts (today's True Cash minus this year's cash flow). Type a value to override."}
             </div>
           </div>
         </div>
