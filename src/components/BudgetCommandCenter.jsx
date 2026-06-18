@@ -7,8 +7,59 @@ import {
   budgetMonths,
   budgetMonthNames,
   isUncategorizedCategoryName,
+  BUDGET_CATEGORY_TYPES,
+  DEFAULT_RESERVE_TARGET_MONTHS,
 } from "../data/constants.jsx";
+import { buildReserveReadiness, isReserveRow } from "../utils/reserves.js";
 import { HouseholdProfilesControl, MonthCoverageEditor } from "./Common.jsx";
+
+function CategoryTypeToggle({ value, onChange }) {
+  const options = [
+    { key: BUDGET_CATEGORY_TYPES.OPERATING, label: "Operating", activeBg: "linear-gradient(90deg,#0077ff,#00d8ff)" },
+    { key: BUDGET_CATEGORY_TYPES.RESERVE, label: "Reserve", activeBg: "linear-gradient(90deg,#00f59b,#38bdf8)" },
+  ];
+
+  return (
+    <div
+      style={{
+        display: "inline-flex",
+        borderRadius: 999,
+        border: "1px solid rgba(0,216,255,.22)",
+        background: "rgba(2,12,26,.6)",
+        padding: 2,
+        flexShrink: 0,
+      }}
+    >
+      {options.map((option) => {
+        const active = value === option.key;
+        return (
+          <button
+            key={option.key}
+            type="button"
+            title={`${option.label} category`}
+            onClick={(event) => {
+              event.stopPropagation();
+              onChange(option.key);
+            }}
+            style={{
+              border: "none",
+              cursor: "pointer",
+              borderRadius: 999,
+              padding: "3px 10px",
+              fontSize: 11,
+              fontWeight: 800,
+              letterSpacing: 0.3,
+              color: active ? "#04101f" : "#7fa1ca",
+              background: active ? option.activeBg : "transparent",
+            }}
+          >
+            {option.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 function buildHeatBarWidth(value, maxValue) {
   const safeValue = Math.abs(Number(value) || 0);
@@ -185,21 +236,45 @@ export function BudgetCommandCenter({
     }
   );
   const budgetRowsWithSpend = activeBudgetSnapshot.rows;
-  const sortedBudgetRowsWithSpend = sortBudgetRows(budgetRowsWithSpend, activeSortMode);
-  const budgetTotal = activeBudgetSnapshot.monthlyBudget;
+  // Operating categories keep the traditional monthly budget behavior. Reserve
+  // categories are preparedness funds and are computed/rendered separately.
+  const operatingRowsWithSpend = budgetRowsWithSpend.filter((row) => !isReserveRow(row));
+  const sortedBudgetRowsWithSpend = sortBudgetRows(operatingRowsWithSpend, activeSortMode);
+
+  const reserveSourceRows = planningBudgetRows.filter(isReserveRow);
+  const reserveReadiness = buildReserveReadiness(reserveSourceRows, transactions, {
+    asOfMonth: activeBudgetMonth,
+    asOfYear: activeBudgetDate.year,
+  });
+  const reserveSnapshots = reserveReadiness.reserves;
+  const reserveDeployedThisMonth = reserveSnapshots.reduce(
+    (sum, reserve) => sum + (Number(reserve.deployedThisMonth) || 0),
+    0
+  );
+
+  const budgetTotal = operatingRowsWithSpend.reduce(
+    (sum, row) => sum + (Number(row.budget) || 0),
+    0
+  );
+  const operatingSpend = operatingRowsWithSpend.reduce(
+    (sum, row) => sum + (Number(row.spent) || 0),
+    0
+  );
   const planningIncomeStreams = getIncomeStreamsForYear(activeBudgetDate.year);
   const monthIncomeTotal = planningIncomeStreams
     .filter((stream) => (stream.months || budgetMonths).includes(activeBudgetMonth))
     .reduce((sum, stream) => sum + parseMoney(stream.amount), 0);
-  // Assume every category lands at budget; only categories that run over budget
-  // reduce projected cash flow by their overage.
-  const projectedOutflow = budgetRowsWithSpend.reduce(
-    (sum, row) => sum + Math.max(Number(row.budget) || 0, Number(row.spent) || 0),
-    0
-  );
+  // Operating categories: assume each lands at budget; only overages reduce cash flow.
+  // Reserve contributions are virtual envelope transfers (no cash leaves the account),
+  // so only realized reserve deployments count against projected cash flow.
+  const projectedOutflow =
+    operatingRowsWithSpend.reduce(
+      (sum, row) => sum + Math.max(Number(row.budget) || 0, Number(row.spent) || 0),
+      0
+    ) + reserveDeployedThisMonth;
   const monthCashFlow = monthIncomeTotal - projectedOutflow;
-  const monthRemaining = budgetTotal - activeBudgetSnapshot.monthlySpend;
-  const budgetUsedPercent = budgetTotal > 0 ? (activeBudgetSnapshot.monthlySpend / budgetTotal) * 100 : 0;
+  const monthRemaining = budgetTotal - operatingSpend;
+  const budgetUsedPercent = budgetTotal > 0 ? (operatingSpend / budgetTotal) * 100 : 0;
   const normalizedBudgetUsedPercent = Math.max(0, Math.min(100, budgetUsedPercent));
   const budgetUsageGradient =
     monthRemaining >= 0
@@ -207,7 +282,7 @@ export function BudgetCommandCenter({
           2
         )}%, rgba(255,255,255,.08) ${normalizedBudgetUsedPercent.toFixed(2)}% 100%)`
       : "conic-gradient(#ff5d7a 0 100%)";
-  const overspentRows = budgetRowsWithSpend
+  const overspentRows = operatingRowsWithSpend
     .filter((row) => (Number(row.remaining) || 0) < 0)
     .sort((left, right) => (Number(left.remaining) || 0) - (Number(right.remaining) || 0));
   const scorecardBarMax = Math.max(
@@ -300,9 +375,56 @@ export function BudgetCommandCenter({
           color: "#00d8ff",
           transactionCategories: [newName],
           months: budgetMonths,
+          type: BUDGET_CATEGORY_TYPES.OPERATING,
         },
       ];
     });
+  };
+
+  const addReserveCategory = () => {
+    setBudgetRowsForYear(activeBudgetDate.year, (rows) => {
+      const nextNumber = rows.length + 1;
+      const newName = `New Reserve ${nextNumber}`;
+      const newId = `reserve-custom-${Date.now()}-${nextNumber}`;
+      return [
+        ...rows,
+        {
+          id: newId,
+          dot: "#00f59b",
+          icon: "🛡️",
+          name: newName,
+          budget: 0,
+          color: "#00f59b",
+          transactionCategories: [newName],
+          months: budgetMonths,
+          type: BUDGET_CATEGORY_TYPES.RESERVE,
+          reserveTargetMonths: DEFAULT_RESERVE_TARGET_MONTHS,
+          reserveAnchor: { month: activeBudgetMonth, year: activeBudgetDate.year },
+        },
+      ];
+    });
+  };
+
+  const setBudgetRowType = (id, nextType) => {
+    setBudgetRowsForYear(activeBudgetDate.year, (rows) =>
+      rows.map((row) => {
+        if (row.id !== id) return row;
+        if (nextType === BUDGET_CATEGORY_TYPES.RESERVE) {
+          const hasAnchor =
+            row.reserveAnchor && budgetMonths.includes(row.reserveAnchor.month);
+          return {
+            ...row,
+            type: BUDGET_CATEGORY_TYPES.RESERVE,
+            reserveTargetMonths: Number(row.reserveTargetMonths) || DEFAULT_RESERVE_TARGET_MONTHS,
+            // Fresh-start anchor: tracking begins the month the category becomes a Reserve.
+            reserveAnchor: hasAnchor
+              ? row.reserveAnchor
+              : { month: activeBudgetMonth, year: activeBudgetDate.year },
+          };
+        }
+        return { ...row, type: BUDGET_CATEGORY_TYPES.OPERATING };
+      })
+    );
   };
 
   const activateBudgetRow = useCallback((rowId) => {
@@ -744,6 +866,163 @@ export function BudgetCommandCenter({
         </div>
       </section>
 
+      <section
+        className="frc-panel"
+        style={{
+          ...styles.panel,
+          padding: "18px 22px",
+          marginBottom: 24,
+          borderRadius: 22,
+          border: `1px solid ${reserveSnapshots.length ? `${reserveReadiness.band.color}55` : "rgba(0,216,255,.22)"}`,
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 16,
+            flexWrap: "wrap",
+          }}
+        >
+          <div>
+            <div
+              style={{
+                color: "#8feaff",
+                fontSize: 11,
+                fontWeight: 900,
+                textTransform: "uppercase",
+                letterSpacing: 1.4,
+              }}
+            >
+              Financial Readiness Condition
+            </div>
+            <div style={{ color: "#9fb6d6", fontSize: 13, marginTop: 4 }}>
+              Overall preparedness across every reserve fund
+            </div>
+          </div>
+          {reserveSnapshots.length ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+              <div style={{ textAlign: "right" }}>
+                <div
+                  style={{
+                    color: reserveReadiness.band.color,
+                    fontSize: 38,
+                    fontWeight: 900,
+                    lineHeight: 1,
+                  }}
+                >
+                  {reserveReadiness.overallPercent}%
+                </div>
+                <div
+                  style={{
+                    color: "#9fb6d6",
+                    fontSize: 12,
+                    fontWeight: 700,
+                    marginTop: 2,
+                  }}
+                >
+                  {wholeDollars(reserveReadiness.totalBalance)} / {wholeDollars(reserveReadiness.totalTarget)}
+                </div>
+              </div>
+              <div
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: 999,
+                  fontSize: 12,
+                  fontWeight: 900,
+                  letterSpacing: 0.5,
+                  color: reserveReadiness.band.color,
+                  background: `${reserveReadiness.band.color}1f`,
+                  border: `1px solid ${reserveReadiness.band.color}66`,
+                }}
+              >
+                {reserveReadiness.band.label}
+              </div>
+            </div>
+          ) : null}
+        </div>
+
+        {reserveSnapshots.length ? (
+          <div
+            style={{
+              marginTop: 16,
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
+              gap: 12,
+            }}
+          >
+            {reserveSnapshots.map((reserve) => (
+              <div
+                key={reserve.id}
+                style={{
+                  border: `1px solid ${reserve.status.color}44`,
+                  background: "linear-gradient(180deg, rgba(8,24,46,.6), rgba(3,14,28,.5))",
+                  borderRadius: 14,
+                  padding: "12px 14px",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 8, color: "#e6efff", fontWeight: 800, fontSize: 14 }}>
+                    <span
+                      style={{
+                        width: 9,
+                        height: 9,
+                        borderRadius: 999,
+                        background: reserve.status.color,
+                        boxShadow: `0 0 10px ${reserve.status.color}`,
+                      }}
+                    />
+                    {reserve.name}
+                  </span>
+                  <span style={{ color: reserve.status.color, fontWeight: 900, fontSize: 14 }}>
+                    {reserve.readinessPercent}%
+                  </span>
+                </div>
+                <div
+                  style={{
+                    marginTop: 8,
+                    height: 8,
+                    borderRadius: 999,
+                    background: "rgba(8,28,49,.95)",
+                    overflow: "hidden",
+                  }}
+                >
+                  <div
+                    style={{
+                      height: "100%",
+                      width: `${reserve.readinessPercent}%`,
+                      borderRadius: 999,
+                      background: reserve.status.color,
+                      boxShadow: `0 0 12px ${reserve.status.color}`,
+                    }}
+                  />
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8, color: "#9fb6d6", fontSize: 11, fontWeight: 700 }}>
+                  <span>{reserve.status.label}</span>
+                  <span>
+                    {wholeDollars(reserve.balance)} / {wholeDollars(reserve.target)}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div
+            style={{
+              marginTop: 12,
+              color: "#9fb6d6",
+              fontSize: 13,
+              lineHeight: 1.5,
+            }}
+          >
+            No reserve funds yet. Switch a category to{" "}
+            <span style={{ color: "#5eead4", fontWeight: 800 }}>Reserve</span> — or add one below — to
+            start building preparedness instead of just tracking spending.
+          </div>
+        )}
+      </section>
+
       {overspentRows.length > 0 ? (
         <section
           style={{
@@ -856,6 +1135,28 @@ export function BudgetCommandCenter({
       ) : null}
 
       <section className="budget-table-section" style={{ padding: "0 8px" }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "baseline",
+            gap: 12,
+            marginBottom: 14,
+          }}
+        >
+          <span
+            style={{
+              color: "#dff7ff",
+              fontSize: 16,
+              fontWeight: 900,
+              letterSpacing: 0.4,
+            }}
+          >
+            Operating Categories
+          </span>
+          <span style={{ color: "#6d92c2", fontSize: 12, fontWeight: 700 }}>
+            Monthly budgets that reset each month
+          </span>
+        </div>
         <div
           className="budget-table-header"
           style={{
@@ -1018,6 +1319,12 @@ export function BudgetCommandCenter({
                       ]}
                     />
                   </div>
+                  {isUncategorizedCategoryName(item.name) ? null : (
+                    <CategoryTypeToggle
+                      value={item.type || BUDGET_CATEGORY_TYPES.OPERATING}
+                      onChange={(nextType) => setBudgetRowType(item.id, nextType)}
+                    />
+                  )}
                 </div>
               </div>
 
@@ -1151,6 +1458,269 @@ export function BudgetCommandCenter({
             }}
           >
             + Add Budget Category
+          </button>
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            alignItems: "baseline",
+            gap: 12,
+            margin: "34px 0 14px",
+            paddingTop: 22,
+            borderTop: "1px solid rgba(94,234,212,.16)",
+          }}
+        >
+          <span
+            style={{
+              color: "#9ff7e0",
+              fontSize: 16,
+              fontWeight: 900,
+              letterSpacing: 0.4,
+            }}
+          >
+            🛡️ Reserve Funds
+          </span>
+          <span style={{ color: "#6d92c2", fontSize: 12, fontWeight: 700 }}>
+            Preparedness funds that carry over month to month
+          </span>
+        </div>
+
+        {reserveSnapshots.length ? (
+          <>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1.4fr 130px 1fr 140px",
+                alignItems: "center",
+                columnGap: 20,
+                color: "#6d92c2",
+                fontSize: 12,
+                fontWeight: 800,
+                letterSpacing: 1,
+                textTransform: "uppercase",
+                marginBottom: 14,
+              }}
+            >
+              <div aria-hidden="true" />
+              <div style={{ textAlign: "right", padding: "8px 10px" }}>Balance</div>
+              <div style={{ textAlign: "center", padding: "8px 10px" }}>Readiness</div>
+              <div style={{ textAlign: "center", padding: "8px 10px" }}>Monthly</div>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {reserveSnapshots.map((item) => (
+                <div
+                  key={item.id}
+                  className="reserve-row-card"
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1.4fr 130px 1fr 140px",
+                    alignItems: "center",
+                    columnGap: 20,
+                    borderRadius: 16,
+                    border:
+                      activeBudgetRowId === item.id
+                        ? `1px solid ${item.status.color}aa`
+                        : `1px solid ${item.status.color}33`,
+                    background:
+                      activeBudgetRowId === item.id
+                        ? "linear-gradient(95deg, rgba(0,245,155,.14), rgba(56,189,248,.10) 55%, rgba(4,18,36,.85))"
+                        : "linear-gradient(180deg, rgba(8,26,46,.5), rgba(3,14,28,.45))",
+                    boxShadow:
+                      activeBudgetRowId === item.id
+                        ? `0 0 24px ${item.status.color}3a, inset 0 0 26px ${item.status.color}1f`
+                        : "inset 0 0 0 1px rgba(94,234,212,.04)",
+                    padding: "10px 12px",
+                    transition: "border-color 120ms ease, box-shadow 160ms ease, background 160ms ease",
+                  }}
+                  onClick={() => activateBudgetRow(item.id)}
+                >
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "auto auto 1fr",
+                      alignItems: "center",
+                      gap: 14,
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 12,
+                        height: 12,
+                        borderRadius: 999,
+                        background: item.status.color,
+                        boxShadow: `0 0 12px ${item.status.color}`,
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onDoubleClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        setDeleteTarget({ id: item.id, name: item.name });
+                      }}
+                      title="Double click to delete reserve"
+                      style={{
+                        width: 34,
+                        height: 34,
+                        borderRadius: 10,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        color: "#e6efff",
+                        fontSize: 18,
+                        background: "rgba(0,245,155,.08)",
+                        border: "1px solid rgba(94,234,212,.18)",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {item.icon}
+                    </button>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                      <input
+                        value={item.name}
+                        onChange={(event) => updateBudgetRow(item.id, "name", event.target.value)}
+                        onFocus={() => activateBudgetRow(item.id)}
+                        style={{
+                          color: "#e6efff",
+                          fontSize: 19,
+                          fontWeight: 700,
+                          background: "transparent",
+                          border: "1px solid transparent",
+                          borderRadius: 8,
+                          padding: "4px 6px",
+                          width: 210,
+                          outline: "none",
+                        }}
+                      />
+                      <CategoryTypeToggle
+                        value={item.type || BUDGET_CATEGORY_TYPES.OPERATING}
+                        onChange={(nextType) => setBudgetRowType(item.id, nextType)}
+                      />
+                      <MonthCoverageEditor
+                        allMonths={budgetMonths}
+                        selectedMonths={item.months || budgetMonths}
+                        onToggleMonth={(month) => toggleBudgetMonth(item.id, month)}
+                        quickActions={[
+                          { label: "All", onClick: () => setBudgetRowMonths(item.id, budgetMonths) },
+                          {
+                            label: `Only ${activeBudgetMonth}`,
+                            onClick: () => setBudgetRowMonths(item.id, [activeBudgetMonth]),
+                          },
+                        ]}
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ textAlign: "right", padding: "6px 8px" }}>
+                    <div style={{ color: "#e6efff", fontSize: 20, fontWeight: 800 }}>
+                      {money(item.balance)}
+                    </div>
+                    <div style={{ color: "#7fa1ca", fontSize: 12, fontWeight: 700, marginTop: 2 }}>
+                      Target {money(item.target)}
+                    </div>
+                  </div>
+
+                  <div style={{ display: "grid", justifyItems: "center", gap: 6 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ color: item.status.color, fontSize: 18, fontWeight: 900 }}>
+                        {item.readinessPercent}%
+                      </span>
+                      <span
+                        style={{
+                          color: item.status.color,
+                          fontSize: 10,
+                          fontWeight: 900,
+                          letterSpacing: 0.4,
+                          textTransform: "uppercase",
+                          background: `${item.status.color}1f`,
+                          border: `1px solid ${item.status.color}55`,
+                          borderRadius: 999,
+                          padding: "3px 8px",
+                        }}
+                      >
+                        {item.status.label}
+                      </span>
+                    </div>
+                    <div
+                      style={{
+                        width: "100%",
+                        height: 10,
+                        borderRadius: 999,
+                        background: "rgba(8,28,49,.95)",
+                        overflow: "hidden",
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: `${item.readinessPercent}%`,
+                          height: "100%",
+                          borderRadius: 999,
+                          background: item.status.color,
+                          boxShadow: `0 0 14px ${item.status.color}`,
+                        }}
+                      />
+                    </div>
+                    {item.deployedThisMonth > 0 ? (
+                      <div
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          alignItems: "center",
+                          gap: 1,
+                          marginTop: 2,
+                        }}
+                      >
+                        <span style={{ color: "#7ef4d2", fontSize: 11, fontWeight: 900, letterSpacing: 0.3 }}>
+                          Reserve Deployed {money(item.deployedThisMonth)}
+                        </span>
+                        <span style={{ color: "#7fa1ca", fontSize: 10, fontWeight: 600 }}>
+                          Covered by {item.name}
+                        </span>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <input
+                    value={money(item.budget)}
+                    onChange={(event) => updateBudgetRow(item.id, "budget", event.target.value)}
+                    onFocus={() => activateBudgetRow(item.id)}
+                    title="Monthly reserve contribution"
+                    style={{
+                      color: "#e6efff",
+                      fontSize: 18,
+                      fontWeight: 800,
+                      textAlign: "center",
+                      background: "rgba(0,245,155,.06)",
+                      border: "1px solid rgba(94,234,212,.20)",
+                      borderRadius: 10,
+                      padding: "8px",
+                      width: "100%",
+                      outline: "none",
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+          </>
+        ) : null}
+
+        <div style={{ marginTop: 20, display: "flex", justifyContent: "center" }}>
+          <button
+            onClick={addReserveCategory}
+            style={{
+              background: "linear-gradient(90deg,#00c96f,#38bdf8)",
+              border: "1px solid rgba(126,244,210,.45)",
+              borderRadius: 12,
+              color: "#04141a",
+              padding: "13px 22px",
+              fontWeight: 900,
+              cursor: "pointer",
+              boxShadow: "0 0 26px rgba(0,201,111,.32)",
+              letterSpacing: 0.4,
+            }}
+          >
+            🛡️ Add Reserve Fund
           </button>
         </div>
       </section>
