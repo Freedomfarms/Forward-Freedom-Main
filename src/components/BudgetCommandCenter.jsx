@@ -195,6 +195,7 @@ export function BudgetCommandCenter({
   const [activeSortMode, setActiveSortMode] = useState("manual");
   const [pendingSortMode, setPendingSortMode] = useState("manual");
   const overspentScrollRef = useRef(null);
+  const reserveScrollRef = useRef(null);
   const [activeBudgetDate, setActiveBudgetDate] = useState(() => ({
     monthIndex: currentBudgetPeriod.monthIndex,
     year: currentPlanYear,
@@ -500,6 +501,13 @@ export function BudgetCommandCenter({
     container.scrollBy({ left: direction * amount, behavior: "smooth" });
   };
 
+  const scrollReserves = (direction) => {
+    const container = reserveScrollRef.current;
+    if (!container) return;
+    const amount = Math.max(container.clientWidth * 0.8, 240);
+    container.scrollBy({ left: direction * amount, behavior: "smooth" });
+  };
+
   return (
     <div style={{ fontFamily: styles.page.fontFamily }}>
       <header style={{ ...styles.pageHeader, marginBottom: 20 }}>
@@ -517,20 +525,21 @@ export function BudgetCommandCenter({
         style={{
           ...styles.panel,
           minHeight: 0,
-          padding: "20px 26px 22px",
-          borderRadius: 32,
+          padding: "16px 22px 18px",
+          borderRadius: 24,
           display: "grid",
-          gridTemplateColumns: "1fr minmax(280px, 340px) 1fr",
+          gridTemplateColumns: "auto minmax(250px, 300px) minmax(0, 1fr)",
+          columnGap: 26,
           alignItems: "center",
-          marginBottom: 38,
+          marginBottom: 24,
           position: "relative",
         }}
       >
         <div style={{ display: "flex", justifyContent: "center" }}>
           <div
             style={{
-              width: 192,
-              height: 192,
+              width: 164,
+              height: 164,
               borderRadius: "50%",
               position: "relative",
               display: "grid",
@@ -944,68 +953,153 @@ export function BudgetCommandCenter({
         </div>
 
         {reserveSnapshots.length ? (
-          <div
-            style={{
-              marginTop: 16,
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
-              gap: 12,
-            }}
-          >
-            {reserveSnapshots.map((reserve) => (
-              <div
-                key={reserve.id}
+          <div style={{ marginTop: 14, display: "flex", alignItems: "center", gap: 10 }}>
+            {reserveSnapshots.length > 1 ? (
+              <button
+                type="button"
+                aria-label="Scroll reserves left"
+                onClick={() => scrollReserves(-1)}
                 style={{
-                  border: `1px solid ${reserve.status.color}44`,
-                  background: "linear-gradient(180deg, rgba(8,24,46,.6), rgba(3,14,28,.5))",
-                  borderRadius: 14,
-                  padding: "12px 14px",
+                  flexShrink: 0,
+                  width: 30,
+                  height: 30,
+                  borderRadius: 999,
+                  border: "1px solid rgba(94,234,212,.3)",
+                  background: "rgba(0,245,155,.1)",
+                  color: "#9ff7e0",
+                  cursor: "pointer",
+                  fontWeight: 900,
+                  lineHeight: 1,
                 }}
               >
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-                  <span style={{ display: "flex", alignItems: "center", gap: 8, color: "#e6efff", fontWeight: 800, fontSize: 14 }}>
+                ‹
+              </button>
+            ) : null}
+            <div
+              ref={reserveScrollRef}
+              style={{
+                display: "flex",
+                gap: 10,
+                overflowX: "auto",
+                flex: 1,
+                scrollbarWidth: "none",
+                padding: "2px 0",
+              }}
+            >
+              {reserveSnapshots.map((reserve) => (
+                <button
+                  key={reserve.id}
+                  type="button"
+                  onClick={() => activateBudgetRow(reserve.id)}
+                  title={`${reserve.name} • ${reserve.readinessPercent}% • ${wholeDollars(
+                    reserve.balance
+                  )} of ${wholeDollars(reserve.target)}`}
+                  style={{
+                    flexShrink: 0,
+                    width: 196,
+                    textAlign: "left",
+                    border: `1px solid ${reserve.status.color}44`,
+                    background: "linear-gradient(180deg, rgba(8,24,46,.6), rgba(3,14,28,.5))",
+                    borderRadius: 12,
+                    padding: "9px 12px",
+                    cursor: "pointer",
+                    color: "#e6efff",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: 8,
+                    }}
+                  >
                     <span
                       style={{
-                        width: 9,
-                        height: 9,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 7,
+                        fontWeight: 800,
+                        fontSize: 13,
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}
+                    >
+                      <span
+                        style={{
+                          flexShrink: 0,
+                          width: 8,
+                          height: 8,
+                          borderRadius: 999,
+                          background: reserve.status.color,
+                          boxShadow: `0 0 8px ${reserve.status.color}`,
+                        }}
+                      />
+                      {reserve.name}
+                    </span>
+                    <span style={{ color: reserve.status.color, fontWeight: 900, fontSize: 13 }}>
+                      {reserve.readinessPercent}%
+                    </span>
+                  </div>
+                  <div
+                    style={{
+                      marginTop: 7,
+                      height: 7,
+                      borderRadius: 999,
+                      background: "rgba(8,28,49,.95)",
+                      overflow: "hidden",
+                    }}
+                  >
+                    <div
+                      style={{
+                        height: "100%",
+                        width: `${reserve.readinessPercent}%`,
                         borderRadius: 999,
                         background: reserve.status.color,
                         boxShadow: `0 0 10px ${reserve.status.color}`,
                       }}
                     />
-                    {reserve.name}
-                  </span>
-                  <span style={{ color: reserve.status.color, fontWeight: 900, fontSize: 14 }}>
-                    {reserve.readinessPercent}%
-                  </span>
-                </div>
-                <div
-                  style={{
-                    marginTop: 8,
-                    height: 8,
-                    borderRadius: 999,
-                    background: "rgba(8,28,49,.95)",
-                    overflow: "hidden",
-                  }}
-                >
+                  </div>
                   <div
                     style={{
-                      height: "100%",
-                      width: `${reserve.readinessPercent}%`,
-                      borderRadius: 999,
-                      background: reserve.status.color,
-                      boxShadow: `0 0 12px ${reserve.status.color}`,
+                      display: "flex",
+                      justifyContent: "space-between",
+                      marginTop: 7,
+                      color: "#9fb6d6",
+                      fontSize: 10,
+                      fontWeight: 700,
                     }}
-                  />
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8, color: "#9fb6d6", fontSize: 11, fontWeight: 700 }}>
-                  <span>{reserve.status.label}</span>
-                  <span>
-                    {wholeDollars(reserve.balance)} / {wholeDollars(reserve.target)}
-                  </span>
-                </div>
-              </div>
-            ))}
+                  >
+                    <span>{reserve.status.label}</span>
+                    <span>
+                      {wholeDollars(reserve.balance)} / {wholeDollars(reserve.target)}
+                    </span>
+                  </div>
+                </button>
+              ))}
+            </div>
+            {reserveSnapshots.length > 1 ? (
+              <button
+                type="button"
+                aria-label="Scroll reserves right"
+                onClick={() => scrollReserves(1)}
+                style={{
+                  flexShrink: 0,
+                  width: 30,
+                  height: 30,
+                  borderRadius: 999,
+                  border: "1px solid rgba(94,234,212,.3)",
+                  background: "rgba(0,245,155,.1)",
+                  color: "#9ff7e0",
+                  cursor: "pointer",
+                  fontWeight: 900,
+                  lineHeight: 1,
+                }}
+              >
+                ›
+              </button>
+            ) : null}
           </div>
         ) : (
           <div
