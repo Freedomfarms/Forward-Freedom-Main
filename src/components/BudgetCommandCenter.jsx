@@ -525,29 +525,33 @@ export function BudgetCommandCenter({
         style={{
           ...styles.panel,
           minHeight: 0,
-          padding: "16px 22px 18px",
+          padding: "16px 20px",
           borderRadius: 24,
           marginBottom: 24,
           position: "relative",
-          display: "flex",
-          flexDirection: "column",
-          gap: 16,
+          display: "grid",
+          gridTemplateColumns: "minmax(150px, 0.85fr) minmax(150px, 0.85fr) auto auto",
+          gridTemplateAreas: '"frc over mid right"',
+          columnGap: 18,
+          alignItems: "stretch",
         }}
       >
         <div
-          className="budget-hero"
+          className="budget-hero-mid"
           style={{
-            display: "grid",
-            gridTemplateColumns: "auto minmax(250px, 300px) minmax(0, 1fr)",
-            columnGap: 26,
+            gridArea: "mid",
+            display: "flex",
             alignItems: "center",
+            gap: 18,
+            paddingLeft: 18,
+            borderLeft: "1px solid rgba(30,144,255,.16)",
           }}
         >
         <div style={{ display: "flex", justifyContent: "center" }}>
           <div
             style={{
-              width: 164,
-              height: 164,
+              width: 132,
+              height: 132,
               borderRadius: "50%",
               position: "relative",
               display: "grid",
@@ -623,8 +627,8 @@ export function BudgetCommandCenter({
         <div style={{ display: "flex", justifyContent: "center" }}>
           <div
             style={{
-              width: "100%",
-              maxWidth: 300,
+              width: 244,
+              flexShrink: 0,
               borderRadius: 24,
               padding: "12px",
               border: "1px solid rgba(0,216,255,.22)",
@@ -758,14 +762,19 @@ export function BudgetCommandCenter({
             </div>
           </div>
         </div>
+        </div>
+
         <div
           className="budget-hero-stats"
           style={{
+            gridArea: "right",
             display: "grid",
             gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
             gap: 12,
-            alignItems: "start",
-            alignSelf: "stretch",
+            alignItems: "center",
+            alignSelf: "center",
+            paddingLeft: 18,
+            borderLeft: "1px solid rgba(30,144,255,.16)",
           }}
         >
           <div style={{ textAlign: "center", display: "grid", justifyItems: "center" }}>
@@ -881,22 +890,18 @@ export function BudgetCommandCenter({
             </select>
           </div>
         </div>
-        </div>
-
         <div
           className="frc-row"
           style={{
-            borderTop: "1px solid rgba(94,234,212,.16)",
-            paddingTop: 16,
+            gridArea: "frc",
+            minWidth: 0,
           }}
         >
         <div
           style={{
             display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            gap: 16,
-            flexWrap: "wrap",
+            flexDirection: "column",
+            gap: 10,
           }}
         >
           <div>
@@ -911,17 +916,17 @@ export function BudgetCommandCenter({
             >
               Financial Readiness Condition
             </div>
-            <div style={{ color: "#9fb6d6", fontSize: 13, marginTop: 4 }}>
-              Overall preparedness across every reserve fund · funded vs. a 1-year target
+            <div style={{ color: "#9fb6d6", fontSize: 12, marginTop: 4 }}>
+              Funded vs. a 1-year target
             </div>
           </div>
           {reserveSnapshots.length ? (
-            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-              <div style={{ textAlign: "right" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div style={{ textAlign: "left" }}>
                 <div
                   style={{
                     color: reserveReadiness.band.color,
-                    fontSize: 38,
+                    fontSize: 30,
                     fontWeight: 900,
                     lineHeight: 1,
                   }}
@@ -1001,7 +1006,7 @@ export function BudgetCommandCenter({
                   )} of ${wholeDollars(reserve.target)}`}
                   style={{
                     flexShrink: 0,
-                    width: 196,
+                    width: 158,
                     textAlign: "left",
                     border: `1px solid ${reserve.status.color}44`,
                     background: "linear-gradient(180deg, rgba(8,24,46,.6), rgba(3,14,28,.5))",
@@ -1110,29 +1115,29 @@ export function BudgetCommandCenter({
           <div
             style={{
               marginTop: 12,
-              color: "#9fb6d6",
+              color: "#7fa1ca",
               fontSize: 13,
+              fontWeight: 700,
               lineHeight: 1.5,
             }}
           >
-            No reserve funds yet. Switch a category to{" "}
-            <span style={{ color: "#5eead4", fontWeight: 800 }}>Reserve</span> — or add one below — to
-            start building preparedness instead of just tracking spending.
+            No reserve categories
           </div>
         )}
         </div>
 
-        {overspentRows.length > 0 ? (
-          <div
-            className="overspent-row"
-            style={{
-              borderTop: "1px solid rgba(255,93,122,.18)",
-              paddingTop: 14,
-              display: "flex",
-              alignItems: "center",
-              gap: 10,
-            }}
-          >
+        <div
+          className="overspent-region"
+          style={{
+            gridArea: "over",
+            minWidth: 0,
+            paddingLeft: 18,
+            borderLeft: "1px solid rgba(30,144,255,.16)",
+            display: "flex",
+            flexDirection: "column",
+            gap: 10,
+          }}
+        >
           <div
             style={{
               color: "#ffd9df",
@@ -1140,97 +1145,102 @@ export function BudgetCommandCenter({
               fontWeight: 900,
               textTransform: "uppercase",
               letterSpacing: 0.9,
-              whiteSpace: "nowrap",
-              flexShrink: 0,
             }}
           >
-            Overspent ({overspentRows.length})
+            Overspent{overspentRows.length ? ` (${overspentRows.length})` : ""}
           </div>
-          {overspentRows.length > 1 ? (
-            <button
-              type="button"
-              aria-label="Scroll overspent categories left"
-              onClick={() => scrollOverspent(-1)}
-              style={{
-                flexShrink: 0,
-                width: 30,
-                height: 30,
-                borderRadius: 999,
-                border: "1px solid rgba(0,216,255,.26)",
-                background: "rgba(0,136,255,.12)",
-                color: "#dff7ff",
-                cursor: "pointer",
-                fontWeight: 900,
-                lineHeight: 1,
-              }}
-            >
-              ‹
-            </button>
-          ) : null}
-          <div
-            ref={overspentScrollRef}
-            style={{
-              display: "flex",
-              gap: 10,
-              overflowX: "auto",
-              flex: 1,
-              scrollbarWidth: "none",
-              padding: "2px 0",
-            }}
-          >
-            {overspentRows.map((row) => (
-              <button
-                key={row.id}
-                type="button"
-                onClick={() => activateBudgetRow(row.id)}
-                title={`${row.name} • Spent ${money(row.spent)} • Remaining ${money(
-                  row.remaining
-                )}`}
+          {overspentRows.length > 0 ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              {overspentRows.length > 1 ? (
+                <button
+                  type="button"
+                  aria-label="Scroll overspent categories left"
+                  onClick={() => scrollOverspent(-1)}
+                  style={{
+                    flexShrink: 0,
+                    width: 28,
+                    height: 28,
+                    borderRadius: 999,
+                    border: "1px solid rgba(0,216,255,.26)",
+                    background: "rgba(0,136,255,.12)",
+                    color: "#dff7ff",
+                    cursor: "pointer",
+                    fontWeight: 900,
+                    lineHeight: 1,
+                  }}
+                >
+                  ‹
+                </button>
+              ) : null}
+              <div
+                ref={overspentScrollRef}
                 style={{
-                  flexShrink: 0,
                   display: "flex",
-                  alignItems: "center",
                   gap: 10,
-                  textAlign: "left",
-                  border: "1px solid rgba(255,93,122,.28)",
-                  borderRadius: 12,
-                  background: "rgba(255,61,103,.10)",
-                  padding: "8px 12px",
-                  cursor: "pointer",
-                  color: "#eef6ff",
-                  whiteSpace: "nowrap",
+                  overflowX: "auto",
+                  flex: 1,
+                  scrollbarWidth: "none",
+                  padding: "2px 0",
                 }}
               >
-                <span style={{ fontWeight: 800, fontSize: 13 }}>{row.name}</span>
-                <span style={{ color: "#ff9fb0", fontSize: 12, fontWeight: 800 }}>
-                  {money(row.remaining)}
-                </span>
-              </button>
-            ))}
-          </div>
-          {overspentRows.length > 1 ? (
-            <button
-              type="button"
-              aria-label="Scroll overspent categories right"
-              onClick={() => scrollOverspent(1)}
-              style={{
-                flexShrink: 0,
-                width: 30,
-                height: 30,
-                borderRadius: 999,
-                border: "1px solid rgba(0,216,255,.26)",
-                background: "rgba(0,136,255,.12)",
-                color: "#dff7ff",
-                cursor: "pointer",
-                fontWeight: 900,
-                lineHeight: 1,
-              }}
-            >
-              ›
-            </button>
-          ) : null}
-          </div>
-        ) : null}
+                {overspentRows.map((row) => (
+                  <button
+                    key={row.id}
+                    type="button"
+                    onClick={() => activateBudgetRow(row.id)}
+                    title={`${row.name} • Spent ${money(row.spent)} • Remaining ${money(
+                      row.remaining
+                    )}`}
+                    style={{
+                      flexShrink: 0,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      textAlign: "left",
+                      border: "1px solid rgba(255,93,122,.28)",
+                      borderRadius: 12,
+                      background: "rgba(255,61,103,.10)",
+                      padding: "8px 12px",
+                      cursor: "pointer",
+                      color: "#eef6ff",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    <span style={{ fontWeight: 800, fontSize: 13 }}>{row.name}</span>
+                    <span style={{ color: "#ff9fb0", fontSize: 12, fontWeight: 800 }}>
+                      {money(row.remaining)}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              {overspentRows.length > 1 ? (
+                <button
+                  type="button"
+                  aria-label="Scroll overspent categories right"
+                  onClick={() => scrollOverspent(1)}
+                  style={{
+                    flexShrink: 0,
+                    width: 28,
+                    height: 28,
+                    borderRadius: 999,
+                    border: "1px solid rgba(0,216,255,.26)",
+                    background: "rgba(0,136,255,.12)",
+                    color: "#dff7ff",
+                    cursor: "pointer",
+                    fontWeight: 900,
+                    lineHeight: 1,
+                  }}
+                >
+                  ›
+                </button>
+              ) : null}
+            </div>
+          ) : (
+            <div style={{ color: "#7fa1ca", fontSize: 13, fontWeight: 700 }}>
+              Nothing overspent
+            </div>
+          )}
+        </div>
       </section>
 
       <section className="budget-table-section" style={{ padding: "0 8px" }}>
