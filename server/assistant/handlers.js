@@ -43,6 +43,12 @@ function summarizeContext(context = {}) {
   if (Number.isFinite(context.budgetedRowCount)) {
     parts.push(`Budgeted categories: ${context.budgetedRowCount}.`);
   }
+  if (Number.isFinite(context.reserveCount)) {
+    parts.push(`Reserve funds: ${context.reserveCount}.`);
+  }
+  if (Number.isFinite(context.reserveReadinessPercent)) {
+    parts.push(`Overall reserve readiness (FRC): ${context.reserveReadinessPercent}%.`);
+  }
   if (Number.isFinite(context.transactionCount)) {
     parts.push(`Transactions: ${context.transactionCount}.`);
   }
