@@ -134,6 +134,15 @@ function accountGroupTheme(title) {
   };
 }
 
+// The Reserves system account gets its own signature color (fuchsia), distinct
+// from every real-account group theme, applied consistently across the card.
+const RESERVE_THEME = {
+  rail: "#e879f9",
+  text: "#f3c4ff",
+  line: "rgba(232,121,249,.32)",
+  tint: "rgba(232,121,249,.12)",
+};
+
 function buildFormFromAccount(account) {
   return {
     ...EMPTY_FORM,
@@ -1022,14 +1031,11 @@ export function AccountsView({
           <div
             style={{
               marginBottom: 30,
-              padding: "14px 16px",
+              padding: "12px 14px",
               borderRadius: 10,
-              border: `1px solid ${
-                reservesAccount.overcommitted ? "rgba(255,53,93,.4)" : "rgba(0,245,155,.28)"
-              }`,
-              borderLeft: `4px solid ${reservesAccount.overcommitted ? "#ff355d" : "#00f59b"}`,
-              background:
-                "linear-gradient(105deg, rgba(0,245,155,.08), rgba(4,14,28,.42) 48%, rgba(3,12,24,.35))",
+              border: `1px solid ${RESERVE_THEME.line}`,
+              borderLeft: `4px solid ${RESERVE_THEME.rail}`,
+              background: `linear-gradient(105deg, ${RESERVE_THEME.tint}, rgba(4,14,28,.5) 52%, rgba(3,12,24,.4))`,
             }}
           >
             <div
@@ -1041,28 +1047,38 @@ export function AccountsView({
                 flexWrap: "wrap",
               }}
             >
-              <div>
+              <div style={{ minWidth: 0 }}>
                 <div
                   style={{
-                    color: "#9ff7e0",
-                    fontSize: 10,
+                    color: RESERVE_THEME.rail,
+                    fontSize: 11,
                     textTransform: "uppercase",
-                    letterSpacing: 0.9,
+                    letterSpacing: 1.1,
                     fontWeight: 800,
                   }}
                 >
-                  Reserves · System account
+                  System Account
                 </div>
-                <div style={{ color: "white", fontSize: 16, fontWeight: 700, marginTop: 6 }}>
-                  Committed cash
-                </div>
-                <div style={{ color: "#7a93b5", fontSize: 12, marginTop: 4, lineHeight: 1.5 }}>
-                  Not a bank account. This is reserve money still held in your bank but removed from
-                  spendable True Cash.
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "baseline",
+                    gap: 10,
+                    flexWrap: "wrap",
+                    marginTop: 5,
+                  }}
+                >
+                  <span style={{ color: RESERVE_THEME.text, fontSize: 16, fontWeight: 800 }}>
+                    Reserves
+                  </span>
+                  <span style={{ color: "#7a93b5", fontSize: 12, lineHeight: 1.4 }}>
+                    Not a bank account. This is reserve money still held in your bank but removed
+                    from spendable True Cash.
+                  </span>
                 </div>
               </div>
               <div style={{ textAlign: "right" }}>
-                <div style={{ color: "#e9f3ff", fontSize: 24, fontWeight: 800 }}>
+                <div style={{ color: RESERVE_THEME.text, fontSize: 24, fontWeight: 800 }}>
                   {money(reservesAccount.balance)}
                 </div>
                 {reservesAccount.overcommitted ? (
@@ -1096,8 +1112,8 @@ export function AccountsView({
                 <div
                   key={fund.id}
                   style={{
-                    border: `1px solid ${fund.status.color}33`,
-                    borderLeft: `2px solid ${fund.status.color}`,
+                    border: `1px solid ${RESERVE_THEME.line}`,
+                    borderLeft: `2px solid ${RESERVE_THEME.rail}`,
                     borderRadius: 8,
                     padding: "7px 9px 8px",
                     background: "linear-gradient(120deg, rgba(3,17,32,.52), rgba(4,14,28,.84))",
@@ -1125,7 +1141,7 @@ export function AccountsView({
                     </span>
                     <span
                       style={{
-                        color: fund.status.color,
+                        color: RESERVE_THEME.rail,
                         fontWeight: 900,
                         fontSize: 12,
                         flexShrink: 0,
