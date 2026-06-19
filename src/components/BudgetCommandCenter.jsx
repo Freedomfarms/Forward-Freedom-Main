@@ -69,11 +69,19 @@ function applyQuietBlur(event) {
   event.currentTarget.style.background = "transparent";
 }
 
-function buildHeatBarWidth(value, maxValue) {
-  const safeValue = Math.abs(Number(value) || 0);
-  const safeMax = Math.max(Number(maxValue) || 1, 1);
-  if (safeValue === 0) return "0%";
-  return `${Math.max(12, (safeValue / safeMax) * 100)}%`;
+function buildSparklinePath(values, width, height) {
+  if (!Array.isArray(values) || values.length === 0) return "";
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  const stepX = values.length > 1 ? width / (values.length - 1) : 0;
+  return values
+    .map((value, index) => {
+      const x = index * stepX;
+      const y = height - ((value - min) / range) * height;
+      return `${index === 0 ? "M" : "L"} ${x.toFixed(1)} ${y.toFixed(1)}`;
+    })
+    .join(" ");
 }
 
 const BUDGET_SORT_OPTIONS = [
@@ -261,10 +269,6 @@ export function BudgetCommandCenter({
     asOfYear: activeBudgetDate.year,
   });
   const reserveSnapshots = reserveReadiness.reserves;
-  const reserveDeployedThisMonth = reserveSnapshots.reduce(
-    (sum, reserve) => sum + (Number(reserve.deployedThisMonth) || 0),
-    0
-  );
 
   const budgetTotal = operatingRowsWithSpend.reduce(
     (sum, row) => sum + (Number(row.budget) || 0),
@@ -278,15 +282,6 @@ export function BudgetCommandCenter({
   const monthIncomeTotal = planningIncomeStreams
     .filter((stream) => (stream.months || budgetMonths).includes(activeBudgetMonth))
     .reduce((sum, stream) => sum + parseMoney(stream.amount), 0);
-  // Operating categories: assume each lands at budget; only overages reduce cash flow.
-  // Reserve contributions are virtual envelope transfers (no cash leaves the account),
-  // so only realized reserve deployments count against projected cash flow.
-  const projectedOutflow =
-    operatingRowsWithSpend.reduce(
-      (sum, row) => sum + Math.max(Number(row.budget) || 0, Number(row.spent) || 0),
-      0
-    ) + reserveDeployedThisMonth;
-  const monthCashFlow = monthIncomeTotal - projectedOutflow;
   const monthRemaining = budgetTotal - operatingSpend;
   const budgetUsedPercent = budgetTotal > 0 ? (operatingSpend / budgetTotal) * 100 : 0;
   const normalizedBudgetUsedPercent = Math.max(0, Math.min(100, budgetUsedPercent));
@@ -299,38 +294,24 @@ export function BudgetCommandCenter({
   const overspentRows = operatingRowsWithSpend
     .filter((row) => (Number(row.remaining) || 0) < 0)
     .sort((left, right) => (Number(left.remaining) || 0) - (Number(right.remaining) || 0));
-  const scorecardBarMax = Math.max(
-    Math.abs(monthIncomeTotal),
-    Math.abs(budgetTotal),
-    Math.abs(monthCashFlow),
-    1
-  );
-  const heatBars = [
-    {
-      label: "Income",
-      value: monthIncomeTotal,
-      accent: "#20c8ff",
-      glow: "rgba(32,200,255,.55)",
-      gradient: "linear-gradient(90deg,#14b8ff 0%, #00d8ff 52%, #7ef4ff 100%)",
-    },
-    {
-      label: "Budget",
-      value: budgetTotal,
-      accent: "#4aa5ff",
-      glow: "rgba(74,165,255,.48)",
-      gradient: "linear-gradient(90deg,#1e87ff 0%, #3cbcff 50%, #9ceaff 100%)",
-    },
-    {
-      label: "Cash Flow",
-      value: monthCashFlow,
-      accent: monthCashFlow >= 0 ? "#00f59b" : "#ff5d7a",
-      glow: monthCashFlow >= 0 ? "rgba(0,245,155,.52)" : "rgba(255,93,122,.48)",
-      gradient:
-        monthCashFlow >= 0
-          ? "linear-gradient(90deg,#00c96f 0%, #00f59b 48%, #86ffd2 100%)"
-          : "linear-gradient(90deg,#ff3d67 0%, #ff5d7a 50%, #ffb3c1 100%)",
-    },
-  ];
+
+  // Planned monthly cash flow (income - budgeted outflow) across the plan year,
+  // used for the Cash Flow value, its month-over-month delta, and the sparkline.
+  const cashFlowSeries = budgetMonths.map((month) => {
+    const income = planningIncomeStreams
+      .filter((stream) => (stream.months || budgetMonths).includes(month))
+      .reduce((sum, stream) => sum + parseMoney(stream.amount), 0);
+    const outflow = planningBudgetRows
+      .filter((row) => (row.months || budgetMonths).includes(month))
+      .reduce((sum, row) => sum + (Number(row.budget) || 0), 0);
+    return income - outflow;
+  });
+  const activeMonthIndex = Math.max(0, budgetMonths.indexOf(activeBudgetMonth));
+  const monthCashFlow = cashFlowSeries[activeMonthIndex] || 0;
+  const previousMonthCashFlow =
+    activeMonthIndex > 0 ? cashFlowSeries[activeMonthIndex - 1] : null;
+  const cashFlowDelta =
+    previousMonthCashFlow === null ? null : monthCashFlow - previousMonthCashFlow;
 
   const updateBudgetRow = (id, field, value) => {
     setBudgetRowsForYear(activeBudgetDate.year, (rows) =>
@@ -519,6 +500,159 @@ export function BudgetCommandCenter({
     if (!container) return;
     const amount = Math.max(container.clientWidth * 0.8, 240);
     container.scrollBy({ left: direction * amount, behavior: "smooth" });
+  };
+
+  const summaryNavButtonStyle = {
+    height: 34,
+    borderRadius: 999,
+    border: "1px solid rgba(0,216,255,.28)",
+    background: "linear-gradient(180deg, rgba(0,136,255,.18), rgba(0,43,87,.28))",
+    color: "#dff7ff",
+    cursor: "pointer",
+    fontSize: 13,
+    fontWeight: 700,
+    letterSpacing: 0.3,
+    padding: "0 14px",
+  };
+  const summaryStatLabelStyle = {
+    color: "#668ab9",
+    fontSize: 11,
+    fontWeight: 800,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+  };
+  const summaryIconBox = (background, color) => ({
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    display: "grid",
+    placeItems: "center",
+    background,
+    color,
+    fontSize: 16,
+    fontWeight: 900,
+    flexShrink: 0,
+  });
+
+  const renderMonthNav = () => (
+    <>
+      <button
+        type="button"
+        onClick={() => shiftBudgetMonth(-1)}
+        aria-label="Go to previous month"
+        style={summaryNavButtonStyle}
+      >
+        ‹ Prev
+      </button>
+      <div
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          height: 34,
+          padding: "0 12px",
+          borderRadius: 999,
+          border: "1px solid rgba(0,216,255,.32)",
+          background: "rgba(0,136,255,.12)",
+          color: "#dff7ff",
+          fontWeight: 800,
+          fontSize: 13,
+        }}
+      >
+        <span aria-hidden="true">🗓️</span>
+        <span>{budgetMonthNames[activeBudgetMonth]}</span>
+        <select
+          value={activeBudgetDate.year}
+          onChange={(event) => updateBudgetDate("year", event.target.value)}
+          aria-label="Select budget planning year"
+          style={{
+            background: "transparent",
+            border: "none",
+            color: "#8feaff",
+            fontWeight: 900,
+            fontSize: 13,
+            cursor: "pointer",
+            outline: "none",
+          }}
+        >
+          {availablePlanningYears.map((year) => (
+            <option key={year} value={year} style={{ background: "#061224", color: "#eaf3ff" }}>
+              {year}
+            </option>
+          ))}
+        </select>
+      </div>
+      <button
+        type="button"
+        onClick={() => shiftBudgetMonth(1)}
+        aria-label="Go to next month"
+        style={summaryNavButtonStyle}
+      >
+        Next ›
+      </button>
+    </>
+  );
+
+  const renderIncomeBudget = () => (
+    <div style={{ display: "grid", gap: 16, flexShrink: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <span style={summaryIconBox("rgba(0,245,155,.14)", "#00f59b")}>$</span>
+        <div>
+          <div style={summaryStatLabelStyle}>Income</div>
+          <div style={{ color: "#7ef4d2", fontSize: 20, fontWeight: 800 }}>
+            {money(monthIncomeTotal)}
+          </div>
+        </div>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <span style={summaryIconBox("rgba(0,136,255,.16)", "#38bdf8")}>▦</span>
+        <div>
+          <div style={summaryStatLabelStyle}>Budget</div>
+          <div style={{ color: "#9fd8ff", fontSize: 20, fontWeight: 800 }}>
+            {money(budgetTotal)}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderCashFlow = () => {
+    const positive = monthCashFlow >= 0;
+    const accent = positive ? "#00f59b" : "#ff5d7a";
+    const path = buildSparklinePath(cashFlowSeries, 132, 40);
+    return (
+      <div style={{ flex: 1, minWidth: 110, display: "grid", gap: 6, alignContent: "center" }}>
+        <div style={summaryStatLabelStyle}>Cash Flow</div>
+        <div style={{ color: accent, fontSize: 22, fontWeight: 900, lineHeight: 1 }}>
+          {positive ? "+" : ""}
+          {money(monthCashFlow)}
+        </div>
+        <svg
+          viewBox="0 0 132 40"
+          preserveAspectRatio="none"
+          style={{ width: "100%", height: 38 }}
+          aria-hidden="true"
+        >
+          <path
+            d={path}
+            fill="none"
+            stroke={accent}
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+        {cashFlowDelta !== null ? (
+          <div style={{ color: "#7fa1ca", fontSize: 12, fontWeight: 700 }}>
+            vs last month{" "}
+            <span style={{ color: cashFlowDelta >= 0 ? "#00f59b" : "#ff5d7a" }}>
+              {cashFlowDelta >= 0 ? "+" : ""}
+              {money(cashFlowDelta)}
+            </span>
+          </div>
+        ) : null}
+      </div>
+    );
   };
 
   const renderOperatingRow = (item) => {
@@ -901,27 +1035,38 @@ export function BudgetCommandCenter({
         <HouseholdProfilesControl {...householdProfilesProps} />
       </header>
 
-      <section
-        className="budget-summary-card"
+      <div
         style={{
-          ...styles.panel,
-          minHeight: 0,
-          padding: "16px 22px",
-          borderRadius: 24,
-          marginBottom: 16,
-          position: "relative",
           display: "flex",
+          justifyContent: "flex-end",
           alignItems: "center",
-          justifyContent: "space-between",
-          gap: 24,
+          gap: 8,
+          marginBottom: 12,
+          flexWrap: "wrap",
         }}
       >
-        <div
-          className="budget-hero-mid"
+        {renderMonthNav()}
+      </div>
+
+      <div
+        className="budget-summary-row"
+        style={{
+          display: "grid",
+          gridTemplateColumns: "minmax(0, 1.4fr) minmax(0, 1fr)",
+          gap: 16,
+          marginBottom: 16,
+        }}
+      >
+        <section
+          className="budget-summary-card"
           style={{
+            ...styles.panel,
+            padding: "16px 18px",
+            borderRadius: 20,
             display: "flex",
             alignItems: "center",
-            gap: 24,
+            gap: 18,
+            minWidth: 0,
           }}
         >
         <div style={{ display: "flex", justifyContent: "center" }}>
@@ -1001,281 +1146,21 @@ export function BudgetCommandCenter({
             </div>
           </div>
         </div>
-        <div style={{ display: "flex", justifyContent: "center" }}>
-          <div
-            style={{
-              width: 244,
-              flexShrink: 0,
-              borderRadius: 24,
-              padding: "12px",
-              border: "1px solid rgba(0,216,255,.22)",
-              background:
-                "linear-gradient(180deg, rgba(4,22,43,.96), rgba(2,11,24,.94))",
-              boxShadow:
-                "0 0 28px rgba(0,136,255,.18), inset 0 0 22px rgba(0,216,255,.05)",
-              position: "relative",
-              overflow: "hidden",
-            }}
-          >
-            <div
-              style={{
-                position: "absolute",
-                inset: 0,
-                background:
-                  "radial-gradient(circle at top center, rgba(0,216,255,.12), transparent 42%)",
-                pointerEvents: "none",
-              }}
-            />
-            <div
-              style={{
-                position: "relative",
-                display: "grid",
-                gap: 8,
-              }}
-            >
-              <div
-                style={{
-                  position: "relative",
-                  borderRadius: 18,
-                  border: "1px solid rgba(0,216,255,.18)",
-                  background:
-                    "linear-gradient(180deg, rgba(8,31,58,.95), rgba(3,18,36,.92))",
-                  boxShadow: "inset 0 0 18px rgba(0,216,255,.05)",
-                  padding: "8px 10px 7px",
-                  textAlign: "center",
-                }}
-              >
-                <div
-                  style={{
-                    color: "white",
-                    fontSize: 18,
-                    fontWeight: 700,
-                    letterSpacing: 0.2,
-                    textShadow: "0 0 14px rgba(0,216,255,.16)",
-                  }}
-                >
-                  {budgetMonthNames[activeBudgetMonth]}
-                </div>
-              </div>
-              <div style={{ position: "relative", display: "grid", gap: 10 }}>
-                {heatBars.map((bar) => (
-                  <div key={bar.label} style={{ display: "grid", gap: 5 }}>
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        gap: 10,
-                      }}
-                    >
-                      <span
-                        style={{
-                          color: bar.accent,
-                          fontSize: 10,
-                          fontWeight: 800,
-                          textTransform: "uppercase",
-                          letterSpacing: 0.75,
-                        }}
-                      >
-                        {bar.label}
-                      </span>
-                      <span
-                        style={{
-                          color: "white",
-                          fontSize: 12,
-                          fontWeight: 800,
-                          textShadow: `0 0 10px ${bar.glow}`,
-                        }}
-                      >
-                        {bar.label === "Cash Flow" && bar.value > 0 ? "+" : ""}
-                        {money(bar.value)}
-                      </span>
-                    </div>
-                    <div
-                      style={{
-                        height: 11,
-                        borderRadius: 999,
-                        background: "rgba(6,22,40,.96)",
-                        border: "1px solid rgba(74,126,220,.18)",
-                        boxShadow: "inset 0 0 16px rgba(0,0,0,.45)",
-                        overflow: "hidden",
-                        position: "relative",
-                      }}
-                    >
-                      <div
-                        style={{
-                          position: "absolute",
-                          inset: 0,
-                          background:
-                            "linear-gradient(90deg, rgba(255,255,255,.04), rgba(255,255,255,0))",
-                          pointerEvents: "none",
-                        }}
-                      />
-                      <div
-                        style={{
-                          height: "100%",
-                          width: buildHeatBarWidth(bar.value, scorecardBarMax),
-                          minWidth: bar.value === 0 ? 0 : 10,
-                          borderRadius: 999,
-                          background: bar.gradient,
-                          boxShadow: `0 0 18px ${bar.glow}`,
-                          position: "relative",
-                        }}
-                      >
-                        <div
-                          style={{
-                            position: "absolute",
-                            inset: 0,
-                            background:
-                              "linear-gradient(180deg, rgba(255,255,255,.38), rgba(255,255,255,0))",
-                            mixBlendMode: "screen",
-                          }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-        </div>
+        {renderIncomeBudget()}
+        {renderCashFlow()}
 
-        <div
-          className="budget-hero-stats"
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-            gap: 12,
-            alignItems: "center",
-            flexShrink: 0,
-          }}
-        >
-          <div style={{ textAlign: "center", display: "grid", justifyItems: "center" }}>
-            <div style={{ color: "#e9f3ff", fontSize: 26, fontWeight: 800 }}>
-              {money(monthIncomeTotal)}
-            </div>
-            <div style={{ color: "#668ab9", fontSize: 16, fontWeight: 700, marginTop: 8 }}>
-              {budgetMonthNames[activeBudgetMonth]} Income
-            </div>
-            <button
-              type="button"
-              onClick={() => shiftBudgetMonth(-1)}
-              aria-label="Go to previous month"
-              style={{
-                marginTop: 10,
-                height: 36,
-                minWidth: 100,
-                borderRadius: 999,
-                border: "1px solid rgba(0,216,255,.28)",
-                background: "linear-gradient(180deg, rgba(0,136,255,.18), rgba(0,43,87,.28))",
-                color: "#dff7ff",
-                cursor: "pointer",
-                fontSize: 14,
-                fontWeight: 700,
-                letterSpacing: 0.35,
-                boxShadow:
-                  "0 0 18px rgba(0,136,255,.18), inset 0 0 16px rgba(143,234,255,.08)",
-              }}
-            >
-              ← Prev
-            </button>
-          </div>
-          <div style={{ textAlign: "center", display: "grid", justifyItems: "center" }}>
-            <div style={{ color: "#e9f3ff", fontSize: 26, fontWeight: 800 }}>
-              {money(budgetTotal)}
-            </div>
-            <div style={{ color: "#668ab9", fontSize: 16, fontWeight: 700, marginTop: 8 }}>
-              {budgetMonthNames[activeBudgetMonth]} Budget
-            </div>
-            <button
-              type="button"
-              onClick={() => shiftBudgetMonth(1)}
-              aria-label="Go to next month"
-              style={{
-                marginTop: 10,
-                height: 36,
-                minWidth: 100,
-                borderRadius: 999,
-                border: "1px solid rgba(0,216,255,.28)",
-                background: "linear-gradient(180deg, rgba(0,136,255,.18), rgba(0,43,87,.28))",
-                color: "#dff7ff",
-                cursor: "pointer",
-                fontSize: 14,
-                fontWeight: 700,
-                letterSpacing: 0.35,
-                boxShadow:
-                  "0 0 18px rgba(0,136,255,.18), inset 0 0 16px rgba(143,234,255,.08)",
-              }}
-            >
-              Next →
-            </button>
-          </div>
-          <div
-            style={{
-              gridColumn: "1 / -1",
-              display: "flex",
-              justifyContent: "flex-end",
-              alignItems: "center",
-              gap: 10,
-              alignSelf: "end",
-            }}
-          >
-            <button
-              type="button"
-              onClick={openSortModal}
-              style={{
-                border: "1px solid rgba(0,216,255,.26)",
-                borderRadius: 10,
-                background: "rgba(0,136,255,.12)",
-                color: "#dff7ff",
-                padding: "8px 14px",
-                fontSize: 13,
-                fontWeight: 800,
-                letterSpacing: 0.4,
-                cursor: "pointer",
-              }}
-            >
-              Sort
-            </button>
-            <select
-              value={activeBudgetDate.year}
-              onChange={(event) => updateBudgetDate("year", event.target.value)}
-              aria-label="Select budget planning year"
-              style={{
-                color: "#8feaff",
-                background: "rgba(0,136,255,.12)",
-                border: "1px solid rgba(0,216,255,.32)",
-                borderRadius: 999,
-                padding: "8px 14px",
-                cursor: "pointer",
-                fontWeight: 900,
-                boxShadow: "0 0 14px rgba(0,136,255,.14)",
-                minWidth: 96,
-                height: 36,
-                textAlign: "center",
-              }}
-            >
-              {availablePlanningYears.map((year) => (
-                <option key={year} value={year} style={{ background: "#061224", color: "#eaf3ff" }}>
-                  {year}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
       </section>
 
       <section
         className="readiness-card"
         style={{
           ...styles.panel,
-          padding: "16px 22px",
+          padding: "16px 18px",
           borderRadius: 20,
-          marginBottom: 24,
+          minWidth: 0,
           display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          columnGap: 28,
+          gridTemplateColumns: "minmax(0, 0.85fr) minmax(0, 1fr)",
+          columnGap: 18,
           alignItems: "stretch",
         }}
       >
@@ -1651,8 +1536,35 @@ export function BudgetCommandCenter({
               Nothing overspent
             </div>
           )}
+          {overspentRows.length > 0 ? (
+            <button
+              type="button"
+              onClick={() => {
+                setViewBy("status");
+                if (typeof document !== "undefined") {
+                  document
+                    .querySelector(".budget-table-section")
+                    ?.scrollIntoView({ behavior: "smooth", block: "start" });
+                }
+              }}
+              style={{
+                alignSelf: "flex-start",
+                marginTop: 2,
+                background: "none",
+                border: "none",
+                color: "#9fd8ff",
+                fontSize: 12,
+                fontWeight: 800,
+                cursor: "pointer",
+                padding: 0,
+              }}
+            >
+              View all overspent →
+            </button>
+          ) : null}
         </div>
       </section>
+      </div>
 
       <section className="budget-table-section" style={{ padding: "0 8px" }}>
         <div
@@ -1668,34 +1580,53 @@ export function BudgetCommandCenter({
           <span style={{ color: "#dff7ff", fontSize: 16, fontWeight: 900, letterSpacing: 0.4 }}>
             Categories
           </span>
-          <label style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-            <span style={{ color: "#6d92c2", fontSize: 12, fontWeight: 700 }}>View by</span>
-            <select
-              value={viewBy}
-              onChange={(event) => setViewBy(event.target.value)}
-              aria-label="View categories by"
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <button
+              type="button"
+              onClick={openSortModal}
               style={{
-                color: "#8feaff",
-                background: "rgba(0,136,255,.12)",
-                border: "1px solid rgba(0,216,255,.32)",
+                border: "1px solid rgba(0,216,255,.26)",
                 borderRadius: 999,
-                padding: "7px 12px",
-                cursor: "pointer",
-                fontWeight: 800,
+                background: "rgba(0,136,255,.12)",
+                color: "#dff7ff",
+                padding: "7px 14px",
                 fontSize: 12,
+                fontWeight: 800,
+                letterSpacing: 0.4,
+                cursor: "pointer",
               }}
             >
-              {BUDGET_VIEW_OPTIONS.map((option) => (
-                <option
-                  key={option.value}
-                  value={option.value}
-                  style={{ background: "#061224", color: "#eaf3ff" }}
-                >
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
+              Sort
+            </button>
+            <label style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+              <span style={{ color: "#6d92c2", fontSize: 12, fontWeight: 700 }}>View by</span>
+              <select
+                value={viewBy}
+                onChange={(event) => setViewBy(event.target.value)}
+                aria-label="View categories by"
+                style={{
+                  color: "#8feaff",
+                  background: "rgba(0,136,255,.12)",
+                  border: "1px solid rgba(0,216,255,.32)",
+                  borderRadius: 999,
+                  padding: "7px 12px",
+                  cursor: "pointer",
+                  fontWeight: 800,
+                  fontSize: 12,
+                }}
+              >
+                {BUDGET_VIEW_OPTIONS.map((option) => (
+                  <option
+                    key={option.value}
+                    value={option.value}
+                    style={{ background: "#061224", color: "#eaf3ff" }}
+                  >
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
         </div>
 
         <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 10 }}>
