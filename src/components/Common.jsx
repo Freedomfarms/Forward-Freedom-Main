@@ -639,12 +639,31 @@ export function MonthCoverageEditor({
       if (!triggerBounds) return;
 
       const desiredWidth = 300;
-      const maxLeft = Math.max(12, window.innerWidth - desiredWidth - 12);
-      setPopoverPosition({
-        top: triggerBounds.bottom + 8,
-        left: Math.min(Math.max(12, triggerBounds.left), maxLeft),
-        width: desiredWidth,
-      });
+      const margin = 12;
+      const maxLeft = Math.max(margin, window.innerWidth - desiredWidth - margin);
+      const left = Math.min(Math.max(margin, triggerBounds.left), maxLeft);
+      const spaceBelow = window.innerHeight - triggerBounds.bottom - margin;
+      const spaceAbove = triggerBounds.top - margin;
+
+      // Open below when there's room; otherwise flip above so the popover (and
+      // its Done button) stay on-screen. Either way cap the height and scroll.
+      if (spaceBelow >= 280 || spaceBelow >= spaceAbove) {
+        setPopoverPosition({
+          top: triggerBounds.bottom + 8,
+          bottom: undefined,
+          left,
+          width: desiredWidth,
+          maxHeight: Math.max(160, spaceBelow),
+        });
+      } else {
+        setPopoverPosition({
+          top: undefined,
+          bottom: window.innerHeight - triggerBounds.top + 8,
+          left,
+          width: desiredWidth,
+          maxHeight: Math.max(160, spaceAbove),
+        });
+      }
     };
 
     updatePopoverPosition();
@@ -678,9 +697,13 @@ export function MonthCoverageEditor({
               onMouseDown={(event) => event.stopPropagation()}
               style={{
                 position: "absolute",
-                top: popoverPosition.top,
+                ...(popoverPosition.top !== undefined
+                  ? { top: popoverPosition.top }
+                  : { bottom: popoverPosition.bottom }),
                 left: popoverPosition.left,
                 width: popoverPosition.width,
+                maxHeight: popoverPosition.maxHeight,
+                overflowY: "auto",
                 padding: 14,
                 borderRadius: 14,
                 border: "1px solid rgba(0,216,255,.28)",
