@@ -1086,22 +1086,21 @@ export function AccountsView({
             </div>
             <div
               style={{
-                display: "flex",
-                flexWrap: "wrap",
-                gap: 10,
-                marginTop: 14,
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
+                gap: 8,
+                marginTop: 12,
               }}
             >
               {reservesAccount.funds.map((fund) => (
                 <div
                   key={fund.id}
                   style={{
-                    minWidth: 170,
-                    flex: "1 1 170px",
                     border: `1px solid ${fund.status.color}33`,
-                    borderRadius: 12,
-                    padding: "10px 12px",
-                    background: "linear-gradient(180deg, rgba(8,24,46,.55), rgba(3,14,28,.45))",
+                    borderLeft: `2px solid ${fund.status.color}`,
+                    borderRadius: 8,
+                    padding: "7px 9px 8px",
+                    background: "linear-gradient(120deg, rgba(3,17,32,.52), rgba(4,14,28,.84))",
                   }}
                 >
                   <div
@@ -1109,18 +1108,34 @@ export function AccountsView({
                       display: "flex",
                       justifyContent: "space-between",
                       alignItems: "center",
-                      gap: 8,
+                      gap: 6,
                     }}
                   >
-                    <span style={{ color: "#e6efff", fontWeight: 700, fontSize: 13 }}>
+                    <span
+                      style={{
+                        color: "#e6efff",
+                        fontWeight: 700,
+                        fontSize: 12,
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}
+                    >
                       {fund.name}
                     </span>
-                    <span style={{ color: fund.status.color, fontWeight: 900, fontSize: 13 }}>
+                    <span
+                      style={{
+                        color: fund.status.color,
+                        fontWeight: 900,
+                        fontSize: 12,
+                        flexShrink: 0,
+                      }}
+                    >
                       {fund.readinessPercent}%
                     </span>
                   </div>
-                  <div style={{ color: "#9fb6d6", fontSize: 12, fontWeight: 600, marginTop: 6 }}>
-                    {money(fund.balance)} <span style={{ color: "#5f7da3" }}>/ {money(fund.target)}</span>
+                  <div style={{ color: "#5f7394", fontSize: 11, fontWeight: 600, marginTop: 3 }}>
+                    {money(fund.balance)} / {money(fund.target)}
                   </div>
                 </div>
               ))}
