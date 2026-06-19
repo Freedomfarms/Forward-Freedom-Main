@@ -1373,18 +1373,6 @@ function ForwardFreedomDashboard({
       onClick: () => setActiveTab(APP_TABS.ADD_ACCOUNTS),
     },
     {
-      icon: METRIC_ICONS.reserves,
-      title: "RESERVES",
-      value: money(reservesBalance),
-      infoText:
-        "Reserves is committed cash — the total of every reserve category balance. It still sits in your bank but is removed from spendable True Cash.",
-      subLabel: isReservesOvercommitted ? "Overcommitted vs. cash" : "Committed cash",
-      ...(isReservesOvercommitted
-        ? { change: "Exceeds available cash", changeColor: "#ff355d", changeIcon: "!" }
-        : {}),
-      onClick: () => setActiveTab(APP_TABS.ADD_ACCOUNTS),
-    },
-    {
       icon: METRIC_ICONS.creditCardDebt,
       title: "CREDIT CARD DEBT",
       value: money(creditCardDebt),
@@ -1402,6 +1390,18 @@ function ForwardFreedomDashboard({
       changeIcon: monthlyFlow >= 0 ? "↑" : "↓",
       subLabel: `${currentMonth} plan`,
       onClick: () => setActiveTab(APP_TABS.BUDGET_COMMAND_CENTER),
+    },
+    {
+      icon: METRIC_ICONS.reserves,
+      title: "RESERVES",
+      value: money(reservesBalance),
+      infoText:
+        "Reserves is committed cash — the total of every reserve category balance. It still sits in your bank but is removed from spendable True Cash.",
+      subLabel: isReservesOvercommitted ? "Overcommitted vs. cash" : "Committed cash",
+      ...(isReservesOvercommitted
+        ? { change: "Exceeds available cash", changeColor: "#ff355d", changeIcon: "!" }
+        : {}),
+      onClick: () => setActiveTab(APP_TABS.ADD_ACCOUNTS),
     },
   ];
 

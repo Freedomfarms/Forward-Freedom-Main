@@ -1060,9 +1060,10 @@ export function AccountsView({
                 </span>
                 <span
                   style={{
-                    color: RESERVE_THEME.text,
-                    fontSize: 11,
-                    fontWeight: 800,
+                    color: RESERVE_THEME.rail,
+                    fontSize: 14,
+                    fontWeight: 700,
+                    letterSpacing: "-0.02em",
                   }}
                 >
                   {money(reservesAccount.balance)}

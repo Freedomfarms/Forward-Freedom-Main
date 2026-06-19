@@ -541,25 +541,26 @@ export function MetricCard({ metric }) {
       onClick={metric.onClick}
       style={{
         ...styles.panel,
-        padding: 20,
+        padding: 14,
         width: "100%",
         border: "none",
         cursor: metric.onClick ? "pointer" : "default",
         textAlign: "left",
       }}
     >
-      <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+      <div style={{ display: "flex", gap: 11, alignItems: "flex-start" }}>
         <div
           style={{
-            width: 50,
-            height: 50,
+            width: 38,
+            height: 38,
+            flexShrink: 0,
             borderRadius: 9,
             border: "1px solid rgba(0,179,255,.55)",
             background: "rgba(0,104,255,.16)",
             display: "grid",
             placeItems: "center",
             color: "#23d7ff",
-            fontSize: 26,
+            fontSize: 20,
             boxShadow: "0 0 24px rgba(0,128,255,.35)",
             lineHeight: 0,
           }}
@@ -568,34 +569,34 @@ export function MetricCard({ metric }) {
             {metric.icon}
           </div>
         </div>
-        <div>
+        <div style={{ minWidth: 0 }}>
           <div
             style={{
               display: "flex",
               alignItems: "center",
-              gap: 8,
+              gap: 6,
               color: "#c9d8ee",
-              fontSize: 12,
+              fontSize: 11,
               letterSpacing: 0.3,
             }}
           >
             {metric.title}
             <InfoDot tooltip={metric.infoText} />
           </div>
-          <div style={{ marginTop: 12, color: "white", fontSize: 25, fontWeight: 650 }}>
+          <div style={{ marginTop: 8, color: "white", fontSize: 19, fontWeight: 700 }}>
             {metric.value}
           </div>
           <div
             style={{
-              marginTop: 12,
+              marginTop: 8,
               color: changeColor,
-              fontSize: 14,
+              fontSize: 11,
               fontWeight: 700,
             }}
           >
             {changeIcon} {metric.change}
           </div>
-          <div style={{ marginTop: 4, color: "#9fb0c9", fontSize: 14 }}>{subLabel}</div>
+          <div style={{ marginTop: 3, color: "#9fb0c9", fontSize: 11 }}>{subLabel}</div>
         </div>
       </div>
     </button>
