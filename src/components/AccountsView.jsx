@@ -1038,17 +1038,16 @@ export function AccountsView({
               background: `linear-gradient(105deg, ${RESERVE_THEME.tint}, rgba(4,14,28,.5) 52%, rgba(3,12,24,.4))`,
             }}
           >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "flex-start",
-                gap: 12,
-                flexWrap: "wrap",
-              }}
-            >
-              <div style={{ minWidth: 0 }}>
-                <div
+            <div>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "baseline",
+                  gap: 8,
+                  flexWrap: "wrap",
+                }}
+              >
+                <span
                   style={{
                     color: RESERVE_THEME.rail,
                     fontSize: 11,
@@ -1058,37 +1057,22 @@ export function AccountsView({
                   }}
                 >
                   System Account
-                </div>
-                <div
+                </span>
+                <span
                   style={{
-                    display: "flex",
-                    alignItems: "baseline",
-                    gap: 10,
-                    flexWrap: "wrap",
-                    marginTop: 5,
+                    color: RESERVE_THEME.text,
+                    fontSize: 11,
+                    fontWeight: 800,
                   }}
                 >
-                  <span style={{ color: RESERVE_THEME.text, fontSize: 16, fontWeight: 800 }}>
-                    Reserves
-                  </span>
-                  <span style={{ color: "#7a93b5", fontSize: 12, lineHeight: 1.4 }}>
-                    Not a bank account. This is reserve money still held in your bank but removed
-                    from spendable True Cash.
-                  </span>
-                </div>
-              </div>
-              <div style={{ textAlign: "right" }}>
-                <div style={{ color: RESERVE_THEME.text, fontSize: 24, fontWeight: 800 }}>
                   {money(reservesAccount.balance)}
-                </div>
+                </span>
                 {reservesAccount.overcommitted ? (
-                  <div
+                  <span
                     style={{
-                      marginTop: 6,
-                      display: "inline-block",
-                      padding: "4px 9px",
+                      padding: "2px 8px",
                       borderRadius: 999,
-                      fontSize: 11,
+                      fontSize: 10,
                       fontWeight: 900,
                       color: "#ff355d",
                       background: "rgba(255,53,93,.12)",
@@ -1096,8 +1080,25 @@ export function AccountsView({
                     }}
                   >
                     Overcommitted vs. {money(reservesAccount.grossCash)} cash
-                  </div>
+                  </span>
                 ) : null}
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "baseline",
+                  gap: 10,
+                  flexWrap: "wrap",
+                  marginTop: 5,
+                }}
+              >
+                <span style={{ color: RESERVE_THEME.text, fontSize: 16, fontWeight: 800 }}>
+                  Reserves
+                </span>
+                <span style={{ color: "#7a93b5", fontSize: 12, lineHeight: 1.4 }}>
+                  Not a bank account. This is reserve money still held in your bank but removed from
+                  spendable True Cash.
+                </span>
               </div>
             </div>
             <div
