@@ -889,13 +889,13 @@ export function BudgetCommandCenter({
         className="readiness-card"
         style={{
           ...styles.panel,
-          padding: "14px 18px",
+          padding: "16px 22px",
           borderRadius: 20,
           marginBottom: 24,
           display: "grid",
           gridTemplateColumns: "1fr 1fr",
-          columnGap: 20,
-          alignItems: "start",
+          columnGap: 28,
+          alignItems: "stretch",
         }}
       >
         <div
@@ -980,6 +980,10 @@ export function BudgetCommandCenter({
                 onClick={() => scrollReserves(-1)}
                 style={{
                   flexShrink: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 16,
                   width: 30,
                   height: 30,
                   borderRadius: 999,
@@ -1003,6 +1007,8 @@ export function BudgetCommandCenter({
                 flex: 1,
                 scrollbarWidth: "none",
                 padding: "2px 0",
+                scrollSnapType: "x mandatory",
+                scrollPadding: "0 2px",
               }}
             >
               {reserveSnapshots.map((reserve) => (
@@ -1015,6 +1021,7 @@ export function BudgetCommandCenter({
                   )} of ${wholeDollars(reserve.target)}`}
                   style={{
                     flexShrink: 0,
+                    scrollSnapAlign: "start",
                     width: 188,
                     textAlign: "left",
                     border: `1px solid ${reserve.status.color}44`,
@@ -1105,6 +1112,10 @@ export function BudgetCommandCenter({
                 onClick={() => scrollReserves(1)}
                 style={{
                   flexShrink: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 16,
                   width: 30,
                   height: 30,
                   borderRadius: 999,
@@ -1139,7 +1150,7 @@ export function BudgetCommandCenter({
           className="overspent-region"
           style={{
             minWidth: 0,
-            paddingLeft: 20,
+            paddingLeft: 28,
             borderLeft: "1px solid rgba(30,144,255,.16)",
             display: "flex",
             flexDirection: "column",
@@ -1166,6 +1177,10 @@ export function BudgetCommandCenter({
                   onClick={() => scrollOverspent(-1)}
                   style={{
                     flexShrink: 0,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 16,
                     width: 28,
                     height: 28,
                     borderRadius: 999,
@@ -1189,6 +1204,8 @@ export function BudgetCommandCenter({
                   flex: 1,
                   scrollbarWidth: "none",
                   padding: "2px 0",
+                  scrollSnapType: "x mandatory",
+                  scrollPadding: "0 2px",
                 }}
               >
                 {overspentRows.map((row) => (
@@ -1201,6 +1218,7 @@ export function BudgetCommandCenter({
                     )}`}
                     style={{
                       flexShrink: 0,
+                      scrollSnapAlign: "start",
                       display: "flex",
                       alignItems: "center",
                       gap: 10,
@@ -1228,6 +1246,10 @@ export function BudgetCommandCenter({
                   onClick={() => scrollOverspent(1)}
                   style={{
                     flexShrink: 0,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 16,
                     width: 28,
                     height: 28,
                     borderRadius: 999,
