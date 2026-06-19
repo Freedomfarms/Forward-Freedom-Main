@@ -1842,7 +1842,6 @@ export function BudgetCommandCenter({
                     <input
                       value={money(item.budget)}
                       onChange={(event) => updateBudgetRow(item.id, "budget", event.target.value)}
-                      onFocus={() => activateBudgetRow(item.id)}
                       title="Monthly reserve contribution — not a spending limit"
                       style={{
                         color: "#e6efff",
@@ -1855,6 +1854,17 @@ export function BudgetCommandCenter({
                         padding: "8px",
                         width: "100%",
                         outline: "none",
+                      }}
+                      onFocus={(event) => {
+                        activateBudgetRow(item.id);
+                        event.currentTarget.style.border = "1px solid rgba(94,234,212,.7)";
+                        event.currentTarget.style.background = "rgba(0,245,155,.14)";
+                        event.currentTarget.style.boxShadow = "inset 0 0 18px rgba(94,234,212,.18)";
+                      }}
+                      onBlur={(event) => {
+                        event.currentTarget.style.border = "1px solid rgba(94,234,212,.20)";
+                        event.currentTarget.style.background = "rgba(0,245,155,.06)";
+                        event.currentTarget.style.boxShadow = "none";
                       }}
                     />
                     <span style={{ color: "#6d92c2", fontSize: 10, fontWeight: 600 }}>
