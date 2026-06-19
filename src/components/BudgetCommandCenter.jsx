@@ -525,33 +525,29 @@ export function BudgetCommandCenter({
         style={{
           ...styles.panel,
           minHeight: 0,
-          padding: "16px 20px",
+          padding: "16px 22px",
           borderRadius: 24,
-          marginBottom: 24,
+          marginBottom: 16,
           position: "relative",
-          display: "grid",
-          gridTemplateColumns: "minmax(150px, 0.85fr) minmax(150px, 0.85fr) auto auto",
-          gridTemplateAreas: '"frc over mid right"',
-          columnGap: 18,
-          alignItems: "stretch",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 24,
         }}
       >
         <div
           className="budget-hero-mid"
           style={{
-            gridArea: "mid",
             display: "flex",
             alignItems: "center",
-            gap: 18,
-            paddingLeft: 18,
-            borderLeft: "1px solid rgba(30,144,255,.16)",
+            gap: 24,
           }}
         >
         <div style={{ display: "flex", justifyContent: "center" }}>
           <div
             style={{
-              width: 132,
-              height: 132,
+              width: 188,
+              height: 188,
               borderRadius: "50%",
               position: "relative",
               display: "grid",
@@ -767,14 +763,11 @@ export function BudgetCommandCenter({
         <div
           className="budget-hero-stats"
           style={{
-            gridArea: "right",
             display: "grid",
             gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
             gap: 12,
             alignItems: "center",
-            alignSelf: "center",
-            paddingLeft: 18,
-            borderLeft: "1px solid rgba(30,144,255,.16)",
+            flexShrink: 0,
           }}
         >
           <div style={{ textAlign: "center", display: "grid", justifyItems: "center" }}>
@@ -890,18 +883,34 @@ export function BudgetCommandCenter({
             </select>
           </div>
         </div>
+      </section>
+
+      <section
+        className="readiness-card"
+        style={{
+          ...styles.panel,
+          padding: "14px 18px",
+          borderRadius: 20,
+          marginBottom: 24,
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          columnGap: 20,
+          alignItems: "start",
+        }}
+      >
         <div
           className="frc-row"
           style={{
-            gridArea: "frc",
             minWidth: 0,
           }}
         >
         <div
           style={{
             display: "flex",
-            flexDirection: "column",
-            gap: 10,
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 16,
+            flexWrap: "wrap",
           }}
         >
           <div>
@@ -922,11 +931,11 @@ export function BudgetCommandCenter({
           </div>
           {reserveSnapshots.length ? (
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <div style={{ textAlign: "left" }}>
+              <div style={{ textAlign: "right" }}>
                 <div
                   style={{
                     color: reserveReadiness.band.color,
-                    fontSize: 30,
+                    fontSize: 34,
                     fontWeight: 900,
                     lineHeight: 1,
                   }}
@@ -1006,7 +1015,7 @@ export function BudgetCommandCenter({
                   )} of ${wholeDollars(reserve.target)}`}
                   style={{
                     flexShrink: 0,
-                    width: 158,
+                    width: 188,
                     textAlign: "left",
                     border: `1px solid ${reserve.status.color}44`,
                     background: "linear-gradient(180deg, rgba(8,24,46,.6), rgba(3,14,28,.5))",
@@ -1129,9 +1138,8 @@ export function BudgetCommandCenter({
         <div
           className="overspent-region"
           style={{
-            gridArea: "over",
             minWidth: 0,
-            paddingLeft: 18,
+            paddingLeft: 20,
             borderLeft: "1px solid rgba(30,144,255,.16)",
             display: "flex",
             flexDirection: "column",
