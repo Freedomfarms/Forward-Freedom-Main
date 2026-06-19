@@ -192,6 +192,7 @@ function shouldFetchMetalsQuoteForForm(form) {
 
 export function AccountsView({
   accounts,
+  reservesAccount,
   addManualAccount,
   connectPlaidAccount,
   repairPlaidItem,
@@ -1017,6 +1018,116 @@ export function AccountsView({
           if (renamingAccountId) cancelRename();
         }}
       >
+        {reservesAccount && Array.isArray(reservesAccount.funds) && reservesAccount.funds.length > 0 ? (
+          <div
+            style={{
+              marginBottom: 30,
+              padding: "14px 16px",
+              borderRadius: 10,
+              border: `1px solid ${
+                reservesAccount.overcommitted ? "rgba(255,53,93,.4)" : "rgba(0,245,155,.28)"
+              }`,
+              borderLeft: `4px solid ${reservesAccount.overcommitted ? "#ff355d" : "#00f59b"}`,
+              background:
+                "linear-gradient(105deg, rgba(0,245,155,.08), rgba(4,14,28,.42) 48%, rgba(3,12,24,.35))",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "flex-start",
+                gap: 12,
+                flexWrap: "wrap",
+              }}
+            >
+              <div>
+                <div
+                  style={{
+                    color: "#9ff7e0",
+                    fontSize: 10,
+                    textTransform: "uppercase",
+                    letterSpacing: 0.9,
+                    fontWeight: 800,
+                  }}
+                >
+                  Reserves · System account
+                </div>
+                <div style={{ color: "white", fontSize: 16, fontWeight: 700, marginTop: 6 }}>
+                  Committed cash
+                </div>
+                <div style={{ color: "#7a93b5", fontSize: 12, marginTop: 4, lineHeight: 1.5 }}>
+                  Not a bank account. This is reserve money still held in your bank but removed from
+                  spendable True Cash.
+                </div>
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <div style={{ color: "#e9f3ff", fontSize: 24, fontWeight: 800 }}>
+                  {money(reservesAccount.balance)}
+                </div>
+                {reservesAccount.overcommitted ? (
+                  <div
+                    style={{
+                      marginTop: 6,
+                      display: "inline-block",
+                      padding: "4px 9px",
+                      borderRadius: 999,
+                      fontSize: 11,
+                      fontWeight: 900,
+                      color: "#ff355d",
+                      background: "rgba(255,53,93,.12)",
+                      border: "1px solid rgba(255,53,93,.4)",
+                    }}
+                  >
+                    Overcommitted vs. {money(reservesAccount.grossCash)} cash
+                  </div>
+                ) : null}
+              </div>
+            </div>
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 10,
+                marginTop: 14,
+              }}
+            >
+              {reservesAccount.funds.map((fund) => (
+                <div
+                  key={fund.id}
+                  style={{
+                    minWidth: 170,
+                    flex: "1 1 170px",
+                    border: `1px solid ${fund.status.color}33`,
+                    borderRadius: 12,
+                    padding: "10px 12px",
+                    background: "linear-gradient(180deg, rgba(8,24,46,.55), rgba(3,14,28,.45))",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: 8,
+                    }}
+                  >
+                    <span style={{ color: "#e6efff", fontWeight: 700, fontSize: 13 }}>
+                      {fund.name}
+                    </span>
+                    <span style={{ color: fund.status.color, fontWeight: 900, fontSize: 13 }}>
+                      {fund.readinessPercent}%
+                    </span>
+                  </div>
+                  <div style={{ color: "#9fb6d6", fontSize: 12, fontWeight: 600, marginTop: 6 }}>
+                    {money(fund.balance)} <span style={{ color: "#5f7da3" }}>/ {money(fund.target)}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
         {accounts.length === 0 ? (
           <div style={{ display: "grid", gap: 14 }}>
             <div style={{ textAlign: "center", padding: "12px 8px 2px" }}>

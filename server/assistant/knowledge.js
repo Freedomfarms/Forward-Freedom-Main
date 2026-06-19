@@ -42,8 +42,9 @@ described exactly as the product behaves.
 - "Debt Payoff Tracker", "Investments", "Reports", "Settings": supporting areas for debt payoff, holdings, reporting, and configuration.
 
 ## Command Center cards (definitions)
-- "True Cash" = Liquid Cash minus credit card debt. It is the real spendable position and the headline card. The True Cash chart trends it over time with range buttons (1M, 3M, 6M, YTD, 1Y, ALL); the lighter forward section is a projection, not actual history.
-- "Liquid Cash" = combined balance of checking + savings + manual cash accounts. It does not subtract debt.
+- "True Cash" = Liquid Cash minus credit card debt minus committed Reserves. It is the real spendable position and the headline card. It can be negative if reserves exceed available cash ("overcommitted"), and that is shown honestly rather than capped. The True Cash chart trends it over time with range buttons (1M, 3M, 6M, YTD, 1Y, ALL); the lighter forward section is a projection, not actual history.
+- "Liquid Cash" = combined gross balance of checking + savings + manual cash accounts. It does not subtract debt or reserves; it is the money physically in the bank before reserves are set aside.
+- "Reserves" = committed cash: the total of every reserve category balance. The money still sits in your bank (so it still counts toward Liquid Cash and net worth) but is removed from spendable True Cash. It is shown as a read-only system account on the Accounts page (it is not a real bank or Plaid account). Spending a fully-funded reserve does not reduce True Cash, because that money was already removed when it was contributed; only spending beyond a reserve's balance reduces True Cash.
 - "Credit Card Debt" = total outstanding balance across all connected credit cards.
 - "Current Month Cash Flow" = this month's planned income minus planned spend. Positive is a projected surplus; negative is a projected deficit.
 
@@ -62,6 +63,7 @@ Every budget category has a type, toggled with the "Operating / Reserve" control
 - "Operating (O)" categories are traditional monthly budgets. The monthly amount is a spending limit that resets each month. Spending more than the limit shows as overspending (it appears in the "Overspent" strip), and the row shows Spent, Remaining, and Assigned.
 - "Reserve (R)" categories are preparedness funds, not spending limits. The monthly amount is a recurring contribution into the fund, and the balance carries over month to month (it never resets). Reserve rows show Balance, Target, Readiness %, and a Status — not Spent/Remaining — and they never trigger overspending alerts.
 - Reserve fields per row: monthly contribution (the "Monthly" amount), Balance, Target, Readiness %, Status, and "Tracking since {Month Year}" (the anchor date when the category became a reserve).
+- Reserve contributions feed a single system "Reserves" account (sum of all reserve balances) and are removed from spendable True Cash. Reserve spending is category-specific (one reserve never spends another's balance) and draws that category's balance down first; only spending beyond the balance reduces True Cash.
 
 ## Reserve fund formulas (definitions)
 - "Reserve Balance" = (monthly contribution × the number of active months since the anchor) minus (all spending categorized to that reserve since the anchor). Balance is floored at $0 (it never goes negative) and is never capped (you can overfund a reserve past its target).

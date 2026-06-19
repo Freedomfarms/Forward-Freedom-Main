@@ -185,7 +185,7 @@ export function resolveWorkspaceGuideReply(question, context) {
   if (includesAny(text, ["true cash"])) {
     return {
       text:
-        "True Cash is your real spendable position: Liquid Cash (checking, savings, and manual cash) minus credit card debt. It's the headline card on Command Center, and the True Cash chart trends it over time. Keep your account balances current in Accounts to keep it accurate.",
+        "True Cash is your real spendable position: Liquid Cash (checking, savings, and manual cash) minus credit card debt minus committed Reserves. Reserve money still sits in your bank but is set aside, so it's removed from spendable cash; True Cash can even go negative if you've committed more than you hold. It's the headline card on Command Center. Keep account balances current in Accounts to keep it accurate.",
       actions: [
         buildAction("Open Command Center", APP_TABS.DASHBOARD),
         buildAction("Open Accounts", APP_TABS.ADD_ACCOUNTS),

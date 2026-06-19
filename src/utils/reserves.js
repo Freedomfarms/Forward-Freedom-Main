@@ -163,6 +163,20 @@ export function buildReserveSnapshot(row, transactions, options = {}) {
 }
 
 /**
+ * Spendable True Cash after committed reserves are removed.
+ *
+ *   True Cash = gross liquid cash - credit card debt - reserves balance
+ *
+ * Reserve dollars physically remain in the bank (so they still count toward gross
+ * cash and net worth) but are committed, so they are removed from spendable cash.
+ * The result is intentionally NOT floored: a negative value honestly signals the
+ * user has committed more than they currently hold ("overcommitted").
+ */
+export function computeTrueCash({ liquidCash = 0, creditCardDebt = 0, reservesBalance = 0 } = {}) {
+  return (Number(liquidCash) || 0) - (Number(creditCardDebt) || 0) - (Number(reservesBalance) || 0);
+}
+
+/**
  * Dollar-weighted Financial Readiness Condition across all reserve funds.
  * FRC = total reserve balances / total reserve targets.
  */
