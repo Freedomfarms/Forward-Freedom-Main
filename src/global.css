@@ -63,6 +63,26 @@ button {
     left: 125%;
   }
 }
+@keyframes budget-orbit-metric-flash {
+  0% {
+    opacity: 0.45;
+    transform: scale(0.96);
+    filter: brightness(1.35);
+  }
+  55% {
+    opacity: 1;
+    transform: scale(1.04);
+    filter: brightness(1.6);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: brightness(1);
+  }
+}
+.budget-orbit-metric-flash {
+  animation: budget-orbit-metric-flash 0.55s ease;
+}
 .ff-logo-sweep {
   animation: ff-logo-spin 7s linear infinite;
 }
