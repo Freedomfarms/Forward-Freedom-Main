@@ -69,21 +69,6 @@ function applyQuietBlur(event) {
   event.currentTarget.style.background = "transparent";
 }
 
-function buildSparklinePath(values, width, height) {
-  if (!Array.isArray(values) || values.length === 0) return "";
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const range = max - min || 1;
-  const stepX = values.length > 1 ? width / (values.length - 1) : 0;
-  return values
-    .map((value, index) => {
-      const x = index * stepX;
-      const y = height - ((value - min) / range) * height;
-      return `${index === 0 ? "M" : "L"} ${x.toFixed(1)} ${y.toFixed(1)}`;
-    })
-    .join(" ");
-}
-
 const BUDGET_SORT_OPTIONS = [
   {
     value: "manual",
@@ -619,29 +604,13 @@ export function BudgetCommandCenter({
   const renderCashFlow = () => {
     const positive = monthCashFlow >= 0;
     const accent = positive ? "#00f59b" : "#ff5d7a";
-    const path = buildSparklinePath(cashFlowSeries, 132, 40);
     return (
-      <div style={{ flex: 1, minWidth: 110, display: "grid", gap: 6, alignContent: "center" }}>
+      <div style={{ flex: 1, minWidth: 110, display: "grid", gap: 8, alignContent: "center" }}>
         <div style={summaryStatLabelStyle}>Cash Flow</div>
-        <div style={{ color: accent, fontSize: 22, fontWeight: 900, lineHeight: 1 }}>
+        <div style={{ color: accent, fontSize: 26, fontWeight: 900, lineHeight: 1 }}>
           {positive ? "+" : ""}
           {money(monthCashFlow)}
         </div>
-        <svg
-          viewBox="0 0 132 40"
-          preserveAspectRatio="none"
-          style={{ width: "100%", height: 38 }}
-          aria-hidden="true"
-        >
-          <path
-            d={path}
-            fill="none"
-            stroke={accent}
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
         {cashFlowDelta !== null ? (
           <div style={{ color: "#7fa1ca", fontSize: 12, fontWeight: 700 }}>
             vs last month{" "}
@@ -1052,7 +1021,7 @@ export function BudgetCommandCenter({
         className="budget-summary-row"
         style={{
           display: "grid",
-          gridTemplateColumns: "minmax(0, 1.4fr) minmax(0, 1fr)",
+          gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
           gap: 16,
           marginBottom: 16,
         }}
