@@ -483,7 +483,7 @@ export function BudgetCommandCenter({
   const scrollReserves = (direction) => {
     const container = reserveScrollRef.current;
     if (!container) return;
-    const amount = Math.max(container.clientWidth * 0.8, 240);
+    const amount = container.clientWidth + 10;
     container.scrollBy({ left: direction * amount, behavior: "smooth" });
   };
 
@@ -1240,10 +1240,10 @@ export function BudgetCommandCenter({
                 gap: 10,
                 overflowX: "auto",
                 flex: 1,
+                minWidth: 0,
                 scrollbarWidth: "none",
                 padding: "2px 0",
                 scrollSnapType: "x mandatory",
-                scrollPadding: "0 2px",
               }}
             >
               {reserveSnapshots.map((reserve) => (
@@ -1255,9 +1255,9 @@ export function BudgetCommandCenter({
                     reserve.balance
                   )} of ${wholeDollars(reserve.target)}`}
                   style={{
-                    flexShrink: 0,
+                    flex: "0 0 100%",
+                    boxSizing: "border-box",
                     scrollSnapAlign: "start",
-                    width: 212,
                     textAlign: "left",
                     border: `1px solid ${reserve.status.color}44`,
                     background: "linear-gradient(180deg, rgba(8,24,46,.6), rgba(3,14,28,.5))",
