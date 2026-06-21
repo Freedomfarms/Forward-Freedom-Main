@@ -476,7 +476,7 @@ export function BudgetCommandCenter({
   const scrollOverspent = (direction) => {
     const container = overspentScrollRef.current;
     if (!container) return;
-    const amount = Math.max(container.clientWidth * 0.8, 240);
+    const amount = container.clientWidth + 10;
     container.scrollBy({ left: direction * amount, behavior: "smooth" });
   };
 
@@ -1437,10 +1437,10 @@ export function BudgetCommandCenter({
                   gap: 10,
                   overflowX: "auto",
                   flex: 1,
+                  minWidth: 0,
                   scrollbarWidth: "none",
                   padding: "2px 0",
                   scrollSnapType: "x mandatory",
-                  scrollPadding: "0 2px",
                 }}
               >
                 {overspentRows.map((row) => (
@@ -1452,10 +1452,12 @@ export function BudgetCommandCenter({
                       row.remaining
                     )}`}
                     style={{
-                      flexShrink: 0,
+                      flex: "0 0 100%",
+                      boxSizing: "border-box",
                       scrollSnapAlign: "start",
                       display: "flex",
                       alignItems: "center",
+                      justifyContent: "space-between",
                       gap: 10,
                       textAlign: "left",
                       border: "1px solid rgba(255,93,122,.28)",
@@ -1464,11 +1466,28 @@ export function BudgetCommandCenter({
                       padding: "8px 12px",
                       cursor: "pointer",
                       color: "#eef6ff",
-                      whiteSpace: "nowrap",
+                      minWidth: 0,
                     }}
                   >
-                    <span style={{ fontWeight: 800, fontSize: 13 }}>{row.name}</span>
-                    <span style={{ color: "#ff9fb0", fontSize: 12, fontWeight: 800 }}>
+                    <span
+                      style={{
+                        fontWeight: 800,
+                        fontSize: 13,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {row.name}
+                    </span>
+                    <span
+                      style={{
+                        color: "#ff9fb0",
+                        fontSize: 12,
+                        fontWeight: 800,
+                        flexShrink: 0,
+                      }}
+                    >
                       {money(row.remaining)}
                     </span>
                   </button>
