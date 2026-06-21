@@ -11,6 +11,7 @@ import {
   buildTrueCashProjectionSchedule,
 } from "../utils/trueCashProjection.js";
 import { HouseholdProfilesControl, InfoDot, MetricCard } from "./Common.jsx";
+import { BudgetOrbitChart } from "./BudgetOrbitChart.jsx";
 
 const CHART_HEIGHT = 300;
 const NET_WORTH_HISTORY_W = 620;
@@ -1160,12 +1161,12 @@ export function DashboardView({
             style={{
               display: "flex",
               justifyContent: "space-between",
-              alignItems: "center",
+              alignItems: "flex-start",
               gap: 18,
               marginBottom: 16,
             }}
           >
-            <div>
+            <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ color: "white", fontSize: 22, fontWeight: 900 }}>
                 {budgetMonthNames[monthlyBudgetReview.month]} {monthlyBudgetReview.year}
               </div>
@@ -1173,38 +1174,12 @@ export function DashboardView({
                 Budgeted plan vs actual spending across your highest-impact categories.
               </div>
             </div>
-            <div style={{ display: "flex", gap: 10 }}>
-              <button
-                onClick={() => setActiveTab(APP_TABS.RECURRING_SUBSCRIPTIONS)}
-                style={{
-                  background: "rgba(0,136,255,.08)",
-                  border: "1px solid rgba(0,216,255,.18)",
-                  color: "#d7ebff",
-                  borderRadius: 8,
-                  padding: "10px 14px",
-                  cursor: "pointer",
-                  fontWeight: 700,
-                  whiteSpace: "nowrap",
-                }}
-              >
-                Open Subscriptions
-              </button>
-              <button
-                onClick={() => setActiveTab(APP_TABS.BUDGET_COMMAND_CENTER)}
-                style={{
-                  background: "rgba(0,136,255,.12)",
-                  border: "1px solid rgba(0,216,255,.28)",
-                  color: "#d7ebff",
-                  borderRadius: 8,
-                  padding: "10px 14px",
-                  cursor: "pointer",
-                  fontWeight: 700,
-                  whiteSpace: "nowrap",
-                }}
-              >
-                Open Budget Lab
-              </button>
-            </div>
+            <BudgetOrbitChart
+              transactions={transactions}
+              budgetRows={budgetRows}
+              year={monthlyBudgetReview.year}
+              currentMonth={monthlyBudgetReview.month}
+            />
           </div>
 
           <div
