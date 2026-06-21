@@ -199,7 +199,7 @@ export function BudgetCommandCenter({
   const [isSortModalOpen, setIsSortModalOpen] = useState(false);
   const [activeSortMode, setActiveSortMode] = useState("manual");
   const [pendingSortMode, setPendingSortMode] = useState("manual");
-  const [viewBy, setViewBy] = useState("category");
+  const [viewBy, setViewBy] = useState("status");
   const overspentScrollRef = useRef(null);
   const reserveScrollRef = useRef(null);
   const [activeBudgetDate, setActiveBudgetDate] = useState(() => ({
