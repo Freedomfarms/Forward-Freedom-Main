@@ -78,6 +78,7 @@ import {
   normalizePreciousMetalsPricePerUnit,
 } from "./utils/preciousMetalsPricing.js";
 import { AccountsView } from "./components/AccountsView.jsx";
+import { buildReserveReadiness, computeTrueCash, isReserveRow } from "./utils/reserves.js";
 import { BudgetCommandCenter } from "./components/BudgetCommandCenter.jsx";
 import { DashboardView } from "./components/DashboardView.jsx";
 import { ForecastLab } from "./components/ForecastLab.jsx";
@@ -140,6 +141,17 @@ const METRIC_ICONS = {
     <svg viewBox="0 0 24 24" width="24" height="24" fill="none" aria-hidden="true">
       <path d="M4 15.2c2.1 0 2.1-6.4 4.2-6.4s2.1 6.4 4.2 6.4 2.1-6.4 4.2-6.4S18.7 15.2 21 15.2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
       <path d="M4 19.2h17" stroke="currentColor" strokeWidth="1.6" opacity="0.85" />
+    </svg>
+  ),
+  reserves: (
+    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" aria-hidden="true">
+      <path
+        d="M12 3.5l6.5 2.4v5.2c0 4.1-2.8 7.1-6.5 8.4-3.7-1.3-6.5-4.3-6.5-8.4V5.9L12 3.5Z"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinejoin="round"
+      />
+      <path d="M9.2 12l1.9 1.9 3.7-3.8" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   ),
 };
@@ -849,7 +861,22 @@ function ForwardFreedomDashboard({
       .reduce((sum, account) => sum + account.balance, 0)
   );
 
-  const trueCash = liquidCash - creditCardDebt;
+  // Reserve (committed) cash: the sum of every reserve category's balance.
+  // This money physically sits in checking but is no longer spendable True Cash.
+  const reserveReadiness = buildReserveReadiness(
+    budgetRows.filter(isReserveRow),
+    categorizedTransactions,
+    { asOfMonth: currentBudgetPeriod.month, asOfYear: currentBudgetPeriod.year }
+  );
+  const reservesBalance = reserveReadiness.totalBalance;
+
+  // Gross True Cash keeps the pre-reserves meaning (liquid minus credit cards) and
+  // is what net worth / allocations use, because reserve cash is still real cash.
+  const grossTrueCash = liquidCash - creditCardDebt;
+  // Spendable True Cash removes committed reserve dollars. Allowed to go negative:
+  // a negative value honestly signals the user has committed more than they hold.
+  const trueCash = computeTrueCash({ liquidCash, creditCardDebt, reservesBalance });
+  const isReservesOvercommitted = reservesBalance > liquidCash;
 
   const investmentTotal = syncedAccounts
     .filter((account) => account.type === "Investment")
@@ -903,7 +930,7 @@ function ForwardFreedomDashboard({
   const activePlaidNicknames = buildPlaidNicknameMap(syncedAccounts);
 
   const totalNetWorth = Math.max(
-    trueCash +
+    grossTrueCash +
       investmentTotal +
       cryptoTotal +
       preciousMetalsTotal +
@@ -1035,10 +1062,10 @@ function ForwardFreedomDashboard({
   const dynamicAllocations = [
     {
       name: "True Cash",
-      amount: money(trueCash),
-      percent: pct(trueCash),
+      amount: money(grossTrueCash),
+      percent: pct(grossTrueCash),
       color: "#8b34ff",
-      valueNumber: trueCash,
+      valueNumber: grossTrueCash,
     },
     {
       name: "Investments",
@@ -1324,8 +1351,16 @@ function ForwardFreedomDashboard({
       icon: METRIC_ICONS.trueCash,
       title: "TRUE CASH",
       value: money(trueCash),
-      infoText: "True Cash equals liquid cash minus credit card debt.",
+      infoText:
+        "True Cash is spendable cash: liquid cash minus credit card debt minus committed reserves. It can be negative if you have committed more than you hold.",
       ...buildTrackedTrueCashMeta(trackedMetricSnapshots, trueCash, true),
+      ...(isReservesOvercommitted
+        ? {
+            change: "Overcommitted",
+            changeColor: "#ff355d",
+            changeIcon: "!",
+          }
+        : {}),
       onClick: () => setActiveTab(APP_TABS.ADD_ACCOUNTS),
     },
     {
@@ -1333,7 +1368,7 @@ function ForwardFreedomDashboard({
       title: "LIQUID CASH",
       value: money(liquidCash),
       infoText:
-        "Liquid Cash is your immediately available cash across checking, savings, and manual cash accounts.",
+        "Liquid Cash (gross) is the money physically in your checking, savings, and manual cash accounts, before reserves are set aside.",
       ...buildTrackedMetricMeta(trackedMetricSnapshots, "liquidCash", liquidCash, true),
       onClick: () => setActiveTab(APP_TABS.ADD_ACCOUNTS),
     },
@@ -1355,6 +1390,18 @@ function ForwardFreedomDashboard({
       changeIcon: monthlyFlow >= 0 ? "↑" : "↓",
       subLabel: `${currentMonth} plan`,
       onClick: () => setActiveTab(APP_TABS.BUDGET_COMMAND_CENTER),
+    },
+    {
+      icon: METRIC_ICONS.reserves,
+      title: "RESERVES",
+      value: money(reservesBalance),
+      infoText:
+        "Reserves is committed cash — the total of every reserve category balance. It still sits in your bank but is removed from spendable True Cash.",
+      subLabel: isReservesOvercommitted ? "Overcommitted vs. cash" : "Committed cash",
+      ...(isReservesOvercommitted
+        ? { change: "Exceeds available cash", changeColor: "#ff355d", changeIcon: "!" }
+        : {}),
+      onClick: () => setActiveTab(APP_TABS.ADD_ACCOUNTS),
     },
   ];
 
@@ -2284,6 +2331,19 @@ function ForwardFreedomDashboard({
           ) : activeTab === APP_TABS.ADD_ACCOUNTS ? (
             <AccountsView
               accounts={syncedAccounts}
+              reservesAccount={{
+                balance: reservesBalance,
+                grossCash: liquidCash,
+                overcommitted: isReservesOvercommitted,
+                funds: reserveReadiness.reserves.map((reserve) => ({
+                  id: reserve.id,
+                  name: reserve.name,
+                  balance: reserve.balance,
+                  target: reserve.target,
+                  readinessPercent: reserve.readinessPercent,
+                  status: reserve.status,
+                })),
+              }}
               addManualAccount={addManualAccount}
               connectPlaidAccount={connectPlaidAccount}
               repairPlaidItem={repairPlaidItem}

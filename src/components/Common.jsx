@@ -541,25 +541,26 @@ export function MetricCard({ metric }) {
       onClick={metric.onClick}
       style={{
         ...styles.panel,
-        padding: 20,
+        padding: 14,
         width: "100%",
         border: "none",
         cursor: metric.onClick ? "pointer" : "default",
         textAlign: "left",
       }}
     >
-      <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+      <div style={{ display: "flex", gap: 11, alignItems: "flex-start" }}>
         <div
           style={{
-            width: 50,
-            height: 50,
+            width: 38,
+            height: 38,
+            flexShrink: 0,
             borderRadius: 9,
             border: "1px solid rgba(0,179,255,.55)",
             background: "rgba(0,104,255,.16)",
             display: "grid",
             placeItems: "center",
             color: "#23d7ff",
-            fontSize: 26,
+            fontSize: 20,
             boxShadow: "0 0 24px rgba(0,128,255,.35)",
             lineHeight: 0,
           }}
@@ -568,34 +569,34 @@ export function MetricCard({ metric }) {
             {metric.icon}
           </div>
         </div>
-        <div>
+        <div style={{ minWidth: 0 }}>
           <div
             style={{
               display: "flex",
               alignItems: "center",
-              gap: 8,
+              gap: 6,
               color: "#c9d8ee",
-              fontSize: 12,
+              fontSize: 11,
               letterSpacing: 0.3,
             }}
           >
             {metric.title}
             <InfoDot tooltip={metric.infoText} />
           </div>
-          <div style={{ marginTop: 12, color: "white", fontSize: 25, fontWeight: 650 }}>
+          <div style={{ marginTop: 8, color: "white", fontSize: 19, fontWeight: 700 }}>
             {metric.value}
           </div>
           <div
             style={{
-              marginTop: 12,
+              marginTop: 8,
               color: changeColor,
-              fontSize: 14,
+              fontSize: 11,
               fontWeight: 700,
             }}
           >
             {changeIcon} {metric.change}
           </div>
-          <div style={{ marginTop: 4, color: "#9fb0c9", fontSize: 14 }}>{subLabel}</div>
+          <div style={{ marginTop: 3, color: "#9fb0c9", fontSize: 11 }}>{subLabel}</div>
         </div>
       </div>
     </button>
@@ -638,12 +639,31 @@ export function MonthCoverageEditor({
       if (!triggerBounds) return;
 
       const desiredWidth = 300;
-      const maxLeft = Math.max(12, window.innerWidth - desiredWidth - 12);
-      setPopoverPosition({
-        top: triggerBounds.bottom + 8,
-        left: Math.min(Math.max(12, triggerBounds.left), maxLeft),
-        width: desiredWidth,
-      });
+      const margin = 12;
+      const maxLeft = Math.max(margin, window.innerWidth - desiredWidth - margin);
+      const left = Math.min(Math.max(margin, triggerBounds.left), maxLeft);
+      const spaceBelow = window.innerHeight - triggerBounds.bottom - margin;
+      const spaceAbove = triggerBounds.top - margin;
+
+      // Open below when there's room; otherwise flip above so the popover (and
+      // its Done button) stay on-screen. Either way cap the height and scroll.
+      if (spaceBelow >= 280 || spaceBelow >= spaceAbove) {
+        setPopoverPosition({
+          top: triggerBounds.bottom + 8,
+          bottom: undefined,
+          left,
+          width: desiredWidth,
+          maxHeight: Math.max(160, spaceBelow),
+        });
+      } else {
+        setPopoverPosition({
+          top: undefined,
+          bottom: window.innerHeight - triggerBounds.top + 8,
+          left,
+          width: desiredWidth,
+          maxHeight: Math.max(160, spaceAbove),
+        });
+      }
     };
 
     updatePopoverPosition();
@@ -677,9 +697,13 @@ export function MonthCoverageEditor({
               onMouseDown={(event) => event.stopPropagation()}
               style={{
                 position: "absolute",
-                top: popoverPosition.top,
+                ...(popoverPosition.top !== undefined
+                  ? { top: popoverPosition.top }
+                  : { bottom: popoverPosition.bottom }),
                 left: popoverPosition.left,
                 width: popoverPosition.width,
+                maxHeight: popoverPosition.maxHeight,
+                overflowY: "auto",
                 padding: 14,
                 borderRadius: 14,
                 border: "1px solid rgba(0,216,255,.28)",

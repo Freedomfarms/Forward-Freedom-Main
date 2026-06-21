@@ -30,10 +30,10 @@ export const APP_TAB_VALUES = Object.values(APP_TABS);
 
 export const navMain = [
   { icon: "⌂", label: APP_TABS.DASHBOARD, active: true },
+  { icon: "◉", label: APP_TABS.FORECAST_LAB },
   { icon: "▣", label: APP_TABS.OPERATIONS_BOARD },
   { icon: "$", label: APP_TABS.INCOME_HUB },
   { icon: "↗", label: APP_TABS.BUDGET_COMMAND_CENTER },
-  { icon: "◉", label: APP_TABS.FORECAST_LAB },
   { icon: "⊕", label: APP_TABS.ADD_ACCOUNTS },
   { icon: "▤", label: APP_TABS.TRANSACTIONS },
 ];
@@ -235,6 +235,49 @@ export function isUncategorizedCategoryName(name) {
   return (
     normalized === UNCATEGORIZED_CATEGORY || LEGACY_UNCATEGORIZED_CATEGORIES.includes(normalized)
   );
+}
+
+export const BUDGET_CATEGORY_TYPES = {
+  OPERATING: "O",
+  RESERVE: "R",
+};
+
+export const DEFAULT_RESERVE_TARGET_MONTHS = 12;
+
+export function normalizeBudgetCategoryType(type) {
+  return type === BUDGET_CATEGORY_TYPES.RESERVE
+    ? BUDGET_CATEGORY_TYPES.RESERVE
+    : BUDGET_CATEGORY_TYPES.OPERATING;
+}
+
+/**
+ * Ensures a budget row carries the fields the Reserve (preparedness) feature relies on.
+ * Operating rows are the default; reserve fields are only meaningful when type === "R".
+ */
+export function normalizeBudgetRow(row) {
+  if (!row || typeof row !== "object") return row;
+  const type = normalizeBudgetCategoryType(row.type);
+  const normalized = { ...row, type };
+
+  if (type === BUDGET_CATEGORY_TYPES.RESERVE) {
+    const targetMonths = Number(row.reserveTargetMonths);
+    normalized.reserveTargetMonths =
+      Number.isFinite(targetMonths) && targetMonths > 0
+        ? targetMonths
+        : DEFAULT_RESERVE_TARGET_MONTHS;
+
+    const anchor = row.reserveAnchor;
+    const hasValidAnchor =
+      anchor &&
+      typeof anchor === "object" &&
+      budgetMonths.includes(anchor.month) &&
+      Number.isFinite(Number(anchor.year));
+    normalized.reserveAnchor = hasValidAnchor
+      ? { month: anchor.month, year: Number(anchor.year) }
+      : null;
+  }
+
+  return normalized;
 }
 
 export const initialBudgetCategories = [

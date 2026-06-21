@@ -134,6 +134,15 @@ function accountGroupTheme(title) {
   };
 }
 
+// The Reserves system account gets its own signature color (fuchsia), distinct
+// from every real-account group theme, applied consistently across the card.
+const RESERVE_THEME = {
+  rail: "#e879f9",
+  text: "#f3c4ff",
+  line: "rgba(232,121,249,.32)",
+  tint: "rgba(232,121,249,.12)",
+};
+
 function buildFormFromAccount(account) {
   return {
     ...EMPTY_FORM,
@@ -192,6 +201,7 @@ function shouldFetchMetalsQuoteForForm(form) {
 
 export function AccountsView({
   accounts,
+  reservesAccount,
   addManualAccount,
   connectPlaidAccount,
   repairPlaidItem,
@@ -1017,6 +1027,140 @@ export function AccountsView({
           if (renamingAccountId) cancelRename();
         }}
       >
+        {reservesAccount && Array.isArray(reservesAccount.funds) && reservesAccount.funds.length > 0 ? (
+          <div
+            style={{
+              marginBottom: 30,
+              padding: "12px 14px",
+              borderRadius: 10,
+              border: `1px solid ${RESERVE_THEME.line}`,
+              borderLeft: `4px solid ${RESERVE_THEME.rail}`,
+              background: `linear-gradient(105deg, ${RESERVE_THEME.tint}, rgba(4,14,28,.5) 52%, rgba(3,12,24,.4))`,
+            }}
+          >
+            <div>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "baseline",
+                  gap: 8,
+                  flexWrap: "wrap",
+                }}
+              >
+                <span
+                  style={{
+                    color: RESERVE_THEME.rail,
+                    fontSize: 11,
+                    textTransform: "uppercase",
+                    letterSpacing: 1.1,
+                    fontWeight: 800,
+                  }}
+                >
+                  System Account
+                </span>
+                <span
+                  style={{
+                    color: RESERVE_THEME.rail,
+                    fontSize: 14,
+                    fontWeight: 700,
+                    letterSpacing: "-0.02em",
+                  }}
+                >
+                  {money(reservesAccount.balance)}
+                </span>
+                {reservesAccount.overcommitted ? (
+                  <span
+                    style={{
+                      padding: "2px 8px",
+                      borderRadius: 999,
+                      fontSize: 10,
+                      fontWeight: 900,
+                      color: "#ff355d",
+                      background: "rgba(255,53,93,.12)",
+                      border: "1px solid rgba(255,53,93,.4)",
+                    }}
+                  >
+                    Overcommitted vs. {money(reservesAccount.grossCash)} cash
+                  </span>
+                ) : null}
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "baseline",
+                  gap: 10,
+                  flexWrap: "wrap",
+                  marginTop: 5,
+                }}
+              >
+                <span style={{ color: RESERVE_THEME.text, fontSize: 16, fontWeight: 800 }}>
+                  Reserves
+                </span>
+                <span style={{ color: "#7a93b5", fontSize: 12, lineHeight: 1.4 }}>
+                  Not a bank account. This is reserve money still held in your bank but removed from
+                  spendable True Cash.
+                </span>
+              </div>
+            </div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
+                gap: 8,
+                marginTop: 12,
+              }}
+            >
+              {reservesAccount.funds.map((fund) => (
+                <div
+                  key={fund.id}
+                  style={{
+                    border: `1px solid ${RESERVE_THEME.line}`,
+                    borderLeft: `2px solid ${RESERVE_THEME.rail}`,
+                    borderRadius: 8,
+                    padding: "7px 9px 8px",
+                    background: "linear-gradient(120deg, rgba(3,17,32,.52), rgba(4,14,28,.84))",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: 6,
+                    }}
+                  >
+                    <span
+                      style={{
+                        color: "#e6efff",
+                        fontWeight: 700,
+                        fontSize: 12,
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}
+                    >
+                      {fund.name}
+                    </span>
+                    <span
+                      style={{
+                        color: RESERVE_THEME.rail,
+                        fontWeight: 900,
+                        fontSize: 12,
+                        flexShrink: 0,
+                      }}
+                    >
+                      {fund.readinessPercent}%
+                    </span>
+                  </div>
+                  <div style={{ color: "#5f7394", fontSize: 11, fontWeight: 600, marginTop: 3 }}>
+                    {money(fund.balance)} / {money(fund.target)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
         {accounts.length === 0 ? (
           <div style={{ display: "grid", gap: 14 }}>
             <div style={{ textAlign: "center", padding: "12px 8px 2px" }}>

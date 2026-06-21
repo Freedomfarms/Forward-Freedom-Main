@@ -1,4 +1,4 @@
-import { budgetMonths } from "../data/constants.jsx";
+import { budgetMonths, normalizeBudgetRow } from "../data/constants.jsx";
 import { getCurrentBudgetPeriod } from "./date.js";
 import { parseMoney } from "./format.js";
 
@@ -13,7 +13,7 @@ export function buildPlanYearData({
   startingTrueCash = 0,
 } = {}) {
   return {
-    budgetRows: cloneValue(budgetRows),
+    budgetRows: cloneValue(budgetRows).map(normalizeBudgetRow),
     incomeStreams: cloneValue(incomeStreams),
     startingMonth,
     startingTrueCash: Number(startingTrueCash) || 0,

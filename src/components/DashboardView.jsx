@@ -1133,7 +1133,7 @@ export function DashboardView({
 
       <section
         className="responsive-grid-4 dashboard-metrics-grid"
-        style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginTop: 16 }}
+        style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: 12, marginTop: 16 }}
       >
         {dynamicMetrics.map((metric) => (
           <MetricCard key={metric.title} metric={metric} />

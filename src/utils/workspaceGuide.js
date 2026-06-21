@@ -1,4 +1,6 @@
 import { APP_TABS, UNCATEGORIZED_CATEGORY } from "../data/constants.jsx";
+import { buildReserveReadiness, isReserveRow } from "./reserves.js";
+import { getCurrentBudgetPeriod } from "./date.js";
 
 function normalizeText(value) {
   return String(value || "")
@@ -27,12 +29,21 @@ export function buildWorkspaceGuideContext({
     (transaction) => normalizeText(transaction?.category) === normalizeText(UNCATEGORIZED_CATEGORY)
   ).length;
 
+  const reserveRows = budgetRows.filter(isReserveRow);
+  const period = getCurrentBudgetPeriod();
+  const reserveReadiness = buildReserveReadiness(reserveRows, transactions, {
+    asOfMonth: period.month,
+    asOfYear: period.year,
+  });
+
   return {
     activeTab,
     onboardingProgress,
     accountCount: accounts.length,
     incomeStreamCount: incomeStreams.length,
     budgetedRowCount: budgetRows.filter((row) => Number(row?.budget) > 0).length,
+    reserveCount: reserveRows.length,
+    reserveReadinessPercent: reserveReadiness.count ? reserveReadiness.overallPercent : null,
     transactionCount: transactions.length,
     uncategorizedTransactions,
     plaidConnectedItemCount: plaidIntegration?.connectedItemCount || 0,
@@ -146,10 +157,35 @@ export function resolveWorkspaceGuideReply(question, context) {
     };
   }
 
+  if (
+    includesAny(text, [
+      "reserve",
+      "frc",
+      "financial readiness",
+      "readiness",
+      "preparedness",
+      "fully funded",
+      "operating vs",
+      "operating or reserve",
+      "reserve vs",
+      "difference between operating",
+    ])
+  ) {
+    const readinessNote = Number.isFinite(context.reserveReadinessPercent)
+      ? ` Your overall reserve readiness (FRC) is currently ${context.reserveReadinessPercent}%.`
+      : "";
+    return {
+      text:
+        "Budget categories are either Operating (O) or Reserve (R), toggled on each row in Budget Strategy Lab. Operating categories are normal monthly budgets — the amount is a spending limit that resets every month. Reserve categories are preparedness funds — the monthly amount is a contribution that builds a balance and carries over month to month (it never resets, and spending it is expected, not overspending). For a reserve: Target = monthly contribution × 12, Readiness % = Balance ÷ Target (shown capped at 100%, labeled Fully Funded once reached). The Financial Readiness Condition (FRC) panel at the top is dollar-weighted: all reserve balances ÷ all reserve targets." +
+        readinessNote,
+      actions: [buildAction("Open Budget Strategy Lab", APP_TABS.BUDGET_COMMAND_CENTER)],
+    };
+  }
+
   if (includesAny(text, ["true cash"])) {
     return {
       text:
-        "True Cash is your real spendable position: Liquid Cash (checking, savings, and manual cash) minus credit card debt. It's the headline card on Command Center, and the True Cash chart trends it over time. Keep your account balances current in Accounts to keep it accurate.",
+        "True Cash is your real spendable position: Liquid Cash (checking, savings, and manual cash) minus credit card debt minus committed Reserves. Reserve money still sits in your bank but is set aside, so it's removed from spendable cash; True Cash can even go negative if you've committed more than you hold. It's the headline card on Command Center. Keep account balances current in Accounts to keep it accurate.",
       actions: [
         buildAction("Open Command Center", APP_TABS.DASHBOARD),
         buildAction("Open Accounts", APP_TABS.ADD_ACCOUNTS),
@@ -304,7 +340,7 @@ export function resolveWorkspaceGuideReply(question, context) {
   if (includesAny(text, ["budget", "spending plan", "category budget", "overspent"])) {
     return {
       text:
-        "Budget Strategy Lab is where you assign monthly budgets, spot overspending, and see projected cash flow by category.",
+        "Budget Strategy Lab is where you assign monthly budgets, spot overspending, and see projected cash flow by category. Categories are either Operating (monthly spending limits that reset) or Reserve (preparedness funds that build up and carry over) — ask me about reserves or the Financial Readiness Condition (FRC) for how those work.",
       actions: [buildAction("Open Budget Strategy Lab", APP_TABS.BUDGET_COMMAND_CENTER)],
     };
   }
