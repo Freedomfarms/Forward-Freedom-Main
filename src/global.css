@@ -83,6 +83,51 @@ button {
 .budget-orbit-metric-flash {
   animation: budget-orbit-metric-flash 0.55s ease;
 }
+
+.dashboard-view[data-scaled="true"] {
+  zoom: var(--dashboard-scale, 1);
+}
+
+@supports not (zoom: 1) {
+  .dashboard-view[data-scaled="true"] {
+    transform: scale(var(--dashboard-scale, 1));
+    transform-origin: top left;
+    width: calc(100% / var(--dashboard-scale, 1));
+  }
+}
+
+@media (max-width: 1440px) {
+  .dashboard-metrics-grid {
+    gap: 10px !important;
+  }
+
+  .dashboard-overview-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .budget-orbit-chart {
+    --orbit-size: clamp(168px, 20vw, 208px);
+  }
+
+  .budget-orbit-metric-value {
+    font-size: 20px !important;
+  }
+}
+
+@media (max-width: 1280px) {
+  .dashboard-chart-panel,
+  .dashboard-view .responsive-two-column > div {
+    padding: 16px !important;
+  }
+
+  .budget-orbit-chart {
+    --orbit-size: clamp(156px, 24vw, 188px);
+  }
+
+  .budget-orbit-metric-value {
+    font-size: 18px !important;
+  }
+}
 .ff-logo-sweep {
   animation: ff-logo-spin 7s linear infinite;
 }

@@ -85,7 +85,7 @@ export function BudgetOrbitChart({ transactions, budgetRows, year, currentMonth 
   ];
 
   return (
-    <div style={{ width: "100%" }}>
+    <div style={{ width: "100%" }} className="budget-orbit-chart">
       <div
         style={{
           width: "100%",
@@ -315,7 +315,7 @@ export function BudgetOrbitChart({ transactions, budgetRows, year, currentMonth 
             </div>
             <div
               key={`${label}-${flashToken}`}
-              className="budget-orbit-metric-flash"
+              className="budget-orbit-metric-flash budget-orbit-metric-value"
               style={{
                 color,
                 fontSize: 22,
