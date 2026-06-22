@@ -199,7 +199,7 @@ export function BudgetCommandCenter({
   const [isSortModalOpen, setIsSortModalOpen] = useState(false);
   const [activeSortMode, setActiveSortMode] = useState("manual");
   const [pendingSortMode, setPendingSortMode] = useState("manual");
-  const [viewBy, setViewBy] = useState("category");
+  const [viewBy, setViewBy] = useState("status");
   const overspentScrollRef = useRef(null);
   const reserveScrollRef = useRef(null);
   const [activeBudgetDate, setActiveBudgetDate] = useState(() => ({
@@ -476,14 +476,14 @@ export function BudgetCommandCenter({
   const scrollOverspent = (direction) => {
     const container = overspentScrollRef.current;
     if (!container) return;
-    const amount = Math.max(container.clientWidth * 0.8, 240);
+    const amount = container.clientWidth + 10;
     container.scrollBy({ left: direction * amount, behavior: "smooth" });
   };
 
   const scrollReserves = (direction) => {
     const container = reserveScrollRef.current;
     if (!container) return;
-    const amount = Math.max(container.clientWidth * 0.8, 240);
+    const amount = container.clientWidth + 10;
     container.scrollBy({ left: direction * amount, behavior: "smooth" });
   };
 
@@ -1021,7 +1021,7 @@ export function BudgetCommandCenter({
         className="budget-summary-row"
         style={{
           display: "grid",
-          gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
+          gridTemplateColumns: "minmax(0, 0.88fr) minmax(0, 1.12fr)",
           gap: 16,
           marginBottom: 16,
         }}
@@ -1128,7 +1128,7 @@ export function BudgetCommandCenter({
           borderRadius: 20,
           minWidth: 0,
           display: "grid",
-          gridTemplateColumns: "minmax(0, 0.85fr) minmax(0, 1fr)",
+          gridTemplateColumns: "minmax(0, 1.05fr) minmax(0, 0.85fr)",
           columnGap: 18,
           alignItems: "stretch",
         }}
@@ -1219,12 +1219,12 @@ export function BudgetCommandCenter({
                   alignItems: "center",
                   justifyContent: "center",
                   fontSize: 16,
-                  width: 30,
-                  height: 30,
+                  width: 28,
+                  height: 28,
                   borderRadius: 999,
-                  border: "1px solid rgba(94,234,212,.3)",
-                  background: "rgba(0,245,155,.1)",
-                  color: "#9ff7e0",
+                  border: "1px solid rgba(0,216,255,.26)",
+                  background: "rgba(0,136,255,.12)",
+                  color: "#dff7ff",
                   cursor: "pointer",
                   fontWeight: 900,
                   lineHeight: 1,
@@ -1240,10 +1240,10 @@ export function BudgetCommandCenter({
                 gap: 10,
                 overflowX: "auto",
                 flex: 1,
+                minWidth: 0,
                 scrollbarWidth: "none",
                 padding: "2px 0",
                 scrollSnapType: "x mandatory",
-                scrollPadding: "0 2px",
               }}
             >
               {reserveSnapshots.map((reserve) => (
@@ -1255,9 +1255,9 @@ export function BudgetCommandCenter({
                     reserve.balance
                   )} of ${wholeDollars(reserve.target)}`}
                   style={{
-                    flexShrink: 0,
+                    flex: "0 0 100%",
+                    boxSizing: "border-box",
                     scrollSnapAlign: "start",
-                    width: 188,
                     textAlign: "left",
                     border: `1px solid ${reserve.status.color}44`,
                     background: "linear-gradient(180deg, rgba(8,24,46,.6), rgba(3,14,28,.5))",
@@ -1351,12 +1351,12 @@ export function BudgetCommandCenter({
                   alignItems: "center",
                   justifyContent: "center",
                   fontSize: 16,
-                  width: 30,
-                  height: 30,
+                  width: 28,
+                  height: 28,
                   borderRadius: 999,
-                  border: "1px solid rgba(94,234,212,.3)",
-                  background: "rgba(0,245,155,.1)",
-                  color: "#9ff7e0",
+                  border: "1px solid rgba(0,216,255,.26)",
+                  background: "rgba(0,136,255,.12)",
+                  color: "#dff7ff",
                   cursor: "pointer",
                   fontWeight: 900,
                   lineHeight: 1,
@@ -1437,10 +1437,10 @@ export function BudgetCommandCenter({
                   gap: 10,
                   overflowX: "auto",
                   flex: 1,
+                  minWidth: 0,
                   scrollbarWidth: "none",
                   padding: "2px 0",
                   scrollSnapType: "x mandatory",
-                  scrollPadding: "0 2px",
                 }}
               >
                 {overspentRows.map((row) => (
@@ -1452,10 +1452,12 @@ export function BudgetCommandCenter({
                       row.remaining
                     )}`}
                     style={{
-                      flexShrink: 0,
+                      flex: "0 0 100%",
+                      boxSizing: "border-box",
                       scrollSnapAlign: "start",
                       display: "flex",
                       alignItems: "center",
+                      justifyContent: "space-between",
                       gap: 10,
                       textAlign: "left",
                       border: "1px solid rgba(255,93,122,.28)",
@@ -1464,11 +1466,28 @@ export function BudgetCommandCenter({
                       padding: "8px 12px",
                       cursor: "pointer",
                       color: "#eef6ff",
-                      whiteSpace: "nowrap",
+                      minWidth: 0,
                     }}
                   >
-                    <span style={{ fontWeight: 800, fontSize: 13 }}>{row.name}</span>
-                    <span style={{ color: "#ff9fb0", fontSize: 12, fontWeight: 800 }}>
+                    <span
+                      style={{
+                        fontWeight: 800,
+                        fontSize: 13,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {row.name}
+                    </span>
+                    <span
+                      style={{
+                        color: "#ff9fb0",
+                        fontSize: 12,
+                        fontWeight: 800,
+                        flexShrink: 0,
+                      }}
+                    >
                       {money(row.remaining)}
                     </span>
                   </button>
