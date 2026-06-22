@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { APP_TABS, budgetMonthNames, budgetMonths, chartSets } from "../data/constants.jsx";
+import { APP_TABS, budgetMonths, chartSets } from "../data/constants.jsx";
 import { buildMonthlyBudgetReview } from "../utils/budgetReview.js";
 import { getCurrentBudgetPeriod } from "../utils/date.js";
 import { styles } from "../styles.js";
@@ -11,6 +11,7 @@ import {
   buildTrueCashProjectionSchedule,
 } from "../utils/trueCashProjection.js";
 import { HouseholdProfilesControl, InfoDot, MetricCard } from "./Common.jsx";
+import { BudgetOrbitChart } from "./BudgetOrbitChart.jsx";
 
 const CHART_HEIGHT = 300;
 const NET_WORTH_HISTORY_W = 620;
@@ -476,7 +477,7 @@ export function DashboardView({
   const isProjectionHover = hoverState?.point.type === "projected";
 
   return (
-    <>
+    <div className="dashboard-view">
       <header style={{ ...styles.pageHeader, marginBottom: 20 }}>
         <div>
           <h1 style={styles.pageTitle}>Command Center</h1>
@@ -1156,105 +1157,12 @@ export function DashboardView({
           >
             Monthly Budget Review <InfoDot />
           </div>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              gap: 18,
-              marginBottom: 16,
-            }}
-          >
-            <div>
-              <div style={{ color: "white", fontSize: 22, fontWeight: 900 }}>
-                {budgetMonthNames[monthlyBudgetReview.month]} {monthlyBudgetReview.year}
-              </div>
-              <div style={{ color: "#8ea8ca", fontSize: 13, marginTop: 6 }}>
-                Budgeted plan vs actual spending across your highest-impact categories.
-              </div>
-            </div>
-            <div style={{ display: "flex", gap: 10 }}>
-              <button
-                onClick={() => setActiveTab(APP_TABS.RECURRING_SUBSCRIPTIONS)}
-                style={{
-                  background: "rgba(0,136,255,.08)",
-                  border: "1px solid rgba(0,216,255,.18)",
-                  color: "#d7ebff",
-                  borderRadius: 8,
-                  padding: "10px 14px",
-                  cursor: "pointer",
-                  fontWeight: 700,
-                  whiteSpace: "nowrap",
-                }}
-              >
-                Open Subscriptions
-              </button>
-              <button
-                onClick={() => setActiveTab(APP_TABS.BUDGET_COMMAND_CENTER)}
-                style={{
-                  background: "rgba(0,136,255,.12)",
-                  border: "1px solid rgba(0,216,255,.28)",
-                  color: "#d7ebff",
-                  borderRadius: 8,
-                  padding: "10px 14px",
-                  cursor: "pointer",
-                  fontWeight: 700,
-                  whiteSpace: "nowrap",
-                }}
-              >
-                Open Budget Lab
-              </button>
-            </div>
-          </div>
-
-          <div
-            className="responsive-grid-3"
-            style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14 }}
-          >
-            {[
-              ["Budget", money(monthlyBudgetReview.monthlyBudget), "#8feaff"],
-              ["Spent", money(monthlyBudgetReview.monthlySpent), "#ffb65d"],
-              [
-                monthlyBudgetReview.remaining >= 0 ? "Remaining" : "Over Budget",
-                `${monthlyBudgetReview.remaining >= 0 ? "" : "-"}${money(
-                  Math.abs(monthlyBudgetReview.remaining)
-                )}`,
-                monthlyBudgetReview.remaining >= 0 ? "#00f59b" : "#ff5d7a",
-              ],
-            ].map(([label, value, color]) => (
-              <div
-                key={label}
-                style={{
-                  border: "1px solid rgba(0,136,255,.18)",
-                  borderRadius: 14,
-                  background: "rgba(3,17,32,.58)",
-                  padding: "16px 18px 18px",
-                }}
-              >
-                <div
-                  style={{
-                    color: "#8fb1d9",
-                    fontSize: 12,
-                    textTransform: "uppercase",
-                    letterSpacing: 0.9,
-                    marginBottom: 10,
-                  }}
-                >
-                  {label}
-                </div>
-                <div
-                  style={{
-                    color,
-                    fontSize: 22,
-                    fontWeight: 900,
-                    lineHeight: 1.2,
-                  }}
-                >
-                  {value}
-                </div>
-              </div>
-            ))}
-          </div>
+          <BudgetOrbitChart
+            transactions={transactions}
+            budgetRows={budgetRows}
+            year={monthlyBudgetReview.year}
+            currentMonth={monthlyBudgetReview.month}
+          />
         </div>
 
         <div style={{ ...styles.panel, padding: 20 }}>
@@ -1495,7 +1403,7 @@ export function DashboardView({
           </div>
         )}
       </section>
-    </>
+    </div>
   );
 }
 

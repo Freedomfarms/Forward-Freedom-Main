@@ -63,6 +63,79 @@ button {
     left: 125%;
   }
 }
+@keyframes budget-orbit-metric-flash {
+  0% {
+    opacity: 0.45;
+    transform: scale(0.96);
+    filter: brightness(1.35);
+  }
+  55% {
+    opacity: 1;
+    transform: scale(1.04);
+    filter: brightness(1.6);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: brightness(1);
+  }
+}
+.budget-orbit-metric-flash {
+  animation: budget-orbit-metric-flash 0.55s ease;
+}
+
+.app-main[data-scaled="true"] {
+  zoom: var(--app-ui-scale, 1);
+}
+
+@supports not (zoom: 1) {
+  .app-main[data-scaled="true"] {
+    transform: scale(var(--app-ui-scale, 1));
+    transform-origin: top left;
+    width: calc(100% / var(--app-ui-scale, 1));
+  }
+}
+
+@media (max-width: 1440px) {
+  .dashboard-metrics-grid {
+    gap: 10px !important;
+  }
+
+  .dashboard-overview-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .budget-orbit-chart {
+    --orbit-size: clamp(168px, 20vw, 208px);
+  }
+
+  .budget-orbit-metric-value {
+    font-size: 20px !important;
+  }
+
+  .app-main {
+    padding: 18px 20px !important;
+  }
+}
+
+@media (max-width: 1280px) {
+  .dashboard-chart-panel,
+  .dashboard-view .responsive-two-column > div {
+    padding: 16px !important;
+  }
+
+  .budget-orbit-chart {
+    --orbit-size: clamp(156px, 24vw, 188px);
+  }
+
+  .budget-orbit-metric-value {
+    font-size: 18px !important;
+  }
+
+  .app-main {
+    padding: 16px 18px !important;
+  }
+}
 .ff-logo-sweep {
   animation: ff-logo-spin 7s linear infinite;
 }

@@ -94,6 +94,7 @@ import { ObjectivesBoard } from "./components/ObjectivesBoard.jsx";
 import { RecurringSubscriptions } from "./components/RecurringSubscriptions.jsx";
 import { TransactionsView } from "./components/TransactionsView.jsx";
 import { WorkspaceGuideAssistant } from "./components/WorkspaceGuideAssistant.jsx";
+import { useViewportUIScale } from "./utils/useViewportUIScale.js";
 import { LegalModal } from "./components/LegalDocuments.jsx";
 
 function roundCurrency(value) {
@@ -2097,6 +2098,8 @@ function ForwardFreedomDashboard({
     setCurrentView("app");
   };
 
+  const appUIScale = useViewportUIScale();
+
   if (currentView === "landing") {
     return <LandingPage enterApp={handleEnterApp} onEnterDemo={onEnterDemo} />;
   }
@@ -2145,7 +2148,14 @@ function ForwardFreedomDashboard({
           />
         </div>
 
-        <main className="app-main" style={styles.main}>
+        <main
+          className="app-main"
+          style={{
+            ...styles.main,
+            ...(appUIScale !== 1 ? { ["--app-ui-scale"]: appUIScale } : {}),
+          }}
+          data-scaled={appUIScale !== 1 ? "true" : undefined}
+        >
           <div className="mobile-topbar">
             <button
               type="button"
