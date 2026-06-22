@@ -84,15 +84,15 @@ button {
   animation: budget-orbit-metric-flash 0.55s ease;
 }
 
-.dashboard-view[data-scaled="true"] {
-  zoom: var(--dashboard-scale, 1);
+.app-main[data-scaled="true"] {
+  zoom: var(--app-ui-scale, 1);
 }
 
 @supports not (zoom: 1) {
-  .dashboard-view[data-scaled="true"] {
-    transform: scale(var(--dashboard-scale, 1));
+  .app-main[data-scaled="true"] {
+    transform: scale(var(--app-ui-scale, 1));
     transform-origin: top left;
-    width: calc(100% / var(--dashboard-scale, 1));
+    width: calc(100% / var(--app-ui-scale, 1));
   }
 }
 
@@ -112,6 +112,10 @@ button {
   .budget-orbit-metric-value {
     font-size: 20px !important;
   }
+
+  .app-main {
+    padding: 18px 20px !important;
+  }
 }
 
 @media (max-width: 1280px) {
@@ -126,6 +130,10 @@ button {
 
   .budget-orbit-metric-value {
     font-size: 18px !important;
+  }
+
+  .app-main {
+    padding: 16px 18px !important;
   }
 }
 .ff-logo-sweep {

@@ -12,7 +12,6 @@ import {
 } from "../utils/trueCashProjection.js";
 import { HouseholdProfilesControl, InfoDot, MetricCard } from "./Common.jsx";
 import { BudgetOrbitChart } from "./BudgetOrbitChart.jsx";
-import { useViewportUIScale } from "../utils/useViewportUIScale.js";
 
 const CHART_HEIGHT = 300;
 const NET_WORTH_HISTORY_W = 620;
@@ -476,20 +475,9 @@ export function DashboardView({
     })),
   ];
   const isProjectionHover = hoverState?.point.type === "projected";
-  const dashboardScale = useViewportUIScale();
 
   return (
-    <div
-      className="dashboard-view"
-      style={
-        dashboardScale === 1
-          ? undefined
-          : {
-              ["--dashboard-scale"]: dashboardScale,
-            }
-      }
-      data-scaled={dashboardScale !== 1 ? "true" : undefined}
-    >
+    <div className="dashboard-view">
       <header style={{ ...styles.pageHeader, marginBottom: 20 }}>
         <div>
           <h1 style={styles.pageTitle}>Command Center</h1>

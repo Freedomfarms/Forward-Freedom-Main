@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 const SIDEBAR_WIDTH = 268;
 const MAIN_PADDING = 48;
 
-function computeDashboardScale(viewportWidth) {
+function computeAppUIScale(viewportWidth) {
   if (viewportWidth <= 1023) return 1;
 
   const available = viewportWidth - SIDEBAR_WIDTH - MAIN_PADDING;
@@ -17,11 +17,11 @@ function computeDashboardScale(viewportWidth) {
 
 export function useViewportUIScale() {
   const [scale, setScale] = useState(() =>
-    typeof window !== "undefined" ? computeDashboardScale(window.innerWidth) : 1
+    typeof window !== "undefined" ? computeAppUIScale(window.innerWidth) : 1
   );
 
   useEffect(() => {
-    const updateScale = () => setScale(computeDashboardScale(window.innerWidth));
+    const updateScale = () => setScale(computeAppUIScale(window.innerWidth));
     updateScale();
     window.addEventListener("resize", updateScale);
     return () => window.removeEventListener("resize", updateScale);
