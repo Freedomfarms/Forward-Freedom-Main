@@ -5,30 +5,53 @@ import { money, wholeDollars } from "../utils/format.js";
 
 const ON_BUDGET_COLOR = "#00d8ff";
 const OVERSPENT_COLOR = "#ff5d7a";
-const ORBIT_SIZE = 220;
-const ORBIT_CENTER = ORBIT_SIZE / 2;
-const LABEL_RADIUS = 122;
-const DOT_RADIUS = 100;
+const VIEW_SIZE = 248;
+const CHART_CENTER = VIEW_SIZE / 2;
+const OUTER_RADIUS = 86;
+const INNER_RADIUS = 56;
+const LABEL_RADIUS = 108;
+const SEGMENT_GAP = 2.4;
 
-function buildOrbitGradient(monthStatuses, activeMonth) {
-  const segmentPercent = 100 / monthStatuses.length;
-  let current = 0;
-
-  return `conic-gradient(${monthStatuses
-    .map((entry) => {
-      const start = current;
-      current += segmentPercent;
-      let color = entry.isOverspent ? OVERSPENT_COLOR : ON_BUDGET_COLOR;
-      if (entry.month === activeMonth) {
-        color = entry.isOverspent ? "#ff8aa0" : "#66e8ff";
-      }
-      return `${color} ${start.toFixed(2)}% ${current.toFixed(2)}%`;
-    })
-    .join(", ")})`;
+function polarToCartesian(cx, cy, radius, angleDeg) {
+  const rad = (angleDeg * Math.PI) / 180;
+  return {
+    x: cx + radius * Math.cos(rad),
+    y: cy + radius * Math.sin(rad),
+  };
 }
 
-function getOrbitAngle(index) {
-  return ((index * 30 + 15 - 90) * Math.PI) / 180;
+function describeDonutSegment(cx, cy, outerR, innerR, startAngle, endAngle) {
+  const outerStart = polarToCartesian(cx, cy, outerR, startAngle);
+  const outerEnd = polarToCartesian(cx, cy, outerR, endAngle);
+  const innerStart = polarToCartesian(cx, cy, innerR, endAngle);
+  const innerEnd = polarToCartesian(cx, cy, innerR, startAngle);
+  const largeArc = endAngle - startAngle > 180 ? 1 : 0;
+
+  return [
+    `M ${outerStart.x} ${outerStart.y}`,
+    `A ${outerR} ${outerR} 0 ${largeArc} 1 ${outerEnd.x} ${outerEnd.y}`,
+    `L ${innerStart.x} ${innerStart.y}`,
+    `A ${innerR} ${innerR} 0 ${largeArc} 0 ${innerEnd.x} ${innerEnd.y}`,
+    "Z",
+  ].join(" ");
+}
+
+function getMonthSegmentAngles(index) {
+  const start = index * 30 - 90 + SEGMENT_GAP / 2;
+  const end = (index + 1) * 30 - 90 - SEGMENT_GAP / 2;
+  return { start, end };
+}
+
+function getMonthLabelAngle(index) {
+  return index * 30 + 15 - 90;
+}
+
+function getSegmentColor(entry, activeMonth) {
+  const isActive = entry.month === activeMonth;
+  if (entry.isOverspent) {
+    return isActive ? "#ff8aa0" : OVERSPENT_COLOR;
+  }
+  return isActive ? "#66e8ff" : ON_BUDGET_COLOR;
 }
 
 export function BudgetOrbitChart({ transactions, budgetRows, year, currentMonth }) {
@@ -61,7 +84,7 @@ export function BudgetOrbitChart({ transactions, budgetRows, year, currentMonth 
   const activeRemaining = activeMonthData?.remaining || 0;
   const activeUsedPercent =
     activeBudget > 0 ? Math.round((activeSpent / activeBudget) * 100) : 0;
-  const orbitGradient = buildOrbitGradient(monthStatuses, activeMonth);
+  const activeIsOverspent = activeRemaining < 0;
 
   const focusMonth = (month) => {
     setActiveMonth(month);
@@ -85,202 +108,181 @@ export function BudgetOrbitChart({ transactions, budgetRows, year, currentMonth 
   ];
 
   return (
-    <div style={{ width: "100%" }} className="budget-orbit-chart">
-      <div
-        style={{
-          width: "100%",
-          border: "1px solid rgba(0,136,255,.18)",
-          borderRadius: 18,
-          background: "rgba(3,17,32,.58)",
-          padding: "16px 18px 14px",
-        }}
-        onMouseLeave={resetMonth}
-      >
-        <div style={{ marginBottom: 14 }}>
+    <div style={{ width: "100%" }} className="budget-orbit-chart" onMouseLeave={resetMonth}>
+      <div style={{ display: "flex", justifyContent: "center", width: "100%" }}>
+        <div className="budget-orbit-stage">
           <div
+            className="budget-orbit-halo"
             style={{
-              color: "#8feaff",
-              fontSize: 11,
-              fontWeight: 900,
-              textTransform: "uppercase",
-              letterSpacing: 1.2,
+              boxShadow: activeIsOverspent
+                ? "0 0 35px rgba(255,93,122,.38), 0 0 70px rgba(255,93,122,.12)"
+                : "0 0 35px rgba(0,174,255,.45), 0 0 70px rgba(0,174,255,.14)",
             }}
-          >
-            Budget Orbit
-          </div>
-          <div style={{ color: "#7fa1ca", fontSize: 12, marginTop: 4 }}>
-            Progress around the budget circle
-          </div>
-        </div>
+          />
 
-        <div style={{ display: "flex", justifyContent: "center", width: "100%" }}>
-          <div
-            style={{
-              position: "relative",
-              width: ORBIT_SIZE,
-              height: ORBIT_SIZE,
-            }}
+          <svg
+            className="budget-orbit-svg"
+            viewBox={`0 0 ${VIEW_SIZE} ${VIEW_SIZE}`}
+            aria-hidden="true"
           >
-            <div
-              style={{
-                width: ORBIT_SIZE,
-                height: ORBIT_SIZE,
-                borderRadius: "50%",
-                background: orbitGradient,
-                boxShadow: "0 0 34px rgba(0,216,255,.18), inset 0 0 42px rgba(0,216,255,.08)",
-              }}
-            >
-              <div
-                style={{
-                  position: "absolute",
-                  inset: 34,
-                  borderRadius: "50%",
-                  background:
-                    "radial-gradient(circle at 30% 25%, rgba(255,255,255,.08), rgba(3,16,31,.98) 62%)",
-                  border: "1px solid rgba(0,216,255,.24)",
-                }}
-              />
-            </div>
+            <defs>
+              <filter id="budget-orbit-glow" x="-40%" y="-40%" width="180%" height="180%">
+                <feGaussianBlur stdDeviation="3.2" result="blur" />
+                <feMerge>
+                  <feMergeNode in="blur" />
+                  <feMergeNode in="SourceGraphic" />
+                </feMerge>
+              </filter>
+            </defs>
+
+            <circle
+              cx={CHART_CENTER}
+              cy={CHART_CENTER}
+              r={(OUTER_RADIUS + INNER_RADIUS) / 2}
+              fill="none"
+              stroke="rgba(120,180,255,.12)"
+              strokeWidth={OUTER_RADIUS - INNER_RADIUS}
+            />
 
             {monthStatuses.map((entry, index) => {
-              const angle = getOrbitAngle(index);
-              const dotX = ORBIT_CENTER + DOT_RADIUS * Math.cos(angle);
-              const dotY = ORBIT_CENTER + DOT_RADIUS * Math.sin(angle);
-              const labelX = ORBIT_CENTER + LABEL_RADIUS * Math.cos(angle);
-              const labelY = ORBIT_CENTER + LABEL_RADIUS * Math.sin(angle);
-              const dotColor = entry.isOverspent ? OVERSPENT_COLOR : ON_BUDGET_COLOR;
+              const { start, end } = getMonthSegmentAngles(index);
+              const color = getSegmentColor(entry, activeMonth);
               const isActive = entry.month === activeMonth;
 
               return (
-                <div key={entry.month}>
-                  <button
-                    type="button"
-                    aria-label={`${budgetMonthNames[entry.month]} ${year}`}
-                    onMouseEnter={() => focusMonth(entry.month)}
-                    onFocus={() => focusMonth(entry.month)}
-                    onClick={() => focusMonth(entry.month)}
-                    style={{
-                      position: "absolute",
-                      left: dotX,
-                      top: dotY,
-                      width: 18,
-                      height: 18,
-                      borderRadius: "50%",
-                      transform: "translate(-50%, -50%)",
-                      background: dotColor,
-                      boxShadow: isActive
-                        ? `0 0 16px ${dotColor}, 0 0 28px ${dotColor}`
-                        : `0 0 10px ${dotColor}`,
-                      border: isActive ? "2px solid #ffffff" : "none",
-                      cursor: "pointer",
-                      padding: 0,
-                    }}
-                  />
-                  <button
-                    type="button"
-                    onMouseEnter={() => focusMonth(entry.month)}
-                    onFocus={() => focusMonth(entry.month)}
-                    onClick={() => focusMonth(entry.month)}
-                    style={{
-                      position: "absolute",
-                      left: labelX,
-                      top: labelY,
-                      transform: "translate(-50%, -50%)",
-                      color: isActive ? "#ffffff" : "#7fa1ca",
-                      fontSize: 10,
-                      fontWeight: 900,
-                      letterSpacing: 0.7,
-                      cursor: "pointer",
-                      padding: "4px 6px",
-                      borderRadius: 6,
-                      border: isActive ? "1px solid rgba(0,216,255,.45)" : "1px solid transparent",
-                      background: isActive ? "rgba(0,136,255,.16)" : "transparent",
-                    }}
-                  >
-                    {entry.month.toUpperCase()}
-                  </button>
-                </div>
+                <path
+                  key={entry.month}
+                  d={describeDonutSegment(
+                    CHART_CENTER,
+                    CHART_CENTER,
+                    OUTER_RADIUS,
+                    INNER_RADIUS,
+                    start,
+                    end
+                  )}
+                  fill={color}
+                  stroke={isActive ? "rgba(255,255,255,.55)" : "rgba(3,16,31,.65)"}
+                  strokeWidth={isActive ? 1.4 : 0.8}
+                  filter="url(#budget-orbit-glow)"
+                  style={{
+                    cursor: "pointer",
+                    opacity: isActive ? 1 : 0.92,
+                    transition: "opacity .2s ease, fill .2s ease",
+                  }}
+                  onMouseEnter={() => focusMonth(entry.month)}
+                  onFocus={() => focusMonth(entry.month)}
+                  onClick={() => focusMonth(entry.month)}
+                />
               );
             })}
+          </svg>
 
+          <div
+            className="budget-orbit-core"
+            style={{
+              border: activeIsOverspent
+                ? "1px solid rgba(255,93,122,.28)"
+                : "1px solid rgba(0,216,255,.24)",
+            }}
+          >
             <div
               style={{
-                position: "absolute",
-                inset: 0,
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                justifyContent: "center",
-                textAlign: "center",
-                pointerEvents: "none",
-                padding: "0 28px",
+                color: activeIsOverspent ? "#ffb3c1" : "#8feaff",
+                fontSize: 11,
+                fontWeight: 900,
+                textTransform: "uppercase",
+                letterSpacing: 1,
               }}
             >
-              <div style={{ color: "#8feaff", fontSize: 10, fontWeight: 800, letterSpacing: 0.6 }}>
-                {budgetMonthNames[activeMonth]?.slice(0, 3).toUpperCase()} {year}
-              </div>
-              <div
-                style={{ color: "white", fontSize: 28, fontWeight: 900, lineHeight: 1, marginTop: 6 }}
-              >
-                {activeUsedPercent}%
-              </div>
-              <div
-                style={{
-                  color: "#8feaff",
-                  fontSize: 9,
-                  fontWeight: 900,
-                  textTransform: "uppercase",
-                  letterSpacing: 0.8,
-                  marginTop: 6,
-                }}
-              >
-                Of Budget Used
-              </div>
-              <div style={{ color: "#9fb6d6", fontSize: 11, fontWeight: 700, marginTop: 8 }}>
-                {wholeDollars(activeSpent)} / {wholeDollars(activeBudget)}
-              </div>
+              Budget Used
+            </div>
+            <div style={{ color: "white", fontSize: 26, fontWeight: 900, lineHeight: 1, marginTop: 8 }}>
+              {activeUsedPercent}%
+            </div>
+            <div
+              style={{
+                color: activeIsOverspent ? "#ffd9df" : "#dff7ff",
+                fontSize: 18,
+                fontWeight: 900,
+                lineHeight: 1.1,
+                marginTop: 8,
+              }}
+            >
+              {wholeDollars(activeSpent)}
+            </div>
+            <div style={{ color: "#7fa1ca", fontSize: 11, lineHeight: 1.4, marginTop: 6 }}>
+              {budgetMonthNames[activeMonth]?.slice(0, 3)} {year}
+              {activeIsOverspent ? " · over budget" : " · of " + wholeDollars(activeBudget)}
             </div>
           </div>
-        </div>
 
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "center",
-            gap: 28,
-            width: "100%",
-            marginTop: 14,
-            paddingTop: 12,
-            borderTop: "1px solid rgba(30,144,255,.12)",
-          }}
-        >
-          {[
-            ["On Budget", ON_BUDGET_COLOR],
-            ["Overspent", OVERSPENT_COLOR],
-          ].map(([label, color]) => (
-            <div
-              key={label}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 7,
-                color: "#9fb6d6",
-                fontSize: 11,
-              }}
-            >
-              <span
+          {monthStatuses.map((entry, index) => {
+            const angle = (getMonthLabelAngle(index) * Math.PI) / 180;
+            const labelX = 50 + (LABEL_RADIUS / (VIEW_SIZE / 2)) * 50 * Math.cos(angle);
+            const labelY = 50 + (LABEL_RADIUS / (VIEW_SIZE / 2)) * 50 * Math.sin(angle);
+            const isActive = entry.month === activeMonth;
+
+            return (
+              <button
+                key={`${entry.month}-label`}
+                type="button"
+                aria-label={`${budgetMonthNames[entry.month]} ${year}`}
+                onMouseEnter={() => focusMonth(entry.month)}
+                onFocus={() => focusMonth(entry.month)}
+                onClick={() => focusMonth(entry.month)}
+                className="budget-orbit-month-label"
                 style={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: "50%",
-                  background: color,
-                  boxShadow: `0 0 8px ${color}`,
+                  left: `${labelX}%`,
+                  top: `${labelY}%`,
+                  color: isActive ? "#ffffff" : "#7fa1ca",
+                  border: isActive ? "1px solid rgba(0,216,255,.45)" : "1px solid transparent",
+                  background: isActive ? "rgba(0,136,255,.16)" : "transparent",
+                  textShadow: isActive ? "0 0 10px rgba(0,216,255,.55)" : "none",
                 }}
-              />
-              {label}
-            </div>
-          ))}
+              >
+                {entry.month.toUpperCase()}
+              </button>
+            );
+          })}
         </div>
+      </div>
+
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "center",
+          gap: 28,
+          width: "100%",
+          marginTop: 18,
+        }}
+      >
+        {[
+          ["On Budget", ON_BUDGET_COLOR],
+          ["Overspent", OVERSPENT_COLOR],
+        ].map(([label, color]) => (
+          <div
+            key={label}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 7,
+              color: "#9fb6d6",
+              fontSize: 11,
+            }}
+          >
+            <span
+              style={{
+                display: "inline-block",
+                width: 10,
+                height: 10,
+                borderRadius: 99,
+                background: color,
+                boxShadow: `0 0 10px ${color}`,
+              }}
+            />
+            {label}
+          </div>
+        ))}
       </div>
 
       <div
@@ -289,7 +291,7 @@ export function BudgetOrbitChart({ transactions, budgetRows, year, currentMonth 
           display: "grid",
           gridTemplateColumns: "repeat(3, 1fr)",
           gap: 14,
-          marginTop: 14,
+          marginTop: 16,
         }}
       >
         {metricCards.map(([label, value, color]) => (
