@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { styles } from "../styles.js";
 import { buildYearlyPlanningMetrics } from "../utils/yearlyPlanningMetrics.js";
 import { getCurrentBudgetPeriod } from "../utils/date.js";
@@ -75,6 +75,237 @@ function buildScorecardYLabels(max, min, count = 5) {
   });
 }
 
+function ScorecardChartInteraction({
+  chartId,
+  chartType,
+  months,
+  yLabels,
+  chartMax,
+  chartMin,
+  primarySeriesPoints,
+  referenceSeriesPoints,
+  strokeColor,
+  getBarValue,
+  getTooltipRows,
+}) {
+  const [chartValueMonth, setChartValueMonth] = useState(null);
+  const chartValueEntry = chartValueMonth
+    ? months.find((entry) => entry.month.month === chartValueMonth) || null
+    : null;
+  const focusX = chartValueEntry ? SCORECARD_MONTH_X[chartValueEntry.month.month] : null;
+  const chartValueIndex = chartValueEntry?.index ?? -1;
+  const chartValueY =
+    chartValueIndex >= 0 && primarySeriesPoints[chartValueIndex]
+      ? primarySeriesPoints[chartValueIndex][1]
+      : null;
+
+  const selectChartMonth = (entry, event) => {
+    event?.stopPropagation?.();
+    setChartValueMonth(entry.month.month);
+  };
+
+  return (
+    <div style={{ flex: 1, position: "relative" }}>
+      {chartValueEntry && chartValueY != null ? (
+        <div
+          style={{
+            position: "absolute",
+            left: `${(SCORECARD_MONTH_X[chartValueEntry.month.month] / SCORECARD_CHART_W) * 100}%`,
+            top: `${(chartValueY / (SCORECARD_CHART_H + 40)) * 100}%`,
+            transform: "translate(-50%, calc(-100% - 10px))",
+            pointerEvents: "none",
+            zIndex: 6,
+            minWidth: 168,
+            padding: "10px 12px",
+            borderRadius: 10,
+            border: "1px solid rgba(0,216,255,.28)",
+            background: "rgba(4,18,34,.96)",
+            boxShadow: "0 10px 28px rgba(0,0,0,.35)",
+          }}
+        >
+          <div
+            style={{
+              color: "#8feaff",
+              fontSize: 11,
+              fontWeight: 800,
+              textTransform: "uppercase",
+              letterSpacing: 0.6,
+              marginBottom: 8,
+            }}
+          >
+            {chartValueEntry.month.month}
+          </div>
+          {getTooltipRows(chartValueEntry).map(([label, value, color]) => (
+            <div
+              key={label}
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 16,
+                fontSize: 12,
+                marginTop: 6,
+              }}
+            >
+              <span style={{ color: "#9fb0c9" }}>{label}</span>
+              <span style={{ color, fontWeight: 800 }}>{value}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      <svg
+        className="ops-scorecard-svg"
+        viewBox={`0 0 ${SCORECARD_CHART_W} ${SCORECARD_CHART_H + 40}`}
+        style={{ width: "100%" }}
+        onClick={() => setChartValueMonth(null)}
+      >
+        <defs>
+          <linearGradient id={`${chartId}AreaGradient`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={strokeColor} stopOpacity="0.4" />
+            <stop offset="100%" stopColor={strokeColor} stopOpacity="0.06" />
+          </linearGradient>
+        </defs>
+
+        {yLabels.map((_, index) => {
+          const y = (index / (yLabels.length - 1)) * SCORECARD_CHART_H;
+          return (
+            <line
+              key={index}
+              x1={0}
+              y1={y}
+              x2={SCORECARD_CHART_W}
+              y2={y}
+              stroke="rgba(0,136,255,.1)"
+              strokeWidth={1}
+            />
+          );
+        })}
+
+        {months.map((entry) => (
+          <line
+            key={`v-${entry.month.month}`}
+            x1={SCORECARD_MONTH_X[entry.month.month]}
+            y1={0}
+            x2={SCORECARD_MONTH_X[entry.month.month]}
+            y2={SCORECARD_CHART_H}
+            stroke="rgba(0,136,255,.06)"
+            strokeWidth={1}
+          />
+        ))}
+
+        {chartType === "line" && primarySeriesPoints.length > 1 ? (
+          <path d={buildAreaPath(primarySeriesPoints)} fill={`url(#${chartId}AreaGradient)`} />
+        ) : null}
+        {referenceSeriesPoints.length > 1 ? (
+          <path
+            d={buildLinePath(referenceSeriesPoints)}
+            fill="none"
+            stroke={strokeColor}
+            strokeWidth={2}
+            strokeDasharray="7 5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        ) : null}
+        {chartType === "line" && primarySeriesPoints.length > 1 ? (
+          <path
+            d={buildLinePath(primarySeriesPoints)}
+            fill="none"
+            stroke={strokeColor}
+            strokeWidth={3}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        ) : null}
+        {chartType === "bar"
+          ? months.map((entry) => {
+              const x = SCORECARD_MONTH_X[entry.month.month];
+              const barValue = getBarValue(entry);
+              const y = scorecardToY(barValue, chartMax, chartMin);
+              const height = Math.max(0, SCORECARD_CHART_H - y);
+              const isSelected = chartValueMonth === entry.month.month;
+              return (
+                <rect
+                  key={`bar-${entry.month.month}`}
+                  x={x - SCORECARD_BAR_WIDTH / 2}
+                  y={y}
+                  width={SCORECARD_BAR_WIDTH}
+                  height={height}
+                  fill={strokeColor}
+                  fillOpacity={isSelected ? 0.95 : 0.72}
+                  stroke={isSelected ? "white" : "none"}
+                  strokeWidth={isSelected ? 1.5 : 0}
+                  rx={4}
+                  style={{ cursor: "pointer" }}
+                  onClick={(event) => selectChartMonth(entry, event)}
+                />
+              );
+            })
+          : null}
+
+        {focusX != null ? (
+          <line
+            x1={focusX}
+            y1={0}
+            x2={focusX}
+            y2={SCORECARD_CHART_H}
+            stroke="rgba(0,216,255,.42)"
+            strokeWidth={1}
+            strokeDasharray="3 4"
+          />
+        ) : null}
+
+        {months.map((entry, index) => {
+          const [x, y] = primarySeriesPoints[index];
+          const isSelected = chartValueMonth === entry.month.month;
+
+          return (
+            <g key={entry.month.month}>
+              {chartType === "line" ? (
+                <>
+                  <circle
+                    cx={x}
+                    cy={y}
+                    r={12}
+                    fill="transparent"
+                    style={{ cursor: "pointer" }}
+                    onClick={(event) => selectChartMonth(entry, event)}
+                  />
+                  <circle
+                    cx={x}
+                    cy={y}
+                    r={isSelected ? 6.2 : 4.8}
+                    fill={strokeColor}
+                    stroke="rgba(255,255,255,.9)"
+                    strokeWidth={isSelected ? 1.6 : 1.2}
+                    style={{ cursor: "pointer", pointerEvents: "none" }}
+                  />
+                </>
+              ) : null}
+              <text
+                x={x}
+                y={SCORECARD_CHART_H + 24}
+                textAnchor="middle"
+                style={{
+                  fill: isSelected ? "#eaf3ff" : "#5e7da0",
+                  fontSize: 11,
+                  fontWeight: isSelected ? 800 : 500,
+                  cursor: "pointer",
+                }}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setChartValueMonth(null);
+                }}
+              >
+                {entry.month.month}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
 function ScorecardChart({
   chartId,
   title,
@@ -93,30 +324,10 @@ function ScorecardChart({
   chartTypeStorageKey = OPS_SCORECARD_CHART_TYPE_STORAGE_KEY,
 }) {
   const [chartType, setChartType] = useState(() => readStoredOpsScorecardChartType(chartTypeStorageKey));
-  const [chartValueMonth, setChartValueMonth] = useState(null);
-  const chartValueEntry = chartValueMonth
-    ? months.find((entry) => entry.month.month === chartValueMonth) || null
-    : null;
-  const focusX = chartValueEntry ? SCORECARD_MONTH_X[chartValueEntry.month.month] : null;
-  const chartValueIndex = chartValueEntry?.index ?? -1;
-  const chartValueY =
-    chartValueIndex >= 0 && primarySeriesPoints[chartValueIndex]
-      ? primarySeriesPoints[chartValueIndex][1]
-      : null;
-
-  useEffect(() => {
-    setChartValueMonth(null);
-  }, [resetKey]);
 
   const handleChartTypeChange = (nextChartType) => {
     setChartType(nextChartType);
     persistOpsScorecardChartType(nextChartType, chartTypeStorageKey);
-    setChartValueMonth(null);
-  };
-
-  const selectChartMonth = (entry, event) => {
-    event?.stopPropagation?.();
-    setChartValueMonth(entry.month.month);
   };
 
   return (
@@ -250,207 +461,20 @@ function ScorecardChart({
                 ))}
               </div>
 
-              <div style={{ flex: 1, position: "relative" }}>
-                {chartValueEntry && chartValueY != null ? (
-                  <div
-                    style={{
-                      position: "absolute",
-                      left: `${(SCORECARD_MONTH_X[chartValueEntry.month.month] / SCORECARD_CHART_W) * 100}%`,
-                      top: `${(chartValueY / (SCORECARD_CHART_H + 40)) * 100}%`,
-                      transform: "translate(-50%, calc(-100% - 10px))",
-                      pointerEvents: "none",
-                      zIndex: 6,
-                      minWidth: 168,
-                      padding: "10px 12px",
-                      borderRadius: 10,
-                      border: "1px solid rgba(0,216,255,.28)",
-                      background: "rgba(4,18,34,.96)",
-                      boxShadow: "0 10px 28px rgba(0,0,0,.35)",
-                    }}
-                  >
-                    <div
-                      style={{
-                        color: "#8feaff",
-                        fontSize: 11,
-                        fontWeight: 800,
-                        textTransform: "uppercase",
-                        letterSpacing: 0.6,
-                        marginBottom: 8,
-                      }}
-                    >
-                      {chartValueEntry.month.month}
-                    </div>
-                    {getTooltipRows(chartValueEntry).map(([label, value, color]) => (
-                      <div
-                        key={label}
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          gap: 16,
-                          fontSize: 12,
-                          marginTop: 6,
-                        }}
-                      >
-                        <span style={{ color: "#9fb0c9" }}>{label}</span>
-                        <span style={{ color, fontWeight: 800 }}>{value}</span>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-                <svg
-                  className="ops-scorecard-svg"
-                  viewBox={`0 0 ${SCORECARD_CHART_W} ${SCORECARD_CHART_H + 40}`}
-                  style={{ width: "100%" }}
-                  onClick={() => setChartValueMonth(null)}
-                >
-                  <defs>
-                    <linearGradient id={`${chartId}AreaGradient`} x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor={strokeColor} stopOpacity="0.4" />
-                      <stop offset="100%" stopColor={strokeColor} stopOpacity="0.06" />
-                    </linearGradient>
-                  </defs>
-
-                  {yLabels.map((_, index) => {
-                    const y = (index / (yLabels.length - 1)) * SCORECARD_CHART_H;
-                    return (
-                      <line
-                        key={index}
-                        x1={0}
-                        y1={y}
-                        x2={SCORECARD_CHART_W}
-                        y2={y}
-                        stroke="rgba(0,136,255,.1)"
-                        strokeWidth={1}
-                      />
-                    );
-                  })}
-
-                  {months.map((entry) => (
-                    <line
-                      key={`v-${entry.month.month}`}
-                      x1={SCORECARD_MONTH_X[entry.month.month]}
-                      y1={0}
-                      x2={SCORECARD_MONTH_X[entry.month.month]}
-                      y2={SCORECARD_CHART_H}
-                      stroke="rgba(0,136,255,.06)"
-                      strokeWidth={1}
-                    />
-                  ))}
-
-                  {chartType === "line" && primarySeriesPoints.length > 1 ? (
-                    <path
-                      d={buildAreaPath(primarySeriesPoints)}
-                      fill={`url(#${chartId}AreaGradient)`}
-                    />
-                  ) : null}
-                  {referenceSeriesPoints.length > 1 ? (
-                    <path
-                      d={buildLinePath(referenceSeriesPoints)}
-                      fill="none"
-                      stroke={strokeColor}
-                      strokeWidth={2}
-                      strokeDasharray="7 5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  ) : null}
-                  {chartType === "line" && primarySeriesPoints.length > 1 ? (
-                    <path
-                      d={buildLinePath(primarySeriesPoints)}
-                      fill="none"
-                      stroke={strokeColor}
-                      strokeWidth={3}
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  ) : null}
-                  {chartType === "bar"
-                    ? months.map((entry) => {
-                        const x = SCORECARD_MONTH_X[entry.month.month];
-                        const barValue = getBarValue(entry);
-                        const y = scorecardToY(barValue, chartMax, chartMin);
-                        const height = Math.max(0, SCORECARD_CHART_H - y);
-                        const isSelected = chartValueMonth === entry.month.month;
-                        return (
-                          <rect
-                            key={`bar-${entry.month.month}`}
-                            x={x - SCORECARD_BAR_WIDTH / 2}
-                            y={y}
-                            width={SCORECARD_BAR_WIDTH}
-                            height={height}
-                            fill={strokeColor}
-                            fillOpacity={isSelected ? 0.95 : 0.72}
-                            stroke={isSelected ? "white" : "none"}
-                            strokeWidth={isSelected ? 1.5 : 0}
-                            rx={4}
-                            style={{ cursor: "pointer" }}
-                            onClick={(event) => selectChartMonth(entry, event)}
-                          />
-                        );
-                      })
-                    : null}
-
-                  {focusX != null ? (
-                    <line
-                      x1={focusX}
-                      y1={0}
-                      x2={focusX}
-                      y2={SCORECARD_CHART_H}
-                      stroke="rgba(0,216,255,.42)"
-                      strokeWidth={1}
-                      strokeDasharray="3 4"
-                    />
-                  ) : null}
-
-                  {months.map((entry, index) => {
-                    const [x, y] = primarySeriesPoints[index];
-                    const isSelected = chartValueMonth === entry.month.month;
-
-                    return (
-                      <g key={entry.month.month}>
-                        {chartType === "line" ? (
-                          <>
-                            <circle
-                              cx={x}
-                              cy={y}
-                              r={12}
-                              fill="transparent"
-                              style={{ cursor: "pointer" }}
-                              onClick={(event) => selectChartMonth(entry, event)}
-                            />
-                            <circle
-                              cx={x}
-                              cy={y}
-                              r={isSelected ? 6.2 : 4.8}
-                              fill={strokeColor}
-                              stroke="rgba(255,255,255,.9)"
-                              strokeWidth={isSelected ? 1.6 : 1.2}
-                              style={{ cursor: "pointer", pointerEvents: "none" }}
-                            />
-                          </>
-                        ) : null}
-                        <text
-                          x={x}
-                          y={SCORECARD_CHART_H + 24}
-                          textAnchor="middle"
-                          style={{
-                            fill: isSelected ? "#eaf3ff" : "#5e7da0",
-                            fontSize: 11,
-                            fontWeight: isSelected ? 800 : 500,
-                            cursor: "pointer",
-                          }}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setChartValueMonth(null);
-                          }}
-                        >
-                          {entry.month.month}
-                        </text>
-                      </g>
-                    );
-                  })}
-                </svg>
-              </div>
+              <ScorecardChartInteraction
+                key={resetKey}
+                chartId={chartId}
+                chartType={chartType}
+                months={months}
+                yLabels={yLabels}
+                chartMax={chartMax}
+                chartMin={chartMin}
+                primarySeriesPoints={primarySeriesPoints}
+                referenceSeriesPoints={referenceSeriesPoints}
+                strokeColor={strokeColor}
+                getBarValue={getBarValue}
+                getTooltipRows={getTooltipRows}
+              />
             </div>
           </div>
         </div>
@@ -650,7 +674,6 @@ function buildCashFlowCalendarModel({
 }
 
 export function OperationsBoard({
-  subscriptions,
   transactions,
   trueCash,
   householdProfilesProps,

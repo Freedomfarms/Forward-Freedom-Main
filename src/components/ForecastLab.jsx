@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   LEGACY_UNCATEGORIZED_CATEGORIES,
   UNCATEGORIZED_CATEGORY,
@@ -434,10 +434,6 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
     ? monthlySeries.find((row) => row.month === chartValueMonth) || null
     : null;
 
-  useEffect(() => {
-    setChartValueMonth(null);
-  }, [activeCategoryId, selectedYear]);
-
   const fieldStyle = {
     color: "#eaf3ff",
     background: "rgba(0,136,255,.08)",
@@ -535,6 +531,7 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
                 onChange={(event) => {
                   const nextYear = Number(event.target.value);
                   setActiveYear(nextYear);
+                  setChartValueMonth(null);
                   setFocusMonth(getFocusMonthForCategory(selectedCategory, nextYear));
                 }}
                 style={fieldStyle}
@@ -653,6 +650,7 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
                       type="button"
                       onClick={() => {
                         setActiveCategoryId(category.id);
+                        setChartValueMonth(null);
                         setFocusMonth(getFocusMonthForCategory(category, selectedYear));
                       }}
                       style={{
@@ -1209,16 +1207,16 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
                 </div>
 
                 <div style={{ ...styles.panel, padding: 24 }}>
-                <div
-                  style={{
-                    color: "white",
-                    fontSize: 20,
-                    fontWeight: 900,
-                    marginBottom: 18,
-                  }}
-                >
-                  Monthly Review Grid
-                </div>
+                  <div
+                    style={{
+                      color: "white",
+                      fontSize: 20,
+                      fontWeight: 900,
+                      marginBottom: 18,
+                    }}
+                  >
+                    Monthly Review Grid
+                  </div>
                 <div
                   className="forecast-review-header"
                   style={{
@@ -1357,6 +1355,7 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
                   <div style={{ textAlign: "right", color: "#d7ebff", fontWeight: 800 }}>
                     {selectedTransactions.length}
                   </div>
+                </div>
                 </div>
               </div>
 
