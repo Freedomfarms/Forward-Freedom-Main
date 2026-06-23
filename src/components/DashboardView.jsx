@@ -99,39 +99,46 @@ function buildProjectionAreaPath(points) {
   );
 }
 
-const NET_WORTH_RING_SIZE = 220;
-const NET_WORTH_RING_CENTER = NET_WORTH_RING_SIZE / 2;
-const NET_WORTH_RING_RADIUS = 84;
-const NET_WORTH_RING_STROKE = 20;
-const NET_WORTH_RING_INNER = 60;
-const NET_WORTH_SLICE_GAP_DEG = 2;
+const NET_WORTH_CYL_WIDTH = 160;
+const NET_WORTH_CYL_HEIGHT = 320;
+const NET_WORTH_CYL_CX = NET_WORTH_CYL_WIDTH / 2;
+const NET_WORTH_CYL_TOP_Y = 30;
+const NET_WORTH_CYL_BOTTOM_Y = 292;
+const NET_WORTH_CYL_RX = 52;
+const NET_WORTH_CYL_RY = 14;
 
-function netWorthPolar(deg, radius) {
-  const a = ((deg - 90) * Math.PI) / 180;
-  return {
-    x: NET_WORTH_RING_CENTER + radius * Math.cos(a),
-    y: NET_WORTH_RING_CENTER + radius * Math.sin(a),
-  };
-}
+const NET_WORTH_CYL_PATH = (() => {
+  const cx = NET_WORTH_CYL_CX;
+  const ty = NET_WORTH_CYL_TOP_Y;
+  const by = NET_WORTH_CYL_BOTTOM_Y;
+  const rx = NET_WORTH_CYL_RX;
+  const ry = NET_WORTH_CYL_RY;
+  return [
+    `M ${cx - rx} ${ty}`,
+    `A ${rx} ${ry} 0 0 1 ${cx + rx} ${ty}`,
+    `L ${cx + rx} ${by}`,
+    `A ${rx} ${ry} 0 0 1 ${cx - rx} ${by}`,
+    "Z",
+  ].join(" ");
+})();
 
-function netWorthArc(startDeg, endDeg, radius) {
-  const start = netWorthPolar(startDeg, radius);
-  const end = netWorthPolar(endDeg, radius);
-  const largeArc = endDeg - startDeg > 180 ? 1 : 0;
-  return `M ${start.x} ${start.y} A ${radius} ${radius} 0 ${largeArc} 1 ${end.x} ${end.y}`;
-}
-
-function buildNetWorthSlices(dynamicAllocations) {
-  const positive = dynamicAllocations.filter((item) => Number(item.valueNumber) > 0);
+function buildNetWorthBands(dynamicAllocations) {
+  const positive = dynamicAllocations
+    .filter((item) => Number(item.valueNumber) > 0)
+    .sort((a, b) => Number(b.valueNumber) - Number(a.valueNumber));
   const total = positive.reduce((sum, item) => sum + Number(item.valueNumber || 0), 0);
   if (total <= 0) return [];
-  let current = 0;
+  const fillTop = NET_WORTH_CYL_TOP_Y;
+  const fillBottom = NET_WORTH_CYL_BOTTOM_Y;
+  const fillHeight = fillBottom - fillTop;
+  let cursor = fillBottom;
   return positive.map((item) => {
-    const sweep = (Number(item.valueNumber) / total) * 360;
-    const startDeg = current;
-    const endDeg = current + sweep;
-    current += sweep;
-    return { ...item, sweep, startDeg, endDeg };
+    const fraction = Number(item.valueNumber) / total;
+    const height = fraction * fillHeight;
+    const top = cursor - height;
+    const band = { ...item, fraction, top, bottom: cursor, height };
+    cursor = top;
+    return band;
   });
 }
 
@@ -320,7 +327,7 @@ export function DashboardView({
       setAccountPanelError(error?.message || "Unable to request email change right now.");
     }
   };
-  const netWorthSlices = buildNetWorthSlices(dynamicAllocations);
+  const netWorthBands = buildNetWorthBands(dynamicAllocations);
   const allocationTotal = dynamicAllocations.reduce(
     (sum, item) => sum + Number(item.valueNumber || 0),
     0
@@ -1211,68 +1218,145 @@ export function DashboardView({
             <div
               style={{
                 position: "relative",
-                width: NET_WORTH_RING_SIZE,
-                height: NET_WORTH_RING_SIZE,
+                width: NET_WORTH_CYL_WIDTH,
+                height: NET_WORTH_CYL_HEIGHT + 60,
                 flexShrink: 0,
               }}
             >
               <svg
-                width={NET_WORTH_RING_SIZE}
-                height={NET_WORTH_RING_SIZE}
-                viewBox={`0 0 ${NET_WORTH_RING_SIZE} ${NET_WORTH_RING_SIZE}`}
+                width={NET_WORTH_CYL_WIDTH}
+                height={NET_WORTH_CYL_HEIGHT}
+                viewBox={`0 0 ${NET_WORTH_CYL_WIDTH} ${NET_WORTH_CYL_HEIGHT}`}
                 style={{ position: "absolute", inset: 0, overflow: "visible" }}
               >
                 <defs>
-                  <radialGradient id="net-worth-core" cx="35%" cy="30%" r="75%">
-                    <stop offset="0%" stopColor="rgba(0,216,255,.14)" />
-                    <stop offset="55%" stopColor="rgba(3,16,31,.92)" />
-                    <stop offset="100%" stopColor="rgba(3,16,31,1)" />
+                  <clipPath id="net-worth-cyl-clip">
+                    <path d={NET_WORTH_CYL_PATH} />
+                  </clipPath>
+                  <linearGradient id="net-worth-cyl-shade" x1="0" y1="0" x2="1" y2="0">
+                    <stop offset="0%" stopColor="rgba(0,0,0,.55)" />
+                    <stop offset="18%" stopColor="rgba(0,0,0,.18)" />
+                    <stop offset="45%" stopColor="rgba(0,0,0,0)" />
+                    <stop offset="70%" stopColor="rgba(0,0,0,.12)" />
+                    <stop offset="100%" stopColor="rgba(0,0,0,.55)" />
+                  </linearGradient>
+                  <linearGradient id="net-worth-cyl-highlight" x1="0" y1="0" x2="1" y2="0">
+                    <stop offset="8%" stopColor="rgba(255,255,255,0)" />
+                    <stop offset="20%" stopColor="rgba(255,255,255,.28)" />
+                    <stop offset="34%" stopColor="rgba(255,255,255,0)" />
+                  </linearGradient>
+                  <radialGradient id="net-worth-cyl-ambient" cx="50%" cy="50%" r="55%">
+                    <stop offset="60%" stopColor="rgba(0,216,255,0)" />
+                    <stop offset="100%" stopColor="rgba(0,216,255,.10)" />
                   </radialGradient>
                 </defs>
 
-                <circle
-                  cx={NET_WORTH_RING_CENTER}
-                  cy={NET_WORTH_RING_CENTER}
-                  r={NET_WORTH_RING_RADIUS}
-                  fill="none"
-                  stroke="rgba(0,136,255,.08)"
-                  strokeWidth={NET_WORTH_RING_STROKE + 4}
+                <ellipse
+                  cx={NET_WORTH_CYL_CX}
+                  cy={NET_WORTH_CYL_HEIGHT - 6}
+                  rx={NET_WORTH_CYL_RX + 6}
+                  ry={5}
+                  fill="url(#net-worth-cyl-ambient)"
                 />
 
-                {netWorthSlices.length > 0 ? (
-                  netWorthSlices.map((slice) => {
-                    const useGap = slice.sweep > NET_WORTH_SLICE_GAP_DEG * 2;
-                    const gap = useGap ? NET_WORTH_SLICE_GAP_DEG / 2 : 0;
-                    const start = slice.startDeg + gap;
-                    const end = slice.endDeg - gap;
-                    return (
-                      <path
-                        key={slice.name}
-                        d={netWorthArc(start, end, NET_WORTH_RING_RADIUS)}
-                        stroke={slice.color}
-                        strokeWidth={NET_WORTH_RING_STROKE}
-                        strokeLinecap="butt"
-                        fill="none"
-                      />
-                    );
-                  })
-                ) : (
-                  <circle
-                    cx={NET_WORTH_RING_CENTER}
-                    cy={NET_WORTH_RING_CENTER}
-                    r={NET_WORTH_RING_RADIUS}
-                    fill="none"
-                    stroke="rgba(120,160,210,.30)"
-                    strokeWidth={NET_WORTH_RING_STROKE}
-                  />
-                )}
+                <ellipse
+                  cx={NET_WORTH_CYL_CX}
+                  cy={NET_WORTH_CYL_BOTTOM_Y}
+                  rx={NET_WORTH_CYL_RX}
+                  ry={NET_WORTH_CYL_RY}
+                  fill="rgba(3,16,31,.95)"
+                  stroke="rgba(120,160,210,.32)"
+                  strokeWidth={1}
+                />
 
-                <circle
-                  cx={NET_WORTH_RING_CENTER}
-                  cy={NET_WORTH_RING_CENTER}
-                  r={NET_WORTH_RING_INNER}
-                  fill="url(#net-worth-core)"
-                  stroke="rgba(120,160,210,.28)"
+                <g clipPath="url(#net-worth-cyl-clip)">
+                  {netWorthBands.length > 0 ? (
+                    netWorthBands.map((band, index, arr) => {
+                      const isBottom = index === 0;
+                      const isTop = index === arr.length - 1;
+                      const yTop = isTop
+                        ? band.top - NET_WORTH_CYL_RY
+                        : band.top;
+                      const yBottom = isBottom
+                        ? band.bottom + NET_WORTH_CYL_RY + 4
+                        : band.bottom + 1;
+                      return (
+                        <rect
+                          key={band.name}
+                          x={NET_WORTH_CYL_CX - NET_WORTH_CYL_RX - 4}
+                          y={yTop}
+                          width={NET_WORTH_CYL_RX * 2 + 8}
+                          height={yBottom - yTop}
+                          fill={band.color}
+                        />
+                      );
+                    })
+                  ) : (
+                    <rect
+                      x={NET_WORTH_CYL_CX - NET_WORTH_CYL_RX - 4}
+                      y={NET_WORTH_CYL_TOP_Y - NET_WORTH_CYL_RY}
+                      width={NET_WORTH_CYL_RX * 2 + 8}
+                      height={NET_WORTH_CYL_BOTTOM_Y - NET_WORTH_CYL_TOP_Y + NET_WORTH_CYL_RY * 2}
+                      fill="rgba(40,70,110,.5)"
+                    />
+                  )}
+                  <rect
+                    x={NET_WORTH_CYL_CX - NET_WORTH_CYL_RX - 4}
+                    y={NET_WORTH_CYL_TOP_Y - NET_WORTH_CYL_RY}
+                    width={NET_WORTH_CYL_RX * 2 + 8}
+                    height={NET_WORTH_CYL_HEIGHT}
+                    fill="url(#net-worth-cyl-shade)"
+                  />
+                  <rect
+                    x={NET_WORTH_CYL_CX - NET_WORTH_CYL_RX - 4}
+                    y={NET_WORTH_CYL_TOP_Y - NET_WORTH_CYL_RY}
+                    width={NET_WORTH_CYL_RX * 2 + 8}
+                    height={NET_WORTH_CYL_HEIGHT}
+                    fill="url(#net-worth-cyl-highlight)"
+                  />
+                </g>
+
+                <line
+                  x1={NET_WORTH_CYL_CX - NET_WORTH_CYL_RX}
+                  y1={NET_WORTH_CYL_TOP_Y}
+                  x2={NET_WORTH_CYL_CX - NET_WORTH_CYL_RX}
+                  y2={NET_WORTH_CYL_BOTTOM_Y}
+                  stroke="rgba(120,160,210,.55)"
+                  strokeWidth={1.2}
+                />
+                <line
+                  x1={NET_WORTH_CYL_CX + NET_WORTH_CYL_RX}
+                  y1={NET_WORTH_CYL_TOP_Y}
+                  x2={NET_WORTH_CYL_CX + NET_WORTH_CYL_RX}
+                  y2={NET_WORTH_CYL_BOTTOM_Y}
+                  stroke="rgba(120,160,210,.55)"
+                  strokeWidth={1.2}
+                />
+
+                <path
+                  d={`M ${NET_WORTH_CYL_CX - NET_WORTH_CYL_RX} ${NET_WORTH_CYL_BOTTOM_Y} A ${NET_WORTH_CYL_RX} ${NET_WORTH_CYL_RY} 0 0 0 ${NET_WORTH_CYL_CX + NET_WORTH_CYL_RX} ${NET_WORTH_CYL_BOTTOM_Y}`}
+                  fill="none"
+                  stroke="rgba(120,160,210,.22)"
+                  strokeDasharray="3 3"
+                  strokeWidth={1}
+                />
+
+                <ellipse
+                  cx={NET_WORTH_CYL_CX}
+                  cy={NET_WORTH_CYL_TOP_Y}
+                  rx={NET_WORTH_CYL_RX}
+                  ry={NET_WORTH_CYL_RY}
+                  fill="rgba(255,255,255,.06)"
+                  stroke="rgba(143,234,255,.6)"
+                  strokeWidth={1.2}
+                />
+                <ellipse
+                  cx={NET_WORTH_CYL_CX}
+                  cy={NET_WORTH_CYL_TOP_Y + 1}
+                  rx={NET_WORTH_CYL_RX - 3}
+                  ry={Math.max(NET_WORTH_CYL_RY - 4, 4)}
+                  fill="none"
+                  stroke="rgba(255,255,255,.25)"
                   strokeWidth={1}
                 />
               </svg>
@@ -1280,14 +1364,15 @@ export function DashboardView({
               <div
                 style={{
                   position: "absolute",
-                  inset: 0,
+                  left: "50%",
+                  transform: "translateX(-50%)",
+                  top: NET_WORTH_CYL_HEIGHT + 8,
                   display: "flex",
                   flexDirection: "column",
                   alignItems: "center",
-                  justifyContent: "center",
                   textAlign: "center",
                   pointerEvents: "none",
-                  padding: "0 24px",
+                  width: "100%",
                 }}
               >
                 <div
@@ -1302,34 +1387,10 @@ export function DashboardView({
                   Net Worth
                 </div>
                 <div
-                  style={{
-                    color: "white",
-                    fontSize: 22,
-                    fontWeight: 900,
-                    lineHeight: 1.1,
-                    marginTop: 6,
-                  }}
+                  style={{ color: "white", fontSize: 20, fontWeight: 900, marginTop: 3 }}
                 >
                   {wholeDollars(allocationTotal)}
                 </div>
-                {topAllocation && allocationTotal > 0 ? (
-                  <div
-                    style={{
-                      marginTop: 8,
-                      fontSize: 9,
-                      fontWeight: 900,
-                      letterSpacing: 0.8,
-                      textTransform: "uppercase",
-                      color: topAllocation.color,
-                      border: `1px solid ${topAllocation.color}66`,
-                      background: `${topAllocation.color}14`,
-                      borderRadius: 999,
-                      padding: "3px 9px",
-                    }}
-                  >
-                    {topAllocation.name} • {topAllocationPercent}%
-                  </div>
-                ) : null}
               </div>
             </div>
 
