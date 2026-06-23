@@ -99,22 +99,40 @@ function buildProjectionAreaPath(points) {
   );
 }
 
-function buildAllocationGradient(dynamicAllocations) {
-  const positiveAllocations = dynamicAllocations.filter((item) => Number(item.valueNumber) > 0);
-  if (positiveAllocations.length === 0) {
-    return "conic-gradient(#12355f 0 100%)";
-  }
+const NET_WORTH_RING_SIZE = 220;
+const NET_WORTH_RING_CENTER = NET_WORTH_RING_SIZE / 2;
+const NET_WORTH_RING_RADIUS = 84;
+const NET_WORTH_RING_STROKE = 20;
+const NET_WORTH_RING_INNER = 60;
+const NET_WORTH_SLICE_GAP_DEG = 2;
 
-  const total = positiveAllocations.reduce((sum, item) => sum + Number(item.valueNumber || 0), 0);
-  let currentPercent = 0;
+function netWorthPolar(deg, radius) {
+  const a = ((deg - 90) * Math.PI) / 180;
+  return {
+    x: NET_WORTH_RING_CENTER + radius * Math.cos(a),
+    y: NET_WORTH_RING_CENTER + radius * Math.sin(a),
+  };
+}
 
-  return `conic-gradient(${positiveAllocations
-    .map((item) => {
-      const start = currentPercent;
-      currentPercent += (Number(item.valueNumber || 0) / total) * 100;
-      return `${item.color} ${start.toFixed(2)}% ${currentPercent.toFixed(2)}%`;
-    })
-    .join(", ")})`;
+function netWorthArc(startDeg, endDeg, radius) {
+  const start = netWorthPolar(startDeg, radius);
+  const end = netWorthPolar(endDeg, radius);
+  const largeArc = endDeg - startDeg > 180 ? 1 : 0;
+  return `M ${start.x} ${start.y} A ${radius} ${radius} 0 ${largeArc} 1 ${end.x} ${end.y}`;
+}
+
+function buildNetWorthSlices(dynamicAllocations) {
+  const positive = dynamicAllocations.filter((item) => Number(item.valueNumber) > 0);
+  const total = positive.reduce((sum, item) => sum + Number(item.valueNumber || 0), 0);
+  if (total <= 0) return [];
+  let current = 0;
+  return positive.map((item) => {
+    const sweep = (Number(item.valueNumber) / total) * 360;
+    const startDeg = current;
+    const endDeg = current + sweep;
+    current += sweep;
+    return { ...item, sweep, startDeg, endDeg };
+  });
 }
 
 function buildFilledAreaPath(points, chartHeight) {
@@ -302,11 +320,20 @@ export function DashboardView({
       setAccountPanelError(error?.message || "Unable to request email change right now.");
     }
   };
-  const allocationGradient = buildAllocationGradient(dynamicAllocations);
+  const netWorthSlices = buildNetWorthSlices(dynamicAllocations);
   const allocationTotal = dynamicAllocations.reduce(
     (sum, item) => sum + Number(item.valueNumber || 0),
     0
   );
+  const topAllocation = dynamicAllocations.reduce(
+    (top, item) =>
+      Number(item.valueNumber || 0) > Number(top?.valueNumber || 0) ? item : top,
+    null
+  );
+  const topAllocationPercent =
+    topAllocation && allocationTotal > 0
+      ? Math.round((Number(topAllocation.valueNumber) / allocationTotal) * 100)
+      : 0;
   const monthlyBudgetReview =
     currentMonthSnapshot ||
     buildMonthlyBudgetReview(transactions, budgetRows, {
@@ -1177,22 +1204,79 @@ export function DashboardView({
           >
             Net Worth Breakdown <InfoDot />
           </div>
-          <div className="dashboard-net-worth-layout" style={{ display: "flex", alignItems: "center", gap: 30 }}>
+          <div
+            className="dashboard-net-worth-layout"
+            style={{ display: "flex", alignItems: "center", gap: 22, flexWrap: "wrap" }}
+          >
             <div
               style={{
                 position: "relative",
-                width: 182,
-                height: 182,
-                borderRadius: 999,
-                background: allocationGradient,
-                padding: 30,
-                boxShadow: "0 0 35px rgba(0,174,255,.45)",
+                width: NET_WORTH_RING_SIZE,
+                height: NET_WORTH_RING_SIZE,
                 flexShrink: 0,
               }}
             >
-              <div
-                style={{ width: "100%", height: "100%", borderRadius: 999, background: "#031120" }}
-              />
+              <svg
+                width={NET_WORTH_RING_SIZE}
+                height={NET_WORTH_RING_SIZE}
+                viewBox={`0 0 ${NET_WORTH_RING_SIZE} ${NET_WORTH_RING_SIZE}`}
+                style={{ position: "absolute", inset: 0, overflow: "visible" }}
+              >
+                <defs>
+                  <radialGradient id="net-worth-core" cx="35%" cy="30%" r="75%">
+                    <stop offset="0%" stopColor="rgba(0,216,255,.14)" />
+                    <stop offset="55%" stopColor="rgba(3,16,31,.92)" />
+                    <stop offset="100%" stopColor="rgba(3,16,31,1)" />
+                  </radialGradient>
+                </defs>
+
+                <circle
+                  cx={NET_WORTH_RING_CENTER}
+                  cy={NET_WORTH_RING_CENTER}
+                  r={NET_WORTH_RING_RADIUS}
+                  fill="none"
+                  stroke="rgba(0,136,255,.08)"
+                  strokeWidth={NET_WORTH_RING_STROKE + 4}
+                />
+
+                {netWorthSlices.length > 0 ? (
+                  netWorthSlices.map((slice) => {
+                    const useGap = slice.sweep > NET_WORTH_SLICE_GAP_DEG * 2;
+                    const gap = useGap ? NET_WORTH_SLICE_GAP_DEG / 2 : 0;
+                    const start = slice.startDeg + gap;
+                    const end = slice.endDeg - gap;
+                    return (
+                      <path
+                        key={slice.name}
+                        d={netWorthArc(start, end, NET_WORTH_RING_RADIUS)}
+                        stroke={slice.color}
+                        strokeWidth={NET_WORTH_RING_STROKE}
+                        strokeLinecap="butt"
+                        fill="none"
+                      />
+                    );
+                  })
+                ) : (
+                  <circle
+                    cx={NET_WORTH_RING_CENTER}
+                    cy={NET_WORTH_RING_CENTER}
+                    r={NET_WORTH_RING_RADIUS}
+                    fill="none"
+                    stroke="rgba(120,160,210,.30)"
+                    strokeWidth={NET_WORTH_RING_STROKE}
+                  />
+                )}
+
+                <circle
+                  cx={NET_WORTH_RING_CENTER}
+                  cy={NET_WORTH_RING_CENTER}
+                  r={NET_WORTH_RING_INNER}
+                  fill="url(#net-worth-core)"
+                  stroke="rgba(120,160,210,.28)"
+                  strokeWidth={1}
+                />
+              </svg>
+
               <div
                 style={{
                   position: "absolute",
@@ -1203,51 +1287,119 @@ export function DashboardView({
                   justifyContent: "center",
                   textAlign: "center",
                   pointerEvents: "none",
+                  padding: "0 24px",
                 }}
               >
                 <div
                   style={{
-                    color: "white",
-                    fontSize: 24,
+                    color: "#8feaff",
+                    fontSize: 9,
                     fontWeight: 900,
-                    lineHeight: 1.15,
-                    maxWidth: 112,
+                    textTransform: "uppercase",
+                    letterSpacing: 1.2,
+                  }}
+                >
+                  Net Worth
+                </div>
+                <div
+                  style={{
+                    color: "white",
+                    fontSize: 22,
+                    fontWeight: 900,
+                    lineHeight: 1.1,
+                    marginTop: 6,
                   }}
                 >
                   {wholeDollars(allocationTotal)}
                 </div>
+                {topAllocation && allocationTotal > 0 ? (
+                  <div
+                    style={{
+                      marginTop: 8,
+                      fontSize: 9,
+                      fontWeight: 900,
+                      letterSpacing: 0.8,
+                      textTransform: "uppercase",
+                      color: topAllocation.color,
+                      border: `1px solid ${topAllocation.color}66`,
+                      background: `${topAllocation.color}14`,
+                      borderRadius: 999,
+                      padding: "3px 9px",
+                    }}
+                  >
+                    {topAllocation.name} • {topAllocationPercent}%
+                  </div>
+                ) : null}
               </div>
             </div>
-            <div style={{ flex: 1, fontSize: 14 }}>
-              {dynamicAllocations.map((item) => (
-                <div
-                  key={item.name}
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "minmax(0, 1fr) 126px 64px",
-                    gap: 16,
-                    marginBottom: 16,
-                    alignItems: "center",
-                    fontVariantNumeric: "tabular-nums",
-                  }}
-                >
-                  <span style={{ minWidth: 0 }}>
-                    <b
+
+            <div
+              style={{
+                flex: 1,
+                minWidth: 220,
+                border: "1px solid rgba(0,136,255,.18)",
+                borderRadius: 14,
+                background: "rgba(3,17,32,.58)",
+                padding: "14px 16px",
+                display: "flex",
+                flexDirection: "column",
+                gap: 12,
+              }}
+            >
+              {dynamicAllocations.map((item) => {
+                const isZero = Number(item.valueNumber || 0) <= 0;
+                return (
+                  <div
+                    key={item.name}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "auto minmax(0, 1fr) auto",
+                      gap: 12,
+                      alignItems: "center",
+                      opacity: isZero ? 0.45 : 1,
+                    }}
+                  >
+                    <span
                       style={{
-                        display: "inline-block",
                         width: 10,
                         height: 10,
                         borderRadius: 999,
                         background: item.color,
-                        marginRight: 12,
+                        boxShadow: isZero ? "none" : `0 0 8px ${item.color}aa`,
+                        flexShrink: 0,
                       }}
                     />
-                    {item.name}
-                  </span>
-                  <span style={{ textAlign: "right", whiteSpace: "nowrap" }}>{item.amount}</span>
-                  <span style={{ textAlign: "right", whiteSpace: "nowrap" }}>{item.percent}</span>
-                </div>
-              ))}
+                    <span
+                      style={{
+                        color: "#cfe2ff",
+                        fontSize: 12,
+                        fontWeight: 800,
+                        textTransform: "uppercase",
+                        letterSpacing: 0.6,
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}
+                    >
+                      {item.name}
+                    </span>
+                    <div
+                      style={{
+                        textAlign: "right",
+                        fontVariantNumeric: "tabular-nums",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      <div style={{ color: item.color, fontSize: 12, fontWeight: 900 }}>
+                        {item.percent}
+                      </div>
+                      <div style={{ color: "#8fb1d9", fontSize: 11, fontWeight: 700, marginTop: 2 }}>
+                        {item.amount}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
