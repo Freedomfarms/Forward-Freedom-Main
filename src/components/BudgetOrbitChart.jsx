@@ -12,17 +12,12 @@ const LABEL_RADIUS = 118;
 const SEGMENT_GAP_DEG = 2.6;
 
 const STATUS_LEVELS = [
-  { key: "on", label: "On Track", range: "0–50%", color: "#22e7a6" },
-  { key: "moderate", label: "Caution", range: "50–80%", color: "#ffd23f" },
-  { key: "high", label: "High Risk", range: "80–100%", color: "#ff8c42" },
-  { key: "over", label: "Over Budget", range: ">100%", color: "#ff4d6d" },
+  { key: "met", label: "Budget Met", color: "#00f59b", glow: "rgba(0,245,155,.95)" },
+  { key: "over", label: "Over Budget", color: "#ff4d7a", glow: "rgba(255,77,122,.95)" },
 ];
 
-function getStatus(percentUsed, isOverspent) {
-  if (isOverspent || percentUsed > 100) return STATUS_LEVELS[3];
-  if (percentUsed >= 80) return STATUS_LEVELS[2];
-  if (percentUsed >= 50) return STATUS_LEVELS[1];
-  return STATUS_LEVELS[0];
+function getStatus(isOverspent) {
+  return isOverspent ? STATUS_LEVELS[1] : STATUS_LEVELS[0];
 }
 
 function polar(deg, radius) {
@@ -60,7 +55,7 @@ export function BudgetOrbitChart({ transactions, budgetRows, year, currentMonth 
           spent: snapshot.monthlySpend,
           remaining: snapshot.remaining,
           percentUsed,
-          status: getStatus(percentUsed, snapshot.remaining < 0),
+          status: getStatus(snapshot.remaining < 0),
         };
       }),
     [transactions, budgetRows, year]
@@ -154,28 +149,58 @@ export function BudgetOrbitChart({ transactions, budgetRows, year, currentMonth 
                   <stop offset="55%" stopColor="rgba(3,16,31,.92)" />
                   <stop offset="100%" stopColor="rgba(3,16,31,1)" />
                 </radialGradient>
-                <radialGradient id="orbit-ambient" cx="50%" cy="50%" r="50%">
-                  <stop offset="60%" stopColor="rgba(0,216,255,0)" />
-                  <stop offset="100%" stopColor="rgba(0,216,255,.10)" />
+                <radialGradient id="orbit-ambient-met" cx="50%" cy="50%" r="50%">
+                  <stop offset="55%" stopColor="rgba(0,245,155,0)" />
+                  <stop offset="100%" stopColor="rgba(0,245,155,.18)" />
                 </radialGradient>
+                <radialGradient id="orbit-ambient-over" cx="50%" cy="50%" r="50%">
+                  <stop offset="55%" stopColor="rgba(255,77,122,0)" />
+                  <stop offset="100%" stopColor="rgba(255,77,122,.22)" />
+                </radialGradient>
+                <linearGradient id="stroke-met" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#7bffd1" />
+                  <stop offset="100%" stopColor="#00f59b" />
+                </linearGradient>
+                <linearGradient id="stroke-over" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#ffb3c4" />
+                  <stop offset="100%" stopColor="#ff4d7a" />
+                </linearGradient>
                 {STATUS_LEVELS.map((level) => (
                   <filter
                     key={level.key}
                     id={`glow-${level.key}`}
-                    x="-50%"
-                    y="-50%"
-                    width="200%"
-                    height="200%"
+                    x="-75%"
+                    y="-75%"
+                    width="250%"
+                    height="250%"
                   >
-                    <feGaussianBlur stdDeviation="3.5" result="blur" />
+                    <feGaussianBlur stdDeviation="4" result="blur" />
                     <feMerge>
                       <feMergeNode in="blur" />
                       <feMergeNode in="SourceGraphic" />
                     </feMerge>
                   </filter>
                 ))}
-                <filter id="pointer-glow" x="-50%" y="-50%" width="200%" height="200%">
-                  <feGaussianBlur stdDeviation="2.4" result="blur" />
+                {STATUS_LEVELS.map((level) => (
+                  <filter
+                    key={`active-${level.key}`}
+                    id={`glow-active-${level.key}`}
+                    x="-100%"
+                    y="-100%"
+                    width="300%"
+                    height="300%"
+                  >
+                    <feGaussianBlur stdDeviation="7" result="bigBlur" />
+                    <feGaussianBlur in="SourceGraphic" stdDeviation="2" result="tightBlur" />
+                    <feMerge>
+                      <feMergeNode in="bigBlur" />
+                      <feMergeNode in="tightBlur" />
+                      <feMergeNode in="SourceGraphic" />
+                    </feMerge>
+                  </filter>
+                ))}
+                <filter id="pointer-glow" x="-100%" y="-100%" width="300%" height="300%">
+                  <feGaussianBlur stdDeviation="3.5" result="blur" />
                   <feMerge>
                     <feMergeNode in="blur" />
                     <feMergeNode in="SourceGraphic" />
@@ -186,8 +211,12 @@ export function BudgetOrbitChart({ transactions, budgetRows, year, currentMonth 
               <circle
                 cx={CENTER}
                 cy={CENTER}
-                r={ARC_RADIUS + 14}
-                fill="url(#orbit-ambient)"
+                r={ARC_RADIUS + 18}
+                fill={
+                  activeStatus.key === "over"
+                    ? "url(#orbit-ambient-over)"
+                    : "url(#orbit-ambient-met)"
+                }
               />
 
               <circle
@@ -213,17 +242,20 @@ export function BudgetOrbitChart({ transactions, budgetRows, year, currentMonth 
                 const startDeg = index * 30 + SEGMENT_GAP_DEG / 2;
                 const endDeg = (index + 1) * 30 - SEGMENT_GAP_DEG / 2;
                 const isActive = entry.month === activeMonth;
-                const color = entry.status.color;
+                const strokeUrl = `url(#stroke-${entry.status.key})`;
+                const filterId = isActive
+                  ? `glow-active-${entry.status.key}`
+                  : `glow-${entry.status.key}`;
                 return (
                   <path
                     key={entry.month}
                     d={describeArc(startDeg, endDeg, ARC_RADIUS)}
-                    stroke={color}
-                    strokeWidth={isActive ? ARC_STROKE + 2 : ARC_STROKE}
+                    stroke={strokeUrl}
+                    strokeWidth={isActive ? ARC_STROKE + 3 : ARC_STROKE}
                     strokeLinecap="round"
                     fill="none"
-                    opacity={isActive ? 1 : 0.78}
-                    filter={isActive ? `url(#glow-${entry.status.key})` : undefined}
+                    opacity={isActive ? 1 : 0.92}
+                    filter={`url(#${filterId})`}
                     style={{ transition: "stroke-width 180ms ease, opacity 180ms ease" }}
                   />
                 );
@@ -234,15 +266,15 @@ export function BudgetOrbitChart({ transactions, budgetRows, year, currentMonth 
                 cy={CENTER}
                 r={TRACK_INNER_RADIUS}
                 fill="url(#orbit-core)"
-                stroke="rgba(0,216,255,.28)"
-                strokeWidth={1}
+                stroke={`${activeStatus.color}55`}
+                strokeWidth={1.2}
               />
               <circle
                 cx={CENTER}
                 cy={CENTER}
                 r={TRACK_INNER_RADIUS - 6}
                 fill="none"
-                stroke="rgba(0,216,255,.10)"
+                stroke={`${activeStatus.color}22`}
                 strokeWidth={1}
               />
 
@@ -340,7 +372,7 @@ export function BudgetOrbitChart({ transactions, budgetRows, year, currentMonth 
                   fontWeight: 900,
                   lineHeight: 1,
                   marginTop: 6,
-                  textShadow: `0 0 18px ${activeStatus.color}66`,
+                  textShadow: `0 0 12px ${activeStatus.color}, 0 0 28px ${activeStatus.color}88`,
                 }}
               >
                 {activeUsedPercent}%
@@ -385,7 +417,7 @@ export function BudgetOrbitChart({ transactions, budgetRows, year, currentMonth 
             display: "flex",
             justifyContent: "center",
             flexWrap: "wrap",
-            gap: 14,
+            gap: 22,
             width: "100%",
             marginTop: 14,
             paddingTop: 12,
@@ -398,22 +430,21 @@ export function BudgetOrbitChart({ transactions, budgetRows, year, currentMonth 
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: 7,
+                gap: 8,
                 color: "#9fb6d6",
                 fontSize: 11,
               }}
             >
               <span
                 style={{
-                  width: 8,
-                  height: 8,
+                  width: 9,
+                  height: 9,
                   borderRadius: "50%",
                   background: level.color,
-                  boxShadow: `0 0 10px ${level.color}`,
+                  boxShadow: `0 0 12px ${level.color}, 0 0 22px ${level.color}88`,
                 }}
               />
               <span style={{ fontWeight: 800, color: "#cfe2ff" }}>{level.label}</span>
-              <span style={{ color: "#7fa1ca" }}>{level.range}</span>
             </div>
           ))}
         </div>
