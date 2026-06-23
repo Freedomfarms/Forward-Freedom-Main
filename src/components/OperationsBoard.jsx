@@ -484,6 +484,289 @@ function ScorecardChart({
 }
 
 const CALENDAR_WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const OPS_CALENDAR_VIEW_MODE_STORAGE_KEY = "fff-ops-calendar-view-mode";
+
+function readStoredCalendarViewMode() {
+  if (typeof window === "undefined") return "monthly";
+  const stored = window.localStorage.getItem(OPS_CALENDAR_VIEW_MODE_STORAGE_KEY);
+  return stored === "weekly" ? "weekly" : "monthly";
+}
+
+function persistCalendarViewMode(mode) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(OPS_CALENDAR_VIEW_MODE_STORAGE_KEY, mode);
+}
+
+function startOfWeekMonday(date) {
+  const next = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 12);
+  const weekday = (next.getDay() + 6) % 7;
+  next.setDate(next.getDate() - weekday);
+  return next;
+}
+
+function addCalendarDays(date, days) {
+  const next = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 12);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function formatWeeklyDayLabel(date) {
+  return `${budgetMonths[date.getMonth()]} ${date.getDate()}`;
+}
+
+function formatWeeklyRangeLabel(startDate, endDate) {
+  const start = formatWeeklyDayLabel(startDate);
+  const end = formatWeeklyDayLabel(endDate);
+  if (startDate.getFullYear() === endDate.getFullYear()) {
+    return `${start} – ${end} ${endDate.getFullYear()}`;
+  }
+  return `${start}, ${startDate.getFullYear()} – ${end}, ${endDate.getFullYear()}`;
+}
+
+function sumTransactionsOnDate(transactions, year, monthIndex, day) {
+  return transactions.reduce((sum, tx) => {
+    const parsedDate = parseTransactionDateParts(tx.date);
+    if (!parsedDate) return sum;
+    if (
+      parsedDate.year !== year ||
+      parsedDate.monthIndex !== monthIndex ||
+      parsedDate.day !== day
+    ) {
+      return sum;
+    }
+    return sum + finiteMoney(tx.amount);
+  }, 0);
+}
+
+function getTransactionsOnDate(transactions, year, monthIndex, day) {
+  return transactions.filter((tx) => {
+    const parsedDate = parseTransactionDateParts(tx.date);
+    if (!parsedDate) return false;
+    return (
+      parsedDate.year === year &&
+      parsedDate.monthIndex === monthIndex &&
+      parsedDate.day === day
+    );
+  });
+}
+
+function computeOpeningTrueCashAtDate({
+  year,
+  monthIndex,
+  day,
+  transactions,
+  getMonthOpeningTrueCash,
+}) {
+  let opening = getMonthOpeningTrueCash(monthIndex);
+  for (let priorDay = 1; priorDay < day; priorDay += 1) {
+    opening += sumTransactionsOnDate(transactions, year, monthIndex, priorDay);
+  }
+  return opening;
+}
+
+function buildDayCashFlowEntry({
+  year,
+  monthIndex,
+  day,
+  date,
+  transactions,
+  plannedIncome,
+  plannedBudget,
+  openingTrueCash,
+  cumulativeActualBeforeDay,
+  daysInMonth,
+  currentDate,
+}) {
+  const monthNetPlan = finiteMoney(plannedIncome) - finiteMoney(plannedBudget);
+  const dailyPlanPulse = daysInMonth > 0 ? monthNetPlan / daysInMonth : 0;
+  const actualNet = sumTransactionsOnDate(transactions, year, monthIndex, day);
+  const dayOpeningBalance = openingTrueCash + cumulativeActualBeforeDay;
+  const cumulativeActual = cumulativeActualBeforeDay + actualNet;
+  const planToDate = dailyPlanPulse * day;
+  const varianceToPlan = cumulativeActual - planToDate;
+  const runningBalance = dayOpeningBalance + actualNet;
+  const monthEndForecast = runningBalance + dailyPlanPulse * (daysInMonth - day);
+  const varianceScoreBase = Math.max(Math.abs(planToDate), 90);
+  const variancePenalty = clampNumber((Math.abs(varianceToPlan) / varianceScoreBase) * 28, 0, 35);
+  const outflowPenalty = actualNet < 0 ? clampNumber(Math.abs(actualNet) / 160, 0, 20) : 0;
+  const riskPenalty =
+    monthEndForecast < 0 ? 26 : monthEndForecast < openingTrueCash * 0.55 ? 12 : 0;
+  const sustainabilityScore = clampNumber(
+    Math.round(100 - variancePenalty - outflowPenalty - riskPenalty),
+    18,
+    100
+  );
+  const isToday =
+    currentDate.getFullYear() === year &&
+    currentDate.getMonth() === monthIndex &&
+    currentDate.getDate() === day;
+
+  return {
+    year,
+    monthIndex,
+    day,
+    date,
+    actualNet,
+    cumulativeActual,
+    varianceToPlan,
+    runningBalance,
+    monthEndForecast,
+    sustainabilityScore,
+    isToday,
+    transactions: getTransactionsOnDate(transactions, year, monthIndex, day),
+    isInPlanningYear: true,
+  };
+}
+
+function buildRollingWeeklyCashFlowModel({
+  year,
+  transactions,
+  dynamicYearlyOpsData,
+  getMonthOpeningTrueCash,
+  weekWindowOffset = 0,
+  currentDate = new Date(),
+}) {
+  const anchorDate =
+    year === currentDate.getFullYear()
+      ? currentDate
+      : year < currentDate.getFullYear()
+        ? new Date(year, 11, 31, 12)
+        : new Date(year, 0, 1, 12);
+  const currentWeekStart = startOfWeekMonday(anchorDate);
+  const windowEndWeekStart = addCalendarDays(currentWeekStart, weekWindowOffset * 7);
+  const weekStarts = [0, 1, 2, 3].map((index) =>
+    addCalendarDays(windowEndWeekStart, (index - 3) * 7)
+  );
+  const monthPlanByIndex = dynamicYearlyOpsData.map((month) => ({
+    plannedIncome: finiteMoney(month.plannedIncome ?? month.income),
+    plannedBudget: finiteMoney(month.budget),
+  }));
+
+  let cumulativeActual = 0;
+  let openingInitialized = false;
+  let runningOpeningTrueCash = 0;
+  const weeks = weekStarts.map((weekStart, weekIndex) => {
+    const days = [];
+    let weekActualNet = 0;
+    let weekInflow = 0;
+    let weekOutflow = 0;
+    let weekRiskDays = 0;
+    let weekSustainabilityTotal = 0;
+    let weekSustainabilityCount = 0;
+    const weekTransactions = [];
+
+    for (let dayOffset = 0; dayOffset < 7; dayOffset += 1) {
+      const date = addCalendarDays(weekStart, dayOffset);
+      const monthIndex = date.getMonth();
+      const day = date.getDate();
+      const dayYear = date.getFullYear();
+
+      if (dayYear !== year) {
+        days.push(null);
+        continue;
+      }
+
+      if (!openingInitialized) {
+        runningOpeningTrueCash = computeOpeningTrueCashAtDate({
+          year,
+          monthIndex,
+          day,
+          transactions,
+          getMonthOpeningTrueCash,
+        });
+        cumulativeActual = 0;
+        openingInitialized = true;
+      }
+
+      const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+      const monthPlan = monthPlanByIndex[monthIndex] || { plannedIncome: 0, plannedBudget: 0 };
+      const dayEntry = buildDayCashFlowEntry({
+        year,
+        monthIndex,
+        day,
+        date,
+        transactions,
+        plannedIncome: monthPlan.plannedIncome,
+        plannedBudget: monthPlan.plannedBudget,
+        openingTrueCash: runningOpeningTrueCash,
+        cumulativeActualBeforeDay: cumulativeActual,
+        daysInMonth,
+        currentDate,
+      });
+
+      cumulativeActual += dayEntry.actualNet;
+      days.push(dayEntry);
+      weekTransactions.push(...dayEntry.transactions);
+      weekActualNet += dayEntry.actualNet;
+      if (dayEntry.actualNet > 0) weekInflow += dayEntry.actualNet;
+      if (dayEntry.actualNet < 0) weekOutflow += Math.abs(dayEntry.actualNet);
+      if (dayEntry.monthEndForecast < runningOpeningTrueCash * 0.55) weekRiskDays += 1;
+      weekSustainabilityTotal += dayEntry.sustainabilityScore;
+      weekSustainabilityCount += 1;
+    }
+
+    const inMonthDays = days.filter(Boolean);
+    const lastDay = inMonthDays[inMonthDays.length - 1] || null;
+    const firstInMonthDay = inMonthDays[0] || null;
+    const weekEndDate = addCalendarDays(weekStart, 6);
+
+    return {
+      weekIndex,
+      startDate: firstInMonthDay?.date || weekStart,
+      endDate: lastDay?.date || weekEndDate,
+      label:
+        firstInMonthDay && lastDay
+          ? formatWeeklyRangeLabel(firstInMonthDay.date, lastDay.date)
+          : formatWeeklyRangeLabel(weekStart, weekEndDate),
+      days,
+      actualNet: weekActualNet,
+      transactions: weekTransactions,
+      runningBalance: lastDay?.runningBalance ?? runningOpeningTrueCash,
+      monthEndForecast: lastDay?.monthEndForecast ?? runningOpeningTrueCash,
+      sustainabilityAverage:
+        weekSustainabilityCount > 0
+          ? Math.round(weekSustainabilityTotal / weekSustainabilityCount)
+          : 0,
+      riskDays: weekRiskDays,
+      totalInflow: weekInflow,
+      totalOutflow: weekOutflow,
+      isCurrentWeek: weekIndex === 3 && weekWindowOffset === 0,
+    };
+  });
+
+  const windowDays = weeks.flatMap((week) => week.days.filter(Boolean));
+  const windowStartDate = windowDays[0]?.date || weekStarts[0];
+  const windowEndDate = windowDays[windowDays.length - 1]?.date || addCalendarDays(weekStarts[3], 6);
+  const sustainabilityAverage =
+    windowDays.length > 0
+      ? Math.round(
+          windowDays.reduce((sum, day) => sum + day.sustainabilityScore, 0) / windowDays.length
+        )
+      : 0;
+  const riskDays = weeks.reduce((sum, week) => sum + week.riskDays, 0);
+  const dailyPlanPulse =
+    windowDays.length > 0
+      ? windowDays.reduce((sum, day) => {
+          const daysInMonth = new Date(year, day.monthIndex + 1, 0).getDate();
+          const monthPlan = monthPlanByIndex[day.monthIndex] || {
+            plannedIncome: 0,
+            plannedBudget: 0,
+          };
+          const monthNetPlan = monthPlan.plannedIncome - monthPlan.plannedBudget;
+          return sum + (daysInMonth > 0 ? monthNetPlan / daysInMonth : 0);
+        }, 0) / windowDays.length
+      : 0;
+
+  return {
+    weeks,
+    days: windowDays,
+    windowLabel: formatWeeklyRangeLabel(windowStartDate, windowEndDate),
+    sustainabilityAverage,
+    riskDays,
+    dailyPlanPulse,
+    canShiftForward: weekWindowOffset < 0,
+  };
+}
 
 function clampNumber(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -687,6 +970,9 @@ export function OperationsBoard({
   isDemoMode = false,
 }) {
   const [hoveredCalendarDay, setHoveredCalendarDay] = useState(null);
+  const [hoveredCalendarWeekIndex, setHoveredCalendarWeekIndex] = useState(null);
+  const [calendarViewMode, setCalendarViewMode] = useState(readStoredCalendarViewMode);
+  const [weekWindowOffset, setWeekWindowOffset] = useState(0);
   const [showStabilityInfo, setShowStabilityInfo] = useState(false);
   const [calendarMonthIndex, setCalendarMonthIndex] = useState(() =>
     currentPlanYear === getCurrentBudgetPeriod().year ? getCurrentBudgetPeriod().monthIndex : 0
@@ -701,6 +987,8 @@ export function OperationsBoard({
     const nextValue = Number(value);
     ensurePlanningYear(nextValue);
     setHoveredCalendarDay(null);
+    setHoveredCalendarWeekIndex(null);
+    setWeekWindowOffset(0);
     setActivePlanningYear(nextValue);
   };
   const updatePlanningAnchor = (field, value) => {
@@ -800,23 +1088,31 @@ export function OperationsBoard({
   const projectedYearEndTrueCash = getLastNonNullValue(projectedTrueCashValues, trueCashYearEndValue);
   const safeCalendarMonthIndex = Math.max(0, Math.min(budgetMonths.length - 1, calendarMonthIndex));
   const calendarMonthData = dynamicYearlyOpsData[safeCalendarMonthIndex] || dynamicYearlyOpsData[0];
-  const priorActualTrueCash = getLastNonNullValue(
-    trueCashValues.slice(0, safeCalendarMonthIndex),
-    null
-  );
-  const priorProjectedTrueCash = getLastNonNullValue(
-    projectedTrueCashValues.slice(0, safeCalendarMonthIndex),
-    null
-  );
-  const calendarOpeningTrueCash =
-    priorActualTrueCash ?? priorProjectedTrueCash ?? anchorStartingTrueCash;
+  const getMonthOpeningTrueCash = (monthIndex) => {
+    const priorActualTrueCash = getLastNonNullValue(
+      trueCashValues.slice(0, monthIndex),
+      null
+    );
+    const priorProjectedTrueCash = getLastNonNullValue(
+      projectedTrueCashValues.slice(0, monthIndex),
+      null
+    );
+    return priorActualTrueCash ?? priorProjectedTrueCash ?? anchorStartingTrueCash;
+  };
   const cashFlowCalendar = buildCashFlowCalendarModel({
     year: activePlanningYear,
     monthIndex: safeCalendarMonthIndex,
     transactions: safeTransactions,
     plannedIncome: calendarMonthData?.plannedIncome ?? 0,
     plannedBudget: calendarMonthData?.budget ?? 0,
-    openingTrueCash: calendarOpeningTrueCash,
+    openingTrueCash: getMonthOpeningTrueCash(safeCalendarMonthIndex),
+  });
+  const weeklyCashFlowCalendar = buildRollingWeeklyCashFlowModel({
+    year: activePlanningYear,
+    transactions: safeTransactions,
+    dynamicYearlyOpsData,
+    getMonthOpeningTrueCash,
+    weekWindowOffset,
   });
   const shiftCalendarMonth = (delta) => {
     setHoveredCalendarDay(null);
@@ -824,17 +1120,62 @@ export function OperationsBoard({
       (current + Number(delta || 0) + budgetMonths.length) % budgetMonths.length
     );
   };
+  const shiftWeeklyWindow = (delta) => {
+    setHoveredCalendarWeekIndex(null);
+    setWeekWindowOffset((current) => {
+      const next = current + Number(delta || 0);
+      return next > 0 ? 0 : next;
+    });
+  };
+  const handleCalendarViewModeChange = (mode) => {
+    setCalendarViewMode(mode);
+    persistCalendarViewMode(mode);
+    setHoveredCalendarDay(null);
+    setHoveredCalendarWeekIndex(null);
+    setWeekWindowOffset(0);
+  };
   const focusedCalendarDay =
     cashFlowCalendar.days.find((day) => day.day === hoveredCalendarDay) ||
     cashFlowCalendar.days.find((day) => day.isToday) ||
     cashFlowCalendar.days[0] ||
     null;
+  const focusedCalendarWeek =
+    weeklyCashFlowCalendar.weeks.find((week) => week.weekIndex === hoveredCalendarWeekIndex) ||
+    weeklyCashFlowCalendar.weeks.find((week) => week.isCurrentWeek) ||
+    weeklyCashFlowCalendar.weeks[weeklyCashFlowCalendar.weeks.length - 1] ||
+    null;
+  const activeCalendarMetrics =
+    calendarViewMode === "weekly" && focusedCalendarWeek
+      ? {
+          totalInflow: focusedCalendarWeek.totalInflow,
+          totalOutflow: focusedCalendarWeek.totalOutflow,
+          monthNetActual: focusedCalendarWeek.actualNet,
+          sustainabilityAverage: focusedCalendarWeek.sustainabilityAverage,
+          riskDays: focusedCalendarWeek.riskDays,
+          dailyPlanPulse: weeklyCashFlowCalendar.dailyPlanPulse,
+        }
+      : {
+          totalInflow: cashFlowCalendar.totalInflow,
+          totalOutflow: cashFlowCalendar.totalOutflow,
+          monthNetActual: cashFlowCalendar.monthNetActual,
+          sustainabilityAverage: cashFlowCalendar.sustainabilityAverage,
+          riskDays: cashFlowCalendar.riskDays,
+          dailyPlanPulse: cashFlowCalendar.dailyPlanPulse,
+        };
   const cashFlowHeatMax = Math.max(
-    ...cashFlowCalendar.days.map((day) => Math.abs(day.actualNet)),
-    Math.abs(cashFlowCalendar.dailyPlanPulse),
+    ...(calendarViewMode === "weekly"
+      ? weeklyCashFlowCalendar.days.map((day) => Math.abs(day.actualNet))
+      : cashFlowCalendar.days.map((day) => Math.abs(day.actualNet))),
+    Math.abs(activeCalendarMetrics.dailyPlanPulse),
     1
   );
-  const sustainabilityRing = clampNumber(cashFlowCalendar.sustainabilityAverage, 0, 100);
+  const sustainabilityRing = clampNumber(
+    calendarViewMode === "weekly"
+      ? weeklyCashFlowCalendar.sustainabilityAverage
+      : cashFlowCalendar.sustainabilityAverage,
+    0,
+    100
+  );
   const stabilityBand = getStabilityBand(sustainabilityRing);
   const scorecardMonths = dynamicYearlyOpsData.map((month, index) => {
     const plannedIncome = finiteMoney(month.plannedIncome ?? month.income);
@@ -1082,18 +1423,64 @@ export function OperationsBoard({
           <div>
             <div
               style={{
-                color: "white",
-                fontSize: 22,
-                fontWeight: 900,
+                display: "flex",
+                alignItems: "center",
+                gap: 14,
+                flexWrap: "wrap",
               }}
             >
-              Calendar Cash Flow
+              <div
+                style={{
+                  color: "white",
+                  fontSize: 22,
+                  fontWeight: 900,
+                }}
+              >
+                Calendar Cash Flow
+              </div>
+              <div
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
+                  padding: 3,
+                  borderRadius: 8,
+                  border: "1px solid rgba(0,136,255,.22)",
+                  background: "rgba(0,136,255,.06)",
+                }}
+              >
+                {[
+                  ["monthly", "Monthly"],
+                  ["weekly", "Weekly"],
+                ].map(([mode, label]) => {
+                  const isActive = calendarViewMode === mode;
+                  return (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => handleCalendarViewModeChange(mode)}
+                      style={{
+                        color: isActive ? "#00d8ff" : "#9fb0c9",
+                        border: isActive
+                          ? "1px solid rgba(0,136,255,.55)"
+                          : "1px solid transparent",
+                        background: isActive ? "rgba(0,104,255,.18)" : "transparent",
+                        borderRadius: 6,
+                        padding: "6px 12px",
+                        cursor: "pointer",
+                        fontSize: 12,
+                        fontWeight: 800,
+                        letterSpacing: 0.4,
+                        boxShadow: isActive ? "0 0 14px rgba(0,136,255,.18)" : "none",
+                      }}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-            <div style={{ color: "#eaf6ff", fontSize: 14, lineHeight: 1.55, marginTop: 10 }}>
-              Cash-flow heatmap that blends posted activity, live plan pulse, and daily forecast
-              stability.
-            </div>
-            {focusedCalendarDay ? (
+            {(calendarViewMode === "weekly" ? focusedCalendarWeek : focusedCalendarDay) ? (
               <div
                 style={{
                   marginTop: 16,
@@ -1111,34 +1498,59 @@ export function OperationsBoard({
                     letterSpacing: 0.8,
                   }}
                 >
-                  Focus Day
+                  {calendarViewMode === "weekly" ? "Focus Week" : "Focus Day"}
                 </div>
                 <div style={{ color: "white", fontWeight: 900, marginTop: 6 }}>
-                  {budgetMonths[safeCalendarMonthIndex]} {focusedCalendarDay.day}
+                  {calendarViewMode === "weekly"
+                    ? focusedCalendarWeek.label
+                    : `${budgetMonths[safeCalendarMonthIndex]} ${focusedCalendarDay.day}`}
                 </div>
                 <div
                   style={{
                     color:
-                      focusedCalendarDay.actualNet < 0
+                      (calendarViewMode === "weekly"
+                        ? focusedCalendarWeek.actualNet
+                        : focusedCalendarDay.actualNet) < 0
                         ? "#ff4f8a"
-                        : focusedCalendarDay.actualNet > 0
+                        : (calendarViewMode === "weekly"
+                              ? focusedCalendarWeek.actualNet
+                              : focusedCalendarDay.actualNet) > 0
                           ? "#7dffd5"
                           : "#8feaff",
                     marginTop: 4,
                     fontWeight: 800,
                     textShadow:
-                      focusedCalendarDay.actualNet < 0
+                      (calendarViewMode === "weekly"
+                        ? focusedCalendarWeek.actualNet
+                        : focusedCalendarDay.actualNet) < 0
                         ? "0 0 14px rgba(255,79,138,.65)"
-                        : focusedCalendarDay.actualNet > 0
+                        : (calendarViewMode === "weekly"
+                              ? focusedCalendarWeek.actualNet
+                              : focusedCalendarDay.actualNet) > 0
                           ? "0 0 14px rgba(125,255,213,.55)"
                           : "none",
                   }}
                 >
-                  {formatCompactSignedMoney(focusedCalendarDay.actualNet)} posted
+                  {formatCompactSignedMoney(
+                    calendarViewMode === "weekly"
+                      ? focusedCalendarWeek.actualNet
+                      : focusedCalendarDay.actualNet
+                  )}{" "}
+                  posted
                 </div>
                 <div style={{ color: "#9fb0c9", fontSize: 12, marginTop: 4 }}>
-                  TC {wholeDollars(focusedCalendarDay.runningBalance)} · Forecast{" "}
-                  {wholeDollars(focusedCalendarDay.monthEndForecast)}
+                  TC{" "}
+                  {wholeDollars(
+                    calendarViewMode === "weekly"
+                      ? focusedCalendarWeek.runningBalance
+                      : focusedCalendarDay.runningBalance
+                  )}{" "}
+                  · Forecast{" "}
+                  {wholeDollars(
+                    calendarViewMode === "weekly"
+                      ? focusedCalendarWeek.monthEndForecast
+                      : focusedCalendarDay.monthEndForecast
+                  )}
                 </div>
                 <div
                   style={{
@@ -1158,9 +1570,16 @@ export function OperationsBoard({
                   >
                     Transactions
                   </div>
-                  {focusedCalendarDay.transactions && focusedCalendarDay.transactions.length > 0 ? (
+                  {(
+                    calendarViewMode === "weekly"
+                      ? focusedCalendarWeek.transactions
+                      : focusedCalendarDay.transactions
+                  )?.length > 0 ? (
                     <div style={{ display: "grid", gap: 8, maxHeight: 196, overflowY: "auto" }}>
-                      {focusedCalendarDay.transactions.map((tx, txIndex) => {
+                      {(calendarViewMode === "weekly"
+                        ? focusedCalendarWeek.transactions
+                        : focusedCalendarDay.transactions
+                      ).map((tx, txIndex) => {
                         const amount = Number(tx.amount) || 0;
                         return (
                           <div
@@ -1234,7 +1653,9 @@ export function OperationsBoard({
               >
                 <button
                   type="button"
-                  onClick={() => shiftCalendarMonth(-1)}
+                  onClick={() =>
+                    calendarViewMode === "weekly" ? shiftWeeklyWindow(-1) : shiftCalendarMonth(-1)
+                  }
                   style={{
                     background:
                       "radial-gradient(circle at 30% 20%, rgba(0,216,255,.34), rgba(0,75,126,.2) 48%, rgba(0,24,48,.14) 100%)",
@@ -1254,7 +1675,9 @@ export function OperationsBoard({
                     boxShadow:
                       "0 0 16px rgba(0,216,255,.26), inset 0 0 9px rgba(143,234,255,.26)",
                   }}
-                  aria-label="Previous calendar month"
+                  aria-label={
+                    calendarViewMode === "weekly" ? "Previous calendar week" : "Previous calendar month"
+                  }
                 >
                   <svg viewBox="0 0 16 16" width="15" height="15" fill="none" aria-hidden="true">
                     <path
@@ -1271,16 +1694,23 @@ export function OperationsBoard({
                     color: "#eaf7ff",
                     textAlign: "center",
                     fontWeight: 900,
-                    fontSize: 30,
+                    fontSize: calendarViewMode === "weekly" ? 22 : 30,
                     letterSpacing: 0.8,
                     textTransform: "uppercase",
+                    lineHeight: 1.15,
+                    padding: "0 8px",
                   }}
                 >
-                  {budgetMonths[safeCalendarMonthIndex]} {activePlanningYear}
+                  {calendarViewMode === "weekly"
+                    ? weeklyCashFlowCalendar.windowLabel
+                    : `${budgetMonths[safeCalendarMonthIndex]} ${activePlanningYear}`}
                 </div>
                 <button
                   type="button"
-                  onClick={() => shiftCalendarMonth(1)}
+                  onClick={() =>
+                    calendarViewMode === "weekly" ? shiftWeeklyWindow(1) : shiftCalendarMonth(1)
+                  }
+                  disabled={calendarViewMode === "weekly" && !weeklyCashFlowCalendar.canShiftForward}
                   style={{
                     background:
                       "radial-gradient(circle at 30% 20%, rgba(0,216,255,.34), rgba(0,75,126,.2) 48%, rgba(0,24,48,.14) 100%)",
@@ -1289,7 +1719,14 @@ export function OperationsBoard({
                     fontSize: 24,
                     fontWeight: 900,
                     lineHeight: 1,
-                    cursor: "pointer",
+                    cursor:
+                      calendarViewMode === "weekly" && !weeklyCashFlowCalendar.canShiftForward
+                        ? "not-allowed"
+                        : "pointer",
+                    opacity:
+                      calendarViewMode === "weekly" && !weeklyCashFlowCalendar.canShiftForward
+                        ? 0.45
+                        : 1,
                     padding: 0,
                     width: 38,
                     height: 38,
@@ -1300,7 +1737,9 @@ export function OperationsBoard({
                     boxShadow:
                       "0 0 16px rgba(0,216,255,.26), inset 0 0 9px rgba(143,234,255,.26)",
                   }}
-                  aria-label="Next calendar month"
+                  aria-label={
+                    calendarViewMode === "weekly" ? "Next calendar week" : "Next calendar month"
+                  }
                 >
                   <svg viewBox="0 0 16 16" width="15" height="15" fill="none" aria-hidden="true">
                     <path
@@ -1341,62 +1780,135 @@ export function OperationsBoard({
               </div>
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 0 }}>
-                {cashFlowCalendar.weeks.map((week, weekIndex) => (
-                  <div
-                    key={`week-${weekIndex}`}
-                    style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))" }}
-                  >
-                    {week.map((day, dayIndex) => {
-                      const heat = day
-                        ? getCashFlowHeatStyle(day.actualNet, cashFlowHeatMax)
-                        : {
-                            background: "rgba(2,12,28,.45)",
-                            border: "1px solid transparent",
-                            boxShadow: "none",
-                            valueColor: "#6c88b1",
-                          };
-                      const isFocused = day && focusedCalendarDay && focusedCalendarDay.day === day.day;
+                {calendarViewMode === "monthly"
+                  ? cashFlowCalendar.weeks.map((week, weekIndex) => (
+                      <div
+                        key={`week-${weekIndex}`}
+                        style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))" }}
+                      >
+                        {week.map((day, dayIndex) => {
+                          const heat = day
+                            ? getCashFlowHeatStyle(day.actualNet, cashFlowHeatMax)
+                            : {
+                                background: "rgba(2,12,28,.45)",
+                                border: "1px solid transparent",
+                                boxShadow: "none",
+                                valueColor: "#6c88b1",
+                              };
+                          const isFocused =
+                            day && focusedCalendarDay && focusedCalendarDay.day === day.day;
+                          return (
+                            <div
+                              key={`${weekIndex}-${dayIndex}-${day?.day || "blank"}`}
+                              onMouseEnter={() => setHoveredCalendarDay(day?.day || null)}
+                              style={{
+                                minHeight: 80,
+                                padding: "7px 8px",
+                                borderRight: "1px solid rgba(0,216,255,.07)",
+                                borderBottom: "1px solid rgba(0,216,255,.07)",
+                                background: day ? heat.background : "rgba(2,12,28,.45)",
+                                boxShadow: day ? heat.boxShadow : "none",
+                                border: isFocused
+                                  ? "1px solid rgba(124,255,223,.52)"
+                                  : heat.border,
+                                cursor: day ? "pointer" : "default",
+                                transition:
+                                  "box-shadow 140ms ease, transform 140ms ease, border-color 140ms ease",
+                                transform: isFocused ? "translateY(-2px)" : "none",
+                              }}
+                            >
+                              {day ? (
+                                <div style={{ display: "grid", gap: 5 }}>
+                                  <div
+                                    style={{
+                                      color: day.isToday ? "#eaf7ff" : "#9bb6dc",
+                                      fontSize: 12,
+                                      fontWeight: 900,
+                                    }}
+                                  >
+                                    {day.day}
+                                  </div>
+                                  <div
+                                    style={{ color: heat.valueColor, fontSize: 15, fontWeight: 900 }}
+                                  >
+                                    {formatCompactSignedMoney(day.actualNet)}
+                                  </div>
+                                  <div style={{ color: "#8fb1d9", fontSize: 10 }}>
+                                    F {formatCompactMoney(day.monthEndForecast)}
+                                  </div>
+                                </div>
+                              ) : null}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ))
+                  : weeklyCashFlowCalendar.weeks.map((week) => {
+                      const isWeekFocused =
+                        focusedCalendarWeek && focusedCalendarWeek.weekIndex === week.weekIndex;
                       return (
                         <div
-                          key={`${weekIndex}-${dayIndex}-${day?.day || "blank"}`}
-                          onMouseEnter={() => setHoveredCalendarDay(day?.day || null)}
+                          key={`rolling-week-${week.weekIndex}`}
+                          onClick={() => setHoveredCalendarWeekIndex(week.weekIndex)}
                           style={{
-                            minHeight: 80,
-                            padding: "7px 8px",
-                            borderRight: "1px solid rgba(0,216,255,.07)",
-                            borderBottom: "1px solid rgba(0,216,255,.07)",
-                            background: day ? heat.background : "rgba(2,12,28,.45)",
-                            boxShadow: day ? heat.boxShadow : "none",
-                            border: isFocused ? "1px solid rgba(124,255,223,.52)" : heat.border,
-                            cursor: day ? "pointer" : "default",
-                            transition: "box-shadow 140ms ease, transform 140ms ease, border-color 140ms ease",
-                            transform: isFocused ? "translateY(-2px)" : "none",
+                            display: "grid",
+                            gridTemplateColumns: "repeat(7, minmax(0, 1fr))",
+                            cursor: "pointer",
+                            border: isWeekFocused
+                              ? "1px solid rgba(124,255,223,.52)"
+                              : "1px solid transparent",
+                            boxShadow: isWeekFocused ? "inset 0 0 0 1px rgba(124,255,223,.22)" : "none",
                           }}
                         >
-                          {day ? (
-                            <div style={{ display: "grid", gap: 5 }}>
+                          {week.days.map((day, dayIndex) => {
+                            const heat = day
+                              ? getCashFlowHeatStyle(day.actualNet, cashFlowHeatMax)
+                              : {
+                                  background: "rgba(2,12,28,.45)",
+                                  border: "1px solid transparent",
+                                  boxShadow: "none",
+                                  valueColor: "#6c88b1",
+                                };
+                            return (
                               <div
+                                key={`${week.weekIndex}-${dayIndex}-${day?.day || "blank"}`}
                                 style={{
-                                  color: day.isToday ? "#eaf7ff" : "#9bb6dc",
-                                  fontSize: 12,
-                                  fontWeight: 900,
+                                  minHeight: 80,
+                                  padding: "7px 8px",
+                                  borderRight: "1px solid rgba(0,216,255,.07)",
+                                  borderBottom: "1px solid rgba(0,216,255,.07)",
+                                  background: day ? heat.background : "rgba(2,12,28,.45)",
+                                  boxShadow: day ? heat.boxShadow : "none",
+                                  border: heat.border,
                                 }}
                               >
-                                {day.day}
+                                {day ? (
+                                  <div style={{ display: "grid", gap: 5 }}>
+                                    <div
+                                      style={{
+                                        color: day.isToday ? "#eaf7ff" : "#9bb6dc",
+                                        fontSize: 12,
+                                        fontWeight: 900,
+                                      }}
+                                    >
+                                      {budgetMonths[day.monthIndex]} {day.day}
+                                    </div>
+                                    <div
+                                      style={{ color: heat.valueColor, fontSize: 15, fontWeight: 900 }}
+                                    >
+                                      {formatCompactSignedMoney(day.actualNet)}
+                                    </div>
+                                    <div style={{ color: "#8fb1d9", fontSize: 10 }}>
+                                      F {formatCompactMoney(day.monthEndForecast)}
+                                    </div>
+                                  </div>
+                                ) : null}
                               </div>
-                              <div style={{ color: heat.valueColor, fontSize: 15, fontWeight: 900 }}>
-                                {formatCompactSignedMoney(day.actualNet)}
-                              </div>
-                              <div style={{ color: "#8fb1d9", fontSize: 10 }}>
-                                F {formatCompactMoney(day.monthEndForecast)}
-                              </div>
-                            </div>
-                          ) : null}
+                            );
+                          })}
                         </div>
                       );
                     })}
-                  </div>
-                ))}
               </div>
             </div>
 
@@ -1412,10 +1924,18 @@ export function OperationsBoard({
               }}
             >
               {[
-                ["Total Inflow", formatCompactMoney(cashFlowCalendar.totalInflow), "#7dffd5"],
-                ["Total Outflow", formatCompactMoney(-cashFlowCalendar.totalOutflow), "#ff8ccc"],
-                ["Net Cash Flow", formatCompactSignedMoney(cashFlowCalendar.monthNetActual), cashFlowCalendar.monthNetActual >= 0 ? "#7dffd5" : "#ff8ccc"],
-                ["Sustainability Avg", `${cashFlowCalendar.sustainabilityAverage}/100`, "#8feaff"],
+                ["Total Inflow", formatCompactMoney(activeCalendarMetrics.totalInflow), "#7dffd5"],
+                ["Total Outflow", formatCompactMoney(-activeCalendarMetrics.totalOutflow), "#ff8ccc"],
+                [
+                  "Net Cash Flow",
+                  formatCompactSignedMoney(activeCalendarMetrics.monthNetActual),
+                  activeCalendarMetrics.monthNetActual >= 0 ? "#7dffd5" : "#ff8ccc",
+                ],
+                [
+                  "Sustainability Avg",
+                  `${activeCalendarMetrics.sustainabilityAverage}/100`,
+                  "#8feaff",
+                ],
               ].map(([label, value, color]) => (
                 <div
                   key={label}
@@ -1619,7 +2139,10 @@ export function OperationsBoard({
                 ))}
               </div>
               <div style={{ color: "#8ea8ca", fontSize: 12, textAlign: "center", marginTop: 8 }}>
-                {cashFlowCalendar.riskDays} risk days · pulse {formatCompactSignedMoney(cashFlowCalendar.dailyPlanPulse)}
+                {calendarViewMode === "weekly"
+                  ? `${weeklyCashFlowCalendar.riskDays} risk days across 4 weeks`
+                  : `${activeCalendarMetrics.riskDays} risk days`}{" "}
+                · pulse {formatCompactSignedMoney(activeCalendarMetrics.dailyPlanPulse)}
               </div>
             </div>
           </div>
