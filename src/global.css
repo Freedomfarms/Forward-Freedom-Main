@@ -85,25 +85,26 @@ button {
 }
 
 .net-worth-orbit-layout {
-  display: grid;
-  grid-template-columns: 240px repeat(auto-fill, minmax(148px, 1fr));
-  gap: 10px 12px;
-  align-items: center;
+  display: flex;
+  align-items: flex-start;
+  gap: 18px;
   width: 100%;
 }
 
 .net-worth-orbit-chart-cell {
-  grid-column: 1;
-  grid-row: 1 / -1;
-  align-self: center;
+  flex-shrink: 0;
 }
 
 .net-worth-orbit-category-list {
-  display: contents;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .net-worth-orbit-category-item {
-  min-width: 0;
+  width: 100%;
 }
 
 .app-main[data-scaled="true"] {
@@ -641,19 +642,15 @@ button {
   }
 
   .net-worth-orbit-layout {
-    grid-template-columns: 1fr;
-    justify-items: center;
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .net-worth-orbit-chart-cell {
-    grid-column: 1;
-    grid-row: auto;
+    align-self: center;
   }
 
   .net-worth-orbit-category-list {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 8px;
     width: 100%;
   }
 
