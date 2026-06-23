@@ -727,19 +727,10 @@ export function AccountsView({
   return (
     <div>
       {/* Header */}
-      <header style={{ ...styles.pageHeader, marginBottom: 16, gap: 14 }}>
+      <header style={styles.pageHeader}>
         <div>
-          <h1
-            style={{
-              ...styles.pageTitle,
-              fontSize: 22,
-              fontWeight: 700,
-              letterSpacing: "-0.02em",
-            }}
-          >
-            Accounts
-          </h1>
-          <p style={{ ...styles.pageSubtitle, fontSize: 13, lineHeight: 1.45, marginTop: 4 }}>
+          <h1 style={styles.pageTitle}>Accounts</h1>
+          <p style={styles.pageSubtitle}>
             Connect bank accounts, credit cards, investments, crypto, metals, real estate, and
             loans.
           </p>
