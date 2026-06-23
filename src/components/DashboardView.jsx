@@ -99,13 +99,13 @@ function buildProjectionAreaPath(points) {
   );
 }
 
-const NET_WORTH_CYL_WIDTH = 160;
-const NET_WORTH_CYL_HEIGHT = 320;
+const NET_WORTH_CYL_WIDTH = 200;
+const NET_WORTH_CYL_HEIGHT = 360;
 const NET_WORTH_CYL_CX = NET_WORTH_CYL_WIDTH / 2;
-const NET_WORTH_CYL_TOP_Y = 30;
-const NET_WORTH_CYL_BOTTOM_Y = 292;
-const NET_WORTH_CYL_RX = 52;
-const NET_WORTH_CYL_RY = 14;
+const NET_WORTH_CYL_TOP_Y = 38;
+const NET_WORTH_CYL_BOTTOM_Y = 296;
+const NET_WORTH_CYL_RX = 60;
+const NET_WORTH_CYL_RY = 18;
 
 const NET_WORTH_CYL_PATH = (() => {
   const cx = NET_WORTH_CYL_CX;
@@ -1234,29 +1234,73 @@ export function DashboardView({
                     <path d={NET_WORTH_CYL_PATH} />
                   </clipPath>
                   <linearGradient id="net-worth-cyl-shade" x1="0" y1="0" x2="1" y2="0">
-                    <stop offset="0%" stopColor="rgba(0,0,0,.55)" />
-                    <stop offset="18%" stopColor="rgba(0,0,0,.18)" />
-                    <stop offset="45%" stopColor="rgba(0,0,0,0)" />
-                    <stop offset="70%" stopColor="rgba(0,0,0,.12)" />
-                    <stop offset="100%" stopColor="rgba(0,0,0,.55)" />
+                    <stop offset="0%" stopColor="rgba(0,0,0,.65)" />
+                    <stop offset="16%" stopColor="rgba(0,0,0,.22)" />
+                    <stop offset="48%" stopColor="rgba(0,0,0,0)" />
+                    <stop offset="78%" stopColor="rgba(0,0,0,.20)" />
+                    <stop offset="100%" stopColor="rgba(0,0,0,.62)" />
                   </linearGradient>
                   <linearGradient id="net-worth-cyl-highlight" x1="0" y1="0" x2="1" y2="0">
-                    <stop offset="8%" stopColor="rgba(255,255,255,0)" />
-                    <stop offset="20%" stopColor="rgba(255,255,255,.28)" />
-                    <stop offset="34%" stopColor="rgba(255,255,255,0)" />
+                    <stop offset="6%" stopColor="rgba(255,255,255,0)" />
+                    <stop offset="16%" stopColor="rgba(255,255,255,.38)" />
+                    <stop offset="28%" stopColor="rgba(255,255,255,0)" />
                   </linearGradient>
-                  <radialGradient id="net-worth-cyl-ambient" cx="50%" cy="50%" r="55%">
-                    <stop offset="60%" stopColor="rgba(0,216,255,0)" />
-                    <stop offset="100%" stopColor="rgba(0,216,255,.10)" />
+                  <linearGradient id="net-worth-cyl-highlight-2" x1="0" y1="0" x2="1" y2="0">
+                    <stop offset="68%" stopColor="rgba(255,255,255,0)" />
+                    <stop offset="76%" stopColor="rgba(255,255,255,.16)" />
+                    <stop offset="84%" stopColor="rgba(255,255,255,0)" />
+                  </linearGradient>
+                  <radialGradient id="net-worth-cyl-base-glow" cx="50%" cy="50%" r="50%">
+                    <stop offset="0%" stopColor="rgba(0,216,255,.55)" />
+                    <stop offset="55%" stopColor="rgba(0,216,255,.12)" />
+                    <stop offset="100%" stopColor="rgba(0,216,255,0)" />
                   </radialGradient>
+                  <radialGradient id="net-worth-cyl-ambient" cx="50%" cy="50%" r="55%">
+                    <stop offset="55%" stopColor="rgba(0,216,255,0)" />
+                    <stop offset="100%" stopColor="rgba(0,216,255,.14)" />
+                  </radialGradient>
+                  <filter id="net-worth-cyl-glow" x="-50%" y="-50%" width="200%" height="200%">
+                    <feGaussianBlur stdDeviation="3.5" result="blur" />
+                    <feMerge>
+                      <feMergeNode in="blur" />
+                      <feMergeNode in="SourceGraphic" />
+                    </feMerge>
+                  </filter>
                 </defs>
 
                 <ellipse
                   cx={NET_WORTH_CYL_CX}
-                  cy={NET_WORTH_CYL_HEIGHT - 6}
-                  rx={NET_WORTH_CYL_RX + 6}
-                  ry={5}
+                  cy={NET_WORTH_CYL_HEIGHT / 2}
+                  rx={NET_WORTH_CYL_RX + 30}
+                  ry={(NET_WORTH_CYL_BOTTOM_Y - NET_WORTH_CYL_TOP_Y) / 2 + 30}
                   fill="url(#net-worth-cyl-ambient)"
+                />
+
+                <ellipse
+                  cx={NET_WORTH_CYL_CX}
+                  cy={NET_WORTH_CYL_BOTTOM_Y + 32}
+                  rx={NET_WORTH_CYL_RX + 24}
+                  ry={14}
+                  fill="url(#net-worth-cyl-base-glow)"
+                />
+
+                <ellipse
+                  cx={NET_WORTH_CYL_CX}
+                  cy={NET_WORTH_CYL_BOTTOM_Y + 28}
+                  rx={NET_WORTH_CYL_RX + 12}
+                  ry={9}
+                  fill="rgba(0,216,255,.10)"
+                  stroke="rgba(143,234,255,.65)"
+                  strokeWidth={1.4}
+                />
+                <ellipse
+                  cx={NET_WORTH_CYL_CX}
+                  cy={NET_WORTH_CYL_BOTTOM_Y + 28}
+                  rx={NET_WORTH_CYL_RX + 4}
+                  ry={5}
+                  fill="rgba(3,16,31,.65)"
+                  stroke="rgba(143,234,255,.35)"
+                  strokeWidth={1}
                 />
 
                 <ellipse
@@ -1265,8 +1309,6 @@ export function DashboardView({
                   rx={NET_WORTH_CYL_RX}
                   ry={NET_WORTH_CYL_RY}
                   fill="rgba(3,16,31,.95)"
-                  stroke="rgba(120,160,210,.32)"
-                  strokeWidth={1}
                 />
 
                 <g clipPath="url(#net-worth-cyl-clip)">
@@ -1275,7 +1317,7 @@ export function DashboardView({
                       const isBottom = index === 0;
                       const isTop = index === arr.length - 1;
                       const yTop = isTop
-                        ? band.top - NET_WORTH_CYL_RY
+                        ? band.top - NET_WORTH_CYL_RY - 2
                         : band.top;
                       const yBottom = isBottom
                         ? band.bottom + NET_WORTH_CYL_RY + 4
@@ -1300,6 +1342,17 @@ export function DashboardView({
                       fill="rgba(40,70,110,.5)"
                     />
                   )}
+
+                  {netWorthBands.slice(0, -1).map((band) => (
+                    <path
+                      key={`sep-${band.name}`}
+                      d={`M ${NET_WORTH_CYL_CX - NET_WORTH_CYL_RX} ${band.top} A ${NET_WORTH_CYL_RX} ${NET_WORTH_CYL_RY} 0 0 0 ${NET_WORTH_CYL_CX + NET_WORTH_CYL_RX} ${band.top}`}
+                      fill="none"
+                      stroke="rgba(0,0,0,.32)"
+                      strokeWidth={1}
+                    />
+                  ))}
+
                   <rect
                     x={NET_WORTH_CYL_CX - NET_WORTH_CYL_RX - 4}
                     y={NET_WORTH_CYL_TOP_Y - NET_WORTH_CYL_RY}
@@ -1314,31 +1367,73 @@ export function DashboardView({
                     height={NET_WORTH_CYL_HEIGHT}
                     fill="url(#net-worth-cyl-highlight)"
                   />
+                  <rect
+                    x={NET_WORTH_CYL_CX - NET_WORTH_CYL_RX - 4}
+                    y={NET_WORTH_CYL_TOP_Y - NET_WORTH_CYL_RY}
+                    width={NET_WORTH_CYL_RX * 2 + 8}
+                    height={NET_WORTH_CYL_HEIGHT}
+                    fill="url(#net-worth-cyl-highlight-2)"
+                  />
                 </g>
+
+                {[0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+                  const y =
+                    NET_WORTH_CYL_BOTTOM_Y -
+                    (NET_WORTH_CYL_BOTTOM_Y - NET_WORTH_CYL_TOP_Y) * ratio;
+                  return (
+                    <g key={`tick-${ratio}`}>
+                      <line
+                        x1={NET_WORTH_CYL_CX - NET_WORTH_CYL_RX - 10}
+                        y1={y}
+                        x2={NET_WORTH_CYL_CX - NET_WORTH_CYL_RX - 3}
+                        y2={y}
+                        stroke="rgba(143,234,255,.45)"
+                        strokeWidth={1}
+                      />
+                      <text
+                        x={NET_WORTH_CYL_CX - NET_WORTH_CYL_RX - 14}
+                        y={y + 3}
+                        textAnchor="end"
+                        fontSize={9}
+                        fontWeight={700}
+                        fill="rgba(143,234,255,.65)"
+                      >
+                        {Math.round(ratio * 100)}%
+                      </text>
+                    </g>
+                  );
+                })}
 
                 <line
                   x1={NET_WORTH_CYL_CX - NET_WORTH_CYL_RX}
                   y1={NET_WORTH_CYL_TOP_Y}
                   x2={NET_WORTH_CYL_CX - NET_WORTH_CYL_RX}
                   y2={NET_WORTH_CYL_BOTTOM_Y}
-                  stroke="rgba(120,160,210,.55)"
-                  strokeWidth={1.2}
+                  stroke="rgba(143,234,255,.7)"
+                  strokeWidth={1.5}
                 />
                 <line
                   x1={NET_WORTH_CYL_CX + NET_WORTH_CYL_RX}
                   y1={NET_WORTH_CYL_TOP_Y}
                   x2={NET_WORTH_CYL_CX + NET_WORTH_CYL_RX}
                   y2={NET_WORTH_CYL_BOTTOM_Y}
-                  stroke="rgba(120,160,210,.55)"
-                  strokeWidth={1.2}
+                  stroke="rgba(143,234,255,.7)"
+                  strokeWidth={1.5}
                 />
 
                 <path
+                  d={`M ${NET_WORTH_CYL_CX - NET_WORTH_CYL_RX} ${NET_WORTH_CYL_BOTTOM_Y} A ${NET_WORTH_CYL_RX} ${NET_WORTH_CYL_RY} 0 0 1 ${NET_WORTH_CYL_CX + NET_WORTH_CYL_RX} ${NET_WORTH_CYL_BOTTOM_Y}`}
+                  fill="none"
+                  stroke="rgba(143,234,255,.30)"
+                  strokeDasharray="4 3"
+                  strokeWidth={1}
+                />
+                <path
                   d={`M ${NET_WORTH_CYL_CX - NET_WORTH_CYL_RX} ${NET_WORTH_CYL_BOTTOM_Y} A ${NET_WORTH_CYL_RX} ${NET_WORTH_CYL_RY} 0 0 0 ${NET_WORTH_CYL_CX + NET_WORTH_CYL_RX} ${NET_WORTH_CYL_BOTTOM_Y}`}
                   fill="none"
-                  stroke="rgba(120,160,210,.22)"
-                  strokeDasharray="3 3"
-                  strokeWidth={1}
+                  stroke="#8feaff"
+                  strokeWidth={1.8}
+                  filter="url(#net-worth-cyl-glow)"
                 />
 
                 <ellipse
@@ -1346,17 +1441,18 @@ export function DashboardView({
                   cy={NET_WORTH_CYL_TOP_Y}
                   rx={NET_WORTH_CYL_RX}
                   ry={NET_WORTH_CYL_RY}
-                  fill="rgba(255,255,255,.06)"
-                  stroke="rgba(143,234,255,.6)"
-                  strokeWidth={1.2}
+                  fill="rgba(255,255,255,.05)"
+                  stroke="#8feaff"
+                  strokeWidth={1.6}
+                  filter="url(#net-worth-cyl-glow)"
                 />
                 <ellipse
                   cx={NET_WORTH_CYL_CX}
                   cy={NET_WORTH_CYL_TOP_Y + 1}
-                  rx={NET_WORTH_CYL_RX - 3}
-                  ry={Math.max(NET_WORTH_CYL_RY - 4, 4)}
+                  rx={NET_WORTH_CYL_RX - 4}
+                  ry={Math.max(NET_WORTH_CYL_RY - 5, 4)}
                   fill="none"
-                  stroke="rgba(255,255,255,.25)"
+                  stroke="rgba(255,255,255,.45)"
                   strokeWidth={1}
                 />
               </svg>
