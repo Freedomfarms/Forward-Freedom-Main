@@ -1141,62 +1141,6 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
               </div>
             </div>
 
-            <div style={{ ...styles.panel, padding: 24, marginTop: 20 }}>
-              <div style={{ color: "white", fontSize: 20, fontWeight: 900, marginBottom: 14 }}>
-                {focusMonthData?.month} Activity
-              </div>
-              <div style={{ display: "grid", gap: 10 }}>
-                {focusMonthData?.transactions?.length ? (
-                  focusMonthData.transactions.map((transaction) => (
-                    <div
-                      key={transaction.id}
-                      style={{
-                        borderRadius: 12,
-                        border: "1px solid rgba(0,216,255,.14)",
-                        background: "rgba(3,17,32,.68)",
-                        padding: "12px 14px",
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          gap: 12,
-                          alignItems: "baseline",
-                        }}
-                      >
-                        <div style={{ color: "white", fontWeight: 800 }}>
-                          {transaction.merchant || "Spending entry"}
-                        </div>
-                        <div style={{ color: "#ffb65d", fontWeight: 900 }}>
-                          {wholeDollars(Math.abs(transaction.amount))}
-                        </div>
-                      </div>
-                      <div
-                        style={{
-                          color: "#7ea6d8",
-                          fontSize: 12,
-                          marginTop: 6,
-                          display: "flex",
-                          justifyContent: "space-between",
-                          gap: 12,
-                          flexWrap: "wrap",
-                        }}
-                      >
-                        <span>{transaction.date}</span>
-                        <span>{transaction.account}</span>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div style={{ color: "#9fb0c9", lineHeight: 1.6 }}>
-                    Nothing posted in {focusMonthData?.month} for this category. Pick another month on
-                    the chart or review grid to scan a different slice of spending.
-                  </div>
-                )}
-              </div>
-            </div>
-
             <div
               className="forecast-detail-grid"
               style={{
@@ -1207,7 +1151,64 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
                 marginTop: 20,
               }}
             >
-              <div style={{ ...styles.panel, padding: 24 }}>
+              <div style={{ display: "grid", gap: 20 }}>
+                <div style={{ ...styles.panel, padding: 24 }}>
+                  <div style={{ color: "white", fontSize: 20, fontWeight: 900, marginBottom: 14 }}>
+                    {focusMonthData?.month} Activity
+                  </div>
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {focusMonthData?.transactions?.length ? (
+                      focusMonthData.transactions.map((transaction) => (
+                        <div
+                          key={transaction.id}
+                          style={{
+                            borderRadius: 12,
+                            border: "1px solid rgba(0,216,255,.14)",
+                            background: "rgba(3,17,32,.68)",
+                            padding: "12px 14px",
+                          }}
+                        >
+                          <div
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              gap: 12,
+                              alignItems: "baseline",
+                            }}
+                          >
+                            <div style={{ color: "white", fontWeight: 800 }}>
+                              {transaction.merchant || "Spending entry"}
+                            </div>
+                            <div style={{ color: "#ffb65d", fontWeight: 900 }}>
+                              {wholeDollars(Math.abs(transaction.amount))}
+                            </div>
+                          </div>
+                          <div
+                            style={{
+                              color: "#7ea6d8",
+                              fontSize: 12,
+                              marginTop: 6,
+                              display: "flex",
+                              justifyContent: "space-between",
+                              gap: 12,
+                              flexWrap: "wrap",
+                            }}
+                          >
+                            <span>{transaction.date}</span>
+                            <span>{transaction.account}</span>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div style={{ color: "#9fb0c9", lineHeight: 1.6 }}>
+                        Nothing posted in {focusMonthData?.month} for this category. Pick another month
+                        on the chart or review grid to scan a different slice of spending.
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div style={{ ...styles.panel, padding: 24 }}>
                 <div
                   style={{
                     color: "white",
@@ -1361,18 +1362,10 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
 
               <div style={{ display: "grid", gap: 20 }}>
                 <div style={{ ...styles.panel, padding: 22 }}>
-                  <div
-                    style={{
-                      color: "#8feaff",
-                      fontSize: 12,
-                      textTransform: "uppercase",
-                      letterSpacing: 1,
-                      fontWeight: 900,
-                    }}
-                  >
+                  <div style={{ color: "white", fontSize: 18, fontWeight: 900, marginBottom: 14 }}>
                     Month Spotlight
                   </div>
-                  <div style={{ color: "white", fontSize: 24, fontWeight: 900, marginTop: 8 }}>
+                  <div style={{ color: "white", fontSize: 24, fontWeight: 900, marginTop: 0 }}>
                     {focusMonthData?.month} {selectedYear}
                   </div>
                   <div style={{ display: "grid", gap: 12, marginTop: 18 }}>
