@@ -7,7 +7,7 @@ import {
 } from "../data/constants.jsx";
 import { parseBudgetReviewDate } from "../utils/budgetReview.js";
 import { sumSpendTransactions } from "../utils/transactions.js";
-import { getCurrentBudgetPeriod } from "../utils/date.js";
+import { getCurrentBudgetPeriod, getBudgetPeriodAtOffset } from "../utils/date.js";
 import { buildAreaPath, buildLinePath, wholeDollars } from "../utils/format.js";
 import { styles } from "../styles.js";
 import { HouseholdProfilesControl } from "./Common.jsx";
@@ -26,10 +26,13 @@ const CATEGORY_COLORS = [
   "#22c55e",
   "#94a3b8",
 ];
-const MONTH_SPACING = (CHART_W - 48) / (budgetMonths.length - 1);
-const BAR_WIDTH = MONTH_SPACING * 0.62;
+const CHART_PADDING_LEFT = 56;
+const CHART_PADDING_RIGHT = 24;
+const MONTH_SPACING =
+  (CHART_W - CHART_PADDING_LEFT - CHART_PADDING_RIGHT) / (budgetMonths.length - 1);
+const BAR_WIDTH = MONTH_SPACING * 0.58;
 const MONTH_X = Object.fromEntries(
-  budgetMonths.map((month, index) => [month, 24 + index * MONTH_SPACING])
+  budgetMonths.map((month, index) => [month, CHART_PADDING_LEFT + index * MONTH_SPACING])
 );
 
 function sumSpending(transactions) {
@@ -59,6 +62,34 @@ function buildYLabels(max, min, count = 5) {
 
 function getLatestMonthWithSpend(monthlySeries, fallbackMonth) {
   return [...monthlySeries].reverse().find((row) => row.spent > 0)?.month || fallbackMonth;
+}
+
+function buildHistorical12MonthAverage({
+  spendingTransactions,
+  category,
+  budgetCategoryDefinitions,
+  endYear,
+  endMonthIndex,
+}) {
+  const endDate = new Date(endYear, endMonthIndex, 1);
+  const trailingPeriods = Array.from({ length: 12 }, (_, index) =>
+    getBudgetPeriodAtOffset(index - 11, endDate)
+  );
+  const trailingSpend = trailingPeriods.reduce((sum, period) => {
+    return (
+      sum +
+      sumSpending(
+        spendingTransactions.filter(
+          (transaction) =>
+            transaction.parsed.year === period.year &&
+            transaction.parsed.month === period.month &&
+            matchesCategory(transaction, category, budgetCategoryDefinitions)
+        )
+      )
+    );
+  }, 0);
+
+  return trailingSpend / 12;
 }
 
 function buildCategoryDefinitions(budgetRows, spendingTransactions) {
@@ -206,7 +237,19 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
     selectedYear < currentBudgetPeriod.year
       ? Math.max(latestTrackedMonthIndex + 1, 1)
       : Math.max(currentBudgetPeriod.monthIndex + 1, latestTrackedMonthIndex + 1, 1);
-  const averageMonthlySpend = selectedTotalSpend / reviewedMonthCount;
+  const historicalAverageEndMonthIndex =
+    selectedYear < currentBudgetPeriod.year
+      ? 11
+      : selectedYear === currentBudgetPeriod.year
+        ? currentBudgetPeriod.monthIndex
+        : 11;
+  const averageMonthlySpend = buildHistorical12MonthAverage({
+    spendingTransactions,
+    category: selectedCategory,
+    budgetCategoryDefinitions,
+    endYear: selectedYear,
+    endMonthIndex: historicalAverageEndMonthIndex,
+  });
   const monthlyBudgets = budgetMonths.map((month) => getBudgetForMonth(selectedCategory, budgetRows, month));
   const hasBudgetContext = monthlyBudgets.some((value) => value !== null);
   const budgetInReviewPeriod = hasBudgetContext
@@ -488,7 +531,7 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
                 {[
                   ["Year Total", wholeDollars(totalSpendForYear), "#00d8ff"],
                   ["Tracked Categories", `${categoryCards.length - 1}`, "#8feaff"],
-                  ["Selected Avg", wholeDollars(averageMonthlySpend), "#00f59b"],
+                  ["12-Mo Avg", wholeDollars(averageMonthlySpend), "#00f59b"],
                   ["Peak Month", `${peakMonth.month} ${wholeDollars(peakMonth.spent)}`, "#ffb65d"],
                 ].map(([label, value, color]) => (
                   <div
@@ -648,8 +691,7 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
                     </div>
                   ) : label === "Average / Month" ? (
                     <div style={{ color: "#9fb0c9", fontSize: 12, marginTop: 8 }}>
-                      Average line is based on {reviewedMonthCount} month
-                      {reviewedMonthCount === 1 ? "" : "s"} in scope
+                      Rolling 12-month historical average
                     </div>
                   ) : label === "Peak Month" ? (
                     <div style={{ color: "#9fb0c9", fontSize: 12, marginTop: 8 }}>
@@ -667,15 +709,14 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
             <div className="forecast-chart-panel" style={{ ...styles.panel, padding: "24px 24px 0" }}>
               <div
                 style={{
-                  display: "flex",
-                  justifyContent: "space-between",
+                  display: "grid",
+                  gridTemplateColumns: "minmax(0, 1fr) auto minmax(0, 1fr)",
                   alignItems: "center",
                   gap: 18,
-                  flexWrap: "wrap",
                   marginBottom: 18,
                 }}
               >
-                <div>
+                <div style={{ minWidth: 0 }}>
                   <div
                     style={{
                       display: "flex",
@@ -730,11 +771,49 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
                     </div>
                   </div>
                   <div style={{ color: "#9fb0c9", marginTop: 6, lineHeight: 1.5 }}>
-                    Track live spend against the average line
+                    Track live spend against the 12-month average
                     {hasBudgetContext ? " and your budget target." : "."}
                   </div>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 10,
+                    padding: "0 12px",
+                    textAlign: "center",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 10,
+                      height: 10,
+                      borderRadius: 999,
+                      background: selectedCategory.color,
+                      flexShrink: 0,
+                    }}
+                  />
+                  <div
+                    style={{
+                      color: "#eaf3ff",
+                      fontSize: 16,
+                      fontWeight: 900,
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {selectedCategory.name}
+                  </div>
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "flex-end",
+                    gap: 18,
+                    flexWrap: "wrap",
+                  }}
+                >
                   <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#9fb0c9" }}>
                     <div
                       style={{
@@ -774,12 +853,13 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
               <div style={{ display: "flex", gap: 0 }}>
                 <div
                   style={{
-                    width: 72,
+                    width: 80,
                     flexShrink: 0,
                     display: "flex",
                     flexDirection: "column",
                     justifyContent: "space-between",
                     paddingBottom: 44,
+                    paddingRight: 8,
                   }}
                 >
                   {yLabels.map((label) => (
@@ -1066,7 +1146,7 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
                     {wholeDollars(selectedTotalSpend)}
                   </div>
                   <div style={{ textAlign: "right", color: "#8feaff", fontWeight: 800 }}>
-                    Avg {wholeDollars(averageMonthlySpend)}
+                    Avg {wholeDollars(averageMonthlySpend)} (12-mo)
                   </div>
                   {hasBudgetContext ? (
                     <div
