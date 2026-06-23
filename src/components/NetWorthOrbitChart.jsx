@@ -95,12 +95,6 @@ export function NetWorthOrbitChart({ allocations }) {
     setFlashToken((t) => t + 1);
   };
 
-  const metricCards = [
-    ["Category", activeData.name, activeData.color],
-    ["Amount", money(Number(activeData.valueNumber || 0)), "#8feaff"],
-    ["Share", `${Math.round(activeData.percentNumber || 0)}%`, activeData.color],
-  ];
-
   return (
     <div style={{ width: "100%" }} className="net-worth-orbit-chart">
       <div onMouseLeave={reset}>
@@ -379,55 +373,6 @@ export function NetWorthOrbitChart({ allocations }) {
             })}
           </div>
         </div>
-      </div>
-
-      <div
-        className="responsive-grid-3"
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(3, 1fr)",
-          gap: 14,
-          marginTop: 14,
-        }}
-      >
-        {metricCards.map(([label, value, color]) => (
-          <div
-            key={label}
-            style={{
-              border: "1px solid rgba(0,136,255,.18)",
-              borderRadius: 14,
-              background: "rgba(3,17,32,.58)",
-              padding: "16px 18px 18px",
-            }}
-          >
-            <div
-              style={{
-                color: "#8fb1d9",
-                fontSize: 12,
-                textTransform: "uppercase",
-                letterSpacing: 0.9,
-                marginBottom: 10,
-              }}
-            >
-              {label}
-            </div>
-            <div
-              key={`${label}-${flashToken}`}
-              className="budget-orbit-metric-flash budget-orbit-metric-value"
-              style={{
-                color,
-                fontSize: 22,
-                fontWeight: 900,
-                lineHeight: 1.2,
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-              }}
-            >
-              {value}
-            </div>
-          </div>
-        ))}
       </div>
     </div>
   );
