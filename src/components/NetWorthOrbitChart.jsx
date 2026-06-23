@@ -99,14 +99,14 @@ export function NetWorthOrbitChart({ allocations }) {
     <div style={{ width: "100%" }} className="net-worth-orbit-chart">
       <div onMouseLeave={reset}>
         <div className="net-worth-orbit-layout">
-          <div
-            style={{
-              position: "relative",
-              width: SIZE,
-              height: SIZE,
-              flexShrink: 0,
-            }}
-          >
+          <div className="net-worth-orbit-chart-cell">
+            <div
+              style={{
+                position: "relative",
+                width: SIZE,
+                height: SIZE,
+              }}
+            >
             <svg
               width={SIZE}
               height={SIZE}
@@ -284,6 +284,7 @@ export function NetWorthOrbitChart({ allocations }) {
               </div>
             </div>
           </div>
+          </div>
 
           <div className="net-worth-orbit-category-list">
             {sortedAllocations.map((item) => {
@@ -299,7 +300,7 @@ export function NetWorthOrbitChart({ allocations }) {
                   onMouseEnter={() => !isZero && focus(item.name)}
                   onFocus={() => !isZero && focus(item.name)}
                   onClick={() => !isZero && focus(item.name)}
-                  className={isActive ? "is-active" : undefined}
+                  className={`net-worth-orbit-category-item${isActive ? " is-active" : ""}`}
                   style={{
                     display: "grid",
                     gridTemplateColumns: "auto 1fr auto",
