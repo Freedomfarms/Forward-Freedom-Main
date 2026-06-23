@@ -12,6 +12,7 @@ import {
 } from "../utils/trueCashProjection.js";
 import { HouseholdProfilesControl, InfoDot, MetricCard } from "./Common.jsx";
 import { BudgetOrbitChart } from "./BudgetOrbitChart.jsx";
+import { NetWorthOrbitChart } from "./NetWorthOrbitChart.jsx";
 
 const CHART_HEIGHT = 300;
 const NET_WORTH_HISTORY_W = 620;
@@ -99,23 +100,6 @@ function buildProjectionAreaPath(points) {
   );
 }
 
-function buildAllocationGradient(dynamicAllocations) {
-  const positiveAllocations = dynamicAllocations.filter((item) => Number(item.valueNumber) > 0);
-  if (positiveAllocations.length === 0) {
-    return "conic-gradient(#12355f 0 100%)";
-  }
-
-  const total = positiveAllocations.reduce((sum, item) => sum + Number(item.valueNumber || 0), 0);
-  let currentPercent = 0;
-
-  return `conic-gradient(${positiveAllocations
-    .map((item) => {
-      const start = currentPercent;
-      currentPercent += (Number(item.valueNumber || 0) / total) * 100;
-      return `${item.color} ${start.toFixed(2)}% ${currentPercent.toFixed(2)}%`;
-    })
-    .join(", ")})`;
-}
 
 function buildFilledAreaPath(points, chartHeight) {
   if (points.length === 0) return "";
@@ -302,11 +286,6 @@ export function DashboardView({
       setAccountPanelError(error?.message || "Unable to request email change right now.");
     }
   };
-  const allocationGradient = buildAllocationGradient(dynamicAllocations);
-  const allocationTotal = dynamicAllocations.reduce(
-    (sum, item) => sum + Number(item.valueNumber || 0),
-    0
-  );
   const monthlyBudgetReview =
     currentMonthSnapshot ||
     buildMonthlyBudgetReview(transactions, budgetRows, {
@@ -1177,79 +1156,7 @@ export function DashboardView({
           >
             Net Worth Breakdown <InfoDot />
           </div>
-          <div className="dashboard-net-worth-layout" style={{ display: "flex", alignItems: "center", gap: 30 }}>
-            <div
-              style={{
-                position: "relative",
-                width: 182,
-                height: 182,
-                borderRadius: 999,
-                background: allocationGradient,
-                padding: 30,
-                boxShadow: "0 0 35px rgba(0,174,255,.45)",
-                flexShrink: 0,
-              }}
-            >
-              <div
-                style={{ width: "100%", height: "100%", borderRadius: 999, background: "#031120" }}
-              />
-              <div
-                style={{
-                  position: "absolute",
-                  inset: 0,
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  textAlign: "center",
-                  pointerEvents: "none",
-                }}
-              >
-                <div
-                  style={{
-                    color: "white",
-                    fontSize: 24,
-                    fontWeight: 900,
-                    lineHeight: 1.15,
-                    maxWidth: 112,
-                  }}
-                >
-                  {wholeDollars(allocationTotal)}
-                </div>
-              </div>
-            </div>
-            <div style={{ flex: 1, fontSize: 14 }}>
-              {dynamicAllocations.map((item) => (
-                <div
-                  key={item.name}
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "minmax(0, 1fr) 126px 64px",
-                    gap: 16,
-                    marginBottom: 16,
-                    alignItems: "center",
-                    fontVariantNumeric: "tabular-nums",
-                  }}
-                >
-                  <span style={{ minWidth: 0 }}>
-                    <b
-                      style={{
-                        display: "inline-block",
-                        width: 10,
-                        height: 10,
-                        borderRadius: 999,
-                        background: item.color,
-                        marginRight: 12,
-                      }}
-                    />
-                    {item.name}
-                  </span>
-                  <span style={{ textAlign: "right", whiteSpace: "nowrap" }}>{item.amount}</span>
-                  <span style={{ textAlign: "right", whiteSpace: "nowrap" }}>{item.percent}</span>
-                </div>
-              ))}
-            </div>
-          </div>
+          <NetWorthOrbitChart allocations={dynamicAllocations} />
         </div>
       </section>
 
