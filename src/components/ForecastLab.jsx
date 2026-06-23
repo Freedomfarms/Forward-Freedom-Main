@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   LEGACY_UNCATEGORIZED_CATEGORIES,
   UNCATEGORIZED_CATEGORY,
@@ -217,6 +217,7 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
   const [activeCategoryId, setActiveCategoryId] = useState("all-spending");
   const [focusMonth, setFocusMonth] = useState(currentBudgetPeriod.month);
   const [monthlySpendChartType, setMonthlySpendChartType] = useState("line");
+  const [barValueMonth, setBarValueMonth] = useState(null);
 
   const selectedYear = availableYears.includes(activeYear) ? activeYear : availableYears[0];
   const selectedCategory =
@@ -363,6 +364,13 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
   const budgetPath = budgetPoints.length > 1 ? buildLinePath(budgetPoints) : "";
   const averageY = toY(averageMonthlySpend, max, min);
   const focusX = focusMonthData ? MONTH_X[focusMonthData.month] : null;
+  const barValueMonthData = barValueMonth
+    ? monthlySeries.find((row) => row.month === barValueMonth) || null
+    : null;
+
+  useEffect(() => {
+    setBarValueMonth(null);
+  }, [activeCategoryId, selectedYear, monthlySpendChartType]);
 
   const fieldStyle = {
     color: "#eaf3ff",
@@ -748,7 +756,10 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
                           <button
                             key={type}
                             type="button"
-                            onClick={() => setMonthlySpendChartType(type)}
+                            onClick={() => {
+                              setMonthlySpendChartType(type);
+                              if (type !== "bar") setBarValueMonth(null);
+                            }}
                             style={{
                               color: isActive ? "#00d8ff" : "#9fb0c9",
                               border: isActive
@@ -796,8 +807,8 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
                   />
                   <div
                     style={{
-                      color: "#eaf3ff",
-                      fontSize: 16,
+                      color: "white",
+                      fontSize: 22,
                       fontWeight: 900,
                       whiteSpace: "nowrap",
                     }}
@@ -832,7 +843,7 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
                         borderTop: "2px dashed rgba(143,234,255,.9)",
                       }}
                     />
-                    Average
+                    12 Month Avg
                   </div>
                   {hasBudgetContext ? (
                     <div
@@ -870,7 +881,74 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
                 </div>
 
                 <div className="forecast-chart-frame" style={{ flex: 1, position: "relative" }}>
-                  <svg className="forecast-chart-svg" viewBox={`0 0 ${CHART_W} ${CHART_H + 40}`} style={{ width: "100%" }}>
+                  {monthlySpendChartType === "bar" && barValueMonthData ? (
+                    <div
+                      style={{
+                        position: "absolute",
+                        left: `${(MONTH_X[barValueMonth] / CHART_W) * 100}%`,
+                        top: `${(toY(barValueMonthData.spent, max, min) / (CHART_H + 40)) * 100}%`,
+                        transform: "translate(-50%, calc(-100% - 10px))",
+                        pointerEvents: "none",
+                        zIndex: 2,
+                        minWidth: 168,
+                        padding: "10px 12px",
+                        borderRadius: 10,
+                        border: "1px solid rgba(0,216,255,.28)",
+                        background: "rgba(4,18,34,.96)",
+                        boxShadow: "0 10px 28px rgba(0,0,0,.35)",
+                      }}
+                    >
+                      <div
+                        style={{
+                          color: "#8feaff",
+                          fontSize: 11,
+                          fontWeight: 800,
+                          textTransform: "uppercase",
+                          letterSpacing: 0.6,
+                          marginBottom: 8,
+                        }}
+                      >
+                        {barValueMonth}
+                      </div>
+                      {[
+                        ["Spend", wholeDollars(barValueMonthData.spent), selectedCategory.color],
+                        ["12 Month Avg", wholeDollars(averageMonthlySpend), "#8feaff"],
+                        ...(hasBudgetContext
+                          ? [
+                              [
+                                "Budget",
+                                barValueMonthData.budget == null
+                                  ? "—"
+                                  : wholeDollars(barValueMonthData.budget),
+                                "#ffb65d",
+                              ],
+                            ]
+                          : []),
+                      ].map(([label, value, color]) => (
+                        <div
+                          key={label}
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            gap: 16,
+                            fontSize: 12,
+                            marginTop: 6,
+                          }}
+                        >
+                          <span style={{ color: "#9fb0c9" }}>{label}</span>
+                          <span style={{ color, fontWeight: 800 }}>{value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                  <svg
+                    className="forecast-chart-svg"
+                    viewBox={`0 0 ${CHART_W} ${CHART_H + 40}`}
+                    style={{ width: "100%" }}
+                    onClick={() => {
+                      if (monthlySpendChartType === "bar") setBarValueMonth(null);
+                    }}
+                  >
                     <defs>
                       <linearGradient id="spendingAreaGradient" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="0%" stopColor={selectedCategory.color} stopOpacity="0.28" />
@@ -943,7 +1021,7 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
                           const x = MONTH_X[row.month];
                           const y = toY(row.spent, max, min);
                           const height = Math.max(0, CHART_H - y);
-                          const isActive = focusMonthData?.month === row.month;
+                          const isSelected = barValueMonth === row.month;
                           return (
                             <rect
                               key={`bar-${row.month}`}
@@ -952,12 +1030,16 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
                               width={BAR_WIDTH}
                               height={height}
                               fill={selectedCategory.color}
-                              fillOpacity={isActive ? 0.95 : 0.72}
-                              stroke={isActive ? "white" : "none"}
-                              strokeWidth={isActive ? 1.5 : 0}
+                              fillOpacity={isSelected ? 0.95 : 0.72}
+                              stroke={isSelected ? "white" : "none"}
+                              strokeWidth={isSelected ? 1.5 : 0}
                               rx={4}
                               style={{ cursor: "pointer" }}
-                              onClick={() => setFocusMonth(row.month)}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setBarValueMonth(row.month);
+                                setFocusMonth(row.month);
+                              }}
                             />
                           );
                         })
@@ -977,7 +1059,10 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
 
                     {monthlySeries.map((row) => {
                       const y = toY(row.spent, max, min);
-                      const isActive = focusMonthData?.month === row.month;
+                      const isActive =
+                        monthlySpendChartType === "bar"
+                          ? barValueMonth === row.month
+                          : focusMonthData?.month === row.month;
                       return (
                         <g key={row.month}>
                           {monthlySpendChartType === "line" ? (
@@ -1002,7 +1087,11 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
                               fontWeight: isActive ? 800 : 500,
                               cursor: "pointer",
                             }}
-                            onClick={() => setFocusMonth(row.month)}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setFocusMonth(row.month);
+                              if (monthlySpendChartType === "bar") setBarValueMonth(null);
+                            }}
                           >
                             {row.month}
                           </text>
