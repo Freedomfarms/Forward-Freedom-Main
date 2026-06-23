@@ -21,12 +21,33 @@ function getLastNonNullValue(values, fallback = 0) {
 
 const SCORECARD_CHART_W = 940;
 const SCORECARD_CHART_H = 300;
+const SCORECARD_PADDING_LEFT = 56;
+const SCORECARD_PADDING_RIGHT = 24;
+const SCORECARD_MONTH_SPACING =
+  (SCORECARD_CHART_W - SCORECARD_PADDING_LEFT - SCORECARD_PADDING_RIGHT) /
+  (budgetMonths.length - 1);
+const SCORECARD_BAR_WIDTH = SCORECARD_MONTH_SPACING * 0.58;
 const SCORECARD_MONTH_X = Object.fromEntries(
   budgetMonths.map((month, index) => [
     month,
-    24 + index * ((SCORECARD_CHART_W - 48) / (budgetMonths.length - 1)),
+    SCORECARD_PADDING_LEFT + index * SCORECARD_MONTH_SPACING,
   ])
 );
+const OPS_SCORECARD_CHART_TYPE_STORAGE_KEY = "fff-ops-scorecard-chart-type";
+
+function readStoredOpsScorecardChartType(storageKey = OPS_SCORECARD_CHART_TYPE_STORAGE_KEY) {
+  if (typeof window === "undefined") return "line";
+  const stored = window.localStorage.getItem(storageKey);
+  return stored === "bar" ? "bar" : "line";
+}
+
+function persistOpsScorecardChartType(
+  chartType,
+  storageKey = OPS_SCORECARD_CHART_TYPE_STORAGE_KEY
+) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(storageKey, chartType);
+}
 
 function finiteMoney(value) {
   const n = Number(value);
@@ -54,6 +75,237 @@ function buildScorecardYLabels(max, min, count = 5) {
   });
 }
 
+function ScorecardChartInteraction({
+  chartId,
+  chartType,
+  months,
+  yLabels,
+  chartMax,
+  chartMin,
+  primarySeriesPoints,
+  referenceSeriesPoints,
+  strokeColor,
+  getBarValue,
+  getTooltipRows,
+}) {
+  const [chartValueMonth, setChartValueMonth] = useState(null);
+  const chartValueEntry = chartValueMonth
+    ? months.find((entry) => entry.month.month === chartValueMonth) || null
+    : null;
+  const focusX = chartValueEntry ? SCORECARD_MONTH_X[chartValueEntry.month.month] : null;
+  const chartValueIndex = chartValueEntry?.index ?? -1;
+  const chartValueY =
+    chartValueIndex >= 0 && primarySeriesPoints[chartValueIndex]
+      ? primarySeriesPoints[chartValueIndex][1]
+      : null;
+
+  const selectChartMonth = (entry, event) => {
+    event?.stopPropagation?.();
+    setChartValueMonth(entry.month.month);
+  };
+
+  return (
+    <div style={{ flex: 1, position: "relative" }}>
+      {chartValueEntry && chartValueY != null ? (
+        <div
+          style={{
+            position: "absolute",
+            left: `${(SCORECARD_MONTH_X[chartValueEntry.month.month] / SCORECARD_CHART_W) * 100}%`,
+            top: `${(chartValueY / (SCORECARD_CHART_H + 40)) * 100}%`,
+            transform: "translate(-50%, calc(-100% - 10px))",
+            pointerEvents: "none",
+            zIndex: 6,
+            minWidth: 168,
+            padding: "10px 12px",
+            borderRadius: 10,
+            border: "1px solid rgba(0,216,255,.28)",
+            background: "rgba(4,18,34,.96)",
+            boxShadow: "0 10px 28px rgba(0,0,0,.35)",
+          }}
+        >
+          <div
+            style={{
+              color: "#8feaff",
+              fontSize: 11,
+              fontWeight: 800,
+              textTransform: "uppercase",
+              letterSpacing: 0.6,
+              marginBottom: 8,
+            }}
+          >
+            {chartValueEntry.month.month}
+          </div>
+          {getTooltipRows(chartValueEntry).map(([label, value, color]) => (
+            <div
+              key={label}
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 16,
+                fontSize: 12,
+                marginTop: 6,
+              }}
+            >
+              <span style={{ color: "#9fb0c9" }}>{label}</span>
+              <span style={{ color, fontWeight: 800 }}>{value}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      <svg
+        className="ops-scorecard-svg"
+        viewBox={`0 0 ${SCORECARD_CHART_W} ${SCORECARD_CHART_H + 40}`}
+        style={{ width: "100%" }}
+        onClick={() => setChartValueMonth(null)}
+      >
+        <defs>
+          <linearGradient id={`${chartId}AreaGradient`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={strokeColor} stopOpacity="0.4" />
+            <stop offset="100%" stopColor={strokeColor} stopOpacity="0.06" />
+          </linearGradient>
+        </defs>
+
+        {yLabels.map((_, index) => {
+          const y = (index / (yLabels.length - 1)) * SCORECARD_CHART_H;
+          return (
+            <line
+              key={index}
+              x1={0}
+              y1={y}
+              x2={SCORECARD_CHART_W}
+              y2={y}
+              stroke="rgba(0,136,255,.1)"
+              strokeWidth={1}
+            />
+          );
+        })}
+
+        {months.map((entry) => (
+          <line
+            key={`v-${entry.month.month}`}
+            x1={SCORECARD_MONTH_X[entry.month.month]}
+            y1={0}
+            x2={SCORECARD_MONTH_X[entry.month.month]}
+            y2={SCORECARD_CHART_H}
+            stroke="rgba(0,136,255,.06)"
+            strokeWidth={1}
+          />
+        ))}
+
+        {chartType === "line" && primarySeriesPoints.length > 1 ? (
+          <path d={buildAreaPath(primarySeriesPoints)} fill={`url(#${chartId}AreaGradient)`} />
+        ) : null}
+        {referenceSeriesPoints.length > 1 ? (
+          <path
+            d={buildLinePath(referenceSeriesPoints)}
+            fill="none"
+            stroke={strokeColor}
+            strokeWidth={2}
+            strokeDasharray="7 5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        ) : null}
+        {chartType === "line" && primarySeriesPoints.length > 1 ? (
+          <path
+            d={buildLinePath(primarySeriesPoints)}
+            fill="none"
+            stroke={strokeColor}
+            strokeWidth={3}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        ) : null}
+        {chartType === "bar"
+          ? months.map((entry) => {
+              const x = SCORECARD_MONTH_X[entry.month.month];
+              const barValue = getBarValue(entry);
+              const y = scorecardToY(barValue, chartMax, chartMin);
+              const height = Math.max(0, SCORECARD_CHART_H - y);
+              const isSelected = chartValueMonth === entry.month.month;
+              return (
+                <rect
+                  key={`bar-${entry.month.month}`}
+                  x={x - SCORECARD_BAR_WIDTH / 2}
+                  y={y}
+                  width={SCORECARD_BAR_WIDTH}
+                  height={height}
+                  fill={strokeColor}
+                  fillOpacity={isSelected ? 0.95 : 0.72}
+                  stroke={isSelected ? "white" : "none"}
+                  strokeWidth={isSelected ? 1.5 : 0}
+                  rx={4}
+                  style={{ cursor: "pointer" }}
+                  onClick={(event) => selectChartMonth(entry, event)}
+                />
+              );
+            })
+          : null}
+
+        {focusX != null ? (
+          <line
+            x1={focusX}
+            y1={0}
+            x2={focusX}
+            y2={SCORECARD_CHART_H}
+            stroke="rgba(0,216,255,.42)"
+            strokeWidth={1}
+            strokeDasharray="3 4"
+          />
+        ) : null}
+
+        {months.map((entry, index) => {
+          const [x, y] = primarySeriesPoints[index];
+          const isSelected = chartValueMonth === entry.month.month;
+
+          return (
+            <g key={entry.month.month}>
+              {chartType === "line" ? (
+                <>
+                  <circle
+                    cx={x}
+                    cy={y}
+                    r={12}
+                    fill="transparent"
+                    style={{ cursor: "pointer" }}
+                    onClick={(event) => selectChartMonth(entry, event)}
+                  />
+                  <circle
+                    cx={x}
+                    cy={y}
+                    r={isSelected ? 6.2 : 4.8}
+                    fill={strokeColor}
+                    stroke="rgba(255,255,255,.9)"
+                    strokeWidth={isSelected ? 1.6 : 1.2}
+                    style={{ cursor: "pointer", pointerEvents: "none" }}
+                  />
+                </>
+              ) : null}
+              <text
+                x={x}
+                y={SCORECARD_CHART_H + 24}
+                textAnchor="middle"
+                style={{
+                  fill: isSelected ? "#eaf3ff" : "#5e7da0",
+                  fontSize: 11,
+                  fontWeight: isSelected ? 800 : 500,
+                  cursor: "pointer",
+                }}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setChartValueMonth(null);
+                }}
+              >
+                {entry.month.month}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
 function ScorecardChart({
   chartId,
   title,
@@ -61,15 +313,22 @@ function ScorecardChart({
   legend,
   months,
   yLabels,
-  lines,
-  dotPoints,
-  dotColor,
-  hovered,
-  setHovered,
-  trueCashValues,
-  projectedTrueCashValues,
+  chartMax,
+  chartMin,
+  primarySeriesPoints,
+  referenceSeriesPoints,
+  strokeColor,
+  getBarValue,
+  getTooltipRows,
+  resetKey,
+  chartTypeStorageKey = OPS_SCORECARD_CHART_TYPE_STORAGE_KEY,
 }) {
-  const focusX = hovered ? SCORECARD_MONTH_X[hovered.data.month] : null;
+  const [chartType, setChartType] = useState(() => readStoredOpsScorecardChartType(chartTypeStorageKey));
+
+  const handleChartTypeChange = (nextChartType) => {
+    setChartType(nextChartType);
+    persistOpsScorecardChartType(nextChartType, chartTypeStorageKey);
+  };
 
   return (
     <section
@@ -103,7 +362,57 @@ function ScorecardChart({
             }}
           >
             <div>
-              <div style={{ color: "white", fontSize: 22, fontWeight: 900 }}>{title}</div>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 14,
+                  flexWrap: "wrap",
+                }}
+              >
+                <div style={{ color: "white", fontSize: 22, fontWeight: 900 }}>{title}</div>
+                <div
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 4,
+                    padding: 3,
+                    borderRadius: 8,
+                    border: "1px solid rgba(0,136,255,.22)",
+                    background: "rgba(0,136,255,.06)",
+                  }}
+                >
+                  {[
+                    ["line", "Line"],
+                    ["bar", "Bar"],
+                  ].map(([type, label]) => {
+                    const isActive = chartType === type;
+                    return (
+                      <button
+                        key={type}
+                        type="button"
+                        onClick={() => handleChartTypeChange(type)}
+                        style={{
+                          color: isActive ? "#00d8ff" : "#9fb0c9",
+                          border: isActive
+                            ? "1px solid rgba(0,136,255,.55)"
+                            : "1px solid transparent",
+                          background: isActive ? "rgba(0,104,255,.18)" : "transparent",
+                          borderRadius: 6,
+                          padding: "6px 12px",
+                          cursor: "pointer",
+                          fontSize: 12,
+                          fontWeight: 800,
+                          letterSpacing: 0.4,
+                          boxShadow: isActive ? "0 0 14px rgba(0,136,255,.18)" : "none",
+                        }}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
               <div style={{ color: "#9fb0c9", marginTop: 6, lineHeight: 1.5 }}>{note}</div>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
@@ -124,7 +433,6 @@ function ScorecardChart({
 
           <div
             className="ops-scorecard-chart"
-            onMouseLeave={() => setHovered(null)}
             style={{
               position: "relative",
               borderRadius: 14,
@@ -134,89 +442,16 @@ function ScorecardChart({
               padding: "18px 16px 6px",
             }}
           >
-            {hovered ? (
-              <div
-                style={{
-                  position: "absolute",
-                  top: 14,
-                  left: `${Math.min(
-                    88,
-                    Math.max(14, ((hovered.index + 0.5) / months.length) * 100)
-                  )}%`,
-                  transform: "translateX(-50%)",
-                  zIndex: 6,
-                  minWidth: 220,
-                  border: "1px solid rgba(0,216,255,.3)",
-                  borderRadius: 10,
-                  background: "rgba(4,16,31,0.96)",
-                  boxShadow: "0 14px 30px rgba(0,0,0,0.45)",
-                  padding: "12px 14px",
-                  pointerEvents: "none",
-                  backdropFilter: "blur(6px)",
-                }}
-              >
-                <div
-                  style={{
-                    color: "#e2f4ff",
-                    fontSize: 13,
-                    marginBottom: 8,
-                    fontWeight: 800,
-                    borderBottom: "1px solid rgba(0,216,255,.16)",
-                    paddingBottom: 7,
-                  }}
-                >
-                  {hovered.data.month}
-                </div>
-                {[
-                  ["Planned income", hovered.data.plannedIncome ?? hovered.data.income, "#5eead4"],
-                  ["Actual income", hovered.data.actualIncome, "#00f59b"],
-                  ["Budget", hovered.data.budget, "#fdba74"],
-                  ["Spent", hovered.data.spent, "#ff7a45"],
-                  ["True Cash", trueCashValues[hovered.index], "#38bdf8"],
-                  [
-                    "Profit",
-                    (hovered.data.plannedIncome ?? hovered.data.income) - hovered.data.budget,
-                    (hovered.data.plannedIncome ?? hovered.data.income) - hovered.data.budget >= 0
-                      ? "#4ade80"
-                      : "#f87171",
-                  ],
-                  ["Projected Cash", projectedTrueCashValues[hovered.index], "#fbbf24"],
-                ].map(([label, value, color]) => (
-                  <div
-                    key={label}
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      gap: 16,
-                      color: "#cbd5e1",
-                      fontSize: 12,
-                      fontWeight: 700,
-                      marginTop: 6,
-                    }}
-                  >
-                    <span style={{ color: "#8ea8ca" }}>{label}</span>
-                    <span style={{ color }}>
-                      {label === "Profit" && value >= 0 ? "+" : ""}
-                      {(label === "Projected Cash" || label === "True Cash") && value === null
-                        ? "—"
-                        : label === "Projected Cash" || label === "True Cash"
-                          ? wholeDollars(value)
-                          : money(value)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            ) : null}
-
             <div style={{ display: "flex", gap: 0 }}>
               <div
                 style={{
-                  width: 72,
+                  width: 80,
                   flexShrink: 0,
                   display: "flex",
                   flexDirection: "column",
                   justifyContent: "space-between",
                   paddingBottom: 44,
+                  paddingRight: 8,
                 }}
               >
                 {yLabels.map((label) => (
@@ -226,114 +461,20 @@ function ScorecardChart({
                 ))}
               </div>
 
-              <div style={{ flex: 1, position: "relative" }}>
-                <svg
-                  className="ops-scorecard-svg"
-                  viewBox={`0 0 ${SCORECARD_CHART_W} ${SCORECARD_CHART_H + 40}`}
-                  style={{ width: "100%" }}
-                >
-                  <defs>
-                    <linearGradient id={`${chartId}AreaGradient`} x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor={dotColor} stopOpacity="0.4" />
-                      <stop offset="100%" stopColor={dotColor} stopOpacity="0.06" />
-                    </linearGradient>
-                  </defs>
-
-                  {yLabels.map((_, index) => {
-                    const y = (index / (yLabels.length - 1)) * SCORECARD_CHART_H;
-                    return (
-                      <line
-                        key={index}
-                        x1={0}
-                        y1={y}
-                        x2={SCORECARD_CHART_W}
-                        y2={y}
-                        stroke="rgba(0,136,255,.1)"
-                        strokeWidth={1}
-                      />
-                    );
-                  })}
-
-                  {months.map((entry) => (
-                    <line
-                      key={`v-${entry.month.month}`}
-                      x1={SCORECARD_MONTH_X[entry.month.month]}
-                      y1={0}
-                      x2={SCORECARD_MONTH_X[entry.month.month]}
-                      y2={SCORECARD_CHART_H}
-                      stroke="rgba(0,136,255,.06)"
-                      strokeWidth={1}
-                    />
-                  ))}
-
-                  {lines.map((line, index) => (
-                    <g key={index}>
-                      {line.area && line.points.length > 1 ? (
-                        <path d={buildAreaPath(line.points)} fill={`url(#${chartId}AreaGradient)`} />
-                      ) : null}
-                      {line.stroke && line.points.length > 1 ? (
-                        <path
-                          d={buildLinePath(line.points)}
-                          fill="none"
-                          stroke={line.stroke}
-                          strokeWidth={line.width}
-                          strokeDasharray={line.dashed ? "7 5" : undefined}
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                      ) : null}
-                    </g>
-                  ))}
-
-                  {focusX != null ? (
-                    <line
-                      x1={focusX}
-                      y1={0}
-                      x2={focusX}
-                      y2={SCORECARD_CHART_H}
-                      stroke="rgba(0,216,255,.42)"
-                      strokeWidth={1}
-                      strokeDasharray="3 4"
-                    />
-                  ) : null}
-
-                  {months.map((entry, index) => {
-                    const [x, y] = dotPoints[index];
-                    const isActive = hovered?.data?.month === entry.month.month;
-
-                    return (
-                      <g key={entry.month.month}>
-                        <circle
-                          cx={x}
-                          cy={y}
-                          r={isActive ? 6.2 : 4.8}
-                          fill={dotColor}
-                          stroke="rgba(255,255,255,.9)"
-                          strokeWidth={isActive ? 1.6 : 1.2}
-                          style={{ cursor: "pointer" }}
-                          onMouseEnter={() => setHovered({ data: entry.month, index: entry.index })}
-                          onClick={() => setHovered({ data: entry.month, index: entry.index })}
-                        />
-                        <text
-                          x={x}
-                          y={SCORECARD_CHART_H + 24}
-                          textAnchor="middle"
-                          style={{
-                            fill: isActive ? "#eaf3ff" : "#5e7da0",
-                            fontSize: 11,
-                            fontWeight: isActive ? 800 : 500,
-                            cursor: "pointer",
-                          }}
-                          onMouseEnter={() => setHovered({ data: entry.month, index: entry.index })}
-                          onClick={() => setHovered({ data: entry.month, index: entry.index })}
-                        >
-                          {entry.month.month}
-                        </text>
-                      </g>
-                    );
-                  })}
-                </svg>
-              </div>
+              <ScorecardChartInteraction
+                key={resetKey}
+                chartId={chartId}
+                chartType={chartType}
+                months={months}
+                yLabels={yLabels}
+                chartMax={chartMax}
+                chartMin={chartMin}
+                primarySeriesPoints={primarySeriesPoints}
+                referenceSeriesPoints={referenceSeriesPoints}
+                strokeColor={strokeColor}
+                getBarValue={getBarValue}
+                getTooltipRows={getTooltipRows}
+              />
             </div>
           </div>
         </div>
@@ -343,6 +484,289 @@ function ScorecardChart({
 }
 
 const CALENDAR_WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const OPS_CALENDAR_VIEW_MODE_STORAGE_KEY = "fff-ops-calendar-view-mode";
+
+function readStoredCalendarViewMode() {
+  if (typeof window === "undefined") return "monthly";
+  const stored = window.localStorage.getItem(OPS_CALENDAR_VIEW_MODE_STORAGE_KEY);
+  return stored === "weekly" ? "weekly" : "monthly";
+}
+
+function persistCalendarViewMode(mode) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(OPS_CALENDAR_VIEW_MODE_STORAGE_KEY, mode);
+}
+
+function startOfWeekMonday(date) {
+  const next = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 12);
+  const weekday = (next.getDay() + 6) % 7;
+  next.setDate(next.getDate() - weekday);
+  return next;
+}
+
+function addCalendarDays(date, days) {
+  const next = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 12);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function formatWeeklyDayLabel(date) {
+  return `${budgetMonths[date.getMonth()]} ${date.getDate()}`;
+}
+
+function formatWeeklyRangeLabel(startDate, endDate) {
+  const start = formatWeeklyDayLabel(startDate);
+  const end = formatWeeklyDayLabel(endDate);
+  if (startDate.getFullYear() === endDate.getFullYear()) {
+    return `${start} – ${end} ${endDate.getFullYear()}`;
+  }
+  return `${start}, ${startDate.getFullYear()} – ${end}, ${endDate.getFullYear()}`;
+}
+
+function sumTransactionsOnDate(transactions, year, monthIndex, day) {
+  return transactions.reduce((sum, tx) => {
+    const parsedDate = parseTransactionDateParts(tx.date);
+    if (!parsedDate) return sum;
+    if (
+      parsedDate.year !== year ||
+      parsedDate.monthIndex !== monthIndex ||
+      parsedDate.day !== day
+    ) {
+      return sum;
+    }
+    return sum + finiteMoney(tx.amount);
+  }, 0);
+}
+
+function getTransactionsOnDate(transactions, year, monthIndex, day) {
+  return transactions.filter((tx) => {
+    const parsedDate = parseTransactionDateParts(tx.date);
+    if (!parsedDate) return false;
+    return (
+      parsedDate.year === year &&
+      parsedDate.monthIndex === monthIndex &&
+      parsedDate.day === day
+    );
+  });
+}
+
+function computeOpeningTrueCashAtDate({
+  year,
+  monthIndex,
+  day,
+  transactions,
+  getMonthOpeningTrueCash,
+}) {
+  let opening = getMonthOpeningTrueCash(monthIndex);
+  for (let priorDay = 1; priorDay < day; priorDay += 1) {
+    opening += sumTransactionsOnDate(transactions, year, monthIndex, priorDay);
+  }
+  return opening;
+}
+
+function buildDayCashFlowEntry({
+  year,
+  monthIndex,
+  day,
+  date,
+  transactions,
+  plannedIncome,
+  plannedBudget,
+  openingTrueCash,
+  cumulativeActualBeforeDay,
+  daysInMonth,
+  currentDate,
+}) {
+  const monthNetPlan = finiteMoney(plannedIncome) - finiteMoney(plannedBudget);
+  const dailyPlanPulse = daysInMonth > 0 ? monthNetPlan / daysInMonth : 0;
+  const actualNet = sumTransactionsOnDate(transactions, year, monthIndex, day);
+  const dayOpeningBalance = openingTrueCash + cumulativeActualBeforeDay;
+  const cumulativeActual = cumulativeActualBeforeDay + actualNet;
+  const planToDate = dailyPlanPulse * day;
+  const varianceToPlan = cumulativeActual - planToDate;
+  const runningBalance = dayOpeningBalance + actualNet;
+  const monthEndForecast = runningBalance + dailyPlanPulse * (daysInMonth - day);
+  const varianceScoreBase = Math.max(Math.abs(planToDate), 90);
+  const variancePenalty = clampNumber((Math.abs(varianceToPlan) / varianceScoreBase) * 28, 0, 35);
+  const outflowPenalty = actualNet < 0 ? clampNumber(Math.abs(actualNet) / 160, 0, 20) : 0;
+  const riskPenalty =
+    monthEndForecast < 0 ? 26 : monthEndForecast < openingTrueCash * 0.55 ? 12 : 0;
+  const sustainabilityScore = clampNumber(
+    Math.round(100 - variancePenalty - outflowPenalty - riskPenalty),
+    18,
+    100
+  );
+  const isToday =
+    currentDate.getFullYear() === year &&
+    currentDate.getMonth() === monthIndex &&
+    currentDate.getDate() === day;
+
+  return {
+    year,
+    monthIndex,
+    day,
+    date,
+    actualNet,
+    cumulativeActual,
+    varianceToPlan,
+    runningBalance,
+    monthEndForecast,
+    sustainabilityScore,
+    isToday,
+    transactions: getTransactionsOnDate(transactions, year, monthIndex, day),
+    isInPlanningYear: true,
+  };
+}
+
+function buildRollingWeeklyCashFlowModel({
+  year,
+  transactions,
+  dynamicYearlyOpsData,
+  getMonthOpeningTrueCash,
+  weekWindowOffset = 0,
+  currentDate = new Date(),
+}) {
+  const anchorDate =
+    year === currentDate.getFullYear()
+      ? currentDate
+      : year < currentDate.getFullYear()
+        ? new Date(year, 11, 31, 12)
+        : new Date(year, 0, 1, 12);
+  const currentWeekStart = startOfWeekMonday(anchorDate);
+  const windowEndWeekStart = addCalendarDays(currentWeekStart, weekWindowOffset * 7);
+  const weekStarts = [0, 1, 2, 3].map((index) =>
+    addCalendarDays(windowEndWeekStart, (index - 3) * 7)
+  );
+  const monthPlanByIndex = dynamicYearlyOpsData.map((month) => ({
+    plannedIncome: finiteMoney(month.plannedIncome ?? month.income),
+    plannedBudget: finiteMoney(month.budget),
+  }));
+
+  let cumulativeActual = 0;
+  let openingInitialized = false;
+  let runningOpeningTrueCash = 0;
+  const weeks = weekStarts.map((weekStart, weekIndex) => {
+    const days = [];
+    let weekActualNet = 0;
+    let weekInflow = 0;
+    let weekOutflow = 0;
+    let weekRiskDays = 0;
+    let weekSustainabilityTotal = 0;
+    let weekSustainabilityCount = 0;
+    const weekTransactions = [];
+
+    for (let dayOffset = 0; dayOffset < 7; dayOffset += 1) {
+      const date = addCalendarDays(weekStart, dayOffset);
+      const monthIndex = date.getMonth();
+      const day = date.getDate();
+      const dayYear = date.getFullYear();
+
+      if (dayYear !== year) {
+        days.push(null);
+        continue;
+      }
+
+      if (!openingInitialized) {
+        runningOpeningTrueCash = computeOpeningTrueCashAtDate({
+          year,
+          monthIndex,
+          day,
+          transactions,
+          getMonthOpeningTrueCash,
+        });
+        cumulativeActual = 0;
+        openingInitialized = true;
+      }
+
+      const daysInMonth = new Date(year, monthIndex + 1, 0).getDate();
+      const monthPlan = monthPlanByIndex[monthIndex] || { plannedIncome: 0, plannedBudget: 0 };
+      const dayEntry = buildDayCashFlowEntry({
+        year,
+        monthIndex,
+        day,
+        date,
+        transactions,
+        plannedIncome: monthPlan.plannedIncome,
+        plannedBudget: monthPlan.plannedBudget,
+        openingTrueCash: runningOpeningTrueCash,
+        cumulativeActualBeforeDay: cumulativeActual,
+        daysInMonth,
+        currentDate,
+      });
+
+      cumulativeActual += dayEntry.actualNet;
+      days.push(dayEntry);
+      weekTransactions.push(...dayEntry.transactions);
+      weekActualNet += dayEntry.actualNet;
+      if (dayEntry.actualNet > 0) weekInflow += dayEntry.actualNet;
+      if (dayEntry.actualNet < 0) weekOutflow += Math.abs(dayEntry.actualNet);
+      if (dayEntry.monthEndForecast < runningOpeningTrueCash * 0.55) weekRiskDays += 1;
+      weekSustainabilityTotal += dayEntry.sustainabilityScore;
+      weekSustainabilityCount += 1;
+    }
+
+    const inMonthDays = days.filter(Boolean);
+    const lastDay = inMonthDays[inMonthDays.length - 1] || null;
+    const firstInMonthDay = inMonthDays[0] || null;
+    const weekEndDate = addCalendarDays(weekStart, 6);
+
+    return {
+      weekIndex,
+      startDate: firstInMonthDay?.date || weekStart,
+      endDate: lastDay?.date || weekEndDate,
+      label:
+        firstInMonthDay && lastDay
+          ? formatWeeklyRangeLabel(firstInMonthDay.date, lastDay.date)
+          : formatWeeklyRangeLabel(weekStart, weekEndDate),
+      days,
+      actualNet: weekActualNet,
+      transactions: weekTransactions,
+      runningBalance: lastDay?.runningBalance ?? runningOpeningTrueCash,
+      monthEndForecast: lastDay?.monthEndForecast ?? runningOpeningTrueCash,
+      sustainabilityAverage:
+        weekSustainabilityCount > 0
+          ? Math.round(weekSustainabilityTotal / weekSustainabilityCount)
+          : 0,
+      riskDays: weekRiskDays,
+      totalInflow: weekInflow,
+      totalOutflow: weekOutflow,
+      isCurrentWeek: weekIndex === 3 && weekWindowOffset === 0,
+    };
+  });
+
+  const windowDays = weeks.flatMap((week) => week.days.filter(Boolean));
+  const windowStartDate = windowDays[0]?.date || weekStarts[0];
+  const windowEndDate = windowDays[windowDays.length - 1]?.date || addCalendarDays(weekStarts[3], 6);
+  const sustainabilityAverage =
+    windowDays.length > 0
+      ? Math.round(
+          windowDays.reduce((sum, day) => sum + day.sustainabilityScore, 0) / windowDays.length
+        )
+      : 0;
+  const riskDays = weeks.reduce((sum, week) => sum + week.riskDays, 0);
+  const dailyPlanPulse =
+    windowDays.length > 0
+      ? windowDays.reduce((sum, day) => {
+          const daysInMonth = new Date(year, day.monthIndex + 1, 0).getDate();
+          const monthPlan = monthPlanByIndex[day.monthIndex] || {
+            plannedIncome: 0,
+            plannedBudget: 0,
+          };
+          const monthNetPlan = monthPlan.plannedIncome - monthPlan.plannedBudget;
+          return sum + (daysInMonth > 0 ? monthNetPlan / daysInMonth : 0);
+        }, 0) / windowDays.length
+      : 0;
+
+  return {
+    weeks,
+    days: windowDays,
+    windowLabel: formatWeeklyRangeLabel(windowStartDate, windowEndDate),
+    sustainabilityAverage,
+    riskDays,
+    dailyPlanPulse,
+    canShiftForward: weekWindowOffset < 0,
+  };
+}
 
 function clampNumber(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -533,7 +957,6 @@ function buildCashFlowCalendarModel({
 }
 
 export function OperationsBoard({
-  subscriptions,
   transactions,
   trueCash,
   householdProfilesProps,
@@ -546,8 +969,10 @@ export function OperationsBoard({
   setPlanningAnchorForYear,
   isDemoMode = false,
 }) {
-  const [hoveredCommandMonth, setHoveredCommandMonth] = useState(null);
   const [hoveredCalendarDay, setHoveredCalendarDay] = useState(null);
+  const [hoveredCalendarWeekIndex, setHoveredCalendarWeekIndex] = useState(null);
+  const [calendarViewMode, setCalendarViewMode] = useState(readStoredCalendarViewMode);
+  const [weekWindowOffset, setWeekWindowOffset] = useState(0);
   const [showStabilityInfo, setShowStabilityInfo] = useState(false);
   const [calendarMonthIndex, setCalendarMonthIndex] = useState(() =>
     currentPlanYear === getCurrentBudgetPeriod().year ? getCurrentBudgetPeriod().monthIndex : 0
@@ -561,8 +986,9 @@ export function OperationsBoard({
   const updatePlanningYear = (value) => {
     const nextValue = Number(value);
     ensurePlanningYear(nextValue);
-    setHoveredCommandMonth(null);
     setHoveredCalendarDay(null);
+    setHoveredCalendarWeekIndex(null);
+    setWeekWindowOffset(0);
     setActivePlanningYear(nextValue);
   };
   const updatePlanningAnchor = (field, value) => {
@@ -662,23 +1088,31 @@ export function OperationsBoard({
   const projectedYearEndTrueCash = getLastNonNullValue(projectedTrueCashValues, trueCashYearEndValue);
   const safeCalendarMonthIndex = Math.max(0, Math.min(budgetMonths.length - 1, calendarMonthIndex));
   const calendarMonthData = dynamicYearlyOpsData[safeCalendarMonthIndex] || dynamicYearlyOpsData[0];
-  const priorActualTrueCash = getLastNonNullValue(
-    trueCashValues.slice(0, safeCalendarMonthIndex),
-    null
-  );
-  const priorProjectedTrueCash = getLastNonNullValue(
-    projectedTrueCashValues.slice(0, safeCalendarMonthIndex),
-    null
-  );
-  const calendarOpeningTrueCash =
-    priorActualTrueCash ?? priorProjectedTrueCash ?? anchorStartingTrueCash;
+  const getMonthOpeningTrueCash = (monthIndex) => {
+    const priorActualTrueCash = getLastNonNullValue(
+      trueCashValues.slice(0, monthIndex),
+      null
+    );
+    const priorProjectedTrueCash = getLastNonNullValue(
+      projectedTrueCashValues.slice(0, monthIndex),
+      null
+    );
+    return priorActualTrueCash ?? priorProjectedTrueCash ?? anchorStartingTrueCash;
+  };
   const cashFlowCalendar = buildCashFlowCalendarModel({
     year: activePlanningYear,
     monthIndex: safeCalendarMonthIndex,
     transactions: safeTransactions,
     plannedIncome: calendarMonthData?.plannedIncome ?? 0,
     plannedBudget: calendarMonthData?.budget ?? 0,
-    openingTrueCash: calendarOpeningTrueCash,
+    openingTrueCash: getMonthOpeningTrueCash(safeCalendarMonthIndex),
+  });
+  const weeklyCashFlowCalendar = buildRollingWeeklyCashFlowModel({
+    year: activePlanningYear,
+    transactions: safeTransactions,
+    dynamicYearlyOpsData,
+    getMonthOpeningTrueCash,
+    weekWindowOffset,
   });
   const shiftCalendarMonth = (delta) => {
     setHoveredCalendarDay(null);
@@ -686,17 +1120,62 @@ export function OperationsBoard({
       (current + Number(delta || 0) + budgetMonths.length) % budgetMonths.length
     );
   };
+  const shiftWeeklyWindow = (delta) => {
+    setHoveredCalendarWeekIndex(null);
+    setWeekWindowOffset((current) => {
+      const next = current + Number(delta || 0);
+      return next > 0 ? 0 : next;
+    });
+  };
+  const handleCalendarViewModeChange = (mode) => {
+    setCalendarViewMode(mode);
+    persistCalendarViewMode(mode);
+    setHoveredCalendarDay(null);
+    setHoveredCalendarWeekIndex(null);
+    setWeekWindowOffset(0);
+  };
   const focusedCalendarDay =
     cashFlowCalendar.days.find((day) => day.day === hoveredCalendarDay) ||
     cashFlowCalendar.days.find((day) => day.isToday) ||
     cashFlowCalendar.days[0] ||
     null;
+  const focusedCalendarWeek =
+    weeklyCashFlowCalendar.weeks.find((week) => week.weekIndex === hoveredCalendarWeekIndex) ||
+    weeklyCashFlowCalendar.weeks.find((week) => week.isCurrentWeek) ||
+    weeklyCashFlowCalendar.weeks[weeklyCashFlowCalendar.weeks.length - 1] ||
+    null;
+  const activeCalendarMetrics =
+    calendarViewMode === "weekly" && focusedCalendarWeek
+      ? {
+          totalInflow: focusedCalendarWeek.totalInflow,
+          totalOutflow: focusedCalendarWeek.totalOutflow,
+          monthNetActual: focusedCalendarWeek.actualNet,
+          sustainabilityAverage: focusedCalendarWeek.sustainabilityAverage,
+          riskDays: focusedCalendarWeek.riskDays,
+          dailyPlanPulse: weeklyCashFlowCalendar.dailyPlanPulse,
+        }
+      : {
+          totalInflow: cashFlowCalendar.totalInflow,
+          totalOutflow: cashFlowCalendar.totalOutflow,
+          monthNetActual: cashFlowCalendar.monthNetActual,
+          sustainabilityAverage: cashFlowCalendar.sustainabilityAverage,
+          riskDays: cashFlowCalendar.riskDays,
+          dailyPlanPulse: cashFlowCalendar.dailyPlanPulse,
+        };
   const cashFlowHeatMax = Math.max(
-    ...cashFlowCalendar.days.map((day) => Math.abs(day.actualNet)),
-    Math.abs(cashFlowCalendar.dailyPlanPulse),
+    ...(calendarViewMode === "weekly"
+      ? weeklyCashFlowCalendar.days.map((day) => Math.abs(day.actualNet))
+      : cashFlowCalendar.days.map((day) => Math.abs(day.actualNet))),
+    Math.abs(activeCalendarMetrics.dailyPlanPulse),
     1
   );
-  const sustainabilityRing = clampNumber(cashFlowCalendar.sustainabilityAverage, 0, 100);
+  const sustainabilityRing = clampNumber(
+    calendarViewMode === "weekly"
+      ? weeklyCashFlowCalendar.sustainabilityAverage
+      : cashFlowCalendar.sustainabilityAverage,
+    0,
+    100
+  );
   const stabilityBand = getStabilityBand(sustainabilityRing);
   const scorecardMonths = dynamicYearlyOpsData.map((month, index) => {
     const plannedIncome = finiteMoney(month.plannedIncome ?? month.income);
@@ -882,17 +1361,18 @@ export function OperationsBoard({
         ]}
         months={scorecardMonths}
         yLabels={budgetChartYLabels}
-        lines={[
-          { points: spentLinePoints, area: true },
-          { points: budgetLinePoints, stroke: "#00d8ff", width: 2, dashed: true },
-          { points: spentLinePoints, stroke: "#00d8ff", width: 3 },
+        chartMax={budgetChartMax}
+        chartMin={budgetChartMin}
+        primarySeriesPoints={spentLinePoints}
+        referenceSeriesPoints={budgetLinePoints}
+        strokeColor="#00d8ff"
+        getBarValue={(entry) => entry.spent}
+        getTooltipRows={(entry) => [
+          ["Budget", money(entry.budget), "#00d8ff"],
+          ["Spent", money(entry.spent), "#00d8ff"],
         ]}
-        dotPoints={spentLinePoints}
-        dotColor="#00d8ff"
-        hovered={hoveredCommandMonth}
-        setHovered={setHoveredCommandMonth}
-        trueCashValues={trueCashValues}
-        projectedTrueCashValues={projectedTrueCashValues}
+        resetKey={activePlanningYear}
+        chartTypeStorageKey="fff-ops-scorecard-budget-chart-type"
       />
 
       <ScorecardChart
@@ -905,17 +1385,18 @@ export function OperationsBoard({
         ]}
         months={scorecardMonths}
         yLabels={incomeChartYLabels}
-        lines={[
-          { points: actualLinePoints, area: true },
-          { points: actualLinePoints, stroke: "#00f59b", width: 2.4 },
-          { points: plannedLinePoints, stroke: "#00f59b", width: 2.2, dashed: true },
+        chartMax={incomeChartMax}
+        chartMin={incomeChartMin}
+        primarySeriesPoints={actualLinePoints}
+        referenceSeriesPoints={plannedLinePoints}
+        strokeColor="#00f59b"
+        getBarValue={(entry) => entry.actualIncome}
+        getTooltipRows={(entry) => [
+          ["Planned Income", money(entry.plannedIncome), "#00f59b"],
+          ["Earned Income", money(entry.actualIncome), "#00f59b"],
         ]}
-        dotPoints={actualLinePoints}
-        dotColor="#00f59b"
-        hovered={hoveredCommandMonth}
-        setHovered={setHoveredCommandMonth}
-        trueCashValues={trueCashValues}
-        projectedTrueCashValues={projectedTrueCashValues}
+        resetKey={activePlanningYear}
+        chartTypeStorageKey="fff-ops-scorecard-income-chart-type"
       />
 
       <section
@@ -942,18 +1423,64 @@ export function OperationsBoard({
           <div>
             <div
               style={{
-                color: "white",
-                fontSize: 22,
-                fontWeight: 900,
+                display: "flex",
+                alignItems: "center",
+                gap: 14,
+                flexWrap: "wrap",
               }}
             >
-              Calendar Cash Flow
+              <div
+                style={{
+                  color: "white",
+                  fontSize: 22,
+                  fontWeight: 900,
+                }}
+              >
+                Calendar Cash Flow
+              </div>
+              <div
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
+                  padding: 3,
+                  borderRadius: 8,
+                  border: "1px solid rgba(0,136,255,.22)",
+                  background: "rgba(0,136,255,.06)",
+                }}
+              >
+                {[
+                  ["monthly", "Monthly"],
+                  ["weekly", "Weekly"],
+                ].map(([mode, label]) => {
+                  const isActive = calendarViewMode === mode;
+                  return (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => handleCalendarViewModeChange(mode)}
+                      style={{
+                        color: isActive ? "#00d8ff" : "#9fb0c9",
+                        border: isActive
+                          ? "1px solid rgba(0,136,255,.55)"
+                          : "1px solid transparent",
+                        background: isActive ? "rgba(0,104,255,.18)" : "transparent",
+                        borderRadius: 6,
+                        padding: "6px 12px",
+                        cursor: "pointer",
+                        fontSize: 12,
+                        fontWeight: 800,
+                        letterSpacing: 0.4,
+                        boxShadow: isActive ? "0 0 14px rgba(0,136,255,.18)" : "none",
+                      }}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-            <div style={{ color: "#eaf6ff", fontSize: 14, lineHeight: 1.55, marginTop: 10 }}>
-              Cash-flow heatmap that blends posted activity, live plan pulse, and daily forecast
-              stability.
-            </div>
-            {focusedCalendarDay ? (
+            {(calendarViewMode === "weekly" ? focusedCalendarWeek : focusedCalendarDay) ? (
               <div
                 style={{
                   marginTop: 16,
@@ -971,34 +1498,59 @@ export function OperationsBoard({
                     letterSpacing: 0.8,
                   }}
                 >
-                  Focus Day
+                  {calendarViewMode === "weekly" ? "Focus Week" : "Focus Day"}
                 </div>
                 <div style={{ color: "white", fontWeight: 900, marginTop: 6 }}>
-                  {budgetMonths[safeCalendarMonthIndex]} {focusedCalendarDay.day}
+                  {calendarViewMode === "weekly"
+                    ? focusedCalendarWeek.label
+                    : `${budgetMonths[safeCalendarMonthIndex]} ${focusedCalendarDay.day}`}
                 </div>
                 <div
                   style={{
                     color:
-                      focusedCalendarDay.actualNet < 0
+                      (calendarViewMode === "weekly"
+                        ? focusedCalendarWeek.actualNet
+                        : focusedCalendarDay.actualNet) < 0
                         ? "#ff4f8a"
-                        : focusedCalendarDay.actualNet > 0
+                        : (calendarViewMode === "weekly"
+                              ? focusedCalendarWeek.actualNet
+                              : focusedCalendarDay.actualNet) > 0
                           ? "#7dffd5"
                           : "#8feaff",
                     marginTop: 4,
                     fontWeight: 800,
                     textShadow:
-                      focusedCalendarDay.actualNet < 0
+                      (calendarViewMode === "weekly"
+                        ? focusedCalendarWeek.actualNet
+                        : focusedCalendarDay.actualNet) < 0
                         ? "0 0 14px rgba(255,79,138,.65)"
-                        : focusedCalendarDay.actualNet > 0
+                        : (calendarViewMode === "weekly"
+                              ? focusedCalendarWeek.actualNet
+                              : focusedCalendarDay.actualNet) > 0
                           ? "0 0 14px rgba(125,255,213,.55)"
                           : "none",
                   }}
                 >
-                  {formatCompactSignedMoney(focusedCalendarDay.actualNet)} posted
+                  {formatCompactSignedMoney(
+                    calendarViewMode === "weekly"
+                      ? focusedCalendarWeek.actualNet
+                      : focusedCalendarDay.actualNet
+                  )}{" "}
+                  posted
                 </div>
                 <div style={{ color: "#9fb0c9", fontSize: 12, marginTop: 4 }}>
-                  TC {wholeDollars(focusedCalendarDay.runningBalance)} · Forecast{" "}
-                  {wholeDollars(focusedCalendarDay.monthEndForecast)}
+                  TC{" "}
+                  {wholeDollars(
+                    calendarViewMode === "weekly"
+                      ? focusedCalendarWeek.runningBalance
+                      : focusedCalendarDay.runningBalance
+                  )}{" "}
+                  · Forecast{" "}
+                  {wholeDollars(
+                    calendarViewMode === "weekly"
+                      ? focusedCalendarWeek.monthEndForecast
+                      : focusedCalendarDay.monthEndForecast
+                  )}
                 </div>
                 <div
                   style={{
@@ -1018,9 +1570,16 @@ export function OperationsBoard({
                   >
                     Transactions
                   </div>
-                  {focusedCalendarDay.transactions && focusedCalendarDay.transactions.length > 0 ? (
+                  {(
+                    calendarViewMode === "weekly"
+                      ? focusedCalendarWeek.transactions
+                      : focusedCalendarDay.transactions
+                  )?.length > 0 ? (
                     <div style={{ display: "grid", gap: 8, maxHeight: 196, overflowY: "auto" }}>
-                      {focusedCalendarDay.transactions.map((tx, txIndex) => {
+                      {(calendarViewMode === "weekly"
+                        ? focusedCalendarWeek.transactions
+                        : focusedCalendarDay.transactions
+                      ).map((tx, txIndex) => {
                         const amount = Number(tx.amount) || 0;
                         return (
                           <div
@@ -1094,7 +1653,9 @@ export function OperationsBoard({
               >
                 <button
                   type="button"
-                  onClick={() => shiftCalendarMonth(-1)}
+                  onClick={() =>
+                    calendarViewMode === "weekly" ? shiftWeeklyWindow(-1) : shiftCalendarMonth(-1)
+                  }
                   style={{
                     background:
                       "radial-gradient(circle at 30% 20%, rgba(0,216,255,.34), rgba(0,75,126,.2) 48%, rgba(0,24,48,.14) 100%)",
@@ -1114,7 +1675,9 @@ export function OperationsBoard({
                     boxShadow:
                       "0 0 16px rgba(0,216,255,.26), inset 0 0 9px rgba(143,234,255,.26)",
                   }}
-                  aria-label="Previous calendar month"
+                  aria-label={
+                    calendarViewMode === "weekly" ? "Previous calendar week" : "Previous calendar month"
+                  }
                 >
                   <svg viewBox="0 0 16 16" width="15" height="15" fill="none" aria-hidden="true">
                     <path
@@ -1131,16 +1694,23 @@ export function OperationsBoard({
                     color: "#eaf7ff",
                     textAlign: "center",
                     fontWeight: 900,
-                    fontSize: 30,
+                    fontSize: calendarViewMode === "weekly" ? 22 : 30,
                     letterSpacing: 0.8,
                     textTransform: "uppercase",
+                    lineHeight: 1.15,
+                    padding: "0 8px",
                   }}
                 >
-                  {budgetMonths[safeCalendarMonthIndex]} {activePlanningYear}
+                  {calendarViewMode === "weekly"
+                    ? weeklyCashFlowCalendar.windowLabel
+                    : `${budgetMonths[safeCalendarMonthIndex]} ${activePlanningYear}`}
                 </div>
                 <button
                   type="button"
-                  onClick={() => shiftCalendarMonth(1)}
+                  onClick={() =>
+                    calendarViewMode === "weekly" ? shiftWeeklyWindow(1) : shiftCalendarMonth(1)
+                  }
+                  disabled={calendarViewMode === "weekly" && !weeklyCashFlowCalendar.canShiftForward}
                   style={{
                     background:
                       "radial-gradient(circle at 30% 20%, rgba(0,216,255,.34), rgba(0,75,126,.2) 48%, rgba(0,24,48,.14) 100%)",
@@ -1149,7 +1719,14 @@ export function OperationsBoard({
                     fontSize: 24,
                     fontWeight: 900,
                     lineHeight: 1,
-                    cursor: "pointer",
+                    cursor:
+                      calendarViewMode === "weekly" && !weeklyCashFlowCalendar.canShiftForward
+                        ? "not-allowed"
+                        : "pointer",
+                    opacity:
+                      calendarViewMode === "weekly" && !weeklyCashFlowCalendar.canShiftForward
+                        ? 0.45
+                        : 1,
                     padding: 0,
                     width: 38,
                     height: 38,
@@ -1160,7 +1737,9 @@ export function OperationsBoard({
                     boxShadow:
                       "0 0 16px rgba(0,216,255,.26), inset 0 0 9px rgba(143,234,255,.26)",
                   }}
-                  aria-label="Next calendar month"
+                  aria-label={
+                    calendarViewMode === "weekly" ? "Next calendar week" : "Next calendar month"
+                  }
                 >
                   <svg viewBox="0 0 16 16" width="15" height="15" fill="none" aria-hidden="true">
                     <path
@@ -1201,62 +1780,135 @@ export function OperationsBoard({
               </div>
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 0 }}>
-                {cashFlowCalendar.weeks.map((week, weekIndex) => (
-                  <div
-                    key={`week-${weekIndex}`}
-                    style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))" }}
-                  >
-                    {week.map((day, dayIndex) => {
-                      const heat = day
-                        ? getCashFlowHeatStyle(day.actualNet, cashFlowHeatMax)
-                        : {
-                            background: "rgba(2,12,28,.45)",
-                            border: "1px solid transparent",
-                            boxShadow: "none",
-                            valueColor: "#6c88b1",
-                          };
-                      const isFocused = day && focusedCalendarDay && focusedCalendarDay.day === day.day;
+                {calendarViewMode === "monthly"
+                  ? cashFlowCalendar.weeks.map((week, weekIndex) => (
+                      <div
+                        key={`week-${weekIndex}`}
+                        style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))" }}
+                      >
+                        {week.map((day, dayIndex) => {
+                          const heat = day
+                            ? getCashFlowHeatStyle(day.actualNet, cashFlowHeatMax)
+                            : {
+                                background: "rgba(2,12,28,.45)",
+                                border: "1px solid transparent",
+                                boxShadow: "none",
+                                valueColor: "#6c88b1",
+                              };
+                          const isFocused =
+                            day && focusedCalendarDay && focusedCalendarDay.day === day.day;
+                          return (
+                            <div
+                              key={`${weekIndex}-${dayIndex}-${day?.day || "blank"}`}
+                              onMouseEnter={() => setHoveredCalendarDay(day?.day || null)}
+                              style={{
+                                minHeight: 80,
+                                padding: "7px 8px",
+                                borderRight: "1px solid rgba(0,216,255,.07)",
+                                borderBottom: "1px solid rgba(0,216,255,.07)",
+                                background: day ? heat.background : "rgba(2,12,28,.45)",
+                                boxShadow: day ? heat.boxShadow : "none",
+                                border: isFocused
+                                  ? "1px solid rgba(124,255,223,.52)"
+                                  : heat.border,
+                                cursor: day ? "pointer" : "default",
+                                transition:
+                                  "box-shadow 140ms ease, transform 140ms ease, border-color 140ms ease",
+                                transform: isFocused ? "translateY(-2px)" : "none",
+                              }}
+                            >
+                              {day ? (
+                                <div style={{ display: "grid", gap: 5 }}>
+                                  <div
+                                    style={{
+                                      color: day.isToday ? "#eaf7ff" : "#9bb6dc",
+                                      fontSize: 12,
+                                      fontWeight: 900,
+                                    }}
+                                  >
+                                    {day.day}
+                                  </div>
+                                  <div
+                                    style={{ color: heat.valueColor, fontSize: 15, fontWeight: 900 }}
+                                  >
+                                    {formatCompactSignedMoney(day.actualNet)}
+                                  </div>
+                                  <div style={{ color: "#8fb1d9", fontSize: 10 }}>
+                                    F {formatCompactMoney(day.monthEndForecast)}
+                                  </div>
+                                </div>
+                              ) : null}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ))
+                  : weeklyCashFlowCalendar.weeks.map((week) => {
+                      const isWeekFocused =
+                        focusedCalendarWeek && focusedCalendarWeek.weekIndex === week.weekIndex;
                       return (
                         <div
-                          key={`${weekIndex}-${dayIndex}-${day?.day || "blank"}`}
-                          onMouseEnter={() => setHoveredCalendarDay(day?.day || null)}
+                          key={`rolling-week-${week.weekIndex}`}
+                          onClick={() => setHoveredCalendarWeekIndex(week.weekIndex)}
                           style={{
-                            minHeight: 80,
-                            padding: "7px 8px",
-                            borderRight: "1px solid rgba(0,216,255,.07)",
-                            borderBottom: "1px solid rgba(0,216,255,.07)",
-                            background: day ? heat.background : "rgba(2,12,28,.45)",
-                            boxShadow: day ? heat.boxShadow : "none",
-                            border: isFocused ? "1px solid rgba(124,255,223,.52)" : heat.border,
-                            cursor: day ? "pointer" : "default",
-                            transition: "box-shadow 140ms ease, transform 140ms ease, border-color 140ms ease",
-                            transform: isFocused ? "translateY(-2px)" : "none",
+                            display: "grid",
+                            gridTemplateColumns: "repeat(7, minmax(0, 1fr))",
+                            cursor: "pointer",
+                            border: isWeekFocused
+                              ? "1px solid rgba(124,255,223,.52)"
+                              : "1px solid transparent",
+                            boxShadow: isWeekFocused ? "inset 0 0 0 1px rgba(124,255,223,.22)" : "none",
                           }}
                         >
-                          {day ? (
-                            <div style={{ display: "grid", gap: 5 }}>
+                          {week.days.map((day, dayIndex) => {
+                            const heat = day
+                              ? getCashFlowHeatStyle(day.actualNet, cashFlowHeatMax)
+                              : {
+                                  background: "rgba(2,12,28,.45)",
+                                  border: "1px solid transparent",
+                                  boxShadow: "none",
+                                  valueColor: "#6c88b1",
+                                };
+                            return (
                               <div
+                                key={`${week.weekIndex}-${dayIndex}-${day?.day || "blank"}`}
                                 style={{
-                                  color: day.isToday ? "#eaf7ff" : "#9bb6dc",
-                                  fontSize: 12,
-                                  fontWeight: 900,
+                                  minHeight: 80,
+                                  padding: "7px 8px",
+                                  borderRight: "1px solid rgba(0,216,255,.07)",
+                                  borderBottom: "1px solid rgba(0,216,255,.07)",
+                                  background: day ? heat.background : "rgba(2,12,28,.45)",
+                                  boxShadow: day ? heat.boxShadow : "none",
+                                  border: heat.border,
                                 }}
                               >
-                                {day.day}
+                                {day ? (
+                                  <div style={{ display: "grid", gap: 5 }}>
+                                    <div
+                                      style={{
+                                        color: day.isToday ? "#eaf7ff" : "#9bb6dc",
+                                        fontSize: 12,
+                                        fontWeight: 900,
+                                      }}
+                                    >
+                                      {budgetMonths[day.monthIndex]} {day.day}
+                                    </div>
+                                    <div
+                                      style={{ color: heat.valueColor, fontSize: 15, fontWeight: 900 }}
+                                    >
+                                      {formatCompactSignedMoney(day.actualNet)}
+                                    </div>
+                                    <div style={{ color: "#8fb1d9", fontSize: 10 }}>
+                                      F {formatCompactMoney(day.monthEndForecast)}
+                                    </div>
+                                  </div>
+                                ) : null}
                               </div>
-                              <div style={{ color: heat.valueColor, fontSize: 15, fontWeight: 900 }}>
-                                {formatCompactSignedMoney(day.actualNet)}
-                              </div>
-                              <div style={{ color: "#8fb1d9", fontSize: 10 }}>
-                                F {formatCompactMoney(day.monthEndForecast)}
-                              </div>
-                            </div>
-                          ) : null}
+                            );
+                          })}
                         </div>
                       );
                     })}
-                  </div>
-                ))}
               </div>
             </div>
 
@@ -1272,10 +1924,18 @@ export function OperationsBoard({
               }}
             >
               {[
-                ["Total Inflow", formatCompactMoney(cashFlowCalendar.totalInflow), "#7dffd5"],
-                ["Total Outflow", formatCompactMoney(-cashFlowCalendar.totalOutflow), "#ff8ccc"],
-                ["Net Cash Flow", formatCompactSignedMoney(cashFlowCalendar.monthNetActual), cashFlowCalendar.monthNetActual >= 0 ? "#7dffd5" : "#ff8ccc"],
-                ["Sustainability Avg", `${cashFlowCalendar.sustainabilityAverage}/100`, "#8feaff"],
+                ["Total Inflow", formatCompactMoney(activeCalendarMetrics.totalInflow), "#7dffd5"],
+                ["Total Outflow", formatCompactMoney(-activeCalendarMetrics.totalOutflow), "#ff8ccc"],
+                [
+                  "Net Cash Flow",
+                  formatCompactSignedMoney(activeCalendarMetrics.monthNetActual),
+                  activeCalendarMetrics.monthNetActual >= 0 ? "#7dffd5" : "#ff8ccc",
+                ],
+                [
+                  "Sustainability Avg",
+                  `${activeCalendarMetrics.sustainabilityAverage}/100`,
+                  "#8feaff",
+                ],
               ].map(([label, value, color]) => (
                 <div
                   key={label}
@@ -1479,7 +2139,10 @@ export function OperationsBoard({
                 ))}
               </div>
               <div style={{ color: "#8ea8ca", fontSize: 12, textAlign: "center", marginTop: 8 }}>
-                {cashFlowCalendar.riskDays} risk days · pulse {formatCompactSignedMoney(cashFlowCalendar.dailyPlanPulse)}
+                {calendarViewMode === "weekly"
+                  ? `${weeklyCashFlowCalendar.riskDays} risk days across 4 weeks`
+                  : `${activeCalendarMetrics.riskDays} risk days`}{" "}
+                · pulse {formatCompactSignedMoney(activeCalendarMetrics.dailyPlanPulse)}
               </div>
             </div>
           </div>

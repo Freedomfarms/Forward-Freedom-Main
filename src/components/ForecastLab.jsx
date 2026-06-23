@@ -7,7 +7,7 @@ import {
 } from "../data/constants.jsx";
 import { parseBudgetReviewDate } from "../utils/budgetReview.js";
 import { sumSpendTransactions } from "../utils/transactions.js";
-import { getCurrentBudgetPeriod } from "../utils/date.js";
+import { getCurrentBudgetPeriod, getBudgetPeriodAtOffset } from "../utils/date.js";
 import { buildAreaPath, buildLinePath, wholeDollars } from "../utils/format.js";
 import { styles } from "../styles.js";
 import { HouseholdProfilesControl } from "./Common.jsx";
@@ -26,9 +26,74 @@ const CATEGORY_COLORS = [
   "#22c55e",
   "#94a3b8",
 ];
+const CHART_PADDING_LEFT = 56;
+const CHART_PADDING_RIGHT = 24;
+const MONTH_SPACING =
+  (CHART_W - CHART_PADDING_LEFT - CHART_PADDING_RIGHT) / (budgetMonths.length - 1);
+const BAR_WIDTH = MONTH_SPACING * 0.58;
 const MONTH_X = Object.fromEntries(
-  budgetMonths.map((month, index) => [month, 24 + index * ((CHART_W - 48) / (budgetMonths.length - 1))])
+  budgetMonths.map((month, index) => [month, CHART_PADDING_LEFT + index * MONTH_SPACING])
 );
+const MONTHLY_SPEND_CHART_TYPE_STORAGE_KEY = "fff-forecast-monthly-spend-chart-type";
+
+function readStoredMonthlySpendChartType() {
+  if (typeof window === "undefined") return "line";
+  const stored = window.localStorage.getItem(MONTHLY_SPEND_CHART_TYPE_STORAGE_KEY);
+  return stored === "bar" ? "bar" : "line";
+}
+
+function persistMonthlySpendChartType(chartType) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(MONTHLY_SPEND_CHART_TYPE_STORAGE_KEY, chartType);
+}
+
+function renderChartValueTooltip({ month, monthData, averageMonthlySpend, hasBudgetContext, categoryColor }) {
+  if (!monthData) return null;
+
+  return (
+    <>
+      <div
+        style={{
+          color: "#8feaff",
+          fontSize: 11,
+          fontWeight: 800,
+          textTransform: "uppercase",
+          letterSpacing: 0.6,
+          marginBottom: 8,
+        }}
+      >
+        {month}
+      </div>
+      {[
+        ["Spend", wholeDollars(monthData.spent), categoryColor],
+        ["12 Month Avg", wholeDollars(averageMonthlySpend), "#8feaff"],
+        ...(hasBudgetContext
+          ? [
+              [
+                "Budget",
+                monthData.budget == null ? "—" : wholeDollars(monthData.budget),
+                "#ffb65d",
+              ],
+            ]
+          : []),
+      ].map(([label, value, color]) => (
+        <div
+          key={label}
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 16,
+            fontSize: 12,
+            marginTop: 6,
+          }}
+        >
+          <span style={{ color: "#9fb0c9" }}>{label}</span>
+          <span style={{ color, fontWeight: 800 }}>{value}</span>
+        </div>
+      ))}
+    </>
+  );
+}
 
 function sumSpending(transactions) {
   return sumSpendTransactions(transactions);
@@ -57,6 +122,34 @@ function buildYLabels(max, min, count = 5) {
 
 function getLatestMonthWithSpend(monthlySeries, fallbackMonth) {
   return [...monthlySeries].reverse().find((row) => row.spent > 0)?.month || fallbackMonth;
+}
+
+function buildHistorical12MonthAverage({
+  spendingTransactions,
+  category,
+  budgetCategoryDefinitions,
+  endYear,
+  endMonthIndex,
+}) {
+  const endDate = new Date(endYear, endMonthIndex, 1);
+  const trailingPeriods = Array.from({ length: 12 }, (_, index) =>
+    getBudgetPeriodAtOffset(index - 11, endDate)
+  );
+  const trailingSpend = trailingPeriods.reduce((sum, period) => {
+    return (
+      sum +
+      sumSpending(
+        spendingTransactions.filter(
+          (transaction) =>
+            transaction.parsed.year === period.year &&
+            transaction.parsed.month === period.month &&
+            matchesCategory(transaction, category, budgetCategoryDefinitions)
+        )
+      )
+    );
+  }, 0);
+
+  return trailingSpend / 12;
 }
 
 function buildCategoryDefinitions(budgetRows, spendingTransactions) {
@@ -183,6 +276,14 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
   const [activeYear, setActiveYear] = useState(availableYears[0]);
   const [activeCategoryId, setActiveCategoryId] = useState("all-spending");
   const [focusMonth, setFocusMonth] = useState(currentBudgetPeriod.month);
+  const [monthlySpendChartType, setMonthlySpendChartType] = useState(readStoredMonthlySpendChartType);
+  const [chartValueMonth, setChartValueMonth] = useState(null);
+
+  const handleMonthlySpendChartTypeChange = (chartType) => {
+    setMonthlySpendChartType(chartType);
+    persistMonthlySpendChartType(chartType);
+    setChartValueMonth(null);
+  };
 
   const selectedYear = availableYears.includes(activeYear) ? activeYear : availableYears[0];
   const selectedCategory =
@@ -203,7 +304,19 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
     selectedYear < currentBudgetPeriod.year
       ? Math.max(latestTrackedMonthIndex + 1, 1)
       : Math.max(currentBudgetPeriod.monthIndex + 1, latestTrackedMonthIndex + 1, 1);
-  const averageMonthlySpend = selectedTotalSpend / reviewedMonthCount;
+  const historicalAverageEndMonthIndex =
+    selectedYear < currentBudgetPeriod.year
+      ? 11
+      : selectedYear === currentBudgetPeriod.year
+        ? currentBudgetPeriod.monthIndex
+        : 11;
+  const averageMonthlySpend = buildHistorical12MonthAverage({
+    spendingTransactions,
+    category: selectedCategory,
+    budgetCategoryDefinitions,
+    endYear: selectedYear,
+    endMonthIndex: historicalAverageEndMonthIndex,
+  });
   const monthlyBudgets = budgetMonths.map((month) => getBudgetForMonth(selectedCategory, budgetRows, month));
   const hasBudgetContext = monthlyBudgets.some((value) => value !== null);
   const budgetInReviewPeriod = hasBudgetContext
@@ -317,6 +430,9 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
   const budgetPath = budgetPoints.length > 1 ? buildLinePath(budgetPoints) : "";
   const averageY = toY(averageMonthlySpend, max, min);
   const focusX = focusMonthData ? MONTH_X[focusMonthData.month] : null;
+  const chartValueMonthData = chartValueMonth
+    ? monthlySeries.find((row) => row.month === chartValueMonth) || null
+    : null;
 
   const fieldStyle = {
     color: "#eaf3ff",
@@ -415,6 +531,7 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
                 onChange={(event) => {
                   const nextYear = Number(event.target.value);
                   setActiveYear(nextYear);
+                  setChartValueMonth(null);
                   setFocusMonth(getFocusMonthForCategory(selectedCategory, nextYear));
                 }}
                 style={fieldStyle}
@@ -485,7 +602,7 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
                 {[
                   ["Year Total", wholeDollars(totalSpendForYear), "#00d8ff"],
                   ["Tracked Categories", `${categoryCards.length - 1}`, "#8feaff"],
-                  ["Selected Avg", wholeDollars(averageMonthlySpend), "#00f59b"],
+                  ["12-Mo Avg", wholeDollars(averageMonthlySpend), "#00f59b"],
                   ["Peak Month", `${peakMonth.month} ${wholeDollars(peakMonth.spent)}`, "#ffb65d"],
                 ].map(([label, value, color]) => (
                   <div
@@ -533,6 +650,7 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
                       type="button"
                       onClick={() => {
                         setActiveCategoryId(category.id);
+                        setChartValueMonth(null);
                         setFocusMonth(getFocusMonthForCategory(category, selectedYear));
                       }}
                       style={{
@@ -645,8 +763,7 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
                     </div>
                   ) : label === "Average / Month" ? (
                     <div style={{ color: "#9fb0c9", fontSize: 12, marginTop: 8 }}>
-                      Average line is based on {reviewedMonthCount} month
-                      {reviewedMonthCount === 1 ? "" : "s"} in scope
+                      Rolling 12-month historical average
                     </div>
                   ) : label === "Peak Month" ? (
                     <div style={{ color: "#9fb0c9", fontSize: 12, marginTop: 8 }}>
@@ -664,24 +781,111 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
             <div className="forecast-chart-panel" style={{ ...styles.panel, padding: "24px 24px 0" }}>
               <div
                 style={{
-                  display: "flex",
-                  justifyContent: "space-between",
+                  display: "grid",
+                  gridTemplateColumns: "minmax(0, 1fr) auto minmax(0, 1fr)",
                   alignItems: "center",
                   gap: 18,
-                  flexWrap: "wrap",
                   marginBottom: 18,
                 }}
               >
-                <div>
-                  <div style={{ color: "white", fontSize: 22, fontWeight: 900 }}>
-                    Monthly Spend Pattern
+                <div style={{ minWidth: 0 }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 14,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <div style={{ color: "white", fontSize: 22, fontWeight: 900 }}>
+                      Monthly Spend Pattern
+                    </div>
+                    <div
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 4,
+                        padding: 3,
+                        borderRadius: 8,
+                        border: "1px solid rgba(0,136,255,.22)",
+                        background: "rgba(0,136,255,.06)",
+                      }}
+                    >
+                      {[
+                        ["line", "Line"],
+                        ["bar", "Bar"],
+                      ].map(([type, label]) => {
+                        const isActive = monthlySpendChartType === type;
+                        return (
+                          <button
+                            key={type}
+                            type="button"
+                            onClick={() => handleMonthlySpendChartTypeChange(type)}
+                            style={{
+                              color: isActive ? "#00d8ff" : "#9fb0c9",
+                              border: isActive
+                                ? "1px solid rgba(0,136,255,.55)"
+                                : "1px solid transparent",
+                              background: isActive ? "rgba(0,104,255,.18)" : "transparent",
+                              borderRadius: 6,
+                              padding: "6px 12px",
+                              cursor: "pointer",
+                              fontSize: 12,
+                              fontWeight: 800,
+                              letterSpacing: 0.4,
+                              boxShadow: isActive ? "0 0 14px rgba(0,136,255,.18)" : "none",
+                            }}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                   <div style={{ color: "#9fb0c9", marginTop: 6, lineHeight: 1.5 }}>
-                    Track live spend against the average line
+                    Track live spend against the 12-month average
                     {hasBudgetContext ? " and your budget target." : "."}
                   </div>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 10,
+                    padding: "0 12px",
+                    textAlign: "center",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 10,
+                      height: 10,
+                      borderRadius: 999,
+                      background: selectedCategory.color,
+                      flexShrink: 0,
+                    }}
+                  />
+                  <div
+                    style={{
+                      color: "white",
+                      fontSize: 22,
+                      fontWeight: 900,
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {selectedCategory.name}
+                  </div>
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "flex-end",
+                    gap: 18,
+                    flexWrap: "wrap",
+                  }}
+                >
                   <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#9fb0c9" }}>
                     <div
                       style={{
@@ -700,7 +904,7 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
                         borderTop: "2px dashed rgba(143,234,255,.9)",
                       }}
                     />
-                    Average
+                    12 Month Avg
                   </div>
                   {hasBudgetContext ? (
                     <div
@@ -721,12 +925,13 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
               <div style={{ display: "flex", gap: 0 }}>
                 <div
                   style={{
-                    width: 72,
+                    width: 80,
                     flexShrink: 0,
                     display: "flex",
                     flexDirection: "column",
                     justifyContent: "space-between",
                     paddingBottom: 44,
+                    paddingRight: 8,
                   }}
                 >
                   {yLabels.map((label) => (
@@ -737,7 +942,38 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
                 </div>
 
                 <div className="forecast-chart-frame" style={{ flex: 1, position: "relative" }}>
-                  <svg className="forecast-chart-svg" viewBox={`0 0 ${CHART_W} ${CHART_H + 40}`} style={{ width: "100%" }}>
+                  {chartValueMonthData ? (
+                    <div
+                      style={{
+                        position: "absolute",
+                        left: `${(MONTH_X[chartValueMonth] / CHART_W) * 100}%`,
+                        top: `${(toY(chartValueMonthData.spent, max, min) / (CHART_H + 40)) * 100}%`,
+                        transform: "translate(-50%, calc(-100% - 10px))",
+                        pointerEvents: "none",
+                        zIndex: 2,
+                        minWidth: 168,
+                        padding: "10px 12px",
+                        borderRadius: 10,
+                        border: "1px solid rgba(0,216,255,.28)",
+                        background: "rgba(4,18,34,.96)",
+                        boxShadow: "0 10px 28px rgba(0,0,0,.35)",
+                      }}
+                    >
+                      {renderChartValueTooltip({
+                        month: chartValueMonth,
+                        monthData: chartValueMonthData,
+                        averageMonthlySpend,
+                        hasBudgetContext,
+                        categoryColor: selectedCategory.color,
+                      })}
+                    </div>
+                  ) : null}
+                  <svg
+                    className="forecast-chart-svg"
+                    viewBox={`0 0 ${CHART_W} ${CHART_H + 40}`}
+                    style={{ width: "100%" }}
+                    onClick={() => setChartValueMonth(null)}
+                  >
                     <defs>
                       <linearGradient id="spendingAreaGradient" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="0%" stopColor={selectedCategory.color} stopOpacity="0.28" />
@@ -772,7 +1008,9 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
                       />
                     ))}
 
-                    {spendArea ? <path d={spendArea} fill="url(#spendingAreaGradient)" /> : null}
+                    {monthlySpendChartType === "line" && spendArea ? (
+                      <path d={spendArea} fill="url(#spendingAreaGradient)" />
+                    ) : null}
                     <line
                       x1={0}
                       y1={averageY}
@@ -793,7 +1031,7 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
                         strokeLinejoin="round"
                       />
                     ) : null}
-                    {spendPath ? (
+                    {monthlySpendChartType === "line" && spendPath ? (
                       <path
                         d={spendPath}
                         fill="none"
@@ -803,6 +1041,34 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
                         strokeLinejoin="round"
                       />
                     ) : null}
+                    {monthlySpendChartType === "bar"
+                      ? monthlySeries.map((row) => {
+                          const x = MONTH_X[row.month];
+                          const y = toY(row.spent, max, min);
+                          const height = Math.max(0, CHART_H - y);
+                          const isSelected = chartValueMonth === row.month;
+                          return (
+                            <rect
+                              key={`bar-${row.month}`}
+                              x={x - BAR_WIDTH / 2}
+                              y={y}
+                              width={BAR_WIDTH}
+                              height={height}
+                              fill={selectedCategory.color}
+                              fillOpacity={isSelected ? 0.95 : 0.72}
+                              stroke={isSelected ? "white" : "none"}
+                              strokeWidth={isSelected ? 1.5 : 0}
+                              rx={4}
+                              style={{ cursor: "pointer" }}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setChartValueMonth(row.month);
+                                setFocusMonth(row.month);
+                              }}
+                            />
+                          );
+                        })
+                      : null}
 
                     {focusX != null ? (
                       <line
@@ -818,30 +1084,50 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
 
                     {monthlySeries.map((row) => {
                       const y = toY(row.spent, max, min);
-                      const isActive = focusMonthData?.month === row.month;
+                      const isChartSelected = chartValueMonth === row.month;
+                      const isFocused = focusMonthData?.month === row.month;
                       return (
                         <g key={row.month}>
-                          <circle
-                            cx={MONTH_X[row.month]}
-                            cy={y}
-                            r={isActive ? 6 : 4.5}
-                            fill={selectedCategory.color}
-                            stroke="white"
-                            strokeWidth={isActive ? 1.8 : 1.3}
-                            style={{ cursor: "pointer" }}
-                            onClick={() => setFocusMonth(row.month)}
-                          />
+                          {monthlySpendChartType === "line" ? (
+                            <>
+                              <circle
+                                cx={MONTH_X[row.month]}
+                                cy={y}
+                                r={12}
+                                fill="transparent"
+                                style={{ cursor: "pointer" }}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  setChartValueMonth(row.month);
+                                  setFocusMonth(row.month);
+                                }}
+                              />
+                              <circle
+                                cx={MONTH_X[row.month]}
+                                cy={y}
+                                r={isChartSelected ? 6 : 4.5}
+                                fill={selectedCategory.color}
+                                stroke="white"
+                                strokeWidth={isChartSelected ? 1.8 : 1.3}
+                                style={{ cursor: "pointer", pointerEvents: "none" }}
+                              />
+                            </>
+                          ) : null}
                           <text
                             x={MONTH_X[row.month]}
                             y={CHART_H + 24}
                             textAnchor="middle"
                             style={{
-                              fill: isActive ? "#eaf3ff" : "#5e7da0",
+                              fill: isFocused ? "#eaf3ff" : "#5e7da0",
                               fontSize: 11,
-                              fontWeight: isActive ? 800 : 500,
+                              fontWeight: isFocused ? 800 : 500,
                               cursor: "pointer",
                             }}
-                            onClick={() => setFocusMonth(row.month)}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setFocusMonth(row.month);
+                              setChartValueMonth(null);
+                            }}
                           >
                             {row.month}
                           </text>
@@ -860,19 +1146,77 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
                 gridTemplateColumns: "minmax(0, 1.15fr) minmax(300px, .85fr)",
                 gap: 20,
                 alignItems: "start",
+                marginTop: 20,
               }}
             >
-              <div style={{ ...styles.panel, padding: 24 }}>
-                <div
-                  style={{
-                    color: "white",
-                    fontSize: 20,
-                    fontWeight: 900,
-                    marginBottom: 18,
-                  }}
-                >
-                  Monthly Review Grid
+              <div style={{ display: "grid", gap: 20 }}>
+                <div style={{ ...styles.panel, padding: 24 }}>
+                  <div style={{ color: "white", fontSize: 20, fontWeight: 900, marginBottom: 14 }}>
+                    {focusMonthData?.month} Activity
+                  </div>
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {focusMonthData?.transactions?.length ? (
+                      focusMonthData.transactions.map((transaction) => (
+                        <div
+                          key={transaction.id}
+                          style={{
+                            borderRadius: 12,
+                            border: "1px solid rgba(0,216,255,.14)",
+                            background: "rgba(3,17,32,.68)",
+                            padding: "12px 14px",
+                          }}
+                        >
+                          <div
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              gap: 12,
+                              alignItems: "baseline",
+                            }}
+                          >
+                            <div style={{ color: "white", fontWeight: 800 }}>
+                              {transaction.merchant || "Spending entry"}
+                            </div>
+                            <div style={{ color: "#ffb65d", fontWeight: 900 }}>
+                              {wholeDollars(Math.abs(transaction.amount))}
+                            </div>
+                          </div>
+                          <div
+                            style={{
+                              color: "#7ea6d8",
+                              fontSize: 12,
+                              marginTop: 6,
+                              display: "flex",
+                              justifyContent: "space-between",
+                              gap: 12,
+                              flexWrap: "wrap",
+                            }}
+                          >
+                            <span>{transaction.date}</span>
+                            <span>{transaction.account}</span>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div style={{ color: "#9fb0c9", lineHeight: 1.6 }}>
+                        Nothing posted in {focusMonthData?.month} for this category. Pick another month
+                        on the chart or review grid to scan a different slice of spending.
+                      </div>
+                    )}
+                  </div>
                 </div>
+
+                <div style={{ ...styles.panel, padding: 24 }}>
+                  <div
+                    style={{
+                      color: "white",
+                      fontSize: 20,
+                      fontWeight: 900,
+                      marginBottom: 18,
+                    }}
+                  >
+                    Monthly Review Grid
+                  </div>
                 <div
                   className="forecast-review-header"
                   style={{
@@ -909,7 +1253,10 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
                         key={row.month}
                         type="button"
                         className="forecast-review-row"
-                        onClick={() => setFocusMonth(row.month)}
+                        onClick={() => {
+                          setFocusMonth(row.month);
+                          setChartValueMonth(null);
+                        }}
                         style={{
                           width: "100%",
                           border: "none",
@@ -985,7 +1332,7 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
                     {wholeDollars(selectedTotalSpend)}
                   </div>
                   <div style={{ textAlign: "right", color: "#8feaff", fontWeight: 800 }}>
-                    Avg {wholeDollars(averageMonthlySpend)}
+                    Avg {wholeDollars(averageMonthlySpend)} (12-mo)
                   </div>
                   {hasBudgetContext ? (
                     <div
@@ -1009,22 +1356,15 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
                     {selectedTransactions.length}
                   </div>
                 </div>
+                </div>
               </div>
 
               <div style={{ display: "grid", gap: 20 }}>
                 <div style={{ ...styles.panel, padding: 22 }}>
-                  <div
-                    style={{
-                      color: "#8feaff",
-                      fontSize: 12,
-                      textTransform: "uppercase",
-                      letterSpacing: 1,
-                      fontWeight: 900,
-                    }}
-                  >
+                  <div style={{ color: "white", fontSize: 18, fontWeight: 900, marginBottom: 14 }}>
                     Month Spotlight
                   </div>
-                  <div style={{ color: "white", fontSize: 24, fontWeight: 900, marginTop: 8 }}>
+                  <div style={{ color: "white", fontSize: 24, fontWeight: 900, marginTop: 0 }}>
                     {focusMonthData?.month} {selectedYear}
                   </div>
                   <div style={{ display: "grid", gap: 12, marginTop: 18 }}>
@@ -1102,62 +1442,6 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
                     ) : (
                       <div style={{ color: "#9fb0c9", lineHeight: 1.6 }}>
                         No merchant signal yet for this category in {selectedYear}.
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div style={{ ...styles.panel, padding: 22 }}>
-                  <div style={{ color: "white", fontSize: 18, fontWeight: 900, marginBottom: 14 }}>
-                    Recent {focusMonthData?.month} Activity
-                  </div>
-                  <div style={{ display: "grid", gap: 10 }}>
-                    {focusMonthData?.transactions?.length ? (
-                      focusMonthData.transactions.slice(0, 6).map((transaction) => (
-                        <div
-                          key={transaction.id}
-                          style={{
-                            borderRadius: 12,
-                            border: "1px solid rgba(0,216,255,.14)",
-                            background: "rgba(3,17,32,.68)",
-                            padding: "12px 14px",
-                          }}
-                        >
-                          <div
-                            style={{
-                              display: "flex",
-                              justifyContent: "space-between",
-                              gap: 12,
-                              alignItems: "baseline",
-                            }}
-                          >
-                            <div style={{ color: "white", fontWeight: 800 }}>
-                              {transaction.merchant || "Spending entry"}
-                            </div>
-                            <div style={{ color: "#ffb65d", fontWeight: 900 }}>
-                              {wholeDollars(Math.abs(transaction.amount))}
-                            </div>
-                          </div>
-                          <div
-                            style={{
-                              color: "#7ea6d8",
-                              fontSize: 12,
-                              marginTop: 6,
-                              display: "flex",
-                              justifyContent: "space-between",
-                              gap: 12,
-                              flexWrap: "wrap",
-                            }}
-                          >
-                            <span>{transaction.date}</span>
-                            <span>{transaction.account}</span>
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <div style={{ color: "#9fb0c9", lineHeight: 1.6 }}>
-                        Nothing posted in {focusMonthData?.month} for this category. Pick another
-                        month on the chart or review grid to scan a different slice of spending.
                       </div>
                     )}
                   </div>
