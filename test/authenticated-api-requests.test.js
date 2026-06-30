@@ -120,3 +120,32 @@ test("generic 401 workspace responses become actionable session errors", async (
     await close();
   }
 });
+
+test("workspace requests retry until a Firebase user token becomes available", async () => {
+  const { api, close } = await loadApiModule({ currentToken: null });
+  const calls = [];
+  let tokenAttempts = 0;
+  const originalFetch = global.fetch;
+  global.fetch = async (url, init = {}) => {
+    calls.push({ url, init });
+    return createJsonResponse({ payload: { snapshot: null } });
+  };
+
+  try {
+    await api.fetchWorkspaceSnapshot({
+      user: {
+        getIdToken: async () => {
+          tokenAttempts += 1;
+          return tokenAttempts >= 2 ? "delayed-user-token" : null;
+        },
+      },
+    });
+  } finally {
+    global.fetch = originalFetch;
+    await close();
+  }
+
+  assert.equal(tokenAttempts, 2);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].init.headers.Authorization, "Bearer delayed-user-token");
+});

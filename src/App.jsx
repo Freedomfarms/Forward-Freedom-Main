@@ -22,13 +22,44 @@ import {
 } from "./utils/workspacePersistence.js";
 import {
   ApiRequestError,
+  AUTHENTICATION_REQUIRED_MESSAGE,
   fetchAuthenticatedUserProfile,
   fetchWorkspaceSnapshot,
+  isApiAuthenticationError,
   saveWorkspaceSnapshot,
 } from "./utils/api.js";
 
 const WORKSPACE_SAVE_DEBOUNCE_MS = 4000;
 const WORKSPACE_RATE_LIMIT_RETRY_MS = 30000;
+const WORKSPACE_BOOTSTRAP_RETRY_DELAYS_MS = [0, 800, 2000, 4000];
+const WORKSPACE_RECOVERY_RETRY_MS = 15000;
+
+function sleep(ms) {
+  return new Promise((resolve) => {
+    globalThis.setTimeout(resolve, ms);
+  });
+}
+
+async function fetchWorkspaceSnapshotWithRetry(options) {
+  let lastError = null;
+
+  for (let attempt = 0; attempt < WORKSPACE_BOOTSTRAP_RETRY_DELAYS_MS.length; attempt += 1) {
+    if (attempt > 0) {
+      await sleep(WORKSPACE_BOOTSTRAP_RETRY_DELAYS_MS[attempt]);
+    }
+
+    try {
+      return await fetchWorkspaceSnapshot(options);
+    } catch (error) {
+      lastError = error;
+      if (!isApiAuthenticationError(error)) {
+        throw error;
+      }
+    }
+  }
+
+  throw lastError;
+}
 
 function isWorkspaceRateLimitError(error) {
   return error instanceof ApiRequestError && error.status === 429;
@@ -110,8 +141,10 @@ function AuthenticatedWorkspaceApp({
   const [latestPersistedState, setLatestPersistedState] = useState(null);
   const [workspaceProfile, setWorkspaceProfile] = useState(null);
   const [workspaceBootstrapComplete, setWorkspaceBootstrapComplete] = useState(false);
+  const [workspaceLoadGeneration, setWorkspaceLoadGeneration] = useState(0);
   const lastServerSnapshotRef = useRef("");
   const lastQueuedPersistedStateRef = useRef("");
+  const hasConfirmedServerSnapshotRef = useRef(false);
   const rateLimitRetryTimeoutRef = useRef(null);
   const cacheWorkspaceState = useCallback(
     (state, cacheState = "browser-cache") => {
@@ -143,9 +176,10 @@ function AuthenticatedWorkspaceApp({
 
     const bootstrapWorkspace = async () => {
       setWorkspaceBootstrapComplete(false);
+      hasConfirmedServerSnapshotRef.current = false;
 
       try {
-        const workspacePayload = await fetchWorkspaceSnapshot({ user });
+        const workspacePayload = await fetchWorkspaceSnapshotWithRetry({ user });
         let profilePayload = null;
 
         try {
@@ -166,6 +200,7 @@ function AuthenticatedWorkspaceApp({
         setWorkspaceError("");
 
         if (remoteState) {
+          hasConfirmedServerSnapshotRef.current = true;
           setWorkspaceSeedState(nextSeedState);
           lastServerSnapshotRef.current = JSON.stringify(remoteState);
           cacheWorkspaceState(remoteState, "server-snapshot");
@@ -197,6 +232,7 @@ function AuthenticatedWorkspaceApp({
 
         const confirmedState = payload?.snapshot?.state || nextSeedState;
         const sanitizedConfirmedState = sanitizeWorkspaceStateForPersistence(confirmedState);
+        hasConfirmedServerSnapshotRef.current = true;
         lastServerSnapshotRef.current = JSON.stringify(sanitizedConfirmedState);
         cacheWorkspaceState(sanitizedConfirmedState, "server-confirmed");
         setWorkspaceSeedState(sanitizedConfirmedState);
@@ -214,8 +250,10 @@ function AuthenticatedWorkspaceApp({
         setWorkspaceSyncState("cache-fallback");
         setWorkspaceBootstrapComplete(true);
         setWorkspaceError(
-          error?.message ||
-            "Workspace server sync is unavailable right now. Using a temporary browser cache until the database is reachable again."
+          isApiAuthenticationError(error)
+            ? AUTHENTICATION_REQUIRED_MESSAGE
+            : error?.message ||
+                "Workspace server sync is unavailable right now. Using a temporary browser cache until the database is reachable again."
         );
       }
     };
@@ -226,6 +264,55 @@ function AuthenticatedWorkspaceApp({
       cancelled = true;
     };
   }, [cacheWorkspaceState, storageKey, user, user.displayName, user.email]);
+
+  useEffect(() => {
+    if (!workspaceBootstrapComplete || workspaceSyncState !== "cache-fallback") {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    const recoverWorkspaceFromServer = async () => {
+      try {
+        const workspacePayload = await fetchWorkspaceSnapshotWithRetry({ user });
+        const remoteState = workspacePayload?.snapshot?.state
+          ? sanitizeWorkspaceStateForPersistence(workspacePayload.snapshot.state)
+          : null;
+
+        if (!remoteState || cancelled) return;
+
+        hasConfirmedServerSnapshotRef.current = true;
+        lastServerSnapshotRef.current = JSON.stringify(remoteState);
+        cacheWorkspaceState(remoteState, "server-snapshot");
+        setWorkspaceSeedState(remoteState);
+        setWorkspaceLoadGeneration((current) => current + 1);
+        setWorkspaceSyncState("server-primary");
+        setWorkspaceError("");
+      } catch (error) {
+        if (cancelled) return;
+
+        if (!isApiAuthenticationError(error)) {
+          setWorkspaceError(
+            error?.message ||
+              "Workspace server sync is unavailable right now. Using a temporary browser cache until the database is reachable again."
+          );
+        }
+      }
+    };
+
+    const initialRetryTimeoutId = window.setTimeout(() => {
+      void recoverWorkspaceFromServer();
+    }, 3000);
+    const intervalId = window.setInterval(() => {
+      void recoverWorkspaceFromServer();
+    }, WORKSPACE_RECOVERY_RETRY_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(initialRetryTimeoutId);
+      window.clearInterval(intervalId);
+    };
+  }, [cacheWorkspaceState, user, workspaceBootstrapComplete, workspaceSyncState]);
 
   const handlePersistedStateChange = useCallback((nextState) => {
     const serializedState = JSON.stringify(nextState);
@@ -239,6 +326,10 @@ function AuthenticatedWorkspaceApp({
 
   useEffect(() => {
     if (!latestPersistedState || !workspaceSeedState || !workspaceBootstrapComplete) {
+      return undefined;
+    }
+
+    if (!hasConfirmedServerSnapshotRef.current && workspaceSyncState === "cache-fallback") {
       return undefined;
     }
 
@@ -314,7 +405,7 @@ function AuthenticatedWorkspaceApp({
         rateLimitRetryTimeoutRef.current = null;
       }
     };
-  }, [cacheWorkspaceState, latestPersistedState, user, workspaceBootstrapComplete, workspaceSeedState]);
+  }, [cacheWorkspaceState, latestPersistedState, user, workspaceBootstrapComplete, workspaceSeedState, workspaceSyncState]);
 
   if (!workspaceSeedState) {
     return <AppLoadingScreen message={buildWorkspaceStatus(workspaceSyncState)} />;
@@ -348,6 +439,7 @@ function AuthenticatedWorkspaceApp({
   return (
     <LazyRouteBoundary message="Loading secure workspace...">
       <ForwardFreedomDashboard
+        key={`${user.uid}:${workspaceLoadGeneration}`}
         initialView="app"
         storageKey={storageKey}
         initialAppStateOverride={workspaceSeedState}
