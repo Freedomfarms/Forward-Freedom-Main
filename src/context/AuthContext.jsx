@@ -12,6 +12,7 @@ import {
   signInWithGooglePopup,
   signOutCurrentUser,
   updateCurrentUserDisplayName,
+  waitForUserIdToken,
 } from "../utils/firebase.js";
 
 const AuthContext = createContext(null);
@@ -54,9 +55,7 @@ export function AuthProvider({ children }) {
   const clientConfig = getFirebaseClientConfig();
   const auth = clientConfig.configured ? getFirebaseAuthInstance() : null;
   const [user, setUser] = useState(() => auth?.currentUser || null);
-  const [ready, setReady] = useState(
-    () => !clientConfig.configured || !auth || Boolean(auth.currentUser)
-  );
+  const [ready, setReady] = useState(() => !clientConfig.configured);
   const [error, setError] = useState(() =>
     clientConfig.configured && !auth ? "Firebase Authentication is configured incorrectly." : ""
   );
@@ -72,8 +71,17 @@ export function AuthProvider({ children }) {
       auth,
       (nextUser) => {
         setUser(nextUser);
-        setReady(true);
         setError("");
+
+        if (!nextUser) {
+          setReady(true);
+          return;
+        }
+
+        setReady(false);
+        void waitForUserIdToken(nextUser).finally(() => {
+          setReady(true);
+        });
       },
       (authError) => {
         setError(mapFirebaseError(authError));

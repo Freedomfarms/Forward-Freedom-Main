@@ -168,4 +168,37 @@ export async function getCurrentUserIdToken(forceRefresh = false) {
   return auth.currentUser.getIdToken(forceRefresh);
 }
 
+const USER_ID_TOKEN_RETRY_DELAYS_MS = [0, 300, 700, 1500, 3000, 5000];
+
+function sleep(ms) {
+  return new Promise((resolve) => {
+    globalThis.setTimeout(resolve, ms);
+  });
+}
+
+export async function waitForUserIdToken(firebaseUser, { forceRefreshOnLastAttempt = true } = {}) {
+  if (!firebaseUser || typeof firebaseUser.getIdToken !== "function") {
+    return null;
+  }
+
+  for (let attempt = 0; attempt < USER_ID_TOKEN_RETRY_DELAYS_MS.length; attempt += 1) {
+    if (attempt > 0) {
+      await sleep(USER_ID_TOKEN_RETRY_DELAYS_MS[attempt] - USER_ID_TOKEN_RETRY_DELAYS_MS[attempt - 1]);
+    }
+
+    try {
+      const shouldForceRefresh =
+        forceRefreshOnLastAttempt && attempt === USER_ID_TOKEN_RETRY_DELAYS_MS.length - 1;
+      const token = await firebaseUser.getIdToken(shouldForceRefresh);
+      if (token) {
+        return token;
+      }
+    } catch {
+      // Retry until the Firebase session finishes issuing a token.
+    }
+  }
+
+  return null;
+}
+
 export { onAuthStateChanged };

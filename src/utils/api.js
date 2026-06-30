@@ -1,4 +1,4 @@
-import { getCurrentUserIdToken } from "./firebase.js";
+import { getCurrentUserIdToken, waitForUserIdToken } from "./firebase.js";
 
 export class ApiRequestError extends Error {
   constructor(message, { status, retryAfterMs } = {}) {
@@ -46,12 +46,21 @@ function readRateLimitRetryAfterMs(response) {
   return undefined;
 }
 
+function buildUnauthorizedErrorMessage(payload) {
+  const serverMessage = typeof payload?.message === "string" ? payload.message.trim() : "";
+  if (!serverMessage || serverMessage === "Missing bearer token.") {
+    return AUTHENTICATION_REQUIRED_MESSAGE;
+  }
+
+  return `Secure workspace request was rejected: ${serverMessage}`;
+}
+
 async function parseApiResponse(response) {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
     throw new ApiRequestError(
       response.status === 401
-        ? AUTHENTICATION_REQUIRED_MESSAGE
+        ? buildUnauthorizedErrorMessage(payload)
         : payload.message || "Request failed.",
       {
         status: response.status,
@@ -72,6 +81,13 @@ async function readAuthenticatedToken(user, forceRefresh = false) {
 }
 
 async function resolveAuthenticatedToken(user) {
+  if (typeof user?.getIdToken === "function") {
+    const token = await waitForUserIdToken(user);
+    if (token) {
+      return token;
+    }
+  }
+
   for (let attempt = 0; attempt < AUTH_TOKEN_RETRY_DELAYS_MS.length; attempt += 1) {
     const forceRefresh = attempt === AUTH_TOKEN_RETRY_DELAYS_MS.length - 1;
     const token = await readAuthenticatedToken(user, forceRefresh);
