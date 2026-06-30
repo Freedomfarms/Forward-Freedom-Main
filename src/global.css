@@ -84,67 +84,27 @@ button {
   animation: budget-orbit-metric-flash 0.55s ease;
 }
 
-.budget-orbit-chart {
-  --orbit-size: 188px;
-  --orbit-stage-size: calc(var(--orbit-size) * 1.32);
+.net-worth-orbit-layout {
+  display: flex;
+  align-items: flex-start;
+  gap: 18px;
+  width: 100%;
 }
 
-.budget-orbit-stage {
-  position: relative;
-  width: var(--orbit-stage-size);
-  height: var(--orbit-stage-size);
+.net-worth-orbit-chart-cell {
   flex-shrink: 0;
 }
 
-.budget-orbit-halo {
-  position: absolute;
-  inset: 12%;
-  border-radius: 50%;
-  pointer-events: none;
+.net-worth-orbit-category-list {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.budget-orbit-svg {
-  position: relative;
-  z-index: 1;
-  display: block;
+.net-worth-orbit-category-item {
   width: 100%;
-  height: 100%;
-}
-
-.budget-orbit-core {
-  position: absolute;
-  z-index: 2;
-  left: 50%;
-  top: 50%;
-  width: calc(var(--orbit-size) * 0.6);
-  height: calc(var(--orbit-size) * 0.6);
-  transform: translate(-50%, -50%);
-  border-radius: 50%;
-  display: grid;
-  justify-items: center;
-  align-content: center;
-  text-align: center;
-  padding: 0 10px;
-  pointer-events: none;
-  background: radial-gradient(
-    circle at 30% 25%,
-    rgba(255, 255, 255, 0.08),
-    rgba(3, 16, 31, 0.98) 62%
-  );
-  box-shadow: inset 0 0 28px rgba(0, 136, 255, 0.08);
-}
-
-.budget-orbit-month-label {
-  position: absolute;
-  z-index: 3;
-  transform: translate(-50%, -50%);
-  color: #7fa1ca;
-  font-size: 10px;
-  font-weight: 900;
-  letter-spacing: 0.7px;
-  cursor: pointer;
-  padding: 4px 6px;
-  border-radius: 6px;
 }
 
 .app-main[data-scaled="true"] {
@@ -679,6 +639,19 @@ button {
 @media (max-width: 767px) {
   .app-main {
     padding: 84px 12px 20px !important;
+  }
+
+  .net-worth-orbit-layout {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .net-worth-orbit-chart-cell {
+    align-self: center;
+  }
+
+  .net-worth-orbit-category-list {
+    width: 100%;
   }
 
   .mobile-topbar-title {

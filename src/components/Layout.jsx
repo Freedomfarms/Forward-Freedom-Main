@@ -225,6 +225,26 @@ export function AppSidebar({
               {sessionControls.error}
             </div>
           ) : null}
+          {sessionControls.error && typeof sessionControls.onRetryWorkspaceSync === "function" ? (
+            <button
+              type="button"
+              disabled={sessionControls.isBusy}
+              onClick={sessionControls.onRetryWorkspaceSync}
+              style={{
+                width: "100%",
+                marginTop: 10,
+                borderRadius: 8,
+                border: "1px solid rgba(0,216,255,.24)",
+                background: "rgba(0,136,255,.08)",
+                color: "#eef6ff",
+                padding: "10px 12px",
+                cursor: sessionControls.isBusy ? "wait" : "pointer",
+                fontWeight: 800,
+              }}
+            >
+              Retry Secure Sync
+            </button>
+          ) : null}
           <button
             type="button"
             disabled={sessionControls.isBusy}

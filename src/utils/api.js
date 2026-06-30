@@ -1,4 +1,4 @@
-import { getCurrentUserIdToken } from "./firebase.js";
+import { getCurrentUserIdToken, waitForUserIdToken } from "./firebase.js";
 
 export class ApiRequestError extends Error {
   constructor(message, { status, retryAfterMs } = {}) {
@@ -9,11 +9,23 @@ export class ApiRequestError extends Error {
   }
 }
 
-const AUTHENTICATION_REQUIRED_MESSAGE =
+export const AUTHENTICATION_REQUIRED_MESSAGE =
   "Your sign-in session is still restoring, so the secure request was not sent. Refresh or sign out and sign back in, then retry.";
+
+const AUTH_TOKEN_RETRY_DELAYS_MS = [0, 400, 1000, 2000];
+
+function sleep(ms) {
+  return new Promise((resolve) => {
+    globalThis.setTimeout(resolve, ms);
+  });
+}
 
 function createAuthenticationError() {
   return new ApiRequestError(AUTHENTICATION_REQUIRED_MESSAGE, { status: 401 });
+}
+
+export function isApiAuthenticationError(error) {
+  return error instanceof ApiRequestError && error.status === 401;
 }
 
 function readRateLimitRetryAfterMs(response) {
@@ -34,12 +46,21 @@ function readRateLimitRetryAfterMs(response) {
   return undefined;
 }
 
+function buildUnauthorizedErrorMessage(payload) {
+  const serverMessage = typeof payload?.message === "string" ? payload.message.trim() : "";
+  if (!serverMessage || serverMessage === "Missing bearer token.") {
+    return AUTHENTICATION_REQUIRED_MESSAGE;
+  }
+
+  return `Secure workspace request was rejected: ${serverMessage}`;
+}
+
 async function parseApiResponse(response) {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
     throw new ApiRequestError(
       response.status === 401
-        ? AUTHENTICATION_REQUIRED_MESSAGE
+        ? buildUnauthorizedErrorMessage(payload)
         : payload.message || "Request failed.",
       {
         status: response.status,
@@ -51,12 +72,35 @@ async function parseApiResponse(response) {
   return payload;
 }
 
-async function resolveAuthenticatedToken(user) {
+async function readAuthenticatedToken(user, forceRefresh = false) {
   if (typeof user?.getIdToken === "function") {
-    return user.getIdToken();
+    return user.getIdToken(forceRefresh);
   }
 
-  return getCurrentUserIdToken();
+  return getCurrentUserIdToken(forceRefresh);
+}
+
+async function resolveAuthenticatedToken(user) {
+  if (typeof user?.getIdToken === "function") {
+    const token = await waitForUserIdToken(user);
+    if (token) {
+      return token;
+    }
+  }
+
+  for (let attempt = 0; attempt < AUTH_TOKEN_RETRY_DELAYS_MS.length; attempt += 1) {
+    const forceRefresh = attempt === AUTH_TOKEN_RETRY_DELAYS_MS.length - 1;
+    const token = await readAuthenticatedToken(user, forceRefresh);
+    if (token) {
+      return token;
+    }
+
+    if (attempt < AUTH_TOKEN_RETRY_DELAYS_MS.length - 1) {
+      await sleep(AUTH_TOKEN_RETRY_DELAYS_MS[attempt + 1] - AUTH_TOKEN_RETRY_DELAYS_MS[attempt]);
+    }
+  }
+
+  return null;
 }
 
 export async function buildAuthenticatedHeaders(headers = {}, { user = null } = {}) {
