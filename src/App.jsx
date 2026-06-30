@@ -111,12 +111,18 @@ function LazyRouteBoundary({ message, children }) {
   );
 }
 
-function buildWorkspaceStatus(syncState) {
+function buildWorkspaceStatus(syncState, { failureKind = null } = {}) {
   if (syncState === "hydrating-cache") return "Restoring cached workspace into the database";
   if (syncState === "initializing-server") return "Creating your first server-backed workspace";
   if (syncState === "syncing") return "Syncing workspace changes to the database";
   if (syncState === "rate-limited") return "Saving paused briefly — retrying automatically";
-  if (syncState === "cache-fallback") return "Using a temporary browser cache until the database returns";
+  if (syncState === "recovering") return "Retrying secure workspace sync";
+  if (syncState === "cache-fallback") {
+    if (failureKind === "auth") {
+      return "Secure sync is paused while your sign-in session finishes restoring";
+    }
+    return "Using a temporary browser cache until the database returns";
+  }
   if (syncState === "synced" || syncState === "server-primary") {
     return "Database-backed workspace active";
   }
@@ -141,6 +147,8 @@ function AuthenticatedWorkspaceApp({
   const [latestPersistedState, setLatestPersistedState] = useState(null);
   const [workspaceProfile, setWorkspaceProfile] = useState(null);
   const [workspaceBootstrapComplete, setWorkspaceBootstrapComplete] = useState(false);
+  const [workspaceBootstrapRequestId, setWorkspaceBootstrapRequestId] = useState(0);
+  const [workspaceFailureKind, setWorkspaceFailureKind] = useState(null);
   const [workspaceLoadGeneration, setWorkspaceLoadGeneration] = useState(0);
   const lastServerSnapshotRef = useRef("");
   const lastQueuedPersistedStateRef = useRef("");
@@ -160,6 +168,10 @@ function AuthenticatedWorkspaceApp({
     [storageKey]
   );
 
+  const retryWorkspaceSync = useCallback(() => {
+    setWorkspaceBootstrapRequestId((current) => current + 1);
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     const cachedWorkspaceRecord = loadPersistedAppStateRecord(storageKey, {
@@ -176,7 +188,9 @@ function AuthenticatedWorkspaceApp({
 
     const bootstrapWorkspace = async () => {
       setWorkspaceBootstrapComplete(false);
+      setWorkspaceFailureKind(null);
       hasConfirmedServerSnapshotRef.current = false;
+      setWorkspaceSyncState(workspaceBootstrapRequestId > 0 ? "recovering" : "idle");
 
       try {
         const workspacePayload = await fetchWorkspaceSnapshotWithRetry({ user });
@@ -198,10 +212,12 @@ function AuthenticatedWorkspaceApp({
 
         setWorkspaceProfile(profilePayload?.user || null);
         setWorkspaceError("");
+        setWorkspaceFailureKind(null);
 
         if (remoteState) {
           hasConfirmedServerSnapshotRef.current = true;
           setWorkspaceSeedState(nextSeedState);
+          setWorkspaceLoadGeneration((current) => current + 1);
           lastServerSnapshotRef.current = JSON.stringify(remoteState);
           cacheWorkspaceState(remoteState, "server-snapshot");
           setWorkspaceSyncState("server-primary");
@@ -236,24 +252,28 @@ function AuthenticatedWorkspaceApp({
         lastServerSnapshotRef.current = JSON.stringify(sanitizedConfirmedState);
         cacheWorkspaceState(sanitizedConfirmedState, "server-confirmed");
         setWorkspaceSeedState(sanitizedConfirmedState);
+        setWorkspaceLoadGeneration((current) => current + 1);
         setWorkspaceSyncState("synced");
         setWorkspaceBootstrapComplete(true);
       } catch (error) {
         if (cancelled) return;
 
+        const authFailure = isApiAuthenticationError(error);
         lastServerSnapshotRef.current = "";
         setWorkspaceSeedState(cachedState);
+        setWorkspaceLoadGeneration((current) => current + 1);
         cacheWorkspaceState(
           cachedState,
           cachedWorkspaceRecord.hasPersistedState ? "cache-fallback" : "seed-default"
         );
         setWorkspaceSyncState("cache-fallback");
+        setWorkspaceFailureKind(authFailure ? "auth" : "server");
         setWorkspaceBootstrapComplete(true);
         setWorkspaceError(
-          isApiAuthenticationError(error)
-            ? AUTHENTICATION_REQUIRED_MESSAGE
-            : error?.message ||
-                "Workspace server sync is unavailable right now. Using a temporary browser cache until the database is reachable again."
+          error?.message ||
+            (authFailure
+              ? AUTHENTICATION_REQUIRED_MESSAGE
+              : "Workspace server sync is unavailable right now. Using a temporary browser cache until the database is reachable again.")
         );
       }
     };
@@ -263,7 +283,14 @@ function AuthenticatedWorkspaceApp({
     return () => {
       cancelled = true;
     };
-  }, [cacheWorkspaceState, storageKey, user, user.displayName, user.email]);
+  }, [
+    cacheWorkspaceState,
+    storageKey,
+    user,
+    user.displayName,
+    user.email,
+    workspaceBootstrapRequestId,
+  ]);
 
   useEffect(() => {
     if (!workspaceBootstrapComplete || workspaceSyncState !== "cache-fallback") {
@@ -287,15 +314,19 @@ function AuthenticatedWorkspaceApp({
         setWorkspaceSeedState(remoteState);
         setWorkspaceLoadGeneration((current) => current + 1);
         setWorkspaceSyncState("server-primary");
+        setWorkspaceFailureKind(null);
         setWorkspaceError("");
       } catch (error) {
         if (cancelled) return;
 
         if (!isApiAuthenticationError(error)) {
+          setWorkspaceFailureKind("server");
           setWorkspaceError(
             error?.message ||
               "Workspace server sync is unavailable right now. Using a temporary browser cache until the database is reachable again."
           );
+        } else {
+          setWorkspaceFailureKind("auth");
         }
       }
     };
@@ -408,17 +439,22 @@ function AuthenticatedWorkspaceApp({
   }, [cacheWorkspaceState, latestPersistedState, user, workspaceBootstrapComplete, workspaceSeedState, workspaceSyncState]);
 
   if (!workspaceSeedState) {
-    return <AppLoadingScreen message={buildWorkspaceStatus(workspaceSyncState)} />;
+    return (
+      <AppLoadingScreen
+        message={buildWorkspaceStatus(workspaceSyncState, { failureKind: workspaceFailureKind })}
+      />
+    );
   }
 
-  const sessionUser = user || workspaceProfile;
-  const sessionEmail = sessionUser?.email || user?.email || "";
+  const profileDetails = workspaceProfile || null;
+  const sessionEmail = user?.email || profileDetails?.email || "";
   const sessionControls = {
-    user: sessionUser,
+    user,
     onSignOut: () => void signOut(),
     isBusy,
-    isEmailVerified: Boolean(sessionUser?.emailVerified),
+    isEmailVerified: Boolean(user?.emailVerified ?? profileDetails?.emailVerified),
     onResendVerification: () => void resendVerificationEmail(),
+    onRetryWorkspaceSync: retryWorkspaceSync,
     onUpdateProfileName:
       typeof updateProfileName === "function"
         ? ({ displayName }) => updateProfileName({ displayName })
@@ -431,7 +467,7 @@ function AuthenticatedWorkspaceApp({
       typeof requestPasswordReset === "function" && sessionEmail
         ? () => void requestPasswordReset({ email: sessionEmail })
         : null,
-    workspaceStatus: buildWorkspaceStatus(workspaceSyncState),
+    workspaceStatus: buildWorkspaceStatus(workspaceSyncState, { failureKind: workspaceFailureKind }),
     notice: authNotice,
     error: workspaceError,
   };

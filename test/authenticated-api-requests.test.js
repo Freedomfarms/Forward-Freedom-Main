@@ -19,7 +19,15 @@ async function loadApiModule({ currentToken = null } = {}) {
         },
         load(id) {
           if (id === "\0mock-firebase-token") {
-            return `export async function getCurrentUserIdToken(){ return ${JSON.stringify(currentToken)}; }`;
+            return `export async function getCurrentUserIdToken(){ return ${JSON.stringify(currentToken)}; }
+export async function waitForUserIdToken(user){
+  if (!user || typeof user.getIdToken !== "function") return ${JSON.stringify(currentToken)};
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const token = await user.getIdToken(attempt === 3);
+    if (token) return token;
+  }
+  return null;
+}`;
           }
           return null;
         },
@@ -104,7 +112,7 @@ test("generic 401 workspace responses become actionable session errors", async (
     createJsonResponse({
       ok: false,
       status: 401,
-      payload: { message: "Request failed." },
+      payload: { message: "Unable to verify the provided auth token." },
     });
 
   try {
@@ -113,7 +121,7 @@ test("generic 401 workspace responses become actionable session errors", async (
       (error) =>
         error.name === "ApiRequestError" &&
         error.status === 401 &&
-        error.message.includes("sign-in session is still restoring")
+        error.message.includes("Unable to verify the provided auth token.")
     );
   } finally {
     global.fetch = originalFetch;
