@@ -84,6 +84,29 @@ button {
   animation: budget-orbit-metric-flash 0.55s ease;
 }
 
+.net-worth-orbit-layout {
+  display: flex;
+  align-items: flex-start;
+  gap: 18px;
+  width: 100%;
+}
+
+.net-worth-orbit-chart-cell {
+  flex-shrink: 0;
+}
+
+.net-worth-orbit-category-list {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.net-worth-orbit-category-item {
+  width: 100%;
+}
+
 .app-main[data-scaled="true"] {
   zoom: var(--app-ui-scale, 1);
 }
@@ -616,6 +639,19 @@ button {
 @media (max-width: 767px) {
   .app-main {
     padding: 84px 12px 20px !important;
+  }
+
+  .net-worth-orbit-layout {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .net-worth-orbit-chart-cell {
+    align-self: center;
+  }
+
+  .net-worth-orbit-category-list {
+    width: 100%;
   }
 
   .mobile-topbar-title {

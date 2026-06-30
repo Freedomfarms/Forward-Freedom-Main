@@ -6,11 +6,9 @@ const CENTER = SIZE / 2;
 const ARC_RADIUS = 96;
 const ARC_STROKE = 16;
 const TRACK_INNER_RADIUS = 70;
-const LABEL_RADIUS = 118;
 const SEGMENT_GAP_DEG = 4;
 const TICK_INNER = ARC_RADIUS + ARC_STROKE / 2 + 2;
 const TICK_OUTER = ARC_RADIUS + ARC_STROKE / 2 + 7;
-const LABEL_MIN_SWEEP_DEG = 14;
 
 function polar(deg, radius) {
   const a = ((deg - 90) * Math.PI) / 180;
@@ -25,6 +23,14 @@ function describeArc(startDeg, endDeg, radius) {
 }
 
 export function NetWorthOrbitChart({ allocations }) {
+  const sortedAllocations = useMemo(
+    () =>
+      [...allocations].sort(
+        (a, b) => Number(b.valueNumber || 0) - Number(a.valueNumber || 0)
+      ),
+    [allocations]
+  );
+
   const total = useMemo(
     () => allocations.reduce((sum, a) => sum + Number(a.valueNumber || 0), 0),
     [allocations]
@@ -54,7 +60,11 @@ export function NetWorthOrbitChart({ allocations }) {
       });
   }, [allocations, total]);
 
-  const defaultActive = segments[0]?.name || allocations[0]?.name || "";
+  const defaultActive = useMemo(() => {
+    const largest = sortedAllocations.find((item) => Number(item.valueNumber || 0) > 0);
+    return largest?.name || sortedAllocations[0]?.name || "";
+  }, [sortedAllocations]);
+
   const [activeName, setActiveName] = useState(defaultActive);
   const [flashToken, setFlashToken] = useState(0);
 
@@ -64,12 +74,14 @@ export function NetWorthOrbitChart({ allocations }) {
 
   const activeSegment =
     segments.find((s) => s.name === activeName) || segments[0] || null;
-  const activeFallback = allocations.find((a) => a.name === activeName) || allocations[0];
+  const activeFallback =
+    sortedAllocations.find((a) => a.name === activeName) || sortedAllocations[0];
   const activeData = activeSegment || {
     name: activeFallback?.name || "Net Worth",
     color: activeFallback?.color || "#8feaff",
     valueNumber: Number(activeFallback?.valueNumber || 0),
-    percentNumber: 0,
+    percentNumber:
+      total > 0 ? (Number(activeFallback?.valueNumber || 0) / total) * 100 : 0,
   };
 
   const focus = (name) => {
@@ -83,27 +95,18 @@ export function NetWorthOrbitChart({ allocations }) {
     setFlashToken((t) => t + 1);
   };
 
-  const metricCards = [
-    ["Category", activeData.name, activeData.color],
-    ["Amount", money(Number(activeData.valueNumber || 0)), "#8feaff"],
-    [
-      "Share",
-      `${Math.round(activeData.percentNumber || 0)}%`,
-      activeData.color,
-    ],
-  ];
-
   return (
     <div style={{ width: "100%" }} className="net-worth-orbit-chart">
       <div onMouseLeave={reset}>
-        <div style={{ display: "flex", justifyContent: "center", width: "100%" }}>
-          <div
-            style={{
-              position: "relative",
-              width: SIZE,
-              height: SIZE,
-            }}
-          >
+        <div className="net-worth-orbit-layout">
+          <div className="net-worth-orbit-chart-cell">
+            <div
+              style={{
+                position: "relative",
+                width: SIZE,
+                height: SIZE,
+              }}
+            >
             <svg
               width={SIZE}
               height={SIZE}
@@ -172,8 +175,9 @@ export function NetWorthOrbitChart({ allocations }) {
                         strokeWidth={isActive ? ARC_STROKE + 4 : ARC_STROKE}
                         strokeLinecap="butt"
                         fill="none"
+                        opacity={isActive ? 1 : 0.72}
                         pointerEvents="none"
-                        style={{ transition: "stroke-width 160ms ease" }}
+                        style={{ transition: "stroke-width 160ms ease, opacity 160ms ease" }}
                       />
                       {isActive ? (
                         <path
@@ -208,44 +212,6 @@ export function NetWorthOrbitChart({ allocations }) {
                 strokeWidth={1}
               />
             </svg>
-
-            {segments
-              .filter((seg) => seg.sweep >= LABEL_MIN_SWEEP_DEG)
-              .map((seg) => {
-                const labelPos = polar(seg.centerDeg, LABEL_RADIUS);
-                const isActive = seg.name === activeName;
-                return (
-                  <button
-                    key={seg.name}
-                    type="button"
-                    onMouseEnter={() => focus(seg.name)}
-                    onFocus={() => focus(seg.name)}
-                    onClick={() => focus(seg.name)}
-                    aria-label={seg.name}
-                    style={{
-                      position: "absolute",
-                      left: labelPos.x,
-                      top: labelPos.y,
-                      transform: "translate(-50%, -50%)",
-                      color: isActive ? "#ffffff" : "#9fb6d6",
-                      fontSize: 10,
-                      fontWeight: 900,
-                      letterSpacing: 0.6,
-                      cursor: "pointer",
-                      padding: "4px 7px",
-                      borderRadius: 7,
-                      border: isActive
-                        ? `1px solid ${seg.color}`
-                        : "1px solid transparent",
-                      background: isActive ? `${seg.color}1f` : "transparent",
-                      transition: "all 140ms ease",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {seg.name.toUpperCase()}
-                  </button>
-                );
-              })}
 
             <div
               style={{
@@ -318,111 +284,96 @@ export function NetWorthOrbitChart({ allocations }) {
               </div>
             </div>
           </div>
-        </div>
-
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "center",
-            flexWrap: "wrap",
-            gap: 10,
-            columnGap: 18,
-            width: "100%",
-            marginTop: 14,
-            paddingTop: 12,
-            borderTop: "1px solid rgba(30,144,255,.12)",
-          }}
-        >
-          {allocations.map((item) => {
-            const isZero = Number(item.valueNumber || 0) <= 0;
-            const isActive = item.name === activeName;
-            return (
-              <button
-                key={item.name}
-                type="button"
-                disabled={isZero}
-                onMouseEnter={() => !isZero && focus(item.name)}
-                onFocus={() => !isZero && focus(item.name)}
-                onClick={() => !isZero && focus(item.name)}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 7,
-                  color: "#9fb6d6",
-                  fontSize: 11,
-                  opacity: isZero ? 0.45 : 1,
-                  cursor: isZero ? "default" : "pointer",
-                  background: "transparent",
-                  border: isActive
-                    ? `1px solid ${item.color}`
-                    : "1px solid transparent",
-                  borderRadius: 999,
-                  padding: "3px 8px",
-                  transition: "all 140ms ease",
-                }}
-              >
-                <span
-                  style={{
-                    width: 9,
-                    height: 9,
-                    borderRadius: "50%",
-                    background: item.color,
-                  }}
-                />
-                <span style={{ fontWeight: 800, color: "#cfe2ff" }}>{item.name}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <div
-        className="responsive-grid-3"
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(3, 1fr)",
-          gap: 14,
-          marginTop: 14,
-        }}
-      >
-        {metricCards.map(([label, value, color]) => (
-          <div
-            key={label}
-            style={{
-              border: "1px solid rgba(0,136,255,.18)",
-              borderRadius: 14,
-              background: "rgba(3,17,32,.58)",
-              padding: "16px 18px 18px",
-            }}
-          >
-            <div
-              style={{
-                color: "#8fb1d9",
-                fontSize: 12,
-                textTransform: "uppercase",
-                letterSpacing: 0.9,
-                marginBottom: 10,
-              }}
-            >
-              {label}
-            </div>
-            <div
-              key={`${label}-${flashToken}`}
-              className="budget-orbit-metric-flash budget-orbit-metric-value"
-              style={{
-                color,
-                fontSize: 22,
-                fontWeight: 900,
-                lineHeight: 1.2,
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-              }}
-            >
-              {value}
-            </div>
           </div>
-        ))}
+
+          <div className="net-worth-orbit-category-list">
+            {sortedAllocations.map((item) => {
+              const value = Number(item.valueNumber || 0);
+              const isZero = value <= 0;
+              const isActive = item.name === activeName;
+              const share = total > 0 ? Math.round((value / total) * 100) : 0;
+              return (
+                <button
+                  key={item.name}
+                  type="button"
+                  disabled={isZero}
+                  onMouseEnter={() => !isZero && focus(item.name)}
+                  onFocus={() => !isZero && focus(item.name)}
+                  onClick={() => !isZero && focus(item.name)}
+                  className={`net-worth-orbit-category-item${isActive ? " is-active" : ""}`}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "auto 1fr auto",
+                    alignItems: "center",
+                    gap: 10,
+                    width: "100%",
+                    textAlign: "left",
+                    padding: "10px 12px",
+                    borderRadius: 12,
+                    border: isActive
+                      ? `1px solid ${item.color}`
+                      : "1px solid rgba(0,136,255,.12)",
+                    background: isActive ? `${item.color}18` : "rgba(3,17,32,.42)",
+                    opacity: isZero ? 0.45 : 1,
+                    cursor: isZero ? "default" : "pointer",
+                    transition: "all 140ms ease",
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 10,
+                      height: 10,
+                      borderRadius: "50%",
+                      background: item.color,
+                      flexShrink: 0,
+                    }}
+                  />
+                  <span
+                    style={{
+                      minWidth: 0,
+                      color: isActive ? "#ffffff" : "#cfe2ff",
+                      fontSize: 12,
+                      fontWeight: 800,
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}
+                  >
+                    {item.name}
+                  </span>
+                  <span
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "flex-end",
+                      gap: 2,
+                      flexShrink: 0,
+                    }}
+                  >
+                    <span
+                      style={{
+                        color: isActive ? "#ffffff" : "#8feaff",
+                        fontSize: 12,
+                        fontWeight: 900,
+                      }}
+                    >
+                      {money(value)}
+                    </span>
+                    <span
+                      style={{
+                        color: isActive ? item.color : "#9fb6d6",
+                        fontSize: 10,
+                        fontWeight: 800,
+                      }}
+                    >
+                      {share}%
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
       </div>
     </div>
   );
