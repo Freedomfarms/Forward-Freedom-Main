@@ -81,13 +81,17 @@ model Account {
   type              String
   institution       String?
   status            String?
+  // Financial values are encrypted at rest (envelope encryption). The plaintext
+  // columns remain only to read/backfill legacy rows and are dropped in a
+  // follow-up migration once backfilled; new writes always set NULL there.
   balance           Decimal?      @db.Decimal(14, 2)
+  balanceCiphertext String?
   syncSource        String?
   plaidType         String?
   plaidSubtype      String?
-  plaidMask         String?
   lastSyncedAt      DateTime?
   metadata          Json?
+  metadataCiphertext String?
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
   user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -108,13 +112,17 @@ model Transaction {
   plaidTransactionId String?           @unique
   source             TransactionSource @default(MANUAL)
   syncSource         String?
-  merchant           String
+  // Financial/behavioural values are encrypted at rest. Plaintext columns are
+  // nullable only to read/backfill legacy rows and are dropped once backfilled.
+  merchant           String?
+  merchantCiphertext String?
   category           String?
-  amount             Decimal           @db.Decimal(14, 2)
+  categoryCiphertext String?
+  amount             Decimal?          @db.Decimal(14, 2)
+  amountCiphertext   String?
   postedAt           DateTime
   authorizedAt       DateTime?
   pending            Boolean           @default(false)
-  raw                Json?
   createdAt          DateTime          @default(now())
   updatedAt          DateTime          @updatedAt
   user               User              @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -235,7 +243,12 @@ model MetricSnapshot {
 model WorkspaceSnapshot {
   id                  String   @id @default(cuid())
   userId              String   @unique
-  state               Json
+  // The workspace blob holds manual financial data (budgets, income, reserves,
+  // manual accounts/transactions). It is encrypted at rest in stateCiphertext;
+  // the legacy plaintext `state` column is read-only for migration and set NULL
+  // on every new write.
+  state               Json?
+  stateCiphertext     String?
   source              String?
   lastClientUpdatedAt DateTime?
   createdAt           DateTime @default(now())
