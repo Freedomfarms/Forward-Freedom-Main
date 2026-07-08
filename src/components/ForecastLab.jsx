@@ -11,6 +11,7 @@ import { getCurrentBudgetPeriod, getBudgetPeriodAtOffset } from "../utils/date.j
 import { buildAreaPath, buildLinePath, wholeDollars } from "../utils/format.js";
 import { styles } from "../styles.js";
 import { HouseholdProfilesControl } from "./Common.jsx";
+import { SpendingBreakdownOrbit } from "./SpendingBreakdownOrbit.jsx";
 
 const CHART_W = 940;
 const CHART_H = 300;
@@ -348,18 +349,6 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
     monthlySeries.find((row) => row.month === selectedFocusMonth) ||
     monthlySeries.find((row) => row.month === latestMonthWithSpend) ||
     monthlySeries[0];
-  const peakMonth = monthlySeries.reduce(
-    (highestRow, row) => (row.spent > highestRow.spent ? row : highestRow),
-    monthlySeries[0] || {
-      month: budgetMonths[0],
-      spent: 0,
-      budget: null,
-      transactionCount: 0,
-      transactions: [],
-      deltaFromAverage: 0,
-      deltaFromBudget: null,
-    }
-  );
   const focusBudgetDelta = focusMonthData?.deltaFromBudget;
   const categoryShare = totalSpendForYear > 0 ? (selectedTotalSpend / totalSpendForYear) * 100 : 0;
   const getFocusMonthForCategory = (definition, year = selectedYear) => {
@@ -586,48 +575,25 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
                   letterSpacing: 1.1,
                   fontSize: 12,
                   fontWeight: 900,
+                  marginBottom: 16,
                 }}
               >
-                Spend Snapshot
+                Spending Breakdown
               </div>
-              <div
-                className="responsive-grid-2"
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                  gap: 12,
-                  marginTop: 16,
+              <SpendingBreakdownOrbit
+                categories={categoryCards}
+                activeCategoryId={selectedCategory.id}
+                onSelectCategory={(categoryId) => {
+                  const nextCategory = categoryDefinitions.find(
+                    (definition) => definition.id === categoryId
+                  );
+                  setActiveCategoryId(categoryId);
+                  setChartValueMonth(null);
+                  if (nextCategory) {
+                    setFocusMonth(getFocusMonthForCategory(nextCategory, selectedYear));
+                  }
                 }}
-              >
-                {[
-                  ["Year Total", wholeDollars(totalSpendForYear), "#00d8ff"],
-                  ["Tracked Categories", `${categoryCards.length - 1}`, "#8feaff"],
-                  ["12-Mo Avg", wholeDollars(averageMonthlySpend), "#00f59b"],
-                  ["Peak Month", `${peakMonth.month} ${wholeDollars(peakMonth.spent)}`, "#ffb65d"],
-                ].map(([label, value, color]) => (
-                  <div
-                    key={label}
-                    style={{
-                      borderRadius: 14,
-                      border: "1px solid rgba(0,136,255,.2)",
-                      background: "rgba(3,17,32,.68)",
-                      padding: 14,
-                    }}
-                  >
-                    <div
-                      style={{
-                        color: "#7ea6d8",
-                        fontSize: 11,
-                        textTransform: "uppercase",
-                        letterSpacing: 0.8,
-                      }}
-                    >
-                      {label}
-                    </div>
-                    <div style={{ color, fontWeight: 900, fontSize: 18, marginTop: 8 }}>{value}</div>
-                  </div>
-                ))}
-              </div>
+              />
             </div>
 
             <div style={{ ...styles.panel, padding: 16 }}>
@@ -716,68 +682,6 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
           </aside>
 
           <div style={{ display: "grid", gap: 20 }}>
-            <div
-              className="responsive-grid-4 forecast-metric-grid"
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-                gap: 16,
-              }}
-            >
-              {[
-                ["Annual Spend", wholeDollars(selectedTotalSpend), selectedCategory.color],
-                ["Average / Month", wholeDollars(averageMonthlySpend), "#8feaff"],
-                [
-                  "Peak Month",
-                  `${peakMonth.month} ${wholeDollars(peakMonth.spent)}`,
-                  peakMonth.spent >= averageMonthlySpend ? "#ffb65d" : "#00f59b",
-                ],
-                [
-                  focusMonthData ? `${focusMonthData.month} Review` : "Focused Month",
-                  focusMonthData ? wholeDollars(focusMonthData.spent) : wholeDollars(0),
-                  focusMonthData?.spent >= averageMonthlySpend ? "#ff7a45" : "#00f59b",
-                ],
-              ].map(([label, value, color]) => (
-                <div
-                  key={label}
-                  style={{
-                    ...styles.panel,
-                    padding: 18,
-                    border: "1px solid rgba(0,216,255,.18)",
-                  }}
-                >
-                  <div
-                    style={{
-                      color: "#7ea6d8",
-                      fontSize: 11,
-                      textTransform: "uppercase",
-                      letterSpacing: 0.8,
-                    }}
-                  >
-                    {label}
-                  </div>
-                  <div style={{ color, fontWeight: 900, fontSize: 24, marginTop: 10 }}>{value}</div>
-                  {label === "Annual Spend" ? (
-                    <div style={{ color: "#9fb0c9", fontSize: 12, marginTop: 8 }}>
-                      {selectedTransactions.length} reviewed transactions in {selectedYear}
-                    </div>
-                  ) : label === "Average / Month" ? (
-                    <div style={{ color: "#9fb0c9", fontSize: 12, marginTop: 8 }}>
-                      Rolling 12-month historical average
-                    </div>
-                  ) : label === "Peak Month" ? (
-                    <div style={{ color: "#9fb0c9", fontSize: 12, marginTop: 8 }}>
-                      Highest spend concentration in the selected year
-                    </div>
-                  ) : (
-                    <div style={{ color: "#9fb0c9", fontSize: 12, marginTop: 8 }}>
-                      {focusMonthData?.transactionCount || 0} transactions in focus
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-
             <div className="forecast-chart-panel" style={{ ...styles.panel, padding: "24px 24px 0" }}>
               <div
                 style={{
