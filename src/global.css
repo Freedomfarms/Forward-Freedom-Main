@@ -84,6 +84,32 @@ button {
   animation: budget-orbit-metric-flash 0.55s ease;
 }
 
+.net-worth-history-layout {
+  display: flex;
+  align-items: flex-start;
+  gap: 18px;
+  width: 100%;
+}
+
+.net-worth-history-value-list {
+  flex: 0 0 minmax(180px, 220px);
+  max-height: 280px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  scrollbar-width: thin;
+}
+
+.net-worth-history-chart-cell {
+  flex: 1;
+  min-width: 0;
+}
+
+.net-worth-history-value-item {
+  width: 100%;
+}
+
 .net-worth-orbit-layout {
   display: flex;
   align-items: flex-start;
@@ -651,6 +677,17 @@ button {
   }
 
   .net-worth-orbit-category-list {
+    width: 100%;
+  }
+
+  .net-worth-history-layout {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .net-worth-history-value-list {
+    flex: none;
+    max-height: 200px;
     width: 100%;
   }
 

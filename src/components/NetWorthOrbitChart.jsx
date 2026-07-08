@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { money, wholeDollars } from "../utils/format.js";
+import { wholeDollars } from "../utils/format.js";
 
 const SIZE = 240;
 const CENTER = SIZE / 2;
@@ -357,7 +357,7 @@ export function NetWorthOrbitChart({ allocations }) {
                         fontWeight: 900,
                       }}
                     >
-                      {money(value)}
+                      {wholeDollars(value)}
                     </span>
                     <span
                       style={{
