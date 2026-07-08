@@ -1757,6 +1757,8 @@ export function AccountsView({
                               <img
                                 src={asset.thumb}
                                 alt=""
+                                loading="lazy"
+                                decoding="async"
                                 style={{ width: 22, height: 22, borderRadius: 999, flexShrink: 0 }}
                               />
                             ) : null}
