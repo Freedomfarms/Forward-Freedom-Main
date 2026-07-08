@@ -1185,14 +1185,14 @@ function ForwardFreedomDashboard({
   };
 
   const syncLinkedPlaidAccounts = useCallback(
-    async (userId = activeUser.id, { silent = false } = {}) => {
+    async (userId = activeUser.id, { silent = false, live = false } = {}) => {
       if (!userId || !plaidStatus.configured) return null;
 
       if (!silent) setPlaidError("");
       setIsPlaidSyncing(true);
 
       try {
-        const payload = await syncPlaidUser(userId, { user: sessionControls?.user || null });
+        const payload = await syncPlaidUser(userId, { user: sessionControls?.user || null, live });
         applyPlaidSyncPayload(userId, payload);
         setPlaidError((currentError) =>
           silent && !isStalePlaidSyncError(currentError) ? currentError : ""
@@ -2062,7 +2062,7 @@ function ForwardFreedomDashboard({
     lastSyncAt: lastPlaidSyncAt,
     connectedItemCount: plaidItems.length,
     items: plaidItems,
-    onRefresh: () => syncLinkedPlaidAccounts(activeUser?.id),
+    onRefresh: () => syncLinkedPlaidAccounts(activeUser?.id, { live: true }),
   };
   const householdProfilesProps = {
     users,

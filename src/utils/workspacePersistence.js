@@ -1,15 +1,22 @@
-function sanitizePlaidItems(items) {
-  if (!Array.isArray(items)) return [];
+// Plaid-derived financial data (accounts, balances, transactions, and the Plaid
+// item list) is NEVER persisted in the workspace snapshot. It lives only in the
+// encrypted normalized tables, which are the single source of truth, and the
+// client reloads it from /api/plaid/sync. This prevents duplicate plaintext
+// copies of financial data from accumulating in the snapshot blob.
+function isPlaidDerivedAccount(account) {
+  return Boolean(
+    account &&
+      (account.syncSource === "Plaid" || account.plaidAccountId || account.plaidItemId)
+  );
+}
 
-  return items
-    .filter((item) => item && typeof item === "object" && item.itemId)
-    .map((item) => ({
-      itemId: String(item.itemId),
-      institutionName: item.institutionName || "Plaid Linked Institution",
-      accountIds: Array.isArray(item.accountIds) ? item.accountIds.filter(Boolean) : [],
-      lastSyncAt: item.lastSyncAt || null,
-      status: item.status === "requires_attention" ? "requires_attention" : "connected",
-    }));
+function isPlaidDerivedTransaction(transaction) {
+  return Boolean(
+    transaction &&
+      (transaction.source === "plaid" ||
+        transaction.syncSource === "Plaid" ||
+        transaction.plaidTransactionId)
+  );
 }
 
 const SENSITIVE_WORKSPACE_FIELDS = new Set([
@@ -44,15 +51,22 @@ export function sanitizeWorkspaceStateForPersistence(state) {
   const users = Array.isArray(state.users)
     ? state.users.map((user) => {
         const accounts = Array.isArray(user?.accounts) ? user.accounts : [];
-        const retainedTransactions = Array.isArray(user?.transactions)
-          ? user.transactions.map(sanitizeTransactionForPersistence)
-          : [];
+        const transactions = Array.isArray(user?.transactions) ? user.transactions : [];
+
+        // Keep only manual (non-Plaid) accounts/transactions. Plaid-derived
+        // financial data is loaded from the encrypted normalized tables.
+        const manualAccounts = accounts
+          .filter((account) => !isPlaidDerivedAccount(account))
+          .map(sanitizeAccountForPersistence);
+        const manualTransactions = transactions
+          .filter((transaction) => !isPlaidDerivedTransaction(transaction))
+          .map(sanitizeTransactionForPersistence);
 
         return {
           ...user,
-          accounts: accounts.map(sanitizeAccountForPersistence),
-          transactions: retainedTransactions,
-          plaidItems: sanitizePlaidItems(user?.plaidItems),
+          accounts: manualAccounts,
+          transactions: manualTransactions,
+          plaidItems: [],
           selectedAccount: user?.selectedAccount || null,
         };
       })

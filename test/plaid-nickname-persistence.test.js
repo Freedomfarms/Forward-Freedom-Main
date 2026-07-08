@@ -40,7 +40,7 @@ test("plaid nickname helpers preserve only valid plaid nickname preferences", ()
   });
 });
 
-test("workspace persistence retains plaid nickname preferences with plaid account summaries", () => {
+test("workspace persistence retains plaid nickname preferences without duplicating plaid accounts", () => {
   const sanitized = sanitizeWorkspaceStateForPersistence({
     users: [
       {
@@ -55,7 +55,6 @@ test("workspace persistence retains plaid nickname preferences with plaid accoun
             status: "Synced",
             syncSource: "Plaid",
             balance: 4200,
-            plaidMask: "1234",
           },
         ],
         transactions: [],
@@ -74,9 +73,11 @@ test("workspace persistence retains plaid nickname preferences with plaid accoun
     activeUserId: "user-1",
   });
 
-  assert.equal(sanitized.users[0].accounts.length, 1);
-  assert.equal(sanitized.users[0].accounts[0].nickname, "Bills Account");
-  assert.equal(Object.hasOwn(sanitized.users[0].accounts[0], "plaidMask"), false);
+  // The Plaid account itself (and its balance) is not persisted, but the
+  // nickname *preference* map is retained so nicknames survive re-sync.
+  assert.equal(sanitized.users[0].accounts.length, 0);
+  assert.deepEqual(sanitized.users[0].plaidItems, []);
+  assert.equal(JSON.stringify(sanitized).includes("4200"), false);
   assert.deepEqual(sanitized.users[0].plaidNicknames, {
     "acct-1": "Bills Account",
   });

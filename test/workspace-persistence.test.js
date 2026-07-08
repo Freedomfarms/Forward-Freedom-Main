@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { sanitizeWorkspaceStateForPersistence } from "../src/utils/workspacePersistence.js";
 
-test("workspace persistence preserves ledger data while stripping sensitive fields", () => {
+test("workspace persistence keeps manual ledger data but drops all Plaid-derived data", () => {
   const input = {
     users: [
       {
@@ -61,24 +61,23 @@ test("workspace persistence preserves ledger data while stripping sensitive fiel
   const sanitized = sanitizeWorkspaceStateForPersistence(input);
   const [user] = sanitized.users;
 
-  assert.equal(user.accounts.length, 3);
+  // Plaid-derived accounts are never persisted in the snapshot (single source of
+  // truth is the encrypted normalized tables). Only manual/demo accounts remain.
   assert.deepEqual(
     user.accounts.map((account) => account.name),
-    ["Cash", "Plaid Checking", "Demo Credit Card"]
+    ["Cash", "Demo Credit Card"]
   );
-  assert.equal(Object.hasOwn(user.accounts[1], "plaidMask"), false);
-  assert.equal(Object.hasOwn(user.accounts[1], "accessTokenCiphertext"), false);
-  assert.equal(user.transactions.length, 3);
-  assert.equal(user.transactions[1].id, "plaid-tx");
-  assert.equal(Object.hasOwn(user.transactions[1], "raw"), false);
+  // Plaid-derived transactions are dropped; manual/demo transactions remain.
+  assert.deepEqual(
+    user.transactions.map((transaction) => transaction.id),
+    ["manual-tx", "demo-tx"]
+  );
+  // The Plaid item list is not duplicated into the snapshot either.
+  assert.deepEqual(user.plaidItems, []);
+  // Sensitive fields never survive persistence.
+  const serialized = JSON.stringify(sanitized);
+  assert.equal(serialized.includes("encrypted-secret"), false);
+  assert.equal(serialized.includes("Sensitive Raw Payload"), false);
+  assert.equal(serialized.includes("plaidMask"), false);
   assert.equal(user.selectedAccount, "Plaid Checking");
-  assert.deepEqual(user.plaidItems, [
-    {
-      itemId: "item-1",
-      institutionName: "Chase",
-      accountIds: ["acc-1"],
-      lastSyncAt: "2026-05-28T00:00:00.000Z",
-      status: "requires_attention",
-    },
-  ]);
 });
