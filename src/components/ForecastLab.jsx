@@ -318,6 +318,13 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
     endYear: selectedYear,
     endMonthIndex: historicalAverageEndMonthIndex,
   });
+  const overallAverageMonthlySpend = buildHistorical12MonthAverage({
+    spendingTransactions,
+    category: categoryDefinitions[0],
+    budgetCategoryDefinitions,
+    endYear: selectedYear,
+    endMonthIndex: historicalAverageEndMonthIndex,
+  });
   const monthlyBudgets = budgetMonths.map((month) => getBudgetForMonth(selectedCategory, budgetRows, month));
   const hasBudgetContext = monthlyBudgets.some((value) => value !== null);
   const budgetInReviewPeriod = hasBudgetContext
@@ -350,7 +357,6 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
     monthlySeries.find((row) => row.month === latestMonthWithSpend) ||
     monthlySeries[0];
   const focusBudgetDelta = focusMonthData?.deltaFromBudget;
-  const categoryShare = totalSpendForYear > 0 ? (selectedTotalSpend / totalSpendForYear) * 100 : 0;
   const getFocusMonthForCategory = (definition, year = selectedYear) => {
     const monthlySpendForCategory = budgetMonths.map((month) => ({
       month,
@@ -465,10 +471,10 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
             justifyContent: "space-between",
             gap: 20,
             flexWrap: "wrap",
-            alignItems: "center",
+            alignItems: "stretch",
           }}
         >
-          <div>
+          <div style={{ flex: 1, minWidth: 260 }}>
             <div
               style={{
                 color: "#8feaff",
@@ -480,19 +486,42 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
             >
               Spending Command Surface
             </div>
-            <div style={{ color: "white", fontSize: 22, fontWeight: 900, marginTop: 2 }}>
-              {selectedCategory.name}
-            </div>
             <div
+              className="forecast-command-stats"
               style={{
-                color: "#9fb0c9",
-                marginTop: 4,
-                lineHeight: 1.4,
-                fontSize: 13,
+                display: "grid",
+                gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                gap: 12,
+                marginTop: 14,
               }}
             >
-              {selectedCategory.description} — drill in to review pacing, budget pressure, and top
-              merchants.
+              {[
+                ["Year Total", wholeDollars(totalSpendForYear), "#00d8ff"],
+                ["Tracked Categories", `${categoryCards.length - 1}`, "#8feaff"],
+                ["12-Mo Avg", wholeDollars(overallAverageMonthlySpend), "#00f59b"],
+              ].map(([label, value, color]) => (
+                <div
+                  key={label}
+                  style={{
+                    borderRadius: 14,
+                    border: "1px solid rgba(0,136,255,.2)",
+                    background: "rgba(3,17,32,.68)",
+                    padding: "12px 14px",
+                  }}
+                >
+                  <div
+                    style={{
+                      color: "#7ea6d8",
+                      fontSize: 11,
+                      textTransform: "uppercase",
+                      letterSpacing: 0.8,
+                    }}
+                  >
+                    {label}
+                  </div>
+                  <div style={{ color, fontWeight: 900, fontSize: 18, marginTop: 8 }}>{value}</div>
+                </div>
+              ))}
             </div>
           </div>
           <div
@@ -501,6 +530,7 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
               display: "grid",
               gap: 8,
               justifyItems: "end",
+              alignContent: "start",
             }}
           >
             <label style={{ display: "grid", gap: 7, width: "100%", maxWidth: 190 }}>
@@ -532,15 +562,6 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
                 ))}
               </select>
             </label>
-            <div
-              style={{
-                color: "#8feaff",
-                fontSize: 12,
-                fontWeight: 800,
-              }}
-            >
-              {categoryShare.toFixed(1)}% of {selectedYear} spend
-            </div>
           </div>
         </div>
       </div>

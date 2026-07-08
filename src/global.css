@@ -702,6 +702,7 @@ button {
   .responsive-grid-2,
   .ops-kpi-grid,
   .forecast-metric-grid,
+  .forecast-command-stats,
   .accounts-quick-start-grid,
   .app-main [style*="grid-template-columns: repeat(6"],
   .app-main [style*="grid-template-columns: repeat(5"],
