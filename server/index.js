@@ -18,6 +18,17 @@ const PORT = Number(process.env.PORT) || 3001;
 // Security headers for every response.
 app.use(helmet());
 
+// Plaid signs the webhook against the exact bytes it transmitted. This route
+// must be registered BEFORE the global JSON parser and use a raw body parser so
+// express.json() never re-serializes the payload — a re-serialized body is not
+// byte-identical to what Plaid sent and would make the SHA-256 signature check
+// in webhookVerification.js fail for every webhook (bug C-1).
+app.post(
+  "/api/plaid/webhook",
+  express.raw({ type: "*/*", limit: "256kb" }),
+  plaidWebhookHandler
+);
+
 app.use(express.json({ limit: "256kb" }));
 
 // Mirror the Vercel route modules in local Express so development and deployment
@@ -32,7 +43,6 @@ app.post("/api/plaid/link-token/create", plaidLinkTokenHandler);
 app.post("/api/plaid/exchange-public-token", plaidExchangePublicTokenHandler);
 app.get("/api/plaid/sync", plaidSyncHandler);
 app.delete("/api/plaid/user", plaidUserHandler);
-app.post("/api/plaid/webhook", plaidWebhookHandler);
 
 app.listen(PORT, () => {
   console.log(`Forward Freedom API server listening on http://localhost:${PORT}`);
