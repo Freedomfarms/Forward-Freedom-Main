@@ -62,6 +62,8 @@ export function AuthScreen({ initialMode = "login", initialForm = null, onBackHo
   const [agreedToLegal, setAgreedToLegal] = useState(false);
   const [activeDocument, setActiveDocument] = useState(null);
   const [formError, setFormError] = useState("");
+  const hasError = Boolean(formError || error);
+  const feedbackId = hasError ? "auth-feedback" : notice ? "auth-notice" : undefined;
 
   const updateForm = (field, value) => {
     setForm((current) => ({ ...current, [field]: value }));
@@ -257,6 +259,7 @@ export function AuthScreen({ initialMode = "login", initialForm = null, onBackHo
               <button
                 key={value}
                 type="button"
+                aria-pressed={mode === value}
                 onClick={() => {
                   setMode(value);
                   setFormError("");
@@ -313,11 +316,15 @@ export function AuthScreen({ initialMode = "login", initialForm = null, onBackHo
               <label style={{ display: "grid", gap: 7 }}>
                 <span style={{ color: "#8fb1d9", fontSize: 12, fontWeight: 800 }}>Full name</span>
                 <input
+                  id="auth-full-name"
                   type="text"
                   value={form.fullName}
                   onChange={(event) => updateForm("fullName", event.target.value)}
                   placeholder="Workspace owner"
                   autoComplete="name"
+                  required={mode === "register"}
+                  aria-invalid={hasError && !form.fullName.trim() ? "true" : undefined}
+                  aria-describedby={feedbackId}
                   style={buildInputStyle()}
                 />
               </label>
@@ -326,11 +333,15 @@ export function AuthScreen({ initialMode = "login", initialForm = null, onBackHo
             <label style={{ display: "grid", gap: 7 }}>
               <span style={{ color: "#8fb1d9", fontSize: 12, fontWeight: 800 }}>Email</span>
               <input
+                id="auth-email"
                 type="email"
                 value={form.email}
                 onChange={(event) => updateForm("email", event.target.value)}
                 placeholder="you@forwardfreedomfinancial.com"
                 autoComplete="email"
+                required
+                aria-invalid={hasError && !form.email.trim() ? "true" : undefined}
+                aria-describedby={feedbackId}
                 style={buildInputStyle()}
               />
             </label>
@@ -338,11 +349,15 @@ export function AuthScreen({ initialMode = "login", initialForm = null, onBackHo
             <label style={{ display: "grid", gap: 7 }}>
               <span style={{ color: "#8fb1d9", fontSize: 12, fontWeight: 800 }}>Password</span>
               <input
+                id="auth-password"
                 type="password"
                 value={form.password}
                 onChange={(event) => updateForm("password", event.target.value)}
                 placeholder={mode === "register" ? "Choose a secure password" : "Enter your password"}
                 autoComplete={mode === "register" ? "new-password" : "current-password"}
+                required
+                aria-invalid={hasError && !form.password ? "true" : undefined}
+                aria-describedby={feedbackId}
                 style={buildInputStyle()}
               />
             </label>
@@ -358,12 +373,16 @@ export function AuthScreen({ initialMode = "login", initialForm = null, onBackHo
               }}
             >
               <input
+                id="auth-legal-consent"
                 type="checkbox"
                 checked={agreedToLegal}
                 onChange={(event) => {
                   setAgreedToLegal(event.target.checked);
                   if (formError) setFormError("");
                 }}
+                required
+                aria-invalid={hasError && !agreedToLegal ? "true" : undefined}
+                aria-describedby={feedbackId}
                 style={{ marginTop: 3 }}
               />
               <span>
@@ -403,6 +422,8 @@ export function AuthScreen({ initialMode = "login", initialForm = null, onBackHo
 
             {formError || error ? (
               <div
+                id="auth-feedback"
+                role="alert"
                 style={{
                   borderRadius: 12,
                   border: "1px solid rgba(255,93,122,.24)",
@@ -418,6 +439,9 @@ export function AuthScreen({ initialMode = "login", initialForm = null, onBackHo
 
             {notice ? (
               <div
+                id="auth-notice"
+                role="status"
+                aria-live="polite"
                 style={{
                   borderRadius: 12,
                   border: "1px solid rgba(0,216,255,.22)",
