@@ -516,9 +516,13 @@ async function persistPlaidTransactions({
         continue;
       }
 
+      // The legacy select matters even though we don't read the result:
+      // Prisma RETURNINGs every schema column by default, which P2022s on
+      // *Ciphertext columns when the migration has not been applied yet.
       await prisma.transaction.update({
         where: { id: existingTransaction.id, userId },
         data: transactionFields,
+        ...(encryptionColumns ? {} : { select: LEGACY_TRANSACTION_ROW_SELECT }),
       });
       continue;
     }
@@ -530,6 +534,7 @@ async function persistPlaidTransactions({
         source: "PLAID",
         ...transactionFields,
       },
+      ...(encryptionColumns ? {} : { select: LEGACY_TRANSACTION_ROW_SELECT }),
     });
   }
 
