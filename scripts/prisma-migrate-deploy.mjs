@@ -41,10 +41,11 @@ const timeoutHandle = setTimeout(() => {
   timedOut = true;
   process.stderr.write(
     `[prisma-migrate-deploy] Timed out after ${MIGRATE_TIMEOUT_MS / 1000}s waiting for ` +
-      "`prisma migrate deploy` to finish. This usually means DATABASE_URL can't be reached " +
-      "(e.g. wrong Supabase connection string/port, or a pooler URL in transaction mode that " +
-      "Prisma Migrate can't use for schema changes). Killing the process so the build fails " +
-      "fast instead of hanging.\n"
+      "`prisma migrate deploy` to finish. This usually means the migrations database " +
+      "connection can't be reached — check that DIRECT_URL (or DATABASE_URL, if DIRECT_URL " +
+      "isn't set) is a *direct/session* connection, not a transaction-mode pooler URL " +
+      "(e.g. Supabase Supavisor port 6543), which Prisma Migrate can't use for schema " +
+      "changes. Killing the process so the build fails fast instead of hanging.\n"
   );
   child.kill("SIGKILL");
 }, MIGRATE_TIMEOUT_MS);
