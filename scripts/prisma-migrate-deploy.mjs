@@ -9,6 +9,14 @@ import { spawn } from "node:child_process";
 // It only runs when a real DATABASE_URL is configured. Local/preview builds
 // without a database (or using the generate-only placeholder) are skipped so
 // they keep working.
+//
+// IMPORTANT: this step is intentionally NON-BLOCKING. The runtime has a
+// schema-compatibility layer (server/db/schemaCapabilities.js) that tolerates
+// an un-migrated database, so a migration hiccup here (unreachable DB, pooler
+// misconfiguration, transient network error) must never fail the deploy —
+// blocking the deploy would keep older, potentially broken code in
+// production, which is strictly worse than deploying with a lagging
+// migration.
 
 const PLACEHOLDER_DATABASE_URL = "postgresql://postgres:password@localhost:5432/forward_freedom";
 const databaseUrl = (process.env.DATABASE_URL || "").trim();
@@ -22,12 +30,11 @@ if (!databaseUrl || databaseUrl === PLACEHOLDER_DATABASE_URL) {
 
 process.stdout.write("[prisma-migrate-deploy] Applying pending migrations…\n");
 
-// Without a hard timeout, an unreachable/misconfigured DATABASE_URL (e.g. a
-// Supabase direct connection that needs IPv6, or a transaction-mode pooler
-// URL that Prisma Migrate can't use) makes the TCP connect attempt hang
-// instead of failing, which stalls the whole Vercel build indefinitely until
-// someone cancels it manually. Fail fast instead so the build reports a
-// clear error.
+// Without a hard timeout, an unreachable/misconfigured migrations connection
+// (e.g. a Supabase transaction-mode pooler URL, which Prisma Migrate can't
+// use for schema changes — it needs the session pooler / direct connection
+// via DIRECT_URL) can hang on the advisory lock and stall the Vercel build
+// indefinitely until someone cancels it manually.
 const MIGRATE_TIMEOUT_MS = 90_000;
 
 const child = spawn("npx", ["prisma", "migrate", "deploy"], {
@@ -36,27 +43,49 @@ const child = spawn("npx", ["prisma", "migrate", "deploy"], {
   shell: process.platform === "win32",
 });
 
+function warnAndContinue(reason) {
+  process.stderr.write(
+    "\n" +
+      "╔════════════════════════════════════════════════════════════════════╗\n" +
+      "║ [prisma-migrate-deploy] WARNING: migrations were NOT applied.       ║\n" +
+      "╚════════════════════════════════════════════════════════════════════╝\n" +
+      `Reason: ${reason}\n` +
+      "The deploy will continue — the app tolerates an un-migrated database\n" +
+      "via its schema-compatibility layer — but the pending migrations still\n" +
+      "need to be applied for new columns/features (e.g. at-rest encryption)\n" +
+      "to activate.\n" +
+      "Checklist:\n" +
+      "  1. DIRECT_URL must be set to Supabase's *session pooler* or direct\n" +
+      "     connection string (host *.pooler.supabase.com, port 5432, no\n" +
+      "     pgbouncer param). Transaction-mode pooler URLs (port 6543) hang\n" +
+      "     or fail — Prisma Migrate cannot run schema changes through them.\n" +
+      "  2. DATABASE_URL (app runtime) can stay on the transaction pooler.\n" +
+      "  3. Alternatively run `npm run db:migrate` manually with DIRECT_URL.\n\n"
+  );
+  process.exit(0);
+}
+
 let timedOut = false;
 const timeoutHandle = setTimeout(() => {
   timedOut = true;
-  process.stderr.write(
-    `[prisma-migrate-deploy] Timed out after ${MIGRATE_TIMEOUT_MS / 1000}s waiting for ` +
-      "`prisma migrate deploy` to finish. This usually means the migrations database " +
-      "connection can't be reached — check that DIRECT_URL (or DATABASE_URL, if DIRECT_URL " +
-      "isn't set) is a *direct/session* connection, not a transaction-mode pooler URL " +
-      "(e.g. Supabase Supavisor port 6543), which Prisma Migrate can't use for schema " +
-      "changes. Killing the process so the build fails fast instead of hanging.\n"
-  );
   child.kill("SIGKILL");
 }, MIGRATE_TIMEOUT_MS);
 
 child.on("exit", (code) => {
   clearTimeout(timeoutHandle);
-  process.exit(timedOut ? 1 : code ?? 1);
+  if (timedOut) {
+    warnAndContinue(
+      `timed out after ${MIGRATE_TIMEOUT_MS / 1000}s — the migrations connection is unreachable or blocked (typical of a transaction-mode pooler URL).`
+    );
+  } else if (code !== 0) {
+    warnAndContinue(`\`prisma migrate deploy\` exited with code ${code}.`);
+  } else {
+    process.stdout.write("[prisma-migrate-deploy] Migrations applied successfully.\n");
+    process.exit(0);
+  }
 });
 
 child.on("error", (error) => {
   clearTimeout(timeoutHandle);
-  process.stderr.write(`${error}\n`);
-  process.exit(1);
+  warnAndContinue(`failed to start \`prisma migrate deploy\`: ${error}`);
 });
