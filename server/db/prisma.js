@@ -1,7 +1,11 @@
 import prismaClientPackage from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 
-const { PrismaClient } = prismaClientPackage;
+const { PrismaClient, Prisma } = prismaClientPackage;
+
+// Re-exported so writers can set JSON columns to SQL NULL (Prisma.DbNull) when
+// migrating plaintext values to their encrypted counterparts.
+export { Prisma };
 
 const globalScope = globalThis;
 

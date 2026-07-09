@@ -12,12 +12,20 @@ import {
 } from "../plaidClient.js";
 import { detectDuplicatePlaidItem } from "./duplicateItemDetection.js";
 import { getPlaidRequestId, logPlaidServerEvent } from "./logging.js";
-import { getPrismaClient, isDatabaseConfigured } from "../db/prisma.js";
+import { getPrismaClient, isDatabaseConfigured, Prisma } from "../db/prisma.js";
 import {
   decryptSensitiveValue,
   encryptSensitiveValue,
   isSensitiveEncryptionConfigured,
 } from "../security/encryption.js";
+import {
+  decrypt as decryptField,
+  decryptJson,
+  decryptNumber,
+  encrypt as encryptField,
+  encryptJson,
+  encryptNumber,
+} from "../security/envelope.js";
 import { authenticateRequest, authenticateVerifiedRequest, AuthError } from "../auth/verifyAuth.js";
 
 function buildErrorResponse(message, extra = {}) {
@@ -148,7 +156,15 @@ function formatAppDate(value) {
 
 function serializeStoredAccount(accountRecord) {
   const metadata =
-    accountRecord?.metadata && typeof accountRecord.metadata === "object" ? accountRecord.metadata : {};
+    accountRecord.metadataCiphertext != null
+      ? decryptJson(accountRecord.metadataCiphertext) || {}
+      : accountRecord?.metadata && typeof accountRecord.metadata === "object"
+        ? accountRecord.metadata
+        : {};
+  const balance =
+    accountRecord.balanceCiphertext != null
+      ? decryptNumber(accountRecord.balanceCiphertext)
+      : Number(accountRecord.balance || 0);
 
   return {
     id: accountRecord.plaidAccountId ? `plaid-${accountRecord.plaidAccountId}` : accountRecord.id,
@@ -156,7 +172,7 @@ function serializeStoredAccount(accountRecord) {
     type: accountRecord.type,
     institution: accountRecord.institution || "Plaid",
     status: accountRecord.status || "Synced",
-    balance: Number(accountRecord.balance || 0),
+    balance: Number(balance || 0),
     syncSource: accountRecord.syncSource || "Plaid",
     plaidAccountId: accountRecord.plaidAccountId || "",
     plaidItemId: metadata.plaidItemId || "",
@@ -172,6 +188,18 @@ function serializeStoredAccount(accountRecord) {
 function serializeStoredTransaction(transactionRecord) {
   const postedDate = formatAppDate(transactionRecord.postedAt);
   const authorizedDate = formatAppDate(transactionRecord.authorizedAt);
+  const merchant =
+    transactionRecord.merchantCiphertext != null
+      ? decryptField(transactionRecord.merchantCiphertext)
+      : transactionRecord.merchant;
+  const category =
+    transactionRecord.categoryCiphertext != null
+      ? decryptField(transactionRecord.categoryCiphertext)
+      : transactionRecord.category;
+  const amount =
+    transactionRecord.amountCiphertext != null
+      ? decryptNumber(transactionRecord.amountCiphertext)
+      : Number(transactionRecord.amount || 0);
   return {
     id: transactionRecord.plaidTransactionId
       ? `plaid-${transactionRecord.plaidTransactionId}`
@@ -182,10 +210,10 @@ function serializeStoredTransaction(transactionRecord) {
     date: postedDate,
     plaidPostedDate: postedDate,
     plaidAuthorizedDate: authorizedDate,
-    merchant: transactionRecord.merchant || "Plaid Transaction",
-    category: transactionRecord.category || "Other",
+    merchant: merchant || "Plaid Transaction",
+    category: category || "Other",
     account: transactionRecord.account?.name || "Plaid Account",
-    amount: Number(transactionRecord.amount || 0),
+    amount: Number(amount || 0),
     pending: Boolean(transactionRecord.pending),
   };
 }
@@ -294,18 +322,21 @@ async function persistPlaidAccounts({
       type: account.type,
       institution: account.institution,
       status: account.status,
-      balance: String(Number(account.balance || 0).toFixed(2)),
+      // Balance is encrypted at rest; the plaintext column is left NULL.
+      balance: null,
+      balanceCiphertext: encryptNumber(Number(account.balance || 0)),
       syncSource: account.syncSource,
       plaidType: account.plaidType || null,
       plaidSubtype: account.plaidSubtype || null,
-      plaidMask: null,
       lastSyncedAt: account.plaidLastSyncAt ? new Date(account.plaidLastSyncAt) : new Date(),
-      metadata: {
+      // Loan/liability details are encrypted at rest; plaintext column NULL.
+      metadata: Prisma.DbNull,
+      metadataCiphertext: encryptJson({
         loanCategory: account.loanCategory || "",
         interestRate: account.interestRate || "",
         monthlyPayment: account.monthlyPayment || "",
         plaidItemId: account.plaidItemId || "",
-      },
+      }),
     };
     const existingAccount = await prisma.account.findUnique({
       where: { plaidAccountId: account.plaidAccountId },
@@ -370,13 +401,16 @@ async function persistPlaidTransactions({
       plaidItemRecordId,
       accountId: accountRecord?.id || null,
       syncSource: "Plaid",
-      merchant: mappedTransaction.merchant,
-      category: mappedTransaction.category,
-      amount: String(Number(mappedTransaction.amount || 0).toFixed(2)),
+      // Merchant, category and amount are encrypted at rest; plaintext NULL.
+      merchant: null,
+      merchantCiphertext: encryptField(mappedTransaction.merchant || ""),
+      category: null,
+      categoryCiphertext: encryptField(mappedTransaction.category || ""),
+      amount: null,
+      amountCiphertext: encryptNumber(Number(mappedTransaction.amount || 0)),
       postedAt: toPlaidDate(transaction.date),
       authorizedAt: toPlaidDate(transaction.authorized_date),
       pending: Boolean(transaction.pending),
-      raw: null,
     };
     const existingTransaction = await prisma.transaction.findUnique({
       where: { plaidTransactionId: transaction.transaction_id },
@@ -563,7 +597,7 @@ async function syncPlaidWorkspace({ prisma, plaidClient, userId, workspaceUserId
         itemId: item.itemId,
         requestId: getPlaidRequestId(accountsResponse),
         institutionId: item.institutionId,
-        accountIds: (accountsResponse.data.accounts || []).map((account) => account.account_id),
+        accountCount: (accountsResponse.data.accounts || []).length,
       });
     } catch (error) {
       const details = getPlaidErrorDetails(error);
@@ -684,7 +718,7 @@ async function syncPlaidWorkspace({ prisma, plaidClient, userId, workspaceUserId
     logPlaidServerEvent("info", "plaid_item_sync_complete", {
       itemId: item.itemId,
       institutionId: item.institutionId,
-      accountIds: mappedAccounts.map((account) => account.plaidAccountId).filter(Boolean),
+      accountCount: mappedAccounts.length,
     });
   }
 
@@ -907,7 +941,7 @@ export async function handleExchangePlaidPublicToken(request, response) {
           institutionName: linkMetadata.institution.name,
           linkSessionId: linkMetadata.link_session_id,
           requestId: linkMetadata.request_id,
-          accountIds: linkMetadata.accounts.map((account) => account.id).filter(Boolean),
+          accountCount: linkMetadata.accounts.length,
           reason: duplicateDetection.reason,
         });
         return response.status(409).json(
@@ -1015,13 +1049,45 @@ export async function handleExchangePlaidPublicToken(request, response) {
   }
 }
 
+function isTruthyFlag(value) {
+  const raw = Array.isArray(value) ? value[0] : value;
+  const normalized = String(raw ?? "").trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "live";
+}
+
 export async function handleSyncPlaidWorkspace(request, response) {
   try {
     const decodedToken = await authenticateRequest(request);
+    const workspaceUserId = normalizeWorkspaceUserId(request.query?.workspaceUserId);
+    const wantsLiveRefresh = isTruthyFlag(request.query?.refresh);
+
+    // Default (load/hydration): read already-synced, encrypted financial data
+    // straight from the normalized tables. This is the single source of truth
+    // and makes NO Plaid API calls, so it can run on every login without cost.
+    if (!wantsLiveRefresh) {
+      if (!isSensitiveEncryptionConfigured()) {
+        return response
+          .status(503)
+          .json(
+            buildErrorResponse(
+              "Encryption is not configured, so stored financial data cannot be decrypted."
+            )
+          );
+      }
+      const prisma = getPrismaOrThrow();
+      await ensureAuthenticatedUserRecord(prisma, decodedToken);
+      const storedPayload = await buildWorkspaceSyncPayload(
+        prisma,
+        decodedToken.uid,
+        workspaceUserId
+      );
+      return response.status(200).json(storedPayload);
+    }
+
+    // Explicit refresh (Accounts "Refresh" button / webhook): pull from Plaid.
     const { prisma, plaidClient } = assertPlaidRuntimeReady();
     await ensureAuthenticatedUserRecord(prisma, decodedToken);
 
-    const workspaceUserId = normalizeWorkspaceUserId(request.query?.workspaceUserId);
     const syncPayload = await syncPlaidWorkspace({
       prisma,
       plaidClient,

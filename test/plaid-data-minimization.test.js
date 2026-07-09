@@ -110,13 +110,21 @@ test("Mapped Plaid accounts keep payment details but omit account masks", () => 
   assert.equal(mappedAccounts[0].monthlyPayment, "247.13");
 });
 
-test("Plaid handlers do not keep extra mask or raw payload access", () => {
+test("Plaid handlers drop mask/raw columns and encrypt financial fields at rest", () => {
   const handlerSource = fs.readFileSync(new URL("../server/plaid/handlers.js", import.meta.url), "utf8");
 
+  // No holdings product and no mask/raw payload storage at all (columns dropped).
   assert.equal(handlerSource.includes("investmentsHoldingsGet"), false);
-  assert.equal(handlerSource.includes("plaidMask: accountRecord.plaidMask"), false);
-  assert.equal(handlerSource.includes("plaidMask: account.plaidMask"), false);
-  assert.equal(handlerSource.includes("raw: transaction"), false);
-  assert.equal(handlerSource.includes("plaidMask: null"), true);
-  assert.equal(handlerSource.includes("raw: null"), true);
+  assert.equal(handlerSource.includes("plaidMask"), false);
+  assert.equal(handlerSource.includes("raw: "), false);
+
+  // Financial values are written only as ciphertext; plaintext columns are NULL.
+  assert.equal(handlerSource.includes("balanceCiphertext: encryptNumber"), true);
+  assert.equal(handlerSource.includes("amountCiphertext: encryptNumber"), true);
+  assert.equal(handlerSource.includes("merchantCiphertext: encryptField"), true);
+  assert.equal(handlerSource.includes("categoryCiphertext: encryptField"), true);
+  assert.equal(handlerSource.includes("metadataCiphertext: encryptJson"), true);
+  assert.equal(handlerSource.includes("balance: null"), true);
+  assert.equal(handlerSource.includes("amount: null"), true);
+  assert.equal(handlerSource.includes("merchant: null"), true);
 });

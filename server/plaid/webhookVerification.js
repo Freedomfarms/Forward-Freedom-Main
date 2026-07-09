@@ -66,26 +66,42 @@ export async function verifyPlaidWebhookRequest(request, rawBody) {
 }
 
 export async function readRawRequestBody(request) {
-  if (typeof request.body === "string") {
-    return request.body;
-  }
-
+  // Plaid signs the exact bytes it transmitted, so we must return those bytes
+  // verbatim. We deliberately do NOT fall back to JSON.stringify(request.body):
+  // once a body parser has turned the payload into a plain object the original
+  // byte order/whitespace is lost, and a re-serialized body will never match
+  // the signed request_body_sha256 (bug C-1). In that case we return an empty
+  // string so verification fails closed rather than silently accepting an
+  // unverifiable webhook.
   if (Buffer.isBuffer(request.body)) {
     return request.body.toString("utf8");
   }
 
-  if (request.body && typeof request.body === "object") {
-    return JSON.stringify(request.body);
+  if (typeof request.body === "string") {
+    return request.body;
   }
 
-  const chunks = [];
-  for await (const chunk of request) {
-    chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+  // Some runtimes stash the untouched payload on request.rawBody.
+  if (Buffer.isBuffer(request.rawBody)) {
+    return request.rawBody.toString("utf8");
   }
 
-  if (!chunks.length) {
-    return "";
+  if (typeof request.rawBody === "string") {
+    return request.rawBody;
   }
 
-  return Buffer.concat(chunks).toString("utf8");
+  // Body has not been parsed yet (e.g. Vercel with bodyParser disabled): read
+  // the raw stream directly.
+  if (request.body == null && typeof request[Symbol.asyncIterator] === "function") {
+    const chunks = [];
+    for await (const chunk of request) {
+      chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+    }
+
+    if (chunks.length) {
+      return Buffer.concat(chunks).toString("utf8");
+    }
+  }
+
+  return "";
 }

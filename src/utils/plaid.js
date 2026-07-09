@@ -113,9 +113,16 @@ export async function exchangePlaidPublicToken(
 }
 
 export async function syncPlaidUser(workspaceUserId, options = {}) {
-  const search = workspaceUserId ? `?workspaceUserId=${encodeURIComponent(workspaceUserId)}` : "";
+  // `live: true` triggers a real Plaid pull (Refresh button / after linking).
+  // The default reads already-synced encrypted data from the database, so it is
+  // safe to call on every login without incurring Plaid API cost.
+  const { live = false, ...requestOptions } = options;
+  const params = new URLSearchParams();
+  if (workspaceUserId) params.set("workspaceUserId", workspaceUserId);
+  if (live) params.set("refresh", "1");
+  const search = params.toString() ? `?${params.toString()}` : "";
   const response = await fetch(`/api/plaid/sync${search}`, {
-    headers: await buildAuthenticatedHeaders({}, options),
+    headers: await buildAuthenticatedHeaders({}, requestOptions),
   });
   return parseApiResponse(response);
 }
