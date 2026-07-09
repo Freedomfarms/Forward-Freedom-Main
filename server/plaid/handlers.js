@@ -14,6 +14,11 @@ import { detectDuplicatePlaidItem } from "./duplicateItemDetection.js";
 import { getPlaidRequestId, logPlaidServerEvent } from "./logging.js";
 import { getPrismaClient, isDatabaseConfigured, Prisma } from "../db/prisma.js";
 import {
+  getSchemaCapabilities,
+  isMissingEncryptionColumnError,
+  resetSchemaCapabilitiesCache,
+} from "../db/schemaCapabilities.js";
+import {
   decryptSensitiveValue,
   encryptSensitiveValue,
   isSensitiveEncryptionConfigured,
@@ -27,6 +32,54 @@ import {
   encryptNumber,
 } from "../security/envelope.js";
 import { authenticateRequest, authenticateVerifiedRequest, AuthError } from "../auth/verifyAuth.js";
+
+// Pre-encryption column sets. Prisma's generated client always SELECTs every
+// schema field (including *Ciphertext), which fails with P2022 on a database
+// that has not yet received the privacy migration. These selects keep reads
+// working until migrate deploy runs.
+const LEGACY_ACCOUNT_SELECT = {
+  id: true,
+  userId: true,
+  workspaceUserId: true,
+  plaidItemRecordId: true,
+  plaidAccountId: true,
+  name: true,
+  type: true,
+  institution: true,
+  status: true,
+  balance: true,
+  syncSource: true,
+  plaidType: true,
+  plaidSubtype: true,
+  lastSyncedAt: true,
+  metadata: true,
+  createdAt: true,
+  updatedAt: true,
+};
+
+const LEGACY_TRANSACTION_ROW_SELECT = {
+  id: true,
+  userId: true,
+  workspaceUserId: true,
+  accountId: true,
+  plaidItemRecordId: true,
+  plaidTransactionId: true,
+  source: true,
+  syncSource: true,
+  merchant: true,
+  category: true,
+  amount: true,
+  postedAt: true,
+  authorizedAt: true,
+  pending: true,
+  createdAt: true,
+  updatedAt: true,
+};
+
+const LEGACY_TRANSACTION_SELECT = {
+  ...LEGACY_TRANSACTION_ROW_SELECT,
+  account: { select: { name: true } },
+};
 
 function buildErrorResponse(message, extra = {}) {
   return {
@@ -311,35 +364,55 @@ async function persistPlaidAccounts({
   workspaceUserId,
   plaidItemRecordId,
   mappedAccounts,
+  encryptionColumns = true,
 }) {
   const accountLookup = new Map();
 
   for (const account of mappedAccounts) {
-    const accountFields = {
-      workspaceUserId,
-      plaidItemRecordId,
-      name: account.name,
-      type: account.type,
-      institution: account.institution,
-      status: account.status,
-      // Balance is encrypted at rest; the plaintext column is left NULL.
-      balance: null,
-      balanceCiphertext: encryptNumber(Number(account.balance || 0)),
-      syncSource: account.syncSource,
-      plaidType: account.plaidType || null,
-      plaidSubtype: account.plaidSubtype || null,
-      lastSyncedAt: account.plaidLastSyncAt ? new Date(account.plaidLastSyncAt) : new Date(),
-      // Loan/liability details are encrypted at rest; plaintext column NULL.
-      metadata: Prisma.DbNull,
-      metadataCiphertext: encryptJson({
-        loanCategory: account.loanCategory || "",
-        interestRate: account.interestRate || "",
-        monthlyPayment: account.monthlyPayment || "",
-        plaidItemId: account.plaidItemId || "",
-      }),
+    const metadataPayload = {
+      loanCategory: account.loanCategory || "",
+      interestRate: account.interestRate || "",
+      monthlyPayment: account.monthlyPayment || "",
+      plaidItemId: account.plaidItemId || "",
     };
+    const accountFields = encryptionColumns
+      ? {
+          workspaceUserId,
+          plaidItemRecordId,
+          name: account.name,
+          type: account.type,
+          institution: account.institution,
+          status: account.status,
+          // Balance is encrypted at rest; the plaintext column is left NULL.
+          balance: null,
+          balanceCiphertext: encryptNumber(Number(account.balance || 0)),
+          syncSource: account.syncSource,
+          plaidType: account.plaidType || null,
+          plaidSubtype: account.plaidSubtype || null,
+          lastSyncedAt: account.plaidLastSyncAt ? new Date(account.plaidLastSyncAt) : new Date(),
+          // Loan/liability details are encrypted at rest; plaintext column NULL.
+          metadata: Prisma.DbNull,
+          metadataCiphertext: encryptJson(metadataPayload),
+        }
+      : {
+          // Pre-migration fallback: write plaintext only so the app keeps
+          // working until the encryption migration is applied.
+          workspaceUserId,
+          plaidItemRecordId,
+          name: account.name,
+          type: account.type,
+          institution: account.institution,
+          status: account.status,
+          balance: String(Number(account.balance || 0).toFixed(2)),
+          syncSource: account.syncSource,
+          plaidType: account.plaidType || null,
+          plaidSubtype: account.plaidSubtype || null,
+          lastSyncedAt: account.plaidLastSyncAt ? new Date(account.plaidLastSyncAt) : new Date(),
+          metadata: metadataPayload,
+        };
     const existingAccount = await prisma.account.findUnique({
       where: { plaidAccountId: account.plaidAccountId },
+      ...(encryptionColumns ? {} : { select: LEGACY_ACCOUNT_SELECT }),
     });
 
     let accountRecord;
@@ -356,6 +429,7 @@ async function persistPlaidAccounts({
       accountRecord = await prisma.account.update({
         where: { id: existingAccount.id, userId },
         data: accountFields,
+        ...(encryptionColumns ? {} : { select: LEGACY_ACCOUNT_SELECT }),
       });
     } else {
       accountRecord = await prisma.account.create({
@@ -364,6 +438,7 @@ async function persistPlaidAccounts({
           plaidAccountId: account.plaidAccountId,
           ...accountFields,
         },
+        ...(encryptionColumns ? {} : { select: LEGACY_ACCOUNT_SELECT }),
       });
     }
 
@@ -382,6 +457,7 @@ async function persistPlaidTransactions({
   removedTransactions,
   mappedAccounts,
   accountLookup,
+  encryptionColumns = true,
 }) {
   const mappedTransactionsById = new Map(
     mapPlaidTransactionsToAppTransactions(
@@ -396,24 +472,38 @@ async function persistPlaidTransactions({
 
     if (!mappedTransaction) continue;
 
-    const transactionFields = {
-      workspaceUserId,
-      plaidItemRecordId,
-      accountId: accountRecord?.id || null,
-      syncSource: "Plaid",
-      // Merchant, category and amount are encrypted at rest; plaintext NULL.
-      merchant: null,
-      merchantCiphertext: encryptField(mappedTransaction.merchant || ""),
-      category: null,
-      categoryCiphertext: encryptField(mappedTransaction.category || ""),
-      amount: null,
-      amountCiphertext: encryptNumber(Number(mappedTransaction.amount || 0)),
-      postedAt: toPlaidDate(transaction.date),
-      authorizedAt: toPlaidDate(transaction.authorized_date),
-      pending: Boolean(transaction.pending),
-    };
+    const transactionFields = encryptionColumns
+      ? {
+          workspaceUserId,
+          plaidItemRecordId,
+          accountId: accountRecord?.id || null,
+          syncSource: "Plaid",
+          // Merchant, category and amount are encrypted at rest; plaintext NULL.
+          merchant: null,
+          merchantCiphertext: encryptField(mappedTransaction.merchant || ""),
+          category: null,
+          categoryCiphertext: encryptField(mappedTransaction.category || ""),
+          amount: null,
+          amountCiphertext: encryptNumber(Number(mappedTransaction.amount || 0)),
+          postedAt: toPlaidDate(transaction.date),
+          authorizedAt: toPlaidDate(transaction.authorized_date),
+          pending: Boolean(transaction.pending),
+        }
+      : {
+          workspaceUserId,
+          plaidItemRecordId,
+          accountId: accountRecord?.id || null,
+          syncSource: "Plaid",
+          merchant: mappedTransaction.merchant || "",
+          category: mappedTransaction.category || null,
+          amount: String(Number(mappedTransaction.amount || 0).toFixed(2)),
+          postedAt: toPlaidDate(transaction.date),
+          authorizedAt: toPlaidDate(transaction.authorized_date),
+          pending: Boolean(transaction.pending),
+        };
     const existingTransaction = await prisma.transaction.findUnique({
       where: { plaidTransactionId: transaction.transaction_id },
+      ...(encryptionColumns ? {} : { select: LEGACY_TRANSACTION_ROW_SELECT }),
     });
 
     if (existingTransaction) {
@@ -496,7 +586,7 @@ async function syncTransactionsForItem(plaidClient, accessToken, cursor, { itemI
   };
 }
 
-async function buildWorkspaceSyncPayload(prisma, userId, workspaceUserId) {
+async function buildWorkspaceSyncPayload(prisma, userId, workspaceUserId, { encryptionColumns = true } = {}) {
   const [plaidItems, accounts, transactions] = await Promise.all([
     prisma.plaidItem.findMany({
       where: {
@@ -516,6 +606,7 @@ async function buildWorkspaceSyncPayload(prisma, userId, workspaceUserId) {
       orderBy: {
         createdAt: "asc",
       },
+      ...(encryptionColumns ? {} : { select: LEGACY_ACCOUNT_SELECT }),
     }),
     prisma.transaction.findMany({
       where: {
@@ -523,9 +614,13 @@ async function buildWorkspaceSyncPayload(prisma, userId, workspaceUserId) {
         workspaceUserId,
         source: "PLAID",
       },
-      include: {
-        account: true,
-      },
+      ...(encryptionColumns
+        ? {
+            include: {
+              account: true,
+            },
+          }
+        : { select: LEGACY_TRANSACTION_SELECT }),
       orderBy: {
         postedAt: "desc",
       },
@@ -555,6 +650,9 @@ async function buildWorkspaceSyncPayload(prisma, userId, workspaceUserId) {
 }
 
 async function syncPlaidWorkspace({ prisma, plaidClient, userId, workspaceUserId }) {
+  const capabilities = await getSchemaCapabilities(prisma);
+  const encryptionColumns = capabilities.encryptionColumns;
+
   const items = await prisma.plaidItem.findMany({
     where: {
       userId,
@@ -694,6 +792,7 @@ async function syncPlaidWorkspace({ prisma, plaidClient, userId, workspaceUserId
       workspaceUserId,
       plaidItemRecordId: item.id,
       mappedAccounts,
+      encryptionColumns,
     });
     await persistPlaidTransactions({
       prisma,
@@ -704,6 +803,7 @@ async function syncPlaidWorkspace({ prisma, plaidClient, userId, workspaceUserId
       removedTransactions,
       mappedAccounts,
       accountLookup,
+      encryptionColumns,
     });
 
     await prisma.plaidItem.update({
@@ -722,7 +822,7 @@ async function syncPlaidWorkspace({ prisma, plaidClient, userId, workspaceUserId
     });
   }
 
-  return buildWorkspaceSyncPayload(prisma, userId, workspaceUserId);
+  return buildWorkspaceSyncPayload(prisma, userId, workspaceUserId, { encryptionColumns });
 }
 
 export async function syncPlaidWorkspaceForWebhookItem(itemId) {
@@ -1076,11 +1176,29 @@ export async function handleSyncPlaidWorkspace(request, response) {
       }
       const prisma = getPrismaOrThrow();
       await ensureAuthenticatedUserRecord(prisma, decodedToken);
-      const storedPayload = await buildWorkspaceSyncPayload(
-        prisma,
-        decodedToken.uid,
-        workspaceUserId
-      );
+      const capabilities = await getSchemaCapabilities(prisma);
+      let storedPayload;
+      try {
+        storedPayload = await buildWorkspaceSyncPayload(
+          prisma,
+          decodedToken.uid,
+          workspaceUserId,
+          { encryptionColumns: capabilities.encryptionColumns }
+        );
+      } catch (error) {
+        if (isMissingEncryptionColumnError(error) && capabilities.encryptionColumns) {
+          resetSchemaCapabilitiesCache();
+          const refreshed = await getSchemaCapabilities(prisma);
+          storedPayload = await buildWorkspaceSyncPayload(
+            prisma,
+            decodedToken.uid,
+            workspaceUserId,
+            { encryptionColumns: refreshed.encryptionColumns }
+          );
+        } else {
+          throw error;
+        }
+      }
       return response.status(200).json(storedPayload);
     }
 

@@ -106,9 +106,13 @@ Users never need to reconnect Plaid.
 
 ### Migrating existing plaintext (online, no data loss)
 
-1. Deploy this code (new writes are encrypted; reads prefer ciphertext and fall
+1. **Apply the database migration** with `npm run db:migrate`
+   (`prisma migrate deploy`). This is required before deploying the code — the
+   generated Prisma client references the new ciphertext columns, so an
+   un-migrated database causes every workspace/Plaid read and write to fail.
+2. Deploy this code (new writes are encrypted; reads prefer ciphertext and fall
    back to any remaining plaintext).
-2. Run `node scripts/encrypt-backfill.mjs` to encrypt legacy rows and NULL the
+3. Run `node scripts/encrypt-backfill.mjs` to encrypt legacy rows and NULL the
    plaintext columns.
 3. After backfill, run the follow-up migration that drops the now-empty
    plaintext columns (`balance`, `amount`, `merchant`, `category`, `metadata`,
