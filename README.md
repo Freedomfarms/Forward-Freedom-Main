@@ -112,6 +112,7 @@ The repo now includes starter Vercel-compatible routes:
 
 - `GET /api/health`
 - `GET /api/me`
+- `POST /api/me`
 - `GET /api/workspace`
 - `PUT /api/workspace`
 - `GET /api/plaid/status`
@@ -121,10 +122,39 @@ The repo now includes starter Vercel-compatible routes:
 - `DELETE /api/plaid/user`
 
 `/api/me` expects a Firebase bearer token in the `Authorization` header and will upsert the user
-into Postgres when `DATABASE_URL` is configured.
+into Postgres when `DATABASE_URL` is configured. `POST /api/me` records legal consent, taking
+`{ "legalConsent": { "version": "<LEGAL_CONSENT_VERSION>", "method": "email-signup" } }`; the
+acceptance timestamp is stamped with the server clock, the latest version is stored on `User`
+(`legalConsentAt`/`legalConsentVersion`), and every acceptance is appended to the `LegalConsentEvent`
+audit trail. `GET /api/me` returns `legalConsentAt`/`legalConsentVersion` so the client can detect a
+version bump and re-prompt.
+
+### Server-side legal-consent enforcement
+
+Sensitive routes require current legal consent server-side, not just the client checkbox:
+`PUT /api/workspace`, `POST /api/plaid/link-token/create`, `POST /api/plaid/exchange-public-token`,
+and the live-refresh (`?refresh=1`) path of `GET /api/plaid/sync`. When consent is missing or the
+accepted version is older than the deployed `LEGAL_CONSENT_VERSION`, the route responds with
+`403 { "requiresLegalConsent": true, "requiredVersion": "<current>" }` and the client routes the user
+back into the consent flow. Enforcement fails open only when the consent columns do not exist yet
+(un-migrated database), consistent with the schema-capability tolerance used elsewhere.
+
+### Workspace save concurrency (optimistic control)
+
+`PUT /api/workspace` accepts an optional `baseSnapshotUpdatedAt` — the server `updatedAt` of the
+snapshot the client's state is based on (`null` when the client believes none exists). The write is
+applied atomically with a conditional `updateMany` (or a unique-constrained `create` guarded against
+`P2002`) so only a write based on the current version lands; a stale write receives
+`409` with the winning snapshot in the body so the client can reconcile without losing its draft.
 
 `/api/workspace` stores a user-scoped workspace snapshot in Postgres so the app can start moving
 away from browser-only persistence while the deeper normalized data migration is still in progress.
+
+> **Legacy API callers:** a `PUT /api/workspace` request that omits `baseSnapshotUpdatedAt` entirely
+> falls back to an ordering guard on `lastClientUpdatedAt` — a write stamped older than the stored
+> value is rejected with `409`, but two writers that both omit the marker degrade to last-write-wins.
+> New/first-party clients always send `baseSnapshotUpdatedAt` (the first-party web app sends it on
+> every save) and should continue to do so for full conflict protection.
 
 The Plaid endpoints expect an authenticated Firebase bearer token and store Plaid item records in
 Postgres with encrypted access-token persistence. Connected-account consent is collected in the

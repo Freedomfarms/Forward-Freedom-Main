@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useAuth } from "../context/AuthContext.jsx";
+import { markPendingLegalConsent } from "../utils/legalConsent.js";
 import { LegalModal } from "./LegalDocuments.jsx";
 
 function buildButtonStyle({ primary = false, danger = false } = {}) {
@@ -92,6 +93,9 @@ export function AuthScreen({ initialMode = "login", initialForm = null, onBackHo
       return;
     }
 
+    // Stage the acceptance so it is recorded server-side once the session exists.
+    markPendingLegalConsent(mode === "register" ? "email-signup" : "email-login");
+
     try {
       if (mode === "register") {
         await signUpWithEmail({
@@ -130,6 +134,9 @@ export function AuthScreen({ initialMode = "login", initialForm = null, onBackHo
       setFormError("Review and accept the Terms of Service and Privacy Policy to continue.");
       return;
     }
+
+    // Stage the acceptance so it is recorded server-side once the session exists.
+    markPendingLegalConsent("google");
 
     clearError();
     setFormError("");

@@ -32,6 +32,11 @@ import {
   encryptNumber,
 } from "../security/envelope.js";
 import { authenticateRequest, authenticateVerifiedRequest, AuthError } from "../auth/verifyAuth.js";
+import {
+  LegalConsentError,
+  requireLegalConsent,
+  respondLegalConsentRequired,
+} from "../auth/legalConsent.js";
 
 // Pre-encryption column sets. Prisma's generated client always SELECTs every
 // schema field (including *Ciphertext), which fails with P2022 on a database
@@ -363,6 +368,10 @@ async function ensureAuthenticatedUserRecord(prisma, decodedToken) {
       photoURL: decodedToken.picture || null,
       lastLoginAt: new Date(),
     },
+    // Explicit minimal select so this keeps working against a production
+    // database that has not received newer User-column migrations yet
+    // (callers only need the row to exist).
+    select: { id: true },
   });
 }
 
@@ -961,6 +970,8 @@ export async function handleCreatePlaidLinkToken(request, response) {
     const decodedToken = await authenticateVerifiedRequest(request);
     const { prisma, plaidClient } = assertPlaidRuntimeReady();
     await ensureAuthenticatedUserRecord(prisma, decodedToken);
+    // Linking a financial institution requires current legal consent.
+    await requireLegalConsent(prisma, decodedToken.uid);
 
     const body = await readJsonBody(request);
     const workspaceUserId = normalizeWorkspaceUserId(body.workspaceUserId);
@@ -1009,6 +1020,10 @@ export async function handleCreatePlaidLinkToken(request, response) {
       return response.status(error.status).json(buildErrorResponse(error.message));
     }
 
+    if (error instanceof LegalConsentError) {
+      return respondLegalConsentRequired(response, error);
+    }
+
     const details = getPlaidErrorDetails(error);
     logPlaidServerEvent("warn", "link_token_create_failed", {
       requestId: getPlaidRequestId(error),
@@ -1024,6 +1039,8 @@ export async function handleExchangePlaidPublicToken(request, response) {
     const decodedToken = await authenticateVerifiedRequest(request);
     const { prisma, plaidClient } = assertPlaidRuntimeReady();
     await ensureAuthenticatedUserRecord(prisma, decodedToken);
+    // Creating a Plaid item (and its accounts) requires current legal consent.
+    await requireLegalConsent(prisma, decodedToken.uid);
 
     const body = await readJsonBody(request);
     const publicToken = body.publicToken;
@@ -1156,6 +1173,10 @@ export async function handleExchangePlaidPublicToken(request, response) {
       return response.status(error.status).json(buildErrorResponse(error.message));
     }
 
+    if (error instanceof LegalConsentError) {
+      return respondLegalConsentRequired(response, error);
+    }
+
     const details = getPlaidErrorDetails(error);
     logPlaidServerEvent("warn", "exchange_public_token_failed", {
       requestId: getPlaidRequestId(error),
@@ -1219,9 +1240,12 @@ export async function handleSyncPlaidWorkspace(request, response) {
       return response.status(200).json(storedPayload);
     }
 
-    // Explicit refresh (Accounts "Refresh" button / webhook): pull from Plaid.
+    // Explicit refresh (Accounts "Refresh" button): pulls from Plaid and
+    // writes financial data, so require current legal consent. The read path
+    // above is intentionally NOT gated so the app can still render.
     const { prisma, plaidClient } = assertPlaidRuntimeReady();
     await ensureAuthenticatedUserRecord(prisma, decodedToken);
+    await requireLegalConsent(prisma, decodedToken.uid);
 
     const syncPayload = await syncPlaidWorkspace({
       prisma,
@@ -1234,6 +1258,10 @@ export async function handleSyncPlaidWorkspace(request, response) {
   } catch (error) {
     if (error instanceof AuthError) {
       return response.status(error.status).json(buildErrorResponse(error.message));
+    }
+
+    if (error instanceof LegalConsentError) {
+      return respondLegalConsentRequired(response, error);
     }
 
     const details = getPlaidErrorDetails(error);

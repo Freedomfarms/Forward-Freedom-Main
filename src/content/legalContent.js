@@ -1,3 +1,7 @@
+// Bump whenever the Terms of Service or Privacy Policy text changes so
+// server-side consent records identify exactly which revision was accepted.
+export const LEGAL_CONSENT_VERSION = "2026-05";
+
 export const LEGAL_CONTENT = {
   terms: {
     title: "Terms of Service",

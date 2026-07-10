@@ -33,6 +33,13 @@ model User {
   role                WorkspaceRole        @default(OWNER)
   isDisabled          Boolean              @default(false)
   lastLoginAt         DateTime?
+  // Server-side proof of Terms of Service / Privacy Policy acceptance. These
+  // hold the LATEST acceptance (fast path for enforcement); the full audit
+  // trail lives in legalConsentEvents. legalConsentAt is stamped with the
+  // server clock; legalConsentVersion records which revision was accepted.
+  legalConsentAt      DateTime?
+  legalConsentVersion String?
+  legalConsentEvents  LegalConsentEvent[]
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
   plaidItems          PlaidItem[]
@@ -238,6 +245,21 @@ model MetricSnapshot {
 
   @@unique([userId, snapshotDate])
   @@index([userId, snapshotDate])
+}
+
+// Immutable audit trail of every legal-consent acceptance. Retaining history
+// (not just the latest version on User) is important for a fintech: it proves
+// when a user accepted each revision of the Terms/Privacy Policy.
+model LegalConsentEvent {
+  id        String   @id @default(cuid())
+  userId    String
+  version   String
+  method    String?
+  consentAt DateTime @default(now())
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, consentAt])
 }
 
 model WorkspaceSnapshot {

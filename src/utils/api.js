@@ -1,11 +1,13 @@
 import { getCurrentUserIdToken, waitForUserIdToken } from "./firebase.js";
 
 export class ApiRequestError extends Error {
-  constructor(message, { status, retryAfterMs } = {}) {
+  constructor(message, { status, retryAfterMs, payload } = {}) {
     super(message);
     this.name = "ApiRequestError";
     this.status = status;
     this.retryAfterMs = retryAfterMs;
+    // Raw response body, e.g. the current server snapshot on 409 conflicts.
+    this.payload = payload;
   }
 }
 
@@ -65,6 +67,7 @@ async function parseApiResponse(response) {
       {
         status: response.status,
         retryAfterMs: readRateLimitRetryAfterMs(response),
+        payload,
       }
     );
   }
@@ -139,7 +142,10 @@ export async function fetchWorkspaceSnapshot(options = {}) {
   return parseApiResponse(response);
 }
 
-export async function saveWorkspaceSnapshot({ state, source, lastClientUpdatedAt }, options = {}) {
+export async function saveWorkspaceSnapshot(
+  { state, source, lastClientUpdatedAt, baseSnapshotUpdatedAt = null },
+  options = {}
+) {
   const response = await fetch("/api/workspace", {
     method: "PUT",
     headers: await buildAuthenticatedHeaders(
@@ -152,6 +158,42 @@ export async function saveWorkspaceSnapshot({ state, source, lastClientUpdatedAt
       state,
       source,
       lastClientUpdatedAt,
+      // Optimistic-concurrency marker: the server `updatedAt` this state is
+      // based on (null when the client believes no snapshot exists yet). The
+      // server rejects the save with a 409 if another session saved first.
+      baseSnapshotUpdatedAt,
+    }),
+  });
+
+  return parseApiResponse(response);
+}
+
+export function isWorkspaceConflictError(error) {
+  return error instanceof ApiRequestError && error.status === 409;
+}
+
+// Server-side legal-consent gate (H-9): any sensitive route can reject a
+// request with 403 + { requiresLegalConsent: true } when consent is missing or
+// the accepted version is out of date.
+export function isLegalConsentRequiredError(error) {
+  return (
+    error instanceof ApiRequestError &&
+    error.status === 403 &&
+    Boolean(error.payload?.requiresLegalConsent)
+  );
+}
+
+export async function recordLegalConsent({ version, method = null }, options = {}) {
+  const response = await fetch("/api/me", {
+    method: "POST",
+    headers: await buildAuthenticatedHeaders(
+      {
+        "Content-Type": "application/json",
+      },
+      options
+    ),
+    body: JSON.stringify({
+      legalConsent: { version, ...(method ? { method } : {}) },
     }),
   });
 
