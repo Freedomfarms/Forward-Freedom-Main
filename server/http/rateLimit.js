@@ -26,7 +26,17 @@ function getClientIp(request) {
   if (TRUST_PROXY_HEADERS) {
     const forwarded = readHeader(request, "x-forwarded-for");
     if (typeof forwarded === "string" && forwarded.trim()) {
-      return forwarded.split(",")[0].trim();
+      // Use the RIGHTMOST entry: it is the one appended by the trusted proxy
+      // directly in front of us. Leftmost entries are attacker-controlled — a
+      // client can send "X-Forwarded-For: 1.2.3.4" and the proxy appends the
+      // real address, producing "1.2.3.4, <real-ip>".
+      const entries = forwarded
+        .split(",")
+        .map((entry) => entry.trim())
+        .filter(Boolean);
+      if (entries.length) {
+        return entries[entries.length - 1];
+      }
     }
 
     const realIp = readHeader(request, "x-real-ip");
@@ -38,26 +48,41 @@ function getClientIp(request) {
   return request.ip || request.socket?.remoteAddress || "127.0.0.1";
 }
 
+function respondLimiterUnavailable(response, error) {
+  console.error("[rate-limit] limiter error — failing closed with 503:", error);
+  if (!response.headersSent) {
+    response.status(503).json({
+      error: true,
+      message: "Service temporarily unavailable. Please try again shortly.",
+    });
+  }
+}
+
 function runRateLimit(limiter, request, response) {
-  // Fail open on any limiter/store error. A throwing limiter (e.g. an
-  // unexpected forwarded-IP format from a particular edge/proxy) must never
-  // turn into an opaque 500 that blocks all linking; that would surface to the
-  // client as a generic, non-JSON failure with no diagnosable message.
+  // Fail CLOSED on any limiter/store error. If the limiter (or its backing
+  // store) is broken, silently disabling rate limits would leave every
+  // endpoint unthrottled — unacceptable for a fintech API. Reject with 503
+  // so the outage is visible and traffic stays bounded.
   return new Promise((resolve) => {
     try {
       const result = limiter(request, response, (error) => {
         if (error) {
-          resolve(true);
+          respondLimiterUnavailable(response, error);
+          resolve(false);
           return;
         }
         resolve(!response.headersSent);
       });
 
       if (result && typeof result.catch === "function") {
-        result.catch(() => resolve(true));
+        result.catch((error) => {
+          respondLimiterUnavailable(response, error);
+          resolve(false);
+        });
       }
-    } catch {
-      resolve(true);
+    } catch (error) {
+      respondLimiterUnavailable(response, error);
+      resolve(false);
     }
   });
 }
