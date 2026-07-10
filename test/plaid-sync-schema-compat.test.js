@@ -169,10 +169,14 @@ before(async () => {
   const { getPrismaClient } = await import("../server/db/prisma.js");
   prisma = getPrismaClient();
 
+  // Narrow select: this init-only (un-migrated) database lacks the newer User
+  // columns, so a default upsert that RETURNs every column would fail with
+  // P2022. Mirrors the narrow-select pattern used by production User writes.
   await prisma.user.upsert({
     where: { id: UID },
     update: {},
     create: { id: UID, email: `${UID}@example.com` },
+    select: { id: true },
   });
   await prisma.plaidItem.create({
     data: {

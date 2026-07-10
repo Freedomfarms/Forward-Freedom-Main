@@ -1,6 +1,7 @@
 import test, { before, mock } from "node:test";
 import assert from "node:assert/strict";
 import crypto from "crypto";
+import { LEGAL_CONSENT_VERSION } from "../src/content/legalContent.js";
 
 // Cross-user isolation integration test. It exercises the REAL Plaid handlers
 // against a REAL Postgres database, proving that one user can never read or
@@ -171,7 +172,16 @@ async function resetFixtures() {
 }
 
 async function seedUser(uid, { itemId, workspaceUserId, accountName, balance, merchant, amount }) {
-  await prisma.user.create({ data: { id: uid, email: `${uid}@example.com` } });
+  // Seed current legal consent so server-side consent enforcement (H-9) passes
+  // and these tests stay focused on cross-user isolation, not the consent gate.
+  await prisma.user.create({
+    data: {
+      id: uid,
+      email: `${uid}@example.com`,
+      legalConsentAt: new Date(),
+      legalConsentVersion: LEGAL_CONSENT_VERSION,
+    },
+  });
   const item = await prisma.plaidItem.create({
     data: {
       userId: uid,
