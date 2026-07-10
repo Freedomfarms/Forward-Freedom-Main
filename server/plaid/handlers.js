@@ -298,7 +298,15 @@ async function readJsonBody(request) {
   if (!chunks.length) return {};
 
   const rawBody = Buffer.concat(chunks).toString("utf8");
-  return rawBody ? JSON.parse(rawBody) : {};
+  if (!rawBody) return {};
+
+  try {
+    return JSON.parse(rawBody);
+  } catch {
+    const error = new Error("Request body must be valid JSON.");
+    error.status = 400;
+    throw error;
+  }
 }
 
 function getPrismaOrThrow() {

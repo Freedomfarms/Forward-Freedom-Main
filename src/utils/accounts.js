@@ -67,6 +67,20 @@ export function accountSupportsTransactions(account) {
   return TRANSACTIONAL_ACCOUNT_TYPES.has(account?.type);
 }
 
+export function isPlaidLinkedAccount(account) {
+  return Boolean(
+    account && (account.syncSource === "Plaid" || account.plaidAccountId || account.plaidItemId)
+  );
+}
+
+// Plaid-linked accounts get their balance from the live bank sync. Applying a
+// manual-transaction delta to them creates a permanent discrepancy: the next
+// sync overwrites the balance while the manual transaction stays in the
+// ledger, so history and balance never reconcile again.
+export function accountSupportsManualTransactions(account) {
+  return accountSupportsTransactions(account) && !isPlaidLinkedAccount(account);
+}
+
 export function normalizeAccount(account, index = 0) {
   const baseAccount = {
     ...account,

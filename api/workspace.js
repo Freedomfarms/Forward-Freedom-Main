@@ -28,7 +28,15 @@ async function readJsonBody(request) {
   if (!chunks.length) return {};
 
   const rawBody = Buffer.concat(chunks).toString("utf8");
-  return rawBody ? JSON.parse(rawBody) : {};
+  if (!rawBody) return {};
+
+  try {
+    return JSON.parse(rawBody);
+  } catch {
+    const error = new Error("Request body must be valid JSON.");
+    error.status = 400;
+    throw error;
+  }
 }
 
 function buildErrorResponse(message) {
@@ -187,6 +195,10 @@ export default async function handler(request, response) {
   } catch (error) {
     if (error instanceof AuthError) {
       return response.status(error.status).json(buildErrorResponse(error.message));
+    }
+
+    if (error?.status === 400) {
+      return response.status(400).json(buildErrorResponse(error.message));
     }
 
     return respondInternalError(

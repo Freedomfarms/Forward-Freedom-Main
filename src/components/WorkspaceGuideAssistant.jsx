@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import { styles } from "../styles.js";
-import { requestWorkspaceGuideReply } from "../utils/api.js";
 import {
   buildWorkspaceGuideContext,
   buildWorkspaceGuideSuggestions,
@@ -50,7 +49,6 @@ export function WorkspaceGuideAssistant({
 }) {
   const [draft, setDraft] = useState("");
   const [messages, setMessages] = useState([]);
-  const [isThinking, setIsThinking] = useState(false);
 
   const context = useMemo(
     () =>
@@ -99,37 +97,19 @@ export function WorkspaceGuideAssistant({
     }
   };
 
-  const submitQuestion = async (rawValue) => {
+  const submitQuestion = (rawValue) => {
     const value = String(rawValue || "").trim();
-    if (!value || isThinking) return;
+    if (!value) return;
 
-    const history = messages.map((message) => ({ role: message.role, text: message.text }));
+    // The guide runs entirely on the built-in rule-based engine. Questions and
+    // workspace financial context never leave the browser — no data is sent to
+    // any third-party AI provider.
+    const reply = resolveWorkspaceGuideReply(value, context);
 
+    setDraft("");
     setMessages((current) => [
       ...current,
       { id: `user-${Date.now()}`, role: "user", text: value },
-    ]);
-    setDraft("");
-    setIsThinking(true);
-
-    let reply = null;
-    try {
-      const result = await requestWorkspaceGuideReply({ question: value, history, context });
-      if (result?.configured && result?.reply?.text) {
-        reply = result.reply;
-      }
-    } catch {
-      // Fall back to the built-in rule-based guide on any failure (offline,
-      // auth restoring, rate limited, or LLM error).
-      reply = null;
-    }
-
-    if (!reply) {
-      reply = resolveWorkspaceGuideReply(value, context);
-    }
-
-    setMessages((current) => [
-      ...current,
       {
         id: `assistant-${Date.now()}`,
         role: "assistant",
@@ -137,7 +117,6 @@ export function WorkspaceGuideAssistant({
         actions: reply.actions,
       },
     ]);
-    setIsThinking(false);
   };
 
   if (!open) return null;
@@ -179,7 +158,7 @@ export function WorkspaceGuideAssistant({
                   fontWeight: 900,
                 }}
               >
-                AI Guide beta
+                Built-in Guide
               </div>
               <div style={{ color: "white", fontSize: 22, fontWeight: 900, marginTop: 4 }}>
                 Ask Forward Freedom
@@ -220,7 +199,6 @@ export function WorkspaceGuideAssistant({
               <button
                 key={suggestion}
                 type="button"
-                disabled={isThinking}
                 onClick={() => submitQuestion(suggestion)}
                 style={{
                   borderRadius: 999,
@@ -271,22 +249,6 @@ export function WorkspaceGuideAssistant({
               <ActionButtons actions={message.actions} onAction={handleAction} />
             </div>
           ))}
-          {isThinking ? (
-            <div
-              style={{
-                justifySelf: "stretch",
-                borderRadius: 16,
-                padding: "12px 14px",
-                border: "1px solid rgba(0,136,255,.22)",
-                background: "rgba(3,17,32,.86)",
-                color: "#9fb0c9",
-                fontSize: 13,
-                fontStyle: "italic",
-              }}
-            >
-              Thinking…
-            </div>
-          ) : null}
         </div>
 
         <form
@@ -324,19 +286,17 @@ export function WorkspaceGuideAssistant({
             </div>
             <button
               type="submit"
-              disabled={isThinking}
               style={{
                 borderRadius: 12,
                 border: "1px solid rgba(120,220,255,.45)",
                 background: "linear-gradient(90deg,#0077ff,#00d8ff)",
                 color: "white",
                 padding: "11px 14px",
-                cursor: isThinking ? "not-allowed" : "pointer",
+                cursor: "pointer",
                 fontWeight: 900,
-                opacity: isThinking ? 0.6 : 1,
               }}
             >
-              {isThinking ? "Asking…" : "Ask guide"}
+              Ask guide
             </button>
           </div>
         </form>
