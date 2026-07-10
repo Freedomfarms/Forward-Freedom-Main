@@ -94,7 +94,7 @@ export function AuthScreen({ initialMode = "login", initialForm = null, onBackHo
     }
 
     // Stage the acceptance so it is recorded server-side once the session exists.
-    markPendingLegalConsent();
+    markPendingLegalConsent(mode === "register" ? "email-signup" : "email-login");
 
     try {
       if (mode === "register") {
@@ -136,7 +136,7 @@ export function AuthScreen({ initialMode = "login", initialForm = null, onBackHo
     }
 
     // Stage the acceptance so it is recorded server-side once the session exists.
-    markPendingLegalConsent();
+    markPendingLegalConsent("google");
 
     clearError();
     setFormError("");

@@ -9,12 +9,13 @@ import { recordLegalConsent } from "./api.js";
 // immediate post-sign-in request could be interrupted.
 const PENDING_LEGAL_CONSENT_STORAGE_KEY = "fff::pendingLegalConsent";
 
-export function markPendingLegalConsent() {
+export function markPendingLegalConsent(method = null) {
   try {
     window.localStorage.setItem(
       PENDING_LEGAL_CONSENT_STORAGE_KEY,
       JSON.stringify({
         version: LEGAL_CONSENT_VERSION,
+        method: method || null,
         agreedAt: new Date().toISOString(),
       })
     );
@@ -51,13 +52,22 @@ export async function flushPendingLegalConsent(options = {}) {
   if (!pending) return false;
 
   try {
-    await recordLegalConsent({ version: pending.version }, options);
+    await recordLegalConsent({ version: pending.version, method: pending.method }, options);
   } catch (error) {
     // Keep the pending record so the next authenticated session retries.
     console.warn("[legal-consent] Unable to record consent on the server yet.", error);
     return false;
   }
 
+  clearPendingLegalConsent();
+  return true;
+}
+
+// Records consent for the currently authenticated session (used by the
+// in-app re-consent gate when the accepted version is out of date). Clears any
+// stale pending marker on success.
+export async function submitLegalConsent({ method = "reconsent" } = {}, options = {}) {
+  await recordLegalConsent({ version: LEGAL_CONSENT_VERSION, method }, options);
   clearPendingLegalConsent();
   return true;
 }

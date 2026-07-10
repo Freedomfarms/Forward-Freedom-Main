@@ -172,7 +172,18 @@ export function isWorkspaceConflictError(error) {
   return error instanceof ApiRequestError && error.status === 409;
 }
 
-export async function recordLegalConsent({ version }, options = {}) {
+// Server-side legal-consent gate (H-9): any sensitive route can reject a
+// request with 403 + { requiresLegalConsent: true } when consent is missing or
+// the accepted version is out of date.
+export function isLegalConsentRequiredError(error) {
+  return (
+    error instanceof ApiRequestError &&
+    error.status === 403 &&
+    Boolean(error.payload?.requiresLegalConsent)
+  );
+}
+
+export async function recordLegalConsent({ version, method = null }, options = {}) {
   const response = await fetch("/api/me", {
     method: "POST",
     headers: await buildAuthenticatedHeaders(
@@ -182,7 +193,7 @@ export async function recordLegalConsent({ version }, options = {}) {
       options
     ),
     body: JSON.stringify({
-      legalConsent: { version },
+      legalConsent: { version, ...(method ? { method } : {}) },
     }),
   });
 

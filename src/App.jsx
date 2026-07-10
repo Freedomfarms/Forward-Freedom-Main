@@ -27,10 +27,14 @@ import {
   fetchAuthenticatedUserProfile,
   fetchWorkspaceSnapshot,
   isApiAuthenticationError,
+  isLegalConsentRequiredError,
   isWorkspaceConflictError,
   saveWorkspaceSnapshot,
 } from "./utils/api.js";
 import { flushPendingLegalConsent } from "./utils/legalConsent.js";
+import { LEGAL_CONSENT_VERSION } from "./content/legalContent.js";
+import { LegalConsentGate } from "./components/LegalConsentGate.jsx";
+import { WorkspaceConflictModal } from "./components/WorkspaceConflictModal.jsx";
 
 const WORKSPACE_SAVE_DEBOUNCE_MS = 4000;
 const WORKSPACE_RATE_LIMIT_RETRY_MS = 30000;
@@ -321,6 +325,8 @@ function buildWorkspaceStatus(syncState, { failureKind = null } = {}) {
   if (syncState === "syncing") return "Syncing workspace changes to the database";
   if (syncState === "rate-limited") return "Saving paused briefly — retrying automatically";
   if (syncState === "recovering") return "Retrying secure workspace sync";
+  if (syncState === "conflict") return "Workspace changed elsewhere — review to continue";
+  if (syncState === "blocked-consent") return "Accept the updated legal terms to continue saving";
   if (syncState === "cache-fallback") {
     if (failureKind === "auth") {
       return "Secure sync is paused while your sign-in session finishes restoring";
@@ -354,10 +360,19 @@ function AuthenticatedWorkspaceApp({
   const [workspaceBootstrapRequestId, setWorkspaceBootstrapRequestId] = useState(0);
   const [workspaceFailureKind, setWorkspaceFailureKind] = useState(null);
   const [workspaceLoadGeneration, setWorkspaceLoadGeneration] = useState(0);
+  // Server-side legal-consent gate (H-9): null, "missing", or "outdated".
+  const [legalConsentRequired, setLegalConsentRequired] = useState(null);
+  // Workspace save conflict (H-10): holds the winning server snapshot so the
+  // user can reconcile without losing their local draft.
+  const [workspaceConflict, setWorkspaceConflict] = useState(null);
   const lastServerSnapshotRef = useRef("");
   // Server `updatedAt` of the snapshot the local state is based on; sent with
   // every save so the server can detect concurrent writes from other sessions.
   const lastServerSnapshotUpdatedAtRef = useRef(null);
+  // Tracks whether the user had any prior consent, so a consent-required
+  // rejection can choose the "outdated" vs "missing" gate copy without adding
+  // workspaceProfile to the save effect's dependencies.
+  const hadPriorConsentRef = useRef(false);
   const lastQueuedPersistedStateRef = useRef("");
   const hasConfirmedServerSnapshotRef = useRef(false);
   const rateLimitRetryTimeoutRef = useRef(null);
@@ -410,8 +425,27 @@ function AuthenticatedWorkspaceApp({
         }
 
         // Record any legal consent accepted during sign-in on the server now
-        // that an authenticated session exists (kept pending until it lands).
-        void flushPendingLegalConsent({ user });
+        // that an authenticated session exists. Awaited so a first-time seed
+        // save (gated server-side) is not rejected for missing consent.
+        const profileUser = profilePayload?.user || null;
+        let consentedVersion = profileUser?.legalConsentVersion || null;
+        if (consentedVersion !== LEGAL_CONSENT_VERSION) {
+          const flushed = await flushPendingLegalConsent({ user });
+          if (flushed) consentedVersion = LEGAL_CONSENT_VERSION;
+        }
+
+        if (cancelled) return;
+
+        // If we can determine consent is missing/outdated, gate proactively
+        // rather than letting a gated write fail. When the profile fetch
+        // failed (profileUser is null) we proceed and rely on server-side 403
+        // enforcement as the backstop.
+        if (profileUser && consentedVersion !== LEGAL_CONSENT_VERSION) {
+          setWorkspaceProfile(profileUser);
+          setLegalConsentRequired(profileUser.legalConsentAt ? "outdated" : "missing");
+          setWorkspaceBootstrapComplete(true);
+          return;
+        }
 
         const remoteSnapshot = workspacePayload?.snapshot || null;
         const remoteState = remoteSnapshot?.state
@@ -473,6 +507,15 @@ function AuthenticatedWorkspaceApp({
         setWorkspaceBootstrapComplete(true);
       } catch (error) {
         if (cancelled) return;
+
+        if (isLegalConsentRequiredError(error)) {
+          // Seed save was blocked for missing/outdated consent (e.g. the
+          // profile fetch failed so we could not gate proactively). Show the
+          // gate; accepting re-runs bootstrap.
+          setLegalConsentRequired(hadPriorConsentRef.current ? "outdated" : "missing");
+          setWorkspaceBootstrapComplete(true);
+          return;
+        }
 
         const conflictSnapshot = isWorkspaceConflictError(error) ? error.payload?.snapshot : null;
         const conflictState = conflictSnapshot?.state
@@ -601,6 +644,12 @@ function AuthenticatedWorkspaceApp({
       return undefined;
     }
 
+    // Pause auto-save while an unresolved consent gate or save conflict is
+    // open so we neither overwrite the server nor lose the local draft.
+    if (legalConsentRequired || workspaceConflict) {
+      return undefined;
+    }
+
     const sanitizedPersistedState = sanitizeWorkspaceStateForPersistence(latestPersistedState);
     cacheWorkspaceState(sanitizedPersistedState, "working-cache");
 
@@ -638,34 +687,22 @@ function AuthenticatedWorkspaceApp({
         .catch((error) => {
           if (cancelled) return;
 
+          if (isLegalConsentRequiredError(error)) {
+            // Server rejected the write for missing/outdated consent. Open the
+            // consent gate; the local draft is preserved and re-saved after
+            // acceptance (auto-save is paused while the gate is open).
+            setLegalConsentRequired(hadPriorConsentRef.current ? "outdated" : "missing");
+            setWorkspaceSyncState("blocked-consent");
+            return;
+          }
+
           if (isWorkspaceConflictError(error)) {
-            // Another session saved a newer snapshot first. Adopt the server
-            // copy (returned with the 409) instead of overwriting it blindly.
-            const conflictSnapshot = error.payload?.snapshot || null;
-            const conflictState = conflictSnapshot?.state
-              ? sanitizeWorkspaceStateForPersistence(conflictSnapshot.state)
-              : null;
-
-            lastQueuedPersistedStateRef.current = "";
-
-            if (conflictState) {
-              hasConfirmedServerSnapshotRef.current = true;
-              lastServerSnapshotRef.current = JSON.stringify(conflictState);
-              lastServerSnapshotUpdatedAtRef.current = conflictSnapshot.updatedAt || null;
-              cacheWorkspaceState(conflictState, "server-snapshot");
-              setWorkspaceSeedState(conflictState);
-              // Align the pending-save queue with the adopted server state so
-              // the stale local state is not immediately re-saved over it.
-              setLatestPersistedState(conflictState);
-              setWorkspaceLoadGeneration((current) => current + 1);
-              setWorkspaceSyncState("server-primary");
-            } else {
-              retryWorkspaceSync();
-            }
-
-            setWorkspaceError(
-              "Another session saved newer workspace changes, so the latest version was loaded. Re-apply any edits made here that are missing."
-            );
+            // Another session saved a newer snapshot first. Preserve the local
+            // draft and let the user decide how to reconcile instead of
+            // silently replacing their unsaved work (H-10 UX).
+            setWorkspaceConflict({ serverSnapshot: error.payload?.snapshot || null });
+            setWorkspaceSyncState("conflict");
+            setWorkspaceError("Your workspace changed elsewhere. Review and re-apply your changes.");
             return;
           }
 
@@ -707,7 +744,66 @@ function AuthenticatedWorkspaceApp({
         rateLimitRetryTimeoutRef.current = null;
       }
     };
-  }, [cacheWorkspaceState, latestPersistedState, retryWorkspaceSync, user, workspaceBootstrapComplete, workspaceSeedState, workspaceSyncState]);
+  }, [cacheWorkspaceState, latestPersistedState, legalConsentRequired, user, workspaceBootstrapComplete, workspaceConflict, workspaceSeedState, workspaceSyncState]);
+
+  useEffect(() => {
+    hadPriorConsentRef.current = Boolean(workspaceProfile?.legalConsentAt);
+  }, [workspaceProfile]);
+
+  const handleConsentAccepted = useCallback(() => {
+    setLegalConsentRequired(null);
+    setWorkspaceProfile((current) =>
+      current ? { ...current, legalConsentVersion: LEGAL_CONSENT_VERSION, legalConsentAt: new Date().toISOString() } : current
+    );
+    retryWorkspaceSync();
+  }, [retryWorkspaceSync]);
+
+  const handleConflictKeepMine = useCallback(() => {
+    const server = workspaceConflict?.serverSnapshot || null;
+    // Re-base onto the latest server version and force a re-save of the local
+    // draft on top of it.
+    lastServerSnapshotUpdatedAtRef.current =
+      server?.updatedAt || lastServerSnapshotUpdatedAtRef.current;
+    lastServerSnapshotRef.current = "";
+    setWorkspaceConflict(null);
+    setWorkspaceError("");
+    setWorkspaceSyncState("syncing");
+  }, [workspaceConflict]);
+
+  const handleConflictDiscardMine = useCallback(() => {
+    const server = workspaceConflict?.serverSnapshot || null;
+    const serverState = server?.state
+      ? sanitizeWorkspaceStateForPersistence(server.state)
+      : null;
+    setWorkspaceConflict(null);
+    setWorkspaceError("");
+    if (serverState) {
+      hasConfirmedServerSnapshotRef.current = true;
+      lastServerSnapshotRef.current = JSON.stringify(serverState);
+      lastServerSnapshotUpdatedAtRef.current = server.updatedAt || null;
+      lastQueuedPersistedStateRef.current = JSON.stringify(serverState);
+      cacheWorkspaceState(serverState, "server-snapshot");
+      setWorkspaceSeedState(serverState);
+      setLatestPersistedState(serverState);
+      setWorkspaceLoadGeneration((current) => current + 1);
+      setWorkspaceSyncState("server-primary");
+    } else {
+      retryWorkspaceSync();
+    }
+  }, [cacheWorkspaceState, retryWorkspaceSync, workspaceConflict]);
+
+  // Server-side consent gate blocks the entire authenticated app until the
+  // current legal version is accepted (H-9). Rendered before the loading/seed
+  // checks so it also covers the pre-seed proactive-gate case.
+  if (legalConsentRequired) {
+    return (
+      <LegalConsentGate
+        reason={legalConsentRequired === "outdated" ? "outdated" : "missing"}
+        user={user}
+        onAccepted={handleConsentAccepted}
+      />
+    );
+  }
 
   if (!workspaceSeedState) {
     return (
@@ -744,17 +840,25 @@ function AuthenticatedWorkspaceApp({
   };
 
   return (
-    <LazyRouteBoundary message="Loading secure workspace...">
-      <ForwardFreedomDashboard
-        key={`${user.uid}:${workspaceLoadGeneration}`}
-        initialView="app"
-        storageKey={storageKey}
-        initialAppStateOverride={workspaceSeedState}
-        onPersistedStateChange={handlePersistedStateChange}
-        sessionControls={sessionControls}
-        persistLocally={false}
-      />
-    </LazyRouteBoundary>
+    <>
+      <LazyRouteBoundary message="Loading secure workspace...">
+        <ForwardFreedomDashboard
+          key={`${user.uid}:${workspaceLoadGeneration}`}
+          initialView="app"
+          storageKey={storageKey}
+          initialAppStateOverride={workspaceSeedState}
+          onPersistedStateChange={handlePersistedStateChange}
+          sessionControls={sessionControls}
+          persistLocally={false}
+        />
+      </LazyRouteBoundary>
+      {workspaceConflict ? (
+        <WorkspaceConflictModal
+          onKeepMine={handleConflictKeepMine}
+          onDiscardMine={handleConflictDiscardMine}
+        />
+      ) : null}
+    </>
   );
 }
 
