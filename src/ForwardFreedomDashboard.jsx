@@ -15,8 +15,9 @@ import {
   evaluateOnboardingProgress,
 } from "./utils/onboarding.js";
 import {
-  accountSupportsTransactions,
+  accountSupportsManualTransactions,
   calculateRealEstateEquity,
+  isPlaidLinkedAccount,
   normalizeAccount,
 } from "./utils/accounts.js";
 import { createManualAccount, updateManualAccountInUser } from "./utils/manualAccounts.js";
@@ -1726,7 +1727,7 @@ function ForwardFreedomDashboard({
     const amount = roundCurrency(transaction.amount);
 
     if (!targetAccount || !Number.isFinite(amount) || amount === 0) return false;
-    if (!accountSupportsTransactions(targetAccount)) return false;
+    if (!accountSupportsManualTransactions(targetAccount)) return false;
 
     setTransactions((current) => [
       {
@@ -1765,7 +1766,8 @@ function ForwardFreedomDashboard({
     );
     setAccounts((current) =>
       current.map((account) =>
-        account.name === transactionToDelete.account
+        // Never delta a Plaid-linked balance: it is owned by the bank sync.
+        account.name === transactionToDelete.account && !isPlaidLinkedAccount(account)
           ? {
               ...account,
               balance: roundCurrency(account.balance - transactionToDelete.amount),
@@ -1787,7 +1789,7 @@ function ForwardFreedomDashboard({
     const nextMerchant = String(updates.merchant ?? transactionToUpdate.merchant).trim();
     const nextDate = String(updates.date ?? transactionToUpdate.date).trim();
 
-    if (!nextAccount || !accountSupportsTransactions(nextAccount)) return false;
+    if (!nextAccount || !accountSupportsManualTransactions(nextAccount)) return false;
     if (!Number.isFinite(nextAmount) || nextAmount === 0) return false;
     if (!nextMerchant || !nextDate) return false;
 
@@ -1815,6 +1817,8 @@ function ForwardFreedomDashboard({
 
     setAccounts((current) =>
       current.map((account) => {
+        // Never delta a Plaid-linked balance: it is owned by the bank sync.
+        if (isPlaidLinkedAccount(account)) return account;
         let balanceDelta = 0;
         if (account.name === transactionToUpdate.account) {
           balanceDelta -= transactionToUpdate.amount;

@@ -298,7 +298,15 @@ async function readJsonBody(request) {
   if (!chunks.length) return {};
 
   const rawBody = Buffer.concat(chunks).toString("utf8");
-  return rawBody ? JSON.parse(rawBody) : {};
+  if (!rawBody) return {};
+
+  try {
+    return JSON.parse(rawBody);
+  } catch {
+    const error = new Error("Request body must be valid JSON.");
+    error.status = 400;
+    throw error;
+  }
 }
 
 function getPrismaOrThrow() {
@@ -654,14 +662,18 @@ async function buildWorkspaceSyncPayload(prisma, userId, workspaceUserId, { encr
   };
 }
 
-async function syncPlaidWorkspace({ prisma, plaidClient, userId, workspaceUserId }) {
+async function syncPlaidWorkspace({ prisma, plaidClient, userId, workspaceUserId, restrictToItemId }) {
   const capabilities = await getSchemaCapabilities(prisma);
   const encryptionColumns = capabilities.encryptionColumns;
 
+  // When a webhook fires for a single Item, only that Item should be pulled
+  // from Plaid. Syncing every Item on each webhook multiplies Plaid API calls
+  // and races concurrent webhooks against each other.
   const items = await prisma.plaidItem.findMany({
     where: {
       userId,
       workspaceUserId,
+      ...(restrictToItemId ? { itemId: restrictToItemId } : {}),
     },
   });
   const lastSyncAt = new Date();

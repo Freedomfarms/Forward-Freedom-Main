@@ -3,7 +3,7 @@ import { APP_TABS, transactionCategoryOptions } from "../data/constants.jsx";
 import { styles } from "../styles.js";
 import { getIsoDateInputValue } from "../utils/date.js";
 import { money } from "../utils/format.js";
-import { accountSupportsTransactions } from "../utils/accounts.js";
+import { accountSupportsManualTransactions, accountSupportsTransactions } from "../utils/accounts.js";
 import { AccountRemoveConfirmModal } from "./AccountRemoveConfirmModal.jsx";
 import { HouseholdProfilesControl } from "./Common.jsx";
 
@@ -222,10 +222,13 @@ export function TransactionsView({
   const selectedAccountRecord = selectedAccount
     ? accounts.find((account) => account.name === selectedAccount) || null
     : null;
+  // Manual transactions may only target manual (non-Plaid) accounts: a manual
+  // delta on a Plaid-linked balance is overwritten by the next bank sync while
+  // the transaction stays in the ledger, permanently desyncing the two.
   const transactionCapableAccounts = accounts.filter((account) =>
-    accountSupportsTransactions(account)
+    accountSupportsManualTransactions(account)
   );
-  const defaultTransactionalAccount = accountSupportsTransactions(selectedAccountRecord)
+  const defaultTransactionalAccount = accountSupportsManualTransactions(selectedAccountRecord)
     ? selectedAccount || transactionCapableAccounts[0]?.name || ""
     : transactionCapableAccounts[0]?.name || "";
   const [manualForm, setManualForm] = useState({
