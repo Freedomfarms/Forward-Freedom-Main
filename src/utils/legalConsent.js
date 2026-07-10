@@ -51,11 +51,25 @@ export async function flushPendingLegalConsent(options = {}) {
   const pending = readPendingLegalConsent();
   if (!pending) return false;
 
+  let payload;
   try {
-    await recordLegalConsent({ version: pending.version, method: pending.method }, options);
+    payload = await recordLegalConsent(
+      { version: pending.version, method: pending.method },
+      options
+    );
   } catch (error) {
     // Keep the pending record so the next authenticated session retries.
     console.warn("[legal-consent] Unable to record consent on the server yet.", error);
+    return false;
+  }
+
+  // The server accepted the request but could not durably persist consent
+  // (its database has not been migrated yet). Keep the pending marker so a
+  // later session flushes it once the migration is applied.
+  if (payload?.legalConsentPersisted === false) {
+    console.warn(
+      "[legal-consent] Server deferred consent recording until its database is migrated."
+    );
     return false;
   }
 
@@ -67,7 +81,16 @@ export async function flushPendingLegalConsent(options = {}) {
 // in-app re-consent gate when the accepted version is out of date). Clears any
 // stale pending marker on success.
 export async function submitLegalConsent({ method = "reconsent" } = {}, options = {}) {
-  await recordLegalConsent({ version: LEGAL_CONSENT_VERSION, method }, options);
+  const payload = await recordLegalConsent({ version: LEGAL_CONSENT_VERSION, method }, options);
+
+  // Deferred by an un-migrated server database: stage the acceptance locally
+  // so it is flushed on a later session, and let the gate close now (the
+  // server fails open on enforcement in this same state).
+  if (payload?.legalConsentPersisted === false) {
+    markPendingLegalConsent(method);
+    return true;
+  }
+
   clearPendingLegalConsent();
   return true;
 }
