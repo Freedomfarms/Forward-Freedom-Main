@@ -439,8 +439,16 @@ function AuthenticatedWorkspaceApp({
         // If we can determine consent is missing/outdated, gate proactively
         // rather than letting a gated write fail. When the profile fetch
         // failed (profileUser is null) we proceed and rely on server-side 403
-        // enforcement as the backstop.
-        if (profileUser && consentedVersion !== LEGAL_CONSENT_VERSION) {
+        // enforcement as the backstop. When the server reports its consent
+        // schema is not migrated yet (legalConsentSchemaReady === false),
+        // consent cannot be recorded or enforced, so blocking sign-on here
+        // would lock the user out with no way through — skip the gate and let
+        // the staged pending consent flush once the migration lands.
+        if (
+          profileUser &&
+          profileUser.legalConsentSchemaReady !== false &&
+          consentedVersion !== LEGAL_CONSENT_VERSION
+        ) {
           setWorkspaceProfile(profileUser);
           setLegalConsentRequired(profileUser.legalConsentAt ? "outdated" : "missing");
           setWorkspaceBootstrapComplete(true);
