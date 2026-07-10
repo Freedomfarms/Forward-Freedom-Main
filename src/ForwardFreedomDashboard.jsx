@@ -25,6 +25,7 @@ import {
   loadPersistedAppState,
   persistAppState,
 } from "./utils/appState.js";
+import { sanitizeWorkspaceStateForPersistence } from "./utils/workspacePersistence.js";
 import {
   buildMerchantCategoryRules,
   categorizeTransactions,
@@ -606,7 +607,10 @@ function ForwardFreedomDashboard({
   initialAppStateOverride,
   onPersistedStateChange,
   sessionControls,
-  persistLocally = true,
+  // Local persistence is opt-in: writing financial state to localStorage must
+  // be an explicit caller decision, never a default for public/unauthenticated
+  // render paths.
+  persistLocally = false,
   isDemoMode = false,
   onEnterDemo,
   onExitDemo,
@@ -1112,7 +1116,7 @@ function ForwardFreedomDashboard({
     };
 
     if (persistLocally) {
-      persistAppState(nextPersistedState, storageKey);
+      persistAppState(sanitizeWorkspaceStateForPersistence(nextPersistedState), storageKey);
     }
     if (typeof onPersistedStateChange === "function") {
       onPersistedStateChange(nextPersistedState);

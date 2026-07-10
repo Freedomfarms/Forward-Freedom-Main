@@ -348,6 +348,18 @@ export function loadPersistedAppState(storageKey = APP_STATE_STORAGE_KEY) {
   return loadPersistedAppStateRecord(storageKey).state;
 }
 
+export function clearPersistedAppState(storageKey = APP_STATE_STORAGE_KEY) {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.localStorage.removeItem(storageKey);
+    window.localStorage.removeItem(LEGACY_METRIC_SNAPSHOT_STORAGE_KEY);
+  } catch {
+    // Storage can be unavailable (e.g. blocked third-party storage); there is
+    // nothing to clear in that case.
+  }
+}
+
 export function persistAppState(state, storageKey = APP_STATE_STORAGE_KEY, options = {}) {
   if (typeof window === "undefined") return;
 

@@ -12,6 +12,7 @@ const DemoWorkspaceApp = lazy(() =>
 );
 import {
   buildScopedAppStateStorageKey,
+  clearPersistedAppState,
   createEmptyAppState,
   loadPersistedAppStateRecord,
   persistAppState,
@@ -692,6 +693,13 @@ function UnconfiguredPublicApp() {
   const [publicView, setPublicView] = useState("landing");
   const [demoSessionKey, setDemoSessionKey] = useState(0);
 
+  // Without Firebase there is no authenticated owner, so this public path must
+  // never persist financial data. Also purge anything a previous visit wrote to
+  // the default localStorage key before persistence was disabled here.
+  useEffect(() => {
+    clearPersistedAppState();
+  }, []);
+
   if (publicView === "demo") {
     return (
       <LazyRouteBoundary message="Loading demo workspace...">
@@ -707,6 +715,7 @@ function UnconfiguredPublicApp() {
     <LazyRouteBoundary message="Loading workspace...">
       <ForwardFreedomDashboard
         initialView="landing"
+        persistLocally={false}
         onEnterDemo={() => {
           setDemoSessionKey((current) => current + 1);
           setPublicView("demo");
