@@ -376,6 +376,10 @@ function AuthenticatedWorkspaceApp({
   const lastQueuedPersistedStateRef = useRef("");
   const hasConfirmedServerSnapshotRef = useRef(false);
   const rateLimitRetryTimeoutRef = useRef(null);
+  // Serializes snapshot PUTs from this tab. Two overlapping saves would race
+  // on the base version marker and 409 against each other, showing a false
+  // "changed in another session" conflict to a single-session user.
+  const saveQueueRef = useRef(Promise.resolve());
   const cacheWorkspaceState = useCallback(
     (state, cacheState = "browser-cache") => {
       if (!state) return;
@@ -671,24 +675,40 @@ function AuthenticatedWorkspaceApp({
     const attemptSave = () => {
       if (cancelled) return;
       setWorkspaceSyncState("syncing");
-      void saveWorkspaceSnapshot(
-        {
-          state: sanitizedPersistedState,
-          source: "phase-5-server-primary",
-          lastClientUpdatedAt: new Date().toISOString(),
-          baseSnapshotUpdatedAt: lastServerSnapshotUpdatedAtRef.current || null,
-        },
-        { user }
-      )
-        .then((payload) => {
-          if (cancelled) return;
-          const confirmedState = sanitizeWorkspaceStateForPersistence(
-            payload?.snapshot?.state || sanitizedPersistedState
+      // Queue behind any in-flight save and re-read the base version marker
+      // only once it settles. A cancelled effect run (e.g. deps changed while
+      // this request was in flight) must still record the server's confirmed
+      // version in the refs — otherwise the next save is sent with a stale
+      // base marker and 409s against our own previous write, popping the
+      // "changed in another session" conflict with only one session open.
+      const queuedSave = saveQueueRef.current
+        .then(() => {
+          // By the time the queue drains, an earlier save may have already
+          // confirmed this exact state; skip the redundant write.
+          if (serializedState === lastServerSnapshotRef.current) {
+            return null;
+          }
+          return saveWorkspaceSnapshot(
+            {
+              state: sanitizedPersistedState,
+              source: "phase-5-server-primary",
+              lastClientUpdatedAt: new Date().toISOString(),
+              baseSnapshotUpdatedAt: lastServerSnapshotUpdatedAtRef.current || null,
+            },
+            { user }
           );
-          lastServerSnapshotRef.current = JSON.stringify(confirmedState);
-          lastServerSnapshotUpdatedAtRef.current =
-            payload?.snapshot?.updatedAt || lastServerSnapshotUpdatedAtRef.current;
-          cacheWorkspaceState(confirmedState, "server-confirmed");
+        })
+        .then((payload) => {
+          if (payload) {
+            const confirmedState = sanitizeWorkspaceStateForPersistence(
+              payload?.snapshot?.state || sanitizedPersistedState
+            );
+            lastServerSnapshotRef.current = JSON.stringify(confirmedState);
+            lastServerSnapshotUpdatedAtRef.current =
+              payload?.snapshot?.updatedAt || lastServerSnapshotUpdatedAtRef.current;
+            cacheWorkspaceState(confirmedState, "server-confirmed");
+          }
+          if (cancelled) return;
           setWorkspaceSyncState("synced");
           setWorkspaceError("");
         })
@@ -740,6 +760,8 @@ function AuthenticatedWorkspaceApp({
               "Workspace changes are being held in a temporary browser cache until the database is available again."
           );
         });
+
+      saveQueueRef.current = queuedSave;
     };
 
     const timeoutId = window.setTimeout(attemptSave, WORKSPACE_SAVE_DEBOUNCE_MS);
