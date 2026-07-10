@@ -12,32 +12,9 @@ import {
   generalApiRateLimit,
   workspaceWriteRateLimit,
 } from "../server/http/rateLimit.js";
+import { readJsonBody } from "../server/http/requestHelpers.js";
 import { applySecurityHeaders } from "../server/http/responseHelpers.js";
 import { sanitizeWorkspaceStateForPersistence } from "../src/utils/workspacePersistence.js";
-
-async function readJsonBody(request) {
-  if (request.body && typeof request.body === "object") {
-    return request.body;
-  }
-
-  const chunks = [];
-  for await (const chunk of request) {
-    chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
-  }
-
-  if (!chunks.length) return {};
-
-  const rawBody = Buffer.concat(chunks).toString("utf8");
-  if (!rawBody) return {};
-
-  try {
-    return JSON.parse(rawBody);
-  } catch {
-    const error = new Error("Request body must be valid JSON.");
-    error.status = 400;
-    throw error;
-  }
-}
 
 function buildErrorResponse(message) {
   return {
@@ -86,6 +63,96 @@ async function findWorkspaceSnapshot(prisma, userId, { encryptionColumns }) {
   });
 }
 
+function buildSnapshotResponsePayload(snapshot) {
+  return {
+    state: sanitizeWorkspaceStateForPersistence(readSnapshotState(snapshot)),
+    source: snapshot.source,
+    updatedAt: snapshot.updatedAt,
+    lastClientUpdatedAt: snapshot.lastClientUpdatedAt,
+  };
+}
+
+function parseOptionalDate(value, label) {
+  if (value == null) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    const error = new Error(`${label} must be a valid ISO-8601 timestamp.`);
+    error.status = 400;
+    throw error;
+  }
+  return parsed;
+}
+
+const SNAPSHOT_WRITE_CONFLICT = Symbol("snapshot-write-conflict");
+
+// Concurrency control for snapshot writes (last-write-wins fix). Clients send
+// baseSnapshotUpdatedAt — the server `updatedAt` of the snapshot their state
+// is based on (null when they believe none exists). The write only lands if
+// the row still matches that version; otherwise the caller receives a 409
+// with the current snapshot so it can reconcile instead of silently
+// clobbering a concurrent save from another tab or session.
+//
+// Legacy clients that do not send the field fall back to an ordering guard on
+// lastClientUpdatedAt: a write stamped older than what is already stored
+// (e.g. a delayed retry arriving after a newer save) is rejected.
+async function writeSnapshotWithConcurrencyControl(prisma, userId, caps, payloadFields) {
+  const { stateColumns, source, lastClientUpdatedAt, hasBaseMarker, baseSnapshotUpdatedAt } =
+    payloadFields;
+  const data = { ...stateColumns, source, lastClientUpdatedAt };
+
+  async function createSnapshot() {
+    try {
+      return await prisma.workspaceSnapshot.create({
+        data: { userId, ...data },
+        ...(caps.encryptionColumns ? {} : { select: LEGACY_SNAPSHOT_SELECT }),
+      });
+    } catch (error) {
+      // Unique(userId) race: another request created the row concurrently.
+      if (error?.code === "P2002") {
+        return SNAPSHOT_WRITE_CONFLICT;
+      }
+      throw error;
+    }
+  }
+
+  if (hasBaseMarker) {
+    if (!baseSnapshotUpdatedAt) {
+      // Client believes no snapshot exists yet; only a create may succeed.
+      const existing = await findWorkspaceSnapshot(prisma, userId, caps);
+      if (existing) return SNAPSHOT_WRITE_CONFLICT;
+      return createSnapshot();
+    }
+
+    const updated = await prisma.workspaceSnapshot.updateMany({
+      where: { userId, updatedAt: baseSnapshotUpdatedAt },
+      data,
+    });
+    if (updated.count === 0) {
+      return SNAPSHOT_WRITE_CONFLICT;
+    }
+    return findWorkspaceSnapshot(prisma, userId, caps);
+  }
+
+  // Legacy path (no base marker): guard against out-of-order writes only.
+  const orderingGuard = lastClientUpdatedAt
+    ? { OR: [{ lastClientUpdatedAt: null }, { lastClientUpdatedAt: { lte: lastClientUpdatedAt } }] }
+    : {};
+  const updated = await prisma.workspaceSnapshot.updateMany({
+    where: { userId, ...orderingGuard },
+    data,
+  });
+  if (updated.count > 0) {
+    return findWorkspaceSnapshot(prisma, userId, caps);
+  }
+
+  const existing = await findWorkspaceSnapshot(prisma, userId, caps);
+  if (existing) {
+    // The row exists but the ordering guard rejected this stale write.
+    return SNAPSHOT_WRITE_CONFLICT;
+  }
+  return createSnapshot();
+}
+
 export default async function handler(request, response) {
   applySecurityHeaders(response);
 
@@ -131,14 +198,7 @@ export default async function handler(request, response) {
       }
 
       return response.status(200).json({
-        snapshot: snapshot
-          ? {
-              state: sanitizeWorkspaceStateForPersistence(readSnapshotState(snapshot)),
-              source: snapshot.source,
-              updatedAt: snapshot.updatedAt,
-              lastClientUpdatedAt: snapshot.lastClientUpdatedAt,
-            }
-          : null,
+        snapshot: snapshot ? buildSnapshotResponsePayload(snapshot) : null,
       });
     }
 
@@ -148,40 +208,49 @@ export default async function handler(request, response) {
     }
     const sanitizedState = sanitizeWorkspaceStateForPersistence(payload.state);
     const source = typeof payload.source === "string" ? payload.source : "app-sync";
-    const lastClientUpdatedAt = payload.lastClientUpdatedAt
-      ? new Date(payload.lastClientUpdatedAt)
-      : null;
+    const lastClientUpdatedAt = parseOptionalDate(
+      payload.lastClientUpdatedAt,
+      "lastClientUpdatedAt"
+    );
+    const hasBaseMarker = Object.hasOwn(payload, "baseSnapshotUpdatedAt");
+    const baseSnapshotUpdatedAt = parseOptionalDate(
+      payload.baseSnapshotUpdatedAt,
+      "baseSnapshotUpdatedAt"
+    );
 
-    async function upsertSnapshot(caps) {
-      const stateColumns = buildSnapshotStateColumns(sanitizedState, caps);
-      return prisma.workspaceSnapshot.upsert({
-        where: { userId: decodedToken.uid },
-        update: {
-          ...stateColumns,
-          source,
-          lastClientUpdatedAt,
-        },
-        create: {
-          userId: decodedToken.uid,
-          ...stateColumns,
-          source,
-          lastClientUpdatedAt,
-        },
-        ...(caps.encryptionColumns ? {} : { select: LEGACY_SNAPSHOT_SELECT }),
+    async function writeSnapshot(caps) {
+      return writeSnapshotWithConcurrencyControl(prisma, decodedToken.uid, caps, {
+        stateColumns: buildSnapshotStateColumns(sanitizedState, caps),
+        source,
+        lastClientUpdatedAt,
+        hasBaseMarker,
+        baseSnapshotUpdatedAt,
       });
     }
 
     let snapshot;
     try {
-      snapshot = await upsertSnapshot(capabilities);
+      snapshot = await writeSnapshot(capabilities);
     } catch (error) {
       if (isMissingEncryptionColumnError(error) && capabilities.encryptionColumns) {
         resetSchemaCapabilitiesCache();
         capabilities = await getSchemaCapabilities(prisma);
-        snapshot = await upsertSnapshot(capabilities);
+        snapshot = await writeSnapshot(capabilities);
       } else {
         throw error;
       }
+    }
+
+    if (snapshot === SNAPSHOT_WRITE_CONFLICT) {
+      // Return the winning snapshot so the client can reconcile without an
+      // extra round-trip instead of silently dropping the other writer's data.
+      const currentSnapshot = await findWorkspaceSnapshot(prisma, decodedToken.uid, capabilities);
+      return response.status(409).json({
+        error: true,
+        message:
+          "The workspace was updated by another session since this state was loaded. Reload the latest snapshot before saving again.",
+        snapshot: currentSnapshot ? buildSnapshotResponsePayload(currentSnapshot) : null,
+      });
     }
 
     return response.status(200).json({

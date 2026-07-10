@@ -27,8 +27,10 @@ import {
   fetchAuthenticatedUserProfile,
   fetchWorkspaceSnapshot,
   isApiAuthenticationError,
+  isWorkspaceConflictError,
   saveWorkspaceSnapshot,
 } from "./utils/api.js";
+import { flushPendingLegalConsent } from "./utils/legalConsent.js";
 
 const WORKSPACE_SAVE_DEBOUNCE_MS = 4000;
 const WORKSPACE_RATE_LIMIT_RETRY_MS = 30000;
@@ -353,6 +355,9 @@ function AuthenticatedWorkspaceApp({
   const [workspaceFailureKind, setWorkspaceFailureKind] = useState(null);
   const [workspaceLoadGeneration, setWorkspaceLoadGeneration] = useState(0);
   const lastServerSnapshotRef = useRef("");
+  // Server `updatedAt` of the snapshot the local state is based on; sent with
+  // every save so the server can detect concurrent writes from other sessions.
+  const lastServerSnapshotUpdatedAtRef = useRef(null);
   const lastQueuedPersistedStateRef = useRef("");
   const hasConfirmedServerSnapshotRef = useRef(false);
   const rateLimitRetryTimeoutRef = useRef(null);
@@ -404,6 +409,10 @@ function AuthenticatedWorkspaceApp({
           console.warn("[workspace] Profile sync unavailable during bootstrap.", profileError);
         }
 
+        // Record any legal consent accepted during sign-in on the server now
+        // that an authenticated session exists (kept pending until it lands).
+        void flushPendingLegalConsent({ user });
+
         const remoteSnapshot = workspacePayload?.snapshot || null;
         const remoteState = remoteSnapshot?.state
           ? sanitizeWorkspaceStateForPersistence(remoteSnapshot.state)
@@ -421,6 +430,7 @@ function AuthenticatedWorkspaceApp({
           setWorkspaceSeedState(nextSeedState);
           setWorkspaceLoadGeneration((current) => current + 1);
           lastServerSnapshotRef.current = JSON.stringify(remoteState);
+          lastServerSnapshotUpdatedAtRef.current = remoteSnapshot?.updatedAt || null;
           cacheWorkspaceState(remoteState, "server-snapshot");
           setWorkspaceSyncState("server-primary");
           setWorkspaceBootstrapComplete(true);
@@ -442,6 +452,9 @@ function AuthenticatedWorkspaceApp({
               ? "phase-5-bootstrap-hydration"
               : "phase-5-bootstrap-seed",
             lastClientUpdatedAt: new Date().toISOString(),
+            // A snapshot row can exist with empty state; base the write on the
+            // version we just fetched so concurrent bootstraps are detected.
+            baseSnapshotUpdatedAt: remoteSnapshot?.updatedAt || null,
           },
           { user }
         );
@@ -452,6 +465,7 @@ function AuthenticatedWorkspaceApp({
         const sanitizedConfirmedState = sanitizeWorkspaceStateForPersistence(confirmedState);
         hasConfirmedServerSnapshotRef.current = true;
         lastServerSnapshotRef.current = JSON.stringify(sanitizedConfirmedState);
+        lastServerSnapshotUpdatedAtRef.current = payload?.snapshot?.updatedAt || null;
         cacheWorkspaceState(sanitizedConfirmedState, "server-confirmed");
         setWorkspaceSeedState(sanitizedConfirmedState);
         setWorkspaceLoadGeneration((current) => current + 1);
@@ -459,6 +473,26 @@ function AuthenticatedWorkspaceApp({
         setWorkspaceBootstrapComplete(true);
       } catch (error) {
         if (cancelled) return;
+
+        const conflictSnapshot = isWorkspaceConflictError(error) ? error.payload?.snapshot : null;
+        const conflictState = conflictSnapshot?.state
+          ? sanitizeWorkspaceStateForPersistence(conflictSnapshot.state)
+          : null;
+        if (conflictState) {
+          // Another session created the first snapshot while this one was
+          // bootstrapping; adopt the server copy instead of overwriting it.
+          hasConfirmedServerSnapshotRef.current = true;
+          lastServerSnapshotRef.current = JSON.stringify(conflictState);
+          lastServerSnapshotUpdatedAtRef.current = conflictSnapshot.updatedAt || null;
+          cacheWorkspaceState(conflictState, "server-snapshot");
+          setWorkspaceSeedState(conflictState);
+          setWorkspaceLoadGeneration((current) => current + 1);
+          setWorkspaceSyncState("server-primary");
+          setWorkspaceFailureKind(null);
+          setWorkspaceBootstrapComplete(true);
+          setWorkspaceError("");
+          return;
+        }
 
         const authFailure = isApiAuthenticationError(error);
         lastServerSnapshotRef.current = "";
@@ -512,6 +546,7 @@ function AuthenticatedWorkspaceApp({
 
         hasConfirmedServerSnapshotRef.current = true;
         lastServerSnapshotRef.current = JSON.stringify(remoteState);
+        lastServerSnapshotUpdatedAtRef.current = workspacePayload?.snapshot?.updatedAt || null;
         cacheWorkspaceState(remoteState, "server-snapshot");
         setWorkspaceSeedState(remoteState);
         setWorkspaceLoadGeneration((current) => current + 1);
@@ -584,6 +619,7 @@ function AuthenticatedWorkspaceApp({
           state: sanitizedPersistedState,
           source: "phase-5-server-primary",
           lastClientUpdatedAt: new Date().toISOString(),
+          baseSnapshotUpdatedAt: lastServerSnapshotUpdatedAtRef.current || null,
         },
         { user }
       )
@@ -593,12 +629,45 @@ function AuthenticatedWorkspaceApp({
             payload?.snapshot?.state || sanitizedPersistedState
           );
           lastServerSnapshotRef.current = JSON.stringify(confirmedState);
+          lastServerSnapshotUpdatedAtRef.current =
+            payload?.snapshot?.updatedAt || lastServerSnapshotUpdatedAtRef.current;
           cacheWorkspaceState(confirmedState, "server-confirmed");
           setWorkspaceSyncState("synced");
           setWorkspaceError("");
         })
         .catch((error) => {
           if (cancelled) return;
+
+          if (isWorkspaceConflictError(error)) {
+            // Another session saved a newer snapshot first. Adopt the server
+            // copy (returned with the 409) instead of overwriting it blindly.
+            const conflictSnapshot = error.payload?.snapshot || null;
+            const conflictState = conflictSnapshot?.state
+              ? sanitizeWorkspaceStateForPersistence(conflictSnapshot.state)
+              : null;
+
+            lastQueuedPersistedStateRef.current = "";
+
+            if (conflictState) {
+              hasConfirmedServerSnapshotRef.current = true;
+              lastServerSnapshotRef.current = JSON.stringify(conflictState);
+              lastServerSnapshotUpdatedAtRef.current = conflictSnapshot.updatedAt || null;
+              cacheWorkspaceState(conflictState, "server-snapshot");
+              setWorkspaceSeedState(conflictState);
+              // Align the pending-save queue with the adopted server state so
+              // the stale local state is not immediately re-saved over it.
+              setLatestPersistedState(conflictState);
+              setWorkspaceLoadGeneration((current) => current + 1);
+              setWorkspaceSyncState("server-primary");
+            } else {
+              retryWorkspaceSync();
+            }
+
+            setWorkspaceError(
+              "Another session saved newer workspace changes, so the latest version was loaded. Re-apply any edits made here that are missing."
+            );
+            return;
+          }
 
           if (isWorkspaceRateLimitError(error)) {
             cacheWorkspaceState(latestPersistedState, "working-cache");
@@ -638,7 +707,7 @@ function AuthenticatedWorkspaceApp({
         rateLimitRetryTimeoutRef.current = null;
       }
     };
-  }, [cacheWorkspaceState, latestPersistedState, user, workspaceBootstrapComplete, workspaceSeedState, workspaceSyncState]);
+  }, [cacheWorkspaceState, latestPersistedState, retryWorkspaceSync, user, workspaceBootstrapComplete, workspaceSeedState, workspaceSyncState]);
 
   if (!workspaceSeedState) {
     return (

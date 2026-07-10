@@ -42,7 +42,7 @@ app.use(express.json({ limit: "256kb" }));
 // exercise the same API entry points. Each handler also enforces its own
 // per-route rate limit on top of the app-wide backstop above.
 app.get("/api/health", healthHandler);
-app.get("/api/me", meHandler);
+app.route("/api/me").get(meHandler).post(meHandler);
 app.route("/api/workspace").get(workspaceHandler).put(workspaceHandler);
 app.get("/api/plaid/status", plaidStatusHandler);
 app.delete("/api/plaid/item", plaidItemHandler);

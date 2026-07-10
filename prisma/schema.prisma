@@ -33,6 +33,11 @@ model User {
   role                WorkspaceRole        @default(OWNER)
   isDisabled          Boolean              @default(false)
   lastLoginAt         DateTime?
+  // Server-side proof of Terms of Service / Privacy Policy acceptance.
+  // legalConsentAt is stamped with the server clock when the client reports
+  // acceptance; legalConsentVersion records which revision was accepted.
+  legalConsentAt      DateTime?
+  legalConsentVersion String?
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
   plaidItems          PlaidItem[]

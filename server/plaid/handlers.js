@@ -363,6 +363,10 @@ async function ensureAuthenticatedUserRecord(prisma, decodedToken) {
       photoURL: decodedToken.picture || null,
       lastLoginAt: new Date(),
     },
+    // Explicit minimal select so this keeps working against a production
+    // database that has not received newer User-column migrations yet
+    // (callers only need the row to exist).
+    select: { id: true },
   });
 }
 
