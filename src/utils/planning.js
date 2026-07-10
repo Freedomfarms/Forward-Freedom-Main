@@ -1,6 +1,7 @@
 import { budgetMonths, normalizeBudgetRow } from "../data/constants.jsx";
 import { getCurrentBudgetPeriod } from "./date.js";
 import { parseMoney } from "./format.js";
+import { addMoney, subtractMoney, sumMoney } from "./money.js";
 
 function cloneValue(value) {
   return JSON.parse(JSON.stringify(value));
@@ -97,13 +98,15 @@ function buildMonthlyProjectionInputs({
   budgetRows = [],
   month,
 }) {
-  const income = incomeStreams
-    .filter((stream) => (stream.months || budgetMonths).includes(month))
-    .reduce((sum, stream) => sum + parseMoney(stream.amount), 0);
-  const budget = budgetRows
-    .filter((row) => (row.months || budgetMonths).includes(month))
-    .reduce((sum, row) => sum + Number(row.budget || 0), 0);
-  const profit = income - budget;
+  const income = sumMoney(
+    incomeStreams.filter((stream) => (stream.months || budgetMonths).includes(month)),
+    (stream) => parseMoney(stream.amount)
+  );
+  const budget = sumMoney(
+    budgetRows.filter((row) => (row.months || budgetMonths).includes(month)),
+    (row) => row.budget
+  );
+  const profit = subtractMoney(income, budget);
 
   return {
     income,
@@ -138,7 +141,7 @@ export function buildProjectedTrueCashSeries({
       budgetRows,
       month,
     });
-    runningBalance += delta;
+    runningBalance = addMoney(runningBalance, delta);
 
     return {
       month,

@@ -5,6 +5,7 @@ import {
 } from "../data/constants.jsx";
 import { getCurrentBudgetPeriod } from "./date.js";
 import { parseMoney } from "./format.js";
+import { fromCents, subtractMoney, sumMoney, toCents } from "./money.js";
 import { isSpendTransaction, sumSpendTransactions } from "./transactions.js";
 
 const monthNameToBudgetMonth = Object.fromEntries(
@@ -77,7 +78,7 @@ export function buildIncomeStreamsWithReceived(transactions, incomeStreams, mont
     tokens: buildIncomeStreamMatchTokens(stream),
   }));
 
-  const receivedById = Object.fromEntries(activeStreams.map((s) => [s.id, 0]));
+  const receivedCentsById = Object.fromEntries(activeStreams.map((s) => [s.id, 0]));
 
   for (const tx of depositsInMonth) {
     const merchant = tx.merchant;
@@ -96,14 +97,14 @@ export function buildIncomeStreamsWithReceived(transactions, incomeStreams, mont
     }
 
     if (matchedId) {
-      receivedById[matchedId] += Number(tx.amount) || 0;
+      receivedCentsById[matchedId] += toCents(tx.amount);
     }
   }
 
   return activeStreams.map((stream) => ({
     ...stream,
     expected: parseMoney(stream.amount),
-    received: receivedById[stream.id] || 0,
+    received: fromCents(receivedCentsById[stream.id] || 0),
   }));
 }
 
@@ -129,22 +130,23 @@ export function buildMonthlySpendSnapshot(
   const rows = activeBudgetRows
     .map((row) => {
       const rowCategorySet = buildBudgetCategorySet(row);
-      const spent = spendTransactions
-        .filter((tx) => {
+      const spent = sumMoney(
+        spendTransactions.filter((tx) => {
           if (isUncategorizedCategoryName(row.name)) return !matchedBudgetCategories.has(tx.category);
           return rowCategorySet.has(tx.category);
-        })
-        .reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
+        }),
+        (tx) => Math.abs(Number(tx.amount) || 0)
+      );
 
       return {
         ...row,
         months: row.months || budgetMonths,
         spent,
-        remaining: Number(row.budget || 0) - spent,
+        remaining: subtractMoney(row.budget, spent),
         color: row.color || "#00d8ff",
       };
     });
-  const monthlyBudget = rows.reduce((sum, row) => sum + Number(row.budget || 0), 0);
+  const monthlyBudget = sumMoney(rows, (row) => row.budget);
   const monthlySpend = sumSpendTransactions(activeMonthTransactions);
 
   return {
@@ -162,7 +164,7 @@ export function buildMonthlySpendSnapshot(
     monthlyBudget,
     monthlySpend,
     monthlySpent: monthlySpend,
-    remaining: monthlyBudget - monthlySpend,
+    remaining: subtractMoney(monthlyBudget, monthlySpend),
     unmatchedSpend: sumSpendTransactions(unmatchedTransactions),
     unmatchedTransactions,
   };
@@ -201,15 +203,17 @@ export function buildBudgetMonthlySpendSeries(transactions, budgetRows, year) {
 /** Positive inflows for the month (excludes Transfers category). */
 export function sumActualIncomeForMonth(transactions, month, year) {
   const list = Array.isArray(transactions) ? transactions : [];
-  return list
-    .filter((tx) => isTransactionInBudgetMonth(tx, month, year))
-    .reduce((sum, tx) => {
-      const amount = Number(tx.amount) || 0;
-      if (amount <= 0) return sum;
-      const category = String(tx.category || "").trim().toLowerCase();
-      if (category === "transfers") return sum;
-      return sum + amount;
-    }, 0);
+  return fromCents(
+    list
+      .filter((tx) => isTransactionInBudgetMonth(tx, month, year))
+      .reduce((cents, tx) => {
+        const amountCents = toCents(tx.amount);
+        if (amountCents <= 0) return cents;
+        const category = String(tx.category || "").trim().toLowerCase();
+        if (category === "transfers") return cents;
+        return cents + amountCents;
+      }, 0)
+  );
 }
 
 export function buildMonthlyActualIncomeSeries(transactions, year) {

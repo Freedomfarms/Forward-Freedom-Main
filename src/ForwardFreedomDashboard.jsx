@@ -10,6 +10,7 @@ import {
 import { styles } from "./styles.js";
 import { getBudgetPeriodAtOffset, getCurrentTimestamp } from "./utils/date.js";
 import { money, parseMoney } from "./utils/format.js";
+import { addMoney, roundMoney, subtractMoney, sumMoney } from "./utils/money.js";
 import {
   createOnboardingState,
   evaluateOnboardingProgress,
@@ -99,9 +100,7 @@ import { WorkspaceGuideAssistant } from "./components/WorkspaceGuideAssistant.js
 import { useViewportUIScale } from "./utils/useViewportUIScale.js";
 import { LegalModal } from "./components/LegalDocuments.jsx";
 
-function roundCurrency(value) {
-  return Number((Number(value) || 0).toFixed(2));
-}
+const roundCurrency = roundMoney;
 
 function normalizeCryptoPrice(value) {
   return Number((Number(value) || 0).toFixed(8));
@@ -644,6 +643,14 @@ function ForwardFreedomDashboard({
   );
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [isGuideOpen, setIsGuideOpen] = useState(false);
+  // Live-price refresh failures (CoinGecko / precious metals). Stale prices in
+  // a fintech context must never fail silently, so these feed a visible banner.
+  const [priceFeedNotices, setPriceFeedNotices] = useState({ crypto: "", metals: "" });
+  const setPriceFeedNotice = (feed, message) => {
+    setPriceFeedNotices((current) =>
+      current[feed] === message ? current : { ...current, [feed]: message }
+    );
+  };
   const plaidRecoverySyncUserIdsRef = useRef(new Set());
   const plaidOAuthResumeAttemptedRef = useRef(false);
   const activeUser = users.find((user) => user.id === activeUserId) || users[0] || EMPTY_USER_STATE;
@@ -876,15 +883,20 @@ function ForwardFreedomDashboard({
     );
   };
 
-  const liquidCash = syncedAccounts
-    .filter((account) => LIQUID_ACCOUNT_TYPES.has(account.type))
-    .reduce((sum, account) => sum + account.balance, 0);
-
-  const creditCardDebt = Math.abs(
-    syncedAccounts
-      .filter((account) => account.type === "Credit Card")
-      .reduce((sum, account) => sum + account.balance, 0)
+  const liquidCash = sumMoney(
+    syncedAccounts.filter((account) => LIQUID_ACCOUNT_TYPES.has(account.type)),
+    (account) => account.balance
   );
+
+  // Credit card balances are stored as negative when money is owed. Net the
+  // balances and floor at zero instead of Math.abs-ing the sum: a positive
+  // balance (e.g. an overpayment credit or a data glitch) must reduce reported
+  // debt, never be silently counted as more debt.
+  const creditCardNetBalance = sumMoney(
+    syncedAccounts.filter((account) => account.type === "Credit Card"),
+    (account) => account.balance
+  );
+  const creditCardDebt = Math.max(0, -creditCardNetBalance);
 
   // Reserve (committed) cash: the sum of every reserve category's balance.
   // This money physically sits in checking but is no longer spendable True Cash.
@@ -897,31 +909,23 @@ function ForwardFreedomDashboard({
 
   // Gross True Cash keeps the pre-reserves meaning (liquid minus credit cards) and
   // is what net worth / allocations use, because reserve cash is still real cash.
-  const grossTrueCash = liquidCash - creditCardDebt;
+  const grossTrueCash = subtractMoney(liquidCash, creditCardDebt);
   // Spendable True Cash removes committed reserve dollars. Allowed to go negative:
   // a negative value honestly signals the user has committed more than they hold.
   const trueCash = computeTrueCash({ liquidCash, creditCardDebt, reservesBalance });
   const isReservesOvercommitted = reservesBalance > liquidCash;
 
-  const investmentTotal = syncedAccounts
-    .filter((account) => account.type === "Investment")
-    .reduce((sum, account) => sum + account.balance, 0);
+  const sumAccountTypeBalance = (accountType) =>
+    sumMoney(
+      syncedAccounts.filter((account) => account.type === accountType),
+      (account) => account.balance
+    );
 
-  const cryptoTotal = syncedAccounts
-    .filter((account) => account.type === "Crypto")
-    .reduce((sum, account) => sum + account.balance, 0);
-
-  const preciousMetalsTotal = syncedAccounts
-    .filter((account) => account.type === "Precious Metals")
-    .reduce((sum, account) => sum + account.balance, 0);
-
-  const realEstateTotal = syncedAccounts
-    .filter((account) => account.type === "Real Estate")
-    .reduce((sum, account) => sum + account.balance, 0);
-
-  const retirementTotal = syncedAccounts
-    .filter((account) => account.type === "Retirement")
-    .reduce((sum, account) => sum + account.balance, 0);
+  const investmentTotal = sumAccountTypeBalance("Investment");
+  const cryptoTotal = sumAccountTypeBalance("Crypto");
+  const preciousMetalsTotal = sumAccountTypeBalance("Precious Metals");
+  const realEstateTotal = sumAccountTypeBalance("Real Estate");
+  const retirementTotal = sumAccountTypeBalance("Retirement");
 
   const currentMonth = currentBudgetPeriod.month;
   const anchorStartingMonth = resolveUserAnchorStartingMonth(activeUser, currentMonth);
@@ -929,13 +933,15 @@ function ForwardFreedomDashboard({
     month: currentBudgetPeriod.month,
     year: currentBudgetPeriod.year,
   });
-  const currentMonthIncome = incomeStreams
-    .filter((s) => (s.months || budgetMonths).includes(currentMonth))
-    .reduce((sum, s) => sum + parseMoney(s.amount), 0);
-  const currentMonthBudget = budgetRows
-    .filter((r) => (r.months || budgetMonths).includes(currentMonth))
-    .reduce((sum, r) => sum + Number(r.budget || 0), 0);
-  const monthlyFlow = currentMonthIncome - currentMonthBudget;
+  const currentMonthIncome = sumMoney(
+    incomeStreams.filter((s) => (s.months || budgetMonths).includes(currentMonth)),
+    (s) => parseMoney(s.amount)
+  );
+  const currentMonthBudget = sumMoney(
+    budgetRows.filter((r) => (r.months || budgetMonths).includes(currentMonth)),
+    (r) => r.budget
+  );
+  const monthlyFlow = subtractMoney(currentMonthIncome, currentMonthBudget);
   const currentYearPlanState = activeUser.plansByYear?.[String(currentPlanYear)];
   const baseCurrentPlanData = buildPlanYearData({
     budgetRows: activeUser.budgetRows,
@@ -955,12 +961,14 @@ function ForwardFreedomDashboard({
   const activePlaidNicknames = buildPlaidNicknameMap(syncedAccounts);
 
   const totalNetWorth = Math.max(
-    grossTrueCash +
-      investmentTotal +
-      cryptoTotal +
-      preciousMetalsTotal +
-      realEstateTotal +
-      retirementTotal,
+    addMoney(
+      grossTrueCash,
+      investmentTotal,
+      cryptoTotal,
+      preciousMetalsTotal,
+      realEstateTotal,
+      retirementTotal
+    ),
     1
   );
   const pct = (v) => `${((v / totalNetWorth) * 100).toFixed(1)}%`;
@@ -1444,7 +1452,15 @@ function ForwardFreedomDashboard({
     let cancelled = false;
     fetchPreciousMetalsSpotPrices()
       .then((quotes) => {
-        if (cancelled || Object.keys(quotes).length === 0) return;
+        if (cancelled) return;
+        if (Object.keys(quotes).length === 0) {
+          setPriceFeedNotice(
+            "metals",
+            "Precious metals spot prices could not be refreshed. Metal values may be out of date."
+          );
+          return;
+        }
+        setPriceFeedNotice("metals", "");
 
         setUsers((currentUsers) =>
           currentUsers.map((user) => {
@@ -1489,7 +1505,13 @@ function ForwardFreedomDashboard({
           })
         );
       })
-      .catch(() => {});
+      .catch(() => {
+        if (cancelled) return;
+        setPriceFeedNotice(
+          "metals",
+          "Precious metals spot prices could not be refreshed. Metal values may be out of date."
+        );
+      });
 
     return () => {
       cancelled = true;
@@ -1515,7 +1537,15 @@ function ForwardFreedomDashboard({
 
     fetchCryptoQuotes(uniqueAssetIds)
       .then((quotes) => {
-        if (cancelled || Object.keys(quotes).length === 0) return;
+        if (cancelled) return;
+        if (Object.keys(quotes).length === 0) {
+          setPriceFeedNotice(
+            "crypto",
+            "Crypto prices could not be refreshed from CoinGecko. Crypto values may be out of date."
+          );
+          return;
+        }
+        setPriceFeedNotice("crypto", "");
 
         setUsers((currentUsers) =>
           currentUsers.map((user) => {
@@ -1554,7 +1584,13 @@ function ForwardFreedomDashboard({
           })
         );
       })
-      .catch(() => {});
+      .catch(() => {
+        if (cancelled) return;
+        setPriceFeedNotice(
+          "crypto",
+          "Crypto prices could not be refreshed from CoinGecko. Crypto values may be out of date."
+        );
+      });
 
     return () => {
       cancelled = true;
@@ -2298,6 +2334,52 @@ function ForwardFreedomDashboard({
                   Exit Demo
                 </button>
               ) : null}
+            </div>
+          ) : null}
+          {priceFeedNotices.crypto || priceFeedNotices.metals ? (
+            <div
+              role="alert"
+              style={{
+                marginBottom: 18,
+                border: "1px solid rgba(255,166,0,.32)",
+                borderRadius: 12,
+                background: "linear-gradient(90deg, rgba(61,34,0,.42), rgba(11,18,35,.9))",
+                padding: "12px 16px",
+                display: "flex",
+                alignItems: "flex-start",
+                justifyContent: "space-between",
+                gap: 14,
+              }}
+            >
+              <div style={{ display: "grid", gap: 4 }}>
+                <div style={{ color: "#ffd38a", fontSize: 12, fontWeight: 800, letterSpacing: 0.4 }}>
+                  Live pricing unavailable
+                </div>
+                {[priceFeedNotices.crypto, priceFeedNotices.metals]
+                  .filter(Boolean)
+                  .map((notice) => (
+                    <div key={notice} style={{ color: "#e8d9c2", fontSize: 13, lineHeight: 1.5 }}>
+                      {notice}
+                    </div>
+                  ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => setPriceFeedNotices({ crypto: "", metals: "" })}
+                aria-label="Dismiss pricing notice"
+                style={{
+                  border: "1px solid rgba(255,211,138,.35)",
+                  borderRadius: 8,
+                  background: "transparent",
+                  color: "#ffd38a",
+                  padding: "4px 10px",
+                  cursor: "pointer",
+                  fontWeight: 800,
+                  flexShrink: 0,
+                }}
+              >
+                Dismiss
+              </button>
             </div>
           ) : null}
           <SetupStepBanner

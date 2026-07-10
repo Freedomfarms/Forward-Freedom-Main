@@ -1,3 +1,5 @@
+import { roundMoney } from "./money.js";
+
 const COINGECKO_API_BASE = "https://api.coingecko.com/api/v3";
 const DAILY_REFRESH_MS = 24 * 60 * 60 * 1000;
 
@@ -7,7 +9,7 @@ export function normalizeCryptoQuantity(value) {
 }
 
 export function calculateCryptoBalance(quantity, priceUsd) {
-  return Number(((Number(quantity) || 0) * (Number(priceUsd) || 0)).toFixed(2));
+  return roundMoney((Number(quantity) || 0) * (Number(priceUsd) || 0));
 }
 
 export function isCryptoPriceStale(lastPriceUpdatedAt, refreshMs = DAILY_REFRESH_MS) {

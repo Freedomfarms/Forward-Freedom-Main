@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { styles } from "../styles.js";
 import { money, wholeDollars, cleanMoneyInput, parseMoney } from "../utils/format.js";
+import { subtractMoney, sumMoney } from "../utils/money.js";
 import { buildMonthlySpendSnapshot } from "../utils/budgetReview.js";
 import { getCurrentBudgetPeriod } from "../utils/date.js";
 import {
@@ -255,19 +256,16 @@ export function BudgetCommandCenter({
   });
   const reserveSnapshots = reserveReadiness.reserves;
 
-  const budgetTotal = operatingRowsWithSpend.reduce(
-    (sum, row) => sum + (Number(row.budget) || 0),
-    0
-  );
-  const operatingSpend = operatingRowsWithSpend.reduce(
-    (sum, row) => sum + (Number(row.spent) || 0),
-    0
-  );
+  const budgetTotal = sumMoney(operatingRowsWithSpend, (row) => row.budget);
+  const operatingSpend = sumMoney(operatingRowsWithSpend, (row) => row.spent);
   const planningIncomeStreams = getIncomeStreamsForYear(activeBudgetDate.year);
-  const monthIncomeTotal = planningIncomeStreams
-    .filter((stream) => (stream.months || budgetMonths).includes(activeBudgetMonth))
-    .reduce((sum, stream) => sum + parseMoney(stream.amount), 0);
-  const monthRemaining = budgetTotal - operatingSpend;
+  const monthIncomeTotal = sumMoney(
+    planningIncomeStreams.filter((stream) =>
+      (stream.months || budgetMonths).includes(activeBudgetMonth)
+    ),
+    (stream) => parseMoney(stream.amount)
+  );
+  const monthRemaining = subtractMoney(budgetTotal, operatingSpend);
   const budgetUsedPercent = budgetTotal > 0 ? (operatingSpend / budgetTotal) * 100 : 0;
   const normalizedBudgetUsedPercent = Math.max(0, Math.min(100, budgetUsedPercent));
   const budgetUsageGradient =
@@ -283,20 +281,22 @@ export function BudgetCommandCenter({
   // Planned monthly cash flow (income - budgeted outflow) across the plan year,
   // used for the Cash Flow value, its month-over-month delta, and the sparkline.
   const cashFlowSeries = budgetMonths.map((month) => {
-    const income = planningIncomeStreams
-      .filter((stream) => (stream.months || budgetMonths).includes(month))
-      .reduce((sum, stream) => sum + parseMoney(stream.amount), 0);
-    const outflow = planningBudgetRows
-      .filter((row) => (row.months || budgetMonths).includes(month))
-      .reduce((sum, row) => sum + (Number(row.budget) || 0), 0);
-    return income - outflow;
+    const income = sumMoney(
+      planningIncomeStreams.filter((stream) => (stream.months || budgetMonths).includes(month)),
+      (stream) => parseMoney(stream.amount)
+    );
+    const outflow = sumMoney(
+      planningBudgetRows.filter((row) => (row.months || budgetMonths).includes(month)),
+      (row) => row.budget
+    );
+    return subtractMoney(income, outflow);
   });
   const activeMonthIndex = Math.max(0, budgetMonths.indexOf(activeBudgetMonth));
   const monthCashFlow = cashFlowSeries[activeMonthIndex] || 0;
   const previousMonthCashFlow =
     activeMonthIndex > 0 ? cashFlowSeries[activeMonthIndex - 1] : null;
   const cashFlowDelta =
-    previousMonthCashFlow === null ? null : monthCashFlow - previousMonthCashFlow;
+    previousMonthCashFlow === null ? null : subtractMoney(monthCashFlow, previousMonthCashFlow);
 
   const updateBudgetRow = (id, field, value) => {
     setBudgetRowsForYear(activeBudgetDate.year, (rows) =>
