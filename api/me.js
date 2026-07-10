@@ -1,4 +1,8 @@
 import { authenticateRequest, AuthError } from "../server/auth/verifyAuth.js";
+import {
+  isMissingConsentColumnError,
+  isMissingConsentHistoryTableError,
+} from "../server/auth/legalConsent.js";
 import { getPrismaClient, isDatabaseConfigured } from "../server/db/prisma.js";
 import { respondInternalError } from "../server/http/errorHelpers.js";
 import { enforceRateLimit, generalApiRateLimit } from "../server/http/rateLimit.js";
@@ -6,6 +10,7 @@ import { readJsonBody } from "../server/http/requestHelpers.js";
 import { applySecurityHeaders } from "../server/http/responseHelpers.js";
 
 const LEGAL_CONSENT_VERSION_MAX_LENGTH = 64;
+const LEGAL_CONSENT_METHOD_MAX_LENGTH = 32;
 
 // Column set that predates the user_legal_consent migration. Used to keep
 // /api/me working against a production database that has not been migrated
@@ -21,10 +26,6 @@ const LEGACY_USER_SELECT = {
   createdAt: true,
   updatedAt: true,
 };
-
-function isMissingConsentColumnError(error) {
-  return error?.code === "P2022" && /legalConsent/i.test(String(error?.message || ""));
-}
 
 function buildUserPayload(decodedToken, userRecord = null) {
   return {
@@ -84,7 +85,51 @@ function parseLegalConsentPayload(payload) {
     return null;
   }
 
-  return { version };
+  const rawMethod = typeof consent.method === "string" ? consent.method.trim() : "";
+  const method = rawMethod.slice(0, LEGAL_CONSENT_METHOD_MAX_LENGTH) || null;
+
+  return { version, method };
+}
+
+// Records the acceptance both as the latest consent on User (fast path for
+// enforcement) and as an immutable audit-trail row. Written atomically so the
+// two never diverge. Falls back gracefully when only part of the newer schema
+// has been migrated.
+async function recordLegalConsent(prisma, decodedToken, consent) {
+  const profileColumns = buildProfileColumns(decodedToken);
+  const consentColumns = {
+    legalConsentAt: new Date(),
+    legalConsentVersion: consent.version,
+  };
+  const userUpsert = {
+    where: { id: decodedToken.uid },
+    update: { ...profileColumns, ...consentColumns },
+    create: { id: decodedToken.uid, ...profileColumns, ...consentColumns },
+  };
+
+  try {
+    const [userRecord] = await prisma.$transaction([
+      prisma.user.upsert(userUpsert),
+      prisma.legalConsentEvent.create({
+        data: {
+          userId: decodedToken.uid,
+          version: consent.version,
+          method: consent.method,
+        },
+      }),
+    ]);
+    return userRecord;
+  } catch (error) {
+    // History table not migrated yet: still persist the latest consent so
+    // enforcement works, but skip the audit row until the migration runs.
+    if (isMissingConsentHistoryTableError(error)) {
+      console.warn(
+        "[api/me] Consent history table missing; recording latest consent only until the migration is applied."
+      );
+      return prisma.user.upsert(userUpsert);
+    }
+    throw error;
+  }
 }
 
 export default async function handler(request, response) {
@@ -122,10 +167,7 @@ export default async function handler(request, response) {
       try {
         // The consent timestamp is stamped with the server clock so it can
         // serve as durable proof of acceptance, independent of client clocks.
-        userRecord = await upsertUserRecord(prisma, decodedToken, {
-          legalConsentAt: new Date(),
-          legalConsentVersion: consent.version,
-        });
+        userRecord = await recordLegalConsent(prisma, decodedToken, consent);
       } catch (error) {
         if (isMissingConsentColumnError(error)) {
           return response.status(503).json({

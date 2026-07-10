@@ -1,4 +1,9 @@
 import { authenticateRequest, AuthError } from "../server/auth/verifyAuth.js";
+import {
+  LegalConsentError,
+  requireLegalConsent,
+  respondLegalConsentRequired,
+} from "../server/auth/legalConsent.js";
 import { getPrismaClient, isDatabaseConfigured, Prisma } from "../server/db/prisma.js";
 import {
   getSchemaCapabilities,
@@ -202,6 +207,10 @@ export default async function handler(request, response) {
       });
     }
 
+    // Workspace writes persist financial data, so require current legal
+    // consent server-side (not just the client checkbox).
+    await requireLegalConsent(prisma, decodedToken.uid);
+
     const payload = await readJsonBody(request);
     if (!payload?.state || typeof payload.state !== "object" || Array.isArray(payload.state)) {
       return response.status(400).json(buildErrorResponse("A workspace state object is required."));
@@ -264,6 +273,10 @@ export default async function handler(request, response) {
   } catch (error) {
     if (error instanceof AuthError) {
       return response.status(error.status).json(buildErrorResponse(error.message));
+    }
+
+    if (error instanceof LegalConsentError) {
+      return respondLegalConsentRequired(response, error);
     }
 
     if (error?.status === 400) {
