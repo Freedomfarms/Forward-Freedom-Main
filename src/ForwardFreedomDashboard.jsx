@@ -25,6 +25,7 @@ import {
   loadPersistedAppState,
   persistAppState,
 } from "./utils/appState.js";
+import { sanitizeWorkspaceStateForPersistence } from "./utils/workspacePersistence.js";
 import {
   buildMerchantCategoryRules,
   categorizeTransactions,
@@ -606,7 +607,10 @@ function ForwardFreedomDashboard({
   initialAppStateOverride,
   onPersistedStateChange,
   sessionControls,
-  persistLocally = true,
+  // Local persistence is opt-in: writing financial state to localStorage must
+  // be an explicit caller decision, never a default for public/unauthenticated
+  // render paths.
+  persistLocally = false,
   isDemoMode = false,
   onEnterDemo,
   onExitDemo,
@@ -737,6 +741,25 @@ function ForwardFreedomDashboard({
     recurringPreferences
   );
   const subscriptions = syncAutoDetectedSubscriptions(rawSubscriptions, recurringSuggestions);
+
+  // Write the synced list back into user state whenever auto-detection changed
+  // it. The UI renders the derived list, but persistence reads
+  // user.subscriptions, so without this write-back every reload would silently
+  // drop the auto-detected entries the user can see (bug C-4). Storing the
+  // exact derived array also keeps the generated subscription ids stable
+  // across renders. syncAutoDetectedSubscriptions returns the input array
+  // untouched when nothing changed, so this converges instead of looping.
+  useEffect(() => {
+    if (!activeUser?.id) return;
+    if (subscriptions === rawSubscriptions) return;
+    setSubscriptionsBase((currentSubscriptions) =>
+      // Skip the write if another update landed since this render; the next
+      // render re-derives from the fresh state and re-syncs if still needed.
+      currentSubscriptions === rawSubscriptions ? subscriptions : currentSubscriptions
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeUser?.id, rawSubscriptions, subscriptions]);
+
   const setSubscriptions = (valueOrUpdater) =>
     setSubscriptionsBase((currentSubscriptions) => {
       const syncedSubscriptions = syncAutoDetectedSubscriptions(
@@ -1112,7 +1135,7 @@ function ForwardFreedomDashboard({
     };
 
     if (persistLocally) {
-      persistAppState(nextPersistedState, storageKey);
+      persistAppState(sanitizeWorkspaceStateForPersistence(nextPersistedState), storageKey);
     }
     if (typeof onPersistedStateChange === "function") {
       onPersistedStateChange(nextPersistedState);

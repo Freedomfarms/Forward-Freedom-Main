@@ -13,15 +13,26 @@ function readHeader(request, name) {
   return undefined;
 }
 
-function getClientIp(request) {
-  const forwarded = readHeader(request, "x-forwarded-for");
-  if (typeof forwarded === "string" && forwarded.trim()) {
-    return forwarded.split(",")[0].trim();
-  }
+// Forwarded-IP headers are only trustworthy when a proxy we control sets them
+// (Vercel always does). A directly exposed Express server must key on the
+// socket address instead — otherwise every rate limit is bypassable by
+// rotating X-Forwarded-For. Self-hosted deployments sitting behind a trusted
+// reverse proxy (nginx, a load balancer) should set FFF_TRUST_PROXY=1 so users
+// are limited per client IP rather than sharing the proxy's bucket.
+const TRUST_PROXY_HEADERS =
+  Boolean(process.env.VERCEL) || /^(1|true|yes)$/i.test(String(process.env.FFF_TRUST_PROXY || ""));
 
-  const realIp = readHeader(request, "x-real-ip");
-  if (typeof realIp === "string" && realIp.trim()) {
-    return realIp.trim();
+function getClientIp(request) {
+  if (TRUST_PROXY_HEADERS) {
+    const forwarded = readHeader(request, "x-forwarded-for");
+    if (typeof forwarded === "string" && forwarded.trim()) {
+      return forwarded.split(",")[0].trim();
+    }
+
+    const realIp = readHeader(request, "x-real-ip");
+    if (typeof realIp === "string" && realIp.trim()) {
+      return realIp.trim();
+    }
   }
 
   return request.ip || request.socket?.remoteAddress || "127.0.0.1";
@@ -109,4 +120,16 @@ export const plaidWebhookRateLimit = rateLimit({
   ...baseRateLimitOptions,
   windowMs: 60 * 1000,
   max: 120,
+});
+
+// App-wide backstop for the self-hosted Express server (server/index.js). Each
+// route handler still enforces its own stricter limit; this separate instance
+// only bounds aggregate per-IP traffic and any future route mounted without a
+// handler-level limiter. The ceiling sits above the sum of legitimate per-route
+// allowances (general 120 + workspace writes 240 + sync/link/exchange) so it
+// never throttles a real client before the per-route limits do.
+export const expressServerBackstopRateLimit = rateLimit({
+  ...baseRateLimitOptions,
+  windowMs: 15 * 60 * 1000,
+  max: 600,
 });

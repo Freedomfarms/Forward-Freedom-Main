@@ -1,5 +1,6 @@
 import express from "express";
 import helmet from "helmet";
+import { expressServerBackstopRateLimit } from "./http/rateLimit.js";
 import assistantHandler from "../api/assistant.js";
 import healthHandler from "../api/health.js";
 import meHandler from "../api/me.js";
@@ -18,6 +19,13 @@ const PORT = Number(process.env.PORT) || 3001;
 // Security headers for every response.
 app.use(helmet());
 
+// App-wide per-IP rate-limit backstop (bug C-5). The Vercel deployment gets
+// this for free because every api/*.js module enforces its own limiter, but a
+// self-hosted Express deployment needs a server-level bound too so no mounted
+// route — present or future — is ever reachable unthrottled. Handler-level
+// limits (Plaid link/exchange etc.) remain the stricter, binding ones.
+app.use("/api", expressServerBackstopRateLimit);
+
 // Plaid signs the webhook against the exact bytes it transmitted. This route
 // must be registered BEFORE the global JSON parser and use a raw body parser so
 // express.json() never re-serializes the payload — a re-serialized body is not
@@ -32,7 +40,8 @@ app.post(
 app.use(express.json({ limit: "256kb" }));
 
 // Mirror the Vercel route modules in local Express so development and deployment
-// exercise the same API entry points. Rate limiting is enforced inside each handler.
+// exercise the same API entry points. Each handler also enforces its own
+// per-route rate limit on top of the app-wide backstop above.
 app.get("/api/health", healthHandler);
 app.get("/api/me", meHandler);
 app.post("/api/assistant", assistantHandler);
