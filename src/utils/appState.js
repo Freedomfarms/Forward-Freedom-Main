@@ -95,6 +95,7 @@ function buildUserState({
     recurringPreferences: normalizeRecurringPreferences(null),
     plaidItems: [],
     plaidNicknames: {},
+    plaidTransactionOverrides: {},
     lastPlaidSyncAt: null,
     merchantCategoryRules: {},
     onboarding: createOnboardingState({ completed: useSeedData }),
@@ -152,6 +153,10 @@ function normalizeUserState(rawUser, fallbackName, useSeedData = true) {
       rawUser?.plaidNicknames && typeof rawUser.plaidNicknames === "object"
         ? rawUser.plaidNicknames
         : defaults.plaidNicknames,
+    plaidTransactionOverrides:
+      rawUser?.plaidTransactionOverrides && typeof rawUser.plaidTransactionOverrides === "object"
+        ? rawUser.plaidTransactionOverrides
+        : defaults.plaidTransactionOverrides,
     lastPlaidSyncAt:
       typeof rawUser?.lastPlaidSyncAt === "string"
         ? rawUser.lastPlaidSyncAt

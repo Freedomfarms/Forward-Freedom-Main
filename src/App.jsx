@@ -36,7 +36,7 @@ import { LEGAL_CONSENT_VERSION } from "./content/legalContent.js";
 import { LegalConsentGate } from "./components/LegalConsentGate.jsx";
 import { WorkspaceConflictModal } from "./components/WorkspaceConflictModal.jsx";
 
-const WORKSPACE_SAVE_DEBOUNCE_MS = 4000;
+const WORKSPACE_SAVE_DEBOUNCE_MS = 2000;
 const WORKSPACE_RATE_LIMIT_RETRY_MS = 30000;
 const WORKSPACE_BOOTSTRAP_RETRY_DELAYS_MS = [0, 800, 2000, 4000];
 const WORKSPACE_RECOVERY_RETRY_MS = 15000;
@@ -376,6 +376,10 @@ function AuthenticatedWorkspaceApp({
   const lastQueuedPersistedStateRef = useRef("");
   const hasConfirmedServerSnapshotRef = useRef(false);
   const rateLimitRetryTimeoutRef = useRef(null);
+  // Latest sanitized state that still needs to reach the server. Lets us flush
+  // a pending debounced save immediately on sign-out / tab-hide so recent edits
+  // aren't dropped when the save effect unmounts before its timer fires.
+  const pendingSaveRef = useRef(null);
   // Serializes snapshot PUTs from this tab. Two overlapping saves would race
   // on the base version marker and 409 against each other, showing a false
   // "changed in another session" conflict to a single-session user.
@@ -667,8 +671,13 @@ function AuthenticatedWorkspaceApp({
 
     const serializedState = JSON.stringify(sanitizedPersistedState);
     if (serializedState === lastServerSnapshotRef.current) {
+      pendingSaveRef.current = null;
       return undefined;
     }
+
+    // Record the not-yet-saved state so an out-of-band flush (sign-out /
+    // tab-hide) can push it immediately instead of relying on the debounce.
+    pendingSaveRef.current = { serializedState, sanitizedPersistedState };
 
     let cancelled = false;
 
@@ -780,6 +789,64 @@ function AuthenticatedWorkspaceApp({
     hadPriorConsentRef.current = Boolean(workspaceProfile?.legalConsentAt);
   }, [workspaceProfile]);
 
+  // Immediately push any pending (debounced) save to the server. Used on
+  // sign-out and tab-hide so edits made within the debounce window are not
+  // lost when the save effect unmounts before its timer fires. Best-effort:
+  // failures leave the working cache in place for the next session.
+  const flushPendingWorkspaceSave = useCallback(async () => {
+    const pending = pendingSaveRef.current;
+    if (!pending || !user) return;
+    if (pending.serializedState === lastServerSnapshotRef.current) return;
+    if (legalConsentRequired || workspaceConflict) return;
+
+    try {
+      const payload = await saveQueueRef.current
+        .catch(() => null)
+        .then(() => {
+          if (pending.serializedState === lastServerSnapshotRef.current) return null;
+          return saveWorkspaceSnapshot(
+            {
+              state: pending.sanitizedPersistedState,
+              source: "flush-on-exit",
+              lastClientUpdatedAt: new Date().toISOString(),
+              baseSnapshotUpdatedAt: lastServerSnapshotUpdatedAtRef.current || null,
+            },
+            { user }
+          );
+        });
+
+      if (payload) {
+        const confirmedState = sanitizeWorkspaceStateForPersistence(
+          payload?.snapshot?.state || pending.sanitizedPersistedState
+        );
+        lastServerSnapshotRef.current = JSON.stringify(confirmedState);
+        lastServerSnapshotUpdatedAtRef.current =
+          payload?.snapshot?.updatedAt || lastServerSnapshotUpdatedAtRef.current;
+        pendingSaveRef.current = null;
+        cacheWorkspaceState(confirmedState, "server-confirmed");
+      }
+    } catch {
+      // Best-effort flush; the debounced save / working cache remain the
+      // fallback so nothing here should surface an error to the user.
+    }
+  }, [cacheWorkspaceState, legalConsentRequired, user, workspaceConflict]);
+
+  // Flush pending edits when the tab is hidden (backgrounded, closed, or
+  // navigated away). visibilitychange fires reliably before unload in modern
+  // browsers and, unlike beforeunload, still allows an async request to start.
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        void flushPendingWorkspaceSave();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [flushPendingWorkspaceSave]);
+
   const handleConsentAccepted = useCallback(() => {
     setLegalConsentRequired(null);
     setWorkspaceProfile((current) =>
@@ -847,7 +914,10 @@ function AuthenticatedWorkspaceApp({
   const sessionEmail = user?.email || profileDetails?.email || "";
   const sessionControls = {
     user,
-    onSignOut: () => void signOut(),
+    onSignOut: () =>
+      void flushPendingWorkspaceSave().finally(() => {
+        signOut();
+      }),
     isBusy,
     isEmailVerified: Boolean(user?.emailVerified ?? profileDetails?.emailVerified),
     onResendVerification: () => void resendVerificationEmail(),
