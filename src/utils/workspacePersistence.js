@@ -43,6 +43,67 @@ function sanitizeTransactionForPersistence(transaction) {
   return omitSensitiveWorkspaceFields(transaction);
 }
 
+// Structural guardrails for client-submitted workspace state. The snapshot is
+// a free-form JSON blob, but a hostile or buggy client must not be able to
+// persist a shape that the normalization code (normalizePersistedAppState and
+// friends) cannot handle, or the app would crash on every load for that user.
+const MAX_WORKSPACE_STATE_DEPTH = 32;
+const MAX_WORKSPACE_USER_PROFILES = 50;
+
+function exceedsMaxDepth(value, maxDepth) {
+  // Iterative traversal: attacker-controlled nesting must not be able to blow
+  // the call stack of the validator itself.
+  const stack = [{ node: value, depth: 1 }];
+  while (stack.length) {
+    const { node, depth } = stack.pop();
+    if (!node || typeof node !== "object") continue;
+    if (depth > maxDepth) return true;
+    const children = Array.isArray(node) ? node : Object.values(node);
+    for (const child of children) {
+      if (child && typeof child === "object") {
+        stack.push({ node: child, depth: depth + 1 });
+      }
+    }
+  }
+  return false;
+}
+
+// Returns a human-readable error string when the submitted workspace state is
+// structurally unusable, or null when it is acceptable.
+export function getWorkspaceStateValidationError(state) {
+  if (!state || typeof state !== "object" || Array.isArray(state)) {
+    return "A workspace state object is required.";
+  }
+
+  if (Object.hasOwn(state, "users")) {
+    if (!Array.isArray(state.users)) {
+      return 'Workspace state field "users" must be an array of profile objects.';
+    }
+    if (state.users.length > MAX_WORKSPACE_USER_PROFILES) {
+      return `Workspace state cannot contain more than ${MAX_WORKSPACE_USER_PROFILES} user profiles.`;
+    }
+    for (const user of state.users) {
+      if (!user || typeof user !== "object" || Array.isArray(user)) {
+        return 'Every entry in workspace state "users" must be an object.';
+      }
+    }
+  }
+
+  if (
+    Object.hasOwn(state, "activeUserId") &&
+    state.activeUserId != null &&
+    typeof state.activeUserId !== "string"
+  ) {
+    return 'Workspace state field "activeUserId" must be a string.';
+  }
+
+  if (exceedsMaxDepth(state, MAX_WORKSPACE_STATE_DEPTH)) {
+    return `Workspace state is nested deeper than ${MAX_WORKSPACE_STATE_DEPTH} levels and cannot be stored.`;
+  }
+
+  return null;
+}
+
 export function sanitizeWorkspaceStateForPersistence(state) {
   if (!state || typeof state !== "object" || Array.isArray(state)) {
     return state;

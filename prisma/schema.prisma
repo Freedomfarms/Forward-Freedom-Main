@@ -30,6 +30,9 @@ model User {
   email               String?              @unique
   displayName         String?
   photoURL            String?
+  // Enforced server-side via server/auth/workspaceRole.js: managing financial
+  // connections (link / refresh / delete Plaid data) requires OWNER or ADMIN,
+  // so role-gated actions stay closed by default for future invited MEMBERs.
   role                WorkspaceRole        @default(OWNER)
   isDisabled          Boolean              @default(false)
   lastLoginAt         DateTime?

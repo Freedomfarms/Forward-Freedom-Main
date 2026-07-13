@@ -19,7 +19,10 @@ import {
 } from "../server/http/rateLimit.js";
 import { readJsonBody } from "../server/http/requestHelpers.js";
 import { applySecurityHeaders } from "../server/http/responseHelpers.js";
-import { sanitizeWorkspaceStateForPersistence } from "../src/utils/workspacePersistence.js";
+import {
+  getWorkspaceStateValidationError,
+  sanitizeWorkspaceStateForPersistence,
+} from "../src/utils/workspacePersistence.js";
 
 function buildErrorResponse(message) {
   return {
@@ -214,6 +217,13 @@ export default async function handler(request, response) {
     const payload = await readJsonBody(request);
     if (!payload?.state || typeof payload.state !== "object" || Array.isArray(payload.state)) {
       return response.status(400).json(buildErrorResponse("A workspace state object is required."));
+    }
+    // Structural validation: reject shapes (wrong `users` type, absurd
+    // nesting, oversized profile lists) that would crash normalization on the
+    // next load instead of persisting them.
+    const stateValidationError = getWorkspaceStateValidationError(payload.state);
+    if (stateValidationError) {
+      return response.status(400).json(buildErrorResponse(stateValidationError));
     }
     const sanitizedState = sanitizeWorkspaceStateForPersistence(payload.state);
     const source = typeof payload.source === "string" ? payload.source : "app-sync";

@@ -3,6 +3,7 @@ import {
   isMissingConsentColumnError,
   isMissingConsentHistoryTableError,
 } from "../server/auth/legalConsent.js";
+import { normalizeWorkspaceRole } from "../server/auth/workspaceRole.js";
 import { getPrismaClient, isDatabaseConfigured } from "../server/db/prisma.js";
 import { respondInternalError } from "../server/http/errorHelpers.js";
 import { enforceRateLimit, generalApiRateLimit } from "../server/http/rateLimit.js";
@@ -34,7 +35,9 @@ function buildUserPayload(decodedToken, userRecord = null, { consentColumnsMissi
     displayName: decodedToken.name || userRecord?.displayName || null,
     photoURL: decodedToken.picture || userRecord?.photoURL || null,
     emailVerified: Boolean(decodedToken.email_verified),
-    role: userRecord?.role || "OWNER",
+    // Role is enforced server-side (server/auth/workspaceRole.js); this field
+    // is informational for the client UI.
+    role: normalizeWorkspaceRole(userRecord?.role),
     legalConsentAt: userRecord?.legalConsentAt || null,
     legalConsentVersion: userRecord?.legalConsentVersion || null,
     // False while the user_legal_consent migration is pending on this
