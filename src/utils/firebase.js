@@ -52,6 +52,14 @@ export function getFirebaseAuthInstance() {
 
   const auth = getAuth(app);
   if (!persistenceSetupPromise) {
+    // Accepted trade-off (audit L-1): browserLocalPersistence keeps the
+    // Firebase session in IndexedDB/localStorage so users stay signed in
+    // across restarts. Same-origin script can read it, so the real defense is
+    // preventing script injection: no dangerouslySetInnerHTML anywhere, and
+    // the Content-Security-Policy shipped from vercel.json. If a stricter
+    // posture is ever required, move to httpOnly session cookies minted
+    // server-side from the ID token (Firebase session cookies) — a server
+    // change, not a persistence-mode change.
     persistenceSetupPromise = setPersistence(auth, browserLocalPersistence).catch(() => null);
   }
 

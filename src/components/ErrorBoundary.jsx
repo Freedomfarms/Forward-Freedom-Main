@@ -83,3 +83,66 @@ export class ErrorBoundary extends Component {
     return this.props.children;
   }
 }
+
+// View-scoped boundary for the main dashboard tabs. A throw inside one view
+// (Accounts, Budget Lab, Transactions, ...) renders this inline panel in the
+// content area instead of blanking the whole app; the sidebar stays usable so
+// the user can retry or move to another tab. Mount it with key={activeTab} so
+// switching tabs automatically clears a previous view's error state.
+export function ViewErrorBoundary({ viewName, children }) {
+  return (
+    <ErrorBoundary
+      fallback={({ reset }) => (
+        <div
+          style={{
+            border: "1px solid rgba(255,93,122,.32)",
+            borderRadius: 18,
+            background: "rgba(3,17,32,.72)",
+            padding: "42px 32px",
+            margin: "24px 0",
+            textAlign: "center",
+            color: "#eef6ff",
+          }}
+        >
+          <div
+            style={{
+              color: "#ff8fa3",
+              textTransform: "uppercase",
+              letterSpacing: 1.4,
+              fontSize: 12,
+              fontWeight: 900,
+            }}
+          >
+            {viewName ? `${viewName} hit an error` : "This view hit an error"}
+          </div>
+          <div style={{ marginTop: 12, fontSize: 24, fontWeight: 900 }}>
+            This screen could not render, but the rest of the app is fine.
+          </div>
+          <p style={{ marginTop: 14, color: "#9fb0c9", lineHeight: 1.6, fontSize: 14 }}>
+            Your data is safe. Try again, or use the sidebar to open a different view while we
+            recover.
+          </p>
+          <button
+            type="button"
+            onClick={reset}
+            style={{
+              marginTop: 20,
+              borderRadius: 10,
+              border: "1px solid rgba(125,220,255,.45)",
+              background: "linear-gradient(90deg,#0077ff,#00aaff)",
+              color: "white",
+              padding: "11px 18px",
+              cursor: "pointer",
+              fontWeight: 800,
+              fontSize: 14,
+            }}
+          >
+            Try Again
+          </button>
+        </div>
+      )}
+    >
+      {children}
+    </ErrorBoundary>
+  );
+}
