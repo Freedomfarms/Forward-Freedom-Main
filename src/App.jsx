@@ -36,7 +36,7 @@ import { LEGAL_CONSENT_VERSION } from "./content/legalContent.js";
 import { LegalConsentGate } from "./components/LegalConsentGate.jsx";
 import { WorkspaceConflictModal } from "./components/WorkspaceConflictModal.jsx";
 
-const WORKSPACE_SAVE_DEBOUNCE_MS = 4000;
+const WORKSPACE_SAVE_DEBOUNCE_MS = 2000;
 const WORKSPACE_RATE_LIMIT_RETRY_MS = 30000;
 const WORKSPACE_BOOTSTRAP_RETRY_DELAYS_MS = [0, 800, 2000, 4000];
 const WORKSPACE_RECOVERY_RETRY_MS = 15000;

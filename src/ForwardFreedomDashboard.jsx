@@ -67,6 +67,12 @@ import {
   normalizePlaidNicknameMap,
 } from "./utils/plaidNicknames.js";
 import {
+  applyPlaidTransactionOverrides,
+  buildPlaidTransactionOverrideMap,
+  upsertPlaidCategoryOverride,
+  upsertPlaidDateNicknameOverride,
+} from "./utils/plaidTransactionOverrides.js";
+import {
   acceptRecurringSuggestionKey,
   buildRecurringSuggestions,
   buildRecurringSubscriptionFromTransaction,
@@ -177,6 +183,7 @@ const EMPTY_USER_STATE = Object.freeze({
   recurringPreferences: normalizeRecurringPreferences(null),
   plaidItems: [],
   plaidNicknames: {},
+  plaidTransactionOverrides: {},
   lastPlaidSyncAt: null,
   merchantCategoryRules: {},
   onboarding: createOnboardingState(),
@@ -496,37 +503,40 @@ function mergePlaidSyncIntoUser(user, syncPayload) {
       .filter((transaction) => transaction.source === "plaid")
       .map((transaction) => [transaction.id, transaction])
   );
-  const syncedTransactions = (syncPayload.transactions || []).map((transaction) => {
-    const existing = existingPlaidTransactions.get(transaction.id);
-    if (!existing) return transaction;
+  const syncedTransactions = applyPlaidTransactionOverrides(
+    (syncPayload.transactions || []).map((transaction) => {
+      const existing = existingPlaidTransactions.get(transaction.id);
+      if (!existing) return transaction;
 
-    let mergedTransaction = transaction;
-    if (existing.categorySource === "user" || existing.categorySource === "manual") {
-      mergedTransaction = {
+      let mergedTransaction = transaction;
+      if (existing.categorySource === "user" || existing.categorySource === "manual") {
+        mergedTransaction = {
+          ...mergedTransaction,
+          category: existing.category,
+          categorySource: existing.categorySource,
+          categoryConfidence: existing.categoryConfidence,
+          needsReview: existing.needsReview,
+        };
+      }
+
+      const nicknameDate =
+        typeof existing.dateNickname === "string" && existing.dateNickname.trim()
+          ? existing.dateNickname.trim()
+          : "";
+      if (!nicknameDate) {
+        return mergedTransaction;
+      }
+
+      return {
         ...mergedTransaction,
-        category: existing.category,
-        categorySource: existing.categorySource,
-        categoryConfidence: existing.categoryConfidence,
-        needsReview: existing.needsReview,
+        plaidPostedDate: transaction.plaidPostedDate || existing.plaidPostedDate || transaction.date,
+        date: nicknameDate,
+        dateNickname: nicknameDate,
+        dateNicknameUpdatedAt: existing.dateNicknameUpdatedAt || null,
       };
-    }
-
-    const nicknameDate =
-      typeof existing.dateNickname === "string" && existing.dateNickname.trim()
-        ? existing.dateNickname.trim()
-        : "";
-    if (!nicknameDate) {
-      return mergedTransaction;
-    }
-
-    return {
-      ...mergedTransaction,
-      plaidPostedDate: transaction.plaidPostedDate || existing.plaidPostedDate || transaction.date,
-      date: nicknameDate,
-      dateNickname: nicknameDate,
-      dateNicknameUpdatedAt: existing.dateNicknameUpdatedAt || null,
-    };
-  });
+    }),
+    user.plaidTransactionOverrides || {}
+  );
   // On the FIRST Plaid link only, clear untouched demo-seed placeholder
   // accounts (identified by their stable seed ids, never by status alone) and
   // the seeded transactions that posted to them. Accounts the user actively
@@ -707,6 +717,7 @@ function ForwardFreedomDashboard({
   const plaidItems = activeUser.plaidItems;
   const lastPlaidSyncAt = activeUser.lastPlaidSyncAt;
   const merchantCategoryRules = activeUser.merchantCategoryRules || {};
+  const plaidTransactionOverrides = activeUser.plaidTransactionOverrides || {};
   const activeTab = SUPPORTED_APP_TABS.has(activeUser.activeTab)
     ? activeUser.activeTab
     : APP_TABS.DASHBOARD;
@@ -747,6 +758,8 @@ function ForwardFreedomDashboard({
   const setObjectives = (valueOrUpdater) => setActiveUserField("objectives", valueOrUpdater);
   const setMerchantCategoryRules = (valueOrUpdater) =>
     setActiveUserField("merchantCategoryRules", valueOrUpdater);
+  const setPlaidTransactionOverrides = (valueOrUpdater) =>
+    setActiveUserField("plaidTransactionOverrides", valueOrUpdater);
   const setOnboarding = (valueOrUpdater) => setActiveUserField("onboarding", valueOrUpdater);
   const setActiveTab = (valueOrUpdater) => setActiveUserField("activeTab", valueOrUpdater);
   const setActiveRange = (valueOrUpdater) => setActiveUserField("activeRange", valueOrUpdater);
@@ -1001,6 +1014,10 @@ function ForwardFreedomDashboard({
   );
   const availablePlanningYears = buildPlanningYearOptions(plansByYear, currentPlanYear);
   const activePlaidNicknames = buildPlaidNicknameMap(syncedAccounts);
+  const activePlaidTransactionOverrides = buildPlaidTransactionOverrideMap(
+    categorizedTransactions,
+    plaidTransactionOverrides
+  );
 
   const totalNetWorth = Math.max(
     addMoney(
@@ -1117,6 +1134,7 @@ function ForwardFreedomDashboard({
           transactions: categorizedTransactions,
           merchantCategoryRules,
           plaidNicknames: activePlaidNicknames,
+          plaidTransactionOverrides: activePlaidTransactionOverrides,
           plansByYear: {
             ...plansByYear,
             [String(currentPlanYear)]: buildPlanYearData({
@@ -1928,6 +1946,16 @@ function ForwardFreedomDashboard({
       if (Number.isNaN(parsedNicknameDate.getTime())) return false;
     }
 
+    if (!nicknameDateText) {
+      setPlaidTransactionOverrides((current) =>
+        upsertPlaidDateNicknameOverride(current, transactionToUpdate, null)
+      );
+    } else {
+      setPlaidTransactionOverrides((current) =>
+        upsertPlaidDateNicknameOverride(current, transactionToUpdate, nicknameDateText)
+      );
+    }
+
     setTransactions((current) =>
       current.map((transaction) => {
         if (transaction.id !== transactionId || transaction.source !== "plaid") return transaction;
@@ -2002,6 +2030,12 @@ function ForwardFreedomDashboard({
     setMerchantCategoryRules((current) =>
       buildMerchantCategoryRules(current, transactionToUpdate.merchant, nextCategory)
     );
+
+    if (transactionToUpdate.source === "plaid") {
+      setPlaidTransactionOverrides((current) =>
+        upsertPlaidCategoryOverride(current, transactionToUpdate, nextCategory)
+      );
+    }
 
     setTransactions((current) => {
       if (transactionToUpdate.id) {
