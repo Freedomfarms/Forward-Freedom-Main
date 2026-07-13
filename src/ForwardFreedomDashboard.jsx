@@ -1149,6 +1149,20 @@ function ForwardFreedomDashboard({
       : {
           ...user,
           name: getDisplayUserName(user, index),
+          // Inactive profiles are persisted as a raw spread, but their derived
+          // Plaid preference maps must still reflect any nicknames/overrides
+          // captured on their own accounts/transactions. Merge (never replace)
+          // so a profile whose Plaid data isn't loaded this session keeps its
+          // saved maps, while a profile that was edited then switched away
+          // still persists the fresh values instead of a stale snapshot.
+          plaidNicknames: {
+            ...(user.plaidNicknames || {}),
+            ...buildPlaidNicknameMap(user.accounts),
+          },
+          plaidTransactionOverrides: buildPlaidTransactionOverrideMap(
+            user.transactions,
+            user.plaidTransactionOverrides
+          ),
         }
   );
 

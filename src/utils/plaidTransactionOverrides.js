@@ -146,7 +146,8 @@ export function upsertPlaidDateNicknameOverride(currentOverrides, transaction, d
   if (dateNickname === null || dateNickname === undefined || !String(dateNickname).trim()) {
     const nextEntry = { ...existing, dateNickname: null };
     if (!nextEntry.category) {
-      const { [key]: removed, ...rest } = normalized;
+      const rest = { ...normalized };
+      delete rest[key];
       return rest;
     }
 
