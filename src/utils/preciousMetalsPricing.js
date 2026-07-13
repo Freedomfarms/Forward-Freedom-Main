@@ -1,3 +1,5 @@
+import { roundMoney as roundCurrency } from "./money.js";
+
 const MINTED_METAL_API_URL = "https://mintedmetal.com/api/prices.json";
 const METALS_REFRESH_MS = 24 * 60 * 60 * 1000;
 const TROY_OUNCE_IN_GRAMS = 31.1034768;
@@ -8,10 +10,6 @@ const METAL_API_KEYS = {
   Platinum: "platinum",
   Palladium: "palladium",
 };
-
-function roundCurrency(value) {
-  return Number((Number(value) || 0).toFixed(2));
-}
 
 export function isPreciousMetalsPriceStale(lastValuedAt, refreshMs = METALS_REFRESH_MS) {
   if (!lastValuedAt) return true;

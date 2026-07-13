@@ -1,6 +1,7 @@
 import { budgetMonthNames, budgetMonths } from "../data/constants.jsx";
 import { getCurrentBudgetPeriod } from "./date.js";
 import { money, parseMoney, wholeDollars } from "./format.js";
+import { addMoney, subtractMoney, sumMoney } from "./money.js";
 import { buildProjectedTrueCashSeries } from "./planning.js";
 
 const FALLBACK_OPEN_YEAR = 2026;
@@ -25,10 +26,10 @@ export function parseChartDate(date) {
 export function buildSyncedTrueCashChart(baseChart, trueCash, valueToChartY) {
   const numericValues = baseChart.values.map((value) => parseMoney(value));
   const lastMockValue = numericValues[numericValues.length - 1] || trueCash;
-  const offset = trueCash - lastMockValue;
-  const adjustedValues = numericValues.map((value) => value + offset);
+  const offset = subtractMoney(trueCash, lastMockValue);
+  const adjustedValues = numericValues.map((value) => addMoney(value, offset));
   const firstValue = adjustedValues[0] || trueCash;
-  const change = trueCash - firstValue;
+  const change = subtractMoney(trueCash, firstValue);
   const percentChange = firstValue ? (change / firstValue) * 100 : 0;
 
   return {
@@ -95,12 +96,13 @@ export function buildForwardTrueCashProjection({
     const activeStreams = incomeStreams.filter((stream) =>
       (stream.months || budgetMonths).includes(month)
     );
-    const income = activeStreams.reduce((sum, stream) => sum + parseMoney(stream.amount), 0);
-    const budget = budgetRows
-      .filter((category) => (category.months || budgetMonths).includes(month))
-      .reduce((sum, category) => sum + Number(category.budget || 0), 0);
-    const profit = income - budget;
-    projectedValue += profit;
+    const income = sumMoney(activeStreams, (stream) => parseMoney(stream.amount));
+    const budget = sumMoney(
+      budgetRows.filter((category) => (category.months || budgetMonths).includes(month)),
+      (category) => category.budget
+    );
+    const profit = subtractMoney(income, budget);
+    projectedValue = addMoney(projectedValue, profit);
 
     return {
       month,

@@ -1,4 +1,5 @@
 import { calculateCryptoBalance } from "./cryptoPricing.js";
+import { roundMoney } from "./money.js";
 
 export const ACCOUNT_TYPES = [
   "Checking",
@@ -36,9 +37,7 @@ export const TRANSACTIONAL_ACCOUNT_TYPES = new Set([
 export const PRECIOUS_METAL_TYPES = ["Gold", "Silver", "Platinum", "Palladium", "Custom"];
 export const PRECIOUS_METAL_UNITS = ["oz", "g"];
 
-function roundCurrency(value) {
-  return Number((Number(value) || 0).toFixed(2));
-}
+const roundCurrency = roundMoney;
 
 function roundRate(value, digits = 8) {
   return Number((Number(value) || 0).toFixed(digits));

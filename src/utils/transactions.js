@@ -1,3 +1,5 @@
+import { fromCents, toCents } from "./money.js";
+
 export function isSpendTransaction(transaction) {
   const amount = Number(transaction?.amount) || 0;
   if (amount >= 0) return false;
@@ -5,8 +7,11 @@ export function isSpendTransaction(transaction) {
 }
 
 export function sumSpendTransactions(transactions) {
-  return transactions.reduce((sum, transaction) => {
-    const amount = Number(transaction?.amount) || 0;
-    return isSpendTransaction(transaction) ? sum + Math.abs(amount) : sum;
-  }, 0);
+  return fromCents(
+    transactions.reduce((cents, transaction) => {
+      return isSpendTransaction(transaction)
+        ? cents + Math.abs(toCents(transaction?.amount))
+        : cents;
+    }, 0)
+  );
 }

@@ -5,6 +5,7 @@ import {
 } from "../data/constants.jsx";
 import { getCurrentBudgetPeriod } from "./date.js";
 import { parseBudgetReviewDate } from "./budgetReview.js";
+import { fromCents, multiplyMoney, subtractMoney, sumMoney, toCents } from "./money.js";
 
 /**
  * Reserve (preparedness) funds are fundamentally different from operating budgets:
@@ -100,7 +101,7 @@ export function buildReserveSnapshot(row, transactions, options = {}) {
 
   const monthlyContribution = Number(row.budget) || 0;
   const targetMonths = Number(row.reserveTargetMonths) || DEFAULT_RESERVE_TARGET_MONTHS;
-  const target = monthlyContribution * targetMonths;
+  const target = multiplyMoney(monthlyContribution, targetMonths);
   const activeMonths = Array.isArray(row.months) && row.months.length ? row.months : budgetMonths;
 
   // Default anchor is the "as of" period so a freshly-converted reserve never
@@ -113,14 +114,17 @@ export function buildReserveSnapshot(row, transactions, options = {}) {
   const anchorIndex = periodIndex(anchor.month, anchor.year);
   const asOfIndex = periodIndex(asOfMonth, asOfYear);
 
-  const contributions =
-    monthlyContribution * countActiveContributions(anchor, asOf, activeMonths);
+  const contributions = multiplyMoney(
+    monthlyContribution,
+    countActiveContributions(anchor, asOf, activeMonths)
+  );
 
   const categorySet = buildReserveCategorySet(row);
   const list = Array.isArray(transactions) ? transactions : [];
 
-  let netWithdrawals = 0;
-  let deployedThisMonth = 0;
+  // Accumulate in integer cents so many small transactions cannot drift.
+  let netWithdrawalCents = 0;
+  let deployedThisMonthCents = 0;
   for (const transaction of list) {
     if (!categorySet.has(transaction.category)) continue;
     const parsed = parseBudgetReviewDate(transaction.date);
@@ -128,17 +132,19 @@ export function buildReserveSnapshot(row, transactions, options = {}) {
     const index = periodIndex(parsed.month, parsed.year);
     if (index === null || index < anchorIndex || index > asOfIndex) continue;
 
-    const amount = Number(transaction.amount) || 0;
+    const amountCents = toCents(transaction.amount);
     // Spending is a negative amount (outflow) -> increases withdrawals.
     // Refunds are positive (inflow) -> reduce withdrawals (restore the reserve).
-    netWithdrawals += -amount;
+    netWithdrawalCents += -amountCents;
 
-    if (parsed.month === asOfMonth && parsed.year === asOfYear && amount < 0) {
-      deployedThisMonth += Math.abs(amount);
+    if (parsed.month === asOfMonth && parsed.year === asOfYear && amountCents < 0) {
+      deployedThisMonthCents += Math.abs(amountCents);
     }
   }
 
-  const balance = Math.max(0, contributions - netWithdrawals);
+  const netWithdrawals = fromCents(netWithdrawalCents);
+  const deployedThisMonth = fromCents(deployedThisMonthCents);
+  const balance = Math.max(0, subtractMoney(contributions, netWithdrawals));
   const ratio = target > 0 ? balance / target : 0;
   const started = target > 0;
   const status = started ? getReserveStatus(ratio) : RESERVE_NOT_STARTED;
@@ -173,7 +179,7 @@ export function buildReserveSnapshot(row, transactions, options = {}) {
  * user has committed more than they currently hold ("overcommitted").
  */
 export function computeTrueCash({ liquidCash = 0, creditCardDebt = 0, reservesBalance = 0 } = {}) {
-  return (Number(liquidCash) || 0) - (Number(creditCardDebt) || 0) - (Number(reservesBalance) || 0);
+  return fromCents(toCents(liquidCash) - toCents(creditCardDebt) - toCents(reservesBalance));
 }
 
 /**
@@ -185,8 +191,8 @@ export function buildReserveReadiness(reserveRows, transactions, options = {}) {
     .filter(isReserveRow)
     .map((row) => buildReserveSnapshot(row, transactions, options));
 
-  const totalBalance = reserves.reduce((sum, reserve) => sum + reserve.balance, 0);
-  const totalTarget = reserves.reduce((sum, reserve) => sum + reserve.target, 0);
+  const totalBalance = sumMoney(reserves, (reserve) => reserve.balance);
+  const totalTarget = sumMoney(reserves, (reserve) => reserve.target);
   const ratio = totalTarget > 0 ? totalBalance / totalTarget : 0;
   const overallPercent = totalTarget > 0 ? Math.min(100, Math.round(ratio * 100)) : 0;
 

@@ -177,9 +177,13 @@ export function mapPlaidAccountsToAppAccounts({
 
       const balanceSource =
         Number(account.balances?.current ?? account.balances?.available ?? 0) || 0;
+      // Plaid reports credit/loan balances as positive-when-owed, while the app
+      // stores liabilities as negative. Negate instead of -Math.abs(): a
+      // negative Plaid balance means a credit (e.g. a credit card overpayment)
+      // and must surface as a positive balance, not be flipped into debt.
       const balance =
         appType === "Credit Card" || appType === "Mortgages / Loans"
-          ? -Math.abs(balanceSource)
+          ? -balanceSource
           : balanceSource;
 
       const liability = liabilityLookup.get(account.account_id);

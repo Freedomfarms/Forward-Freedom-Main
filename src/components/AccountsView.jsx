@@ -3,6 +3,7 @@ import { AccountRemoveConfirmModal } from "./AccountRemoveConfirmModal.jsx";
 import { styles } from "../styles.js";
 import { getCurrentTimestamp } from "../utils/date.js";
 import { money } from "../utils/format.js";
+import { roundMoney, subtractMoney, sumMoney } from "../utils/money.js";
 import {
   ACCOUNT_GROUPS,
   ACCOUNT_TYPES,
@@ -43,12 +44,23 @@ const EMPTY_FORM = {
   monthlyPayment: "",
 };
 
+// Guard rail against fat-fingered balances (e.g. $9999999999999) poisoning
+// every net worth and forecast calculation downstream.
+const MAX_MANUAL_BALANCE = 999_999_999_999;
+
+const BALANCE_INPUT_ERROR = `Enter a valid amount with a single decimal point, up to $${MAX_MANUAL_BALANCE.toLocaleString("en-US")}.`;
+
 function parseBalance(raw) {
   const str = String(raw).trim();
+  if (!str) return NaN;
   const isNeg = str.startsWith("-");
   const digits = str.replace(/[^0-9.]/g, "");
+  // Reject malformed input ("1.2.3") instead of silently collapsing it to 1.23.
+  if (!digits || (digits.match(/\./g) || []).length > 1) return NaN;
   const n = Number(digits);
-  return isNeg ? -Math.abs(n) : n;
+  if (!Number.isFinite(n) || n > MAX_MANUAL_BALANCE) return NaN;
+  const rounded = roundMoney(n);
+  return isNeg ? -rounded : rounded;
 }
 
 function formatCryptoSearchLabel(asset) {
@@ -237,7 +249,20 @@ export function AccountsView({
   const [metalsQuoteError, setMetalsQuoteError] = useState("");
   const [isLoadingMetalsQuote, setIsLoadingMetalsQuote] = useState(false);
 
-  const linkedBalance = accounts.reduce((sum, a) => sum + a.balance, 0);
+  // Assets and debts are shown separately in the hero card: a single summed
+  // "combined balance" hides liabilities (a $400k mortgage plus $10k checking
+  // must never read as positive liquid funds).
+  const totalAssets = sumMoney(
+    accounts.filter((account) => (Number(account.balance) || 0) > 0),
+    (account) => account.balance
+  );
+  const totalDebts = Math.abs(
+    sumMoney(
+      accounts.filter((account) => (Number(account.balance) || 0) < 0),
+      (account) => account.balance
+    )
+  );
+  const netBalance = subtractMoney(totalAssets, totalDebts);
   const attentionItems = (plaidIntegration?.items || []).filter(
     (item) => item.status === "requires_attention"
   );
@@ -319,6 +344,9 @@ export function AccountsView({
   const parsedQuantity = normalizeCryptoQuantity(form.quantity);
   const parsedPricePerUnit = parseBalance(form.pricePerUnit);
   const parsedPropertyMarketValue = parseBalance(form.propertyMarketValue);
+  const balanceInputInvalid = form.balance.trim().length > 0 && !Number.isFinite(parsedBalance);
+  const propertyMarketValueInvalid =
+    form.propertyMarketValue.trim().length > 0 && !Number.isFinite(parsedPropertyMarketValue);
   const linkedLoanBalance =
     loanAccounts.find((account) => account.id === form.linkedLoanId)?.balance || 0;
   const effectiveCryptoQuote =
@@ -926,12 +954,22 @@ export function AccountsView({
                 marginBottom: 8,
               }}
             >
-              Combined balance
+              Net across accounts
             </div>
-            <div style={{ color: "white", fontSize: 22, fontWeight: 700, letterSpacing: "-0.02em" }}>
-              {money(linkedBalance)}
+            <div
+              style={{
+                color: netBalance < 0 ? "#ff8fa3" : "white",
+                fontSize: 22,
+                fontWeight: 700,
+                letterSpacing: "-0.02em",
+              }}
+            >
+              {money(netBalance)}
             </div>
-            <div style={{ color: "#5ad4a8", marginTop: 8, fontWeight: 600, fontSize: 12 }}>
+            <div style={{ color: "#8aa3bf", marginTop: 6, fontWeight: 600, fontSize: 11 }}>
+              Assets {money(totalAssets)} − Debts {money(totalDebts)}
+            </div>
+            <div style={{ color: "#5ad4a8", marginTop: 6, fontWeight: 600, fontSize: 12 }}>
               {accounts.length} account{accounts.length !== 1 ? "s" : ""} tracked
             </div>
           </div>
@@ -1954,6 +1992,11 @@ export function AccountsView({
                           opacity: form.valuationSource === "Live Spot" ? 0.82 : 1,
                         }}
                       />
+                      {form.valuationSource !== "Live Spot" &&
+                      form.pricePerUnit.trim().length > 0 &&
+                      !Number.isFinite(parsedPricePerUnit) ? (
+                        <span style={{ color: "#ff8fa3", fontSize: 12 }}>{BALANCE_INPUT_ERROR}</span>
+                      ) : null}
                     </label>
                   </div>
 
@@ -2038,6 +2081,9 @@ export function AccountsView({
                         onChange={(e) => update("propertyMarketValue", e.target.value)}
                         style={inputStyle}
                       />
+                      {propertyMarketValueInvalid ? (
+                        <span style={{ color: "#ff8fa3", fontSize: 12 }}>{BALANCE_INPUT_ERROR}</span>
+                      ) : null}
                     </label>
 
                     <label style={labelStyle}>
@@ -2075,6 +2121,9 @@ export function AccountsView({
                         ? "This equity is auto-derived from market value minus the linked loan balance."
                         : "Enter the current equity only, not the full market value of the property."}
                     </span>
+                    {!canDeriveRealEstateEquity && balanceInputInvalid ? (
+                      <span style={{ color: "#ff8fa3", fontSize: 12 }}>{BALANCE_INPUT_ERROR}</span>
+                    ) : null}
                   </label>
                 </>
               ) : isLoanAccount ? (
@@ -2153,6 +2202,9 @@ export function AccountsView({
                     <span style={{ color: "#7294bb", fontSize: 12 }}>
                       Use a negative value for what is still owed on the loan.
                     </span>
+                    {balanceInputInvalid ? (
+                      <span style={{ color: "#ff8fa3", fontSize: 12 }}>{BALANCE_INPUT_ERROR}</span>
+                    ) : null}
                   </label>
                 </>
               ) : (
@@ -2175,6 +2227,9 @@ export function AccountsView({
                   <span style={{ color: "#7294bb", fontSize: 12 }}>
                     Enter a negative number for debt / credit card balances (e.g. -2400).
                   </span>
+                  {balanceInputInvalid ? (
+                    <span style={{ color: "#ff8fa3", fontSize: 12 }}>{BALANCE_INPUT_ERROR}</span>
+                  ) : null}
                 </label>
               )}
             </div>

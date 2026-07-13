@@ -1,3 +1,5 @@
+import { roundMoney } from "./money.js";
+
 export function buildLinePath(points) {
   return "M " + points.map((p) => p[0] + " " + p[1]).join(" L ");
 }
@@ -9,8 +11,10 @@ export function buildAreaPath(points) {
 }
 
 export function money(value) {
-  const number = Number(value) || 0;
-  return "$" + number.toLocaleString("en-US");
+  // Round to exact cents before formatting so float drift from upstream math
+  // (e.g. 1234.5600000000002) can never leak into the UI.
+  const number = roundMoney(value);
+  return "$" + number.toLocaleString("en-US", { maximumFractionDigits: 2 });
 }
 
 export function wholeDollars(value) {
@@ -20,7 +24,7 @@ export function wholeDollars(value) {
 }
 
 export function parseMoney(value) {
-  return Number(String(value).replace(/[^0-9.-]/g, "")) || 0;
+  return roundMoney(Number(String(value).replace(/[^0-9.-]/g, "")) || 0);
 }
 
 export function cleanMoneyInput(value) {
