@@ -160,3 +160,29 @@ The Plaid endpoints expect an authenticated Firebase bearer token and store Plai
 Postgres with encrypted access-token persistence. Connected-account consent is collected in the
 authenticated UI before opening Plaid Link, and workspace snapshots intentionally omit synced Plaid
 accounts and transactions so financial data is reloaded from the server-backed Plaid sync path.
+
+## Encryption key rotation (ops runbook)
+
+All sensitive data at rest (Plaid access tokens, balances, transaction details, the workspace blob)
+uses **envelope encryption with versioned Key-Encryption-Keys** (`server/security/envelope.js` +
+`server/security/keyProvider.js`). Every stored ciphertext records the KEK version that wrapped its
+data key, so **rotating keys never invalidates stored data and never forces users to re-link Plaid**
+as long as the old key stays in the keyring until re-encryption completes.
+
+To rotate the encryption key:
+
+1. Generate a new 32-byte key: `openssl rand -base64 32`.
+2. **Append** it to `FFF_ENCRYPTION_KEYS` with a new version — do not remove the old entry yet:
+   `FFF_ENCRYPTION_KEYS="1:<old-key>,2:<new-key>"` and set `FFF_ENCRYPTION_ACTIVE_VERSION="2"`
+   (if unset, the highest version becomes active automatically). Redeploy. New writes now use v2;
+   existing v1 ciphertexts keep decrypting.
+3. Re-encrypt existing rows under the new key: `node scripts/encrypt-backfill.mjs --rotate`
+   (it re-wraps every stored ciphertext — accounts, transactions, Plaid access tokens, and
+   workspace snapshots — under the active version and prints per-table counts).
+4. Only after that rotate run completes without errors, remove the old entry from
+   `FFF_ENCRYPTION_KEYS`.
+
+**Never** remove or replace a key version that still has ciphertexts in the database — decryption of
+those rows will fail and affected users would have to re-link their banks. Legacy deployments that
+only set `PLAID_TOKEN_ENCRYPTION_KEY` get a derived KEK (version `pk1`) automatically; migrate them
+to `FFF_ENCRYPTION_KEYS` using the same append-then-backfill procedure.

@@ -81,6 +81,7 @@ import {
   normalizePreciousMetalsPricePerUnit,
 } from "./utils/preciousMetalsPricing.js";
 import { AccountsView } from "./components/AccountsView.jsx";
+import { ViewErrorBoundary } from "./components/ErrorBoundary.jsx";
 import { buildReserveReadiness, computeTrueCash, isReserveRow } from "./utils/reserves.js";
 import { BudgetCommandCenter } from "./components/BudgetCommandCenter.jsx";
 import { DashboardView } from "./components/DashboardView.jsx";
@@ -2388,6 +2389,10 @@ function ForwardFreedomDashboard({
             onOpenStep={openOnboardingStep}
             onSkip={skipOnboarding}
           />
+          {/* Per-view isolation: a crash in one tab renders an inline fallback
+              here instead of unmounting the whole app. key={activeTab} resets
+              the boundary whenever the user switches views. */}
+          <ViewErrorBoundary key={activeTab} viewName={activeTab}>
           {activeTab === APP_TABS.DASHBOARD ? (
             <DashboardView
               activeRange={activeRange}
@@ -2537,6 +2542,7 @@ function ForwardFreedomDashboard({
               householdProfilesProps={householdProfilesProps}
             />
           )}
+          </ViewErrorBoundary>
         </main>
       </div>
 
