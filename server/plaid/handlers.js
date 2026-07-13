@@ -37,6 +37,7 @@ import {
   requireLegalConsent,
   respondLegalConsentRequired,
 } from "../auth/legalConsent.js";
+import { requireWorkspaceManagerRole } from "../auth/workspaceRole.js";
 
 // Pre-encryption column sets. Prisma's generated client always SELECTs every
 // schema field (including *Ciphertext), which fails with P2022 on a database
@@ -199,7 +200,10 @@ function buildPlaidClientUserId(authUserId, workspaceUserId) {
 
 function toPlaidDate(value) {
   if (!value) return null;
-  return new Date(`${value}T12:00:00Z`);
+  const parsed = new Date(`${value}T12:00:00Z`);
+  // Never let an unparseable date become an Invalid Date in the database;
+  // callers treat null as "no usable date".
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
 function formatAppDate(value) {
@@ -489,6 +493,17 @@ async function persistPlaidTransactions({
 
     if (!mappedTransaction) continue;
 
+    // postedAt is a required column; skip (and log) a transaction with an
+    // unparseable date instead of failing the whole item sync on it.
+    const postedAt = toPlaidDate(transaction.date);
+    if (!postedAt) {
+      logPlaidServerEvent("warn", "transaction_invalid_posted_date", {
+        plaidTransactionId: transaction.transaction_id,
+        date: transaction.date,
+      });
+      continue;
+    }
+
     const transactionFields = encryptionColumns
       ? {
           workspaceUserId,
@@ -502,7 +517,7 @@ async function persistPlaidTransactions({
           categoryCiphertext: encryptField(mappedTransaction.category || ""),
           amount: null,
           amountCiphertext: encryptNumber(Number(mappedTransaction.amount || 0)),
-          postedAt: toPlaidDate(transaction.date),
+          postedAt,
           authorizedAt: toPlaidDate(transaction.authorized_date),
           pending: Boolean(transaction.pending),
         }
@@ -514,7 +529,7 @@ async function persistPlaidTransactions({
           merchant: mappedTransaction.merchant || "",
           category: mappedTransaction.category || null,
           amount: String(Number(mappedTransaction.amount || 0).toFixed(2)),
-          postedAt: toPlaidDate(transaction.date),
+          postedAt,
           authorizedAt: toPlaidDate(transaction.authorized_date),
           pending: Boolean(transaction.pending),
         };
@@ -970,8 +985,10 @@ export async function handleCreatePlaidLinkToken(request, response) {
     const decodedToken = await authenticateVerifiedRequest(request);
     const { prisma, plaidClient } = assertPlaidRuntimeReady();
     await ensureAuthenticatedUserRecord(prisma, decodedToken);
-    // Linking a financial institution requires current legal consent.
+    // Linking a financial institution requires current legal consent and a
+    // role allowed to manage financial connections.
     await requireLegalConsent(prisma, decodedToken.uid);
+    await requireWorkspaceManagerRole(prisma, decodedToken.uid);
 
     const body = await readJsonBody(request);
     const workspaceUserId = normalizeWorkspaceUserId(body.workspaceUserId);
@@ -1039,8 +1056,10 @@ export async function handleExchangePlaidPublicToken(request, response) {
     const decodedToken = await authenticateVerifiedRequest(request);
     const { prisma, plaidClient } = assertPlaidRuntimeReady();
     await ensureAuthenticatedUserRecord(prisma, decodedToken);
-    // Creating a Plaid item (and its accounts) requires current legal consent.
+    // Creating a Plaid item (and its accounts) requires current legal consent
+    // and a role allowed to manage financial connections.
     await requireLegalConsent(prisma, decodedToken.uid);
+    await requireWorkspaceManagerRole(prisma, decodedToken.uid);
 
     const body = await readJsonBody(request);
     const publicToken = body.publicToken;
@@ -1195,7 +1214,10 @@ function isTruthyFlag(value) {
 
 export async function handleSyncPlaidWorkspace(request, response) {
   try {
-    const decodedToken = await authenticateRequest(request);
+    // Reading or refreshing linked financial data requires a verified email,
+    // matching the linking flow: an unverified account (e.g. after account
+    // recovery) must not be able to pull bank data that verification gated.
+    const decodedToken = await authenticateVerifiedRequest(request);
     const workspaceUserId = normalizeWorkspaceUserId(request.query?.workspaceUserId);
     const wantsLiveRefresh = isTruthyFlag(request.query?.refresh);
 
@@ -1241,11 +1263,13 @@ export async function handleSyncPlaidWorkspace(request, response) {
     }
 
     // Explicit refresh (Accounts "Refresh" button): pulls from Plaid and
-    // writes financial data, so require current legal consent. The read path
-    // above is intentionally NOT gated so the app can still render.
+    // writes financial data, so require current legal consent and a role
+    // allowed to manage financial connections. The read path above is
+    // intentionally not consent-gated so the app can still render.
     const { prisma, plaidClient } = assertPlaidRuntimeReady();
     await ensureAuthenticatedUserRecord(prisma, decodedToken);
     await requireLegalConsent(prisma, decodedToken.uid);
+    await requireWorkspaceManagerRole(prisma, decodedToken.uid);
 
     const syncPayload = await syncPlaidWorkspace({
       prisma,
@@ -1271,8 +1295,12 @@ export async function handleSyncPlaidWorkspace(request, response) {
 
 export async function handleDeletePlaidWorkspace(request, response) {
   try {
+    // Deliberately NOT verification-gated: deleting your own financial data
+    // must stay possible even when the email is unverified (data-removal
+    // rights). Role enforcement still applies.
     const decodedToken = await authenticateRequest(request);
     const prisma = getPrismaOrThrow();
+    await requireWorkspaceManagerRole(prisma, decodedToken.uid);
     const workspaceUserId = normalizeWorkspaceUserId(request.query?.workspaceUserId);
 
     const plaidItems = await prisma.plaidItem.findMany({
@@ -1306,8 +1334,11 @@ export async function handleDeletePlaidWorkspace(request, response) {
 
 export async function handleDeletePlaidItem(request, response) {
   try {
-    const decodedToken = await authenticateRequest(request);
+    // Removing a linked institution is as sensitive as linking one, so it
+    // carries the same verified-email and role requirements.
+    const decodedToken = await authenticateVerifiedRequest(request);
     const prisma = getPrismaOrThrow();
+    await requireWorkspaceManagerRole(prisma, decodedToken.uid);
     const workspaceUserId = normalizeWorkspaceUserId(request.query?.workspaceUserId);
     const itemId = normalizePlaidItemId(request.query?.itemId);
 

@@ -274,6 +274,22 @@ export const householdDemoAccounts = [
   },
 ];
 
+const HOUSEHOLD_DEMO_ACCOUNT_IDS = new Set(householdDemoAccounts.map((account) => account.id));
+const HOUSEHOLD_DEMO_TRANSACTION_ID_PREFIX = "tx-demo-";
+
+// Identifies records that came from THIS seed (by their stable seed ids), so
+// demo-cleanup code never mistakes user-created data for demo placeholders.
+export function isHouseholdDemoSeedAccount(account) {
+  return Boolean(account && HOUSEHOLD_DEMO_ACCOUNT_IDS.has(account.id));
+}
+
+export function isHouseholdDemoSeedTransaction(transaction) {
+  return (
+    typeof transaction?.id === "string" &&
+    transaction.id.startsWith(HOUSEHOLD_DEMO_TRANSACTION_ID_PREFIX)
+  );
+}
+
 const RECURRING_EXPENSE_TEMPLATES = [
   { day: 4, merchant: "Mortgage Payment", category: "Housing", account: CHECKING, base: 2845 },
   { day: 6, merchant: "AT&T Wireless", category: "Utilities", account: CHECKING, base: 142.18 },

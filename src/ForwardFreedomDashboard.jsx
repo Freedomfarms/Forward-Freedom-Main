@@ -7,6 +7,10 @@ import {
   navMain,
   navTools,
 } from "./data/constants.jsx";
+import {
+  isHouseholdDemoSeedAccount,
+  isHouseholdDemoSeedTransaction,
+} from "./data/householdDemoSeed.js";
 import { styles } from "./styles.js";
 import { getBudgetPeriodAtOffset, getCurrentTimestamp } from "./utils/date.js";
 import { money, parseMoney } from "./utils/format.js";
@@ -522,14 +526,51 @@ function mergePlaidSyncIntoUser(user, syncPayload) {
       dateNicknameUpdatedAt: existing.dateNicknameUpdatedAt || null,
     };
   });
-  const retainedAccounts = user.accounts.filter((account) => {
-    if (account.syncSource === "Plaid" || account.plaidAccountId) return false;
-    if (shouldReplaceDemoSyncedData && account.status === "Synced") return false;
-    return true;
-  });
+  // On the FIRST Plaid link only, clear untouched demo-seed placeholder
+  // accounts (identified by their stable seed ids, never by status alone) and
+  // the seeded transactions that posted to them. Accounts the user actively
+  // used — by posting their own transactions to them — are kept, so a first
+  // Plaid connect can never silently delete user-entered data. Editing a demo
+  // account already converts its status to "Manual", which also keeps it.
+  const accountNamesWithUserEntries = new Set(
+    user.transactions
+      .filter(
+        (transaction) =>
+          transaction.source === "manual" && !isHouseholdDemoSeedTransaction(transaction)
+      )
+      .map((transaction) => transaction.account)
+  );
+  const removedDemoAccountNames = new Set();
+  const retainedAccounts = user.accounts
+    .filter((account) => {
+      if (account.syncSource === "Plaid" || account.plaidAccountId) return false;
+      if (
+        shouldReplaceDemoSyncedData &&
+        account.status === "Synced" &&
+        isHouseholdDemoSeedAccount(account) &&
+        !accountNamesWithUserEntries.has(account.name)
+      ) {
+        removedDemoAccountNames.add(account.name);
+        return false;
+      }
+      return true;
+    })
+    .map((account) =>
+      // A surviving demo-styled "Synced" account becomes a plain manual
+      // account once real bank data exists, so it stops presenting as linked.
+      shouldReplaceDemoSyncedData && account.status === "Synced"
+        ? { ...account, status: "Manual" }
+        : account
+    );
   const retainedTransactions = user.transactions.filter((transaction) => {
     if (transaction.source === "plaid") return false;
-    if (shouldReplaceDemoSyncedData && transaction.source !== "manual") return false;
+    if (
+      shouldReplaceDemoSyncedData &&
+      isHouseholdDemoSeedTransaction(transaction) &&
+      removedDemoAccountNames.has(transaction.account)
+    ) {
+      return false;
+    }
     return true;
   });
 

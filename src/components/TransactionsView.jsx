@@ -265,6 +265,14 @@ export function TransactionsView({
     source: "All",
     review: "All",
   });
+  // The account filter is seeded from the selectedAccount prop, so it must
+  // also follow the prop when navigation changes it while this view stays
+  // mounted; otherwise the filter silently keeps targeting the old account.
+  const [lastSyncedSelectedAccount, setLastSyncedSelectedAccount] = useState(selectedAccount);
+  if (selectedAccount !== lastSyncedSelectedAccount) {
+    setLastSyncedSelectedAccount(selectedAccount);
+    setFilters((current) => ({ ...current, account: selectedAccount || "All" }));
+  }
 
   const closeAccountRemoveModal = () => {
     if (isRemovingAccount) return;
