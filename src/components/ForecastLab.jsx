@@ -705,6 +705,7 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
           <div style={{ display: "grid", gap: 20 }}>
             <div className="forecast-chart-panel" style={{ ...styles.panel, padding: "24px 24px 0" }}>
               <div
+                className="forecast-chart-toolbar"
                 style={{
                   display: "grid",
                   gridTemplateColumns: "minmax(0, 1fr) auto minmax(0, 1fr)",
@@ -849,6 +850,7 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
 
               <div style={{ display: "flex", gap: 0 }}>
                 <div
+                  className="forecast-chart-ylabels"
                   style={{
                     width: 80,
                     flexShrink: 0,
@@ -1131,7 +1133,7 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
                   </div>
                 </div>
 
-                <div style={{ ...styles.panel, padding: 24 }}>
+                <div className="forecast-review-panel" style={{ ...styles.panel, padding: 24 }}>
                   <div
                     style={{
                       color: "white",
@@ -1162,7 +1164,7 @@ export function ForecastLab({ transactions, budgetRows, householdProfilesProps }
                   <div style={{ textAlign: "right" }}>Tx Count</div>
                 </div>
 
-                <div style={{ maxHeight: "58vh", overflowY: "auto" }}>
+                <div className="forecast-review-body" style={{ maxHeight: "58vh", overflowY: "auto" }}>
                   {monthlySeries.map((row, index) => {
                     const isFocused = focusMonthData?.month === row.month;
                     const avgColor = row.deltaFromAverage > 0 ? "#ffb65d" : "#00f59b";

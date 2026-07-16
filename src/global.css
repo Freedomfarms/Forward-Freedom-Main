@@ -768,6 +768,26 @@ textarea:focus-visible,
     padding: 18px 16px 0 !important;
   }
 
+  .forecast-chart-toolbar {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+
+  .forecast-chart-toolbar > div:nth-child(2) {
+    justify-content: flex-start !important;
+    padding: 0 !important;
+    text-align: left !important;
+  }
+
+  .forecast-chart-toolbar > div:nth-child(3) {
+    justify-content: flex-start !important;
+    row-gap: 8px !important;
+  }
+
+  .forecast-chart-ylabels {
+    width: 52px !important;
+  }
+
   .forecast-chart-frame {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
@@ -783,9 +803,19 @@ textarea:focus-visible,
     overflow-x: auto;
   }
 
-  .forecast-review-header,
-  .forecast-review-row,
-  .forecast-review-footer {
+  .forecast-review-panel {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .forecast-review-body {
+    max-height: none !important;
+    overflow-y: visible !important;
+  }
+
+  .app-main .forecast-review-header,
+  .app-main .forecast-review-row,
+  .app-main .forecast-review-footer {
     min-width: 560px;
   }
 
