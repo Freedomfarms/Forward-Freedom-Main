@@ -955,6 +955,7 @@ export function DashboardView({
           ) : null}
 
           <div
+            className="dashboard-chart-xaxis"
             style={{
               position: "absolute",
               left: 64,

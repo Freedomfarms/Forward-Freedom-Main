@@ -590,6 +590,15 @@ textarea:focus-visible,
     overflow: hidden;
   }
 
+  .dashboard-chart-xaxis {
+    font-size: 12px !important;
+    gap: 6px;
+  }
+
+  .dashboard-chart-xaxis span {
+    white-space: nowrap;
+  }
+
   .budget-hero {
     gap: 18px !important;
     margin-bottom: 24px !important;
@@ -891,6 +900,16 @@ textarea:focus-visible,
   .dashboard-chart-frame {
     height: 280px !important;
     padding-left: 42px !important;
+  }
+
+  .dashboard-chart-xaxis {
+    font-size: 11px !important;
+  }
+
+  .dashboard-chart-xaxis span:not(:nth-child(3n + 1)):not(:last-child) {
+    visibility: hidden;
+    width: 0;
+    overflow: hidden;
   }
 
   .budget-hero-stats {
