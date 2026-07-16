@@ -729,6 +729,26 @@ textarea:focus-visible,
     min-width: 0 !important;
   }
 
+  .income-stream-head {
+    grid-template-columns: auto minmax(0, 1fr) !important;
+    gap: 10px 12px !important;
+  }
+
+  .income-stream-head > input {
+    grid-column: 1 / -1;
+    width: 100% !important;
+  }
+
+  .income-stream-head > div > div:first-child {
+    flex-direction: column;
+    align-items: stretch !important;
+  }
+
+  .income-stream-head > div > div:first-child > input {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
   .ops-scorecard,
   .ops-yearly-panel {
     padding: 16px !important;
