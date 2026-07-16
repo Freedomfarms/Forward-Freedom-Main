@@ -786,6 +786,14 @@ textarea:focus-visible,
     -webkit-overflow-scrolling: touch;
   }
 
+  .ops-yearly-scroll > div > div > div:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: linear-gradient(90deg, #041b30 82%, rgba(4, 27, 48, 0));
+    padding-right: 10px;
+  }
+
   .ops-scorecard-svg,
   .forecast-chart-svg {
     min-width: 640px;
@@ -995,6 +1003,35 @@ textarea:focus-visible,
   .ops-scorecard-svg,
   .forecast-chart-svg {
     min-width: 560px;
+  }
+
+  .ops-calendar-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .ops-calendar-scroll > div {
+    min-width: 486px;
+  }
+
+  .ops-calendar-day {
+    min-height: 68px !important;
+    padding: 6px 5px !important;
+  }
+
+  .ops-calendar-day-net {
+    font-size: 12px !important;
+    letter-spacing: -0.2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .ops-calendar-day-forecast {
+    font-size: 9px !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 }
 

@@ -1753,6 +1753,7 @@ export function OperationsBoard({
                 </button>
               </div>
 
+              <div className="ops-calendar-scroll">
               <div
                 style={{
                   display: "grid",
@@ -1800,6 +1801,7 @@ export function OperationsBoard({
                           return (
                             <div
                               key={`${weekIndex}-${dayIndex}-${day?.day || "blank"}`}
+                              className="ops-calendar-day"
                               onMouseEnter={() => setHoveredCalendarDay(day?.day || null)}
                               style={{
                                 minHeight: 80,
@@ -1829,11 +1831,12 @@ export function OperationsBoard({
                                     {day.day}
                                   </div>
                                   <div
+                                    className="ops-calendar-day-net"
                                     style={{ color: heat.valueColor, fontSize: 15, fontWeight: 900 }}
                                   >
                                     {formatCompactSignedMoney(day.actualNet)}
                                   </div>
-                                  <div style={{ color: "#8fb1d9", fontSize: 10 }}>
+                                  <div className="ops-calendar-day-forecast" style={{ color: "#8fb1d9", fontSize: 10 }}>
                                     F {formatCompactMoney(day.monthEndForecast)}
                                   </div>
                                 </div>
@@ -1872,6 +1875,7 @@ export function OperationsBoard({
                             return (
                               <div
                                 key={`${week.weekIndex}-${dayIndex}-${day?.day || "blank"}`}
+                                className="ops-calendar-day"
                                 style={{
                                   minHeight: 80,
                                   padding: "7px 8px",
@@ -1894,11 +1898,15 @@ export function OperationsBoard({
                                       {budgetMonths[day.monthIndex]} {day.day}
                                     </div>
                                     <div
+                                      className="ops-calendar-day-net"
                                       style={{ color: heat.valueColor, fontSize: 15, fontWeight: 900 }}
                                     >
                                       {formatCompactSignedMoney(day.actualNet)}
                                     </div>
-                                    <div style={{ color: "#8fb1d9", fontSize: 10 }}>
+                                    <div
+                                      className="ops-calendar-day-forecast"
+                                      style={{ color: "#8fb1d9", fontSize: 10 }}
+                                    >
                                       F {formatCompactMoney(day.monthEndForecast)}
                                     </div>
                                   </div>
@@ -1909,6 +1917,7 @@ export function OperationsBoard({
                         </div>
                       );
                     })}
+              </div>
               </div>
             </div>
 
