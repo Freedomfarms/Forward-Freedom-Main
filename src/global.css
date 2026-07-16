@@ -605,6 +605,28 @@ textarea:focus-visible,
     padding: 18px !important;
   }
 
+  .budget-summary-row {
+    grid-template-columns: 1fr !important;
+  }
+
+  .budget-summary-card {
+    flex-direction: column;
+    align-items: stretch !important;
+    gap: 16px !important;
+  }
+
+  .readiness-card {
+    grid-template-columns: 1fr !important;
+    row-gap: 18px;
+  }
+
+  .readiness-card .overspent-region {
+    padding-left: 0 !important;
+    border-left: none !important;
+    padding-top: 16px;
+    border-top: 1px solid rgba(30, 144, 255, 0.16);
+  }
+
   .budget-table-header {
     display: none !important;
   }
@@ -613,46 +635,50 @@ textarea:focus-visible,
     padding: 0 !important;
   }
 
-  .budget-row-card {
+  .budget-row-card,
+  .reserve-row-card {
     grid-template-columns: 1fr !important;
-    gap: 12px !important;
+    gap: 10px !important;
     padding: 14px !important;
-    cursor: pointer !important;
   }
 
-  .budget-row-title {
-    grid-template-columns: auto minmax(0, 1fr) !important;
+  .budget-table-total {
+    grid-template-columns: 1fr !important;
     gap: 10px !important;
   }
 
-  .budget-row-name-controls {
-    align-items: stretch !important;
-    flex-direction: column !important;
-    gap: 8px !important;
+  .budget-row-title {
+    flex-wrap: wrap;
+    row-gap: 8px;
   }
 
-  .budget-row-name-controls input {
-    width: 100% !important;
+  .budget-row-title input {
+    flex: 1 1 130px;
+    max-width: none !important;
+    min-width: 0;
   }
 
-  .budget-row-activity {
+  .budget-row-cell {
     display: flex !important;
+    align-items: center;
     justify-content: space-between;
-    text-align: left !important;
-    padding: 0 !important;
+    gap: 12px;
   }
 
-  .budget-row-activity::before {
-    content: "Activity";
+  .budget-row-cell::before {
+    content: attr(data-mobile-label);
     color: #8fb1d9;
     font-size: 11px;
     font-weight: 900;
     letter-spacing: 0.8px;
     text-transform: uppercase;
+    flex-shrink: 0;
   }
 
-  .budget-row-assigned {
-    text-align: left !important;
+  .budget-row-cell input {
+    width: auto !important;
+    flex: 1 1 auto;
+    min-width: 0;
   }
 
   .transactions-panel {
