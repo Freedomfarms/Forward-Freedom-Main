@@ -1653,6 +1653,7 @@ export function TransactionsView({
             }}
           >
             <div
+              className="transactions-edit-header"
               style={{
                 display: "flex",
                 justifyContent: "space-between",
@@ -1708,6 +1709,7 @@ export function TransactionsView({
             </div>
 
             <div
+              className="transactions-manual-grid"
               style={{
                 display: "grid",
                 gridTemplateColumns: "140px minmax(150px,1fr) 140px 120px 160px",

@@ -695,6 +695,10 @@ textarea:focus-visible,
     grid-template-columns: 1fr !important;
   }
 
+  .transactions-edit-header {
+    flex-wrap: wrap;
+  }
+
   .transactions-feed-header {
     display: none !important;
   }
