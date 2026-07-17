@@ -803,6 +803,10 @@ textarea:focus-visible,
     -webkit-overflow-scrolling: touch;
   }
 
+  .ops-yearly-scroll > div {
+    min-width: 1160px !important;
+  }
+
   .ops-yearly-scroll > div > div > div:first-child {
     position: sticky;
     left: 0;
@@ -877,6 +881,11 @@ textarea:focus-visible,
   .forecast-review-panel {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
+  }
+
+  .forecast-review-panel > div:first-child {
+    position: sticky;
+    left: 0;
   }
 
   .forecast-review-body {
