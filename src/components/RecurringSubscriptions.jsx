@@ -278,6 +278,7 @@ export function RecurringSubscriptions({
             New Subscription
           </div>
           <div
+            className="subscriptions-add-grid"
             style={{
               display: "grid",
               gridTemplateColumns: "1.4fr 110px 130px 140px 130px 110px 110px 80px",
@@ -471,6 +472,7 @@ export function RecurringSubscriptions({
 
       {/* Filter Bar */}
       <div
+        className="subscriptions-filter-bar"
         style={{
           display: "flex",
           gap: 10,

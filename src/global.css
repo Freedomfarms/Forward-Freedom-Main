@@ -755,6 +755,19 @@ textarea:focus-visible,
     min-width: 0 !important;
   }
 
+  .subscriptions-add-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .subscriptions-filter-bar {
+    flex-wrap: wrap;
+  }
+
+  .subscriptions-filter-bar > span:last-child {
+    flex: 1 0 100%;
+    margin-left: 0 !important;
+  }
+
   .income-stream-head {
     grid-template-columns: auto minmax(0, 1fr) !important;
     gap: 10px 12px !important;
@@ -1012,6 +1025,10 @@ textarea:focus-visible,
 
   .ops-calendar-scroll > div {
     min-width: 486px;
+  }
+
+  .subscriptions-add-grid {
+    grid-template-columns: 1fr !important;
   }
 
   .ops-calendar-day {
