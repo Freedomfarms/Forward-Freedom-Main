@@ -657,7 +657,10 @@ export function BudgetCommandCenter({
         onMouseDown={(event) => handleBudgetRowPointerDown(event, item.id)}
         data-budget-row-id={item.id}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+        <div
+          className="budget-row-title"
+          style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}
+        >
           {isUncat ? (
             <span style={{ width: 22, flexShrink: 0 }} />
           ) : (
@@ -718,22 +721,30 @@ export function BudgetCommandCenter({
           </span>
         </div>
 
-        <input
-          value={money(item.budget)}
-          onChange={(event) => updateBudgetRow(item.id, "budget", event.target.value)}
-          style={{ ...QUIET_INPUT_STYLE, fontSize: 14, fontWeight: 700, textAlign: "right" }}
-          onFocus={(event) => {
-            activateBudgetRow(item.id);
-            applyQuietFocus(event);
-          }}
-          onBlur={applyQuietBlur}
-        />
+        <div className="budget-row-cell" data-mobile-label="Budget">
+          <input
+            value={money(item.budget)}
+            onChange={(event) => updateBudgetRow(item.id, "budget", event.target.value)}
+            style={{ ...QUIET_INPUT_STYLE, fontSize: 14, fontWeight: 700, textAlign: "right" }}
+            onFocus={(event) => {
+              activateBudgetRow(item.id);
+              applyQuietFocus(event);
+            }}
+            onBlur={applyQuietBlur}
+          />
+        </div>
 
-        <div style={{ textAlign: "right", color: "#cfe0f5", fontSize: 14, fontWeight: 700 }}>
+        <div
+          className="budget-row-cell"
+          data-mobile-label="Actual"
+          style={{ textAlign: "right", color: "#cfe0f5", fontSize: 14, fontWeight: 700 }}
+        >
           {money(spent)}
         </div>
 
         <div
+          className="budget-row-cell"
+          data-mobile-label="Remaining"
           style={{
             textAlign: "right",
             color: remaining < 0 ? "#ff6b8a" : "#cfe0f5",
@@ -744,7 +755,7 @@ export function BudgetCommandCenter({
           {money(remaining)}
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div className="budget-row-progress" style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <div
             style={{
               flex: 1,
@@ -834,7 +845,10 @@ export function BudgetCommandCenter({
         }}
         onClick={() => activateBudgetRow(item.id)}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+        <div
+          className="budget-row-title"
+          style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}
+        >
           <TypePill
             value={item.type || BUDGET_CATEGORY_TYPES.RESERVE}
             onChange={(nextType) => setBudgetRowType(item.id, nextType)}
@@ -897,27 +911,37 @@ export function BudgetCommandCenter({
           </span>
         </div>
 
-        <input
-          value={money(item.budget)}
-          onChange={(event) => updateBudgetRow(item.id, "budget", event.target.value)}
-          title="Monthly reserve contribution — not a spending limit"
-          style={{ ...QUIET_INPUT_STYLE, fontSize: 14, fontWeight: 700, textAlign: "right" }}
-          onFocus={(event) => {
-            activateBudgetRow(item.id);
-            applyQuietFocus(event, "rgba(232,121,249,.6)");
-          }}
-          onBlur={applyQuietBlur}
-        />
+        <div className="budget-row-cell" data-mobile-label="Monthly">
+          <input
+            value={money(item.budget)}
+            onChange={(event) => updateBudgetRow(item.id, "budget", event.target.value)}
+            title="Monthly reserve contribution — not a spending limit"
+            style={{ ...QUIET_INPUT_STYLE, fontSize: 14, fontWeight: 700, textAlign: "right" }}
+            onFocus={(event) => {
+              activateBudgetRow(item.id);
+              applyQuietFocus(event, "rgba(232,121,249,.6)");
+            }}
+            onBlur={applyQuietBlur}
+          />
+        </div>
 
-        <div style={{ textAlign: "right", color: "#cfe0f5", fontSize: 14, fontWeight: 700 }}>
+        <div
+          className="budget-row-cell"
+          data-mobile-label="Balance"
+          style={{ textAlign: "right", color: "#cfe0f5", fontSize: 14, fontWeight: 700 }}
+        >
           {money(item.balance)}
         </div>
 
-        <div style={{ textAlign: "right", color: "#cfe0f5", fontSize: 14, fontWeight: 700 }}>
+        <div
+          className="budget-row-cell"
+          data-mobile-label="Target"
+          style={{ textAlign: "right", color: "#cfe0f5", fontSize: 14, fontWeight: 700 }}
+        >
           {money(item.target)}
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div className="budget-row-progress" style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <div
             style={{
               flex: 1,
@@ -1684,6 +1708,7 @@ export function BudgetCommandCenter({
 
         {sortedBudgetRowsWithSpend.length ? (
           <div
+            className="budget-table-total"
             style={{
               display: "grid",
               gridTemplateColumns: CATEGORY_GRID_COLUMNS,
@@ -1695,13 +1720,23 @@ export function BudgetCommandCenter({
             }}
           >
             <div style={{ color: "#e6efff", fontSize: 14, fontWeight: 900 }}>Total</div>
-            <div style={{ textAlign: "right", color: "#e6efff", fontSize: 14, fontWeight: 900 }}>
+            <div
+              className="budget-row-cell"
+              data-mobile-label="Budget"
+              style={{ textAlign: "right", color: "#e6efff", fontSize: 14, fontWeight: 900 }}
+            >
               {money(budgetTotal)}
             </div>
-            <div style={{ textAlign: "right", color: "#e6efff", fontSize: 14, fontWeight: 900 }}>
+            <div
+              className="budget-row-cell"
+              data-mobile-label="Actual"
+              style={{ textAlign: "right", color: "#e6efff", fontSize: 14, fontWeight: 900 }}
+            >
               {money(operatingSpend)}
             </div>
             <div
+              className="budget-row-cell"
+              data-mobile-label="Remaining"
               style={{
                 textAlign: "right",
                 color: monthRemaining < 0 ? "#ff6b8a" : "#e6efff",
@@ -1766,6 +1801,7 @@ export function BudgetCommandCenter({
         {reserveSnapshots.length ? (
           <>
             <div
+              className="budget-table-header"
               style={{
                 display: "grid",
                 gridTemplateColumns: CATEGORY_GRID_COLUMNS,

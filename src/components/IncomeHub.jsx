@@ -583,6 +583,7 @@ export function IncomeHub({
                   }}
                 >
                   <div
+                    className="income-stream-head"
                     style={{
                       display: "grid",
                       gridTemplateColumns: "auto 1fr auto",

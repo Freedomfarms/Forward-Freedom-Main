@@ -590,10 +590,41 @@ textarea:focus-visible,
     overflow: hidden;
   }
 
+  .dashboard-chart-xaxis {
+    font-size: 12px !important;
+    gap: 6px;
+  }
+
+  .dashboard-chart-xaxis span {
+    white-space: nowrap;
+  }
+
   .budget-hero {
     gap: 18px !important;
     margin-bottom: 24px !important;
     padding: 18px !important;
+  }
+
+  .budget-summary-row {
+    grid-template-columns: 1fr !important;
+  }
+
+  .budget-summary-card {
+    flex-direction: column;
+    align-items: stretch !important;
+    gap: 16px !important;
+  }
+
+  .readiness-card {
+    grid-template-columns: 1fr !important;
+    row-gap: 18px;
+  }
+
+  .readiness-card .overspent-region {
+    padding-left: 0 !important;
+    border-left: none !important;
+    padding-top: 16px;
+    border-top: 1px solid rgba(30, 144, 255, 0.16);
   }
 
   .budget-table-header {
@@ -604,46 +635,50 @@ textarea:focus-visible,
     padding: 0 !important;
   }
 
-  .budget-row-card {
+  .budget-row-card,
+  .reserve-row-card {
     grid-template-columns: 1fr !important;
-    gap: 12px !important;
+    gap: 10px !important;
     padding: 14px !important;
-    cursor: pointer !important;
   }
 
-  .budget-row-title {
-    grid-template-columns: auto minmax(0, 1fr) !important;
+  .budget-table-total {
+    grid-template-columns: 1fr !important;
     gap: 10px !important;
   }
 
-  .budget-row-name-controls {
-    align-items: stretch !important;
-    flex-direction: column !important;
-    gap: 8px !important;
+  .budget-row-title {
+    flex-wrap: wrap;
+    row-gap: 8px;
   }
 
-  .budget-row-name-controls input {
-    width: 100% !important;
+  .budget-row-title input {
+    flex: 1 1 130px;
+    max-width: none !important;
+    min-width: 0;
   }
 
-  .budget-row-activity {
+  .budget-row-cell {
     display: flex !important;
+    align-items: center;
     justify-content: space-between;
-    text-align: left !important;
-    padding: 0 !important;
+    gap: 12px;
   }
 
-  .budget-row-activity::before {
-    content: "Activity";
+  .budget-row-cell::before {
+    content: attr(data-mobile-label);
     color: #8fb1d9;
     font-size: 11px;
     font-weight: 900;
     letter-spacing: 0.8px;
     text-transform: uppercase;
+    flex-shrink: 0;
   }
 
-  .budget-row-assigned {
-    text-align: left !important;
+  .budget-row-cell input {
+    width: auto !important;
+    flex: 1 1 auto;
+    min-width: 0;
   }
 
   .transactions-panel {
@@ -658,6 +693,10 @@ textarea:focus-visible,
   .transactions-manual-grid,
   .transactions-filter-grid {
     grid-template-columns: 1fr !important;
+  }
+
+  .transactions-edit-header {
+    flex-wrap: wrap;
   }
 
   .transactions-feed-header {
@@ -720,6 +759,39 @@ textarea:focus-visible,
     min-width: 0 !important;
   }
 
+  .subscriptions-add-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .subscriptions-filter-bar {
+    flex-wrap: wrap;
+  }
+
+  .subscriptions-filter-bar > span:last-child {
+    flex: 1 0 100%;
+    margin-left: 0 !important;
+  }
+
+  .income-stream-head {
+    grid-template-columns: auto minmax(0, 1fr) !important;
+    gap: 10px 12px !important;
+  }
+
+  .income-stream-head > input {
+    grid-column: 1 / -1;
+    width: 100% !important;
+  }
+
+  .income-stream-head > div > div:first-child {
+    flex-direction: column;
+    align-items: stretch !important;
+  }
+
+  .income-stream-head > div > div:first-child > input {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
   .ops-scorecard,
   .ops-yearly-panel {
     padding: 16px !important;
@@ -729,6 +801,18 @@ textarea:focus-visible,
   .ops-yearly-scroll {
     overflow-x: auto !important;
     -webkit-overflow-scrolling: touch;
+  }
+
+  .ops-yearly-scroll > div {
+    min-width: 1160px !important;
+  }
+
+  .ops-yearly-scroll > div > div > div:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: linear-gradient(90deg, #041b30 82%, rgba(4, 27, 48, 0));
+    padding-right: 10px;
   }
 
   .ops-scorecard-svg,
@@ -759,6 +843,26 @@ textarea:focus-visible,
     padding: 18px 16px 0 !important;
   }
 
+  .forecast-chart-toolbar {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+
+  .forecast-chart-toolbar > div:nth-child(2) {
+    justify-content: flex-start !important;
+    padding: 0 !important;
+    text-align: left !important;
+  }
+
+  .forecast-chart-toolbar > div:nth-child(3) {
+    justify-content: flex-start !important;
+    row-gap: 8px !important;
+  }
+
+  .forecast-chart-ylabels {
+    width: 52px !important;
+  }
+
   .forecast-chart-frame {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
@@ -774,9 +878,24 @@ textarea:focus-visible,
     overflow-x: auto;
   }
 
-  .forecast-review-header,
-  .forecast-review-row,
-  .forecast-review-footer {
+  .forecast-review-panel {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .forecast-review-panel > div:first-child {
+    position: sticky;
+    left: 0;
+  }
+
+  .forecast-review-body {
+    max-height: none !important;
+    overflow-y: visible !important;
+  }
+
+  .app-main .forecast-review-header,
+  .app-main .forecast-review-row,
+  .app-main .forecast-review-footer {
     min-width: 560px;
   }
 
@@ -893,6 +1012,16 @@ textarea:focus-visible,
     padding-left: 42px !important;
   }
 
+  .dashboard-chart-xaxis {
+    font-size: 11px !important;
+  }
+
+  .dashboard-chart-xaxis span:not(:nth-child(3n + 1)):not(:last-child) {
+    visibility: hidden;
+    width: 0;
+    overflow: hidden;
+  }
+
   .budget-hero-stats {
     grid-template-columns: 1fr !important;
   }
@@ -900,6 +1029,39 @@ textarea:focus-visible,
   .ops-scorecard-svg,
   .forecast-chart-svg {
     min-width: 560px;
+  }
+
+  .ops-calendar-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .ops-calendar-scroll > div {
+    min-width: 486px;
+  }
+
+  .subscriptions-add-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .ops-calendar-day {
+    min-height: 68px !important;
+    padding: 6px 5px !important;
+  }
+
+  .ops-calendar-day-net {
+    font-size: 12px !important;
+    letter-spacing: -0.2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .ops-calendar-day-forecast {
+    font-size: 9px !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 }
 
