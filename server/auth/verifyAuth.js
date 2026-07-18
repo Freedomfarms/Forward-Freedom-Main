@@ -1,5 +1,5 @@
 import { getFirebaseAdminAuth, isFirebaseAdminConfigured } from "./firebaseAdmin.js";
-import { getPrismaClient, isDatabaseConfigured } from "../db/prisma.js";
+import { getPrismaClient, isDatabaseConfigured, withUserContext } from "../db/prisma.js";
 
 export class AuthError extends Error {
   constructor(message, status = 401) {
@@ -34,16 +34,18 @@ export async function authenticateRequest(request) {
   try {
     const decodedToken = await adminAuth.verifyIdToken(token);
 
-    if (isDatabaseConfigured()) {
-      const prisma = getPrismaClient();
-      if (prisma) {
-        const userRecord = await prisma.user.findUnique({
+    if (isDatabaseConfigured() && getPrismaClient()) {
+      // The uid is already proven by the decoded Firebase token, so the
+      // disabled-flag lookup runs in that user's RLS context like every other
+      // user-scoped query.
+      const userRecord = await withUserContext(decodedToken.uid, (tx) =>
+        tx.user.findUnique({
           where: { id: decodedToken.uid },
           select: { isDisabled: true },
-        });
-        if (userRecord?.isDisabled) {
-          throw new AuthError("This account has been disabled.", 403);
-        }
+        })
+      );
+      if (userRecord?.isDisabled) {
+        throw new AuthError("This account has been disabled.", 403);
       }
     }
 

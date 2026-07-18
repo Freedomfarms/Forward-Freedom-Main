@@ -1,5 +1,5 @@
-import { syncPlaidWorkspaceForWebhookItem } from "./handlers.js";
-import { getPrismaClient, isDatabaseConfigured } from "../db/prisma.js";
+import { resolvePlaidWebhookItem, syncPlaidWorkspaceForWebhookItem } from "./handlers.js";
+import { getPrismaClient, isDatabaseConfigured, withUserContext } from "../db/prisma.js";
 import { logPlaidServerEvent } from "./logging.js";
 import { readRawRequestBody, verifyPlaidWebhookRequest } from "./webhookVerification.js";
 
@@ -19,18 +19,27 @@ async function markPlaidItemAttention(itemId, message) {
     return;
   }
 
-  const prisma = getPrismaClient();
-  if (!prisma || !itemId) {
+  if (!getPrismaClient() || !itemId) {
     return;
   }
 
-  await prisma.plaidItem.updateMany({
-    where: { itemId },
-    data: {
-      status: "REQUIRES_ATTENTION",
-      lastSyncError: message,
-    },
-  });
+  // Service-client bypass (justified): the webhook is Plaid-initiated and
+  // carries no user token, so the item_id → userId resolution cannot run in a
+  // user context. The write itself runs in the resolved owner's context.
+  const item = await resolvePlaidWebhookItem(itemId);
+  if (!item) {
+    return;
+  }
+
+  await withUserContext(item.userId, (tx) =>
+    tx.plaidItem.updateMany({
+      where: { itemId },
+      data: {
+        status: "REQUIRES_ATTENTION",
+        lastSyncError: message,
+      },
+    })
+  );
 }
 
 export async function handlePlaidWebhook(request, response) {

@@ -4,7 +4,12 @@ import {
   requireLegalConsent,
   respondLegalConsentRequired,
 } from "../server/auth/legalConsent.js";
-import { getPrismaClient, isDatabaseConfigured, Prisma } from "../server/db/prisma.js";
+import {
+  getPrismaClient,
+  isDatabaseConfigured,
+  Prisma,
+  withUserContext,
+} from "../server/db/prisma.js";
 import {
   getSchemaCapabilities,
   isMissingEncryptionColumnError,
@@ -192,14 +197,19 @@ export default async function handler(request, response) {
     if (request.method === "GET") {
       let snapshot;
       try {
-        snapshot = await findWorkspaceSnapshot(prisma, decodedToken.uid, capabilities);
+        snapshot = await withUserContext(decodedToken.uid, (tx) =>
+          findWorkspaceSnapshot(tx, decodedToken.uid, capabilities)
+        );
       } catch (error) {
         // Cache may be stale if the migration was applied mid-process, or the
-        // opposite: we assumed columns exist but they don't. Retry once.
+        // opposite: we assumed columns exist but they don't. Retry once (in a
+        // fresh transaction — the failed statement aborted the previous one).
         if (isMissingEncryptionColumnError(error) && capabilities.encryptionColumns) {
           resetSchemaCapabilitiesCache();
           capabilities = await getSchemaCapabilities(prisma);
-          snapshot = await findWorkspaceSnapshot(prisma, decodedToken.uid, capabilities);
+          snapshot = await withUserContext(decodedToken.uid, (tx) =>
+            findWorkspaceSnapshot(tx, decodedToken.uid, capabilities)
+          );
         } else {
           throw error;
         }
@@ -211,8 +221,9 @@ export default async function handler(request, response) {
     }
 
     // Workspace writes persist financial data, so require current legal
-    // consent server-side (not just the client checkbox).
-    await requireLegalConsent(prisma, decodedToken.uid);
+    // consent server-side (not just the client checkbox). Runs in its own
+    // user-context transaction so the consent lookup is RLS-scoped.
+    await withUserContext(decodedToken.uid, (tx) => requireLegalConsent(tx, decodedToken.uid));
 
     const payload = await readJsonBody(request);
     if (!payload?.state || typeof payload.state !== "object" || Array.isArray(payload.state)) {
@@ -238,13 +249,17 @@ export default async function handler(request, response) {
     );
 
     async function writeSnapshot(caps) {
-      return writeSnapshotWithConcurrencyControl(prisma, decodedToken.uid, caps, {
-        stateColumns: buildSnapshotStateColumns(sanitizedState, caps),
-        source,
-        lastClientUpdatedAt,
-        hasBaseMarker,
-        baseSnapshotUpdatedAt,
-      });
+      // The whole read-compare-write sequence shares one user-context
+      // transaction, which also makes the concurrency control atomic.
+      return withUserContext(decodedToken.uid, (tx) =>
+        writeSnapshotWithConcurrencyControl(tx, decodedToken.uid, caps, {
+          stateColumns: buildSnapshotStateColumns(sanitizedState, caps),
+          source,
+          lastClientUpdatedAt,
+          hasBaseMarker,
+          baseSnapshotUpdatedAt,
+        })
+      );
     }
 
     let snapshot;
@@ -263,7 +278,9 @@ export default async function handler(request, response) {
     if (snapshot === SNAPSHOT_WRITE_CONFLICT) {
       // Return the winning snapshot so the client can reconcile without an
       // extra round-trip instead of silently dropping the other writer's data.
-      const currentSnapshot = await findWorkspaceSnapshot(prisma, decodedToken.uid, capabilities);
+      const currentSnapshot = await withUserContext(decodedToken.uid, (tx) =>
+        findWorkspaceSnapshot(tx, decodedToken.uid, capabilities)
+      );
       return response.status(409).json({
         error: true,
         message:
