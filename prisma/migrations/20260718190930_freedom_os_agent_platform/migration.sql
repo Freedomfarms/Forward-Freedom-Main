@@ -17,7 +17,10 @@ CREATE TYPE "AgentChatRole" AS ENUM ('USER', 'AGENT');
 CREATE TYPE "NotificationChannel" AS ENUM ('IN_APP', 'EMAIL');
 
 -- AlterTable
-ALTER TABLE "User" ADD COLUMN     "isAdmin" BOOLEAN NOT NULL DEFAULT false;
+-- Nullable without a default on purpose (NULL = not an admin): a Prisma-side
+-- @default would put the column in every User INSERT, breaking writes during
+-- the new-code-against-un-migrated-database window the app tolerates.
+ALTER TABLE "User" ADD COLUMN     "isAdmin" BOOLEAN;
 
 -- CreateTable
 CREATE TABLE "CeoAgentConfig" (
