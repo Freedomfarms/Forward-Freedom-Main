@@ -76,7 +76,11 @@ model User {
   role                WorkspaceRole        @default(OWNER)
   // Platform administrator (usage reporting / admin panel). Distinct concern
   // from WorkspaceRole above, which is the household workspace role.
-  isAdmin             Boolean              @default(false)
+  // Nullable WITHOUT @default on purpose: Prisma includes @default columns in
+  // every INSERT, which would break all User writes during the window where
+  // new code runs against a not-yet-migrated database (the repo's
+  // schema-compatibility tolerance). NULL means false; check `isAdmin === true`.
+  isAdmin             Boolean?
   isDisabled          Boolean              @default(false)
   lastLoginAt         DateTime?
   // Server-side proof of Terms of Service / Privacy Policy acceptance. These
