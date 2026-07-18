@@ -25,6 +25,46 @@ enum TransactionSource {
   SYSTEM
 }
 
+// ── Freedom OS agent platform ────────────────────────────────────────────────
+
+enum CeoPersonalityPreset {
+  DIRECT_EFFICIENT
+  WARM_ENCOURAGING
+  FORMAL
+}
+
+// Trust is staged: all four levels exist in the schema now, but the runtime
+// only honors READ_ONLY and DRAFT_ONLY in this phase. ACTION_REQUIRED_APPROVAL
+// and AUTONOMOUS are schema-ready only and unlock in later phases.
+enum AgentPermissionLevel {
+  READ_ONLY
+  DRAFT_ONLY
+  ACTION_REQUIRED_APPROVAL
+  AUTONOMOUS
+}
+
+enum AgentStatus {
+  ACTIVE
+  PAUSED
+}
+
+enum AgentRunStatus {
+  RUNNING
+  SUCCEEDED
+  FAILED
+  SKIPPED
+}
+
+enum AgentChatRole {
+  USER
+  AGENT
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+}
+
 model User {
   id                  String               @id
   email               String?              @unique
@@ -34,6 +74,13 @@ model User {
   // connections (link / refresh / delete Plaid data) requires OWNER or ADMIN,
   // so role-gated actions stay closed by default for future invited MEMBERs.
   role                WorkspaceRole        @default(OWNER)
+  // Platform administrator (usage reporting / admin panel). Distinct concern
+  // from WorkspaceRole above, which is the household workspace role.
+  // Nullable WITHOUT @default on purpose: Prisma includes @default columns in
+  // every INSERT, which would break all User writes during the window where
+  // new code runs against a not-yet-migrated database (the repo's
+  // schema-compatibility tolerance). NULL means false; check `isAdmin === true`.
+  isAdmin             Boolean?
   isDisabled          Boolean              @default(false)
   lastLoginAt         DateTime?
   // Server-side proof of Terms of Service / Privacy Policy acceptance. These
@@ -55,6 +102,11 @@ model User {
   merchantRules       MerchantCategoryRule[]
   metricSnapshots     MetricSnapshot[]
   workspaceSnapshot   WorkspaceSnapshot?
+  ceoAgentConfig      CeoAgentConfig?
+  agentConfigs        AgentConfig[]
+  agentRuns           AgentRun[]
+  agentChatMessages   AgentChatMessage[]
+  notifications       Notification[]
 }
 
 model PlaidItem {
@@ -279,4 +331,147 @@ model WorkspaceSnapshot {
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
   user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// The per-user orchestrator (the CEO Agent itself, not a sub-agent) — exactly
+// one per user. Personality is preset-driven by design: no free-text system
+// prompts, and avatarKey identifies a preset avatar (not a URL, no AI
+// generation).
+model CeoAgentConfig {
+  id                   String               @id @default(cuid())
+  userId               String               @unique
+  name                 String               @default("CEO Agent")
+  personalityPreset    CeoPersonalityPreset @default(DIRECT_EFFICIENT)
+  avatarKey            String?
+  // The encrypted "living profile": long-term shared memory that all agents
+  // read and feed. Decrypted JSON shape — categories financialGoals,
+  // knownAccountsRelationships, statedPreferences, recurringConcerns,
+  // lifeContext; each entry { id, text, source, addedAt, updatedAt } where
+  // source is onboarding | user_edit | an agent type; plus a tombstones array
+  // of removed-entry ids so automatic merging never re-adds what the user
+  // deleted.
+  profileCiphertext    String?
+  profileUpdatedAt     DateTime?
+  // Cached CEO digest (encrypted) so opening the dashboard doesn't require a
+  // fresh LLM call.
+  lastDigestCiphertext String?
+  lastDigestAt         DateTime?
+  onboardingCompletedAt DateTime?
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+  user                 User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  agentConfigs         AgentConfig[]
+  agentChatMessages    AgentChatMessage[]
+}
+
+// A sub-agent owned by a user and coordinated by their CEO Agent. Any number
+// per user (Finance first; Research/Reminders soon; Email schema-ready only).
+model AgentConfig {
+  id               String               @id @default(cuid())
+  userId           String
+  ceoAgentConfigId String
+  // Open/extensible on purpose — NOT an enum, so future agent types don't
+  // require migrations. Known values now: finance, research, reminders, email.
+  agentType        String
+  name             String
+  // Preset-guided instructions set by the agent creation flow.
+  instructions     String?
+  // One specific, measurable sentence describing success for this agent.
+  definitionOfDone String?
+  permissionLevel  AgentPermissionLevel @default(READ_ONLY)
+  // Per-agent LLM tier; a single tier is used at launch, but the field exists
+  // so model tiering isn't a retrofit.
+  model            String               @default("claude-sonnet-4-5")
+  // Allowlist of data/APIs this agent may touch.
+  toolAccess       Json?
+  // Cron-style expression; null = on-demand only.
+  schedule         String?
+  status           AgentStatus          @default(ACTIVE)
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  user             User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ceoAgentConfig   CeoAgentConfig       @relation(fields: [ceoAgentConfigId], references: [id], onDelete: Cascade)
+  agentRuns        AgentRun[]
+  agentChatMessages AgentChatMessage[]
+  notifications    Notification[]
+
+  @@index([userId])
+  @@index([userId, agentType])
+}
+
+// Audit log of every agent run: what was touched, what was produced, when,
+// status, and cost. agentConfigId is deliberately nullable (SetNull) so the
+// audit trail survives agent deletion; agentType is a denormalized copy for
+// the same reason.
+model AgentRun {
+  id               String         @id @default(cuid())
+  userId           String
+  agentConfigId    String?
+  agentType        String
+  // Short human-readable plaintext the CEO digest consumes cheaply. Not raw
+  // logs — must never contain merchant names or account identifiers.
+  summary          String?
+  // Description of what data the run read.
+  dataAccessed     Json?
+  // Full run output, encrypted at rest.
+  outputCiphertext String?
+  status           AgentRunStatus @default(RUNNING)
+  error            String?
+  // Usage accounting for per-user usage reporting in the admin panel.
+  model            String?
+  tokensInput      Int?
+  tokensOutput     Int?
+  estimatedCostUsd Decimal?       @db.Decimal(10, 6)
+  startedAt        DateTime       @default(now())
+  completedAt      DateTime?
+  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  agentConfig      AgentConfig?   @relation(fields: [agentConfigId], references: [id], onDelete: SetNull)
+  chatMessages     AgentChatMessage[]
+
+  @@index([userId, startedAt])
+  @@index([agentConfigId, startedAt])
+  @@index([userId, agentType, startedAt])
+}
+
+// One table serves both CEO chat and every sub-agent chat. Invariant: exactly
+// one of agentConfigId / ceoAgentConfigId is set — enforced in application
+// code and by a Postgres CHECK constraint in the migration SQL:
+//   (("agentConfigId" IS NULL) <> ("ceoAgentConfigId" IS NULL))
+model AgentChatMessage {
+  id                String          @id @default(cuid())
+  userId            String
+  agentConfigId     String?
+  ceoAgentConfigId  String?
+  role              AgentChatRole
+  // Chat content is sensitive and encrypted at rest.
+  contentCiphertext String
+  // Links a message to the specific run it asks about ("why did you flag
+  // this?"). SetNull so chat history survives run pruning.
+  relatedRunId      String?
+  createdAt         DateTime        @default(now())
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  agentConfig       AgentConfig?    @relation(fields: [agentConfigId], references: [id], onDelete: Cascade)
+  ceoAgentConfig    CeoAgentConfig? @relation(fields: [ceoAgentConfigId], references: [id], onDelete: Cascade)
+  relatedRun        AgentRun?       @relation(fields: [relatedRunId], references: [id], onDelete: SetNull)
+
+  @@index([agentConfigId, createdAt])
+  @@index([ceoAgentConfigId, createdAt])
+  @@index([userId, createdAt])
+}
+
+// Self-notification only: agents may notify the user (in-app or via the
+// user's own verified email), never any third party.
+model Notification {
+  id            String              @id @default(cuid())
+  userId        String
+  agentConfigId String?
+  title         String
+  body          String
+  channel       NotificationChannel @default(IN_APP)
+  readAt        DateTime?
+  createdAt     DateTime            @default(now())
+  user          User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  agentConfig   AgentConfig?        @relation(fields: [agentConfigId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
 }
