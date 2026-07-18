@@ -2,25 +2,17 @@
 
 ## Cursor Cloud specific instructions
 
-### Validation preference: no validation on edits by default
+### Verification policy: fast terminal checks only
 
-Do NOT validate edits unless the user explicitly asks for testing.
+For all edits, verify with direct terminal commands only — `npm run lint`, `npm run build`, `npm run dev` (just confirm it starts, then stop it; no need to keep it running), or equivalent checks. Default to the fastest, cheapest verification that still confirms the code is correct.
 
-For normal edits (including UI/styling changes):
-- Make the edit.
-- Stop.
+Do NOT use screen recording, browser automation, or simulated UI clicking to verify changes. The only exception is a change that specifically touches UI behavior that cannot be confirmed any other way — and even then, ask the user first before doing that kind of verification, since it is slow and token-heavy.
 
 Do not (unless explicitly requested):
-- Run lint or build.
-- Run automated tests.
-- Do manual/browser testing.
+- Do manual/browser testing or computer-use/GUI-driven testing.
 - Record videos, take screenshots, or produce walkthroughs.
 - Re-test unrelated areas or narrate validation.
 
-Only validate when:
-1. The user explicitly asks for testing/QA, or
-2. The user reports a runtime error/bug and asks for a fix (verify the fix only).
-
 Keep responses concise:
 - What changed (one or two lines).
-- No validation/testing sections unless testing was explicitly requested.
+- Brief verification result (e.g. "lint and build pass"), nothing more.
