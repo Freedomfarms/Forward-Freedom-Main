@@ -1,6 +1,8 @@
 import prismaClientPackage from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 
+import { buildPgPoolConfig } from "./pgPoolConfig.js";
+
 const { PrismaClient, Prisma } = prismaClientPackage;
 
 // Re-exported so writers can set JSON columns to SQL NULL (Prisma.DbNull) when
@@ -19,7 +21,10 @@ export function getPrismaClient() {
   }
 
   if (!globalScope.__forwardFreedomPrisma) {
-    const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
+    // buildPgPoolConfig translates sslmode/host into the explicit ssl option
+    // pg needs — Supabase's pooler requires TLS, which pg never negotiates on
+    // its own (see server/db/pgPoolConfig.js).
+    const adapter = new PrismaPg(buildPgPoolConfig(process.env.DATABASE_URL));
     globalScope.__forwardFreedomPrisma = new PrismaClient({ adapter });
   }
 

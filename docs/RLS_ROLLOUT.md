@@ -63,7 +63,59 @@ In Vercel:
 - `DIRECT_URL` stays on the owner role — the Prisma CLI keeps running
   migrations as the owner.
 
-Redeploy. Owner credentials now exist only in `DIRECT_URL`.
+**Username format matters.** Supavisor routes tenants through the username, so
+the pooler username is `<role>.<project-ref>` — e.g.
+`freedom_app.abcdefghijklm`, NOT plain `freedom_app`. The connection string the
+Supabase dashboard generates always prefills `postgres.<project-ref>`; when
+building the `freedom_app` / `freedom_service` strings you must replace the
+`postgres` part by hand and keep the `.<project-ref>` suffix.
+
+Make sure each variable is saved for the **Production** environment, then
+redeploy. Owner credentials now exist only in `DIRECT_URL`.
+
+### SSL
+
+The runtime clients (`server/db/prisma.js`, `server/db/servicePrisma.js`)
+negotiate TLS automatically for any non-local database host — see
+`server/db/pgPoolConfig.js`. No `sslmode` parameter is required on
+`DATABASE_URL` / `SERVICE_DATABASE_URL`, though `sslmode=require` is accepted
+and equivalent. Two optional upgrades:
+
+- Set `DATABASE_SSL_CA_CERT` to the PEM contents of Supabase's root
+  certificate (Database Settings → SSL Configuration → download
+  `prod-ca-2021.crt`) to turn on full certificate verification.
+- `sslmode=disable` opts a URL out (local tooling only — never production).
+
+## Troubleshooting
+
+### `(ESSLREQUIRED) SSL connection is required for user: postgres`
+
+Two independent facts are visible in this error:
+
+1. **`SSL connection is required`** — the connection reached Supabase's pooler
+   without TLS. Older builds passed the connection string straight to `pg`,
+   which never negotiates TLS on its own; `server/db/pgPoolConfig.js` now
+   turns TLS on for remote hosts, so redeploying current `main` fixes this
+   half regardless of the URL's query params.
+2. **`for user: postgres`** — the pooler echoes the username from the startup
+   packet with the `.<project-ref>` tenant suffix stripped. If it says
+   `postgres` after the role switch, the runtime is still connecting as
+   `postgres.<project-ref>`: either the Vercel env var kept the dashboard's
+   prefilled username (see step 4), was saved to the wrong environment
+   (Preview instead of Production), or the deployment predates the env change.
+   When the switch is correct the error would have said `for user:
+   freedom_app`.
+
+To confirm what a deployed function actually sees, run
+`vercel env pull .env.production --environment=production` locally (or check
+Settings → Environment Variables) and inspect the username in `DATABASE_URL` —
+never log the value from runtime code.
+
+Note: this error used to surface in the app UI as a paused "secure sync" with
+the raw pooler message, because a database failure during the auth-time
+disabled-account lookup was misreported as a 401 sign-in problem.
+`server/auth/verifyAuth.js` now reports database outages as 503 with a stable
+message.
 
 ## Verifying after rollout
 
