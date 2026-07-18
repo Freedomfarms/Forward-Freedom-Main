@@ -1,6 +1,7 @@
 import prismaClientPackage from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 
+import { buildPgPoolConfig } from "./pgPoolConfig.js";
 import { getPrismaClient } from "./prisma.js";
 
 const { PrismaClient } = prismaClientPackage;
@@ -45,7 +46,8 @@ export function getServicePrismaClient() {
   }
 
   if (!globalScope.__forwardFreedomServicePrisma) {
-    const adapter = new PrismaPg({ connectionString });
+    // Same SSL handling as the app client (see server/db/pgPoolConfig.js).
+    const adapter = new PrismaPg(buildPgPoolConfig(connectionString));
     globalScope.__forwardFreedomServicePrisma = new PrismaClient({ adapter });
   }
 

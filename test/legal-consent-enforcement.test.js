@@ -2,6 +2,7 @@ import test, { before, mock } from "node:test";
 import assert from "node:assert/strict";
 import crypto from "crypto";
 import { spawnSync } from "node:child_process";
+import { readdirSync } from "node:fs";
 
 // H-9: proves legal consent is enforced SERVER-SIDE (not just the client
 // checkbox). A sensitive write is rejected until consent is recorded, consent
@@ -138,12 +139,13 @@ before(async () => {
     setupError = new Error(reset.stderr || "failed to reset consent DB");
     return;
   }
-  for (const dir of [
-    "20250604120000_init",
-    "20260708195911_privacy_field_encryption",
-    "20260710162000_user_legal_consent",
-    "20260710171000_legal_consent_history",
-  ]) {
+  // Every migration, in order, discovered dynamically so new migrations are
+  // always part of this test's "fully-migrated" schema.
+  const migrationDirs = readdirSync("prisma/migrations", { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
+  for (const dir of migrationDirs) {
     const applied = psql("-f", `prisma/migrations/${dir}/migration.sql`);
     if (applied.status !== 0) {
       setupError = new Error(applied.stderr || `failed to apply ${dir}`);

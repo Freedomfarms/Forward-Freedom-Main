@@ -2,6 +2,7 @@ import test, { before, mock } from "node:test";
 import assert from "node:assert/strict";
 import crypto from "crypto";
 import { spawnSync } from "node:child_process";
+import { readdirSync } from "node:fs";
 
 // H-10: proves optimistic-concurrency control on workspace saves. Two clients
 // load the same snapshot version; the first save wins and the second (based on
@@ -125,12 +126,13 @@ before(async () => {
     setupError = new Error(reset.stderr || "failed to reset full DB");
     return;
   }
-  for (const dir of [
-    "20250604120000_init",
-    "20260708195911_privacy_field_encryption",
-    "20260710162000_user_legal_consent",
-    "20260710171000_legal_consent_history",
-  ]) {
+  // Every migration, in order, discovered dynamically so new migrations are
+  // always part of this test's "fully-migrated" schema.
+  const migrationDirs = readdirSync("prisma/migrations", { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
+  for (const dir of migrationDirs) {
     const applied = psql("-f", `prisma/migrations/${dir}/migration.sql`);
     if (applied.status !== 0) {
       setupError = new Error(applied.stderr || `failed to apply ${dir}`);
