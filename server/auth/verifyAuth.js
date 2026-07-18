@@ -1,4 +1,5 @@
 import { getFirebaseAdminAuth, isFirebaseAdminConfigured } from "./firebaseAdmin.js";
+import { describeDatabaseError } from "../db/describeDatabaseError.js";
 import { getPrismaClient, isDatabaseConfigured, withUserContext } from "../db/prisma.js";
 import { summarizeError } from "../security/redaction.js";
 
@@ -54,12 +55,17 @@ export async function authenticateRequest(request) {
     } catch (error) {
       // A database failure here is an infrastructure problem, not an invalid
       // token. Reporting it as 401 (as this path once did) makes the client
-      // blame the sign-in session AND leaks the raw driver error message —
-      // e.g. Supabase's "(ESSLREQUIRED) SSL connection is required for user"
-      // surfaced verbatim in the UI. Report 503 with a stable message instead.
+      // blame the sign-in session. Report 503 instead, and attach a short
+      // redacted diagnostic (connection role, error code, first line of the
+      // underlying driver message) so a connection-config mistake — wrong
+      // pooler username, bad password, missing grants, SSL enforcement — is
+      // identifiable from the UI by the (authenticated) user without digging
+      // through serverless logs.
       console.error("[auth/verifyAuth]", JSON.stringify(summarizeError(error)));
+      const diagnostic = describeDatabaseError(error);
       throw new AuthError(
-        "The database is temporarily unreachable, so the request could not be completed. Please retry shortly.",
+        "The database is temporarily unreachable, so the request could not be completed. Please retry shortly." +
+          (diagnostic ? ` (${diagnostic})` : ""),
         503
       );
     }
