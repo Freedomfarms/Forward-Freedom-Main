@@ -12,7 +12,8 @@ import {
 } from "../plaidClient.js";
 import { detectDuplicatePlaidItem } from "./duplicateItemDetection.js";
 import { getPlaidRequestId, logPlaidServerEvent } from "./logging.js";
-import { getPrismaClient, isDatabaseConfigured, Prisma } from "../db/prisma.js";
+import { getPrismaClient, isDatabaseConfigured, Prisma, withUserContext } from "../db/prisma.js";
+import { getServicePrismaClient } from "../db/servicePrisma.js";
 import {
   getSchemaCapabilities,
   isMissingEncryptionColumnError,
@@ -86,6 +87,11 @@ const LEGACY_TRANSACTION_SELECT = {
   ...LEGACY_TRANSACTION_ROW_SELECT,
   account: { select: { name: true } },
 };
+
+// A live Plaid item sync interleaves paginated Plaid API calls with row
+// writes inside one user-context transaction, so it needs far more headroom
+// than the default transaction timeout.
+const PLAID_SYNC_TRANSACTION_OPTIONS = { timeout: 120_000 };
 
 function buildErrorResponse(message, extra = {}) {
   return {
@@ -350,8 +356,11 @@ function assertPlaidRuntimeReady() {
     throw error;
   }
 
+  // Throws 503 when the database is unconfigured; user-scoped queries must
+  // still go through withUserContext, never this bare client.
+  getPrismaOrThrow();
+
   return {
-    prisma: getPrismaOrThrow(),
     plaidClient: getPlaidClient(),
   };
 }
@@ -686,9 +695,18 @@ async function buildWorkspaceSyncPayload(prisma, userId, workspaceUserId, { encr
   };
 }
 
-async function syncPlaidWorkspace({ prisma, plaidClient, userId, workspaceUserId, restrictToItemId }) {
-  const capabilities = await getSchemaCapabilities(prisma);
-  const encryptionColumns = capabilities.encryptionColumns;
+// `prisma` here is the withUserContext transaction handle from the caller.
+// The schema-capability probe is resolved by callers BEFORE the transaction
+// opens (its internal catch would abort an in-flight transaction), and its
+// result is passed in.
+async function syncPlaidWorkspace({
+  prisma,
+  plaidClient,
+  userId,
+  workspaceUserId,
+  restrictToItemId,
+  encryptionColumns,
+}) {
 
   // When a webhook fires for a single Item, only that Item should be pulled
   // from Plaid. Syncing every Item on each webhook multiplies Plaid API calls
@@ -866,6 +884,26 @@ async function syncPlaidWorkspace({ prisma, plaidClient, userId, workspaceUserId
   return buildWorkspaceSyncPayload(prisma, userId, workspaceUserId, { encryptionColumns });
 }
 
+// Resolves the owning user of a Plaid item_id for webhook processing. The
+// webhook is Plaid-initiated (no user token), so this one lookup must run on
+// the RLS-bypassing service client; everything after it runs inside the
+// resolved user's context.
+export async function resolvePlaidWebhookItem(itemId) {
+  const servicePrisma = getServicePrismaClient();
+  if (!servicePrisma || !itemId) {
+    return null;
+  }
+
+  return servicePrisma.plaidItem.findUnique({
+    where: { itemId },
+    select: {
+      itemId: true,
+      userId: true,
+      workspaceUserId: true,
+    },
+  });
+}
+
 export async function syncPlaidWorkspaceForWebhookItem(itemId) {
   if (!itemId) {
     return { synced: false, reason: "missing_item_id" };
@@ -879,32 +917,33 @@ export async function syncPlaidWorkspaceForWebhookItem(itemId) {
     return { synced: false, reason: "plaid_runtime_not_ready" };
   }
 
-  const prisma = getPrismaClient();
-  if (!prisma) {
+  if (!getPrismaClient()) {
     return { synced: false, reason: "database_client_unavailable" };
   }
 
-  const item = await prisma.plaidItem.findUnique({
-    where: { itemId },
-    select: {
-      itemId: true,
-      userId: true,
-      workspaceUserId: true,
-    },
-  });
+  // Service-client bypass (justified): Plaid webhooks carry no user identity,
+  // so the item_id → userId resolution cannot run inside a user context.
+  const item = await resolvePlaidWebhookItem(itemId);
 
   if (!item) {
     return { synced: false, reason: "item_not_found" };
   }
 
   const plaidClient = getPlaidClient();
-  await syncPlaidWorkspace({
-    prisma,
-    plaidClient,
-    userId: item.userId,
-    workspaceUserId: item.workspaceUserId,
-    restrictToItemId: item.itemId,
-  });
+  const capabilities = await getSchemaCapabilities();
+  await withUserContext(
+    item.userId,
+    (tx) =>
+      syncPlaidWorkspace({
+        prisma: tx,
+        plaidClient,
+        userId: item.userId,
+        workspaceUserId: item.workspaceUserId,
+        restrictToItemId: item.itemId,
+        encryptionColumns: capabilities.encryptionColumns,
+      }),
+    PLAID_SYNC_TRANSACTION_OPTIONS
+  );
 
   return {
     synced: true,
@@ -983,25 +1022,35 @@ export async function handlePlaidStatus(request, response) {
 export async function handleCreatePlaidLinkToken(request, response) {
   try {
     const decodedToken = await authenticateVerifiedRequest(request);
-    const { prisma, plaidClient } = assertPlaidRuntimeReady();
-    await ensureAuthenticatedUserRecord(prisma, decodedToken);
-    // Linking a financial institution requires current legal consent and a
-    // role allowed to manage financial connections.
-    await requireLegalConsent(prisma, decodedToken.uid);
-    await requireWorkspaceManagerRole(prisma, decodedToken.uid);
+    const { plaidClient } = assertPlaidRuntimeReady();
 
     const body = await readJsonBody(request);
     const workspaceUserId = normalizeWorkspaceUserId(body.workspaceUserId);
     const plaidItemId = normalizePlaidItemId(body.plaidItemId);
-    let accessToken;
 
-    if (plaidItemId) {
-      const existingItem = await prisma.plaidItem.findUnique({
+    // All database work runs in the authenticated user's RLS context; the
+    // Plaid network call below stays outside the transactions. The consent
+    // check gets its own transaction because it swallows a missing-column
+    // error on un-migrated databases, which aborts the enclosing transaction.
+    await withUserContext(decodedToken.uid, (tx) =>
+      ensureAuthenticatedUserRecord(tx, decodedToken)
+    );
+    // Linking a financial institution requires current legal consent and a
+    // role allowed to manage financial connections.
+    await withUserContext(decodedToken.uid, (tx) => requireLegalConsent(tx, decodedToken.uid));
+    const existingItem = await withUserContext(decodedToken.uid, async (tx) => {
+      await requireWorkspaceManagerRole(tx, decodedToken.uid);
+
+      if (!plaidItemId) return null;
+      return tx.plaidItem.findUnique({
         where: {
           itemId: plaidItemId,
         },
       });
+    });
 
+    let accessToken;
+    if (plaidItemId) {
       if (
         !existingItem ||
         existingItem.userId !== decodedToken.uid ||
@@ -1054,12 +1103,7 @@ export async function handleCreatePlaidLinkToken(request, response) {
 export async function handleExchangePlaidPublicToken(request, response) {
   try {
     const decodedToken = await authenticateVerifiedRequest(request);
-    const { prisma, plaidClient } = assertPlaidRuntimeReady();
-    await ensureAuthenticatedUserRecord(prisma, decodedToken);
-    // Creating a Plaid item (and its accounts) requires current legal consent
-    // and a role allowed to manage financial connections.
-    await requireLegalConsent(prisma, decodedToken.uid);
-    await requireWorkspaceManagerRole(prisma, decodedToken.uid);
+    const { plaidClient } = assertPlaidRuntimeReady();
 
     const body = await readJsonBody(request);
     const publicToken = body.publicToken;
@@ -1073,12 +1117,31 @@ export async function handleExchangePlaidPublicToken(request, response) {
         .json(buildErrorResponse("publicToken is required to connect a Plaid item."));
     }
 
-    if (!plaidItemId && linkMetadata?.institution?.institution_id && linkMetadata.accounts.length > 0) {
-      const existingItems = await getExistingPlaidItemsForDetection(
-        prisma,
-        decodedToken.uid,
-        workspaceUserId
-      );
+    // Guards + duplicate detection read run in the user's RLS context; the
+    // Plaid exchange calls below stay outside the transactions. The consent
+    // check gets its own transaction because it swallows a missing-column
+    // error on un-migrated databases, which aborts the enclosing transaction.
+    await withUserContext(decodedToken.uid, (tx) =>
+      ensureAuthenticatedUserRecord(tx, decodedToken)
+    );
+    // Creating a Plaid item (and its accounts) requires current legal consent
+    // and a role allowed to manage financial connections.
+    await withUserContext(decodedToken.uid, (tx) => requireLegalConsent(tx, decodedToken.uid));
+    const existingItemsForDetection = await withUserContext(decodedToken.uid, async (tx) => {
+      await requireWorkspaceManagerRole(tx, decodedToken.uid);
+
+      if (
+        !plaidItemId &&
+        linkMetadata?.institution?.institution_id &&
+        linkMetadata.accounts.length > 0
+      ) {
+        return getExistingPlaidItemsForDetection(tx, decodedToken.uid, workspaceUserId);
+      }
+      return null;
+    });
+
+    if (existingItemsForDetection) {
+      const existingItems = existingItemsForDetection;
       const duplicateDetection = detectDuplicatePlaidItem({
         currentItemId: plaidItemId,
         existingItems,
@@ -1130,16 +1193,6 @@ export async function handleExchangePlaidPublicToken(request, response) {
       requestId: getPlaidRequestId(itemResponse),
     });
 
-    // Ownership guard: if this itemId already exists, it must belong to the same user.
-    // Without this check the update branch would silently re-assign the item to whoever
-    // exchanges a public token referencing the same itemId.
-    const existingItem = await prisma.plaidItem.findUnique({ where: { itemId } });
-    if (existingItem && existingItem.userId !== decodedToken.uid) {
-      return response
-        .status(409)
-        .json(buildErrorResponse("This institution is already linked to a different account."));
-    }
-
     const plaidItemFields = {
       workspaceUserId,
       institutionId,
@@ -1156,27 +1209,58 @@ export async function handleExchangePlaidPublicToken(request, response) {
       lastSyncError: "",
     };
 
-    if (existingItem) {
-      await prisma.plaidItem.update({
-        where: { id: existingItem.id, userId: decodedToken.uid },
-        data: plaidItemFields,
+    try {
+      await withUserContext(decodedToken.uid, async (tx) => {
+        // Ownership guard: if this itemId already exists, it must belong to the
+        // same user. Without this check the update branch would silently
+        // re-assign the item to whoever exchanges a public token referencing
+        // the same itemId. Under RLS another user's row is invisible (null),
+        // which routes to the create branch; its unique(itemId) violation is
+        // mapped to the same 409 below.
+        const existingItem = await tx.plaidItem.findUnique({ where: { itemId } });
+        if (existingItem && existingItem.userId !== decodedToken.uid) {
+          const conflict = new Error("This institution is already linked to a different account.");
+          conflict.status = 409;
+          throw conflict;
+        }
+
+        if (existingItem) {
+          await tx.plaidItem.update({
+            where: { id: existingItem.id, userId: decodedToken.uid },
+            data: plaidItemFields,
+          });
+        } else {
+          await tx.plaidItem.create({
+            data: {
+              userId: decodedToken.uid,
+              itemId,
+              ...plaidItemFields,
+            },
+          });
+        }
       });
-    } else {
-      await prisma.plaidItem.create({
-        data: {
-          userId: decodedToken.uid,
-          itemId,
-          ...plaidItemFields,
-        },
-      });
+    } catch (error) {
+      if (error?.status === 409 || error?.code === "P2002") {
+        return response
+          .status(409)
+          .json(buildErrorResponse("This institution is already linked to a different account."));
+      }
+      throw error;
     }
 
-    const syncPayload = await syncPlaidWorkspace({
-      prisma,
-      plaidClient,
-      userId: decodedToken.uid,
-      workspaceUserId,
-    });
+    const capabilities = await getSchemaCapabilities();
+    const syncPayload = await withUserContext(
+      decodedToken.uid,
+      (tx) =>
+        syncPlaidWorkspace({
+          prisma: tx,
+          plaidClient,
+          userId: decodedToken.uid,
+          workspaceUserId,
+          encryptionColumns: capabilities.encryptionColumns,
+        }),
+      PLAID_SYNC_TRANSACTION_OPTIONS
+    );
 
     logPlaidServerEvent("info", "plaid_item_exchange_complete", {
       userId: decodedToken.uid,
@@ -1234,27 +1318,27 @@ export async function handleSyncPlaidWorkspace(request, response) {
             )
           );
       }
-      const prisma = getPrismaOrThrow();
-      await ensureAuthenticatedUserRecord(prisma, decodedToken);
-      const capabilities = await getSchemaCapabilities(prisma);
+      getPrismaOrThrow();
+      // The capability probe runs on the bare client (it reads no user rows);
+      // user-scoped reads run inside the user's RLS context.
+      const capabilities = await getSchemaCapabilities();
+      const readStoredPayload = (encryptionColumns) =>
+        withUserContext(decodedToken.uid, async (tx) => {
+          await ensureAuthenticatedUserRecord(tx, decodedToken);
+          return buildWorkspaceSyncPayload(tx, decodedToken.uid, workspaceUserId, {
+            encryptionColumns,
+          });
+        });
       let storedPayload;
       try {
-        storedPayload = await buildWorkspaceSyncPayload(
-          prisma,
-          decodedToken.uid,
-          workspaceUserId,
-          { encryptionColumns: capabilities.encryptionColumns }
-        );
+        storedPayload = await readStoredPayload(capabilities.encryptionColumns);
       } catch (error) {
+        // Stale capability cache: retry once in a fresh transaction (the
+        // failed statement aborted the previous one).
         if (isMissingEncryptionColumnError(error) && capabilities.encryptionColumns) {
           resetSchemaCapabilitiesCache();
-          const refreshed = await getSchemaCapabilities(prisma);
-          storedPayload = await buildWorkspaceSyncPayload(
-            prisma,
-            decodedToken.uid,
-            workspaceUserId,
-            { encryptionColumns: refreshed.encryptionColumns }
-          );
+          const refreshed = await getSchemaCapabilities();
+          storedPayload = await readStoredPayload(refreshed.encryptionColumns);
         } else {
           throw error;
         }
@@ -1266,17 +1350,31 @@ export async function handleSyncPlaidWorkspace(request, response) {
     // writes financial data, so require current legal consent and a role
     // allowed to manage financial connections. The read path above is
     // intentionally not consent-gated so the app can still render.
-    const { prisma, plaidClient } = assertPlaidRuntimeReady();
-    await ensureAuthenticatedUserRecord(prisma, decodedToken);
-    await requireLegalConsent(prisma, decodedToken.uid);
-    await requireWorkspaceManagerRole(prisma, decodedToken.uid);
+    const { plaidClient } = assertPlaidRuntimeReady();
+    // The consent check gets its own transaction because it swallows a
+    // missing-column error on un-migrated databases, which aborts the
+    // enclosing transaction.
+    await withUserContext(decodedToken.uid, (tx) =>
+      ensureAuthenticatedUserRecord(tx, decodedToken)
+    );
+    await withUserContext(decodedToken.uid, (tx) => requireLegalConsent(tx, decodedToken.uid));
+    await withUserContext(decodedToken.uid, (tx) =>
+      requireWorkspaceManagerRole(tx, decodedToken.uid)
+    );
 
-    const syncPayload = await syncPlaidWorkspace({
-      prisma,
-      plaidClient,
-      userId: decodedToken.uid,
-      workspaceUserId,
-    });
+    const capabilities = await getSchemaCapabilities();
+    const syncPayload = await withUserContext(
+      decodedToken.uid,
+      (tx) =>
+        syncPlaidWorkspace({
+          prisma: tx,
+          plaidClient,
+          userId: decodedToken.uid,
+          workspaceUserId,
+          encryptionColumns: capabilities.encryptionColumns,
+        }),
+      PLAID_SYNC_TRANSACTION_OPTIONS
+    );
 
     return response.status(200).json(syncPayload);
   } catch (error) {
@@ -1299,22 +1397,33 @@ export async function handleDeletePlaidWorkspace(request, response) {
     // must stay possible even when the email is unverified (data-removal
     // rights). Role enforcement still applies.
     const decodedToken = await authenticateRequest(request);
-    const prisma = getPrismaOrThrow();
-    await requireWorkspaceManagerRole(prisma, decodedToken.uid);
+    getPrismaOrThrow();
     const workspaceUserId = normalizeWorkspaceUserId(request.query?.workspaceUserId);
 
-    const plaidItems = await prisma.plaidItem.findMany({
-      where: {
-        userId: decodedToken.uid,
-        workspaceUserId,
-      },
-    });
+    // Deleting calls Plaid's itemRemove per item inside the transaction, so
+    // give it the extended sync timeout.
+    const plaidItems = await withUserContext(
+      decodedToken.uid,
+      async (tx) => {
+        await requireWorkspaceManagerRole(tx, decodedToken.uid);
 
-    await deletePlaidItems({
-      prisma,
-      userId: decodedToken.uid,
-      plaidItems,
-    });
+        const items = await tx.plaidItem.findMany({
+          where: {
+            userId: decodedToken.uid,
+            workspaceUserId,
+          },
+        });
+
+        await deletePlaidItems({
+          prisma: tx,
+          userId: decodedToken.uid,
+          plaidItems: items,
+        });
+
+        return items;
+      },
+      PLAID_SYNC_TRANSACTION_OPTIONS
+    );
 
     return response.status(200).json({
       deleted: true,
@@ -1337,8 +1446,7 @@ export async function handleDeletePlaidItem(request, response) {
     // Removing a linked institution is as sensitive as linking one, so it
     // carries the same verified-email and role requirements.
     const decodedToken = await authenticateVerifiedRequest(request);
-    const prisma = getPrismaOrThrow();
-    await requireWorkspaceManagerRole(prisma, decodedToken.uid);
+    getPrismaOrThrow();
     const workspaceUserId = normalizeWorkspaceUserId(request.query?.workspaceUserId);
     const itemId = normalizePlaidItemId(request.query?.itemId);
 
@@ -1348,25 +1456,37 @@ export async function handleDeletePlaidItem(request, response) {
         .json(buildErrorResponse("itemId is required to remove a linked Plaid institution."));
     }
 
-    const plaidItems = await prisma.plaidItem.findMany({
-      where: {
-        userId: decodedToken.uid,
-        workspaceUserId,
-        itemId,
+    const plaidItems = await withUserContext(
+      decodedToken.uid,
+      async (tx) => {
+        await requireWorkspaceManagerRole(tx, decodedToken.uid);
+
+        const items = await tx.plaidItem.findMany({
+          where: {
+            userId: decodedToken.uid,
+            workspaceUserId,
+            itemId,
+          },
+        });
+
+        if (items.length) {
+          await deletePlaidItems({
+            prisma: tx,
+            userId: decodedToken.uid,
+            plaidItems: items,
+          });
+        }
+
+        return items;
       },
-    });
+      PLAID_SYNC_TRANSACTION_OPTIONS
+    );
 
     if (!plaidItems.length) {
       return response
         .status(404)
         .json(buildErrorResponse("No linked Plaid institution was found for that itemId."));
     }
-
-    await deletePlaidItems({
-      prisma,
-      userId: decodedToken.uid,
-      plaidItems,
-    });
 
     return response.status(200).json({
       deleted: true,
