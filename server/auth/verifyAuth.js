@@ -1,5 +1,6 @@
 import { getFirebaseAdminAuth, isFirebaseAdminConfigured } from "./firebaseAdmin.js";
 import { getPrismaClient, isDatabaseConfigured, withUserContext } from "../db/prisma.js";
+import { summarizeError } from "../security/redaction.js";
 
 export class AuthError extends Error {
   constructor(message, status = 401) {
@@ -31,31 +32,43 @@ export async function authenticateRequest(request) {
     throw new AuthError("Firebase Admin could not be initialized.", 503);
   }
 
+  let decodedToken;
   try {
-    const decodedToken = await adminAuth.verifyIdToken(token);
+    decodedToken = await adminAuth.verifyIdToken(token);
+  } catch (error) {
+    throw new AuthError(error?.message || "Unable to verify the provided auth token.", 401);
+  }
 
-    if (isDatabaseConfigured() && getPrismaClient()) {
+  if (isDatabaseConfigured() && getPrismaClient()) {
+    let userRecord;
+    try {
       // The uid is already proven by the decoded Firebase token, so the
       // disabled-flag lookup runs in that user's RLS context like every other
       // user-scoped query.
-      const userRecord = await withUserContext(decodedToken.uid, (tx) =>
+      userRecord = await withUserContext(decodedToken.uid, (tx) =>
         tx.user.findUnique({
           where: { id: decodedToken.uid },
           select: { isDisabled: true },
         })
       );
-      if (userRecord?.isDisabled) {
-        throw new AuthError("This account has been disabled.", 403);
-      }
+    } catch (error) {
+      // A database failure here is an infrastructure problem, not an invalid
+      // token. Reporting it as 401 (as this path once did) makes the client
+      // blame the sign-in session AND leaks the raw driver error message —
+      // e.g. Supabase's "(ESSLREQUIRED) SSL connection is required for user"
+      // surfaced verbatim in the UI. Report 503 with a stable message instead.
+      console.error("[auth/verifyAuth]", JSON.stringify(summarizeError(error)));
+      throw new AuthError(
+        "The database is temporarily unreachable, so the request could not be completed. Please retry shortly.",
+        503
+      );
     }
-
-    return decodedToken;
-  } catch (error) {
-    if (error instanceof AuthError) {
-      throw error;
+    if (userRecord?.isDisabled) {
+      throw new AuthError("This account has been disabled.", 403);
     }
-    throw new AuthError(error?.message || "Unable to verify the provided auth token.", 401);
   }
+
+  return decodedToken;
 }
 
 /**
