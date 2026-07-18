@@ -21,10 +21,12 @@
     "format:check": "prettier --check ."
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^4.0.16",
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
     "@vercel/speed-insights": "^2.0.0",
     "@vitejs/plugin-react": "latest",
+    "ai": "^7.0.31",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "express-rate-limit": "^8.5.2",
@@ -37,6 +39,7 @@
     "react": "latest",
     "react-dom": "latest",
     "react-plaid-link": "^4.1.1",
+    "resend": "^6.17.2",
     "vite": "latest"
   },
   "devDependencies": {
