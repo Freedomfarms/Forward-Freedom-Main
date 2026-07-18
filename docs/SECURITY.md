@@ -152,6 +152,21 @@ user's item returns 404/409 and touches nothing. This is covered by
 Postgres database and asserts one user can never reach another's data, and that
 financial columns are ciphertext at rest.
 
+### Database-enforced isolation (Postgres RLS)
+
+On top of the app-level scoping, every user-scoped table has row-level
+security **enabled and forced** (`FORCE` applies policies even to the table
+owner). Each request binds its user with a transaction-local
+`app.current_user_id` setting via `withUserContext()` (`server/db/prisma.js`);
+one `user_isolation` policy per table (`USING` + `WITH CHECK` on `"userId"`,
+`"id"` for `"User"`) means a query with no context returns zero rows and an
+insert for another user is rejected by the database itself — a forgotten
+`WHERE` clause can no longer leak data. Cross-user access exists only through
+the `freedom_service` role (`server/db/servicePrisma.js`), restricted to the
+Plaid webhook's item→owner resolution, the cron dispatcher, and admin usage
+reporting. Rollout, roles, and verification: `docs/RLS_ROLLOUT.md`; covered by
+`test/rls-isolation.test.js`.
+
 ## 8. Access controls summary
 
 - Bank linking requires an authenticated **and email-verified** Firebase user.
