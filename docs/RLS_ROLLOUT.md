@@ -131,6 +131,27 @@ message.
   Postgres (two-user isolation, zero rows without context, `WITH CHECK`
   rejecting mismatched inserts, `FORCE` applying to the owner).
 
+### `Unable to read or update the workspace snapshot` (after auth works)
+
+Getting past the auth-time 503 means `DATABASE_URL` reaches Postgres as
+`freedom_app` and can read `"User"`. A subsequent workspace 500 with this
+message (often with `code 42501 — permission denied for table …` in the
+diagnostic) means the DML grants for `freedom_app` / `freedom_service` were
+skipped — typically because the roles did not exist yet when the RLS
+migration's grant block ran. Re-run the grants as the owner in the SQL editor:
+
+```sql
+GRANT USAGE ON SCHEMA public TO freedom_app, freedom_service;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO freedom_app, freedom_service;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO freedom_app, freedom_service;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO freedom_app, freedom_service;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT USAGE, SELECT ON SEQUENCES TO freedom_app, freedom_service;
+```
+
+No redeploy needed after the grants — click **Retry Secure Sync**.
+
 ## Rollback
 
 Config-only rollback: point `DATABASE_URL` back at the owner connection string
