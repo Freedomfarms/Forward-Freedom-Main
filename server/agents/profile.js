@@ -74,7 +74,7 @@ export function normalizeProfile(raw) {
     profile.categories[category] = entries.map(normalizeEntry).filter(Boolean);
   }
   profile.tombstones = Array.isArray(raw.tombstones)
-    ? raw.tombstones.map((id) => String(id)).filter(Boolean)
+    ? raw.tombstones.filter((id) => id != null && String(id).trim()).map((id) => String(id))
     : [];
   return profile;
 }

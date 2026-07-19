@@ -206,7 +206,7 @@ export async function respondToChat({
     dataSection("RECENT RUN SUMMARIES", renderRunSummaries(runs))
   );
   if (relatedRun) {
-    let relatedOutput = null;
+    let relatedOutput;
     try {
       relatedOutput = relatedRun.outputCiphertext ? decrypt(relatedRun.outputCiphertext) : null;
     } catch {
