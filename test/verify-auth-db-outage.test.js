@@ -61,9 +61,11 @@ function requestWithToken() {
 }
 
 test("a database outage during the disabled-account lookup is a 503, not a 401", { skip }, async () => {
+  const dbError = new Error("Database query failed");
+  dbError.cause = Object.assign(new Error(DB_ERROR_MESSAGE), { code: "XX000" });
   globalThis.__VERIFY_AUTH_TEST = {
     verifyIdTokenError: null,
-    dbError: new Error(DB_ERROR_MESSAGE),
+    dbError,
     userRecord: null,
   };
 
@@ -72,10 +74,12 @@ test("a database outage during the disabled-account lookup is a 503, not a 401",
     (thrown) => {
       assert.ok(thrown instanceof AuthError);
       assert.equal(thrown.status, 503);
-      // The raw driver error (connection details, usernames) must never
-      // reach the client-facing message.
-      assert.equal(thrown.message.includes("ESSLREQUIRED"), false);
-      assert.equal(thrown.message.includes("postgres"), false);
+      // The stable retry message leads, followed by a redacted diagnostic
+      // (error code + underlying driver line) so connection-config mistakes
+      // are identifiable from the UI.
+      assert.equal(thrown.message.startsWith("The database is temporarily unreachable"), true);
+      assert.equal(thrown.message.includes("code XX000"), true);
+      assert.equal(thrown.message.includes("SSL connection is required"), true);
       return true;
     }
   );
