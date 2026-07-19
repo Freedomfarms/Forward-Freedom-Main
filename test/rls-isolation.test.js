@@ -35,12 +35,14 @@ function databaseNameFromUrl(fallback) {
 }
 const DB_NAME = process.env.RLS_DB_NAME || databaseNameFromUrl("ff_rls");
 const PG_PORT = process.env.TEST_PG_PORT || "5433";
+const GRANT_REMEDIATION_MIGRATION = "20260719010000_runtime_role_grant_remediation";
 
 // The schema owner must be a non-superuser so the FORCE-RLS assertions mean
 // something (superusers bypass RLS unconditionally).
 const OWNER_ROLE = "rls_test_owner";
 
 let setupError = null;
+let skippedGrantIncidentReproduced = false;
 let prisma;
 let withUserContext;
 
@@ -92,6 +94,32 @@ before(async () => {
       .map((entry) => entry.name)
       .sort();
     for (const dir of migrationDirs) {
+      if (dir === GRANT_REMEDIATION_MIGRATION) {
+        // Reproduce the production deployment order: the original migration
+        // completed without runtime-role grants, then the roles became
+        // available. Revoking here is equivalent to its conditional block
+        // having skipped them, while avoiding destructive cluster-wide role
+        // drops in a developer database.
+        const revoked = psqlAs(OWNER_ROLE, DB_NAME, "-c", `
+          REVOKE USAGE ON SCHEMA public FROM freedom_app, freedom_service;
+          REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM freedom_app, freedom_service;
+          REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM freedom_app, freedom_service;
+          ALTER DEFAULT PRIVILEGES IN SCHEMA public
+            REVOKE ALL PRIVILEGES ON TABLES FROM freedom_app, freedom_service;
+          ALTER DEFAULT PRIVILEGES IN SCHEMA public
+            REVOKE ALL PRIVILEGES ON SEQUENCES FROM freedom_app, freedom_service;
+        `);
+        if (revoked.status !== 0) {
+          throw new Error(revoked.stderr || "failed to reproduce skipped runtime grants");
+        }
+
+        const denied = psqlAs("freedom_app", DB_NAME, "-c", `SELECT 1 FROM "User" LIMIT 0;`);
+        if (denied.status === 0) {
+          throw new Error("skipped-grant reproduction did not remove freedom_app table access");
+        }
+        skippedGrantIncidentReproduced = true;
+      }
+
       const applied = psqlAs(OWNER_ROLE, DB_NAME, "-f", `prisma/migrations/${dir}/migration.sql`);
       if (applied.status !== 0) {
         throw new Error(`migration ${dir} failed: ${applied.stderr}`);
@@ -269,6 +297,42 @@ test("the BYPASSRLS service role still sees every user's rows", { skip }, () => 
   // only. It must see across users; everything else must not.
   assert.equal(countAs("freedom_service", "User"), 2);
   assert.equal(countAs("freedom_service", "Transaction"), 2);
+});
+
+test("grant remediation repairs skipped grants and future-table defaults", { skip }, () => {
+  requireSetup();
+  assert.equal(skippedGrantIncidentReproduced, true);
+
+  const created = psqlAs(
+    OWNER_ROLE,
+    DB_NAME,
+    "-c",
+    `CREATE TABLE "RuntimeGrantProbe" (
+       "id" BIGSERIAL PRIMARY KEY,
+       "value" TEXT NOT NULL
+     );`
+  );
+  assert.equal(created.status, 0, created.stderr);
+
+  for (const role of ["freedom_app", "freedom_service"]) {
+    const dml = psqlAs(
+      role,
+      DB_NAME,
+      "-c",
+      `INSERT INTO "RuntimeGrantProbe" ("value") VALUES ('${role}');
+       UPDATE "RuntimeGrantProbe" SET "value" = '${role}-updated'
+         WHERE "value" = '${role}';
+       SELECT * FROM "RuntimeGrantProbe";
+       DELETE FROM "RuntimeGrantProbe" WHERE "value" = '${role}-updated';`
+    );
+    assert.equal(dml.status, 0, `${role} did not inherit future DML/sequence grants: ${dml.stderr}`);
+
+    const truncate = psqlAs(role, DB_NAME, "-c", `TRUNCATE TABLE "RuntimeGrantProbe";`);
+    assert.notEqual(truncate.status, 0, `${role} must not receive TRUNCATE`);
+  }
+
+  const dropped = psqlAs(OWNER_ROLE, DB_NAME, "-c", `DROP TABLE "RuntimeGrantProbe";`);
+  assert.equal(dropped.status, 0, dropped.stderr);
 });
 
 test("withUserContext rejects an empty userId instead of running unscoped", { skip }, async () => {
