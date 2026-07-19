@@ -46,6 +46,13 @@ original RLS migration ran before the roles were created. It conditionally
 re-applies the same grants and future-object defaults on a later deploy, while
 remaining a no-op for local and shadow databases without those roles.
 
+`20260719011500_user_isolation_policy_remediation` then performs full RLS
+state reconciliation in one transaction across all 17 user-scoped tables: it
+explicitly enables and forces RLS, removes every existing policy regardless of
+name or permissive/restrictive mode using safely quoted catalog identifiers,
+and creates the sole intended `user_isolation` policy with the original
+`id`/`userId` predicate. It introduces no bypass, grants, or role changes.
+
 ### 3. Deploy the RLS migration
 
 Deploy the PR containing
@@ -127,18 +134,28 @@ message.
 - Sign in and load the dashboard: data appears normally.
 - In the SQL editor, as `freedom_app` without a context:
   `SET ROLE freedom_app; SELECT count(*) FROM "Transaction";` → `0` rows.
-- `test/rls-isolation.test.js` covers the same guarantees against a local
+- `test/rls-policy-remediation.test.js` statically pins the exact 17-table
+  ENABLE/FORCE, cleanup, and single-policy inventories and rejects bypass,
+  grant, or role mutations.
+- `test/rls-isolation.test.js` covers the runtime guarantees against a local
   Postgres (two-user isolation, zero rows without context, `WITH CHECK`
-  rejecting mismatched inserts, `FORCE` applying to the owner).
+  rejecting mismatched inserts, `FORCE` applying to the owner, and removal of
+  deliberately missing and arbitrarily named restrictive policy drift).
 
 ### `Unable to read or update the workspace snapshot` (after auth works)
 
 Getting past the auth-time 503 means `DATABASE_URL` reaches Postgres as
 `freedom_app` and can read `"User"`. A subsequent workspace 500 with this
-message (often with `code 42501 — permission denied for table …` in the
-diagnostic) means the DML grants for `freedom_app` / `freedom_service` were
-skipped — typically because the roles did not exist yet when the RLS
-migration's grant block ran. Re-run the grants as the owner in the SQL editor:
+message can report either of two distinct `42501` diagnostics:
+
+- `permission denied for table …` means the runtime grants were skipped.
+  Deploy `20260719010000_runtime_role_grant_remediation`, or re-run the grants
+  below as the owner.
+- `new row violates row-level security policy for table …` means policy state
+  is missing or drifted. Deploy
+  `20260719011500_user_isolation_policy_remediation` as the owner via
+  `DIRECT_URL` to fully reconcile RLS flags and policies; do not disable RLS
+  or `FORCE`.
 
 ```sql
 GRANT USAGE ON SCHEMA public TO freedom_app, freedom_service;

@@ -36,6 +36,7 @@ function databaseNameFromUrl(fallback) {
 const DB_NAME = process.env.RLS_DB_NAME || databaseNameFromUrl("ff_rls");
 const PG_PORT = process.env.TEST_PG_PORT || "5433";
 const GRANT_REMEDIATION_MIGRATION = "20260719010000_runtime_role_grant_remediation";
+const POLICY_REMEDIATION_MIGRATION = "20260719011500_user_isolation_policy_remediation";
 
 // The schema owner must be a non-superuser so the FORCE-RLS assertions mean
 // something (superusers bypass RLS unconditionally).
@@ -43,6 +44,9 @@ const OWNER_ROLE = "rls_test_owner";
 
 let setupError = null;
 let skippedGrantIncidentReproduced = false;
+let missingPolicyIncidentReproduced = false;
+let driftedPolicyIncidentReproduced = false;
+let policyRemediationVerified = false;
 let prisma;
 let withUserContext;
 
@@ -50,6 +54,27 @@ function psqlAs(user, db, ...args) {
   return spawnSync("psql", ["-h", "/tmp", "-p", PG_PORT, "-U", user, "-d", db, "-v", "ON_ERROR_STOP=1", ...args], {
     encoding: "utf8",
   });
+}
+
+function scopedSqlAsApp(userId, sql) {
+  return psqlAs(
+    "freedom_app",
+    DB_NAME,
+    "-c",
+    `BEGIN;
+     SELECT set_config('app.current_user_id', '${userId}', true);
+     ${sql}
+     COMMIT;`
+  );
+}
+
+function requireRlsRejection(result, operation) {
+  if (result.status === 0) {
+    throw new Error(`${operation} unexpectedly bypassed RLS`);
+  }
+  if (!/row-level security|42501/i.test(`${result.stderr}\n${result.stdout}`)) {
+    throw new Error(`${operation} failed for a non-RLS reason: ${result.stderr}`);
+  }
 }
 
 function countAs(user, table) {
@@ -120,9 +145,117 @@ before(async () => {
         skippedGrantIncidentReproduced = true;
       }
 
+      if (dir === POLICY_REMEDIATION_MIGRATION) {
+        // Reproduce both policy-state failure modes immediately before the
+        // repair: no applicable policy (default deny) and an extra restrictive
+        // policy with an arbitrary name. Neither simulation weakens isolation.
+        const drifted = psqlAs(OWNER_ROLE, DB_NAME, "-c", `
+          DROP POLICY IF EXISTS "user_isolation" ON "WorkspaceSnapshot";
+          CREATE POLICY "unexpected_restrictive_drift" ON "Account"
+            AS RESTRICTIVE
+            FOR ALL
+            USING (false)
+            WITH CHECK (false);
+        `);
+        if (drifted.status !== 0) {
+          throw new Error(drifted.stderr || "failed to reproduce policy-state drift");
+        }
+
+        for (const uid of ["rls-policy-probe-a", "rls-policy-probe-b"]) {
+          const createdUser = scopedSqlAsApp(
+            uid,
+            `INSERT INTO "User" ("id", "email", "updatedAt")
+             VALUES ('${uid}', '${uid}@example.com', CURRENT_TIMESTAMP);`
+          );
+          if (createdUser.status !== 0) {
+            throw new Error(createdUser.stderr || `failed to create ${uid}`);
+          }
+        }
+
+        const missingPolicyWrite = scopedSqlAsApp(
+          "rls-policy-probe-a",
+          `INSERT INTO "WorkspaceSnapshot"
+             ("id", "userId", "stateCiphertext", "updatedAt")
+           VALUES
+             ('rls-policy-probe-snapshot', 'rls-policy-probe-a', 'ciphertext', CURRENT_TIMESTAMP);`
+        );
+        requireRlsRejection(missingPolicyWrite, "same-user write with a missing policy");
+        missingPolicyIncidentReproduced = true;
+
+        const driftedPolicyWrite = scopedSqlAsApp(
+          "rls-policy-probe-a",
+          `INSERT INTO "Account" ("id", "userId", "name", "type", "updatedAt")
+           VALUES
+             ('rls-policy-probe-account', 'rls-policy-probe-a', 'Probe', 'Checking', CURRENT_TIMESTAMP);`
+        );
+        requireRlsRejection(driftedPolicyWrite, "same-user write with a drifted policy");
+        driftedPolicyIncidentReproduced = true;
+      }
+
       const applied = psqlAs(OWNER_ROLE, DB_NAME, "-f", `prisma/migrations/${dir}/migration.sql`);
       if (applied.status !== 0) {
         throw new Error(`migration ${dir} failed: ${applied.stderr}`);
+      }
+
+      if (dir === POLICY_REMEDIATION_MIGRATION) {
+        const accountPolicies = psqlAs(
+          OWNER_ROLE,
+          DB_NAME,
+          "-tAc",
+          `SELECT policyname, permissive, cmd
+             FROM pg_policies
+            WHERE schemaname = 'public' AND tablename = 'Account';`
+        );
+        assert.equal(accountPolicies.status, 0, accountPolicies.stderr);
+        assert.equal(
+          accountPolicies.stdout.trim(),
+          "user_isolation|PERMISSIVE|ALL",
+          "arbitrarily named restrictive policy survived remediation"
+        );
+
+        const repairedSnapshotWrite = scopedSqlAsApp(
+          "rls-policy-probe-a",
+          `INSERT INTO "WorkspaceSnapshot"
+             ("id", "userId", "stateCiphertext", "updatedAt")
+           VALUES
+             ('rls-policy-probe-snapshot', 'rls-policy-probe-a', 'ciphertext', CURRENT_TIMESTAMP);`
+        );
+        if (repairedSnapshotWrite.status !== 0) {
+          throw new Error(
+            repairedSnapshotWrite.stderr || "repaired WorkspaceSnapshot policy rejected same-user write"
+          );
+        }
+
+        const repairedAccountWrite = scopedSqlAsApp(
+          "rls-policy-probe-a",
+          `INSERT INTO "Account" ("id", "userId", "name", "type", "updatedAt")
+           VALUES
+             ('rls-policy-probe-account', 'rls-policy-probe-a', 'Probe', 'Checking', CURRENT_TIMESTAMP);`
+        );
+        if (repairedAccountWrite.status !== 0) {
+          throw new Error(
+            repairedAccountWrite.stderr || "repaired Account policy rejected same-user write"
+          );
+        }
+
+        const crossUserWrite = scopedSqlAsApp(
+          "rls-policy-probe-a",
+          `INSERT INTO "Account" ("id", "userId", "name", "type", "updatedAt")
+           VALUES
+             ('rls-policy-probe-cross-account', 'rls-policy-probe-b', 'Cross-user Probe', 'Checking', CURRENT_TIMESTAMP);`
+        );
+        requireRlsRejection(crossUserWrite, "cross-user write after policy remediation");
+
+        const cleaned = psqlAs(
+          "postgres",
+          DB_NAME,
+          "-c",
+          `DELETE FROM "User" WHERE "id" IN ('rls-policy-probe-a', 'rls-policy-probe-b');`
+        );
+        if (cleaned.status !== 0) {
+          throw new Error(cleaned.stderr || "failed to clean policy remediation probes");
+        }
+        policyRemediationVerified = true;
       }
     }
 
@@ -333,6 +466,13 @@ test("grant remediation repairs skipped grants and future-table defaults", { ski
 
   const dropped = psqlAs(OWNER_ROLE, DB_NAME, "-c", `DROP TABLE "RuntimeGrantProbe";`);
   assert.equal(dropped.status, 0, dropped.stderr);
+});
+
+test("policy remediation repairs missing and drifted policies without weakening isolation", { skip }, () => {
+  requireSetup();
+  assert.equal(missingPolicyIncidentReproduced, true);
+  assert.equal(driftedPolicyIncidentReproduced, true);
+  assert.equal(policyRemediationVerified, true);
 });
 
 test("withUserContext rejects an empty userId instead of running unscoped", { skip }, async () => {
