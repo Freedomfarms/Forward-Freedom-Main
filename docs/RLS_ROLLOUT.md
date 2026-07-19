@@ -41,6 +41,11 @@ The RLS migration's grants reference these roles; when a role is missing the
 migration skips its grants with a warning, so create the roles **before**
 deploying step 3 (or re-run the grant block afterwards).
 
+`20260719010000_runtime_role_grant_remediation` repairs environments where the
+original RLS migration ran before the roles were created. It conditionally
+re-applies the same grants and future-object defaults on a later deploy, while
+remaining a no-op for local and shadow databases without those roles.
+
 ### 3. Deploy the RLS migration
 
 Deploy the PR containing
