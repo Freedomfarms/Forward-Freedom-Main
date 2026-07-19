@@ -164,8 +164,11 @@ insert for another user is rejected by the database itself — a forgotten
 `WHERE` clause can no longer leak data. Cross-user access exists only through
 the `freedom_service` role (`server/db/servicePrisma.js`), restricted to the
 Plaid webhook's item→owner resolution, the cron dispatcher, and admin usage
-reporting. Rollout, roles, and verification: `docs/RLS_ROLLOUT.md`; covered by
-`test/rls-isolation.test.js`.
+reporting. The remediation migration performs full RLS state reconciliation:
+it restores enabled/forced flags, removes all policy drift, and recreates the
+sole intended policy on each user-scoped table. Rollout, roles, and
+verification: `docs/RLS_ROLLOUT.md`; covered by
+`test/rls-policy-remediation.test.js` and `test/rls-isolation.test.js`.
 
 ## 8. Access controls summary
 
