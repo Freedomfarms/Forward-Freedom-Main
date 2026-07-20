@@ -17,9 +17,9 @@ const { PrismaClient } = prismaClientPackage;
 //   (a) the Plaid webhook resolving an incoming item_id to its owning userId
 //       (server/plaid/handlers.js, server/plaid/webhookHandler.js) — Plaid
 //       sends no user token, so the owner is unknown until this lookup;
-//   (b) the future cron dispatcher enumerating due agents across users
+//   (b) the cron dispatcher enumerating due agents across users
 //       (api/cron/agent-dispatch.js);
-//   (c) future admin usage/cost reporting queries.
+//   (c) admin usage/cost reporting (api/admin/usage.js).
 //
 // Every call site must carry a comment justifying the bypass, and must switch
 // into withUserContext(resolvedUserId, ...) the moment a user is known.

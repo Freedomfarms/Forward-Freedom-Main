@@ -5,6 +5,12 @@ The guiding principle is **privacy over database convenience**: sensitive
 financial data is encrypted at rest with per-record envelope encryption, and no
 employee, developer, database administrator, or owner can casually read it.
 
+It covers both the financial workspace (Plaid, encryption, §§1–8) and the
+**Freedom OS agent platform** (§§9–14): the per-account CEO Agent and its
+read-only sub-agents, Postgres row-level security, agent audit logging, the
+living profile, and LLM data minimization. Operational details (env vars,
+cron, admin setup) live in `docs/FREEDOM_OS.md`.
+
 ## 1. What FFF never has access to
 
 - **Bank usernames, passwords, or login credentials.** These are entered only
@@ -145,30 +151,30 @@ Users never need to reconnect Plaid.
 
 ## 7. Cross-user isolation
 
-Every Plaid handler filters by `userId` and verifies ownership before returning
-or mutating data. Attempting to read, sync, delete, or update-link another
-user's item returns 404/409 and touches nothing. This is covered by
-`test/plaid-user-isolation.test.js`, which runs the real handlers against a real
-Postgres database and asserts one user can never reach another's data, and that
-financial columns are ciphertext at rest.
+Isolation is enforced at two independent layers: **Postgres row-level
+security** (the database itself refuses to return or accept another user's
+rows — see §10) **plus app-level scoping** (every handler filters by `userId`
+and verifies ownership before returning or mutating data). Attempting to read,
+sync, delete, or update-link another user's item returns 404/409 and touches
+nothing; the same scoping applies to every agent-platform route.
 
-### Database-enforced isolation (Postgres RLS)
+Test coverage:
 
-On top of the app-level scoping, every user-scoped table has row-level
-security **enabled and forced** (`FORCE` applies policies even to the table
-owner). Each request binds its user with a transaction-local
-`app.current_user_id` setting via `withUserContext()` (`server/db/prisma.js`);
-one `user_isolation` policy per table (`USING` + `WITH CHECK` on `"userId"`,
-`"id"` for `"User"`) means a query with no context returns zero rows and an
-insert for another user is rejected by the database itself — a forgotten
-`WHERE` clause can no longer leak data. Cross-user access exists only through
-the `freedom_service` role (`server/db/servicePrisma.js`), restricted to the
-Plaid webhook's item→owner resolution, the cron dispatcher, and admin usage
-reporting. The remediation migration performs full RLS state reconciliation:
-it restores enabled/forced flags, removes all policy drift, and recreates the
-sole intended policy on each user-scoped table. Rollout, roles, and
-verification: `docs/RLS_ROLLOUT.md`; covered by
-`test/rls-policy-remediation.test.js` and `test/rls-isolation.test.js`.
+- `test/plaid-user-isolation.test.js` runs the real Plaid handlers against a
+  real Postgres database and asserts one user can never reach another's data,
+  and that financial columns are ciphertext at rest.
+- `test/rls-isolation.test.js` proves the database-level guarantees against a
+  real Postgres: two-user isolation, zero rows without a bound user context,
+  `WITH CHECK` rejecting inserts for another user, and `FORCE` applying even
+  to the table owner.
+- `test/rls-policy-remediation.test.js` statically pins the exact per-table
+  ENABLE/FORCE and single-policy inventory and rejects bypass, grant, or role
+  mutations.
+- `test/agent-chat-scoping.test.js` covers scoping inside the agent platform
+  (a sub-agent chat may only see its own runs and messages).
+
+The RLS design — roles, policies, and the narrowly-scoped service-role bypass
+— is documented in §10 and `docs/RLS_ROLLOUT.md`.
 
 ## 8. Access controls summary
 
@@ -176,3 +182,158 @@ verification: `docs/RLS_ROLLOUT.md`; covered by
 - All Plaid/workspace routes require a valid Firebase ID token.
 - Rate limits apply per route (`server/http/rateLimit.js`).
 - Security headers + CSP are applied to every response.
+
+## 9. Freedom OS agent platform
+
+Freedom OS adds a per-account team of AI agents on top of the financial
+workspace:
+
+- **CEO Agent** — the per-account orchestrator (default name "CEO Agent",
+  exactly one per user; `CeoAgentConfig`). It synthesizes a digest from
+  sub-agent run summaries, hosts the main chat, and owns the living profile
+  (§14). Personality is preset-driven (a fixed enum of server-side tone
+  snippets) — there are no free-text system prompts, and avatars are preset
+  keys, never uploaded or AI-generated images.
+- **Sub-agents** (`AgentConfig`) — Finance, Research, and Reminders, all
+  **read-only**. The runner's fail-closed gate (`server/agents/runner.js`)
+  only executes agents whose permission level is `READ_ONLY` or `DRAFT_ONLY`;
+  `ACTION_REQUIRED_APPROVAL` and `AUTONOMOUS` exist in the schema but are
+  rejected until a later phase unlocks them. Any gate failure is recorded as a
+  `SKIPPED` run in the audit log (§13).
+
+**Agents never execute actions.** There is no code path through which an agent
+can make transfers, trades, or payments, or contact any third party. The only
+outward effect any agent has is **self-notification**: an in-app
+`Notification` row and, when the Reminders agent has email enabled, an email
+sent via Resend exclusively to the user's own verified account address — the
+recipient is structurally hardcoded to `User.email`, with no parameter through
+which any other destination can be supplied
+(`server/agents/types/reminders.js`).
+
+**Finance agent = observations only.** Its fixed system prompt limits it to
+surfacing observations and patterns ("dining spend is 40% above your 3-month
+average") and explicitly forbids prescriptive directives or investment
+recommendations of any kind. It is **not** an investment adviser. §12 covers
+what data it may see.
+
+**Research agent** reads no user financial data at all — its topic comes from
+the agent's own configuration — and its only tool is Anthropic's
+provider-executed web search (read-only by construction; no code or network
+access runs on our side).
+
+## 10. Postgres row-level security (RLS)
+
+On top of the app-level scoping (§7), every user-scoped table — including all
+agent tables — has row-level security **enabled and forced**
+(`ENABLE ROW LEVEL SECURITY` + `FORCE ROW LEVEL SECURITY`; `FORCE` applies the
+policies even to the table owner).
+
+- Each request binds its user with a transaction-local
+  `SELECT set_config('app.current_user_id', <uid>, true)` issued by
+  `withUserContext(userId, ...)` (`server/db/prisma.js`). Transaction-local
+  means it is safe behind Supabase's transaction-mode pooler.
+- One `user_isolation` policy per table (`USING` + `WITH CHECK` on `"userId"`;
+  `"id"` for `"User"`) means a query with **no** bound context returns zero
+  rows and an insert for another user is rejected by the database itself — a
+  forgotten `WHERE` clause can no longer leak data.
+- A remediation migration performs full RLS state reconciliation: it restores
+  enabled/forced flags, removes all policy drift, and recreates the sole
+  intended policy on each user-scoped table.
+
+Roles:
+
+- The app connects as **`freedom_app`** (`DATABASE_URL`) — a non-bypass role
+  fully subject to the policies.
+- Migrations run as the table **owner** via `DIRECT_URL` (Prisma CLI only;
+  owner credentials exist nowhere else in the runtime).
+- **`freedom_service`** (`SERVICE_DATABASE_URL`) carries `BYPASSRLS` and is
+  reachable only through `server/db/servicePrisma.js`. Its allowed call sites
+  are exactly:
+  1. the Plaid webhook resolving an incoming `item_id` to its owning user
+     (Plaid sends no user token, so the owner is unknown until this lookup);
+  2. the cron dispatcher enumerating due agents across users
+     (`api/cron/agent-dispatch.js`) — the moment a due agent's owner is known,
+     the run executes inside `withUserContext(userId, ...)`;
+  3. admin usage/cost reporting (`api/admin/usage.js`, §13), gated on
+     `User.isAdmin`.
+
+  Every call site carries a comment justifying the bypass. Nothing else —
+  handlers, agent runtime, UI-serving code — may import the service client.
+
+Rollout order, role creation SQL, troubleshooting, and post-rollout
+verification: `docs/RLS_ROLLOUT.md`. Covered by `test/rls-isolation.test.js`
+and `test/rls-policy-remediation.test.js` (§7).
+
+## 11. Agent data & encryption
+
+Agent data follows the same envelope-encryption scheme as financial data (§4):
+anything sensitive is ciphertext at rest, and only the non-financial metadata
+needed for lookups, scheduling, and usage reporting stays queryable.
+
+| Table | Encrypted | Plaintext (queryable) |
+| --- | --- | --- |
+| `CeoAgentConfig` | living profile (`profileCiphertext`), cached digest (`lastDigestCiphertext`) | name, personality preset, avatar key, timestamps |
+| `AgentRun` | full run output (`outputCiphertext`) | `summary` (aggregates only — never merchant names or account identifiers), `status`, token counts, estimated cost, `dataAccessed` JSON |
+| `AgentChatMessage` | message content (`contentCiphertext`) | role, timestamps, foreign keys |
+
+`AgentRun.summary` is the one deliberately plaintext output: a short
+human-readable line the CEO digest consumes cheaply. Every agent's system
+prompt forbids merchant names, account names/numbers, and institution names in
+its output, and the Finance agent structurally never sees them in the first
+place (§12).
+
+## 12. LLM data minimization
+
+- **Finance agent aggregates only.** All aggregation happens server-side; only
+  category/amount/date (month) aggregates and account-**type** balance totals
+  are ever sent to Anthropic — never merchant names, account names/IDs, or
+  institution names. Those columns are never even `SELECT`ed by the agent
+  (`server/agents/types/finance.js`), so they structurally cannot reach a
+  prompt, a run summary, or a digest. Asserted by
+  `test/agent-finance-aggregates.test.js` against the exact prompt payload.
+- **User content is data, not instructions.** System prompts are fixed
+  server-side templates. Everything user-derived — the living profile, agent
+  instructions, definition of done, chat messages, prior run outputs — is
+  injected only through delimited, explicitly-labeled data sections inside the
+  user message (`server/agents/prompts.js`); no code path concatenates user
+  text into a system prompt, and delimiter look-alikes in user text are
+  neutralized.
+- **Platform key only, no BYOK.** Every model call goes through a single
+  chokepoint (`server/agents/llm.js`) using the platform `ANTHROPIC_API_KEY`.
+  Users never supply their own key and no per-user key is stored.
+
+## 13. Audit & admin
+
+Every agent run — including runs blocked by the fail-closed gate — is recorded
+as an `AgentRun` row: `userId`, `agentType`, `dataAccessed` (a JSON
+description of what data the run read), plaintext `summary` (aggregates only),
+full output (encrypted), model, token counts, estimated cost, status
+(`RUNNING` / `SUCCEEDED` / `FAILED` / `SKIPPED`), and start/completion
+timestamps. The audit trail survives agent deletion: `agentConfigId` is
+nullable with `SetNull`, and `agentType` is denormalized onto the run.
+
+The admin usage panel is gated on `User.isAdmin`, which is DB-only — no API
+can set it (`docs/FREEDOM_OS.md` documents how to grant it).
+`GET /api/admin/usage` returns cross-user **aggregates only**: run counts,
+token totals, and estimated cost per user and agent type. An admin has **no**
+access to another user's financial data, decrypted agent output, chat, or
+profile — those stay ciphertext behind RLS, and no admin endpoint reads them.
+
+## 14. Living profile
+
+The CEO Agent maintains an encrypted "living profile" — long-term shared
+memory that all agents read and feed, stored on
+`CeoAgentConfig.profileCiphertext` (§11):
+
+- **Structured categories:** financial goals, known accounts & relationships,
+  stated preferences, recurring concerns, and life context. Each entry records
+  its text, source (onboarding, user edit, or the agent type that surfaced
+  it), and timestamps.
+- **Auto-updated:** after each run and chat, a cheap extraction pass proposes
+  profile updates (`server/agents/profile.js`). Extraction is best-effort by
+  contract — it can never fail the run it follows.
+- **User-controlled:** the user can view, edit, and delete entries via
+  `GET`/`PATCH` `/api/agents/ceo/profile` (and the profile view in the UI).
+- **Tombstones make deletion durable:** deleting an entry records its id in a
+  tombstone list, and automatic merging never re-adds an entry the user
+  removed. Covered by `test/agent-profile-ops.test.js`.
