@@ -71,7 +71,7 @@ export function AgentChat({
   placeholder = "Type a message...",
   maxHeight = 380,
 }) {
-  const loadsHistory = mode === "ceo" || mode === "agent";
+  const loadsHistory = mode === "ceo" || (mode === "agent" && Boolean(agentId));
   const [messages, setMessages] = useState(() =>
     introMessage && !loadsHistory
       ? [{ id: "intro", role: "agent", text: introMessage }]
@@ -90,22 +90,13 @@ export function AgentChat({
   const historyLoadedForRef = useRef(null);
 
   useEffect(() => {
-    if (!loadsHistory) {
-      setIsLoadingHistory(false);
-      return undefined;
-    }
-    if (mode === "agent" && !agentId) {
-      setIsLoadingHistory(false);
-      return undefined;
-    }
+    if (!loadsHistory) return undefined;
 
     const loadKey = mode === "agent" ? `agent:${agentId}` : "ceo";
     if (historyLoadedForRef.current === loadKey) return undefined;
     let cancelled = false;
 
     (async () => {
-      setIsLoadingHistory(true);
-      setHistoryError("");
       try {
         const payload =
           mode === "agent"
@@ -114,6 +105,7 @@ export function AgentChat({
         if (cancelled) return;
         const history = mapHistoryMessages(payload);
         historyLoadedForRef.current = loadKey;
+        setHistoryError("");
         setMessages((current) => {
           // Keep any optimistic turns that arrived while history was loading.
           const historyIds = new Set(history.map((row) => row.id));
