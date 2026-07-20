@@ -38,6 +38,9 @@ function buildUserPayload(decodedToken, userRecord = null, { consentColumnsMissi
     // Role is enforced server-side (server/auth/workspaceRole.js); this field
     // is informational for the client UI.
     role: normalizeWorkspaceRole(userRecord?.role),
+    // Platform admin (usage reporting). DB-only: no API can ever set it — the
+    // column is flipped manually (SQL / Prisma Studio) and merely read here.
+    isAdmin: Boolean(userRecord?.isAdmin),
     legalConsentAt: userRecord?.legalConsentAt || null,
     legalConsentVersion: userRecord?.legalConsentVersion || null,
     // False while the user_legal_consent migration is pending on this

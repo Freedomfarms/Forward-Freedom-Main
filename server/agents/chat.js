@@ -2,6 +2,7 @@ import { jsonSchema } from "ai";
 
 import { withUserContext } from "../db/prisma.js";
 import { decrypt, decryptJson, encrypt } from "../security/envelope.js";
+import { isCreationStateContent } from "./creationFlow.js";
 import { AgentError } from "./errors.js";
 import { CEO_AGENT_MODEL, generateAgentObject } from "./llm.js";
 import { dataSection, PROMPT_SAFETY_RULES } from "./prompts.js";
@@ -54,8 +55,7 @@ const CEO_CHAT_SYSTEM_PROMPT = [
 ].join("\n");
 
 function renderTranscript(messages) {
-  if (!messages.length) return "(no previous messages)";
-  return messages
+  const lines = messages
     .map((message) => {
       let content;
       try {
@@ -63,9 +63,13 @@ function renderTranscript(messages) {
       } catch {
         content = "(message could not be decrypted)";
       }
+      // Hidden agent-creation state rows (see creationFlow.js) are internal
+      // bookkeeping, never conversation — they must not reach a prompt.
+      if (isCreationStateContent(content)) return null;
       return `${message.role === "USER" ? "User" : "Agent"}: ${content}`;
     })
-    .join("\n");
+    .filter(Boolean);
+  return lines.length ? lines.join("\n") : "(no previous messages)";
 }
 
 function renderRunSummaries(runs) {

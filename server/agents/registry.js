@@ -29,6 +29,10 @@ const AGENT_HANDLERS = Object.freeze({
 
 export const BUILT_AGENT_TYPES = Object.freeze(["finance", "research", "reminders"]);
 
+// Every type a user may CREATE (store a config for). Superset of the built
+// types: "email" is storable by design but its runtime fails closed above.
+export const CREATABLE_AGENT_TYPES = Object.freeze(Object.keys(AGENT_HANDLERS));
+
 export function isBuiltAgentType(agentType) {
   return BUILT_AGENT_TYPES.includes(agentType);
 }
