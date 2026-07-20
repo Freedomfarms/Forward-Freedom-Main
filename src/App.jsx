@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { AuthProvider, useAuth } from "./context/AuthContext.jsx";
 import { ErrorBoundary } from "./components/ErrorBoundary.jsx";
 import { LandingPage } from "./components/LandingPage.jsx";
+import { FreedomOsLanding } from "./components/FreedomOsLanding.jsx";
 
 const ForwardFreedomDashboard = lazy(() => import("./ForwardFreedomDashboard.jsx"));
 const AuthScreen = lazy(() =>
@@ -965,6 +966,7 @@ function AuthenticatedWorkspaceApp({
 
 function UnconfiguredPublicApp() {
   const [publicView, setPublicView] = useState("landing");
+  const [authMode, setAuthMode] = useState("login");
   const [demoSessionKey, setDemoSessionKey] = useState(0);
 
   // Without Firebase there is no authenticated owner, so this public path must
@@ -985,17 +987,43 @@ function UnconfiguredPublicApp() {
     );
   }
 
+  // Sign-in still renders here so the flow matches the configured app; any
+  // submit attempt surfaces the "not configured yet" error from AuthContext.
+  if (publicView === "auth") {
+    return (
+      <LazyRouteBoundary message="Loading sign-in...">
+        <AuthScreen initialMode={authMode} onBackHome={() => setPublicView("landing")} />
+      </LazyRouteBoundary>
+    );
+  }
+
+  if (publicView === "fff") {
+    return (
+      <LazyRouteBoundary message="Loading workspace...">
+        <ForwardFreedomDashboard
+          initialView="landing"
+          persistLocally={false}
+          onBackToOs={() => setPublicView("landing")}
+          onEnterDemo={() => {
+            setDemoSessionKey((current) => current + 1);
+            setPublicView("demo");
+          }}
+        />
+      </LazyRouteBoundary>
+    );
+  }
+
+  const openAuthScreen = (mode) => {
+    setAuthMode(mode);
+    setPublicView("auth");
+  };
+
   return (
-    <LazyRouteBoundary message="Loading workspace...">
-      <ForwardFreedomDashboard
-        initialView="landing"
-        persistLocally={false}
-        onEnterDemo={() => {
-          setDemoSessionKey((current) => current + 1);
-          setPublicView("demo");
-        }}
-      />
-    </LazyRouteBoundary>
+    <FreedomOsLanding
+      onSignIn={() => openAuthScreen("login")}
+      onCreateAccount={() => openAuthScreen("register")}
+      onExploreFff={() => setPublicView("fff")}
+    />
   );
 }
 
@@ -1051,25 +1079,44 @@ function AppContent() {
       );
     }
 
+    const openAuthScreen = (payload = {}) => {
+      setAuthScreenConfig({
+        mode: payload?.mode === "create-account" ? "register" : "login",
+        initialForm:
+          payload?.mode === "create-account"
+            ? {
+                fullName: payload.primaryUserName || "",
+                email: payload.email || "",
+              }
+            : null,
+      });
+      setPublicView("auth");
+    };
+
+    const openDemo = () => {
+      setDemoSessionKey((current) => current + 1);
+      setPublicView("demo");
+    };
+
+    // "What is FFF?" — the original Forward Freedom Financial marketing page,
+    // reachable from the Freedom OS front door.
+    if (publicView === "fff") {
+      return (
+        <LandingPage
+          enterApp={openAuthScreen}
+          onEnterDemo={openDemo}
+          onBackToOs={() => setPublicView("landing")}
+        />
+      );
+    }
+
+    // Freedom OS landing is the main homepage: sign-in and account creation
+    // launch from here. The FFF demo sandbox is entered from the FFF page.
     return (
-      <LandingPage
-        enterApp={(payload = {}) => {
-          setAuthScreenConfig({
-            mode: payload?.mode === "create-account" ? "register" : "login",
-            initialForm:
-              payload?.mode === "create-account"
-                ? {
-                    fullName: payload.primaryUserName || "",
-                    email: payload.email || "",
-                  }
-                : null,
-          });
-          setPublicView("auth");
-        }}
-        onEnterDemo={() => {
-          setDemoSessionKey((current) => current + 1);
-          setPublicView("demo");
-        }}
+      <FreedomOsLanding
+        onSignIn={() => openAuthScreen()}
+        onCreateAccount={() => openAuthScreen({ mode: "create-account" })}
+        onExploreFff={() => setPublicView("fff")}
       />
     );
   }
