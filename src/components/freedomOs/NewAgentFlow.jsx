@@ -63,8 +63,9 @@ export function NewAgentFlow({ ceoAgent, user, onClose, onAgentCreated }) {
             </button>
           </div>
           <div style={{ color: "#9fb0c9", lineHeight: 1.55, marginTop: 10, fontSize: 13 }}>
-            {ceoName} will ask about purpose, data, schedule, and a definition of done, then show a
-            review before anything is created. New agents always start read-only.
+            {ceoName} will gather purpose, data, schedule, and a definition of done (you can answer
+            naturally — details in any order are fine), then show a review before anything is
+            created. New agents always start read-only.
           </div>
         </div>
 

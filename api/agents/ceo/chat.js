@@ -24,8 +24,9 @@ import {
 // POST /api/agents/ceo/chat — the CEO Agent chat, plus the "+ New Agent"
 // creation flow. Sending { mode: "create_agent" } starts a deterministic
 // multi-turn creation session (state hidden in the encrypted chat thread —
-// see creationFlow.js); while a session is active every message is routed to
-// it (no LLM call). Everything else goes through respondToChat.
+// see creationFlow.js). While a session is active every message is routed to
+// it (no LLM call); the stepper extracts fields opportunistically so answers
+// need not follow the question order. Everything else goes through respondToChat.
 
 const CREATION_STATE_LOOKBACK = 60;
 
