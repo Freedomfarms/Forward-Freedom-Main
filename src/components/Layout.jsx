@@ -13,7 +13,13 @@ export function AppSidebar({
   onSkipSetup = null,
   className = "",
   onNavigate,
+  // Platform admin (from /api/me isAdmin) — gates the Admin Usage entry.
+  isAdmin = false,
 }) {
+  // Freedom OS sits alone at the top; the existing finance tabs group under a
+  // "Finance" section label (labels themselves are unchanged).
+  const freedomOsItems = navMain.filter((item) => item.label === APP_TABS.FREEDOM_OS);
+  const financeItems = navMain.filter((item) => item.label !== APP_TABS.FREEDOM_OS);
   const actionItems = [
     {
       label: "Review transactions",
@@ -107,7 +113,28 @@ export function AppSidebar({
       >
         Main
       </div>
-      {navMain.map((item) => (
+      {freedomOsItems.map((item) => (
+        <SideItem
+          key={item.label}
+          item={item}
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          onNavigate={onNavigate}
+        />
+      ))}
+
+      <div
+        style={{
+          color: "#9fb0c9",
+          textTransform: "uppercase",
+          fontSize: 12,
+          marginTop: 18,
+          marginBottom: 16,
+        }}
+      >
+        Finance
+      </div>
+      {financeItems.map((item) => (
         <SideItem
           key={item.label}
           item={item}
@@ -137,6 +164,28 @@ export function AppSidebar({
           onNavigate={onNavigate}
         />
       ))}
+
+      {isAdmin ? (
+        <>
+          <div
+            style={{
+              color: "#9fb0c9",
+              textTransform: "uppercase",
+              fontSize: 12,
+              marginTop: 18,
+              marginBottom: 16,
+            }}
+          >
+            Admin
+          </div>
+          <SideItem
+            item={{ icon: "⛭", label: APP_TABS.ADMIN_USAGE }}
+            activeTab={activeTab}
+            setActiveTab={setActiveTab}
+            onNavigate={onNavigate}
+          />
+        </>
+      ) : null}
 
       <button
         onClick={() => {

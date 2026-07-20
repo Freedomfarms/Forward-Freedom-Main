@@ -108,6 +108,11 @@ import { ObjectivesBoard } from "./components/ObjectivesBoard.jsx";
 import { RecurringSubscriptions } from "./components/RecurringSubscriptions.jsx";
 import { TransactionsView } from "./components/TransactionsView.jsx";
 import { WorkspaceGuideAssistant } from "./components/WorkspaceGuideAssistant.jsx";
+import {
+  FreedomOsHome,
+  FreedomOsSignedOutCard,
+} from "./components/freedomOs/FreedomOsHome.jsx";
+import { AdminUsagePanel } from "./components/freedomOs/AdminUsagePanel.jsx";
 import { useViewportUIScale } from "./utils/useViewportUIScale.js";
 import { LegalModal } from "./components/LegalDocuments.jsx";
 
@@ -121,7 +126,12 @@ const LIQUID_ACCOUNT_TYPES = new Set(["Checking", "Savings", "Manual Cash"]);
 const CRYPTO_PRICE_SOURCE = "CoinGecko";
 const THIRTY_DAY_WINDOW = 30;
 const SNAPSHOT_RETENTION_DAYS = 400;
-const SUPPORTED_APP_TABS = new Set([...navMain, ...navTools].map((item) => item.label));
+// Admin Usage is deliberately outside navMain/navTools — it only appears in
+// the sidebar for isAdmin users, but the tab itself must always be renderable.
+const SUPPORTED_APP_TABS = new Set([
+  ...[...navMain, ...navTools].map((item) => item.label),
+  APP_TABS.ADMIN_USAGE,
+]);
 
 const METRIC_ICONS = {
   trueCash: (
@@ -187,7 +197,7 @@ const EMPTY_USER_STATE = Object.freeze({
   lastPlaidSyncAt: null,
   merchantCategoryRules: {},
   onboarding: createOnboardingState(),
-  activeTab: APP_TABS.DASHBOARD,
+  activeTab: APP_TABS.FREEDOM_OS,
   activeRange: "ALL",
   metricSnapshots: {},
 });
@@ -666,6 +676,9 @@ function ForwardFreedomDashboard({
   isDemoMode = false,
   onEnterDemo,
   onExitDemo,
+  // /api/me profile of the signed-in user (null for demo/unauthenticated).
+  // Freedom OS uses it for the isAdmin gate on the Admin Usage tab.
+  workspaceProfile = null,
 } = {}) {
   const [initialAppState] = useState(() => initialAppStateOverride || loadPersistedAppState(storageKey));
   const [currentView, setCurrentView] = useState(initialView);
@@ -720,8 +733,12 @@ function ForwardFreedomDashboard({
   const plaidTransactionOverrides = activeUser.plaidTransactionOverrides || {};
   const activeTab = SUPPORTED_APP_TABS.has(activeUser.activeTab)
     ? activeUser.activeTab
-    : APP_TABS.DASHBOARD;
+    : APP_TABS.FREEDOM_OS;
   const onboardingProgress = evaluateOnboardingProgress(activeUser, activeTab);
+  // Freedom OS requires an authenticated Firebase user for its API calls; in
+  // demo/public sessions the tab renders a static sign-in card instead.
+  const freedomOsAuthUser = !isDemoMode && sessionControls?.user ? sessionControls.user : null;
+  const isPlatformAdmin = Boolean(freedomOsAuthUser) && workspaceProfile?.isAdmin === true;
   const activeRange = activeUser.activeRange;
   const metricSnapshots = activeUser.metricSnapshots;
   const currentBudgetPeriod = getBudgetPeriodAtOffset(0);
@@ -2284,6 +2301,7 @@ function ForwardFreedomDashboard({
           onboardingProgress={onboardingProgress}
           onOpenSetupStep={openOnboardingStep}
           onSkipSetup={skipOnboarding}
+          isAdmin={isPlatformAdmin}
         />
 
         <div className={`mobile-nav-backdrop${isMobileNavOpen ? " is-open" : ""}`} onClick={() => setIsMobileNavOpen(false)} />
@@ -2297,6 +2315,7 @@ function ForwardFreedomDashboard({
             onboardingProgress={onboardingProgress}
             onOpenSetupStep={openOnboardingStep}
             onSkipSetup={skipOnboarding}
+            isAdmin={isPlatformAdmin}
             onNavigate={() => setIsMobileNavOpen(false)}
           />
         </div>
@@ -2482,7 +2501,25 @@ function ForwardFreedomDashboard({
               here instead of unmounting the whole app. key={activeTab} resets
               the boundary whenever the user switches views. */}
           <ViewErrorBoundary key={activeTab} viewName={activeTab}>
-          {activeTab === APP_TABS.DASHBOARD ? (
+          {activeTab === APP_TABS.FREEDOM_OS ? (
+            freedomOsAuthUser ? (
+              <FreedomOsHome
+                user={freedomOsAuthUser}
+                onOpenFinanceTool={() => setActiveTab(APP_TABS.DASHBOARD)}
+              />
+            ) : (
+              <FreedomOsSignedOutCard />
+            )
+          ) : activeTab === APP_TABS.ADMIN_USAGE ? (
+            isPlatformAdmin ? (
+              <AdminUsagePanel user={freedomOsAuthUser} />
+            ) : (
+              <ModulePlaceholder
+                activeTab={activeTab}
+                householdProfilesProps={householdProfilesProps}
+              />
+            )
+          ) : activeTab === APP_TABS.DASHBOARD ? (
             <DashboardView
               activeRange={activeRange}
               setActiveRange={setActiveRange}
