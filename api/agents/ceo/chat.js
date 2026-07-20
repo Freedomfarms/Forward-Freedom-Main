@@ -1,7 +1,11 @@
 import { authenticateRequest } from "../../../server/auth/verifyAuth.js";
 import { withUserContext } from "../../../server/db/prisma.js";
 import { decrypt, encrypt } from "../../../server/security/envelope.js";
-import { agentLlmRateLimit, enforceRateLimit } from "../../../server/http/rateLimit.js";
+import {
+  agentLlmRateLimit,
+  enforceRateLimit,
+  generalApiRateLimit,
+} from "../../../server/http/rateLimit.js";
 import { readJsonBody } from "../../../server/http/requestHelpers.js";
 import { applySecurityHeaders } from "../../../server/http/responseHelpers.js";
 import { AgentError } from "../../../server/agents/errors.js";
@@ -12,6 +16,7 @@ import {
   validateAgentCreatePayload,
 } from "../../../server/agents/apiHelpers.js";
 import { respondToChat } from "../../../server/agents/chat.js";
+import { listChatHistory } from "../../../server/agents/chatHistory.js";
 import {
   advanceCreationSession,
   buildCreationSuccessReply,
@@ -21,12 +26,13 @@ import {
   startCreationSession,
 } from "../../../server/agents/creationFlow.js";
 
-// POST /api/agents/ceo/chat — the CEO Agent chat, plus the "+ New Agent"
-// creation flow. Sending { mode: "create_agent" } starts a deterministic
-// multi-turn creation session (state hidden in the encrypted chat thread —
-// see creationFlow.js). While a session is active every message is routed to
-// it (no LLM call); the stepper extracts fields opportunistically so answers
-// need not follow the question order. Everything else goes through respondToChat.
+// GET  /api/agents/ceo/chat — visible message history for the CEO thread
+// POST /api/agents/ceo/chat — send a message (or drive "+ New Agent" creation).
+// Sending { mode: "create_agent" } starts a deterministic multi-turn creation
+// session (state hidden in the encrypted chat thread — see creationFlow.js).
+// While a session is active every message is routed to it (no LLM call); the
+// stepper extracts fields opportunistically so answers need not follow the
+// question order. Everything else goes through respondToChat.
 
 const CREATION_STATE_LOOKBACK = 60;
 
@@ -121,11 +127,29 @@ async function handleCreationTurn({ userId, ceoConfigId, activeState, message })
   });
 }
 
-export default async function handler(request, response) {
-  applySecurityHeaders(response);
-  if (request.method !== "POST") {
-    return response.status(405).json({ error: true, message: "Method not allowed." });
+async function handleHistory(request, response) {
+  if (!(await enforceRateLimit(request, response, generalApiRateLimit))) return;
+  try {
+    const decodedToken = await authenticateRequest(request);
+    const ceoConfig = await withUserContext(decodedToken.uid, (tx) =>
+      ensureCeoAgentConfig(tx, decodedToken.uid)
+    );
+    const messages = await listChatHistory({
+      userId: decodedToken.uid,
+      ceoAgentConfigId: ceoConfig.id,
+    });
+    return response.status(200).json({ messages });
+  } catch (error) {
+    return respondAgentApiError(
+      response,
+      "api/agents/ceo/chat",
+      error,
+      "Unable to load the CEO Agent chat history."
+    );
   }
+}
+
+async function handleSend(request, response) {
   if (!(await enforceRateLimit(request, response, agentLlmRateLimit))) return;
 
   try {
@@ -178,4 +202,11 @@ export default async function handler(request, response) {
       "Unable to process the CEO Agent chat message."
     );
   }
+}
+
+export default async function handler(request, response) {
+  applySecurityHeaders(response);
+  if (request.method === "GET") return handleHistory(request, response);
+  if (request.method === "POST") return handleSend(request, response);
+  return response.status(405).json({ error: true, message: "Method not allowed." });
 }

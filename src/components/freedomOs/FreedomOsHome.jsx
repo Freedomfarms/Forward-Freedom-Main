@@ -137,6 +137,7 @@ export function FreedomOsHome({ user, onOpenFinanceTool }) {
   const [view, setView] = useState("home"); // home | settings | profile
   const [selectedAgentId, setSelectedAgentId] = useState(null);
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const [chatMounted, setChatMounted] = useState(false);
   const [isNewAgentOpen, setIsNewAgentOpen] = useState(false);
   const [isRefreshingDigest, setIsRefreshingDigest] = useState(false);
   const [toast, setToast] = useState("");
@@ -340,7 +341,13 @@ export function FreedomOsHome({ user, onOpenFinanceTool }) {
         <div style={{ display: "grid", gap: 12 }}>
           <button
             type="button"
-            onClick={() => setIsChatOpen((current) => !current)}
+            onClick={() => {
+              setIsChatOpen((current) => {
+                const next = !current;
+                if (next) setChatMounted(true);
+                return next;
+              });
+            }}
             style={{
               ...fosStyles.secondaryButton,
               textAlign: "left",
@@ -352,13 +359,17 @@ export function FreedomOsHome({ user, onOpenFinanceTool }) {
             <span>💬 Chat with {ceoName}</span>
             <span style={{ color: "#8feaff" }}>{isChatOpen ? "▴" : "▾"}</span>
           </button>
-          {isChatOpen ? (
-            <AgentChat
-              mode="ceo"
-              agentName={ceoName}
-              user={user}
-              placeholder={`Ask ${ceoName} anything about your money or your agents…`}
-            />
+          {/* Stay mounted after first open so collapse doesn't wipe local state;
+              server history still reloads if the home view remounts. */}
+          {chatMounted ? (
+            <div style={{ display: isChatOpen ? "block" : "none" }}>
+              <AgentChat
+                mode="ceo"
+                agentName={ceoName}
+                user={user}
+                placeholder={`Ask ${ceoName} anything about your money or your agents…`}
+              />
+            </div>
           ) : null}
         </div>
       </div>

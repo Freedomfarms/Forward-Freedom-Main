@@ -51,6 +51,11 @@ export function regenerateCeoDigest(options = {}) {
   return requestJson("/api/agents/ceo/digest", { method: "POST", body: {}, options });
 }
 
+/** Visible CEO chat history (creation-state bookkeeping rows are omitted). */
+export function fetchCeoChatHistory(options = {}) {
+  return requestJson("/api/agents/ceo/chat", { options });
+}
+
 /**
  * CEO chat. Pass mode: "create_agent" to start the "+ New Agent" creation
  * flow; while a creation session is active every message continues it. The
@@ -122,6 +127,10 @@ export function fetchAgentRun(agentId, runId, options = {}) {
     `/api/agents/${encodeURIComponent(agentId)}/runs/${encodeURIComponent(runId)}`,
     { options }
   );
+}
+
+export function fetchAgentChatHistory(agentId, options = {}) {
+  return requestJson(`/api/agents/${encodeURIComponent(agentId)}/chat`, { options });
 }
 
 export function sendAgentChatMessage(agentId, { message, relatedRunId = null } = {}, options = {}) {

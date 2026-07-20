@@ -556,6 +556,106 @@ test("POST /api/agents/ceo/chat delegates to respondToChat scoped to the CEO con
   assert.equal(chatCalls[0].message, "how are my finances?");
 });
 
+test("GET /api/agents/ceo/chat returns visible history and hides creation-state rows", async (t) => {
+  if (!requireSetup(t)) return;
+
+  // Ensure the CEO config exists (same path the GET handler uses).
+  await invoke(handlers.ceo, authedRequest("u1", { method: "GET" }));
+  const ceoId = currentDb.tables.ceoAgentConfig[0].id;
+  const { CREATION_STATE_SENTINEL } = await import("../server/agents/creationFlow.js");
+
+  currentDb.tables.agentChatMessage.push(
+    {
+      id: "m1",
+      userId: "u1",
+      ceoAgentConfigId: ceoId,
+      agentConfigId: null,
+      role: "USER",
+      contentCiphertext: envelope.encrypt("What should I focus on this week?"),
+      createdAt: new Date("2026-07-20T10:00:00Z"),
+    },
+    {
+      id: "m2",
+      userId: "u1",
+      ceoAgentConfigId: ceoId,
+      agentConfigId: null,
+      role: "AGENT",
+      contentCiphertext: envelope.encrypt(`${CREATION_STATE_SENTINEL}{"v":1,"status":"completed"}`),
+      createdAt: new Date("2026-07-20T10:00:01Z"),
+    },
+    {
+      id: "m3",
+      userId: "u1",
+      ceoAgentConfigId: ceoId,
+      agentConfigId: null,
+      role: "AGENT",
+      contentCiphertext: envelope.encrypt("Start with cash flow and upcoming bills."),
+      createdAt: new Date("2026-07-20T10:00:02Z"),
+    }
+  );
+
+  const response = await invoke(handlers.ceoChat, authedRequest("u1", { method: "GET" }));
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.messages.length, 2);
+  assert.equal(response.body.messages[0].role, "user");
+  assert.match(response.body.messages[0].text, /focus on this week/);
+  assert.equal(response.body.messages[1].role, "agent");
+  assert.match(response.body.messages[1].text, /cash flow/);
+  assert.equal(chatCalls.length, 0);
+});
+
+test("GET /api/agents/:id/chat returns that agent's history only", async (t) => {
+  if (!requireSetup(t)) return;
+  currentDb.tables.agentConfig.push(
+    {
+      id: "agent-1",
+      userId: "u1",
+      agentType: "research",
+      name: "Research Agent",
+      definitionOfDone: "done",
+      permissionLevel: "READ_ONLY",
+      status: "ACTIVE",
+    },
+    {
+      id: "agent-2",
+      userId: "u1",
+      agentType: "finance",
+      name: "Finance Agent",
+      definitionOfDone: "done",
+      permissionLevel: "READ_ONLY",
+      status: "ACTIVE",
+    }
+  );
+  currentDb.tables.agentChatMessage.push(
+    {
+      id: "a1",
+      userId: "u1",
+      agentConfigId: "agent-1",
+      ceoAgentConfigId: null,
+      role: "USER",
+      contentCiphertext: envelope.encrypt("any updates on AI tools?"),
+      createdAt: new Date("2026-07-20T11:00:00Z"),
+    },
+    {
+      id: "a2",
+      userId: "u1",
+      agentConfigId: "agent-2",
+      ceoAgentConfigId: null,
+      role: "USER",
+      contentCiphertext: envelope.encrypt("spending question for finance"),
+      createdAt: new Date("2026-07-20T11:01:00Z"),
+    }
+  );
+
+  const response = await invoke(
+    handlers.agentChat,
+    authedRequest("u1", { method: "GET", params: { id: "agent-1" } })
+  );
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.messages.length, 1);
+  assert.match(response.body.messages[0].text, /AI tools/);
+});
+
 test("CEO chat creation flow builds and creates an agent without any LLM call", async (t) => {
   if (!requireSetup(t)) return;
 
