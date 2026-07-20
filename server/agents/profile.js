@@ -88,7 +88,18 @@ export async function getProfile(userId) {
     });
     return ceoConfig?.profileCiphertext ?? null;
   });
-  return normalizeProfile(ciphertext ? decryptJson(ciphertext) : null);
+  if (!ciphertext) return createEmptyProfile();
+  try {
+    return normalizeProfile(decryptJson(ciphertext));
+  } catch (error) {
+    // Corrupted/unreadable ciphertext must not blank the profile UI — fail
+    // open to an empty profile so the user can keep editing/re-seeding.
+    console.error(
+      "[profile.getProfile] decrypt failed; returning empty profile",
+      error?.name || "Error"
+    );
+    return createEmptyProfile();
+  }
 }
 
 /** Encrypts and persists the profile onto the user's CeoAgentConfig. */

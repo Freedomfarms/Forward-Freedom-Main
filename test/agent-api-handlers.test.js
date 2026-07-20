@@ -132,6 +132,19 @@ before(async () => {
       },
     });
 
+    // Force template onboarding summaries in handler tests (no live LLM).
+    mock.module("../server/agents/llm.js", {
+      namedExports: {
+        PROFILE_EXTRACTION_MODEL: "mock-model",
+        CEO_AGENT_MODEL: "mock-model",
+        setLlmImplementationForTesting: () => {},
+        isLlmConfigured: () => false,
+        getWebSearchTools: () => ({}),
+        generateAgentText: async () => ({ text: "mock summary", usage: null }),
+        generateAgentObject: async () => ({ object: { reply: "mock", profileOps: [] }, usage: null }),
+      },
+    });
+
     ({ createFakeDb } = await import("./helpers/fakeAgentDb.js"));
     envelope = await import("../server/security/envelope.js");
 
@@ -147,6 +160,7 @@ before(async () => {
       ceoProfile: (await import("../api/agents/ceo/profile.js")).default,
       ceoDigest: (await import("../api/agents/ceo/digest.js")).default,
       ceoChat: (await import("../api/agents/ceo/chat.js")).default,
+      ceoDocuments: (await import("../api/agents/ceo/documents.js")).default,
       onboarding: (await import("../api/agents/onboarding.js")).default,
       notifications: (await import("../api/notifications.js")).default,
       notificationById: (await import("../api/notifications/[id].js")).default,
@@ -795,10 +809,18 @@ test("POST /api/agents/onboarding seeds the profile once and 409s afterwards", a
       body: {
         financialGoals: ["Pay off debt", "Save for a farm"],
         lifeContext: "Two kids, one income.",
+        additionalNotes: "Keep cash higher before spring expansion.",
         priorities: ["Stability"],
         communicationPrefs: "Short and direct",
         ceoName: "Chief",
         personalityPreset: "WARM_ENCOURAGING",
+        documents: [
+          {
+            filename: "priorities.txt",
+            mimeType: "text/plain",
+            content: "Reserve runway matters more than growth this year.",
+          },
+        ],
       },
     })
   );
@@ -806,7 +828,11 @@ test("POST /api/agents/onboarding seeds the profile once and 409s afterwards", a
   assert.equal(response.body.ceoAgent.name, "Chief");
   assert.equal(response.body.ceoAgent.personalityPreset, "WARM_ENCOURAGING");
   assert.ok(response.body.ceoAgent.onboardingCompletedAt);
-  assert.equal(response.body.profileEntriesSeeded, 5);
+  assert.equal(response.body.profileEntriesSeeded, 6);
+  assert.equal(response.body.documents.length, 1);
+  assert.equal(response.body.documents[0].filename, "priorities.txt");
+  assert.match(response.body.onboardingSummary.summary, /Goals|know/i);
+  assert.ok(currentDb.tables.ceoAgentConfig[0].onboardingSummaryCiphertext);
 
   const stored = envelope.decryptJson(currentDb.tables.ceoAgentConfig[0].profileCiphertext);
   assert.deepEqual(
@@ -815,12 +841,50 @@ test("POST /api/agents/onboarding seeds the profile once and 409s afterwards", a
   );
   assert.ok(stored.categories.financialGoals.every((entry) => entry.source === "onboarding"));
   assert.equal(stored.categories.lifeContext[0].text, "Two kids, one income.");
+  assert.match(stored.categories.lifeContext[1].text, /Additional notes/);
+  assert.equal(currentDb.tables.ceoDocument.length, 1);
+
+  const profileGet = await invoke(handlers.ceoProfile, authedRequest("u1", { method: "GET" }));
+  assert.equal(profileGet.statusCode, 200);
+  assert.match(profileGet.body.onboardingSummary.summary, /Goals|know/i);
+  assert.equal(profileGet.body.documents.length, 1);
 
   const repeat = await invoke(
     handlers.onboarding,
     authedRequest("u1", { method: "POST", body: { financialGoals: ["Another goal"] } })
   );
   assert.equal(repeat.statusCode, 409);
+});
+
+test("CEO documents can be uploaded and deleted after onboarding", async (t) => {
+  if (!requireSetup(t)) return;
+  await invoke(handlers.ceo, authedRequest("u1", { method: "GET" }));
+
+  const uploaded = await invoke(
+    handlers.ceoDocuments,
+    authedRequest("u1", {
+      method: "POST",
+      body: {
+        documents: [
+          { filename: "plan.md", mimeType: "text/markdown", content: "# Plan\nHold reserves." },
+        ],
+      },
+    })
+  );
+  assert.equal(uploaded.statusCode, 200);
+  assert.equal(uploaded.body.documents[0].filename, "plan.md");
+  const docId = uploaded.body.documents[0].id;
+
+  const listed = await invoke(handlers.ceoDocuments, authedRequest("u1", { method: "GET" }));
+  assert.equal(listed.statusCode, 200);
+  assert.equal(listed.body.documents.length, 1);
+
+  const deleted = await invoke(
+    handlers.ceoDocuments,
+    authedRequest("u1", { method: "DELETE", query: { id: docId } })
+  );
+  assert.equal(deleted.statusCode, 200);
+  assert.equal(currentDb.tables.ceoDocument.length, 0);
 });
 
 // ── Notifications ────────────────────────────────────────────────────────────

@@ -42,6 +42,26 @@ export function updateCeoProfile(ops, options = {}) {
   return requestJson("/api/agents/ceo/profile", { method: "PATCH", body: { ops }, options });
 }
 
+export function fetchCeoDocuments(options = {}) {
+  return requestJson("/api/agents/ceo/documents", { options });
+}
+
+/** documents: [{ filename, mimeType, content }] — text files only. */
+export function uploadCeoDocuments(documents, options = {}) {
+  return requestJson("/api/agents/ceo/documents", {
+    method: "POST",
+    body: { documents },
+    options,
+  });
+}
+
+export function deleteCeoDocument(documentId, options = {}) {
+  return requestJson(
+    `/api/agents/ceo/documents?id=${encodeURIComponent(documentId)}`,
+    { method: "DELETE", options }
+  );
+}
+
 export function fetchCeoDigest({ refresh = false } = {}, options = {}) {
   const query = refresh ? "?refresh=true" : "";
   return requestJson(`/api/agents/ceo/digest${query}`, { options });

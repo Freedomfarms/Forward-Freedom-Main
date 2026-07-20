@@ -8,6 +8,8 @@ import {
   ensureCeoAgentConfig,
   respondAgentApiError,
 } from "../../../server/agents/apiHelpers.js";
+import { listCeoDocuments } from "../../../server/agents/documents.js";
+import { readOnboardingSummary } from "../../../server/agents/onboardingSummary.js";
 import {
   applyOps,
   getProfile,
@@ -72,15 +74,22 @@ function readProfileOps(payload) {
   });
 }
 
-function buildProfileResponse(profile, ceoConfig) {
-  // Entries already carry provenance ({ source, addedAt, updatedAt });
-  // tombstones are returned as metadata (count only — the ids are internal).
+async function buildProfileResponse(profile, ceoConfig, userId) {
+  const [onboardingSummary, documents] = await Promise.all([
+    readOnboardingSummary(userId),
+    listCeoDocuments(userId),
+  ]);
   return {
     profile: {
       categories: profile.categories,
       tombstones: { count: profile.tombstones.length },
       updatedAt: ceoConfig?.profileUpdatedAt ?? null,
     },
+    onboardingSummary: {
+      summary: onboardingSummary.summary,
+      generatedAt: onboardingSummary.generatedAt,
+    },
+    documents,
   };
 }
 
@@ -102,7 +111,9 @@ export default async function handler(request, response) {
 
     if (request.method === "GET") {
       const profile = await getProfile(decodedToken.uid);
-      return response.status(200).json(buildProfileResponse(profile, ceoConfig));
+      return response
+        .status(200)
+        .json(await buildProfileResponse(profile, ceoConfig, decodedToken.uid));
     }
 
     const ops = readProfileOps(await readJsonBody(request));
@@ -111,7 +122,13 @@ export default async function handler(request, response) {
     await saveProfile(decodedToken.uid, updated);
     return response
       .status(200)
-      .json(buildProfileResponse(updated, { profileUpdatedAt: new Date() }));
+      .json(
+        await buildProfileResponse(
+          updated,
+          { profileUpdatedAt: new Date() },
+          decodedToken.uid
+        )
+      );
   } catch (error) {
     return respondAgentApiError(
       response,

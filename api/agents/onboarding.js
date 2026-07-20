@@ -12,17 +12,24 @@ import {
   respondAgentApiError,
   serializeCeoAgentConfig,
 } from "../../server/agents/apiHelpers.js";
+import { createCeoDocuments, readDocumentInputs } from "../../server/agents/documents.js";
+import {
+  generateOnboardingSummary,
+  saveOnboardingSummary,
+} from "../../server/agents/onboardingSummary.js";
 import { applyOps, getProfile, saveProfile } from "../../server/agents/profile.js";
 
 // POST /api/agents/onboarding — one-shot CEO Agent onboarding. Seeds the
-// living profile from structured answers (source: "onboarding"), sets the CEO
-// presentation fields, and stamps onboardingCompletedAt.
+// living profile from structured answers (source: "onboarding"), stores
+// optional reference documents, generates a short profile summary, sets the
+// CEO presentation fields, and stamps onboardingCompletedAt.
 //
 // Idempotency: a second submission returns 409 (already completed) rather
 // than merging — onboarding is a one-time flow; later edits go through
 // PUT /api/agents/ceo and PATCH /api/agents/ceo/profile.
 
 const TEXT_MAX_LENGTH = 1000;
+const ADDITIONAL_NOTES_MAX_LENGTH = 2000;
 const LIST_MAX_ITEMS = 10;
 
 function invalid(message) {
@@ -41,10 +48,10 @@ function readTextList(value, label) {
     .filter(Boolean);
 }
 
-function readText(value, label) {
+function readText(value, label, { maxLength = TEXT_MAX_LENGTH } = {}) {
   if (value == null) return null;
   if (typeof value !== "string") throw invalid(`${label} must be a string.`);
-  return value.trim().slice(0, TEXT_MAX_LENGTH) || null;
+  return value.trim().slice(0, maxLength) || null;
 }
 
 function parseOnboardingPayload(payload) {
@@ -57,7 +64,11 @@ function parseOnboardingPayload(payload) {
     ? readTextList(payload.priorities, "priorities")
     : [readText(payload.priorities, "priorities")].filter(Boolean);
   const lifeContext = readText(payload.lifeContext, "lifeContext");
+  const additionalNotes = readText(payload.additionalNotes, "additionalNotes", {
+    maxLength: ADDITIONAL_NOTES_MAX_LENGTH,
+  });
   const communicationPrefs = readText(payload.communicationPrefs, "communicationPrefs");
+  const documents = readDocumentInputs(payload.documents);
 
   const ceoName = readText(payload.ceoName, "ceoName");
   if (ceoName && ceoName.length > 80) throw invalid("ceoName must be at most 80 characters.");
@@ -74,7 +85,9 @@ function parseOnboardingPayload(payload) {
     financialGoals,
     priorities,
     lifeContext,
+    additionalNotes,
     communicationPrefs,
+    documents,
     ceoName,
     personalityPreset,
     avatarKey,
@@ -92,6 +105,13 @@ function buildProfileOps(parsed) {
   if (parsed.lifeContext) {
     ops.push({ op: "add", category: "lifeContext", text: parsed.lifeContext });
   }
+  if (parsed.additionalNotes) {
+    ops.push({
+      op: "add",
+      category: "lifeContext",
+      text: `Additional notes: ${parsed.additionalNotes}`,
+    });
+  }
   if (parsed.communicationPrefs) {
     ops.push({
       op: "add",
@@ -107,6 +127,8 @@ export default async function handler(request, response) {
   if (request.method !== "POST") {
     return response.status(405).json({ error: true, message: "Method not allowed." });
   }
+  // Summary generation falls back to a template when the LLM is unavailable,
+  // so onboarding stays on the general limiter (one-shot per account anyway).
   if (!(await enforceRateLimit(request, response, generalApiRateLimit))) return;
 
   try {
@@ -134,14 +156,33 @@ export default async function handler(request, response) {
     });
 
     const ops = buildProfileOps(parsed);
+    let profile = await getProfile(decodedToken.uid);
     if (ops.length) {
-      const profile = await getProfile(decodedToken.uid);
-      await saveProfile(decodedToken.uid, applyOps(profile, ops, { source: "onboarding" }));
+      profile = applyOps(profile, ops, { source: "onboarding" });
+      await saveProfile(decodedToken.uid, profile);
     }
+
+    let documents = [];
+    if (parsed.documents.length) {
+      documents = await createCeoDocuments(decodedToken.uid, ceoConfig.id, parsed.documents);
+    }
+
+    const { summary } = await generateOnboardingSummary({
+      profile,
+      additionalNotes: parsed.additionalNotes,
+      documentNames: documents.map((doc) => doc.filename),
+      personalityPreset: ceoConfig.personalityPreset,
+    });
+    const savedSummary = await saveOnboardingSummary(decodedToken.uid, summary);
 
     return response.status(200).json({
       ceoAgent: serializeCeoAgentConfig(ceoConfig),
       profileEntriesSeeded: ops.length,
+      documents,
+      onboardingSummary: {
+        summary: savedSummary.summary,
+        generatedAt: savedSummary.generatedAt,
+      },
     });
   } catch (error) {
     return respondAgentApiError(

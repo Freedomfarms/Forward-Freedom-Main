@@ -60,10 +60,16 @@ function buildUnauthorizedErrorMessage(payload) {
 export async function parseApiResponse(response) {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
+    const fallback =
+      response.status >= 500
+        ? `Server error (${response.status}). Try again in a moment.`
+        : response.status
+          ? `Request failed (${response.status}).`
+          : "Request failed.";
     throw new ApiRequestError(
       response.status === 401
         ? buildUnauthorizedErrorMessage(payload)
-        : payload.message || "Request failed.",
+        : payload.message || fallback,
       {
         status: response.status,
         retryAfterMs: readRateLimitRetryAfterMs(response),

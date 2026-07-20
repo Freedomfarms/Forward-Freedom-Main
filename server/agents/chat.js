@@ -3,6 +3,7 @@ import { jsonSchema } from "ai";
 import { withUserContext } from "../db/prisma.js";
 import { decrypt, decryptJson, encrypt } from "../security/envelope.js";
 import { isCreationStateContent } from "./creationFlow.js";
+import { loadDocumentsForPrompt } from "./documents.js";
 import { AgentError } from "./errors.js";
 import { CEO_AGENT_MODEL, generateAgentObject } from "./llm.js";
 import { dataSection, PROMPT_SAFETY_RULES } from "./prompts.js";
@@ -188,11 +189,16 @@ export async function respondToChat({
 
   const { agentConfig, ceoConfig, runs, relatedRun } = context;
   const history = [...context.history].reverse();
-  const profile = normalizeProfile(
-    context.profileSource?.profileCiphertext
-      ? decryptJson(context.profileSource.profileCiphertext)
-      : null
-  );
+  let profile;
+  try {
+    profile = normalizeProfile(
+      context.profileSource?.profileCiphertext
+        ? decryptJson(context.profileSource.profileCiphertext)
+        : null
+    );
+  } catch {
+    profile = normalizeProfile(null);
+  }
 
   const identity = agentConfig
     ? `Agent name: ${agentConfig.name}\nAgent type: ${agentConfig.agentType}\nInstructions: ${agentConfig.instructions || "(none)"}`
@@ -209,6 +215,12 @@ export async function respondToChat({
     dataSection("USER PROFILE (long-term memory)", renderProfileForPrompt(profile)),
     dataSection("RECENT RUN SUMMARIES", renderRunSummaries(runs))
   );
+  // Reference documents are CEO-scoped context (uploaded during onboarding /
+  // from the profile page). Sub-agent chats stay on their own run scope.
+  if (ceoConfig && !agentConfig) {
+    const documents = await loadDocumentsForPrompt(userId);
+    sections.push(dataSection("USER REFERENCE DOCUMENTS", documents));
+  }
   if (relatedRun) {
     let relatedOutput;
     try {

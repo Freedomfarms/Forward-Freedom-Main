@@ -21,6 +21,7 @@ import ceoAgentHandler from "../api/agents/ceo.js";
 import ceoProfileHandler from "../api/agents/ceo/profile.js";
 import ceoDigestHandler from "../api/agents/ceo/digest.js";
 import ceoChatHandler from "../api/agents/ceo/chat.js";
+import ceoDocumentsHandler from "../api/agents/ceo/documents.js";
 import onboardingHandler from "../api/agents/onboarding.js";
 import notificationsHandler from "../api/notifications.js";
 import notificationByIdHandler from "../api/notifications/[id].js";
@@ -51,7 +52,9 @@ app.post(
   plaidWebhookHandler
 );
 
-app.use(express.json({ limit: "256kb" }));
+// 1mb allows onboarding/profile document uploads (text-only, still capped in
+// the documents module) without opening the door to large binary payloads.
+app.use(express.json({ limit: "1mb" }));
 
 // Mirror the Vercel route modules in local Express so development and deployment
 // exercise the same API entry points. Each handler also enforces its own
@@ -73,6 +76,11 @@ app.route("/api/agents/ceo").get(ceoAgentHandler).put(ceoAgentHandler);
 app.route("/api/agents/ceo/profile").get(ceoProfileHandler).patch(ceoProfileHandler);
 app.route("/api/agents/ceo/digest").get(ceoDigestHandler).post(ceoDigestHandler);
 app.route("/api/agents/ceo/chat").get(ceoChatHandler).post(ceoChatHandler);
+app
+  .route("/api/agents/ceo/documents")
+  .get(ceoDocumentsHandler)
+  .post(ceoDocumentsHandler)
+  .delete(ceoDocumentsHandler);
 app.post("/api/agents/onboarding", onboardingHandler);
 app.route("/api/agents").get(agentsHandler).post(agentsHandler);
 app.route("/api/agents/:id").patch(agentByIdHandler).delete(agentByIdHandler);
