@@ -992,6 +992,7 @@ function UnconfiguredPublicApp() {
         <ForwardFreedomDashboard
           initialView="landing"
           persistLocally={false}
+          onBackToOs={() => setPublicView("landing")}
           onEnterDemo={() => {
             setDemoSessionKey((current) => current + 1);
             setPublicView("demo");
@@ -1008,10 +1009,6 @@ function UnconfiguredPublicApp() {
       onSignIn={() => setPublicView("fff")}
       onCreateAccount={() => setPublicView("fff")}
       onExploreFff={() => setPublicView("fff")}
-      onEnterDemo={() => {
-        setDemoSessionKey((current) => current + 1);
-        setPublicView("demo");
-      }}
     />
   );
 }
@@ -1100,12 +1097,11 @@ function AppContent() {
     }
 
     // Freedom OS landing is the main homepage: sign-in and account creation
-    // launch from here.
+    // launch from here. The FFF demo sandbox is entered from the FFF page.
     return (
       <FreedomOsLanding
         onSignIn={() => openAuthScreen()}
         onCreateAccount={() => openAuthScreen({ mode: "create-account" })}
-        onEnterDemo={openDemo}
         onExploreFff={() => setPublicView("fff")}
       />
     );

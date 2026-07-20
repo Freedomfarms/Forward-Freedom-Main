@@ -42,7 +42,7 @@ const LANDING_STYLES = `
 .fosl-portal { transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease; }
 .fosl-portal:hover { transform: translateY(-3px); border-color: rgba(0,216,255,.65) !important; box-shadow: 0 14px 44px rgba(0,140,255,.28) !important; }
 .fosl-actions { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; }
-.fosl-portals { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; width: 100%; max-width: 860px; }
+.fosl-portals { display: grid; gap: 16px; width: 100%; max-width: 520px; }
 @media (max-width: 640px) {
   .fosl-actions > button { width: 100%; }
 }
@@ -155,7 +155,7 @@ function PortalCard({ eyebrow, title, description, actionLabel, onClick }) {
   );
 }
 
-export function FreedomOsLanding({ onSignIn, onCreateAccount, onEnterDemo, onExploreFff }) {
+export function FreedomOsLanding({ onSignIn, onCreateAccount, onExploreFff }) {
   const [activeDocument, setActiveDocument] = useState(null);
   const typedTagline = useTypedText(TAGLINE);
   const taglineDone = typedTagline.length === TAGLINE.length;
@@ -322,8 +322,8 @@ export function FreedomOsLanding({ onSignIn, onCreateAccount, onEnterDemo, onExp
             minHeight: 26,
             fontSize: "clamp(13px, 2.4vw, 17px)",
             letterSpacing: 0.6,
+            fontWeight: 700,
             color: "rgba(222,242,255,.86)",
-            fontFamily: "'SFMono-Regular', Menlo, Consolas, monospace",
             maxWidth: 720,
           }}
         >
@@ -340,8 +340,8 @@ export function FreedomOsLanding({ onSignIn, onCreateAccount, onEnterDemo, onExp
             marginTop: "clamp(14px, 3vh, 26px)",
             display: "grid",
             gap: 5,
-            fontFamily: "'SFMono-Regular', Menlo, Consolas, monospace",
             fontSize: 11.5,
+            fontWeight: 700,
             letterSpacing: 0.4,
             textAlign: "left",
             border: "1px solid rgba(0,216,255,.18)",
@@ -381,16 +381,9 @@ export function FreedomOsLanding({ onSignIn, onCreateAccount, onEnterDemo, onExp
           <PortalCard
             eyebrow="Module 01 — Finance"
             title="What is FFF?"
-            description="Forward Freedom Financial: the financial command center inside Freedom OS. Accounts, budgets, forecasting, and real-time cash intelligence."
+            description="Forward Freedom Financial: the financial command center inside Freedom OS. Accounts, budgets, forecasting, and real-time cash intelligence — including a no-sign-up demo sandbox."
             actionLabel="Explore FFF"
             onClick={onExploreFff}
-          />
-          <PortalCard
-            eyebrow="Sandbox"
-            title="Demo Mode"
-            description="Step inside with sample accounts, budgets, and transactions. No sign-up, nothing saved — just look around."
-            actionLabel="Launch demo"
-            onClick={onEnterDemo}
           />
         </div>
       </div>

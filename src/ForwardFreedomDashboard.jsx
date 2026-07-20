@@ -677,6 +677,9 @@ function ForwardFreedomDashboard({
   isDemoMode = false,
   onEnterDemo,
   onExitDemo,
+  // Returns to the Freedom OS public landing (the platform homepage) from the
+  // internally rendered FFF landing view.
+  onBackToOs,
   // /api/me profile of the signed-in user (null for demo/unauthenticated).
   // Freedom OS uses it for the isAdmin gate on the Admin Usage tab.
   workspaceProfile = null,
@@ -2272,7 +2275,9 @@ function ForwardFreedomDashboard({
   const appUIScale = useViewportUIScale();
 
   if (currentView === "landing") {
-    return <LandingPage enterApp={handleEnterApp} onEnterDemo={onEnterDemo} />;
+    return (
+      <LandingPage enterApp={handleEnterApp} onEnterDemo={onEnterDemo} onBackToOs={onBackToOs} />
+    );
   }
 
   const handleBackHome = () => {
