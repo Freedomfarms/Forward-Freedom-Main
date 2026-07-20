@@ -950,6 +950,7 @@ function AuthenticatedWorkspaceApp({
           onPersistedStateChange={handlePersistedStateChange}
           sessionControls={sessionControls}
           persistLocally={false}
+          workspaceProfile={profileDetails}
         />
       </LazyRouteBoundary>
       {workspaceConflict ? (

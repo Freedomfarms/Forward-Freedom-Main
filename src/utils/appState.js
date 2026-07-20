@@ -9,7 +9,6 @@ import { normalizeAccount } from "./accounts.js";
 import { getCurrentBudgetPeriod } from "./date.js";
 import {
   createOnboardingState,
-  getFirstOnboardingTab,
   normalizeOnboardingState,
 } from "./onboarding.js";
 import { buildPlanYearData, normalizePlansByYear } from "./planning.js";
@@ -99,7 +98,9 @@ function buildUserState({
     lastPlaidSyncAt: null,
     merchantCategoryRules: {},
     onboarding: createOnboardingState({ completed: useSeedData }),
-    activeTab: useSeedData ? APP_TABS.DASHBOARD : getFirstOnboardingTab(),
+    // Demo/seed sessions land on the finance Command Center (Freedom OS needs
+    // auth); new authenticated users start on the Freedom OS home.
+    activeTab: useSeedData ? APP_TABS.DASHBOARD : APP_TABS.FREEDOM_OS,
     activeRange: DEFAULT_ACTIVE_RANGE,
     metricSnapshots: useSeedData ? demoDataset.metricSnapshots : {},
   };
