@@ -11,7 +11,8 @@ transaction via `withUserContext()` (`server/db/prisma.js`), which runs
 Queries issued with **no** user context match zero rows (fail closed).
 Cross-user work is restricted to the `freedom_service` role used by
 `server/db/servicePrisma.js` at three justified call sites only (Plaid webhook
-item resolution, future cron dispatcher, future admin usage queries).
+item resolution, the cron dispatcher `api/cron/agent-dispatch.js`, and admin
+usage reporting `api/admin/usage.js`).
 
 ## Rollout order (do NOT collapse into one deploy)
 
