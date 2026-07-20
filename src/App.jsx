@@ -966,6 +966,7 @@ function AuthenticatedWorkspaceApp({
 
 function UnconfiguredPublicApp() {
   const [publicView, setPublicView] = useState("landing");
+  const [authMode, setAuthMode] = useState("login");
   const [demoSessionKey, setDemoSessionKey] = useState(0);
 
   // Without Firebase there is no authenticated owner, so this public path must
@@ -986,6 +987,16 @@ function UnconfiguredPublicApp() {
     );
   }
 
+  // Sign-in still renders here so the flow matches the configured app; any
+  // submit attempt surfaces the "not configured yet" error from AuthContext.
+  if (publicView === "auth") {
+    return (
+      <LazyRouteBoundary message="Loading sign-in...">
+        <AuthScreen initialMode={authMode} onBackHome={() => setPublicView("landing")} />
+      </LazyRouteBoundary>
+    );
+  }
+
   if (publicView === "fff") {
     return (
       <LazyRouteBoundary message="Loading workspace...">
@@ -1002,12 +1013,15 @@ function UnconfiguredPublicApp() {
     );
   }
 
-  // Freedom OS is the front door; without Firebase, both auth actions route to
-  // the FFF page, whose local-only entry path still works unauthenticated.
+  const openAuthScreen = (mode) => {
+    setAuthMode(mode);
+    setPublicView("auth");
+  };
+
   return (
     <FreedomOsLanding
-      onSignIn={() => setPublicView("fff")}
-      onCreateAccount={() => setPublicView("fff")}
+      onSignIn={() => openAuthScreen("login")}
+      onCreateAccount={() => openAuthScreen("register")}
       onExploreFff={() => setPublicView("fff")}
     />
   );
