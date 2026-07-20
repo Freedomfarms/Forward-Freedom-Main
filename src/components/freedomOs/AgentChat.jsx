@@ -1,15 +1,21 @@
 import { useEffect, useRef, useState } from "react";
 import { styles } from "../../styles.js";
-import { sendAgentChatMessage, sendCeoChatMessage } from "../../utils/agentsApi.js";
+import {
+  fetchAgentChatHistory,
+  fetchCeoChatHistory,
+  sendAgentChatMessage,
+  sendCeoChatMessage,
+} from "../../utils/agentsApi.js";
 import { describeAgentApiError, fosStyles, getAgentTypeMeta } from "./freedomOsShared.js";
 
 // Reusable chat UI for the agent platform (CEO panel, AgentDetail, and the
-// "+ New Agent" flow). Messages live in local optimistic state — the API is
-// POST-only for chat in this phase, so there is no history endpoint to load.
+// "+ New Agent" flow). CEO and sub-agent modes load durable history from the
+// server on mount so collapsing/remounting the panel does not wipe the thread.
+// create_agent mode stays ephemeral (a dedicated intake UI).
 //
-// mode: "ceo"           → POST /api/agents/ceo/chat
-//       "create_agent"  → same endpoint, starts the CEO creation session
-//       "agent"         → POST /api/agents/:id/chat (requires agentId)
+// mode: "ceo"           → GET/POST /api/agents/ceo/chat
+//       "create_agent"  → POST /api/agents/ceo/chat (starts creation session)
+//       "agent"         → GET/POST /api/agents/:id/chat (requires agentId)
 
 let localMessageId = 0;
 function nextLocalId(prefix) {
@@ -42,6 +48,17 @@ function AgentCreatedCard({ agentCreated }) {
   );
 }
 
+function mapHistoryMessages(payload) {
+  const rows = Array.isArray(payload?.messages) ? payload.messages : [];
+  return rows
+    .filter((row) => row && (row.role === "user" || row.role === "agent") && typeof row.text === "string")
+    .map((row) => ({
+      id: row.id || nextLocalId("history"),
+      role: row.role,
+      text: row.text,
+    }));
+}
+
 export function AgentChat({
   mode = "ceo",
   agentId = null,
@@ -54,24 +71,73 @@ export function AgentChat({
   placeholder = "Type a message...",
   maxHeight = 380,
 }) {
+  const loadsHistory = mode === "ceo" || (mode === "agent" && Boolean(agentId));
   const [messages, setMessages] = useState(() =>
-    introMessage
+    introMessage && !loadsHistory
       ? [{ id: "intro", role: "agent", text: introMessage }]
       : []
   );
   const [draft, setDraft] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(loadsHistory);
+  const [historyError, setHistoryError] = useState("");
   const [sendError, setSendError] = useState("");
   // In create mode only the FIRST message carries mode: "create_agent"; the
   // server keeps routing follow-ups to the active creation session on its own,
   // and re-sending the flag after completion would start a new session.
   const hasStartedCreateSessionRef = useRef(false);
   const scrollRef = useRef(null);
+  const historyLoadedForRef = useRef(null);
+
+  useEffect(() => {
+    if (!loadsHistory) return undefined;
+
+    const loadKey = mode === "agent" ? `agent:${agentId}` : "ceo";
+    if (historyLoadedForRef.current === loadKey) return undefined;
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const payload =
+          mode === "agent"
+            ? await fetchAgentChatHistory(agentId, { user })
+            : await fetchCeoChatHistory({ user });
+        if (cancelled) return;
+        const history = mapHistoryMessages(payload);
+        historyLoadedForRef.current = loadKey;
+        setHistoryError("");
+        setMessages((current) => {
+          // Keep any optimistic turns that arrived while history was loading.
+          const historyIds = new Set(history.map((row) => row.id));
+          const pending = current.filter((row) => !historyIds.has(row.id) && row.id !== "intro");
+          if (history.length === 0 && introMessage) {
+            return [{ id: "intro", role: "agent", text: introMessage }, ...pending];
+          }
+          return [...history, ...pending];
+        });
+      } catch (error) {
+        if (!cancelled) {
+          setHistoryError(describeAgentApiError(error, "Could not load earlier messages."));
+          if (introMessage) {
+            setMessages((current) =>
+              current.length ? current : [{ id: "intro", role: "agent", text: introMessage }]
+            );
+          }
+        }
+      } finally {
+        if (!cancelled) setIsLoadingHistory(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loadsHistory, mode, agentId, user, introMessage]);
 
   useEffect(() => {
     const node = scrollRef.current;
     if (node) node.scrollTop = node.scrollHeight;
-  }, [messages, isSending]);
+  }, [messages, isSending, isLoadingHistory]);
 
   const sendMessage = async (rawValue) => {
     const message = String(rawValue || "").trim();
@@ -125,6 +191,9 @@ export function AgentChat({
     }
   };
 
+  const showEmpty =
+    messages.length === 0 && !isSending && !isLoadingHistory;
+
   return (
     <div style={{ display: "grid", gap: 10 }}>
       <div
@@ -139,7 +208,12 @@ export function AgentChat({
           padding: 2,
         }}
       >
-        {messages.length === 0 && !isSending ? (
+        {isLoadingHistory ? (
+          <div style={{ color: "#8faecc", fontSize: 13, lineHeight: 1.6, padding: "10px 4px" }}>
+            Loading conversation…
+          </div>
+        ) : null}
+        {showEmpty ? (
           <div style={{ color: "#8faecc", fontSize: 13, lineHeight: 1.6, padding: "10px 4px" }}>
             {mode === "create_agent"
               ? `Tell ${agentName} what the new agent should handle — it will ask a few questions and confirm before creating anything.`
@@ -207,6 +281,7 @@ export function AgentChat({
         ) : null}
       </div>
 
+      {historyError ? <div style={fosStyles.errorBox}>{historyError}</div> : null}
       {sendError ? <div style={fosStyles.errorBox}>{sendError}</div> : null}
 
       {relatedRunId ? (

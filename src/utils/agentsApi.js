@@ -42,6 +42,26 @@ export function updateCeoProfile(ops, options = {}) {
   return requestJson("/api/agents/ceo/profile", { method: "PATCH", body: { ops }, options });
 }
 
+export function fetchCeoDocuments(options = {}) {
+  return requestJson("/api/agents/ceo/documents", { options });
+}
+
+/** documents: [{ filename, mimeType, content }] — text files only. */
+export function uploadCeoDocuments(documents, options = {}) {
+  return requestJson("/api/agents/ceo/documents", {
+    method: "POST",
+    body: { documents },
+    options,
+  });
+}
+
+export function deleteCeoDocument(documentId, options = {}) {
+  return requestJson(
+    `/api/agents/ceo/documents?id=${encodeURIComponent(documentId)}`,
+    { method: "DELETE", options }
+  );
+}
+
 export function fetchCeoDigest({ refresh = false } = {}, options = {}) {
   const query = refresh ? "?refresh=true" : "";
   return requestJson(`/api/agents/ceo/digest${query}`, { options });
@@ -49,6 +69,11 @@ export function fetchCeoDigest({ refresh = false } = {}, options = {}) {
 
 export function regenerateCeoDigest(options = {}) {
   return requestJson("/api/agents/ceo/digest", { method: "POST", body: {}, options });
+}
+
+/** Visible CEO chat history (creation-state bookkeeping rows are omitted). */
+export function fetchCeoChatHistory(options = {}) {
+  return requestJson("/api/agents/ceo/chat", { options });
 }
 
 /**
@@ -122,6 +147,10 @@ export function fetchAgentRun(agentId, runId, options = {}) {
     `/api/agents/${encodeURIComponent(agentId)}/runs/${encodeURIComponent(runId)}`,
     { options }
   );
+}
+
+export function fetchAgentChatHistory(agentId, options = {}) {
+  return requestJson(`/api/agents/${encodeURIComponent(agentId)}/chat`, { options });
 }
 
 export function sendAgentChatMessage(agentId, { message, relatedRunId = null } = {}, options = {}) {

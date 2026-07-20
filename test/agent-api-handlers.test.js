@@ -132,6 +132,19 @@ before(async () => {
       },
     });
 
+    // Force template onboarding summaries in handler tests (no live LLM).
+    mock.module("../server/agents/llm.js", {
+      namedExports: {
+        PROFILE_EXTRACTION_MODEL: "mock-model",
+        CEO_AGENT_MODEL: "mock-model",
+        setLlmImplementationForTesting: () => {},
+        isLlmConfigured: () => false,
+        getWebSearchTools: () => ({}),
+        generateAgentText: async () => ({ text: "mock summary", usage: null }),
+        generateAgentObject: async () => ({ object: { reply: "mock", profileOps: [] }, usage: null }),
+      },
+    });
+
     ({ createFakeDb } = await import("./helpers/fakeAgentDb.js"));
     envelope = await import("../server/security/envelope.js");
 
@@ -147,6 +160,7 @@ before(async () => {
       ceoProfile: (await import("../api/agents/ceo/profile.js")).default,
       ceoDigest: (await import("../api/agents/ceo/digest.js")).default,
       ceoChat: (await import("../api/agents/ceo/chat.js")).default,
+      ceoDocuments: (await import("../api/agents/ceo/documents.js")).default,
       onboarding: (await import("../api/agents/onboarding.js")).default,
       notifications: (await import("../api/notifications.js")).default,
       notificationById: (await import("../api/notifications/[id].js")).default,
@@ -556,6 +570,106 @@ test("POST /api/agents/ceo/chat delegates to respondToChat scoped to the CEO con
   assert.equal(chatCalls[0].message, "how are my finances?");
 });
 
+test("GET /api/agents/ceo/chat returns visible history and hides creation-state rows", async (t) => {
+  if (!requireSetup(t)) return;
+
+  // Ensure the CEO config exists (same path the GET handler uses).
+  await invoke(handlers.ceo, authedRequest("u1", { method: "GET" }));
+  const ceoId = currentDb.tables.ceoAgentConfig[0].id;
+  const { CREATION_STATE_SENTINEL } = await import("../server/agents/creationFlow.js");
+
+  currentDb.tables.agentChatMessage.push(
+    {
+      id: "m1",
+      userId: "u1",
+      ceoAgentConfigId: ceoId,
+      agentConfigId: null,
+      role: "USER",
+      contentCiphertext: envelope.encrypt("What should I focus on this week?"),
+      createdAt: new Date("2026-07-20T10:00:00Z"),
+    },
+    {
+      id: "m2",
+      userId: "u1",
+      ceoAgentConfigId: ceoId,
+      agentConfigId: null,
+      role: "AGENT",
+      contentCiphertext: envelope.encrypt(`${CREATION_STATE_SENTINEL}{"v":1,"status":"completed"}`),
+      createdAt: new Date("2026-07-20T10:00:01Z"),
+    },
+    {
+      id: "m3",
+      userId: "u1",
+      ceoAgentConfigId: ceoId,
+      agentConfigId: null,
+      role: "AGENT",
+      contentCiphertext: envelope.encrypt("Start with cash flow and upcoming bills."),
+      createdAt: new Date("2026-07-20T10:00:02Z"),
+    }
+  );
+
+  const response = await invoke(handlers.ceoChat, authedRequest("u1", { method: "GET" }));
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.messages.length, 2);
+  assert.equal(response.body.messages[0].role, "user");
+  assert.match(response.body.messages[0].text, /focus on this week/);
+  assert.equal(response.body.messages[1].role, "agent");
+  assert.match(response.body.messages[1].text, /cash flow/);
+  assert.equal(chatCalls.length, 0);
+});
+
+test("GET /api/agents/:id/chat returns that agent's history only", async (t) => {
+  if (!requireSetup(t)) return;
+  currentDb.tables.agentConfig.push(
+    {
+      id: "agent-1",
+      userId: "u1",
+      agentType: "research",
+      name: "Research Agent",
+      definitionOfDone: "done",
+      permissionLevel: "READ_ONLY",
+      status: "ACTIVE",
+    },
+    {
+      id: "agent-2",
+      userId: "u1",
+      agentType: "finance",
+      name: "Finance Agent",
+      definitionOfDone: "done",
+      permissionLevel: "READ_ONLY",
+      status: "ACTIVE",
+    }
+  );
+  currentDb.tables.agentChatMessage.push(
+    {
+      id: "a1",
+      userId: "u1",
+      agentConfigId: "agent-1",
+      ceoAgentConfigId: null,
+      role: "USER",
+      contentCiphertext: envelope.encrypt("any updates on AI tools?"),
+      createdAt: new Date("2026-07-20T11:00:00Z"),
+    },
+    {
+      id: "a2",
+      userId: "u1",
+      agentConfigId: "agent-2",
+      ceoAgentConfigId: null,
+      role: "USER",
+      contentCiphertext: envelope.encrypt("spending question for finance"),
+      createdAt: new Date("2026-07-20T11:01:00Z"),
+    }
+  );
+
+  const response = await invoke(
+    handlers.agentChat,
+    authedRequest("u1", { method: "GET", params: { id: "agent-1" } })
+  );
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.messages.length, 1);
+  assert.match(response.body.messages[0].text, /AI tools/);
+});
+
 test("CEO chat creation flow builds and creates an agent without any LLM call", async (t) => {
   if (!requireSetup(t)) return;
 
@@ -695,10 +809,18 @@ test("POST /api/agents/onboarding seeds the profile once and 409s afterwards", a
       body: {
         financialGoals: ["Pay off debt", "Save for a farm"],
         lifeContext: "Two kids, one income.",
+        additionalNotes: "Keep cash higher before spring expansion.",
         priorities: ["Stability"],
         communicationPrefs: "Short and direct",
         ceoName: "Chief",
         personalityPreset: "WARM_ENCOURAGING",
+        documents: [
+          {
+            filename: "priorities.txt",
+            mimeType: "text/plain",
+            content: "Reserve runway matters more than growth this year.",
+          },
+        ],
       },
     })
   );
@@ -706,7 +828,11 @@ test("POST /api/agents/onboarding seeds the profile once and 409s afterwards", a
   assert.equal(response.body.ceoAgent.name, "Chief");
   assert.equal(response.body.ceoAgent.personalityPreset, "WARM_ENCOURAGING");
   assert.ok(response.body.ceoAgent.onboardingCompletedAt);
-  assert.equal(response.body.profileEntriesSeeded, 5);
+  assert.equal(response.body.profileEntriesSeeded, 6);
+  assert.equal(response.body.documents.length, 1);
+  assert.equal(response.body.documents[0].filename, "priorities.txt");
+  assert.match(response.body.onboardingSummary.summary, /Goals|know/i);
+  assert.ok(currentDb.tables.ceoAgentConfig[0].onboardingSummaryCiphertext);
 
   const stored = envelope.decryptJson(currentDb.tables.ceoAgentConfig[0].profileCiphertext);
   assert.deepEqual(
@@ -715,12 +841,50 @@ test("POST /api/agents/onboarding seeds the profile once and 409s afterwards", a
   );
   assert.ok(stored.categories.financialGoals.every((entry) => entry.source === "onboarding"));
   assert.equal(stored.categories.lifeContext[0].text, "Two kids, one income.");
+  assert.match(stored.categories.lifeContext[1].text, /Additional notes/);
+  assert.equal(currentDb.tables.ceoDocument.length, 1);
+
+  const profileGet = await invoke(handlers.ceoProfile, authedRequest("u1", { method: "GET" }));
+  assert.equal(profileGet.statusCode, 200);
+  assert.match(profileGet.body.onboardingSummary.summary, /Goals|know/i);
+  assert.equal(profileGet.body.documents.length, 1);
 
   const repeat = await invoke(
     handlers.onboarding,
     authedRequest("u1", { method: "POST", body: { financialGoals: ["Another goal"] } })
   );
   assert.equal(repeat.statusCode, 409);
+});
+
+test("CEO documents can be uploaded and deleted after onboarding", async (t) => {
+  if (!requireSetup(t)) return;
+  await invoke(handlers.ceo, authedRequest("u1", { method: "GET" }));
+
+  const uploaded = await invoke(
+    handlers.ceoDocuments,
+    authedRequest("u1", {
+      method: "POST",
+      body: {
+        documents: [
+          { filename: "plan.md", mimeType: "text/markdown", content: "# Plan\nHold reserves." },
+        ],
+      },
+    })
+  );
+  assert.equal(uploaded.statusCode, 200);
+  assert.equal(uploaded.body.documents[0].filename, "plan.md");
+  const docId = uploaded.body.documents[0].id;
+
+  const listed = await invoke(handlers.ceoDocuments, authedRequest("u1", { method: "GET" }));
+  assert.equal(listed.statusCode, 200);
+  assert.equal(listed.body.documents.length, 1);
+
+  const deleted = await invoke(
+    handlers.ceoDocuments,
+    authedRequest("u1", { method: "DELETE", query: { id: docId } })
+  );
+  assert.equal(deleted.statusCode, 200);
+  assert.equal(currentDb.tables.ceoDocument.length, 0);
 });
 
 // ── Notifications ────────────────────────────────────────────────────────────

@@ -63,6 +63,7 @@ const TABLES = [
   "ceoAgentConfig",
   "agentRun",
   "agentChatMessage",
+  "ceoDocument",
   "notification",
   "transaction",
   "account",
@@ -103,6 +104,10 @@ export function createFakeDb(seed = {}) {
         }
         if (args.take != null) matched = matched.slice(0, args.take);
         return matched.map((row) => ({ ...row }));
+      },
+      async count(args = {}) {
+        calls.push({ table, method: "count", args });
+        return rows().filter((row) => matchesWhere(row, args.where)).length;
       },
       async upsert(args = {}) {
         calls.push({ table, method: "upsert", args });
