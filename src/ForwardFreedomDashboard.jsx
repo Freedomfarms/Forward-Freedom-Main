@@ -112,6 +112,7 @@ import {
   FreedomOsHome,
   FreedomOsSignedOutCard,
 } from "./components/freedomOs/FreedomOsHome.jsx";
+import { FreedomOsDeck } from "./components/freedomOs/FreedomOsDeck.jsx";
 import { AdminUsagePanel } from "./components/freedomOs/AdminUsagePanel.jsx";
 import { useViewportUIScale } from "./utils/useViewportUIScale.js";
 import { LegalModal } from "./components/LegalDocuments.jsx";
@@ -2289,6 +2290,27 @@ function ForwardFreedomDashboard({
     setIsMobileNavOpen(false);
   };
 
+  // Freedom OS is the platform home: authenticated sessions get a full-screen
+  // deck (no FFF sidebar) with a portal button into the finance dashboard.
+  // Demo and signed-out sessions keep the in-shell signed-out card below.
+  if (activeTab === APP_TABS.FREEDOM_OS && freedomOsAuthUser) {
+    return (
+      <FreedomOsDeck
+        sessionControls={sessionControls}
+        isAdmin={isPlatformAdmin}
+        onEnterFff={() => setActiveTab(APP_TABS.DASHBOARD)}
+        onOpenAdminUsage={() => setActiveTab(APP_TABS.ADMIN_USAGE)}
+      >
+        <ViewErrorBoundary key={APP_TABS.FREEDOM_OS} viewName={APP_TABS.FREEDOM_OS}>
+          <FreedomOsHome
+            user={freedomOsAuthUser}
+            onOpenFinanceTool={() => setActiveTab(APP_TABS.DASHBOARD)}
+          />
+        </ViewErrorBoundary>
+      </FreedomOsDeck>
+    );
+  }
+
   return (
     <div className="app-page" style={styles.page}>
       <div className="app-shell" style={styles.shell}>
@@ -2502,14 +2524,9 @@ function ForwardFreedomDashboard({
               the boundary whenever the user switches views. */}
           <ViewErrorBoundary key={activeTab} viewName={activeTab}>
           {activeTab === APP_TABS.FREEDOM_OS ? (
-            freedomOsAuthUser ? (
-              <FreedomOsHome
-                user={freedomOsAuthUser}
-                onOpenFinanceTool={() => setActiveTab(APP_TABS.DASHBOARD)}
-              />
-            ) : (
-              <FreedomOsSignedOutCard />
-            )
+            // Authenticated sessions render the full-screen deck above; only
+            // demo / signed-out sessions reach this in-shell card.
+            <FreedomOsSignedOutCard />
           ) : activeTab === APP_TABS.ADMIN_USAGE ? (
             isPlatformAdmin ? (
               <AdminUsagePanel user={freedomOsAuthUser} />

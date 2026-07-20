@@ -18,7 +18,7 @@ function buildPrimaryButtonStyle(isSecondary = false) {
   };
 }
 
-export function LandingPage({ enterApp, onEnterDemo }) {
+export function LandingPage({ enterApp, onEnterDemo, onBackToOs }) {
   const [activeDocument, setActiveDocument] = useState(null);
   const openCreateAccess = () => enterApp({ mode: "create-account" });
   const openDemoMode = () => {
@@ -64,6 +64,30 @@ export function LandingPage({ enterApp, onEnterDemo }) {
       />
 
       <div style={{ position: "relative", zIndex: 2 }}>
+        {typeof onBackToOs === "function" ? (
+          <button
+            type="button"
+            onClick={onBackToOs}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              marginBottom: 20,
+              border: "1px solid rgba(0,216,255,.3)",
+              borderRadius: 999,
+              background: "rgba(2,18,36,.66)",
+              color: "#8feaff",
+              padding: "9px 18px",
+              cursor: "pointer",
+              fontWeight: 900,
+              fontSize: 12,
+              letterSpacing: 1.2,
+              textTransform: "uppercase",
+            }}
+          >
+            <span aria-hidden="true">◈</span> Back to Freedom OS
+          </button>
+        ) : null}
         <section
           id="home"
           className="landing-hero"

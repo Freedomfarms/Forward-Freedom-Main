@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { AuthProvider, useAuth } from "./context/AuthContext.jsx";
 import { ErrorBoundary } from "./components/ErrorBoundary.jsx";
 import { LandingPage } from "./components/LandingPage.jsx";
+import { FreedomOsLanding } from "./components/FreedomOsLanding.jsx";
 
 const ForwardFreedomDashboard = lazy(() => import("./ForwardFreedomDashboard.jsx"));
 const AuthScreen = lazy(() =>
@@ -985,17 +986,33 @@ function UnconfiguredPublicApp() {
     );
   }
 
+  if (publicView === "fff") {
+    return (
+      <LazyRouteBoundary message="Loading workspace...">
+        <ForwardFreedomDashboard
+          initialView="landing"
+          persistLocally={false}
+          onEnterDemo={() => {
+            setDemoSessionKey((current) => current + 1);
+            setPublicView("demo");
+          }}
+        />
+      </LazyRouteBoundary>
+    );
+  }
+
+  // Freedom OS is the front door; without Firebase, both auth actions route to
+  // the FFF page, whose local-only entry path still works unauthenticated.
   return (
-    <LazyRouteBoundary message="Loading workspace...">
-      <ForwardFreedomDashboard
-        initialView="landing"
-        persistLocally={false}
-        onEnterDemo={() => {
-          setDemoSessionKey((current) => current + 1);
-          setPublicView("demo");
-        }}
-      />
-    </LazyRouteBoundary>
+    <FreedomOsLanding
+      onSignIn={() => setPublicView("fff")}
+      onCreateAccount={() => setPublicView("fff")}
+      onExploreFff={() => setPublicView("fff")}
+      onEnterDemo={() => {
+        setDemoSessionKey((current) => current + 1);
+        setPublicView("demo");
+      }}
+    />
   );
 }
 
@@ -1051,25 +1068,45 @@ function AppContent() {
       );
     }
 
+    const openAuthScreen = (payload = {}) => {
+      setAuthScreenConfig({
+        mode: payload?.mode === "create-account" ? "register" : "login",
+        initialForm:
+          payload?.mode === "create-account"
+            ? {
+                fullName: payload.primaryUserName || "",
+                email: payload.email || "",
+              }
+            : null,
+      });
+      setPublicView("auth");
+    };
+
+    const openDemo = () => {
+      setDemoSessionKey((current) => current + 1);
+      setPublicView("demo");
+    };
+
+    // "What is FFF?" — the original Forward Freedom Financial marketing page,
+    // reachable from the Freedom OS front door.
+    if (publicView === "fff") {
+      return (
+        <LandingPage
+          enterApp={openAuthScreen}
+          onEnterDemo={openDemo}
+          onBackToOs={() => setPublicView("landing")}
+        />
+      );
+    }
+
+    // Freedom OS landing is the main homepage: sign-in and account creation
+    // launch from here.
     return (
-      <LandingPage
-        enterApp={(payload = {}) => {
-          setAuthScreenConfig({
-            mode: payload?.mode === "create-account" ? "register" : "login",
-            initialForm:
-              payload?.mode === "create-account"
-                ? {
-                    fullName: payload.primaryUserName || "",
-                    email: payload.email || "",
-                  }
-                : null,
-          });
-          setPublicView("auth");
-        }}
-        onEnterDemo={() => {
-          setDemoSessionKey((current) => current + 1);
-          setPublicView("demo");
-        }}
+      <FreedomOsLanding
+        onSignIn={() => openAuthScreen()}
+        onCreateAccount={() => openAuthScreen({ mode: "create-account" })}
+        onEnterDemo={openDemo}
+        onExploreFff={() => setPublicView("fff")}
       />
     );
   }
