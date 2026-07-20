@@ -141,6 +141,24 @@ export const plaidSyncRateLimit = rateLimit({
   message: { error: true, message: "Too many sync requests. Please try again later." },
 });
 
+// LLM-backed agent endpoints (chat, digest regeneration): each request can
+// cost real model tokens, so they get a tighter budget than the general API.
+export const agentLlmRateLimit = rateLimit({
+  ...baseRateLimitOptions,
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  message: { error: true, message: "Too many agent requests. Please try again in a few minutes." },
+});
+
+// Manual agent-run triggers are the most expensive single action (full agent
+// run + profile extraction), so they are capped hardest: 10 per hour.
+export const agentRunRateLimit = rateLimit({
+  ...baseRateLimitOptions,
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  message: { error: true, message: "Too many manual runs. Please try again later." },
+});
+
 export const plaidWebhookRateLimit = rateLimit({
   ...baseRateLimitOptions,
   windowMs: 60 * 1000,

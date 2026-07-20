@@ -1,3 +1,13 @@
+// Reads a dynamic path segment, working both on Vercel (which exposes [name]
+// segments on request.query) and on the local Express server (request.params).
+export function readPathParam(request, name) {
+  const fromParams = request?.params?.[name];
+  const fromQuery = request?.query?.[name];
+  const raw = fromParams ?? (Array.isArray(fromQuery) ? fromQuery[0] : fromQuery);
+  const value = typeof raw === "string" ? raw.trim() : "";
+  return value || null;
+}
+
 // Reads and parses a JSON request body, working both on Vercel (which
 // pre-parses JSON bodies onto request.body) and on the local Express server.
 // Invalid JSON raises a 400-tagged error the API handlers surface directly.

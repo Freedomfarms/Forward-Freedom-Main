@@ -57,7 +57,7 @@ function buildUnauthorizedErrorMessage(payload) {
   return `Secure workspace request was rejected: ${serverMessage}`;
 }
 
-async function parseApiResponse(response) {
+export async function parseApiResponse(response) {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
     throw new ApiRequestError(

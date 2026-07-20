@@ -8,6 +8,8 @@ import crypto from "crypto";
 function operatorMatch(value, condition) {
   if ("gte" in condition && !(value >= condition.gte)) return false;
   if ("lte" in condition && !(value <= condition.lte)) return false;
+  if ("gt" in condition && !(value > condition.gt)) return false;
+  if ("lt" in condition && !(value < condition.lt)) return false;
   if ("not" in condition) {
     if (condition.not === null) {
       if (value == null) return false;
@@ -90,8 +92,28 @@ export function createFakeDb(seed = {}) {
         calls.push({ table, method: "findMany", args });
         let matched = rows().filter((row) => matchesWhere(row, args.where));
         matched = sortRows(matched, args.orderBy);
+        if (Array.isArray(args.distinct) && args.distinct.length) {
+          const seen = new Set();
+          matched = matched.filter((row) => {
+            const key = JSON.stringify(args.distinct.map((field) => row[field]));
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
+        }
         if (args.take != null) matched = matched.slice(0, args.take);
         return matched.map((row) => ({ ...row }));
+      },
+      async upsert(args = {}) {
+        calls.push({ table, method: "upsert", args });
+        const row = rows().find((candidate) => matchesWhere(candidate, args.where));
+        if (row) {
+          Object.assign(row, args.update);
+          return { ...row };
+        }
+        const created = { id: crypto.randomUUID(), createdAt: new Date(), ...args.create };
+        rows().push(created);
+        return { ...created };
       },
       async create(args = {}) {
         calls.push({ table, method: "create", args });
@@ -111,6 +133,13 @@ export function createFakeDb(seed = {}) {
         if (!row) throw new Error(`fakeAgentDb: no ${table} row matches ${JSON.stringify(args.where)}`);
         Object.assign(row, args.data);
         return { ...row };
+      },
+      async delete(args = {}) {
+        calls.push({ table, method: "delete", args });
+        const index = rows().findIndex((candidate) => matchesWhere(candidate, args.where));
+        if (index < 0) throw new Error(`fakeAgentDb: no ${table} row matches ${JSON.stringify(args.where)}`);
+        const [removed] = rows().splice(index, 1);
+        return { ...removed };
       },
     };
   }
