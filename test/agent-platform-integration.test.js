@@ -91,7 +91,7 @@ before(async () => {
 
     handlers = {
       ceo: (await import("../api/agents/ceo.js")).default,
-      agents: (await import("../api/agents/index.js")).default,
+      agents: (await import("../api/agents.js")).default,
       agentRun: (await import("../api/agents/[id]/run.js")).default,
       ceoDigest: (await import("../api/agents/ceo/digest.js")).default,
     };

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { styles } from "../../styles.js";
+import { ApiRequestError } from "../../utils/api.js";
 import {
   fetchAgentChatHistory,
   fetchCeoChatHistory,
@@ -97,11 +98,27 @@ export function AgentChat({
     let cancelled = false;
 
     (async () => {
+      const loadHistory = async () =>
+        mode === "agent"
+          ? fetchAgentChatHistory(agentId, { user })
+          : fetchCeoChatHistory({ user });
+
       try {
-        const payload =
-          mode === "agent"
-            ? await fetchAgentChatHistory(agentId, { user })
-            : await fetchCeoChatHistory({ user });
+        let payload;
+        try {
+          payload = await loadHistory();
+        } catch (firstError) {
+          // One retry for transient network / edge blips ("Failed to fetch").
+          const isHttpError = firstError instanceof ApiRequestError;
+          const transient =
+            !isHttpError &&
+            /failed to fetch|networkerror|load failed/i.test(String(firstError?.message || ""));
+          if (!transient) throw firstError;
+          await new Promise((resolve) => {
+            globalThis.setTimeout(resolve, 400);
+          });
+          payload = await loadHistory();
+        }
         if (cancelled) return;
         const history = mapHistoryMessages(payload);
         historyLoadedForRef.current = loadKey;

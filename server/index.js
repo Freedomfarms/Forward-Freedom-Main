@@ -11,7 +11,7 @@ import plaidExchangePublicTokenHandler from "../api/plaid/exchange-public-token.
 import plaidSyncHandler from "../api/plaid/sync.js";
 import plaidUserHandler from "../api/plaid/user.js";
 import plaidWebhookHandler from "../api/plaid/webhook.js";
-import agentsHandler from "../api/agents/index.js";
+import agentsHandler from "../api/agents.js";
 import agentByIdHandler from "../api/agents/[id].js";
 import agentRunHandler from "../api/agents/[id]/run.js";
 import agentRunsHandler from "../api/agents/[id]/runs.js";

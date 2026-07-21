@@ -35,6 +35,19 @@ export function decodeVisibleChatMessages(rows, { limit = CHAT_HISTORY_DEFAULT_L
   return visible.reverse();
 }
 
+/** JSON-safe chat history rows for API responses. */
+export function serializeChatHistoryMessages(messages) {
+  return (Array.isArray(messages) ? messages : []).map((row) => ({
+    id: row.id,
+    role: row.role,
+    text: row.text,
+    createdAt:
+      row.createdAt instanceof Date
+        ? row.createdAt.toISOString()
+        : row.createdAt ?? null,
+  }));
+}
+
 /**
  * Loads visible chat history for exactly one of agentConfigId / ceoAgentConfigId.
  * Verifies the target config belongs to the user before reading messages.

@@ -150,7 +150,7 @@ before(async () => {
 
     handlers = {
       me: (await import("../api/me.js")).default,
-      agents: (await import("../api/agents/index.js")).default,
+      agents: (await import("../api/agents.js")).default,
       agentById: (await import("../api/agents/[id].js")).default,
       agentRun: (await import("../api/agents/[id]/run.js")).default,
       agentRuns: (await import("../api/agents/[id]/runs.js")).default,

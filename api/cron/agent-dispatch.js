@@ -44,15 +44,19 @@ async function findDueAgents(service, now) {
   });
   if (!candidates.length) return [];
 
-  // Latest run per candidate agent in one query (any trigger counts — a
-  // manual run inside the window also satisfies the schedule).
+  // Latest run per candidate agent (any trigger counts — a manual run inside
+  // the window also satisfies the schedule). Avoid Prisma `distinct`, which is
+  // fragile with Postgres DISTINCT ON ordering rules.
   const latestRuns = await service.agentRun.findMany({
     where: { agentConfigId: { in: candidates.map((agent) => agent.id) } },
     orderBy: { startedAt: "desc" },
-    distinct: ["agentConfigId"],
     select: { agentConfigId: true, startedAt: true },
   });
-  const lastRunByAgentId = new Map(latestRuns.map((run) => [run.agentConfigId, run.startedAt]));
+  const lastRunByAgentId = new Map();
+  for (const run of latestRuns) {
+    if (!run.agentConfigId || lastRunByAgentId.has(run.agentConfigId)) continue;
+    lastRunByAgentId.set(run.agentConfigId, run.startedAt);
+  }
 
   return candidates.filter((agent) =>
     isAgentDue(agent.schedule, lastRunByAgentId.get(agent.id) ?? null, now)
