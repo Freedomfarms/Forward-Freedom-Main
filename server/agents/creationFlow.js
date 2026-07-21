@@ -1,3 +1,4 @@
+import { getAgentModelLabel, parseAgentModelChoice } from "./models.js";
 import { CREATABLE_AGENT_TYPES } from "./registry.js";
 import { WEEKDAY_NAMES } from "./schedule.js";
 
@@ -9,10 +10,11 @@ import { WEEKDAY_NAMES } from "./schedule.js";
 // filters those rows out, so state never reaches a prompt or the client.
 //
 // Required fields: type → purpose → data → schedule → definition of done →
-// review → (confirm creates the agent). Each turn extracts ANY recognizable
-// fields from the user's message (schedule, email intent, purpose, etc.), so
-// answers given out of order or bundled together are not stuffed into the
-// wrong slot. Only still-missing fields are asked next.
+// model → review → (confirm creates the agent). Each turn extracts ANY
+// recognizable fields from the user's message (schedule, email intent,
+// purpose, etc.), so answers given out of order or bundled together are not
+// stuffed into the wrong slot. Only still-missing fields are asked next.
+// Model is last and optional — Sonnet is pre-selected; "skip" keeps it.
 //
 // On confirm the draft goes through the SAME validation + creation path as
 // POST /api/agents (validateAgentCreatePayload → createAgentConfig), so the
@@ -43,7 +45,9 @@ const STEP_QUESTIONS = Object.freeze({
     "What data or area should it pay attention to? (For a reminders agent, mention email if you also want the reminder emailed to your account address.)",
   clarify_schedule: SCHEDULE_QUESTION,
   definition_of_done:
-    "Last question: give me one specific, measurable sentence that defines success for this agent (its definition of done).",
+    "Give me one specific, measurable sentence that defines success for this agent (its definition of done).",
+  choose_model:
+    'Which Claude model should this agent use? Say "haiku" (fastest), "sonnet" (balanced, recommended), or "opus" (smartest). Or say "skip" to keep Sonnet.',
 });
 
 const EMAIL_ADDRESS_RE = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i;
@@ -157,6 +161,7 @@ function renderReview(draft) {
     `- Focus: ${composedInstructions(draft)}`,
     `- Schedule: ${scheduleLabel(draft)}`,
     `- Definition of done: ${draft.definitionOfDone}`,
+    `- Model: ${getAgentModelLabel(draft.model || "claude-sonnet-4-5")}`,
     "- Permissions: read-only (all new agents start read-only)",
   ];
   if (draft.requestedTime) {
@@ -201,6 +206,7 @@ function questionForMissing(draft) {
   if (!draft.dataFocus) return STEP_QUESTIONS.clarify_data;
   if (!draft.scheduleResolved) return SCHEDULE_QUESTION;
   if (!draft.definitionOfDone) return STEP_QUESTIONS.definition_of_done;
+  if (!draft.modelResolved) return STEP_QUESTIONS.choose_model;
   return null;
 }
 
@@ -211,6 +217,7 @@ function stepForDraft(draft) {
   if (!draft.dataFocus) return "clarify_data";
   if (!draft.scheduleResolved) return "clarify_schedule";
   if (!draft.definitionOfDone) return "definition_of_done";
+  if (!draft.modelResolved) return "choose_model";
   return "review";
 }
 
@@ -385,7 +392,10 @@ export function advanceCreationSession(state, message) {
   }
 
   // Review / confirm is a deliberate gate — don't re-absorb fields here.
-  if (state.step === "review" || (!questionForMissing(draft) && draft.definitionOfDone)) {
+  if (
+    state.step === "review" ||
+    (!questionForMissing(draft) && draft.definitionOfDone && draft.modelResolved)
+  ) {
     next.step = "review";
     if (/\b(confirm|yes|create it|create|go ahead|do it|looks good)\b/i.test(text)) {
       return {
@@ -399,6 +409,7 @@ export function advanceCreationSession(state, message) {
           schedulePreset: draft.schedulePreset ?? null,
           scheduleWeekday: draft.scheduleWeekday ?? null,
           toolAccess: draft.toolAccess ?? null,
+          model: draft.model || "claude-sonnet-4-5",
         },
       };
     }
@@ -448,6 +459,33 @@ export function advanceCreationSession(state, message) {
       next.step = stepForDraft(draft);
     }
     return { state: next, reply: buildReply(draft, ackNotes, prefix) };
+  }
+
+  // Model choice is last (after definition of done) and optional.
+  if (
+    draft.definitionOfDone &&
+    !draft.modelResolved &&
+    draft.agentType &&
+    draft.instructions &&
+    draft.dataFocus &&
+    draft.scheduleResolved &&
+    !draft.pendingWeekdays?.length
+  ) {
+    const chosen = parseAgentModelChoice(text);
+    if (!chosen) {
+      next.step = "choose_model";
+      return {
+        state: next,
+        reply: `I didn't catch a model choice. ${STEP_QUESTIONS.choose_model}`,
+      };
+    }
+    draft.model = chosen;
+    draft.modelResolved = true;
+    next.step = "review";
+    return {
+      state: next,
+      reply: `Model set to ${getAgentModelLabel(chosen)}.\n\n${renderReview(draft)}`,
+    };
   }
 
   // Determine which text slot (if any) this turn is trying to fill.

@@ -5,9 +5,11 @@ import { readJsonBody } from "../../server/http/requestHelpers.js";
 import { applySecurityHeaders } from "../../server/http/responseHelpers.js";
 import { AgentError } from "../../server/agents/errors.js";
 import {
+  ALLOWED_AGENT_MODELS,
   CEO_AGENT_CONFIG_SAFE_SELECT,
   CEO_PERSONALITY_PRESETS,
   ensureCeoAgentConfig,
+  isValidAgentModel,
   isValidAvatarKey,
   isValidPersonalityPreset,
   respondAgentApiError,
@@ -94,6 +96,10 @@ function parseOnboardingPayload(payload) {
   if (avatarKey != null && !isValidAvatarKey(avatarKey)) {
     throw invalid("avatarKey must be a preset avatar key (short slug) or null.");
   }
+  const model = payload.model ?? null;
+  if (model != null && !isValidAgentModel(model)) {
+    throw invalid(`model must be one of: ${ALLOWED_AGENT_MODELS.join(", ")}.`);
+  }
 
   return {
     financialGoals,
@@ -105,6 +111,7 @@ function parseOnboardingPayload(payload) {
     ceoName,
     personalityPreset,
     avatarKey,
+    model,
   };
 }
 
@@ -164,6 +171,7 @@ export default async function handler(request, response) {
           ...(parsed.ceoName ? { name: parsed.ceoName } : {}),
           ...(parsed.personalityPreset ? { personalityPreset: parsed.personalityPreset } : {}),
           ...(parsed.avatarKey ? { avatarKey: parsed.avatarKey } : {}),
+          ...(parsed.model ? { model: parsed.model } : {}),
           onboardingCompletedAt: new Date(),
         },
         select: CEO_AGENT_CONFIG_SAFE_SELECT,
@@ -195,6 +203,7 @@ export default async function handler(request, response) {
       additionalNotes: parsed.additionalNotes,
       documentNames: documents.map((doc) => doc.filename),
       personalityPreset: ceoConfig.personalityPreset,
+      model: ceoConfig.model,
     });
     let savedSummary = { summary, generatedAt: new Date() };
     try {

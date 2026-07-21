@@ -2,6 +2,12 @@ import { AuthError } from "../auth/verifyAuth.js";
 import { decrypt } from "../security/envelope.js";
 import { respondInternalError } from "../http/errorHelpers.js";
 import { AgentError, isAgentError } from "./errors.js";
+import {
+  ALLOWED_AGENT_MODELS,
+  DEFAULT_AGENT_MODEL,
+  isValidAgentModel,
+  normalizeAgentModel,
+} from "./models.js";
 import { CREATABLE_AGENT_TYPES } from "./registry.js";
 import {
   cronToSchedulePreset,
@@ -9,6 +15,8 @@ import {
   isValidScheduleWeekday,
   schedulePresetToCron,
 } from "./schedule.js";
+
+export { ALLOWED_AGENT_MODELS, DEFAULT_AGENT_MODEL, isValidAgentModel };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared helpers for the agent-platform API handlers (api/agents/*,
@@ -64,6 +72,8 @@ export const CEO_AGENT_CONFIG_SAFE_SELECT = Object.freeze({
   userId: true,
   name: true,
   personalityPreset: true,
+  model: true,
+  defaultSubAgentModel: true,
   avatarKey: true,
   profileCiphertext: true,
   profileUpdatedAt: true,
@@ -108,6 +118,8 @@ export function serializeCeoAgentConfig(config) {
     id: config.id,
     name: config.name,
     personalityPreset: config.personalityPreset,
+    model: normalizeAgentModel(config.model),
+    defaultSubAgentModel: normalizeAgentModel(config.defaultSubAgentModel),
     avatarKey: config.avatarKey ?? null,
     onboardingCompletedAt: config.onboardingCompletedAt ?? null,
     profileUpdatedAt: config.profileUpdatedAt ?? null,
@@ -130,6 +142,7 @@ export function serializeAgentConfig(config, { latestRun } = {}) {
     definitionOfDone: config.definitionOfDone ?? null,
     permissionLevel: config.permissionLevel,
     status: config.status,
+    model: normalizeAgentModel(config.model),
     toolAccess: config.toolAccess ?? null,
     schedule: cronToSchedulePreset(config.schedule),
     createdAt: config.createdAt,
@@ -260,6 +273,14 @@ export function validateAgentCreatePayload(payload) {
   if (!CREATABLE_AGENT_TYPES.includes(agentType)) {
     throw invalid(`agentType must be one of: ${CREATABLE_AGENT_TYPES.join(", ")}.`);
   }
+  let model;
+  if ("model" in payload && payload.model != null) {
+    if (!isValidAgentModel(payload.model)) {
+      throw invalid(`model must be one of: ${ALLOWED_AGENT_MODELS.join(", ")}.`);
+    }
+    model = payload.model;
+  }
+
   return {
     agentType,
     name: readTrimmedString(payload.name, "name", { maxLength: NAME_MAX_LENGTH, required: true }),
@@ -272,6 +293,7 @@ export function validateAgentCreatePayload(payload) {
     }),
     schedule: readSchedule(payload),
     toolAccess: sanitizeToolAccess(payload.toolAccess),
+    ...(model ? { model } : {}),
   };
 }
 
@@ -320,6 +342,12 @@ export function validateAgentUpdatePayload(payload) {
   if ("schedulePreset" in payload || "scheduleWeekday" in payload) {
     data.schedule = readSchedule(payload);
   }
+  if ("model" in payload) {
+    if (!isValidAgentModel(payload.model)) {
+      throw invalid(`model must be one of: ${ALLOWED_AGENT_MODELS.join(", ")}.`);
+    }
+    data.model = payload.model;
+  }
 
   if (!Object.keys(data).length) {
     throw invalid("No updatable fields were provided.");
@@ -336,6 +364,9 @@ export function validateAgentUpdatePayload(payload) {
  */
 export async function createAgentConfig(tx, userId, validated) {
   const ceoConfig = await ensureCeoAgentConfig(tx, userId);
+  const model = normalizeAgentModel(
+    validated.model ?? ceoConfig.defaultSubAgentModel ?? DEFAULT_AGENT_MODEL
+  );
   return tx.agentConfig.create({
     data: {
       userId,
@@ -346,6 +377,7 @@ export async function createAgentConfig(tx, userId, validated) {
       definitionOfDone: validated.definitionOfDone,
       schedule: validated.schedule,
       toolAccess: validated.toolAccess,
+      model,
       permissionLevel: "READ_ONLY",
       status: "ACTIVE",
     },

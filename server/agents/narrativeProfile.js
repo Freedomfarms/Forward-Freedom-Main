@@ -2,6 +2,7 @@ import { withUserContext } from "../db/prisma.js";
 import { decrypt, encrypt } from "../security/envelope.js";
 import { AgentError } from "./errors.js";
 import { CEO_AGENT_MODEL, generateAgentText, isLlmConfigured } from "./llm.js";
+import { normalizeAgentModel } from "./models.js";
 import { dataSection, PROMPT_SAFETY_RULES } from "./prompts.js";
 import { getProfile, renderProfileForPrompt } from "./profile.js";
 import { isCreationStateContent } from "./creationState.js";
@@ -121,7 +122,7 @@ async function loadNarrativeContext(userId) {
     async (tx) => {
       const ceoConfigRow = await tx.ceoAgentConfig.findFirst({
         where: { userId },
-        select: { id: true, personalityPreset: true, name: true },
+        select: { id: true, personalityPreset: true, name: true, model: true },
       });
       if (!ceoConfigRow) {
         return { ceoConfig: null, agents: [], chatRows: [], documentNames: [] };
@@ -305,8 +306,9 @@ export async function generateNarrativeProfile(userId) {
     );
   }
 
+  const model = normalizeAgentModel(context.ceoConfig.model, CEO_AGENT_MODEL);
   const { text, usage } = await generateAgentText({
-    model: CEO_AGENT_MODEL,
+    model,
     system: buildNarrativeSystemPrompt(context.ceoConfig.personalityPreset),
     prompt: [
       "Write the user's long-form profile newsletter from the data below.",
@@ -344,5 +346,5 @@ export async function generateNarrativeProfile(userId) {
   }
 
   const saved = await saveNarrativeProfile(userId, profile);
-  return { ...saved, model: CEO_AGENT_MODEL, usage: usage || null, wordCount: countWords(profile) };
+  return { ...saved, model, usage: usage || null, wordCount: countWords(profile) };
 }

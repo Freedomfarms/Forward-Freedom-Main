@@ -27,6 +27,7 @@ const AGENT_LIST_SELECT = Object.freeze({
   definitionOfDone: true,
   permissionLevel: true,
   status: true,
+  model: true,
   toolAccess: true,
   schedule: true,
   createdAt: true,

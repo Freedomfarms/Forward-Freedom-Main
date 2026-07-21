@@ -32,6 +32,37 @@ export const PERSONALITY_PRESETS = [
   },
 ];
 
+export const DEFAULT_AGENT_MODEL = "claude-sonnet-4-5";
+
+/** Capability-focused model labels (no per-user billing language). */
+export const AGENT_MODEL_OPTIONS = [
+  {
+    value: "claude-haiku-4-5",
+    shortLabel: "Haiku",
+    label: "Haiku — Fastest",
+    description: "Quick replies for everyday questions.",
+  },
+  {
+    value: "claude-sonnet-4-5",
+    shortLabel: "Sonnet",
+    label: "Sonnet — Balanced (recommended)",
+    description: "Strong default for most chats and agents.",
+  },
+  {
+    value: "claude-opus-4-1",
+    shortLabel: "Opus",
+    label: "Opus — Smartest",
+    description: "Deepest reasoning for harder decisions.",
+  },
+];
+
+export function getAgentModelLabel(value) {
+  return (
+    AGENT_MODEL_OPTIONS.find((option) => option.value === value)?.label ||
+    AGENT_MODEL_OPTIONS.find((option) => option.value === DEFAULT_AGENT_MODEL).label
+  );
+}
+
 export function getPersonalityLabel(value) {
   return PERSONALITY_PRESETS.find((preset) => preset.value === value)?.label || "Direct & Efficient";
 }

@@ -24,12 +24,17 @@ export function fetchCeoAgent(options = {}) {
   return requestJson("/api/agents/ceo", { options });
 }
 
-/** Updatable fields: name, personalityPreset (enum), avatarKey (preset slug). */
-export function updateCeoAgent({ name, personalityPreset, avatarKey } = {}, options = {}) {
+/** Updatable fields: name, personalityPreset, avatarKey, model, defaultSubAgentModel. */
+export function updateCeoAgent(
+  { name, personalityPreset, avatarKey, model, defaultSubAgentModel } = {},
+  options = {}
+) {
   const body = {};
   if (name !== undefined) body.name = name;
   if (personalityPreset !== undefined) body.personalityPreset = personalityPreset;
   if (avatarKey !== undefined) body.avatarKey = avatarKey;
+  if (model !== undefined) body.model = model;
+  if (defaultSubAgentModel !== undefined) body.defaultSubAgentModel = defaultSubAgentModel;
   return requestJson("/api/agents/ceo", { method: "PUT", body, options });
 }
 

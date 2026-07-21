@@ -369,6 +369,36 @@ test("PUT /api/agents/ceo rejects unknown personality presets and free-text fiel
   assert.equal(good.body.ceoAgent.personalityPreset, "FORMAL");
 });
 
+test("PUT /api/agents/ceo accepts model and defaultSubAgentModel allowlist", async (t) => {
+  if (!requireSetup(t)) return;
+  currentDb.tables.ceoAgentConfig.push({
+    id: "ceo-1",
+    userId: "u1",
+    name: "CEO Agent",
+    personalityPreset: "DIRECT_EFFICIENT",
+    model: "claude-sonnet-4-5",
+    defaultSubAgentModel: "claude-sonnet-4-5",
+  });
+
+  const bad = await invoke(
+    handlers.ceo,
+    authedRequest("u1", { method: "PUT", body: { model: "gpt-4" } })
+  );
+  assert.equal(bad.statusCode, 400);
+  assert.match(String(bad.body.message || ""), /model/);
+
+  const good = await invoke(
+    handlers.ceo,
+    authedRequest("u1", {
+      method: "PUT",
+      body: { model: "claude-opus-4-1", defaultSubAgentModel: "claude-haiku-4-5" },
+    })
+  );
+  assert.equal(good.statusCode, 200);
+  assert.equal(good.body.ceoAgent.model, "claude-opus-4-1");
+  assert.equal(good.body.ceoAgent.defaultSubAgentModel, "claude-haiku-4-5");
+});
+
 // ── Sub-agent CRUD ───────────────────────────────────────────────────────────
 
 test("POST /api/agents creates a READ_ONLY ACTIVE agent linked to the CEO config", async (t) => {
@@ -390,13 +420,56 @@ test("POST /api/agents creates a READ_ONLY ACTIVE agent linked to the CEO config
   assert.equal(response.statusCode, 201);
   assert.equal(response.body.agent.permissionLevel, "READ_ONLY");
   assert.equal(response.body.agent.status, "ACTIVE");
+  assert.equal(response.body.agent.model, "claude-sonnet-4-5");
   assert.deepEqual(response.body.agent.schedule, { preset: "weekly", weekday: "friday" });
 
   const row = currentDb.tables.agentConfig[0];
   assert.equal(row.permissionLevel, "READ_ONLY");
   assert.equal(row.status, "ACTIVE");
+  assert.equal(row.model, "claude-sonnet-4-5");
   assert.equal(row.schedule, "0 13 * * 5"); // raw cron stays server-side
   assert.equal(row.ceoAgentConfigId, currentDb.tables.ceoAgentConfig[0].id);
+});
+
+test("POST /api/agents uses defaultSubAgentModel unless model is provided", async (t) => {
+  if (!requireSetup(t)) return;
+  currentDb.tables.ceoAgentConfig.push({
+    id: "ceo-1",
+    userId: "u1",
+    name: "CEO Agent",
+    personalityPreset: "DIRECT_EFFICIENT",
+    model: "claude-opus-4-1",
+    defaultSubAgentModel: "claude-haiku-4-5",
+  });
+
+  const fromDefault = await invoke(
+    handlers.agents,
+    authedRequest("u1", {
+      method: "POST",
+      body: {
+        agentType: "research",
+        name: "Trend Scout",
+        definitionOfDone: "A weekly trends brief.",
+      },
+    })
+  );
+  assert.equal(fromDefault.statusCode, 201);
+  assert.equal(fromDefault.body.agent.model, "claude-haiku-4-5");
+
+  const explicit = await invoke(
+    handlers.agents,
+    authedRequest("u1", {
+      method: "POST",
+      body: {
+        agentType: "reminders",
+        name: "Cash Nudge",
+        definitionOfDone: "A reminder is delivered on schedule.",
+        model: "claude-opus-4-1",
+      },
+    })
+  );
+  assert.equal(explicit.statusCode, 201);
+  assert.equal(explicit.body.agent.model, "claude-opus-4-1");
 });
 
 test("POST /api/agents rejects invalid types and permissionLevel injection", async (t) => {
@@ -916,18 +989,24 @@ test("CEO chat creation flow builds and creates an agent without any LLM call", 
   assert.match(schedule.body.reply, /definition of done/i);
 
   const done = await send("A weekly spending observations report is produced");
-  assert.match(done.body.reply, /Here's the agent I'll create/);
-  assert.match(done.body.reply, /read-only/);
+  assert.match(done.body.reply, /haiku|sonnet|opus|model/i);
+
+  const model = await send("skip");
+  assert.match(model.body.reply, /Here's the agent I'll create/);
+  assert.match(model.body.reply, /read-only/);
+  assert.match(model.body.reply, /Sonnet/i);
 
   const confirm = await send("confirm");
   assert.equal(confirm.statusCode, 200);
   assert.equal(confirm.body.agentCreated.name, "Finance Agent");
   assert.equal(confirm.body.agentCreated.agentType, "finance");
+  assert.equal(confirm.body.agentCreated.model, "claude-sonnet-4-5");
 
   const row = currentDb.tables.agentConfig[0];
   assert.equal(row.permissionLevel, "READ_ONLY");
   assert.equal(row.status, "ACTIVE");
   assert.equal(row.schedule, "0 13 * * 5");
+  assert.equal(row.model, "claude-sonnet-4-5");
   assert.match(row.instructions, /monthly spending/);
   assert.match(row.definitionOfDone, /observations report/);
 

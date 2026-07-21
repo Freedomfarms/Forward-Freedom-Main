@@ -122,7 +122,12 @@ async function handleCreationTurn({ userId, ceoConfigId, conversationId, activeS
       const agent = await createAgentConfig(tx, userId, validated);
       state = completeCreationSession(state, agent);
       reply = buildCreationSuccessReply(agent);
-      agentCreated = { id: agent.id, name: agent.name, agentType: agent.agentType };
+      agentCreated = {
+        id: agent.id,
+        name: agent.name,
+        agentType: agent.agentType,
+        model: agent.model,
+      };
     }
 
     // savedAtMs/savedAtSeq disambiguate state rows across turns (see

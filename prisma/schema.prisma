@@ -344,6 +344,10 @@ model CeoAgentConfig {
   userId               String               @unique
   name                 String               @default("CEO Agent")
   personalityPreset    CeoPersonalityPreset @default(DIRECT_EFFICIENT)
+  // User-selected Anthropic tier for CEO chat / digest / narrative profile.
+  model                String               @default("claude-sonnet-4-5")
+  // Default model applied when creating new sub-agents (independent of CEO model).
+  defaultSubAgentModel String               @default("claude-sonnet-4-5")
   avatarKey            String?
   // The encrypted "living profile": long-term shared memory that all agents
   // read and feed. Decrypted JSON shape — categories financialGoals,
