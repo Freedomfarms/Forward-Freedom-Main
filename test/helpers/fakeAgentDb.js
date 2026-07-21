@@ -128,6 +128,9 @@ export function createFakeDb(seed = {}) {
           id: crypto.randomUUID(),
           createdAt: now,
           ...(table === "agentRun" ? { startedAt: now, status: "RUNNING" } : {}),
+          ...(table === "agentConversation"
+            ? { updatedAt: now, isSystem: false, archivedAt: null, title: null }
+            : {}),
           ...args.data,
         };
         rows().push(row);

@@ -72,19 +72,74 @@ export function regenerateCeoDigest(options = {}) {
 }
 
 /** Visible CEO chat history (creation-state bookkeeping rows are omitted). */
-export function fetchCeoChatHistory(options = {}) {
-  return requestJson("/api/agents/ceo/chat", { options });
+export function fetchCeoChatHistory({ conversationId } = {}, options = {}) {
+  const params = new URLSearchParams();
+  if (conversationId) params.set("conversationId", conversationId);
+  const query = params.toString() ? `?${params.toString()}` : "";
+  return requestJson(`/api/agents/ceo/chat${query}`, { options });
 }
 
 /**
- * CEO chat. Pass mode: "create_agent" to start the "+ New Agent" creation
- * flow; while a creation session is active every message continues it. The
- * response contains { reply, messageId } and, on the confirming turn,
- * { agentCreated: { id, name, agentType } }.
+ * CEO chat. Pass mode: "create_agent" on every turn of the "+ New Agent"
+ * flow (pinned to an isSystem conversation). Optional conversationId selects
+ * a regular thread; omitted → newest non-system conversation.
+ * Response: { reply, messageId } and optionally { agentCreated }.
  */
-export function sendCeoChatMessage({ message, relatedRunId = null, mode } = {}, options = {}) {
-  const body = { message, ...(relatedRunId ? { relatedRunId } : {}), ...(mode ? { mode } : {}) };
+export function sendCeoChatMessage(
+  { message, relatedRunId = null, mode, conversationId = null } = {},
+  options = {}
+) {
+  const body = {
+    message,
+    ...(relatedRunId ? { relatedRunId } : {}),
+    ...(mode ? { mode } : {}),
+    ...(conversationId ? { conversationId } : {}),
+  };
   return requestJson("/api/agents/ceo/chat", { method: "POST", body, options });
+}
+
+/** List non-system CEO conversations (newest updatedAt first). */
+export function fetchCeoConversations({ limit, before, includeArchived = false } = {}, options = {}) {
+  const params = new URLSearchParams();
+  if (limit) params.set("limit", String(limit));
+  if (before) params.set("before", before instanceof Date ? before.toISOString() : String(before));
+  if (includeArchived) params.set("includeArchived", "true");
+  const query = params.toString() ? `?${params.toString()}` : "";
+  return requestJson(`/api/agents/ceo/conversations${query}`, { options });
+}
+
+export function createCeoConversation({ title = null } = {}, options = {}) {
+  return requestJson("/api/agents/ceo/conversations", {
+    method: "POST",
+    body: title != null ? { title } : {},
+    options,
+  });
+}
+
+export function updateCeoConversation(conversationId, payload, options = {}) {
+  return requestJson(`/api/agents/ceo/conversations/${encodeURIComponent(conversationId)}`, {
+    method: "PATCH",
+    body: payload,
+    options,
+  });
+}
+
+export function deleteCeoConversation(conversationId, options = {}) {
+  return requestJson(`/api/agents/ceo/conversations/${encodeURIComponent(conversationId)}`, {
+    method: "DELETE",
+    options,
+  });
+}
+
+export function fetchCeoConversationMessages(conversationId, { limit, before } = {}, options = {}) {
+  const params = new URLSearchParams();
+  if (limit) params.set("limit", String(limit));
+  if (before) params.set("before", before instanceof Date ? before.toISOString() : String(before));
+  const query = params.toString() ? `?${params.toString()}` : "";
+  return requestJson(
+    `/api/agents/ceo/conversations/${encodeURIComponent(conversationId)}/messages${query}`,
+    { options }
+  );
 }
 
 /**
@@ -160,17 +215,77 @@ export function emailAgentRun(agentId, runId, options = {}) {
   );
 }
 
-export function fetchAgentChatHistory(agentId, options = {}) {
-  return requestJson(`/api/agents/${encodeURIComponent(agentId)}/chat`, { options });
+export function fetchAgentChatHistory(agentId, { conversationId } = {}, options = {}) {
+  const params = new URLSearchParams();
+  if (conversationId) params.set("conversationId", conversationId);
+  const query = params.toString() ? `?${params.toString()}` : "";
+  return requestJson(`/api/agents/${encodeURIComponent(agentId)}/chat${query}`, { options });
 }
 
-export function sendAgentChatMessage(agentId, { message, relatedRunId = null } = {}, options = {}) {
-  const body = { message, ...(relatedRunId ? { relatedRunId } : {}) };
+export function sendAgentChatMessage(
+  agentId,
+  { message, relatedRunId = null, conversationId = null } = {},
+  options = {}
+) {
+  const body = {
+    message,
+    ...(relatedRunId ? { relatedRunId } : {}),
+    ...(conversationId ? { conversationId } : {}),
+  };
   return requestJson(`/api/agents/${encodeURIComponent(agentId)}/chat`, {
     method: "POST",
     body,
     options,
   });
+}
+
+export function fetchAgentConversations(agentId, { limit, before, includeArchived = false } = {}, options = {}) {
+  const params = new URLSearchParams();
+  if (limit) params.set("limit", String(limit));
+  if (before) params.set("before", before instanceof Date ? before.toISOString() : String(before));
+  if (includeArchived) params.set("includeArchived", "true");
+  const query = params.toString() ? `?${params.toString()}` : "";
+  return requestJson(`/api/agents/${encodeURIComponent(agentId)}/conversations${query}`, {
+    options,
+  });
+}
+
+export function createAgentConversation(agentId, { title = null } = {}, options = {}) {
+  return requestJson(`/api/agents/${encodeURIComponent(agentId)}/conversations`, {
+    method: "POST",
+    body: title != null ? { title } : {},
+    options,
+  });
+}
+
+export function updateAgentConversation(agentId, conversationId, payload, options = {}) {
+  return requestJson(
+    `/api/agents/${encodeURIComponent(agentId)}/conversations/${encodeURIComponent(conversationId)}`,
+    { method: "PATCH", body: payload, options }
+  );
+}
+
+export function deleteAgentConversation(agentId, conversationId, options = {}) {
+  return requestJson(
+    `/api/agents/${encodeURIComponent(agentId)}/conversations/${encodeURIComponent(conversationId)}`,
+    { method: "DELETE", options }
+  );
+}
+
+export function fetchAgentConversationMessages(
+  agentId,
+  conversationId,
+  { limit, before } = {},
+  options = {}
+) {
+  const params = new URLSearchParams();
+  if (limit) params.set("limit", String(limit));
+  if (before) params.set("before", before instanceof Date ? before.toISOString() : String(before));
+  const query = params.toString() ? `?${params.toString()}` : "";
+  return requestJson(
+    `/api/agents/${encodeURIComponent(agentId)}/conversations/${encodeURIComponent(conversationId)}/messages${query}`,
+    { options }
+  );
 }
 
 // ── Notifications ────────────────────────────────────────────────────────────

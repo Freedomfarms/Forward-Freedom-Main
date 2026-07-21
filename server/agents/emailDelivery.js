@@ -3,7 +3,7 @@ import { getFirebaseAdminAuth, isFirebaseAdminConfigured } from "../auth/firebas
 import { withUserContext } from "../db/prisma.js";
 import { decrypt, encrypt } from "../security/envelope.js";
 import { AgentError } from "./errors.js";
-import { ensureDefaultConversation, touchConversation } from "./conversations.js";
+import { resolveConversationForWrite, touchConversation } from "./conversations.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared email delivery for sub-agent reports (finance, research, reminders).
@@ -166,7 +166,13 @@ export function buildRunEmailContent({ agentName, agentType, run, output }) {
  * emails it to the verified account address, and writes both chat rows so
  * the exchange is part of the durable thread. Returns { reply, messageId }.
  */
-export async function emailRunReportFromChat({ userId, agentConfigId, message, relatedRunId = null }) {
+export async function emailRunReportFromChat({
+  userId,
+  agentConfigId,
+  conversationId = null,
+  message,
+  relatedRunId = null,
+}) {
   const context = await withUserContext(userId, async (tx) => {
     const agentConfig = await tx.agentConfig.findFirst({
       where: { id: agentConfigId, userId },
@@ -175,9 +181,11 @@ export async function emailRunReportFromChat({ userId, agentConfigId, message, r
       throw new AgentError("Agent not found.", "AGENT_NOT_FOUND", 404);
     }
 
-    const conversation = await ensureDefaultConversation(tx, {
+    const conversation = await resolveConversationForWrite(tx, {
       userId,
       agentConfigId: agentConfig.id,
+      conversationId,
+      allowSystem: false,
     });
 
     await tx.agentChatMessage.create({
@@ -204,7 +212,7 @@ export async function emailRunReportFromChat({ userId, agentConfigId, message, r
     return { agentConfig, run, conversationId: conversation.id };
   });
 
-  const { agentConfig, run, conversationId } = context;
+  const { agentConfig, run, conversationId: resolvedConversationId } = context;
 
   let reply;
   if (!run) {
@@ -235,14 +243,14 @@ export async function emailRunReportFromChat({ userId, agentConfigId, message, r
     const created = await tx.agentChatMessage.create({
       data: {
         userId,
-        conversationId,
+        conversationId: resolvedConversationId,
         agentConfigId: agentConfig.id,
         role: "AGENT",
         contentCiphertext: encrypt(reply),
         relatedRunId: run?.id || null,
       },
     });
-    await touchConversation(tx, conversationId);
+    await touchConversation(tx, resolvedConversationId);
     return created;
   });
 

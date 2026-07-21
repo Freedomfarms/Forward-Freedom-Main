@@ -83,10 +83,10 @@ export function AgentChat({
   const [isLoadingHistory, setIsLoadingHistory] = useState(loadsHistory);
   const [historyError, setHistoryError] = useState("");
   const [sendError, setSendError] = useState("");
-  // In create mode only the FIRST message carries mode: "create_agent"; the
-  // server keeps routing follow-ups to the active creation session on its own,
-  // and re-sending the flag after completion would start a new session.
-  const hasStartedCreateSessionRef = useRef(false);
+  // While create_agent mode is active, every turn sends mode: "create_agent"
+  // so the server pins the session to the isSystem conversation. Stop after
+  // an agent is created so follow-ups don't start a second creation session.
+  const createSessionActiveRef = useRef(mode === "create_agent");
   const scrollRef = useRef(null);
   const historyLoadedForRef = useRef(null);
 
@@ -100,8 +100,8 @@ export function AgentChat({
     (async () => {
       const loadHistory = async () =>
         mode === "agent"
-          ? fetchAgentChatHistory(agentId, { user })
-          : fetchCeoChatHistory({ user });
+          ? fetchAgentChatHistory(agentId, {}, { user })
+          : fetchCeoChatHistory({}, { user });
 
       try {
         let payload;
@@ -175,15 +175,19 @@ export function AgentChat({
           { user }
         );
       } else {
-        const createFlag =
-          mode === "create_agent" && !hasStartedCreateSessionRef.current
-            ? "create_agent"
-            : undefined;
+        // Every active create_agent turn sends mode so the server keeps the
+        // session on the isSystem conversation and regular CEO chat is never
+        // hijacked by an abandoned creation session.
         payload = await sendCeoChatMessage(
-          { message, relatedRunId: pendingRelatedRunId, mode: createFlag },
+          {
+            message,
+            relatedRunId: pendingRelatedRunId,
+            ...(mode === "create_agent" && createSessionActiveRef.current
+              ? { mode: "create_agent" }
+              : {}),
+          },
           { user }
         );
-        if (mode === "create_agent") hasStartedCreateSessionRef.current = true;
       }
 
       setMessages((current) => [
@@ -198,8 +202,11 @@ export function AgentChat({
       if (pendingRelatedRunId && typeof onClearRelatedRun === "function") {
         onClearRelatedRun();
       }
-      if (payload?.agentCreated && typeof onAgentCreated === "function") {
-        onAgentCreated(payload.agentCreated);
+      if (payload?.agentCreated) {
+        createSessionActiveRef.current = false;
+        if (typeof onAgentCreated === "function") {
+          onAgentCreated(payload.agentCreated);
+        }
       }
     } catch (error) {
       setSendError(describeAgentApiError(error, "The message could not be sent. Try again."));

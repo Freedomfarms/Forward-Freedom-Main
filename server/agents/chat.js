@@ -4,7 +4,7 @@ import { withUserContext } from "../db/prisma.js";
 import { decrypt, decryptJson, encrypt } from "../security/envelope.js";
 import { CEO_AGENT_CONFIG_SAFE_SELECT } from "./apiHelpers.js";
 import { isCreationStateContent } from "./creationFlow.js";
-import { ensureDefaultConversation, touchConversation } from "./conversations.js";
+import { resolveConversationForWrite, touchConversation } from "./conversations.js";
 import { loadDocumentsForPrompt } from "./documents.js";
 import { AgentError } from "./errors.js";
 import { CEO_AGENT_MODEL, generateAgentObject } from "./llm.js";
@@ -24,6 +24,9 @@ import {
 //   • the CEO chat reads run summaries across ALL the user's agents —
 //     cross-agent questions are its job — plus the living profile, which is
 //     how it answers "what do you know about me?".
+//   • Always-include context (profile, docs, run summaries) is shared across
+//     conversations for that agent. Conversation-scoped context is only the
+//     message history for the active conversationId.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const CHAT_HISTORY_LIMIT = 50;
@@ -94,6 +97,7 @@ export async function respondToChat({
   userId,
   agentConfigId = null,
   ceoAgentConfigId = null,
+  conversationId = null,
   message,
   relatedRunId = null,
 }) {
@@ -128,20 +132,20 @@ export async function respondToChat({
       }
     }
 
-    const conversation = await ensureDefaultConversation(tx, {
+    // Explicit conversationId when provided; otherwise newest non-system thread.
+    const conversation = await resolveConversationForWrite(tx, {
       userId,
       agentConfigId: agentConfig?.id ?? null,
       ceoAgentConfigId: ceoConfig?.id ?? null,
+      conversationId,
+      allowSystem: false,
     });
 
-    // History is captured before persisting the new message so the transcript
-    // and the current question stay distinct in the prompt.
+    // Conversation-scoped context only — profile / docs / runs load separately.
     const history = await tx.agentChatMessage.findMany({
       where: {
         userId,
         conversationId: conversation.id,
-        agentConfigId: agentConfig?.id ?? null,
-        ceoAgentConfigId: ceoConfig?.id ?? null,
       },
       orderBy: { createdAt: "desc" },
       take: CHAT_HISTORY_LIMIT,
@@ -209,7 +213,13 @@ export async function respondToChat({
     };
   });
 
-  const { agentConfig, ceoConfig, conversationId, runs, relatedRun } = context;
+  const {
+    agentConfig,
+    ceoConfig,
+    conversationId: resolvedConversationId,
+    runs,
+    relatedRun,
+  } = context;
   const history = [...context.history].reverse();
   let profile;
   try {
@@ -276,7 +286,7 @@ export async function respondToChat({
     const created = await tx.agentChatMessage.create({
       data: {
         userId,
-        conversationId,
+        conversationId: resolvedConversationId,
         agentConfigId: agentConfig?.id ?? null,
         ceoAgentConfigId: ceoConfig?.id ?? null,
         role: "AGENT",
@@ -284,7 +294,7 @@ export async function respondToChat({
         relatedRunId,
       },
     });
-    await touchConversation(tx, conversationId);
+    await touchConversation(tx, resolvedConversationId);
     return created;
   });
 
