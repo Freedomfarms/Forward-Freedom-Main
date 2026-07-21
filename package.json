@@ -35,6 +35,8 @@
     "firebase-admin": "^13.10.0",
     "helmet": "^8.2.0",
     "jose": "^6.2.3",
+    "jszip": "^3.10.1",
+    "mammoth": "^1.12.0",
     "pdfjs-dist": "^6.1.200",
     "pg": "^8.21.0",
     "plaid": "^42.2.0",
@@ -42,7 +44,8 @@
     "react-dom": "latest",
     "react-plaid-link": "^4.1.1",
     "resend": "^6.17.2",
-    "vite": "latest"
+    "vite": "latest",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

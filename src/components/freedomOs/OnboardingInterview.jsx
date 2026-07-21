@@ -5,6 +5,7 @@ import { submitCeoOnboarding } from "../../utils/agentsApi.js";
 import {
   MAX_DOC_SIZE_BYTES,
   MAX_UPLOAD_DOCS,
+  CEO_DOCUMENT_ACCEPT,
   readCeoDocumentFiles,
 } from "../../utils/ceoDocumentFiles.js";
 import { CEO_AVATAR_PRESETS } from "../../data/ceoAvatars.js";
@@ -471,7 +472,7 @@ export function OnboardingInterview({ user, onComplete }) {
         <StepShell
           eyebrow="Step 9 of 9"
           title="Upload documents for your CEO Agent"
-          subtitle={`Optional. .txt, .md, .csv, .json, or .pdf — up to ${MAX_UPLOAD_DOCS} files, ${MAX_DOC_SIZE_BYTES / 1024} KB each (no character limit). Your CEO Agent can read these when you chat.`}
+          subtitle={`Optional. .txt, .md, .csv, .json, .pdf, .docx, .xlsx, or .pptx — up to ${MAX_UPLOAD_DOCS} files, ${MAX_DOC_SIZE_BYTES / 1024} KB each (no character limit). Your CEO Agent can read these when you chat.`}
         >
           <label
             style={{
@@ -486,7 +487,7 @@ export function OnboardingInterview({ user, onComplete }) {
             Choose files
             <input
               type="file"
-              accept=".txt,.md,.markdown,.csv,.json,.pdf,text/plain,text/markdown,text/csv,application/json,application/pdf"
+              accept={CEO_DOCUMENT_ACCEPT}
               multiple
               disabled={documents.length >= MAX_UPLOAD_DOCS}
               style={{ display: "none" }}
