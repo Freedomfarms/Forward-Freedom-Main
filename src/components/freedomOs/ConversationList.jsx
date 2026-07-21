@@ -14,6 +14,8 @@ export function ConversationList({
   isLoading = false,
   isCreating = false,
   error = "",
+  sectionLabel = "Chats",
+  listMaxHeight = 168,
   onSelect,
   onNewChat,
   onArchive,
@@ -28,10 +30,12 @@ export function ConversationList({
         border: "1px solid rgba(0,216,255,.14)",
         background: "rgba(2,14,28,.72)",
         padding: 10,
+        alignContent: "start",
+        minWidth: 0,
       }}
     >
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-        <div style={{ ...fosStyles.sectionLabel, fontSize: 11 }}>Chats</div>
+        <div style={{ ...fosStyles.sectionLabel, fontSize: 11 }}>{sectionLabel}</div>
         <button
           type="button"
           onClick={() => onNewChat?.()}
@@ -53,7 +57,7 @@ export function ConversationList({
         style={{
           display: "grid",
           gap: 4,
-          maxHeight: 168,
+          maxHeight: listMaxHeight,
           overflowY: "auto",
         }}
       >

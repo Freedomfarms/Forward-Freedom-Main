@@ -18,15 +18,22 @@ import {
   updateCeoConversation,
 } from "../../utils/agentsApi.js";
 import { ConversationList } from "./ConversationList.jsx";
+import {
+  filterConversationsInScope,
+  isConversationInScope,
+  isRecoverableConversationError,
+} from "./conversationScope.js";
 import { describeAgentApiError, fosStyles, getAgentTypeMeta } from "./freedomOsShared.js";
 
 // Reusable chat UI for the agent platform (CEO panel, AgentDetail, and the
 // "+ New Agent" flow). CEO and sub-agent modes load durable multi-conversation
-// history; create_agent mode stays ephemeral on the isSystem creation thread.
+// history scoped to exactly one target; create_agent mode stays ephemeral on
+// the isSystem creation thread.
 //
 // mode: "ceo"           → CEO conversations + chat
 //       "create_agent"  → POST /api/agents/ceo/chat (creation session)
 //       "agent"         → sub-agent conversations + chat (requires agentId)
+// layout: "embedded" (default) | "workspace" (ChatGPT-style full pane)
 
 let localMessageId = 0;
 function nextLocalId(prefix) {
@@ -81,8 +88,14 @@ export function AgentChat({
   introMessage = null,
   placeholder = "Type a message...",
   maxHeight = 380,
+  layout = "embedded",
+  listLabel = "Chats",
 }) {
   const loadsHistory = mode === "ceo" || (mode === "agent" && Boolean(agentId));
+  const isWorkspace = layout === "workspace";
+  const userScopeKey = user?.uid || user?.id || "anon";
+  const chatScope = useCallback(() => ({ mode, agentId }), [mode, agentId]);
+
   const [messages, setMessages] = useState(() =>
     introMessage && !loadsHistory
       ? [{ id: "intro", role: "agent", text: introMessage }]
@@ -105,36 +118,56 @@ export function AgentChat({
   const scrollRef = useRef(null);
   const historyLoadedForRef = useRef(null);
   const conversationsLoadedForRef = useRef(null);
+  const recoveringRef = useRef(false);
 
   const listConversations = useCallback(async () => {
     if (mode === "agent") return fetchAgentConversations(agentId, {}, { user });
-    return fetchCeoConversations({}, { user });
+    if (mode === "ceo") return fetchCeoConversations({}, { user });
+    throw new Error("Conversation list is only available for CEO or sub-agent chat.");
   }, [mode, agentId, user]);
 
   const createConversation = useCallback(async () => {
     if (mode === "agent") return createAgentConversation(agentId, {}, { user });
-    return createCeoConversation({}, { user });
+    if (mode === "ceo") return createCeoConversation({}, { user });
+    throw new Error("Conversation create is only available for CEO or sub-agent chat.");
   }, [mode, agentId, user]);
 
   const loadMessagesFor = useCallback(
     async (conversationId) => {
       if (!conversationId) {
         if (mode === "agent") return fetchAgentChatHistory(agentId, {}, { user });
-        return fetchCeoChatHistory({}, { user });
+        if (mode === "ceo") return fetchCeoChatHistory({}, { user });
+        throw new Error("Chat history is only available for CEO or sub-agent chat.");
       }
       if (mode === "agent") {
         return fetchAgentConversationMessages(agentId, conversationId, {}, { user });
       }
-      return fetchCeoConversationMessages(conversationId, {}, { user });
+      if (mode === "ceo") {
+        return fetchCeoConversationMessages(conversationId, {}, { user });
+      }
+      throw new Error("Chat history is only available for CEO or sub-agent chat.");
     },
     [mode, agentId, user]
   );
 
-  // Load conversation list once per agent/CEO scope; ensure at least one thread.
+  const applyConversationRows = useCallback(
+    (rows) => {
+      const scoped = filterConversationsInScope(rows, chatScope());
+      setConversations(scoped);
+      setActiveConversationId((current) => {
+        if (current && scoped.some((row) => row.id === current)) return current;
+        return scoped[0]?.id || null;
+      });
+      return scoped;
+    },
+    [chatScope]
+  );
+
+  // Load conversation list once per user + agent/CEO scope; ensure ≥1 thread.
   useEffect(() => {
     if (!loadsHistory) return undefined;
 
-    const scopeKey = mode === "agent" ? `agent:${agentId}` : "ceo";
+    const scopeKey = `${userScopeKey}:${mode === "agent" ? `agent:${agentId}` : "ceo"}`;
     if (conversationsLoadedForRef.current === scopeKey) return undefined;
     let cancelled = false;
 
@@ -142,24 +175,27 @@ export function AgentChat({
       setIsLoadingConversations(true);
       setListError("");
       try {
+        const scope = chatScope();
         const payload = await listConversations();
-        let rows = Array.isArray(payload?.conversations) ? payload.conversations : [];
+        let rows = filterConversationsInScope(
+          Array.isArray(payload?.conversations) ? payload.conversations : [],
+          scope
+        );
         if (rows.length === 0) {
           const created = await createConversation();
-          if (created?.conversation) {
+          if (created?.conversation && isConversationInScope(created.conversation, scope)) {
             rows = [created.conversation];
           } else {
             const retry = await listConversations();
-            rows = Array.isArray(retry?.conversations) ? retry.conversations : [];
+            rows = filterConversationsInScope(
+              Array.isArray(retry?.conversations) ? retry.conversations : [],
+              scope
+            );
           }
         }
         if (cancelled) return;
         conversationsLoadedForRef.current = scopeKey;
-        setConversations(rows);
-        setActiveConversationId((current) => {
-          if (current && rows.some((row) => row.id === current)) return current;
-          return rows[0]?.id || null;
-        });
+        applyConversationRows(rows);
       } catch (error) {
         if (!cancelled) {
           setListError(describeAgentApiError(error, "Could not load chats."));
@@ -172,14 +208,67 @@ export function AgentChat({
     return () => {
       cancelled = true;
     };
-  }, [loadsHistory, mode, agentId, listConversations, createConversation]);
+  }, [
+    loadsHistory,
+    mode,
+    agentId,
+    userScopeKey,
+    listConversations,
+    createConversation,
+    applyConversationRows,
+    chatScope,
+  ]);
+
+  const recoverFromBadConversation = useCallback(
+    async (badConversationId, error) => {
+      if (recoveringRef.current) return;
+      recoveringRef.current = true;
+      const notice = describeAgentApiError(
+        error,
+        "That chat is not available here. Switching to a valid conversation."
+      );
+      try {
+        const scope = chatScope();
+        historyLoadedForRef.current = null;
+        setConversations((current) => current.filter((row) => row.id !== badConversationId));
+        setActiveConversationId(null);
+        setMessages([]);
+        setSendError("");
+        setHistoryError(notice);
+        setListError("");
+
+        const payload = await listConversations();
+        let rows = filterConversationsInScope(
+          Array.isArray(payload?.conversations) ? payload.conversations : [],
+          scope
+        ).filter((row) => row.id !== badConversationId);
+
+        if (rows.length === 0) {
+          const created = await createConversation();
+          if (created?.conversation && isConversationInScope(created.conversation, scope)) {
+            rows = [created.conversation];
+          }
+        }
+
+        applyConversationRows(rows);
+        if (rows[0]?.id) {
+          setActiveConversationId(rows[0].id);
+        }
+      } catch (recoveryError) {
+        setListError(describeAgentApiError(recoveryError, "Could not recover chat list."));
+      } finally {
+        recoveringRef.current = false;
+      }
+    },
+    [listConversations, createConversation, applyConversationRows, chatScope]
+  );
 
   // Load messages whenever the active conversation changes.
   useEffect(() => {
     if (!loadsHistory) return undefined;
     if (!activeConversationId && isLoadingConversations) return undefined;
 
-    const loadKey = `${mode === "agent" ? `agent:${agentId}` : "ceo"}:${activeConversationId || "default"}`;
+    const loadKey = `${userScopeKey}:${mode === "agent" ? `agent:${agentId}` : "ceo"}:${activeConversationId || "default"}`;
     if (historyLoadedForRef.current === loadKey) return undefined;
     let cancelled = false;
 
@@ -193,6 +282,12 @@ export function AgentChat({
         try {
           payload = await loadHistory();
         } catch (firstError) {
+          if (activeConversationId && isRecoverableConversationError(firstError)) {
+            if (!cancelled) {
+              await recoverFromBadConversation(activeConversationId, firstError);
+            }
+            return;
+          }
           const isHttpError = firstError instanceof ApiRequestError;
           const transient =
             !isHttpError &&
@@ -218,11 +313,15 @@ export function AgentChat({
         });
       } catch (error) {
         if (!cancelled) {
-          setHistoryError(describeAgentApiError(error, "Could not load earlier messages."));
-          if (introMessage) {
-            setMessages((current) =>
-              current.length ? current : [{ id: "intro", role: "agent", text: introMessage }]
-            );
+          if (activeConversationId && isRecoverableConversationError(error)) {
+            await recoverFromBadConversation(activeConversationId, error);
+          } else {
+            setHistoryError(describeAgentApiError(error, "Could not load earlier messages."));
+            if (introMessage) {
+              setMessages((current) =>
+                current.length ? current : [{ id: "intro", role: "agent", text: introMessage }]
+              );
+            }
           }
         }
       } finally {
@@ -237,10 +336,12 @@ export function AgentChat({
     loadsHistory,
     mode,
     agentId,
+    userScopeKey,
     activeConversationId,
     isLoadingConversations,
     introMessage,
     loadMessagesFor,
+    recoverFromBadConversation,
   ]);
 
   useEffect(() => {
@@ -251,7 +352,10 @@ export function AgentChat({
   const refreshConversationList = async () => {
     try {
       const payload = await listConversations();
-      const rows = Array.isArray(payload?.conversations) ? payload.conversations : [];
+      const rows = filterConversationsInScope(
+        Array.isArray(payload?.conversations) ? payload.conversations : [],
+        chatScope()
+      );
       setConversations(rows);
       return rows;
     } catch (error) {
@@ -267,7 +371,9 @@ export function AgentChat({
     try {
       const payload = await createConversation();
       const created = payload?.conversation;
-      if (!created?.id) throw new Error("Conversation was not created.");
+      if (!created?.id || !isConversationInScope(created, chatScope())) {
+        throw new Error("Conversation was not created for this agent.");
+      }
       historyLoadedForRef.current = null;
       setConversations((current) => [created, ...current.filter((row) => row.id !== created.id)]);
       setActiveConversationId(created.id);
@@ -283,6 +389,7 @@ export function AgentChat({
 
   const handleSelectConversation = (conversationId) => {
     if (!conversationId || conversationId === activeConversationId) return;
+    if (!conversations.some((row) => row.id === conversationId)) return;
     historyLoadedForRef.current = null;
     setActiveConversationId(conversationId);
     setMessages([]);
@@ -294,8 +401,10 @@ export function AgentChat({
     try {
       if (mode === "agent") {
         await updateAgentConversation(agentId, conversationId, { archived: true }, { user });
-      } else {
+      } else if (mode === "ceo") {
         await updateCeoConversation(conversationId, { archived: true }, { user });
+      } else {
+        return;
       }
       const rows = await refreshConversationList();
       if (conversationId === activeConversationId) {
@@ -309,7 +418,11 @@ export function AgentChat({
         }
       }
     } catch (error) {
-      setListError(describeAgentApiError(error, "Could not archive that chat."));
+      if (isRecoverableConversationError(error)) {
+        await recoverFromBadConversation(conversationId, error);
+      } else {
+        setListError(describeAgentApiError(error, "Could not archive that chat."));
+      }
     }
   };
 
@@ -323,8 +436,10 @@ export function AgentChat({
     try {
       if (mode === "agent") {
         await deleteAgentConversation(agentId, conversationId, { user });
-      } else {
+      } else if (mode === "ceo") {
         await deleteCeoConversation(conversationId, { user });
+      } else {
+        return;
       }
       const rows = (await refreshConversationList()).filter((row) => row.id !== conversationId);
       setConversations(rows);
@@ -339,17 +454,21 @@ export function AgentChat({
         }
       }
     } catch (error) {
-      setListError(describeAgentApiError(error, "Could not delete that chat."));
+      if (isRecoverableConversationError(error)) {
+        await recoverFromBadConversation(conversationId, error);
+      } else {
+        setListError(describeAgentApiError(error, "Could not delete that chat."));
+      }
     }
   };
 
   const sendMessage = async (rawValue) => {
     const message = String(rawValue || "").trim();
     if (!message || isSending) return;
+    if (loadsHistory && (isLoadingConversations || !activeConversationId)) return;
 
     const pendingRelatedRunId = relatedRunId || null;
-    const conversationIdForSend =
-      mode === "create_agent" ? null : activeConversationId;
+    const conversationIdForSend = mode === "create_agent" ? null : activeConversationId;
     setDraft("");
     setSendError("");
     setIsSending(true);
@@ -359,7 +478,7 @@ export function AgentChat({
         id: nextLocalId("user"),
         role: "user",
         text: message,
-        _pendingFor: `${mode === "agent" ? `agent:${agentId}` : "ceo"}:${activeConversationId || "default"}`,
+        _pendingFor: `${userScopeKey}:${mode === "agent" ? `agent:${agentId}` : "ceo"}:${activeConversationId || "default"}`,
       },
     ]);
 
@@ -387,7 +506,7 @@ export function AgentChat({
           },
           { user }
         );
-      } else {
+      } else if (mode === "ceo" || mode === "create_agent") {
         payload = await sendCeoChatMessage(
           {
             message,
@@ -399,6 +518,8 @@ export function AgentChat({
           },
           { user }
         );
+      } else {
+        throw new Error("Unsupported chat mode.");
       }
 
       if (payload?.conversationId && mode !== "create_agent") {
@@ -420,16 +541,33 @@ export function AgentChat({
               )
               .sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));
           }
-          return [
-            {
-              id: payload.conversationId,
-              title,
-              updatedAt,
-              isSystem: false,
-              archivedAt: null,
-            },
-            ...current,
-          ];
+          // Synthesize a scoped stub from the current mode (server just wrote
+          // it there). Placeholder ceoAgentConfigId is truthy for client
+          // scope checks until the list refresh returns the real uuid.
+          const stub =
+            mode === "agent"
+              ? {
+                  id: payload.conversationId,
+                  title,
+                  updatedAt,
+                  isSystem: false,
+                  archivedAt: null,
+                  agentConfigId: agentId,
+                  ceoAgentConfigId: null,
+                }
+              : {
+                  id: payload.conversationId,
+                  title,
+                  updatedAt,
+                  isSystem: false,
+                  archivedAt: null,
+                  agentConfigId: null,
+                  ceoAgentConfigId: "ceo",
+                };
+          if (!isConversationInScope(stub, { mode, agentId })) {
+            return current;
+          }
+          return [stub, ...current];
         });
       }
 
@@ -458,22 +596,29 @@ export function AgentChat({
         }, 2500);
       }
     } catch (error) {
-      setSendError(describeAgentApiError(error, "The message could not be sent. Try again."));
+      if (conversationIdForSend && isRecoverableConversationError(error)) {
+        await recoverFromBadConversation(conversationIdForSend, error);
+      } else {
+        setSendError(describeAgentApiError(error, "The message could not be sent. Try again."));
+      }
     } finally {
       setIsSending(false);
     }
   };
 
   const showEmpty = messages.length === 0 && !isSending && !isLoadingHistory;
+  const composerDisabled =
+    isSending || (loadsHistory && (isLoadingConversations || !activeConversationId));
+  const chatMaxHeight = isWorkspace ? "min(62vh, 640px)" : maxHeight;
 
   const chatBody = (
-    <div style={{ display: "grid", gap: 10 }}>
+    <div style={{ display: "grid", gap: 10, minWidth: 0, ...(isWorkspace ? { minHeight: 0 } : {}) }}>
       <div
         ref={scrollRef}
         style={{
           overflowY: "auto",
-          maxHeight,
-          minHeight: 120,
+          maxHeight: chatMaxHeight,
+          minHeight: isWorkspace ? 280 : 120,
           display: "grid",
           gap: 10,
           alignContent: "start",
@@ -608,8 +753,8 @@ export function AgentChat({
             }
           }}
           placeholder={placeholder}
-          rows={2}
-          disabled={isSending}
+          rows={isWorkspace ? 3 : 2}
+          disabled={composerDisabled}
           style={{
             width: "100%",
             resize: "vertical",
@@ -622,17 +767,17 @@ export function AgentChat({
             fontFamily: styles.page.fontFamily,
             fontSize: 13,
             boxSizing: "border-box",
-            opacity: isSending ? 0.7 : 1,
+            opacity: composerDisabled ? 0.7 : 1,
           }}
         />
         <div style={{ display: "flex", justifyContent: "flex-end" }}>
           <button
             type="submit"
-            disabled={isSending || !draft.trim()}
+            disabled={composerDisabled || !draft.trim()}
             style={{
               ...fosStyles.primaryButton,
-              opacity: isSending || !draft.trim() ? 0.55 : 1,
-              cursor: isSending || !draft.trim() ? "default" : "pointer",
+              opacity: composerDisabled || !draft.trim() ? 0.55 : 1,
+              cursor: composerDisabled || !draft.trim() ? "default" : "pointer",
             }}
           >
             {isSending ? "Sending…" : "Send"}
@@ -650,8 +795,20 @@ export function AgentChat({
     <div
       style={{
         display: "grid",
-        gap: 12,
-        gridTemplateColumns: "minmax(160px, 220px) minmax(0, 1fr)",
+        gap: isWorkspace ? 14 : 12,
+        gridTemplateColumns: isWorkspace
+          ? "minmax(200px, 260px) minmax(0, 1fr)"
+          : "minmax(160px, 220px) minmax(0, 1fr)",
+        alignItems: "stretch",
+        ...(isWorkspace
+          ? {
+              borderRadius: 16,
+              border: "1px solid rgba(0,216,255,.14)",
+              background: "rgba(2,14,28,.55)",
+              padding: 12,
+              minHeight: 420,
+            }
+          : {}),
       }}
       className="fos-chat-with-conversations"
     >
@@ -661,6 +818,8 @@ export function AgentChat({
         isLoading={isLoadingConversations}
         isCreating={isCreatingConversation}
         error={listError}
+        sectionLabel={listLabel}
+        listMaxHeight={isWorkspace ? 520 : 168}
         onSelect={handleSelectConversation}
         onNewChat={() => void handleNewChat()}
         onArchive={(id) => void handleArchiveConversation(id)}

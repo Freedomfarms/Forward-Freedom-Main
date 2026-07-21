@@ -300,6 +300,27 @@ export function AgentDetail({ agent, user, onBack, onAgentUpdated, onOpenFinance
       {statusError ? <div style={fosStyles.errorBox}>{statusError}</div> : null}
       {runNowError ? <div style={fosStyles.errorBox}>{runNowError}</div> : null}
 
+      {/* Sub-agent chat is scoped to this agent only — never mixed with CEO chats. */}
+      <div style={{ display: "grid", gap: 10 }}>
+        <div>
+          <div style={fosStyles.sectionLabel}>Chat with {agent.name}</div>
+          <div style={{ color: "#8faecc", fontSize: 12, marginTop: 4, lineHeight: 1.5 }}>
+            These conversations stay with this agent. Talk to your CEO Agent from the Freedom OS
+            home for cross-agent questions.
+          </div>
+        </div>
+        <AgentChat
+          mode="agent"
+          agentId={agent.id}
+          agentName={agent.name}
+          user={user}
+          relatedRunId={chatRelatedRunId}
+          onClearRelatedRun={() => setChatRelatedRunId(null)}
+          listLabel={`${agent.name} chats`}
+          placeholder={`Ask ${agent.name} about its work…`}
+        />
+      </div>
+
       <div style={{ display: "grid", gap: 10 }}>
         <div style={fosStyles.sectionLabel}>Definition of done</div>
         <textarea
@@ -396,19 +417,6 @@ export function AgentDetail({ agent, user, onBack, onAgentUpdated, onOpenFinance
             </button>
           </div>
         ) : null}
-      </div>
-
-      <div style={{ display: "grid", gap: 12 }}>
-        <div style={fosStyles.sectionLabel}>Chat with this agent</div>
-        <AgentChat
-          mode="agent"
-          agentId={agent.id}
-          agentName={agent.name}
-          user={user}
-          relatedRunId={chatRelatedRunId}
-          onClearRelatedRun={() => setChatRelatedRunId(null)}
-          placeholder={`Ask ${agent.name} about its work…`}
-        />
       </div>
 
       <div

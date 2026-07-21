@@ -45,6 +45,13 @@ export default async function handler(request, response) {
     if (!agentId) {
       throw new AgentError("An agent id is required.", "INVALID_AGENT_PAYLOAD", 400);
     }
+    if (agentId === "ceo") {
+      throw new AgentError(
+        "Use /api/agents/ceo/chat for CEO Agent chats.",
+        "INVALID_CHAT_TARGET",
+        400
+      );
+    }
 
     if (request.method === "GET") {
       const messages = await listChatHistory({

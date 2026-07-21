@@ -97,6 +97,16 @@ export function describeAgentApiError(error, fallback = "Something went wrong. T
         ? `You've hit the usage limit for now. Try again in about ${waitSeconds} seconds.`
         : "You've hit the usage limit for now. Give it a moment and try again.";
     }
+    const code = error.payload?.code;
+    if (code === "CONVERSATION_TARGET_MISMATCH") {
+      return "That chat belongs to a different agent. Switched you back to this agent's conversations.";
+    }
+    if (code === "CONVERSATION_NOT_FOUND") {
+      return "That chat could not be found. Starting a fresh conversation.";
+    }
+    if (code === "CONVERSATION_ARCHIVED") {
+      return "That chat is archived. Pick another conversation or start a new one.";
+    }
     if (error.message) return error.message;
   }
   const raw = typeof error?.message === "string" ? error.message.trim() : "";
