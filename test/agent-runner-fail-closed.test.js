@@ -263,3 +263,30 @@ test("reminders run succeeds without any LLM call and degrades cleanly without k
   assert.equal(notifications[0].channel, "IN_APP");
   assert.equal(notifications[0].userId, USER_ID);
 });
+
+test("finance run with email delivery enabled degrades cleanly and never fails the run", async (t) => {
+  if (!requireSetup(t)) return;
+  const previousResendKey = process.env.RESEND_API_KEY;
+  delete process.env.RESEND_API_KEY;
+  t.after(() => {
+    if (previousResendKey == null) delete process.env.RESEND_API_KEY;
+    else process.env.RESEND_API_KEY = previousResendKey;
+  });
+
+  seedDb({ agentConfig: agentConfigRow({ toolAccess: { email: true } }) });
+
+  const run = await runAgent({ userId: USER_ID, agentConfigId: "agent-1" });
+  assert.equal(run.status, "SUCCEEDED");
+  // Report produced normally; email skipped with an explanation in the summary.
+  assert.match(run.summary, /Mock 1-2 sentence summary/);
+  assert.match(run.summary, /email skipped/);
+});
+
+test("finance run without email tool never touches email delivery", async (t) => {
+  if (!requireSetup(t)) return;
+  seedDb({ agentConfig: agentConfigRow({ toolAccess: null }) });
+
+  const run = await runAgent({ userId: USER_ID, agentConfigId: "agent-1" });
+  assert.equal(run.status, "SUCCEEDED");
+  assert.doesNotMatch(run.summary, /email/i);
+});

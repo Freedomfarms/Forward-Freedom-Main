@@ -90,7 +90,10 @@ app.route("/api/agents").get(agentsHandler).post(agentsHandler);
 app.route("/api/agents/:id").patch(agentByIdHandler).delete(agentByIdHandler);
 app.post("/api/agents/:id/run", agentRunHandler);
 app.get("/api/agents/:id/runs", agentRunsHandler);
-app.get("/api/agents/:id/runs/:runId", agentRunByIdHandler);
+app
+  .route("/api/agents/:id/runs/:runId")
+  .get(agentRunByIdHandler)
+  .post(agentRunByIdHandler);
 app.route("/api/agents/:id/chat").get(agentChatHandler).post(agentChatHandler);
 app.get("/api/notifications", notificationsHandler);
 app.patch("/api/notifications/:id", notificationByIdHandler);

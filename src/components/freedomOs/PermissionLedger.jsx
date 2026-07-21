@@ -19,7 +19,7 @@ const WILL_NEVER_DO_BY_TYPE = {
 };
 
 const TOOL_ACCESS_LABELS = {
-  email: "Email delivery — reminders may also be emailed to your own account address",
+  email: "Email delivery — run reports may also be emailed to your own verified account address",
 };
 
 export function PermissionLedger({ agentType, toolAccess = null, permissionLevel = "READ_ONLY" }) {

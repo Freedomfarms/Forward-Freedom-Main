@@ -47,9 +47,44 @@ function userScopedModels(schema) {
 
 const expectedTables = Object.keys(expectedPolicyColumns).sort();
 
+// User-scoped models added AFTER the remediation migration shipped. Each one
+// must enable+force RLS in its own migration instead (asserted below).
+const laterRlsModels = {
+  CeoDocument: "20260720220000_ceo_documents_and_onboarding_summary",
+};
+
 test("remediation inventory is exactly every user-scoped model", () => {
   assert.equal(expectedTables.length, 17);
-  assert.deepEqual(expectedTables, userScopedModels(prismaSchema));
+  assert.deepEqual(
+    [...expectedTables, ...Object.keys(laterRlsModels)].sort(),
+    userScopedModels(prismaSchema)
+  );
+});
+
+test("models added after the remediation enable and force RLS in their own migration", () => {
+  for (const [model, migration] of Object.entries(laterRlsModels)) {
+    const sql = withoutComments(
+      readFileSync(
+        new URL(`../prisma/migrations/${migration}/migration.sql`, import.meta.url),
+        "utf8"
+      )
+    );
+    assert.match(
+      sql,
+      new RegExp(`ALTER TABLE "${model}" ENABLE ROW LEVEL SECURITY;`),
+      `${model} must enable RLS in ${migration}`
+    );
+    assert.match(
+      sql,
+      new RegExp(`ALTER TABLE "${model}" FORCE ROW LEVEL SECURITY;`),
+      `${model} must force RLS in ${migration}`
+    );
+    assert.match(
+      sql,
+      new RegExp(`CREATE POLICY "user_isolation" ON "${model}"`),
+      `${model} must create the user_isolation policy in ${migration}`
+    );
+  }
 });
 
 test("remediation atomically enables and forces RLS on every target table", () => {

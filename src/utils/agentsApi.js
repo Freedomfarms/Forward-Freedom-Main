@@ -149,6 +149,17 @@ export function fetchAgentRun(agentId, runId, options = {}) {
   );
 }
 
+/**
+ * Emails one run's report to the user's own VERIFIED account address.
+ * The server rejects unverified accounts; no other recipient is possible.
+ */
+export function emailAgentRun(agentId, runId, options = {}) {
+  return requestJson(
+    `/api/agents/${encodeURIComponent(agentId)}/runs/${encodeURIComponent(runId)}`,
+    { method: "POST", body: {}, options }
+  );
+}
+
 export function fetchAgentChatHistory(agentId, options = {}) {
   return requestJson(`/api/agents/${encodeURIComponent(agentId)}/chat`, { options });
 }
