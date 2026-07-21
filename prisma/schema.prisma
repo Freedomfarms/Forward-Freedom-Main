@@ -361,6 +361,11 @@ model CeoAgentConfig {
   // Encrypted narrative summary produced after onboarding (and refreshable).
   onboardingSummaryCiphertext String?
   onboardingSummaryAt  DateTime?
+  // Long-form newsletter-style profile (encrypted), generated on demand from
+  // living profile facts + CEO chat history + created agents. Separate from
+  // the short onboarding summary shown above Reference documents.
+  narrativeProfileCiphertext String?
+  narrativeProfileAt   DateTime?
   onboardingCompletedAt DateTime?
   createdAt            DateTime             @default(now())
   updatedAt            DateTime             @updatedAt

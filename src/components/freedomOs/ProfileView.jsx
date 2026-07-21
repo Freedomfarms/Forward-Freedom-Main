@@ -3,6 +3,7 @@ import { styles } from "../../styles.js";
 import {
   deleteCeoDocument,
   fetchCeoProfile,
+  generateCeoNarrativeProfile,
   updateCeoProfile,
   uploadCeoDocuments,
 } from "../../utils/agentsApi.js";
@@ -141,11 +142,13 @@ function ProfileEntry({ entry, category, user, onChanged, onError }) {
 export function ProfileView({ user, onBack }) {
   const [profile, setProfile] = useState(null);
   const [onboardingSummary, setOnboardingSummary] = useState(null);
+  const [narrativeProfile, setNarrativeProfile] = useState(null);
   const [documents, setDocuments] = useState([]);
   const [loadError, setLoadError] = useState("");
   const [actionError, setActionError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
+  const [isGeneratingNarrative, setIsGeneratingNarrative] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
 
   useEffect(() => {
@@ -157,6 +160,7 @@ export function ProfileView({ user, onBack }) {
         if (cancelled) return;
         setProfile(payload?.profile || null);
         setOnboardingSummary(payload?.onboardingSummary || null);
+        setNarrativeProfile(payload?.narrativeProfile || null);
         setDocuments(Array.isArray(payload?.documents) ? payload.documents : []);
         setLoadError("");
       } catch (error) {
@@ -177,7 +181,25 @@ export function ProfileView({ user, onBack }) {
     if (!payload) return;
     if (payload.profile) setProfile(payload.profile);
     if (payload.onboardingSummary) setOnboardingSummary(payload.onboardingSummary);
+    if (payload.narrativeProfile) setNarrativeProfile(payload.narrativeProfile);
     if (Array.isArray(payload.documents)) setDocuments(payload.documents);
+  };
+
+  const handleGenerateNarrative = async () => {
+    setActionError("");
+    setIsGeneratingNarrative(true);
+    try {
+      const payload = await generateCeoNarrativeProfile({ user });
+      if (payload?.narrativeProfile) {
+        setNarrativeProfile(payload.narrativeProfile);
+      }
+    } catch (error) {
+      setActionError(
+        describeAgentApiError(error, "Your CEO Agent could not write the profile right now.")
+      );
+    } finally {
+      setIsGeneratingNarrative(false);
+    }
   };
 
   const handleUpload = async (fileList) => {
@@ -217,6 +239,8 @@ export function ProfileView({ user, onBack }) {
   const categories = profile?.categories || {};
   const hasEntries = Object.values(categories).some((entries) => entries?.length);
   const summaryText = onboardingSummary?.summary;
+  const narrativeText = narrativeProfile?.profile;
+  const narrativeGeneratedAt = narrativeProfile?.generatedAt;
 
   return (
     <div style={{ ...styles.panel, padding: 24, display: "grid", gap: 20 }}>
@@ -281,6 +305,65 @@ export function ProfileView({ user, onBack }) {
           >
             {summaryText}
           </div>
+        </div>
+      ) : null}
+
+      {!isLoading && !loadError ? (
+        <div style={{ display: "grid", gap: 10 }}>
+          <div style={fosStyles.sectionLabel}>Your profile</div>
+          <p style={{ margin: 0, color: "#9fb0c9", fontSize: 12, lineHeight: 1.55 }}>
+            A longer newsletter-style write-up from your CEO Agent, built from what it knows about
+            you, your chats, and the agents you&apos;ve created.
+          </p>
+          {narrativeText ? (
+            <>
+              <div
+                style={{
+                  borderRadius: 12,
+                  border: "1px solid rgba(0,216,255,.22)",
+                  background: "rgba(3,17,32,.72)",
+                  padding: "14px 16px",
+                  color: "#d7ebff",
+                  fontSize: 13,
+                  lineHeight: 1.75,
+                  whiteSpace: "pre-wrap",
+                }}
+              >
+                {narrativeText}
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  style={{
+                    ...fosStyles.secondaryButton,
+                    opacity: isGeneratingNarrative ? 0.6 : 1,
+                  }}
+                  disabled={isGeneratingNarrative}
+                  onClick={() => void handleGenerateNarrative()}
+                >
+                  {isGeneratingNarrative ? "Refreshing…" : "Refresh Profile"}
+                </button>
+                {narrativeGeneratedAt ? (
+                  <span style={{ color: "#5f7896", fontSize: 11 }}>
+                    Updated {formatRelativeTime(narrativeGeneratedAt)}
+                  </span>
+                ) : null}
+              </div>
+            </>
+          ) : (
+            <button
+              type="button"
+              style={{
+                ...fosStyles.primaryButton,
+                width: "fit-content",
+                opacity: isGeneratingNarrative ? 0.6 : 1,
+              }}
+              disabled={isGeneratingNarrative}
+              onClick={() => void handleGenerateNarrative()}
+            >
+              {isGeneratingNarrative ? "Writing your profile…" : "Read your Profile"}
+            </button>
+          )}
         </div>
       ) : null}
 

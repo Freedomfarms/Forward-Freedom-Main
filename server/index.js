@@ -22,6 +22,7 @@ import agentConversationByIdHandler from "../api/agents/[id]/conversations/[conv
 import agentConversationMessagesHandler from "../api/agents/[id]/conversations/[conversationId]/messages.js";
 import ceoAgentHandler from "../api/agents/ceo.js";
 import ceoProfileHandler from "../api/agents/ceo/profile.js";
+import ceoNarrativeProfileHandler from "../api/agents/ceo/profile/narrative.js";
 import ceoDigestHandler from "../api/agents/ceo/digest.js";
 import ceoChatHandler from "../api/agents/ceo/chat.js";
 import ceoConversationsHandler from "../api/agents/ceo/conversations.js";
@@ -84,6 +85,10 @@ app.delete("/api/plaid/user", plaidUserHandler);
 // captured as an :id (Vercel resolves the same precedence automatically).
 app.route("/api/agents/ceo").get(ceoAgentHandler).put(ceoAgentHandler);
 app.route("/api/agents/ceo/profile").get(ceoProfileHandler).patch(ceoProfileHandler);
+app
+  .route("/api/agents/ceo/profile/narrative")
+  .get(ceoNarrativeProfileHandler)
+  .post(ceoNarrativeProfileHandler);
 app.route("/api/agents/ceo/digest").get(ceoDigestHandler).post(ceoDigestHandler);
 app.route("/api/agents/ceo/chat").get(ceoChatHandler).post(ceoChatHandler);
 app

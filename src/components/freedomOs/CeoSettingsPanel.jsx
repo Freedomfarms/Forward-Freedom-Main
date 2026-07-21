@@ -177,7 +177,7 @@ export function CeoSettingsPanel({ ceoAgent, user, onBack, onSaved, onOpenProfil
         ) : null}
         <span style={{ flex: 1 }} />
         <button type="button" style={fosStyles.secondaryButton} onClick={onOpenProfile}>
-          What it knows about you →
+          Profile →
         </button>
       </div>
     </div>

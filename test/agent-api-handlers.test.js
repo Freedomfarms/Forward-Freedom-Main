@@ -22,6 +22,7 @@ let runnerCalls;
 let runnerResult;
 let chatCalls;
 let digestCalls;
+let narrativeProfileCalls;
 
 class FakeAuthError extends Error {
   constructor(message, status = 401) {
@@ -132,6 +133,44 @@ before(async () => {
       },
     });
 
+    mock.module("../server/agents/narrativeProfile.js", {
+      namedExports: {
+        generateNarrativeProfile: async (userId) => {
+          narrativeProfileCalls.push(userId);
+          return {
+            profile: "Generated long-form newsletter profile about the user.",
+            generatedAt: new Date("2026-07-21T12:00:00Z"),
+            insufficient: false,
+            persisted: true,
+            model: "mock-model",
+            usage: null,
+            wordCount: 8,
+          };
+        },
+        readNarrativeProfile: async (userId) => {
+          const row = currentDb.tables.ceoAgentConfig.find((item) => item.userId === userId);
+          if (!row?.narrativeProfileCiphertext) {
+            return { profile: null, generatedAt: null, insufficient: false };
+          }
+          return {
+            profile: envelope.decrypt(row.narrativeProfileCiphertext),
+            generatedAt: row.narrativeProfileAt ?? null,
+            insufficient: false,
+          };
+        },
+        saveNarrativeProfile: async () => ({
+          profile: "",
+          generatedAt: new Date(),
+          insufficient: false,
+          persisted: true,
+        }),
+        hasAnyNarrativeSourceMaterial: () => false,
+        isMissingNarrativeProfileColumnError: () => false,
+        INSUFFICIENT_PROFILE_MESSAGE:
+          "I don't have enough information yet to build your profile — chat with me a bit more or create an agent, and I'll be able to write one.",
+      },
+    });
+
     // Force template onboarding summaries in handler tests (no live LLM).
     mock.module("../server/agents/llm.js", {
       namedExports: {
@@ -158,6 +197,7 @@ before(async () => {
       agentChat: (await import("../api/agents/[id]/chat.js")).default,
       ceo: (await import("../api/agents/ceo.js")).default,
       ceoProfile: (await import("../api/agents/ceo/profile.js")).default,
+      ceoNarrativeProfile: (await import("../api/agents/ceo/profile/narrative.js")).default,
       ceoDigest: (await import("../api/agents/ceo/digest.js")).default,
       ceoChat: (await import("../api/agents/ceo/chat.js")).default,
       ceoConversations: (await import("../api/agents/ceo/conversations.js")).default,
@@ -189,6 +229,7 @@ beforeEach(() => {
   runnerCalls = [];
   chatCalls = [];
   digestCalls = [];
+  narrativeProfileCalls = [];
   runnerResult = {
     id: "run-1",
     agentConfigId: "agent-1",
@@ -1186,6 +1227,39 @@ test("GET /api/agents/ceo/digest serves the fresh cache and regenerates when sta
   const posted = await invoke(handlers.ceoDigest, authedRequest("u1", { method: "POST" }));
   assert.equal(posted.body.refreshed, true);
   assert.equal(digestCalls.length, 3);
+});
+
+test("GET/POST /api/agents/ceo/profile/narrative serve cache and regenerate", async (t) => {
+  if (!requireSetup(t)) return;
+  currentDb.tables.ceoAgentConfig.push({
+    id: "ceo-1",
+    userId: "u1",
+    name: "CEO Agent",
+    personalityPreset: "DIRECT_EFFICIENT",
+    narrativeProfileCiphertext: envelope.encrypt("Cached newsletter profile."),
+    narrativeProfileAt: new Date("2026-07-21T10:00:00Z"),
+  });
+
+  const cached = await invoke(
+    handlers.ceoNarrativeProfile,
+    authedRequest("u1", { method: "GET" })
+  );
+  assert.equal(cached.statusCode, 200);
+  assert.equal(cached.body.narrativeProfile.profile, "Cached newsletter profile.");
+  assert.equal(narrativeProfileCalls.length, 0);
+
+  const profileGet = await invoke(handlers.ceoProfile, authedRequest("u1", { method: "GET" }));
+  assert.equal(profileGet.statusCode, 200);
+  assert.equal(profileGet.body.narrativeProfile.profile, "Cached newsletter profile.");
+
+  const refreshed = await invoke(
+    handlers.ceoNarrativeProfile,
+    authedRequest("u1", { method: "POST" })
+  );
+  assert.equal(refreshed.statusCode, 200);
+  assert.equal(refreshed.body.refreshed, true);
+  assert.match(String(refreshed.body.narrativeProfile.profile || ""), /newsletter profile/i);
+  assert.equal(narrativeProfileCalls.length, 1);
 });
 
 // ── Onboarding ───────────────────────────────────────────────────────────────
