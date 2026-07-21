@@ -3,7 +3,7 @@ import { withUserContext } from "../db/prisma.js";
 import { enforceRateLimit, generalApiRateLimit } from "../http/rateLimit.js";
 import { readJsonBody, readPathParam } from "../http/requestHelpers.js";
 import { applySecurityHeaders } from "../http/responseHelpers.js";
-import { respondAgentApiError } from "./apiHelpers.js";
+import { ensureCeoAgentConfig, respondAgentApiError } from "./apiHelpers.js";
 import { AgentError } from "./errors.js";
 import {
   assertConversationMatchesTarget,
@@ -20,6 +20,31 @@ import {
  *
  * resolveTarget(request, userId) → { agentConfigId?, ceoAgentConfigId? }
  */
+
+/** Resolve the CEO conversation target (used by /api/agents/ceo/conversations*). */
+export async function resolveCeoConversationTarget(_request, userId) {
+  const ceo = await withUserContext(userId, (tx) => ensureCeoAgentConfig(tx, userId));
+  return { ceoAgentConfigId: ceo.id, agentConfigId: null };
+}
+
+/**
+ * Resolve a sub-agent conversation target from :id.
+ *
+ * Vercel filesystem routing can bind /api/agents/ceo/conversations/* onto the
+ * dynamic /api/agents/:id/conversations/* handlers (id="ceo"). When that
+ * happens, handle the request as CEO instead of rejecting — the client already
+ * called the CEO URL; failing here surfaces as a permanent chat/delete error.
+ */
+export async function resolveAgentConversationTarget(request, userId) {
+  const agentId = readPathParam(request, "id");
+  if (!agentId) {
+    throw new AgentError("An agent id is required.", "INVALID_AGENT_PAYLOAD", 400);
+  }
+  if (agentId === "ceo") {
+    return resolveCeoConversationTarget(request, userId);
+  }
+  return { agentConfigId: agentId, ceoAgentConfigId: null };
+}
 
 export async function handleConversationCollection(request, response, { resolveTarget, logLabel }) {
   applySecurityHeaders(response);

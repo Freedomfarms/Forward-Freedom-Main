@@ -1061,15 +1061,45 @@ test("sub-agent conversations are scoped to that agent", async (t) => {
   assert.match(String(cross.body?.message || cross.body?.error || ""), /does not belong/i);
 });
 
-test("agent conversation routes reject id=ceo so CEO chats stay on /ceo/*", async (t) => {
+test("agent conversation routes with id=ceo act as CEO (Vercel misroute compat)", async (t) => {
   if (!requireSetup(t)) return;
+  // Nested /api/agents/ceo/conversations/* can land on the dynamic :id handlers
+  // in production. Those must serve CEO chats, not reject with INVALID_CHAT_TARGET.
   const listed = await invoke(
     handlers.agentConversations,
     authedRequest("u1", { method: "GET", params: { id: "ceo" } })
   );
-  assert.equal(listed.statusCode, 400);
-  assert.match(String(listed.body?.message || ""), /ceo\/conversations/i);
+  assert.equal(listed.statusCode, 200);
+  assert.ok(Array.isArray(listed.body?.conversations));
 
+  const created = await invoke(
+    handlers.agentConversations,
+    authedRequest("u1", { method: "POST", params: { id: "ceo" }, body: { title: "Via :id" } })
+  );
+  assert.equal(created.statusCode, 201);
+  assert.ok(created.body?.conversation?.ceoAgentConfigId);
+  assert.equal(created.body?.conversation?.agentConfigId ?? null, null);
+
+  const messages = await invoke(
+    handlers.agentConversationMessages,
+    authedRequest("u1", {
+      method: "GET",
+      params: { id: "ceo", conversationId: created.body.conversation.id },
+    })
+  );
+  assert.equal(messages.statusCode, 200);
+  assert.ok(Array.isArray(messages.body?.messages));
+
+  const deleted = await invoke(
+    handlers.agentConversationById,
+    authedRequest("u1", {
+      method: "DELETE",
+      params: { id: "ceo", conversationId: created.body.conversation.id },
+    })
+  );
+  assert.equal(deleted.statusCode, 200);
+
+  // Chat still has an explicit redirect — only conversation nesting is ambiguous.
   const chat = await invoke(
     handlers.agentChat,
     authedRequest("u1", { method: "GET", params: { id: "ceo" } })
