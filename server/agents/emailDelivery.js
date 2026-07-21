@@ -4,6 +4,7 @@ import { withUserContext } from "../db/prisma.js";
 import { decrypt, encrypt } from "../security/envelope.js";
 import { AgentError } from "./errors.js";
 import { resolveConversationForWrite, touchConversation } from "./conversations.js";
+import { applySnippetTitleIfNeeded } from "./conversationTitle.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared email delivery for sub-agent reports (finance, research, reminders).
@@ -199,6 +200,10 @@ export async function emailRunReportFromChat({
       },
     });
     await touchConversation(tx, conversation.id);
+    const conversationTitle = await applySnippetTitleIfNeeded(tx, {
+      conversationId: conversation.id,
+      messageText: String(message),
+    });
 
     const run = relatedRunId
       ? await tx.agentRun.findFirst({
@@ -209,10 +214,20 @@ export async function emailRunReportFromChat({
           orderBy: { startedAt: "desc" },
         });
 
-    return { agentConfig, run, conversationId: conversation.id };
+    return {
+      agentConfig,
+      run,
+      conversationId: conversation.id,
+      conversationTitle,
+    };
   });
 
-  const { agentConfig, run, conversationId: resolvedConversationId } = context;
+  const {
+    agentConfig,
+    run,
+    conversationId: resolvedConversationId,
+    conversationTitle,
+  } = context;
 
   let reply;
   if (!run) {
@@ -254,5 +269,10 @@ export async function emailRunReportFromChat({
     return created;
   });
 
-  return { reply, messageId: replyMessage.id };
+  return {
+    reply,
+    messageId: replyMessage.id,
+    conversationId: resolvedConversationId,
+    conversationTitle,
+  };
 }

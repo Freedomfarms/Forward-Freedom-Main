@@ -1,22 +1,32 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { styles } from "../../styles.js";
 import { ApiRequestError } from "../../utils/api.js";
 import {
+  createAgentConversation,
+  createCeoConversation,
+  deleteAgentConversation,
+  deleteCeoConversation,
   fetchAgentChatHistory,
+  fetchAgentConversationMessages,
+  fetchAgentConversations,
   fetchCeoChatHistory,
+  fetchCeoConversationMessages,
+  fetchCeoConversations,
   sendAgentChatMessage,
   sendCeoChatMessage,
+  updateAgentConversation,
+  updateCeoConversation,
 } from "../../utils/agentsApi.js";
+import { ConversationList } from "./ConversationList.jsx";
 import { describeAgentApiError, fosStyles, getAgentTypeMeta } from "./freedomOsShared.js";
 
 // Reusable chat UI for the agent platform (CEO panel, AgentDetail, and the
-// "+ New Agent" flow). CEO and sub-agent modes load durable history from the
-// server on mount so collapsing/remounting the panel does not wipe the thread.
-// create_agent mode stays ephemeral (a dedicated intake UI).
+// "+ New Agent" flow). CEO and sub-agent modes load durable multi-conversation
+// history; create_agent mode stays ephemeral on the isSystem creation thread.
 //
-// mode: "ceo"           → GET/POST /api/agents/ceo/chat
-//       "create_agent"  → POST /api/agents/ceo/chat (starts creation session)
-//       "agent"         → GET/POST /api/agents/:id/chat (requires agentId)
+// mode: "ceo"           → CEO conversations + chat
+//       "create_agent"  → POST /api/agents/ceo/chat (creation session)
+//       "agent"         → sub-agent conversations + chat (requires agentId)
 
 let localMessageId = 0;
 function nextLocalId(prefix) {
@@ -83,32 +93,106 @@ export function AgentChat({
   const [isLoadingHistory, setIsLoadingHistory] = useState(loadsHistory);
   const [historyError, setHistoryError] = useState("");
   const [sendError, setSendError] = useState("");
+  const [conversations, setConversations] = useState([]);
+  const [activeConversationId, setActiveConversationId] = useState(null);
+  const [isLoadingConversations, setIsLoadingConversations] = useState(loadsHistory);
+  const [isCreatingConversation, setIsCreatingConversation] = useState(false);
+  const [listError, setListError] = useState("");
   // While create_agent mode is active, every turn sends mode: "create_agent"
   // so the server pins the session to the isSystem conversation. Stop after
   // an agent is created so follow-ups don't start a second creation session.
   const createSessionActiveRef = useRef(mode === "create_agent");
   const scrollRef = useRef(null);
   const historyLoadedForRef = useRef(null);
+  const conversationsLoadedForRef = useRef(null);
 
+  const listConversations = useCallback(async () => {
+    if (mode === "agent") return fetchAgentConversations(agentId, {}, { user });
+    return fetchCeoConversations({}, { user });
+  }, [mode, agentId, user]);
+
+  const createConversation = useCallback(async () => {
+    if (mode === "agent") return createAgentConversation(agentId, {}, { user });
+    return createCeoConversation({}, { user });
+  }, [mode, agentId, user]);
+
+  const loadMessagesFor = useCallback(
+    async (conversationId) => {
+      if (!conversationId) {
+        if (mode === "agent") return fetchAgentChatHistory(agentId, {}, { user });
+        return fetchCeoChatHistory({}, { user });
+      }
+      if (mode === "agent") {
+        return fetchAgentConversationMessages(agentId, conversationId, {}, { user });
+      }
+      return fetchCeoConversationMessages(conversationId, {}, { user });
+    },
+    [mode, agentId, user]
+  );
+
+  // Load conversation list once per agent/CEO scope; ensure at least one thread.
   useEffect(() => {
     if (!loadsHistory) return undefined;
 
-    const loadKey = mode === "agent" ? `agent:${agentId}` : "ceo";
+    const scopeKey = mode === "agent" ? `agent:${agentId}` : "ceo";
+    if (conversationsLoadedForRef.current === scopeKey) return undefined;
+    let cancelled = false;
+
+    (async () => {
+      setIsLoadingConversations(true);
+      setListError("");
+      try {
+        const payload = await listConversations();
+        let rows = Array.isArray(payload?.conversations) ? payload.conversations : [];
+        if (rows.length === 0) {
+          const created = await createConversation();
+          if (created?.conversation) {
+            rows = [created.conversation];
+          } else {
+            const retry = await listConversations();
+            rows = Array.isArray(retry?.conversations) ? retry.conversations : [];
+          }
+        }
+        if (cancelled) return;
+        conversationsLoadedForRef.current = scopeKey;
+        setConversations(rows);
+        setActiveConversationId((current) => {
+          if (current && rows.some((row) => row.id === current)) return current;
+          return rows[0]?.id || null;
+        });
+      } catch (error) {
+        if (!cancelled) {
+          setListError(describeAgentApiError(error, "Could not load chats."));
+        }
+      } finally {
+        if (!cancelled) setIsLoadingConversations(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loadsHistory, mode, agentId, listConversations, createConversation]);
+
+  // Load messages whenever the active conversation changes.
+  useEffect(() => {
+    if (!loadsHistory) return undefined;
+    if (!activeConversationId && isLoadingConversations) return undefined;
+
+    const loadKey = `${mode === "agent" ? `agent:${agentId}` : "ceo"}:${activeConversationId || "default"}`;
     if (historyLoadedForRef.current === loadKey) return undefined;
     let cancelled = false;
 
     (async () => {
-      const loadHistory = async () =>
-        mode === "agent"
-          ? fetchAgentChatHistory(agentId, {}, { user })
-          : fetchCeoChatHistory({}, { user });
+      setIsLoadingHistory(true);
+      setHistoryError("");
+      const loadHistory = async () => loadMessagesFor(activeConversationId);
 
       try {
         let payload;
         try {
           payload = await loadHistory();
         } catch (firstError) {
-          // One retry for transient network / edge blips ("Failed to fetch").
           const isHttpError = firstError instanceof ApiRequestError;
           const transient =
             !isHttpError &&
@@ -122,11 +206,11 @@ export function AgentChat({
         if (cancelled) return;
         const history = mapHistoryMessages(payload);
         historyLoadedForRef.current = loadKey;
-        setHistoryError("");
         setMessages((current) => {
-          // Keep any optimistic turns that arrived while history was loading.
           const historyIds = new Set(history.map((row) => row.id));
-          const pending = current.filter((row) => !historyIds.has(row.id) && row.id !== "intro");
+          const pending = current.filter(
+            (row) => !historyIds.has(row.id) && row.id !== "intro" && row._pendingFor === loadKey
+          );
           if (history.length === 0 && introMessage) {
             return [{ id: "intro", role: "agent", text: introMessage }, ...pending];
           }
@@ -149,45 +233,204 @@ export function AgentChat({
     return () => {
       cancelled = true;
     };
-  }, [loadsHistory, mode, agentId, user, introMessage]);
+  }, [
+    loadsHistory,
+    mode,
+    agentId,
+    activeConversationId,
+    isLoadingConversations,
+    introMessage,
+    loadMessagesFor,
+  ]);
 
   useEffect(() => {
     const node = scrollRef.current;
     if (node) node.scrollTop = node.scrollHeight;
   }, [messages, isSending, isLoadingHistory]);
 
+  const refreshConversationList = async () => {
+    try {
+      const payload = await listConversations();
+      const rows = Array.isArray(payload?.conversations) ? payload.conversations : [];
+      setConversations(rows);
+      return rows;
+    } catch (error) {
+      setListError(describeAgentApiError(error, "Could not refresh chats."));
+      return conversations;
+    }
+  };
+
+  const handleNewChat = async () => {
+    if (isCreatingConversation) return;
+    setIsCreatingConversation(true);
+    setListError("");
+    try {
+      const payload = await createConversation();
+      const created = payload?.conversation;
+      if (!created?.id) throw new Error("Conversation was not created.");
+      historyLoadedForRef.current = null;
+      setConversations((current) => [created, ...current.filter((row) => row.id !== created.id)]);
+      setActiveConversationId(created.id);
+      setMessages([]);
+      setHistoryError("");
+      setSendError("");
+    } catch (error) {
+      setListError(describeAgentApiError(error, "Could not start a new chat."));
+    } finally {
+      setIsCreatingConversation(false);
+    }
+  };
+
+  const handleSelectConversation = (conversationId) => {
+    if (!conversationId || conversationId === activeConversationId) return;
+    historyLoadedForRef.current = null;
+    setActiveConversationId(conversationId);
+    setMessages([]);
+    setSendError("");
+    setHistoryError("");
+  };
+
+  const handleArchiveConversation = async (conversationId) => {
+    try {
+      if (mode === "agent") {
+        await updateAgentConversation(agentId, conversationId, { archived: true }, { user });
+      } else {
+        await updateCeoConversation(conversationId, { archived: true }, { user });
+      }
+      const rows = await refreshConversationList();
+      if (conversationId === activeConversationId) {
+        historyLoadedForRef.current = null;
+        const nextId = rows[0]?.id || null;
+        if (!nextId) {
+          await handleNewChat();
+        } else {
+          setActiveConversationId(nextId);
+          setMessages([]);
+        }
+      }
+    } catch (error) {
+      setListError(describeAgentApiError(error, "Could not archive that chat."));
+    }
+  };
+
+  const handleDeleteConversation = async (conversationId) => {
+    const label =
+      conversations.find((row) => row.id === conversationId)?.title?.trim() || "this chat";
+    const confirmed = window.confirm(
+      `Delete "${label}" permanently? This cannot be undone.`
+    );
+    if (!confirmed) return;
+    try {
+      if (mode === "agent") {
+        await deleteAgentConversation(agentId, conversationId, { user });
+      } else {
+        await deleteCeoConversation(conversationId, { user });
+      }
+      const rows = (await refreshConversationList()).filter((row) => row.id !== conversationId);
+      setConversations(rows);
+      if (conversationId === activeConversationId) {
+        historyLoadedForRef.current = null;
+        const nextId = rows[0]?.id || null;
+        if (!nextId) {
+          await handleNewChat();
+        } else {
+          setActiveConversationId(nextId);
+          setMessages([]);
+        }
+      }
+    } catch (error) {
+      setListError(describeAgentApiError(error, "Could not delete that chat."));
+    }
+  };
+
   const sendMessage = async (rawValue) => {
     const message = String(rawValue || "").trim();
     if (!message || isSending) return;
 
     const pendingRelatedRunId = relatedRunId || null;
+    const conversationIdForSend =
+      mode === "create_agent" ? null : activeConversationId;
     setDraft("");
     setSendError("");
     setIsSending(true);
-    setMessages((current) => [...current, { id: nextLocalId("user"), role: "user", text: message }]);
+    setMessages((current) => [
+      ...current,
+      {
+        id: nextLocalId("user"),
+        role: "user",
+        text: message,
+        _pendingFor: `${mode === "agent" ? `agent:${agentId}` : "ceo"}:${activeConversationId || "default"}`,
+      },
+    ]);
+
+    // Optimistic snippet title in the list while the server confirms.
+    if (conversationIdForSend) {
+      setConversations((current) =>
+        current.map((row) => {
+          if (row.id !== conversationIdForSend) return row;
+          if (row.title && String(row.title).trim()) return row;
+          const snippet = message.length > 40 ? `${message.slice(0, 39).trimEnd()}…` : message;
+          return { ...row, title: snippet, updatedAt: new Date().toISOString() };
+        })
+      );
+    }
 
     try {
       let payload;
       if (mode === "agent") {
         payload = await sendAgentChatMessage(
           agentId,
-          { message, relatedRunId: pendingRelatedRunId },
+          {
+            message,
+            relatedRunId: pendingRelatedRunId,
+            conversationId: conversationIdForSend,
+          },
           { user }
         );
       } else {
-        // Every active create_agent turn sends mode so the server keeps the
-        // session on the isSystem conversation and regular CEO chat is never
-        // hijacked by an abandoned creation session.
         payload = await sendCeoChatMessage(
           {
             message,
             relatedRunId: pendingRelatedRunId,
+            conversationId: conversationIdForSend,
             ...(mode === "create_agent" && createSessionActiveRef.current
               ? { mode: "create_agent" }
               : {}),
           },
           { user }
         );
+      }
+
+      if (payload?.conversationId && mode !== "create_agent") {
+        setActiveConversationId(payload.conversationId);
+        setConversations((current) => {
+          const title = payload.conversationTitle || null;
+          const updatedAt = new Date().toISOString();
+          const existing = current.find((row) => row.id === payload.conversationId);
+          if (existing) {
+            return current
+              .map((row) =>
+                row.id === payload.conversationId
+                  ? {
+                      ...row,
+                      title: title || row.title,
+                      updatedAt,
+                    }
+                  : row
+              )
+              .sort((a, b) => String(b.updatedAt || "").localeCompare(String(a.updatedAt || "")));
+          }
+          return [
+            {
+              id: payload.conversationId,
+              title,
+              updatedAt,
+              isSystem: false,
+              archivedAt: null,
+            },
+            ...current,
+          ];
+        });
       }
 
       setMessages((current) => [
@@ -208,6 +451,12 @@ export function AgentChat({
           onAgentCreated(payload.agentCreated);
         }
       }
+      // Refresh list later so async LLM titles can appear.
+      if (mode !== "create_agent") {
+        window.setTimeout(() => {
+          void refreshConversationList();
+        }, 2500);
+      }
     } catch (error) {
       setSendError(describeAgentApiError(error, "The message could not be sent. Try again."));
     } finally {
@@ -215,10 +464,9 @@ export function AgentChat({
     }
   };
 
-  const showEmpty =
-    messages.length === 0 && !isSending && !isLoadingHistory;
+  const showEmpty = messages.length === 0 && !isSending && !isLoadingHistory;
 
-  return (
+  const chatBody = (
     <div style={{ display: "grid", gap: 10 }}>
       <div
         ref={scrollRef}
@@ -391,6 +639,41 @@ export function AgentChat({
           </button>
         </div>
       </form>
+    </div>
+  );
+
+  if (!loadsHistory) {
+    return chatBody;
+  }
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        gap: 12,
+        gridTemplateColumns: "minmax(160px, 220px) minmax(0, 1fr)",
+      }}
+      className="fos-chat-with-conversations"
+    >
+      <ConversationList
+        conversations={conversations}
+        activeConversationId={activeConversationId}
+        isLoading={isLoadingConversations}
+        isCreating={isCreatingConversation}
+        error={listError}
+        onSelect={handleSelectConversation}
+        onNewChat={() => void handleNewChat()}
+        onArchive={(id) => void handleArchiveConversation(id)}
+        onDelete={(id) => void handleDeleteConversation(id)}
+      />
+      {chatBody}
+      <style>{`
+        @media (max-width: 720px) {
+          .fos-chat-with-conversations {
+            grid-template-columns: 1fr !important;
+          }
+        }
+      `}</style>
     </div>
   );
 }
