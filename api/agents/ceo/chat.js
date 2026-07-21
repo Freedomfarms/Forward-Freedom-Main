@@ -16,7 +16,10 @@ import {
   validateAgentCreatePayload,
 } from "../../../server/agents/apiHelpers.js";
 import { respondToChat } from "../../../server/agents/chat.js";
-import { listChatHistory } from "../../../server/agents/chatHistory.js";
+import {
+  listChatHistory,
+  serializeChatHistoryMessages,
+} from "../../../server/agents/chatHistory.js";
 import {
   advanceCreationSession,
   buildCreationSuccessReply,
@@ -138,7 +141,7 @@ async function handleHistory(request, response) {
       userId: decodedToken.uid,
       ceoAgentConfigId: ceoConfig.id,
     });
-    return response.status(200).json({ messages });
+    return response.status(200).json({ messages: serializeChatHistoryMessages(messages) });
   } catch (error) {
     return respondAgentApiError(
       response,

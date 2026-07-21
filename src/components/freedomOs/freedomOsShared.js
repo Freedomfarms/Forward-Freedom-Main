@@ -99,7 +99,16 @@ export function describeAgentApiError(error, fallback = "Something went wrong. T
     }
     if (error.message) return error.message;
   }
-  return error?.message || fallback;
+  const raw = typeof error?.message === "string" ? error.message.trim() : "";
+  // Browser TypeError when fetch never gets an HTTP response (network reset,
+  // CORS on an edge challenge page, aborted connection, offline, etc.).
+  if (/failed to fetch|networkerror|load failed/i.test(raw)) {
+    return (
+      "Could not reach the server (network error). Check your connection and retry. " +
+      "If this keeps happening, a hosting firewall may be blocking the request."
+    );
+  }
+  return raw || fallback;
 }
 
 // ── Shared style fragments ───────────────────────────────────────────────────

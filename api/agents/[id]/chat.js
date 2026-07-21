@@ -9,7 +9,10 @@ import { applySecurityHeaders } from "../../../server/http/responseHelpers.js";
 import { AgentError } from "../../../server/agents/errors.js";
 import { respondAgentApiError } from "../../../server/agents/apiHelpers.js";
 import { respondToChat } from "../../../server/agents/chat.js";
-import { listChatHistory } from "../../../server/agents/chatHistory.js";
+import {
+  listChatHistory,
+  serializeChatHistoryMessages,
+} from "../../../server/agents/chatHistory.js";
 
 // GET  /api/agents/:id/chat — visible message history for one sub-agent
 // POST /api/agents/:id/chat — send a message. respondToChat enforces ownership
@@ -36,7 +39,7 @@ export default async function handler(request, response) {
         userId: decodedToken.uid,
         agentConfigId: agentId,
       });
-      return response.status(200).json({ messages });
+      return response.status(200).json({ messages: serializeChatHistoryMessages(messages) });
     }
 
     const payload = await readJsonBody(request);

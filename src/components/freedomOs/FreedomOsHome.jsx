@@ -160,6 +160,31 @@ export function FreedomOsHome({ user, onOpenFinanceTool }) {
   };
 
   const handleAgentCreated = (agentCreated) => {
+    // Show the new agent immediately even if the follow-up list refresh fails
+    // (e.g. a transient edge 403) — the create response already confirmed it.
+    setAgents((current) => {
+      const list = Array.isArray(current) ? current : [];
+      if (!agentCreated?.id || list.some((agent) => agent.id === agentCreated.id)) {
+        return list;
+      }
+      return [
+        ...list,
+        {
+          id: agentCreated.id,
+          name: agentCreated.name,
+          agentType: agentCreated.agentType,
+          status: "ACTIVE",
+          permissionLevel: "READ_ONLY",
+          instructions: null,
+          definitionOfDone: null,
+          toolAccess: null,
+          schedule: null,
+          latestRun: null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ];
+    });
     void refreshAgents();
     setToast(`"${agentCreated.name}" was created and is ready to go.`);
     window.setTimeout(() => setToast(""), 6000);

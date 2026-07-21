@@ -57,19 +57,34 @@ function buildUnauthorizedErrorMessage(payload) {
   return `Secure workspace request was rejected: ${serverMessage}`;
 }
 
+function describeBodylessHttpError(status) {
+  // App handlers always return JSON `{ message }`. A body-less / HTML 403 means
+  // the request never reached our function (Vercel Firewall / Attack Challenge /
+  // directory-not-routed). Same pattern documented for Plaid in plaid.js.
+  if (status === 403) {
+    return (
+      "Request blocked before reaching the server (HTTP 403). This is usually a " +
+      "hosting firewall block (Vercel Firewall / Attack Challenge Mode), not an " +
+      "app permission error. Check Vercel → Project → Firewall, then retry."
+    );
+  }
+  if (status >= 500) {
+    return `Server error (${status}). Try again in a moment.`;
+  }
+  if (status) {
+    return `Request failed (${status}).`;
+  }
+  return "Request failed.";
+}
+
 export async function parseApiResponse(response) {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const fallback =
-      response.status >= 500
-        ? `Server error (${response.status}). Try again in a moment.`
-        : response.status
-          ? `Request failed (${response.status}).`
-          : "Request failed.";
+    const serverMessage = typeof payload?.message === "string" ? payload.message.trim() : "";
     throw new ApiRequestError(
       response.status === 401
         ? buildUnauthorizedErrorMessage(payload)
-        : payload.message || fallback,
+        : serverMessage || describeBodylessHttpError(response.status),
       {
         status: response.status,
         retryAfterMs: readRateLimitRetryAfterMs(response),
