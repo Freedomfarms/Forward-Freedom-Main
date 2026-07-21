@@ -8,6 +8,11 @@ import { readJsonBody, readPathParam } from "../../../server/http/requestHelpers
 import { applySecurityHeaders } from "../../../server/http/responseHelpers.js";
 import { AgentError } from "../../../server/agents/errors.js";
 import { respondAgentApiError } from "../../../server/agents/apiHelpers.js";
+import { serializeAgentRun } from "../../../server/agents/apiHelpers.js";
+import {
+  applySubAgentTaskAction,
+  matchDeterministicTaskIntent,
+} from "../../../server/agents/chatActions.js";
 import { respondToChat } from "../../../server/agents/chat.js";
 import {
   emailRunReportFromChat,
@@ -18,10 +23,23 @@ import {
   serializeChatHistoryMessages,
 } from "../../../server/agents/chatHistory.js";
 
+function serializeChatOutcome(outcome) {
+  return {
+    reply: outcome.reply,
+    messageId: outcome.messageId,
+    conversationId: outcome.conversationId,
+    conversationTitle: outcome.conversationTitle,
+    ...(outcome.agent ? { agent: outcome.agent } : {}),
+    ...(outcome.run ? { run: serializeAgentRun(outcome.run) } : {}),
+  };
+}
+
 // GET  /api/agents/:id/chat — visible history (?conversationId= optional)
 // POST /api/agents/:id/chat — send a message ({ conversationId? }). respondToChat
-// enforces ownership and scoping. "Email me the report/draft" is handled
-// deterministically (no LLM).
+// enforces ownership and scoping. Task-scoped self-management (run now,
+// schedule/instructions/pause/email toggles) and "email me the report" are
+// handled deterministically when phrasing is clear; otherwise the LLM may
+// emit a validated taskAction that the server applies.
 
 function readOptionalConversationId(source) {
   const raw = source?.conversationId;
@@ -83,12 +101,23 @@ export default async function handler(request, response) {
         message,
         relatedRunId,
       });
-      return response.status(200).json({
-        reply: outcome.reply,
-        messageId: outcome.messageId,
-        conversationId: outcome.conversationId,
-        conversationTitle: outcome.conversationTitle,
+      return response.status(200).json(serializeChatOutcome(outcome));
+    }
+
+    // Clear self-management asks (run now, pause/resume, schedule, email
+    // toggle) apply immediately — no LLM, no CEO handoff.
+    const deterministicAction = matchDeterministicTaskIntent(message);
+    if (deterministicAction) {
+      const outcome = await applySubAgentTaskAction({
+        userId: decodedToken.uid,
+        agentConfigId: agentId,
+        conversationId,
+        message,
+        action: deterministicAction,
+        relatedRunId,
+        persist: true,
       });
+      return response.status(200).json(serializeChatOutcome(outcome));
     }
 
     const outcome = await respondToChat({
@@ -98,12 +127,7 @@ export default async function handler(request, response) {
       message,
       relatedRunId,
     });
-    return response.status(200).json({
-      reply: outcome.reply,
-      messageId: outcome.messageId,
-      conversationId: outcome.conversationId,
-      conversationTitle: outcome.conversationTitle,
-    });
+    return response.status(200).json(serializeChatOutcome(outcome));
   } catch (error) {
     return respondAgentApiError(
       response,

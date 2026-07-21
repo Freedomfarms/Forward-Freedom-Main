@@ -30,6 +30,9 @@ before(async () => {
     mock.module("../server/db/prisma.js", {
       namedExports: {
         withUserContext: async (userId, fn) => fn(currentDb.tx),
+        getPrismaClient: () => null,
+        isDatabaseConfigured: () => false,
+        Prisma: {},
       },
     });
     ({ createFakeDb } = await import("./helpers/fakeAgentDb.js"));
@@ -184,7 +187,10 @@ function installLlmMock(reply = "Here is my answer.", profileOps = []) {
   setLlmImplementationForTesting({
     generateObject: async (options) => {
       llmCalls.push(options);
-      return { object: { reply, profileOps }, usage: { inputTokens: 500, outputTokens: 100 } };
+      return {
+        object: { reply, profileOps, taskAction: null },
+        usage: { inputTokens: 500, outputTokens: 100 },
+      };
     },
   });
 }

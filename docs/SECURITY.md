@@ -201,14 +201,20 @@ workspace:
   rejected until a later phase unlocks them. Any gate failure is recorded as a
   `SKIPPED` run in the audit log (§13).
 
-**Agents never execute actions.** There is no code path through which an agent
-can make transfers, trades, or payments, or contact any third party. The only
-outward effect any agent has is **self-notification**: an in-app
-`Notification` row and, when the Reminders agent has email enabled, an email
-sent via Resend exclusively to the user's own verified account address — the
-recipient is structurally hardcoded to `User.email`, with no parameter through
-which any other destination can be supplied
-(`server/agents/types/reminders.js`).
+**Agents never execute financial or third-party actions.** There is no code
+path through which an agent can make transfers, trades, or payments, or
+contact any third party. Allowed non-financial effects are:
+
+- **Self-notification**: an in-app `Notification` row and, when email is
+  enabled for that agent, an email sent via Resend exclusively to the user's
+  own verified account address — the recipient is structurally hardcoded, with
+  no parameter through which any other destination can be supplied
+  (`server/agents/emailDelivery.js`, `server/agents/types/reminders.js`).
+- **Task-scoped self-management** in a sub-agent's own chat: that agent may
+  update its own schedule / instructions / definition of done / pause state /
+  email toggle, or trigger its own manual run, via allowlisted server-side
+  `taskAction` handling (`server/agents/chatActions.js`). It cannot edit other
+  agents or CEO settings.
 
 **Finance agent = observations only.** Its fixed system prompt limits it to
 surfacing observations and patterns ("dining spend is 40% above your 3-month

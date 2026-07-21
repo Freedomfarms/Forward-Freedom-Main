@@ -327,8 +327,8 @@ export function AgentDetail({ agent, user, onBack, onAgentUpdated, onOpenFinance
         <div>
           <div style={fosStyles.sectionLabel}>Chat with {agent.name}</div>
           <div style={{ color: "#8faecc", fontSize: 12, marginTop: 4, lineHeight: 1.5 }}>
-            These conversations stay with this agent. Talk to your CEO Agent from the Freedom OS
-            home for cross-agent questions.
+            Ask this agent to change its own schedule, instructions, email settings, or to run now.
+            Talk to your CEO Agent from the Freedom OS home for cross-agent questions.
           </div>
         </div>
         <AgentChat
@@ -338,8 +338,14 @@ export function AgentDetail({ agent, user, onBack, onAgentUpdated, onOpenFinance
           user={user}
           relatedRunId={chatRelatedRunId}
           onClearRelatedRun={() => setChatRelatedRunId(null)}
+          onAgentUpdated={(updated) => {
+            onAgentUpdated?.(updated);
+            if (updated?.definitionOfDone != null) setDodDraft(updated.definitionOfDone);
+            if (updated?.model) setModelDraft(updated.model);
+          }}
+          onRunStarted={() => reloadRuns()}
           listLabel={`${agent.name} chats`}
-          placeholder={`Ask ${agent.name} about its work…`}
+          placeholder={`Ask ${agent.name} about its work or to update its settings…`}
         />
       </div>
 

@@ -12,6 +12,13 @@ import {
 import { loadDocumentsForPrompt } from "./documents.js";
 import { AgentError } from "./errors.js";
 import { CEO_AGENT_MODEL, generateAgentObject } from "./llm.js";
+import {
+  applySubAgentTaskAction,
+  sanitizeTaskAction,
+  TASK_ACTION_JSON_SCHEMA,
+} from "./chatActions.js";
+import { cronToSchedulePreset } from "./schedule.js";
+import { isEmailDeliveryEnabled } from "./emailDelivery.js";
 import { dataSection, PROMPT_SAFETY_RULES } from "./prompts.js";
 import {
   extractFromChatReply,
@@ -36,7 +43,7 @@ import {
 const CHAT_HISTORY_LIMIT = 50;
 const RUN_SUMMARY_LIMIT = 20;
 
-const CHAT_REPLY_SCHEMA = jsonSchema({
+const CEO_CHAT_REPLY_SCHEMA = jsonSchema({
   type: "object",
   properties: {
     reply: { type: "string", description: "Your conversational reply to the user's message." },
@@ -46,23 +53,54 @@ const CHAT_REPLY_SCHEMA = jsonSchema({
   additionalProperties: false,
 });
 
+const SUB_AGENT_CHAT_REPLY_SCHEMA = jsonSchema({
+  type: "object",
+  properties: {
+    reply: { type: "string", description: "Your conversational reply to the user's message." },
+    profileOps: PROFILE_OPS_JSON_SCHEMA,
+    taskAction: TASK_ACTION_JSON_SCHEMA,
+  },
+  required: ["reply", "profileOps", "taskAction"],
+  additionalProperties: false,
+});
+
 const SUB_AGENT_CHAT_SYSTEM_PROMPT = [
-  "You are one of the user's read-only agents inside Freedom OS, chatting with the user about your own work. Your identity, purpose and recent activity are provided as data sections.",
-  "Answer questions about your runs and findings using only the provided context. If something is outside your scope (another agent's work, actions to take), say so and point the user to their CEO Agent.",
-  "You cannot take actions of any kind. Never give directives such as buy/sell/move money and never make investment recommendations.",
-  "Also return profileOps: durable facts about the user revealed in this conversation (usually an empty array).",
+  "You are one of the user's agents inside Freedom OS, chatting with the user about your own work. Your identity, current settings, and recent activity are provided as data sections.",
+  "Answer questions about your runs and findings using only the provided context.",
+  "You CAN manage your own task: when the user asks you to change YOUR schedule, instructions, definition of done, name, pause/resume, enable/disable emailing them your reports, run yourself now, or email them a report — set taskAction accordingly and confirm the change in your reply. The server applies taskAction; do not claim you are unable to do these things, and do not redirect the user to the CEO Agent for your own settings.",
+  "If the request is about another agent's work or creating a new agent, say so and point the user to their CEO Agent. Never invent side effects outside taskAction.",
+  "Never give directives such as buy/sell/move money and never make investment recommendations.",
+  "Also return profileOps: durable facts about the user revealed in this conversation (usually an empty array). Set taskAction to null when the user is only asking a question.",
   "Safety rules:",
   `- ${PROMPT_SAFETY_RULES}`,
 ].join("\n");
 
 const CEO_CHAT_SYSTEM_PROMPT = [
-  "You are the user's CEO Agent inside Freedom OS: the orchestrator of their team of read-only agents, and their main point of contact.",
+  "You are the user's CEO Agent inside Freedom OS: the orchestrator of their team of financially read-only agents, and their main point of contact.",
   "Answer using the provided context: recent run summaries from ALL of the user's agents (cross-agent questions are your job) and the user's long-term profile. When asked what you know about the user, answer from the profile data section.",
-  "You cannot take actions of any kind. Never give directives such as buy/sell/move money and never make investment recommendations.",
+  "You cannot edit a sub-agent's schedule, instructions, email settings, or trigger its runs from this chat. When the user wants those changes for a specific agent, tell them to open that agent's own chat and ask the agent directly — that agent can apply those task changes itself. Do not claim the sub-agent is powerless, and do not imply that you will make the edit from here.",
+  "Never give directives such as buy/sell/move money and never make investment recommendations.",
   "Also return profileOps: durable facts about the user revealed in this conversation (usually an empty array).",
   "Safety rules:",
   `- ${PROMPT_SAFETY_RULES}`,
 ].join("\n");
+
+function renderAgentSettings(agentConfig) {
+  const schedule = cronToSchedulePreset(agentConfig.schedule);
+  let scheduleLabel = "on-demand (no schedule)";
+  if (schedule?.preset === "weekly") {
+    scheduleLabel = `weekly (${schedule.weekday || "monday"})`;
+  } else if (schedule?.preset) {
+    scheduleLabel = schedule.preset;
+  }
+  const emailOn = isEmailDeliveryEnabled(agentConfig.toolAccess);
+  return [
+    `Status: ${agentConfig.status}`,
+    `Schedule: ${scheduleLabel}`,
+    `Email reports after each run: ${emailOn ? "enabled" : "disabled"}`,
+    `Model: ${agentConfig.model || "(default)"}`,
+  ].join("\n");
+}
 
 function renderTranscript(messages) {
   const lines = messages
@@ -254,6 +292,7 @@ export async function respondToChat({
     dataSection("AGENT IDENTITY", identity),
   ];
   if (agentConfig) {
+    sections.push(dataSection("CURRENT SETTINGS (this agent)", renderAgentSettings(agentConfig)));
     sections.push(dataSection("DEFINITION OF DONE (user-configured)", agentConfig.definitionOfDone));
   }
   sections.push(
@@ -292,11 +331,42 @@ export async function respondToChat({
     model,
     system: agentConfig ? SUB_AGENT_CHAT_SYSTEM_PROMPT : CEO_CHAT_SYSTEM_PROMPT,
     prompt: sections.join("\n\n"),
-    schema: CHAT_REPLY_SCHEMA,
+    schema: agentConfig ? SUB_AGENT_CHAT_REPLY_SCHEMA : CEO_CHAT_REPLY_SCHEMA,
     maxOutputTokens: 1200,
   });
 
-  const reply = String(object?.reply || "").trim() || "Sorry — I could not generate a reply.";
+  let reply = String(object?.reply || "").trim() || "Sorry — I could not generate a reply.";
+  let actionResult = null;
+
+  // Sub-agent taskAction is applied server-side after the model reply. The
+  // model must not invent side effects — only this allowlisted path mutates.
+  if (agentConfig) {
+    try {
+      const action = sanitizeTaskAction(object?.taskAction ?? null);
+      if (action) {
+        actionResult = await applySubAgentTaskAction({
+          userId,
+          agentConfigId: agentConfig.id,
+          conversationId: resolvedConversationId,
+          message: text,
+          action,
+          relatedRunId,
+          persist: false,
+        });
+        // Prefer the authoritative server confirmation over a hedged model reply.
+        if (actionResult?.reply) {
+          reply = actionResult.reply;
+        }
+      }
+    } catch (error) {
+      if (error instanceof AgentError) {
+        reply = `${reply}\n\n(I couldn't apply that change: ${error.message})`;
+      } else {
+        reply = `${reply}\n\n(I couldn't apply that change right now.)`;
+      }
+    }
+  }
+
   const replyMessage = await withUserContext(userId, async (tx) => {
     const created = await tx.agentChatMessage.create({
       data: {
@@ -306,7 +376,7 @@ export async function respondToChat({
         ceoAgentConfigId: ceoConfig?.id ?? null,
         role: "AGENT",
         contentCiphertext: encrypt(reply),
-        relatedRunId,
+        relatedRunId: actionResult?.run?.id || relatedRunId,
       },
     });
     await touchConversation(tx, resolvedConversationId);
@@ -343,5 +413,7 @@ export async function respondToChat({
     conversationTitle: snippetTitle,
     model,
     usage,
+    ...(actionResult?.agent ? { agent: actionResult.agent } : {}),
+    ...(actionResult?.run ? { run: actionResult.run } : {}),
   };
 }

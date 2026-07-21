@@ -134,8 +134,14 @@ export async function sendAgentReportEmailOrThrow({ userId, subject, body }) {
 export function isEmailReportRequest(message) {
   const text = String(message || "").toLowerCase();
   if (!/\be-?mail/.test(text)) return false;
+  // Settings toggles ("enable email", "turn off email") are not send requests.
+  if (/\b(enable|disable|turn on|turn off|stop)\b.{0,40}\be-?mail/.test(text)) {
+    return false;
+  }
   return (
     /\b(e-?mail|mail|send)\s+(me|the|this|that|it|a|my|over|your)\b/.test(text) ||
+    /\bsend\s+(an?\s+)?e-?mail\b/.test(text) ||
+    /\be-?mail\s+(me|it|this|that|the|a|my)\b/.test(text) ||
     /\bto my e-?mail\b/.test(text)
   );
 }
@@ -162,10 +168,64 @@ export function buildRunEmailContent({ agentName, agentType, run, output }) {
 }
 
 /**
+ * Picks the related or latest succeeded run for an agent and emails it to the
+ * user's verified address. Does not touch chat history — callers decide how
+ * to record the exchange. Returns { reply, run }.
+ */
+export async function deliverAgentRunReport({ userId, agentConfigId, relatedRunId = null }) {
+  const context = await withUserContext(userId, async (tx) => {
+    const agentConfig = await tx.agentConfig.findFirst({
+      where: { id: agentConfigId, userId },
+    });
+    if (!agentConfig) {
+      throw new AgentError("Agent not found.", "AGENT_NOT_FOUND", 404);
+    }
+    const run = relatedRunId
+      ? await tx.agentRun.findFirst({
+          where: { id: relatedRunId, userId, agentConfigId: agentConfig.id },
+        })
+      : await tx.agentRun.findFirst({
+          where: { userId, agentConfigId: agentConfig.id, status: "SUCCEEDED" },
+          orderBy: { startedAt: "desc" },
+        });
+    return { agentConfig, run };
+  });
+
+  const { agentConfig, run } = context;
+  if (!run) {
+    return {
+      reply:
+        'There is no completed run to email yet. Ask me to run now (or wait for the schedule), then ask me again.',
+      run: null,
+    };
+  }
+
+  let output = null;
+  if (run.outputCiphertext) {
+    try {
+      output = decrypt(run.outputCiphertext);
+    } catch {
+      output = null;
+    }
+  }
+  const { subject, body } = buildRunEmailContent({
+    agentName: agentConfig.name,
+    agentType: agentConfig.agentType,
+    run,
+    output,
+  });
+  const result = await sendAgentReportEmail({ userId, subject, body });
+  return {
+    reply: result.sent
+      ? "Done — I've emailed that report to your verified account address."
+      : `I couldn't email it: ${result.status}. The full report is still available here in Freedom OS.`,
+    run,
+  };
+}
+
+/**
  * Chat-path handler: the user asked a sub-agent (in chat) to email its
- * report/draft. Picks the referenced run (or the latest completed one),
- * emails it to the verified account address, and writes both chat rows so
- * the exchange is part of the durable thread. Returns { reply, messageId }.
+ * report/draft. Persists both chat rows and emails the related/latest run.
  */
 export async function emailRunReportFromChat({
   userId,
@@ -174,7 +234,7 @@ export async function emailRunReportFromChat({
   message,
   relatedRunId = null,
 }) {
-  const context = await withUserContext(userId, async (tx) => {
+  const prep = await withUserContext(userId, async (tx) => {
     const agentConfig = await tx.agentConfig.findFirst({
       where: { id: agentConfigId, userId },
     });
@@ -205,74 +265,38 @@ export async function emailRunReportFromChat({
       messageText: String(message),
     });
 
-    const run = relatedRunId
-      ? await tx.agentRun.findFirst({
-          where: { id: relatedRunId, userId, agentConfigId: agentConfig.id },
-        })
-      : await tx.agentRun.findFirst({
-          where: { userId, agentConfigId: agentConfig.id, status: "SUCCEEDED" },
-          orderBy: { startedAt: "desc" },
-        });
-
     return {
-      agentConfig,
-      run,
+      agentConfigId: agentConfig.id,
       conversationId: conversation.id,
       conversationTitle,
     };
   });
 
-  const {
-    agentConfig,
-    run,
-    conversationId: resolvedConversationId,
-    conversationTitle,
-  } = context;
-
-  let reply;
-  if (!run) {
-    reply =
-      'There is no completed run to email yet. Use "Run now" (or wait for the schedule), then ask me again.';
-  } else {
-    let output = null;
-    if (run.outputCiphertext) {
-      try {
-        output = decrypt(run.outputCiphertext);
-      } catch {
-        output = null;
-      }
-    }
-    const { subject, body } = buildRunEmailContent({
-      agentName: agentConfig.name,
-      agentType: agentConfig.agentType,
-      run,
-      output,
-    });
-    const result = await sendAgentReportEmail({ userId, subject, body });
-    reply = result.sent
-      ? "Done — I've emailed that report to your verified account address."
-      : `I couldn't email it: ${result.status}. The full report is still available here in Freedom OS.`;
-  }
+  const delivered = await deliverAgentRunReport({
+    userId,
+    agentConfigId: prep.agentConfigId,
+    relatedRunId,
+  });
 
   const replyMessage = await withUserContext(userId, async (tx) => {
     const created = await tx.agentChatMessage.create({
       data: {
         userId,
-        conversationId: resolvedConversationId,
-        agentConfigId: agentConfig.id,
+        conversationId: prep.conversationId,
+        agentConfigId: prep.agentConfigId,
         role: "AGENT",
-        contentCiphertext: encrypt(reply),
-        relatedRunId: run?.id || null,
+        contentCiphertext: encrypt(delivered.reply),
+        relatedRunId: delivered.run?.id || null,
       },
     });
-    await touchConversation(tx, resolvedConversationId);
+    await touchConversation(tx, prep.conversationId);
     return created;
   });
 
   return {
-    reply,
+    reply: delivered.reply,
     messageId: replyMessage.id,
-    conversationId: resolvedConversationId,
-    conversationTitle,
+    conversationId: prep.conversationId,
+    conversationTitle: prep.conversationTitle,
   };
 }
