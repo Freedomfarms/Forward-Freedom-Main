@@ -492,10 +492,17 @@ model AgentConversation {
 //   (("agentConfigId" IS NULL) <> ("ceoAgentConfigId" IS NULL))
 // conversationId scopes messages to one AgentConversation thread; agent XOR
 // columns stay denormalized for target checks and legacy lookbacks.
+//
+// conversationId is optional in the Prisma schema (not in the migrated DB)
+// on purpose: production can briefly run new code before
+// 20260721020000_agent_conversations is applied. Omitting the field lets the
+// schema-compat layer write/read the pre-multi-chat single-thread shape
+// without Prisma client validation rejecting the create. After migrate
+// deploy, runtime always sets conversationId (DB NOT NULL + FK).
 model AgentChatMessage {
   id                String          @id @default(cuid())
   userId            String
-  conversationId    String
+  conversationId    String?
   agentConfigId     String?
   ceoAgentConfigId  String?
   role              AgentChatRole
@@ -506,7 +513,7 @@ model AgentChatMessage {
   relatedRunId      String?
   createdAt         DateTime        @default(now())
   user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  conversation      AgentConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversation      AgentConversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   agentConfig       AgentConfig?    @relation(fields: [agentConfigId], references: [id], onDelete: Cascade)
   ceoAgentConfig    CeoAgentConfig? @relation(fields: [ceoAgentConfigId], references: [id], onDelete: Cascade)
   relatedRun        AgentRun?       @relation(fields: [relatedRunId], references: [id], onDelete: SetNull)

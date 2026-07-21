@@ -3,7 +3,11 @@ import { getFirebaseAdminAuth, isFirebaseAdminConfigured } from "../auth/firebas
 import { withUserContext } from "../db/prisma.js";
 import { decrypt, encrypt } from "../security/envelope.js";
 import { AgentError } from "./errors.js";
-import { resolveConversationForWrite, touchConversation } from "./conversations.js";
+import {
+  chatMessageConversationData,
+  resolveConversationForWrite,
+  touchConversation,
+} from "./conversations.js";
 import { applySnippetTitleIfNeeded } from "./conversationTitle.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -192,7 +196,7 @@ export async function emailRunReportFromChat({
     await tx.agentChatMessage.create({
       data: {
         userId,
-        conversationId: conversation.id,
+        ...chatMessageConversationData(conversation.id),
         agentConfigId: agentConfig.id,
         role: "USER",
         contentCiphertext: encrypt(String(message)),
@@ -258,7 +262,7 @@ export async function emailRunReportFromChat({
     const created = await tx.agentChatMessage.create({
       data: {
         userId,
-        conversationId: resolvedConversationId,
+        ...chatMessageConversationData(resolvedConversationId),
         agentConfigId: agentConfig.id,
         role: "AGENT",
         contentCiphertext: encrypt(reply),

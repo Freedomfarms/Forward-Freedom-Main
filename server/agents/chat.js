@@ -4,7 +4,13 @@ import { withUserContext } from "../db/prisma.js";
 import { decrypt, decryptJson, encrypt } from "../security/envelope.js";
 import { CEO_AGENT_CONFIG_SAFE_SELECT } from "./apiHelpers.js";
 import { isCreationStateContent } from "./creationFlow.js";
-import { resolveConversationForWrite, touchConversation } from "./conversations.js";
+import {
+  chatMessageConversationData,
+  chatMessageConversationWhere,
+  isMissingAgentConversationError,
+  resolveConversationForWrite,
+  touchConversation,
+} from "./conversations.js";
 import {
   applySnippetTitleIfNeeded,
   scheduleConversationTitle,
@@ -137,6 +143,8 @@ export async function respondToChat({
     }
 
     // Explicit conversationId when provided; otherwise newest non-system thread.
+    // When AgentConversation is unmigrated this resolves to the legacy sentinel
+    // and message reads/writes omit conversationId (pre-multi-chat shape).
     const conversation = await resolveConversationForWrite(tx, {
       userId,
       agentConfigId: agentConfig?.id ?? null,
@@ -145,24 +153,40 @@ export async function respondToChat({
       allowSystem: false,
     });
 
+    const messageTarget = {
+      userId,
+      agentConfigId: agentConfig?.id ?? null,
+      ceoAgentConfigId: ceoConfig?.id ?? null,
+    };
+
     // Conversation-scoped context only — profile / docs / runs load separately.
-    const history = await tx.agentChatMessage.findMany({
-      where: {
-        userId,
-        conversationId: conversation.id,
-      },
-      orderBy: { createdAt: "desc" },
-      take: CHAT_HISTORY_LIMIT,
-      select: { role: true, contentCiphertext: true, createdAt: true },
-    });
+    let history;
+    try {
+      history = await tx.agentChatMessage.findMany({
+        where: chatMessageConversationWhere(conversation.id, messageTarget),
+        orderBy: { createdAt: "desc" },
+        take: CHAT_HISTORY_LIMIT,
+        select: { role: true, contentCiphertext: true, createdAt: true },
+      });
+    } catch (error) {
+      if (!isMissingAgentConversationError(error)) throw error;
+      history = await tx.agentChatMessage.findMany({
+        where: {
+          userId,
+          agentConfigId: messageTarget.agentConfigId,
+          ceoAgentConfigId: messageTarget.ceoAgentConfigId,
+        },
+        orderBy: { createdAt: "desc" },
+        take: CHAT_HISTORY_LIMIT,
+        select: { role: true, contentCiphertext: true, createdAt: true },
+      });
+    }
     const isFirstExchange = history.length === 0;
 
     await tx.agentChatMessage.create({
       data: {
-        userId,
-        conversationId: conversation.id,
-        agentConfigId: agentConfig?.id ?? null,
-        ceoAgentConfigId: ceoConfig?.id ?? null,
+        ...messageTarget,
+        ...chatMessageConversationData(conversation.id),
         role: "USER",
         contentCiphertext: encrypt(text),
         relatedRunId,
@@ -299,7 +323,7 @@ export async function respondToChat({
     const created = await tx.agentChatMessage.create({
       data: {
         userId,
-        conversationId: resolvedConversationId,
+        ...chatMessageConversationData(resolvedConversationId),
         agentConfigId: agentConfig?.id ?? null,
         ceoAgentConfigId: ceoConfig?.id ?? null,
         role: "AGENT",

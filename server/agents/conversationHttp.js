@@ -144,6 +144,7 @@ export async function handleConversationMessages(request, response, { resolveTar
     const result = await listConversationMessages({
       userId: decodedToken.uid,
       conversationId,
+      ...target,
       limit: request.query?.limit,
       before: request.query?.before,
     });

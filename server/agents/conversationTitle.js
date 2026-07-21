@@ -1,4 +1,8 @@
 import { withUserContext } from "../db/prisma.js";
+import {
+  isLegacyConversationId,
+  isMissingAgentConversationError,
+} from "./conversations.js";
 import { PROFILE_EXTRACTION_MODEL, generateAgentText, isLlmConfigured } from "./llm.js";
 
 const SNIPPET_MAX_CHARS = 40;
@@ -32,20 +36,25 @@ function sanitizeGeneratedTitle(raw) {
  * snippet from the first user message. Returns the title string to surface.
  */
 export async function applySnippetTitleIfNeeded(tx, { conversationId, messageText }) {
-  if (!conversationId) return null;
-  const row = await tx.agentConversation.findFirst({
-    where: { id: conversationId },
-    select: { id: true, title: true, isSystem: true },
-  });
-  if (!row || row.isSystem) return row?.title ?? null;
-  if (typeof row.title === "string" && row.title.trim()) return row.title;
+  if (isLegacyConversationId(conversationId)) return null;
+  try {
+    const row = await tx.agentConversation.findFirst({
+      where: { id: conversationId },
+      select: { id: true, title: true, isSystem: true },
+    });
+    if (!row || row.isSystem) return row?.title ?? null;
+    if (typeof row.title === "string" && row.title.trim()) return row.title;
 
-  const title = buildSnippetTitle(messageText);
-  await tx.agentConversation.update({
-    where: { id: conversationId },
-    data: { title, updatedAt: new Date() },
-  });
-  return title;
+    const title = buildSnippetTitle(messageText);
+    await tx.agentConversation.update({
+      where: { id: conversationId },
+      data: { title, updatedAt: new Date() },
+    });
+    return title;
+  } catch (error) {
+    if (isMissingAgentConversationError(error)) return null;
+    throw error;
+  }
 }
 
 /**
@@ -59,7 +68,7 @@ export function scheduleConversationTitle({
   agentReply,
   snippetTitle = null,
 } = {}) {
-  if (!userId || !conversationId || !isLlmConfigured()) return;
+  if (!userId || isLegacyConversationId(conversationId) || !isLlmConfigured()) return;
   void generateAndSaveTitle({
     userId,
     conversationId,
@@ -96,24 +105,29 @@ async function generateAndSaveTitle({
   const title = sanitizeGeneratedTitle(timed?.text);
   if (!title) return;
 
-  await withUserContext(userId, async (tx) => {
-    const row = await tx.agentConversation.findFirst({
-      where: { id: conversationId, userId },
-      select: { id: true, title: true, isSystem: true },
+  try {
+    await withUserContext(userId, async (tx) => {
+      const row = await tx.agentConversation.findFirst({
+        where: { id: conversationId, userId },
+        select: { id: true, title: true, isSystem: true },
+      });
+      if (!row || row.isSystem) return;
+      // Don't clobber a user rename that landed after the snippet was set.
+      if (
+        snippetTitle &&
+        typeof row.title === "string" &&
+        row.title.trim() &&
+        row.title.trim() !== snippetTitle.trim()
+      ) {
+        return;
+      }
+      await tx.agentConversation.update({
+        where: { id: row.id },
+        data: { title, updatedAt: new Date() },
+      });
     });
-    if (!row || row.isSystem) return;
-    // Don't clobber a user rename that landed after the snippet was set.
-    if (
-      snippetTitle &&
-      typeof row.title === "string" &&
-      row.title.trim() &&
-      row.title.trim() !== snippetTitle.trim()
-    ) {
-      return;
-    }
-    await tx.agentConversation.update({
-      where: { id: row.id },
-      data: { title, updatedAt: new Date() },
-    });
-  });
+  } catch (error) {
+    if (isMissingAgentConversationError(error)) return;
+    throw error;
+  }
 }

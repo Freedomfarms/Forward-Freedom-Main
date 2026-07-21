@@ -1,10 +1,15 @@
 import { withUserContext } from "../db/prisma.js";
-import { ensureDefaultConversation } from "./conversations.js";
+import {
+  chatMessageConversationWhere,
+  ensureDefaultConversation,
+  isMissingAgentConversationError,
+  LEGACY_SINGLE_THREAD_ID,
+} from "./conversations.js";
 import {
   CHAT_HISTORY_DEFAULT_LIMIT,
   decodeVisibleChatMessages,
 } from "./chatMessageCodec.js";
-import { AgentError } from "./errors.js";
+import { AgentError, isAgentError } from "./errors.js";
 
 // Shared chat-history loader for CEO and sub-agent chats. The UI previously
 // kept messages in local React state only; these helpers restore the durable
@@ -23,6 +28,9 @@ const CHAT_HISTORY_FETCH_CAP = 200;
  * When conversationId is omitted, uses the newest non-system conversation
  * (creating an Original thread if needed) so GET /chat stays single-thread
  * compatible until the UI switches to /conversations/:id/messages.
+ *
+ * When AgentConversation / conversationId are unmigrated, falls back to the
+ * pre-multi-chat agent-XOR message scope so CEO chat still loads.
  */
 export async function listChatHistory({
   userId,
@@ -63,21 +71,30 @@ export async function listChatHistory({
     }
 
     let resolvedConversationId = conversationId;
-    if (resolvedConversationId) {
-      const conversation = await tx.agentConversation.findFirst({
-        where: {
-          id: resolvedConversationId,
-          userId,
-          agentConfigId: agentConfigId ?? null,
-          ceoAgentConfigId: ceoAgentConfigId ?? null,
-          isSystem: false,
-        },
-        select: { id: true },
-      });
-      if (!conversation) {
-        throw new AgentError("Conversation not found.", "CONVERSATION_NOT_FOUND", 404);
+    if (resolvedConversationId === LEGACY_SINGLE_THREAD_ID) {
+      resolvedConversationId = LEGACY_SINGLE_THREAD_ID;
+    } else if (resolvedConversationId) {
+      try {
+        const conversation = await tx.agentConversation.findFirst({
+          where: {
+            id: resolvedConversationId,
+            userId,
+            agentConfigId: agentConfigId ?? null,
+            ceoAgentConfigId: ceoAgentConfigId ?? null,
+            isSystem: false,
+          },
+          select: { id: true },
+        });
+        if (!conversation) {
+          throw new AgentError("Conversation not found.", "CONVERSATION_NOT_FOUND", 404);
+        }
+        resolvedConversationId = conversation.id;
+      } catch (error) {
+        if (isAgentError(error)) throw error;
+        if (!isMissingAgentConversationError(error)) throw error;
+        // Unmigrated: ignore the requested id and use legacy agent scope.
+        resolvedConversationId = LEGACY_SINGLE_THREAD_ID;
       }
-      resolvedConversationId = conversation.id;
     } else {
       const conversation = await ensureDefaultConversation(tx, {
         userId,
@@ -87,16 +104,33 @@ export async function listChatHistory({
       resolvedConversationId = conversation.id;
     }
 
-    const rows = await tx.agentChatMessage.findMany({
-      where: {
-        userId,
-        conversationId: resolvedConversationId,
-      },
-      orderBy: { createdAt: "desc" },
-      take,
-      select: { id: true, role: true, contentCiphertext: true, createdAt: true },
-    });
+    try {
+      const rows = await tx.agentChatMessage.findMany({
+        where: chatMessageConversationWhere(resolvedConversationId, {
+          userId,
+          agentConfigId,
+          ceoAgentConfigId,
+        }),
+        orderBy: { createdAt: "desc" },
+        take,
+        select: { id: true, role: true, contentCiphertext: true, createdAt: true },
+      });
 
-    return decodeVisibleChatMessages(rows, { limit });
+      return decodeVisibleChatMessages(rows, { limit });
+    } catch (error) {
+      if (!isMissingAgentConversationError(error)) throw error;
+      // conversationId column missing — query the pre-multi-chat shape.
+      const rows = await tx.agentChatMessage.findMany({
+        where: {
+          userId,
+          agentConfigId: agentConfigId ?? null,
+          ceoAgentConfigId: ceoAgentConfigId ?? null,
+        },
+        orderBy: { createdAt: "desc" },
+        take,
+        select: { id: true, role: true, contentCiphertext: true, createdAt: true },
+      });
+      return decodeVisibleChatMessages(rows, { limit });
+    }
   });
 }

@@ -29,7 +29,10 @@ import {
   startCreationSession,
 } from "../../../server/agents/creationFlow.js";
 import {
+  chatMessageConversationData,
+  chatMessageConversationWhere,
   ensureSystemConversation,
+  isMissingAgentConversationError,
   touchConversation,
 } from "../../../server/agents/conversations.js";
 
@@ -43,18 +46,35 @@ import {
 const CREATION_STATE_LOOKBACK = 60;
 
 async function findActiveCreationState(tx, userId, ceoAgentConfigId, conversationId) {
-  const recent = await tx.agentChatMessage.findMany({
-    where: {
-      userId,
-      ceoAgentConfigId,
-      agentConfigId: null,
-      conversationId,
-      role: "AGENT",
-    },
-    orderBy: { createdAt: "desc" },
-    take: CREATION_STATE_LOOKBACK,
-    select: { contentCiphertext: true },
-  });
+  let recent;
+  try {
+    recent = await tx.agentChatMessage.findMany({
+      where: {
+        ...chatMessageConversationWhere(conversationId, {
+          userId,
+          agentConfigId: null,
+          ceoAgentConfigId,
+        }),
+        role: "AGENT",
+      },
+      orderBy: { createdAt: "desc" },
+      take: CREATION_STATE_LOOKBACK,
+      select: { contentCiphertext: true },
+    });
+  } catch (error) {
+    if (!isMissingAgentConversationError(error)) throw error;
+    recent = await tx.agentChatMessage.findMany({
+      where: {
+        userId,
+        ceoAgentConfigId,
+        agentConfigId: null,
+        role: "AGENT",
+      },
+      orderBy: { createdAt: "desc" },
+      take: CREATION_STATE_LOOKBACK,
+      select: { contentCiphertext: true },
+    });
+  }
   // Messages written in one turn share the same createdAt (Postgres now() is
   // the transaction timestamp), so row order alone cannot identify the latest
   // state. Each state row carries its own marker (savedAtMs + a per-process
@@ -91,7 +111,7 @@ async function handleCreationTurn({ userId, ceoConfigId, conversationId, activeS
   return withUserContext(userId, async (tx) => {
     const messageBase = {
       userId,
-      conversationId,
+      ...chatMessageConversationData(conversationId),
       ceoAgentConfigId: ceoConfigId,
       agentConfigId: null,
     };
