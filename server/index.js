@@ -52,9 +52,13 @@ app.post(
   plaidWebhookHandler
 );
 
-// 1mb allows onboarding/profile document uploads (text-only, still capped in
-// the documents module) without opening the door to large binary payloads.
-app.use(express.json({ limit: "1mb" }));
+// Document/onboarding uploads can carry up to 10 files at 500,000 KB each
+// (size still enforced in the documents module). Other API routes stay at 1mb.
+const largeJsonParser = express.json({ limit: "5500mb" });
+const defaultJsonParser = express.json({ limit: "1mb" });
+app.use("/api/agents/ceo/documents", largeJsonParser);
+app.use("/api/agents/onboarding", largeJsonParser);
+app.use(defaultJsonParser);
 
 // Mirror the Vercel route modules in local Express so development and deployment
 // exercise the same API entry points. Each handler also enforces its own

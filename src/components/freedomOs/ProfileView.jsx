@@ -6,6 +6,11 @@ import {
   updateCeoProfile,
   uploadCeoDocuments,
 } from "../../utils/agentsApi.js";
+import {
+  MAX_DOC_SIZE_BYTES,
+  MAX_UPLOAD_DOCS,
+  readCeoDocumentFiles,
+} from "../../utils/ceoDocumentFiles.js";
 import { describeAgentApiError, formatRelativeTime, fosStyles } from "./freedomOsShared.js";
 
 // "What your CEO Agent knows about you" — the living profile. Entries are
@@ -19,8 +24,6 @@ const CATEGORY_LABELS = {
   recurringConcerns: "Recurring concerns",
   lifeContext: "Life context",
 };
-
-const MAX_DOC_CHARS = 40_000;
 
 function sourceBadge(source) {
   const label =
@@ -134,25 +137,6 @@ function ProfileEntry({ entry, category, user, onChanged, onError }) {
   );
 }
 
-function readTextFiles(fileList) {
-  return Promise.all(
-    Array.from(fileList || []).map(
-      (file) =>
-        new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () =>
-            resolve({
-              filename: file.name,
-              mimeType: file.type || "text/plain",
-              content: String(reader.result || ""),
-            });
-          reader.onerror = () => reject(new Error(`Could not read ${file.name}`));
-          reader.readAsText(file);
-        })
-    )
-  );
-}
-
 export function ProfileView({ user, onBack }) {
   const [profile, setProfile] = useState(null);
   const [onboardingSummary, setOnboardingSummary] = useState(null);
@@ -199,16 +183,15 @@ export function ProfileView({ user, onBack }) {
     setActionError("");
     setIsUploading(true);
     try {
-      const parsed = await readTextFiles(fileList);
-      const valid = [];
-      for (const doc of parsed.slice(0, 3)) {
-        if (!doc.content?.trim()) continue;
-        if (doc.content.length > MAX_DOC_CHARS) {
-          throw new Error(`"${doc.filename}" is too large (max ${MAX_DOC_CHARS.toLocaleString()} characters).`);
-        }
-        valid.push(doc);
+      const files = Array.from(fileList || []);
+      if (files.length > MAX_UPLOAD_DOCS) {
+        throw new Error(`You can upload up to ${MAX_UPLOAD_DOCS} documents at once.`);
       }
-      if (!valid.length) throw new Error("Choose at least one text file (.txt, .md, .csv, or .json).");
+      const parsed = await readCeoDocumentFiles(files);
+      const valid = parsed.filter((doc) => doc.content?.trim());
+      if (!valid.length) {
+        throw new Error("Choose at least one supported file (.txt, .md, .csv, .json, or .pdf).");
+      }
       const payload = await uploadCeoDocuments(valid, { user });
       setDocuments((current) => [...(payload?.documents || []), ...current]);
     } catch (error) {
@@ -302,7 +285,9 @@ export function ProfileView({ user, onBack }) {
         <div style={{ display: "grid", gap: 10 }}>
           <div style={fosStyles.sectionLabel}>Reference documents</div>
           <p style={{ margin: 0, color: "#9fb0c9", fontSize: 12, lineHeight: 1.55 }}>
-            Text files your CEO Agent can read in chat (.txt, .md, .csv, .json).
+            Files your CEO Agent can read in chat (.txt, .md, .csv, .json, .pdf) — up
+            to {MAX_UPLOAD_DOCS} files, {MAX_DOC_SIZE_BYTES / 1024} KB each. No
+            character limit.
           </p>
           <label
             style={{
@@ -316,7 +301,7 @@ export function ProfileView({ user, onBack }) {
             {isUploading ? "Uploading…" : "Upload documents"}
             <input
               type="file"
-              accept=".txt,.md,.markdown,.csv,.json,text/plain,text/markdown,text/csv,application/json"
+              accept=".txt,.md,.markdown,.csv,.json,.pdf,text/plain,text/markdown,text/csv,application/json,application/pdf"
               multiple
               disabled={isUploading}
               style={{ display: "none" }}

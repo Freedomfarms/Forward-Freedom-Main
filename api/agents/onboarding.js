@@ -34,6 +34,14 @@ import { applyOps, getProfile, saveProfile } from "../../server/agents/profile.j
 // than merging — onboarding is a one-time flow; later edits go through
 // PUT /api/agents/ceo and PATCH /api/agents/ceo/profile.
 
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: "4.5mb",
+    },
+  },
+};
+
 const TEXT_MAX_LENGTH = 1000;
 const ADDITIONAL_NOTES_MAX_LENGTH = 2000;
 const LIST_MAX_ITEMS = 10;
