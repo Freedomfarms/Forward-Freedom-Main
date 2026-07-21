@@ -101,6 +101,8 @@ export async function generateDigest(userId) {
     tx.ceoAgentConfig.update({
       where: { id: ceoConfig.id },
       data: { lastDigestCiphertext: encrypt(digest), lastDigestAt: generatedAt },
+      // Avoid RETURNING un-migrated columns (P2022) if schema is lagging.
+      select: { id: true },
     })
   );
 

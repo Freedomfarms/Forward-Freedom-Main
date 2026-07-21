@@ -114,6 +114,8 @@ export async function saveProfile(userId, profile) {
     await tx.ceoAgentConfig.update({
       where: { id: ceoConfig.id },
       data: { profileCiphertext: ciphertext, profileUpdatedAt: new Date() },
+      // Avoid RETURNING un-migrated columns (P2022) if schema is lagging.
+      select: { id: true },
     });
   });
 }

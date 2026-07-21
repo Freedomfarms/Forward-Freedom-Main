@@ -8,6 +8,14 @@ import { renderProfileForPrompt } from "./profile.js";
 // Falls back to a deterministic template when the LLM is unavailable so setup
 // never blocks on model access.
 
+export function isMissingOnboardingSummaryColumnError(error) {
+  const message = String(error?.message || "");
+  return (
+    error?.code === "P2022" &&
+    /onboardingSummary/i.test(message)
+  );
+}
+
 function buildTemplateSummary({ profile, additionalNotes, documentNames }) {
   const goals = profile?.categories?.financialGoals?.map((entry) => entry.text) || [];
   const life = profile?.categories?.lifeContext?.map((entry) => entry.text) || [];
@@ -101,21 +109,30 @@ export async function saveOnboardingSummary(userId, summary) {
         onboardingSummaryCiphertext: ciphertext,
         onboardingSummaryAt: at,
       },
+      select: { id: true },
     });
   });
   return { summary: String(summary || "").trim(), generatedAt: at };
 }
 
 export async function readOnboardingSummary(userId) {
-  const row = await withUserContext(userId, (tx) =>
-    tx.ceoAgentConfig.findFirst({
-      where: { userId },
-      select: {
-        onboardingSummaryCiphertext: true,
-        onboardingSummaryAt: true,
-      },
-    })
-  );
+  let row;
+  try {
+    row = await withUserContext(userId, (tx) =>
+      tx.ceoAgentConfig.findFirst({
+        where: { userId },
+        select: {
+          onboardingSummaryCiphertext: true,
+          onboardingSummaryAt: true,
+        },
+      })
+    );
+  } catch (error) {
+    if (isMissingOnboardingSummaryColumnError(error)) {
+      return { summary: null, generatedAt: null };
+    }
+    throw error;
+  }
   if (!row?.onboardingSummaryCiphertext) {
     return { summary: null, generatedAt: null };
   }

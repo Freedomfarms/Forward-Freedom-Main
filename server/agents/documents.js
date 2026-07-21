@@ -5,6 +5,14 @@ import { AgentError } from "./errors.js";
 // Encrypted reference documents for the CEO Agent. Content is stored as
 // ciphertext plaintext (text/csv/md/json only) — no binary uploads.
 
+export function isMissingCeoDocumentsError(error) {
+  const message = String(error?.message || "");
+  return (
+    (error?.code === "P2021" || error?.code === "P2022") &&
+    /CeoDocument/i.test(message)
+  );
+}
+
 export const MAX_DOCUMENTS_PER_USER = 10;
 export const MAX_DOCUMENT_CONTENT_CHARS = 40_000;
 export const MAX_DOCUMENTS_PER_UPLOAD = 3;
@@ -89,63 +97,97 @@ export function readDocumentInputs(value, { max = MAX_DOCUMENTS_PER_UPLOAD } = {
 }
 
 export async function listCeoDocuments(userId) {
-  const rows = await withUserContext(userId, (tx) =>
-    tx.ceoDocument.findMany({
-      where: { userId },
-      orderBy: { createdAt: "desc" },
-      select: {
-        id: true,
-        filename: true,
-        mimeType: true,
-        sizeBytes: true,
-        createdAt: true,
-      },
-    })
-  );
-  return rows.map(serializeCeoDocument);
+  try {
+    const rows = await withUserContext(userId, (tx) =>
+      tx.ceoDocument.findMany({
+        where: { userId },
+        orderBy: { createdAt: "desc" },
+        select: {
+          id: true,
+          filename: true,
+          mimeType: true,
+          sizeBytes: true,
+          createdAt: true,
+        },
+      })
+    );
+    return rows.map(serializeCeoDocument);
+  } catch (error) {
+    if (isMissingCeoDocumentsError(error)) return [];
+    throw error;
+  }
 }
 
 export async function createCeoDocuments(userId, ceoAgentConfigId, documents) {
   if (!documents.length) return [];
-  return withUserContext(userId, async (tx) => {
-    const existing = await tx.ceoDocument.count({ where: { userId } });
-    if (existing + documents.length > MAX_DOCUMENTS_PER_USER) {
+  try {
+    return await withUserContext(userId, async (tx) => {
+      const existing = await tx.ceoDocument.count({ where: { userId } });
+      if (existing + documents.length > MAX_DOCUMENTS_PER_USER) {
+        throw new AgentError(
+          `You can store at most ${MAX_DOCUMENTS_PER_USER} documents for your CEO Agent.`,
+          "DOCUMENT_LIMIT_REACHED",
+          400
+        );
+      }
+      const created = [];
+      for (const doc of documents) {
+        const row = await tx.ceoDocument.create({
+          data: {
+            userId,
+            ceoAgentConfigId,
+            filename: doc.filename,
+            mimeType: doc.mimeType,
+            sizeBytes: doc.sizeBytes,
+            contentCiphertext: encrypt(doc.content),
+          },
+          select: {
+            id: true,
+            filename: true,
+            mimeType: true,
+            sizeBytes: true,
+            createdAt: true,
+          },
+        });
+        created.push(serializeCeoDocument(row));
+      }
+      return created;
+    });
+  } catch (error) {
+    if (isMissingCeoDocumentsError(error)) {
       throw new AgentError(
-        `You can store at most ${MAX_DOCUMENTS_PER_USER} documents for your CEO Agent.`,
-        "DOCUMENT_LIMIT_REACHED",
-        400
+        "Document storage is not available yet (database migration pending). Try again shortly.",
+        "DOCUMENTS_SCHEMA_UNMIGRATED",
+        503
       );
     }
-    const created = [];
-    for (const doc of documents) {
-      const row = await tx.ceoDocument.create({
-        data: {
-          userId,
-          ceoAgentConfigId,
-          filename: doc.filename,
-          mimeType: doc.mimeType,
-          sizeBytes: doc.sizeBytes,
-          contentCiphertext: encrypt(doc.content),
-        },
-      });
-      created.push(serializeCeoDocument(row));
-    }
-    return created;
-  });
+    throw error;
+  }
 }
 
 export async function deleteCeoDocument(userId, documentId) {
-  return withUserContext(userId, async (tx) => {
-    const existing = await tx.ceoDocument.findFirst({
-      where: { id: documentId, userId },
-      select: { id: true },
+  try {
+    return await withUserContext(userId, async (tx) => {
+      const existing = await tx.ceoDocument.findFirst({
+        where: { id: documentId, userId },
+        select: { id: true },
+      });
+      if (!existing) {
+        throw new AgentError("Document not found.", "DOCUMENT_NOT_FOUND", 404);
+      }
+      await tx.ceoDocument.delete({ where: { id: existing.id } });
+      return { deleted: true, id: existing.id };
     });
-    if (!existing) {
-      throw new AgentError("Document not found.", "DOCUMENT_NOT_FOUND", 404);
+  } catch (error) {
+    if (isMissingCeoDocumentsError(error)) {
+      throw new AgentError(
+        "Document storage is not available yet (database migration pending). Try again shortly.",
+        "DOCUMENTS_SCHEMA_UNMIGRATED",
+        503
+      );
     }
-    await tx.ceoDocument.delete({ where: { id: existing.id } });
-    return { deleted: true, id: existing.id };
-  });
+    throw error;
+  }
 }
 
 /**
@@ -153,14 +195,22 @@ export async function deleteCeoDocument(userId, documentId) {
  * Fail-closed per row: undecryptable documents are skipped.
  */
 export async function loadDocumentsForPrompt(userId, { limit = 8, maxCharsPerDoc = 6000 } = {}) {
-  const rows = await withUserContext(userId, (tx) =>
-    tx.ceoDocument.findMany({
-      where: { userId },
-      orderBy: { createdAt: "desc" },
-      take: limit,
-      select: { filename: true, contentCiphertext: true },
-    })
-  );
+  let rows;
+  try {
+    rows = await withUserContext(userId, (tx) =>
+      tx.ceoDocument.findMany({
+        where: { userId },
+        orderBy: { createdAt: "desc" },
+        take: limit,
+        select: { filename: true, contentCiphertext: true },
+      })
+    );
+  } catch (error) {
+    if (isMissingCeoDocumentsError(error)) {
+      return "(no reference documents uploaded)";
+    }
+    throw error;
+  }
   const blocks = [];
   for (const row of rows) {
     let content;

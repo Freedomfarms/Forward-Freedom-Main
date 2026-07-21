@@ -5,6 +5,7 @@ import { readJsonBody } from "../../server/http/requestHelpers.js";
 import { applySecurityHeaders } from "../../server/http/responseHelpers.js";
 import { AgentError } from "../../server/agents/errors.js";
 import {
+  CEO_AGENT_CONFIG_SAFE_SELECT,
   CEO_PERSONALITY_PRESETS,
   ensureCeoAgentConfig,
   isValidAvatarKey,
@@ -12,9 +13,14 @@ import {
   respondAgentApiError,
   serializeCeoAgentConfig,
 } from "../../server/agents/apiHelpers.js";
-import { createCeoDocuments, readDocumentInputs } from "../../server/agents/documents.js";
+import {
+  createCeoDocuments,
+  isMissingCeoDocumentsError,
+  readDocumentInputs,
+} from "../../server/agents/documents.js";
 import {
   generateOnboardingSummary,
+  isMissingOnboardingSummaryColumnError,
   saveOnboardingSummary,
 } from "../../server/agents/onboardingSummary.js";
 import { applyOps, getProfile, saveProfile } from "../../server/agents/profile.js";
@@ -152,6 +158,7 @@ export default async function handler(request, response) {
           ...(parsed.avatarKey ? { avatarKey: parsed.avatarKey } : {}),
           onboardingCompletedAt: new Date(),
         },
+        select: CEO_AGENT_CONFIG_SAFE_SELECT,
       });
     });
 
@@ -164,7 +171,15 @@ export default async function handler(request, response) {
 
     let documents = [];
     if (parsed.documents.length) {
-      documents = await createCeoDocuments(decodedToken.uid, ceoConfig.id, parsed.documents);
+      try {
+        documents = await createCeoDocuments(decodedToken.uid, ceoConfig.id, parsed.documents);
+      } catch (error) {
+        // Table may not exist yet if migrate deploy lagged; don't fail setup.
+        if (!isMissingCeoDocumentsError(error)) throw error;
+        console.warn(
+          "[onboarding] CeoDocument table missing; continuing without document storage until migrate deploy."
+        );
+      }
     }
 
     const { summary } = await generateOnboardingSummary({
@@ -173,7 +188,15 @@ export default async function handler(request, response) {
       documentNames: documents.map((doc) => doc.filename),
       personalityPreset: ceoConfig.personalityPreset,
     });
-    const savedSummary = await saveOnboardingSummary(decodedToken.uid, summary);
+    let savedSummary = { summary, generatedAt: new Date() };
+    try {
+      savedSummary = await saveOnboardingSummary(decodedToken.uid, summary);
+    } catch (error) {
+      if (!isMissingOnboardingSummaryColumnError(error)) throw error;
+      console.warn(
+        "[onboarding] onboardingSummary columns missing; summary returned but not cached until migrate deploy."
+      );
+    }
 
     return response.status(200).json({
       ceoAgent: serializeCeoAgentConfig(ceoConfig),
