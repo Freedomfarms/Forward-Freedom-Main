@@ -3,6 +3,11 @@ import { encrypt } from "../security/envelope.js";
 import { AgentError, describeAgentError } from "./errors.js";
 import { getRunnableAgentHandler } from "./registry.js";
 import { addCosts, addUsage, estimateCost } from "./costs.js";
+import {
+  buildRunEmailContent,
+  isEmailDeliveryEnabled,
+  sendAgentReportEmail,
+} from "./emailDelivery.js";
 import { extractFromRun } from "./profile.js";
 
 // Trust is staged (see prisma/schema.prisma): the runtime only honors these
@@ -87,6 +92,22 @@ export async function runAgent({ userId, agentConfigId, trigger = "manual" }) {
   try {
     const result = await gate.handler({ userId, config, trigger });
 
+    // Opt-in email delivery of the run's report to the user's own VERIFIED
+    // account address. Reminders handles delivery inside its own handler (the
+    // email IS the reminder); every other type is emailed here, after the
+    // handler produced its report. Best-effort: never fails the run.
+    let summary = result.summary;
+    if (config.agentType !== "reminders" && isEmailDeliveryEnabled(config.toolAccess)) {
+      const { subject, body } = buildRunEmailContent({
+        agentName: config.name,
+        agentType: config.agentType,
+        run: { summary: result.summary, startedAt: run.startedAt },
+        output: result.output != null ? String(result.output) : null,
+      });
+      const emailResult = await sendAgentReportEmail({ userId, subject, body });
+      summary = summary ? `${summary} (${emailResult.status})` : `(${emailResult.status})`;
+    }
+
     const usage = result.usage || null;
     const model = result.model ?? (usage ? config.model : null);
     const cost = estimateCost(model, usage);
@@ -95,7 +116,7 @@ export async function runAgent({ userId, agentConfigId, trigger = "manual" }) {
         where: { id: run.id },
         data: {
           status: "SUCCEEDED",
-          summary: clampSummary(result.summary),
+          summary: clampSummary(summary),
           dataAccessed: result.dataAccessed ?? undefined,
           outputCiphertext: result.output != null ? encrypt(String(result.output)) : null,
           model,

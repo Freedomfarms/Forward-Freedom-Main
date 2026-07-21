@@ -10,13 +10,19 @@ import { AgentError } from "../../../server/agents/errors.js";
 import { respondAgentApiError } from "../../../server/agents/apiHelpers.js";
 import { respondToChat } from "../../../server/agents/chat.js";
 import {
+  emailRunReportFromChat,
+  isEmailReportRequest,
+} from "../../../server/agents/emailDelivery.js";
+import {
   listChatHistory,
   serializeChatHistoryMessages,
 } from "../../../server/agents/chatHistory.js";
 
 // GET  /api/agents/:id/chat — visible message history for one sub-agent
 // POST /api/agents/:id/chat — send a message. respondToChat enforces ownership
-// and scoping (this agent's own runs and messages only).
+// and scoping (this agent's own runs and messages only). Messages that ask
+// the agent to email its report/draft are handled deterministically (no LLM):
+// the run output is emailed to the user's own verified account address.
 
 export default async function handler(request, response) {
   applySecurityHeaders(response);
@@ -51,6 +57,18 @@ export default async function handler(request, response) {
       typeof payload?.relatedRunId === "string" && payload.relatedRunId.trim()
         ? payload.relatedRunId.trim()
         : null;
+
+    // "Email me the report/draft" → deterministic email of the (related or
+    // latest) run to the user's own verified address, no LLM call.
+    if (isEmailReportRequest(message)) {
+      const outcome = await emailRunReportFromChat({
+        userId: decodedToken.uid,
+        agentConfigId: agentId,
+        message,
+        relatedRunId,
+      });
+      return response.status(200).json({ reply: outcome.reply, messageId: outcome.messageId });
+    }
 
     const { reply, messageId } = await respondToChat({
       userId: decodedToken.uid,

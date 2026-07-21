@@ -33,8 +33,9 @@ export const CEO_PERSONALITY_PRESETS = Object.freeze([
 // its runtime fails closed — the runner records a SKIPPED run for it.
 export { CREATABLE_AGENT_TYPES };
 
-// The only tool key any agent may be granted in this phase (reminders email
-// delivery to the user's own address). Unknown keys are dropped, not stored.
+// The only tool key any agent may be granted in this phase: email delivery of
+// the agent's run output (report/summary/reminder) to the user's OWN verified
+// account address. Unknown keys are dropped, not stored.
 const ALLOWED_TOOL_KEYS = Object.freeze(["email"]);
 
 const NAME_MAX_LENGTH = 80;

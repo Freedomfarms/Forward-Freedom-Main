@@ -536,6 +536,53 @@ test("GET /api/agents/:id/runs/:runId returns the decrypted output (owner only)"
   assert.equal(response.body.run.output, "the full report");
 });
 
+test("POST /api/agents/:id/runs/:runId (email me this run) fails closed", async (t) => {
+  if (!requireSetup(t)) return;
+  const previousResendKey = process.env.RESEND_API_KEY;
+  delete process.env.RESEND_API_KEY;
+  t.after(() => {
+    if (previousResendKey == null) delete process.env.RESEND_API_KEY;
+    else process.env.RESEND_API_KEY = previousResendKey;
+  });
+
+  seedAgent();
+  currentDb.tables.agentRun.push({
+    id: "run-1",
+    userId: "u1",
+    agentConfigId: "agent-1",
+    agentType: "finance",
+    status: "SUCCEEDED",
+    summary: "the summary",
+    outputCiphertext: envelope.encrypt("the full report"),
+    startedAt: new Date("2026-07-15T13:00:00Z"),
+  });
+
+  // Ownership is enforced before anything else.
+  const foreign = await invoke(
+    handlers.agentRunById,
+    authedRequest("u2", { method: "POST", params: { id: "agent-1", runId: "run-1" } })
+  );
+  assert.equal(foreign.statusCode, 404);
+
+  // Email service missing → typed 503, nothing sent.
+  const noService = await invoke(
+    handlers.agentRunById,
+    authedRequest("u1", { method: "POST", params: { id: "agent-1", runId: "run-1" } })
+  );
+  assert.equal(noService.statusCode, 503);
+  assert.equal(noService.body.code, "EMAIL_SERVICE_UNAVAILABLE");
+
+  // Service configured but the account email cannot be verified (Firebase
+  // Admin is not configured in tests) → typed 403, nothing sent.
+  process.env.RESEND_API_KEY = "test-key-never-used";
+  const unverified = await invoke(
+    handlers.agentRunById,
+    authedRequest("u1", { method: "POST", params: { id: "agent-1", runId: "run-1" } })
+  );
+  assert.equal(unverified.statusCode, 403);
+  assert.equal(unverified.body.code, "EMAIL_NOT_VERIFIED");
+});
+
 // ── Chat ─────────────────────────────────────────────────────────────────────
 
 test("POST /api/agents/:id/chat delegates to respondToChat scoped to the agent", async (t) => {
@@ -555,6 +602,75 @@ test("POST /api/agents/:id/chat delegates to respondToChat scoped to the agent",
   assert.deepEqual(chatCalls, [
     { userId: "u1", agentConfigId: "agent-1", message: "what did you find?", relatedRunId: "run-9" },
   ]);
+});
+
+test("POST /api/agents/:id/chat 'email me the report' is handled without an LLM call", async (t) => {
+  if (!requireSetup(t)) return;
+  const previousResendKey = process.env.RESEND_API_KEY;
+  delete process.env.RESEND_API_KEY;
+  t.after(() => {
+    if (previousResendKey == null) delete process.env.RESEND_API_KEY;
+    else process.env.RESEND_API_KEY = previousResendKey;
+  });
+
+  seedAgent();
+
+  // No completed run yet → helpful reply, no LLM call.
+  const noRuns = await invoke(
+    handlers.agentChat,
+    authedRequest("u1", {
+      method: "POST",
+      params: { id: "agent-1" },
+      body: { message: "can you email me the report?" },
+    })
+  );
+  assert.equal(noRuns.statusCode, 200);
+  assert.match(noRuns.body.reply, /no completed run/i);
+  assert.equal(chatCalls.length, 0);
+
+  // With a completed run but no email service → explains the skip in chat.
+  currentDb.tables.agentRun.push({
+    id: "run-1",
+    userId: "u1",
+    agentConfigId: "agent-1",
+    agentType: "finance",
+    status: "SUCCEEDED",
+    summary: "the summary",
+    outputCiphertext: envelope.encrypt("the full report"),
+    startedAt: new Date("2026-07-15T13:00:00Z"),
+  });
+  const skipped = await invoke(
+    handlers.agentChat,
+    authedRequest("u1", {
+      method: "POST",
+      params: { id: "agent-1" },
+      body: { message: "email me the report" },
+    })
+  );
+  assert.equal(skipped.statusCode, 200);
+  assert.match(skipped.body.reply, /couldn't email it/i);
+  assert.match(skipped.body.reply, /email service is not configured/i);
+  assert.equal(chatCalls.length, 0);
+
+  // Both chat turns were persisted to the durable thread.
+  const chatRows = currentDb.tables.agentChatMessage.filter(
+    (row) => row.agentConfigId === "agent-1"
+  );
+  assert.equal(chatRows.filter((row) => row.role === "USER").length, 2);
+  assert.equal(chatRows.filter((row) => row.role === "AGENT").length, 2);
+
+  // A normal question still goes through the LLM chat path.
+  const normal = await invoke(
+    handlers.agentChat,
+    authedRequest("u1", {
+      method: "POST",
+      params: { id: "agent-1" },
+      body: { message: "what did you find?" },
+    })
+  );
+  assert.equal(normal.statusCode, 200);
+  assert.equal(normal.body.reply, "mock chat reply");
+  assert.equal(chatCalls.length, 1);
 });
 
 test("POST /api/agents/ceo/chat delegates to respondToChat scoped to the CEO config", async (t) => {

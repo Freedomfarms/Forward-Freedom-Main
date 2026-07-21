@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { styles } from "../../styles.js";
-import { fetchAgentRuns, triggerAgentRun, updateAgent } from "../../utils/agentsApi.js";
+import { emailAgentRun, fetchAgentRuns, triggerAgentRun, updateAgent } from "../../utils/agentsApi.js";
 import { AgentChat } from "./AgentChat.jsx";
 import { PermissionLedger } from "./PermissionLedger.jsx";
 import { TrustLadder } from "./TrustLadder.jsx";
@@ -16,8 +16,26 @@ import {
 
 const RUNS_PAGE_SIZE = 20;
 
-function RunRow({ run, onAskAboutRun }) {
+function RunRow({ run, onAskAboutRun, onEmailRun }) {
+  const [isEmailing, setIsEmailing] = useState(false);
+  const [emailNote, setEmailNote] = useState("");
   const tokens = (run.tokensInput || 0) + (run.tokensOutput || 0);
+  const canEmail = run.status === "SUCCEEDED" && typeof onEmailRun === "function";
+
+  const handleEmail = async () => {
+    if (isEmailing) return;
+    setIsEmailing(true);
+    setEmailNote("");
+    try {
+      const payload = await onEmailRun(run.id);
+      setEmailNote(payload?.status || "Emailed to your verified account address.");
+    } catch (error) {
+      setEmailNote(error?.message || "The email could not be sent.");
+    } finally {
+      setIsEmailing(false);
+    }
+  };
+
   return (
     <div
       style={{
@@ -44,11 +62,24 @@ function RunRow({ run, onAskAboutRun }) {
       <div style={{ color: "#d7ebff", fontSize: 13, lineHeight: 1.55 }}>
         {run.summary || run.error || "No summary recorded for this run."}
       </div>
-      <div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <button type="button" style={fosStyles.subtleButton} onClick={() => onAskAboutRun(run.id)}>
           Ask about this run
         </button>
+        {canEmail ? (
+          <button
+            type="button"
+            style={{ ...fosStyles.subtleButton, opacity: isEmailing ? 0.6 : 1 }}
+            disabled={isEmailing}
+            onClick={() => void handleEmail()}
+          >
+            {isEmailing ? "Emailing…" : "Email me this run"}
+          </button>
+        ) : null}
       </div>
+      {emailNote ? (
+        <div style={{ color: "#8faecc", fontSize: 12, lineHeight: 1.5 }}>{emailNote}</div>
+      ) : null}
     </div>
   );
 }
@@ -67,6 +98,8 @@ export function AgentDetail({ agent, user, onBack, onAgentUpdated, onOpenFinance
   const [dodError, setDodError] = useState("");
   const [dodSavedAt, setDodSavedAt] = useState(null);
   const [chatRelatedRunId, setChatRelatedRunId] = useState(null);
+  const [isTogglingEmail, setIsTogglingEmail] = useState(false);
+  const [emailToggleError, setEmailToggleError] = useState("");
 
   const agentId = agent?.id || null;
   const meta = getAgentTypeMeta(agent?.agentType);
@@ -171,6 +204,27 @@ export function AgentDetail({ agent, user, onBack, onAgentUpdated, onOpenFinance
       setIsSavingDod(false);
     }
   };
+
+  const emailEnabled = agent?.toolAccess?.email === true;
+  const handleToggleEmailDelivery = async () => {
+    if (!agentId || isTogglingEmail) return;
+    setIsTogglingEmail(true);
+    setEmailToggleError("");
+    try {
+      const payload = await updateAgent(
+        agentId,
+        { toolAccess: emailEnabled ? {} : { email: true } },
+        { user }
+      );
+      if (payload?.agent) onAgentUpdated?.(payload.agent);
+    } catch (error) {
+      setEmailToggleError(describeAgentApiError(error, "Unable to update email delivery."));
+    } finally {
+      setIsTogglingEmail(false);
+    }
+  };
+
+  const handleEmailRun = (runId) => emailAgentRun(agentId, runId, { user });
 
   if (!agent) return null;
 
@@ -280,6 +334,37 @@ export function AgentDetail({ agent, user, onBack, onAgentUpdated, onOpenFinance
         {dodError ? <div style={fosStyles.errorBox}>{dodError}</div> : null}
       </div>
 
+      {agent.agentType !== "email" ? (
+      <div style={{ display: "grid", gap: 10 }}>
+        <div style={fosStyles.sectionLabel}>Email delivery</div>
+        <div style={{ color: "#9fb0c9", fontSize: 13, lineHeight: 1.6 }}>
+          When enabled, each run&apos;s report is also emailed to your own verified account
+          address — never anyone else. You can also email any single run from its row below.
+        </div>
+        {user && user.emailVerified === false ? (
+          <div style={{ color: "#ffcf9d", fontSize: 12, lineHeight: 1.5 }}>
+            Your account email is not verified yet, so emails will be skipped until you verify
+            it from your account settings.
+          </div>
+        ) : null}
+        <div>
+          <button
+            type="button"
+            style={{ ...fosStyles.secondaryButton, opacity: isTogglingEmail ? 0.6 : 1 }}
+            disabled={isTogglingEmail}
+            onClick={() => void handleToggleEmailDelivery()}
+          >
+            {isTogglingEmail
+              ? "Saving…"
+              : emailEnabled
+                ? "Disable email delivery"
+                : "Email me each run's report"}
+          </button>
+        </div>
+        {emailToggleError ? <div style={fosStyles.errorBox}>{emailToggleError}</div> : null}
+      </div>
+      ) : null}
+
       <div style={{ display: "grid", gap: 12 }}>
         <div style={fosStyles.sectionLabel}>Run history</div>
         {runsError ? <div style={fosStyles.errorBox}>{runsError}</div> : null}
@@ -292,7 +377,12 @@ export function AgentDetail({ agent, user, onBack, onAgentUpdated, onOpenFinance
           </div>
         ) : null}
         {(runs || []).map((run) => (
-          <RunRow key={run.id} run={run} onAskAboutRun={(runId) => setChatRelatedRunId(runId)} />
+          <RunRow
+            key={run.id}
+            run={run}
+            onAskAboutRun={(runId) => setChatRelatedRunId(runId)}
+            onEmailRun={handleEmailRun}
+          />
         ))}
         {hasMoreRuns ? (
           <div>

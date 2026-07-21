@@ -183,11 +183,20 @@ function renderReview(draft) {
     );
   }
   if (draft.toolAccess?.email) {
-    lines.push("- Email delivery: reminders will also be emailed to your own account address.");
+    lines.push(
+      draft.agentType === "reminders"
+        ? "- Email delivery: reminders will also be emailed to your own verified account address."
+        : "- Email delivery: each run's report will also be emailed to your own verified account address."
+    );
+    if (draft.emailAddress) {
+      lines.push(
+        `- Note: agents can only email YOUR account address (and only once it's verified) — ${draft.emailAddress} can't be used unless it IS your account email.`
+      );
+    }
   } else if (draft.emailRequested || draft.emailAddress) {
     const dest = draft.emailAddress ? ` to ${draft.emailAddress}` : "";
     lines.push(
-      `- Note: emailing reports${dest} isn't available for this agent type yet; you'll see outputs in Freedom OS. (Reminders agents can email your account address.)`
+      `- Note: emailing reports${dest} isn't available for this agent type; you'll see outputs in Freedom OS.`
     );
   }
   lines.push('Reply "confirm" to create it, or "cancel" to discard.');
@@ -253,14 +262,23 @@ function applyScheduleParse(draft, parsed) {
   return null;
 }
 
+// Types whose run output can be emailed to the user's own verified address.
+// Mirrors EMAIL_CAPABLE_AGENT_TYPES in emailDelivery.js (kept local so this
+// module stays pure / dependency-free for unit tests).
+const EMAIL_CAPABLE_TYPES = Object.freeze(["finance", "research", "reminders"]);
+
+function applyPendingEmailRequest(draft) {
+  if (draft.emailRequested && EMAIL_CAPABLE_TYPES.includes(draft.agentType)) {
+    draft.toolAccess = { ...(draft.toolAccess || {}), email: true };
+  }
+}
+
 function applyEmailSignals(draft, message) {
   const address = extractEmailAddress(message);
   if (address) draft.emailAddress = address;
   if (/\bemail/i.test(message) || address) {
     draft.emailRequested = true;
-    if (draft.agentType === "reminders") {
-      draft.toolAccess = { ...(draft.toolAccess || {}), email: true };
-    }
+    applyPendingEmailRequest(draft);
   }
   const time = extractRequestedTime(message);
   if (time) draft.requestedTime = time;
@@ -415,6 +433,9 @@ export function advanceCreationSession(state, message) {
   if (!draft.agentType) {
     const agentType = parseAgentType(text);
     if (!agentType) {
+      // Still capture email/time intent so it isn't lost while the type is
+      // being clarified (applied once a type is chosen).
+      applyEmailSignals(draft, text);
       return {
         state: next,
         reply: `I didn't catch a valid agent type. ${STEP_QUESTIONS.choose_type}`,
@@ -423,6 +444,8 @@ export function advanceCreationSession(state, message) {
     draft.agentType = agentType;
     draft.name = `${TYPE_LABELS[agentType]} Agent`;
     prefix = `A ${TYPE_LABELS[agentType]} agent it is.`;
+    // Email may have been requested before the type was known.
+    applyPendingEmailRequest(draft);
     // Same message may also carry purpose / schedule / email.
     const { ackNotes } = absorbMessage(draft, text, { asSlot: "purpose_or_opening" });
     next.step = stepForDraft(draft);
@@ -530,10 +553,16 @@ export function completeCreationSession(state, agent) {
 }
 
 export function buildCreationSuccessReply(agent) {
-  return [
+  const parts = [
     `Done — I've created "${agent.name}" (${agent.agentType}). It starts read-only and is active now.`,
     agent.agentType === "email"
       ? "Heads up: email agents cannot run yet in this phase; the configuration is saved for when the runtime ships."
       : "You can trigger a run from its page or let its schedule pick it up.",
-  ].join(" ");
+  ];
+  if (agent.toolAccess?.email === true) {
+    parts.push(
+      "Each run will also be emailed to your account address once it's verified."
+    );
+  }
+  return parts.join(" ");
 }
