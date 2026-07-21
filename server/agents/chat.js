@@ -4,6 +4,7 @@ import { withUserContext } from "../db/prisma.js";
 import { decrypt, decryptJson, encrypt } from "../security/envelope.js";
 import { CEO_AGENT_CONFIG_SAFE_SELECT } from "./apiHelpers.js";
 import { isCreationStateContent } from "./creationFlow.js";
+import { ensureDefaultConversation, touchConversation } from "./conversations.js";
 import { loadDocumentsForPrompt } from "./documents.js";
 import { AgentError } from "./errors.js";
 import { CEO_AGENT_MODEL, generateAgentObject } from "./llm.js";
@@ -127,11 +128,18 @@ export async function respondToChat({
       }
     }
 
+    const conversation = await ensureDefaultConversation(tx, {
+      userId,
+      agentConfigId: agentConfig?.id ?? null,
+      ceoAgentConfigId: ceoConfig?.id ?? null,
+    });
+
     // History is captured before persisting the new message so the transcript
     // and the current question stay distinct in the prompt.
     const history = await tx.agentChatMessage.findMany({
       where: {
         userId,
+        conversationId: conversation.id,
         agentConfigId: agentConfig?.id ?? null,
         ceoAgentConfigId: ceoConfig?.id ?? null,
       },
@@ -143,6 +151,7 @@ export async function respondToChat({
     await tx.agentChatMessage.create({
       data: {
         userId,
+        conversationId: conversation.id,
         agentConfigId: agentConfig?.id ?? null,
         ceoAgentConfigId: ceoConfig?.id ?? null,
         role: "USER",
@@ -150,6 +159,7 @@ export async function respondToChat({
         relatedRunId,
       },
     });
+    await touchConversation(tx, conversation.id);
 
     // Sub-agent chats are scoped to that agent's own runs; the CEO chat reads
     // summaries across every agent the user owns.
@@ -188,10 +198,18 @@ export async function respondToChat({
         select: { profileCiphertext: true },
       }));
 
-    return { agentConfig, ceoConfig, history, runs, relatedRun, profileSource };
+    return {
+      agentConfig,
+      ceoConfig,
+      conversationId: conversation.id,
+      history,
+      runs,
+      relatedRun,
+      profileSource,
+    };
   });
 
-  const { agentConfig, ceoConfig, runs, relatedRun } = context;
+  const { agentConfig, ceoConfig, conversationId, runs, relatedRun } = context;
   const history = [...context.history].reverse();
   let profile;
   try {
@@ -254,18 +272,21 @@ export async function respondToChat({
   });
 
   const reply = String(object?.reply || "").trim() || "Sorry — I could not generate a reply.";
-  const replyMessage = await withUserContext(userId, (tx) =>
-    tx.agentChatMessage.create({
+  const replyMessage = await withUserContext(userId, async (tx) => {
+    const created = await tx.agentChatMessage.create({
       data: {
         userId,
+        conversationId,
         agentConfigId: agentConfig?.id ?? null,
         ceoAgentConfigId: ceoConfig?.id ?? null,
         role: "AGENT",
         contentCiphertext: encrypt(reply),
         relatedRunId,
       },
-    })
-  );
+    });
+    await touchConversation(tx, conversationId);
+    return created;
+  });
 
   // Profile ops arrive inside the same structured reply (no second model
   // call); applying them is best-effort and never fails the chat.

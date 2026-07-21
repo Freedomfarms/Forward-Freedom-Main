@@ -3,6 +3,7 @@ import { getFirebaseAdminAuth, isFirebaseAdminConfigured } from "../auth/firebas
 import { withUserContext } from "../db/prisma.js";
 import { decrypt, encrypt } from "../security/envelope.js";
 import { AgentError } from "./errors.js";
+import { ensureDefaultConversation, touchConversation } from "./conversations.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared email delivery for sub-agent reports (finance, research, reminders).
@@ -174,15 +175,22 @@ export async function emailRunReportFromChat({ userId, agentConfigId, message, r
       throw new AgentError("Agent not found.", "AGENT_NOT_FOUND", 404);
     }
 
+    const conversation = await ensureDefaultConversation(tx, {
+      userId,
+      agentConfigId: agentConfig.id,
+    });
+
     await tx.agentChatMessage.create({
       data: {
         userId,
+        conversationId: conversation.id,
         agentConfigId: agentConfig.id,
         role: "USER",
         contentCiphertext: encrypt(String(message)),
         relatedRunId: relatedRunId || null,
       },
     });
+    await touchConversation(tx, conversation.id);
 
     const run = relatedRunId
       ? await tx.agentRun.findFirst({
@@ -193,10 +201,10 @@ export async function emailRunReportFromChat({ userId, agentConfigId, message, r
           orderBy: { startedAt: "desc" },
         });
 
-    return { agentConfig, run };
+    return { agentConfig, run, conversationId: conversation.id };
   });
 
-  const { agentConfig, run } = context;
+  const { agentConfig, run, conversationId } = context;
 
   let reply;
   if (!run) {
@@ -223,17 +231,20 @@ export async function emailRunReportFromChat({ userId, agentConfigId, message, r
       : `I couldn't email it: ${result.status}. The full report is still available here in Freedom OS.`;
   }
 
-  const replyMessage = await withUserContext(userId, (tx) =>
-    tx.agentChatMessage.create({
+  const replyMessage = await withUserContext(userId, async (tx) => {
+    const created = await tx.agentChatMessage.create({
       data: {
         userId,
+        conversationId,
         agentConfigId: agentConfig.id,
         role: "AGENT",
         contentCiphertext: encrypt(reply),
         relatedRunId: run?.id || null,
       },
-    })
-  );
+    });
+    await touchConversation(tx, conversationId);
+    return created;
+  });
 
   return { reply, messageId: replyMessage.id };
 }

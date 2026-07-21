@@ -61,6 +61,7 @@ const TABLES = [
   "user",
   "agentConfig",
   "ceoAgentConfig",
+  "agentConversation",
   "agentRun",
   "agentChatMessage",
   "ceoDocument",

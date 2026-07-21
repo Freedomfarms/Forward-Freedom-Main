@@ -28,6 +28,10 @@ import {
   encodeCreationState,
   startCreationSession,
 } from "../../../server/agents/creationFlow.js";
+import {
+  ensureDefaultConversation,
+  touchConversation,
+} from "../../../server/agents/conversations.js";
 
 // GET  /api/agents/ceo/chat — visible message history for the CEO thread
 // POST /api/agents/ceo/chat — send a message (or drive "+ New Agent" creation).
@@ -80,10 +84,22 @@ let stateSequence = 0;
 
 async function handleCreationTurn({ userId, ceoConfigId, activeState, message }) {
   return withUserContext(userId, async (tx) => {
-    const messageBase = { userId, ceoAgentConfigId: ceoConfigId, agentConfigId: null };
+    // Phase 1: creation turns stay on the default CEO thread. Phase 3 will
+    // pin this flow to an isSystem conversation instead.
+    const conversation = await ensureDefaultConversation(tx, {
+      userId,
+      ceoAgentConfigId: ceoConfigId,
+    });
+    const messageBase = {
+      userId,
+      conversationId: conversation.id,
+      ceoAgentConfigId: ceoConfigId,
+      agentConfigId: null,
+    };
     await tx.agentChatMessage.create({
       data: { ...messageBase, role: "USER", contentCiphertext: encrypt(message) },
     });
+    await touchConversation(tx, conversation.id);
 
     let turn;
     if (activeState) {
@@ -125,6 +141,7 @@ async function handleCreationTurn({ userId, ceoConfigId, activeState, message })
     const replyMessage = await tx.agentChatMessage.create({
       data: { ...messageBase, role: "AGENT", contentCiphertext: encrypt(reply) },
     });
+    await touchConversation(tx, conversation.id);
 
     return { reply, messageId: replyMessage.id, agentCreated };
   });
