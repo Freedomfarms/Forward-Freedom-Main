@@ -3,7 +3,7 @@ import { decrypt, encrypt } from "../security/envelope.js";
 import { AgentError } from "./errors.js";
 
 // Encrypted reference documents for the CEO Agent. Content is stored as
-// ciphertext plaintext (text/csv/md/json only) — no binary uploads.
+// encrypted UTF-8 text (.txt/.md/.csv/.json; PDFs are text-extracted client-side).
 
 export function isMissingCeoDocumentsError(error) {
   const message = String(error?.message || "");
@@ -14,8 +14,9 @@ export function isMissingCeoDocumentsError(error) {
 }
 
 export const MAX_DOCUMENTS_PER_USER = 10;
-export const MAX_DOCUMENT_CONTENT_CHARS = 40_000;
-export const MAX_DOCUMENTS_PER_UPLOAD = 3;
+/** Per-file ceiling in bytes (500,000 KB). No character limit on content. */
+export const MAX_DOCUMENT_SIZE_BYTES = 500_000 * 1024;
+export const MAX_DOCUMENTS_PER_UPLOAD = 10;
 export const MAX_FILENAME_LENGTH = 120;
 
 const ALLOWED_MIME_TYPES = new Set([
@@ -74,16 +75,17 @@ export function readDocumentInput(raw, index = 0) {
   }
   const content = typeof raw.content === "string" ? raw.content : "";
   if (!content.trim()) throw invalid(`${label}.content is required.`);
-  if (content.length > MAX_DOCUMENT_CONTENT_CHARS) {
+  const sizeBytes = Buffer.byteLength(content, "utf8");
+  if (sizeBytes > MAX_DOCUMENT_SIZE_BYTES) {
     throw invalid(
-      `${label}.content must be at most ${MAX_DOCUMENT_CONTENT_CHARS} characters.`
+      `${label} is too large (max ${MAX_DOCUMENT_SIZE_BYTES / 1024} KB).`
     );
   }
   return {
     filename,
     mimeType,
     content,
-    sizeBytes: Buffer.byteLength(content, "utf8"),
+    sizeBytes,
   };
 }
 

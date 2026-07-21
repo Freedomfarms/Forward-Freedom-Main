@@ -2,6 +2,11 @@ import { useState } from "react";
 import { styles } from "../../styles.js";
 import { ApiRequestError } from "../../utils/api.js";
 import { submitCeoOnboarding } from "../../utils/agentsApi.js";
+import {
+  MAX_DOC_SIZE_BYTES,
+  MAX_UPLOAD_DOCS,
+  readCeoDocumentFiles,
+} from "../../utils/ceoDocumentFiles.js";
 import { CEO_AVATAR_PRESETS } from "../../data/ceoAvatars.js";
 import { describeAgentApiError, fosStyles, PERSONALITY_PRESETS } from "./freedomOsShared.js";
 
@@ -43,8 +48,6 @@ const DIGEST_OPTIONS = [
 ];
 
 const MAX_GOALS = 3;
-const MAX_UPLOAD_DOCS = 3;
-const MAX_DOC_CHARS = 40_000;
 
 function Chip({ selected, onToggle, children, disabled = false }) {
   return (
@@ -83,27 +86,6 @@ function StepShell({ eyebrow, title, subtitle, children }) {
       </div>
       {children}
     </div>
-  );
-}
-
-function readTextFiles(fileList) {
-  const files = Array.from(fileList || []);
-  return Promise.all(
-    files.map(
-      (file) =>
-        new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => {
-            resolve({
-              filename: file.name,
-              mimeType: file.type || "text/plain",
-              content: String(reader.result || ""),
-            });
-          };
-          reader.onerror = () => reject(new Error(`Could not read ${file.name}`));
-          reader.readAsText(file);
-        })
-    )
   );
 }
 
@@ -152,10 +134,6 @@ export function OnboardingInterview({ user, onComplete }) {
           break;
         }
         if (!doc.content?.trim()) continue;
-        if (doc.content.length > MAX_DOC_CHARS) {
-          setDocError(`"${doc.filename}" is too large (max ${MAX_DOC_CHARS.toLocaleString()} characters).`);
-          continue;
-        }
         if (next.some((item) => item.filename === doc.filename)) continue;
         next.push(doc);
       }
@@ -493,7 +471,7 @@ export function OnboardingInterview({ user, onComplete }) {
         <StepShell
           eyebrow="Step 9 of 9"
           title="Upload documents for your CEO Agent"
-          subtitle={`Optional. Text files only (.txt, .md, .csv, .json) — up to ${MAX_UPLOAD_DOCS}. Your CEO Agent can read these when you chat.`}
+          subtitle={`Optional. .txt, .md, .csv, .json, or .pdf — up to ${MAX_UPLOAD_DOCS} files, ${MAX_DOC_SIZE_BYTES / 1024} KB each (no character limit). Your CEO Agent can read these when you chat.`}
         >
           <label
             style={{
@@ -508,13 +486,13 @@ export function OnboardingInterview({ user, onComplete }) {
             Choose files
             <input
               type="file"
-              accept=".txt,.md,.markdown,.csv,.json,text/plain,text/markdown,text/csv,application/json"
+              accept=".txt,.md,.markdown,.csv,.json,.pdf,text/plain,text/markdown,text/csv,application/json,application/pdf"
               multiple
               disabled={documents.length >= MAX_UPLOAD_DOCS}
               style={{ display: "none" }}
               onChange={(event) => {
                 const input = event.target;
-                void readTextFiles(input.files)
+                void readCeoDocumentFiles(input.files)
                   .then((parsed) => addDocuments(parsed))
                   .catch((error) => setDocError(error.message || "Could not read that file."))
                   .finally(() => {
@@ -538,7 +516,6 @@ export function OnboardingInterview({ user, onComplete }) {
               onChange={(event) => setPasteContent(event.target.value)}
               placeholder="Paste notes, a plan outline, or other text…"
               rows={5}
-              maxLength={MAX_DOC_CHARS}
               style={{ ...fosStyles.input, resize: "vertical", fontFamily: styles.page.fontFamily }}
             />
             <div style={{ display: "flex", justifyContent: "flex-end" }}>
@@ -550,11 +527,19 @@ export function OnboardingInterview({ user, onComplete }) {
                 }}
                 disabled={!pasteContent.trim() || documents.length >= MAX_UPLOAD_DOCS}
                 onClick={() => {
+                  const content = pasteContent;
+                  const sizeBytes = new TextEncoder().encode(content).length;
+                  if (sizeBytes > MAX_DOC_SIZE_BYTES) {
+                    setDocError(
+                      `Pasted text is too large (max ${MAX_DOC_SIZE_BYTES / 1024} KB).`
+                    );
+                    return;
+                  }
                   addDocuments([
                     {
                       filename: (pasteFilename.trim() || "notes.txt").replace(/[/\\]/g, "-"),
                       mimeType: "text/plain",
-                      content: pasteContent,
+                      content,
                     },
                   ]);
                   setPasteContent("");

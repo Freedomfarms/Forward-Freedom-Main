@@ -19,6 +19,16 @@ import {
 // POST   /api/agents/ceo/documents  { documents: [{ filename, mimeType, content }] }
 // DELETE /api/agents/ceo/documents/:id  (id via query/params)
 
+// Raise the serverless body ceiling as high as the platform allows so large
+// reference-document uploads are not rejected before our size checks run.
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: "4.5mb",
+    },
+  },
+};
+
 export default async function handler(request, response) {
   applySecurityHeaders(response);
   if (!["GET", "POST", "DELETE"].includes(request.method || "")) {
