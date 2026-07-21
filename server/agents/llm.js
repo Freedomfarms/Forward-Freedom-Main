@@ -2,6 +2,7 @@ import { generateText as aiGenerateText, generateObject as aiGenerateObject } fr
 import { anthropic, createAnthropic } from "@ai-sdk/anthropic";
 
 import { AgentError } from "./errors.js";
+import { DEFAULT_AGENT_MODEL } from "./models.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Single chokepoint for every model call the agent platform makes.
@@ -14,12 +15,14 @@ import { AgentError } from "./errors.js";
 // exact prompt payload for data-minimization assertions.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Cheap fast tier used for the living-profile extraction pass after each run.
+// Cheap fast tier used for invisible background jobs (profile extraction,
+// conversation titles). Not user-selectable — stays on Haiku regardless of
+// the CEO / sub-agent model pickers.
 export const PROFILE_EXTRACTION_MODEL = "claude-haiku-4-5";
 
-// Model used for CEO Agent work (digest + CEO chat). Sub-agent runs use the
-// model id stored on their AgentConfig row.
-export const CEO_AGENT_MODEL = "claude-sonnet-4-5";
+// Fallback when a stored CEO model is missing/unmigrated. Prefer the value on
+// CeoAgentConfig.model at call sites.
+export const CEO_AGENT_MODEL = DEFAULT_AGENT_MODEL;
 
 let llmImplementationOverride = null;
 

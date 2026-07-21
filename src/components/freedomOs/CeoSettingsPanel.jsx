@@ -2,10 +2,16 @@ import { useState } from "react";
 import { styles } from "../../styles.js";
 import { updateCeoAgent } from "../../utils/agentsApi.js";
 import { CEO_AVATAR_PRESETS } from "../../data/ceoAvatars.js";
-import { describeAgentApiError, fosStyles, PERSONALITY_PRESETS } from "./freedomOsShared.js";
+import { ModelPicker } from "./ModelPicker.jsx";
+import {
+  DEFAULT_AGENT_MODEL,
+  describeAgentApiError,
+  fosStyles,
+  PERSONALITY_PRESETS,
+} from "./freedomOsShared.js";
 
-// CEO Agent settings: name, personality preset, avatar preset. Personality is
-// preset-only by contract — there is deliberately no free-text field here.
+// CEO Agent settings: name, personality, avatar, model, and the default model
+// for newly created sub-agents. Personality is preset-only by contract.
 
 export function CeoSettingsPanel({ ceoAgent, user, onBack, onSaved, onOpenProfile }) {
   const [name, setName] = useState(ceoAgent?.name || "CEO Agent");
@@ -13,6 +19,10 @@ export function CeoSettingsPanel({ ceoAgent, user, onBack, onSaved, onOpenProfil
     ceoAgent?.personalityPreset || "DIRECT_EFFICIENT"
   );
   const [avatarKey, setAvatarKey] = useState(ceoAgent?.avatarKey || CEO_AVATAR_PRESETS[0].key);
+  const [model, setModel] = useState(ceoAgent?.model || DEFAULT_AGENT_MODEL);
+  const [defaultSubAgentModel, setDefaultSubAgentModel] = useState(
+    ceoAgent?.defaultSubAgentModel || DEFAULT_AGENT_MODEL
+  );
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [savedAt, setSavedAt] = useState(null);
@@ -20,7 +30,9 @@ export function CeoSettingsPanel({ ceoAgent, user, onBack, onSaved, onOpenProfil
   const isDirty =
     name.trim() !== (ceoAgent?.name || "CEO Agent") ||
     personalityPreset !== (ceoAgent?.personalityPreset || "DIRECT_EFFICIENT") ||
-    avatarKey !== (ceoAgent?.avatarKey || CEO_AVATAR_PRESETS[0].key);
+    avatarKey !== (ceoAgent?.avatarKey || CEO_AVATAR_PRESETS[0].key) ||
+    model !== (ceoAgent?.model || DEFAULT_AGENT_MODEL) ||
+    defaultSubAgentModel !== (ceoAgent?.defaultSubAgentModel || DEFAULT_AGENT_MODEL);
 
   const handleSave = async () => {
     if (isSaving) return;
@@ -33,7 +45,13 @@ export function CeoSettingsPanel({ ceoAgent, user, onBack, onSaved, onOpenProfil
     setSaveError("");
     try {
       const payload = await updateCeoAgent(
-        { name: trimmedName, personalityPreset, avatarKey },
+        {
+          name: trimmedName,
+          personalityPreset,
+          avatarKey,
+          model,
+          defaultSubAgentModel,
+        },
         { user }
       );
       if (payload?.ceoAgent) onSaved?.(payload.ceoAgent);
@@ -155,6 +173,28 @@ export function CeoSettingsPanel({ ceoAgent, user, onBack, onSaved, onOpenProfil
             </button>
           ))}
         </div>
+      </div>
+
+      <div style={{ display: "grid", gap: 10 }}>
+        <div style={fosStyles.sectionLabel}>CEO Agent model</div>
+        <p style={{ margin: 0, color: "#9fb0c9", fontSize: 12, lineHeight: 1.55 }}>
+          Used for CEO chat, digests, and Read your Profile. Background jobs stay on a fast
+          model automatically.
+        </p>
+        <ModelPicker value={model} onChange={setModel} name="ceo-model" />
+      </div>
+
+      <div style={{ display: "grid", gap: 10 }}>
+        <div style={fosStyles.sectionLabel}>Default for new agents</div>
+        <p style={{ margin: 0, color: "#9fb0c9", fontSize: 12, lineHeight: 1.55 }}>
+          Pre-selected when you create a sub-agent. Independent of the CEO Agent model — you can
+          still change each agent later.
+        </p>
+        <ModelPicker
+          value={defaultSubAgentModel}
+          onChange={setDefaultSubAgentModel}
+          name="default-sub-agent-model"
+        />
       </div>
 
       {saveError ? <div style={fosStyles.errorBox}>{saveError}</div> : null}

@@ -2,9 +2,11 @@ import { useCallback, useEffect, useState } from "react";
 import { styles } from "../../styles.js";
 import { emailAgentRun, fetchAgentRuns, triggerAgentRun, updateAgent } from "../../utils/agentsApi.js";
 import { AgentChat } from "./AgentChat.jsx";
+import { ModelPicker } from "./ModelPicker.jsx";
 import { PermissionLedger } from "./PermissionLedger.jsx";
 import { TrustLadder } from "./TrustLadder.jsx";
 import {
+  DEFAULT_AGENT_MODEL,
   describeAgentApiError,
   formatDateTime,
   formatSchedule,
@@ -97,6 +99,10 @@ export function AgentDetail({ agent, user, onBack, onAgentUpdated, onOpenFinance
   const [isSavingDod, setIsSavingDod] = useState(false);
   const [dodError, setDodError] = useState("");
   const [dodSavedAt, setDodSavedAt] = useState(null);
+  const [modelDraft, setModelDraft] = useState(agent?.model || DEFAULT_AGENT_MODEL);
+  const [isSavingModel, setIsSavingModel] = useState(false);
+  const [modelError, setModelError] = useState("");
+  const [modelSavedAt, setModelSavedAt] = useState(null);
   const [chatRelatedRunId, setChatRelatedRunId] = useState(null);
   const [isTogglingEmail, setIsTogglingEmail] = useState(false);
   const [emailToggleError, setEmailToggleError] = useState("");
@@ -226,10 +232,26 @@ export function AgentDetail({ agent, user, onBack, onAgentUpdated, onOpenFinance
 
   const handleEmailRun = (runId) => emailAgentRun(agentId, runId, { user });
 
+  const handleSaveModel = async () => {
+    if (!agentId || isSavingModel) return;
+    setIsSavingModel(true);
+    setModelError("");
+    try {
+      const payload = await updateAgent(agentId, { model: modelDraft }, { user });
+      if (payload?.agent) onAgentUpdated?.(payload.agent);
+      setModelSavedAt(Date.now());
+    } catch (error) {
+      setModelError(describeAgentApiError(error, "Unable to update the model."));
+    } finally {
+      setIsSavingModel(false);
+    }
+  };
+
   if (!agent) return null;
 
   const isPaused = agent.status === "PAUSED";
   const dodDirty = dodDraft.trim() !== (agent.definitionOfDone || "").trim();
+  const modelDirty = modelDraft !== (agent.model || DEFAULT_AGENT_MODEL);
 
   return (
     <div style={{ ...styles.panel, padding: 24, display: "grid", gap: 22 }}>
@@ -319,6 +341,36 @@ export function AgentDetail({ agent, user, onBack, onAgentUpdated, onOpenFinance
           listLabel={`${agent.name} chats`}
           placeholder={`Ask ${agent.name} about its work…`}
         />
+      </div>
+
+      <div style={{ display: "grid", gap: 10 }}>
+        <div style={fosStyles.sectionLabel}>Model</div>
+        <p style={{ margin: 0, color: "#9fb0c9", fontSize: 12, lineHeight: 1.55 }}>
+          Used for this agent&apos;s chat and runs. Independent of your CEO Agent model.
+        </p>
+        <ModelPicker
+          value={modelDraft}
+          onChange={setModelDraft}
+          disabled={isSavingModel}
+          name={`agent-model-${agent.id}`}
+        />
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <button
+            type="button"
+            style={{
+              ...fosStyles.secondaryButton,
+              opacity: !modelDirty || isSavingModel ? 0.55 : 1,
+            }}
+            disabled={!modelDirty || isSavingModel}
+            onClick={() => void handleSaveModel()}
+          >
+            {isSavingModel ? "Saving…" : "Save model"}
+          </button>
+          {modelSavedAt && !modelDirty ? (
+            <span style={{ color: "#7cf1af", fontSize: 12, fontWeight: 700 }}>Saved</span>
+          ) : null}
+        </div>
+        {modelError ? <div style={fosStyles.errorBox}>{modelError}</div> : null}
       </div>
 
       <div style={{ display: "grid", gap: 10 }}>

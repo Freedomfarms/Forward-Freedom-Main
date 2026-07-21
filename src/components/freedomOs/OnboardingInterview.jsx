@@ -9,7 +9,13 @@ import {
   readCeoDocumentFiles,
 } from "../../utils/ceoDocumentFiles.js";
 import { CEO_AVATAR_PRESETS } from "../../data/ceoAvatars.js";
-import { describeAgentApiError, fosStyles, PERSONALITY_PRESETS } from "./freedomOsShared.js";
+import { ModelPicker } from "./ModelPicker.jsx";
+import {
+  DEFAULT_AGENT_MODEL,
+  describeAgentApiError,
+  fosStyles,
+  PERSONALITY_PRESETS,
+} from "./freedomOsShared.js";
 
 // Structured CEO Agent onboarding interview (one-shot POST /api/agents/onboarding).
 // Shown when the CEO config exists but onboardingCompletedAt is null.
@@ -100,6 +106,7 @@ export function OnboardingInterview({ user, onComplete }) {
   const [digestFrequency, setDigestFrequency] = useState("daily");
   const [ceoName, setCeoName] = useState("CEO Agent");
   const [personalityPreset, setPersonalityPreset] = useState("DIRECT_EFFICIENT");
+  const [model, setModel] = useState(DEFAULT_AGENT_MODEL);
   const [avatarKey, setAvatarKey] = useState(CEO_AVATAR_PRESETS[0].key);
   const [additionalNotes, setAdditionalNotes] = useState("");
   const [documents, setDocuments] = useState([]);
@@ -157,6 +164,7 @@ export function OnboardingInterview({ user, onComplete }) {
           communicationPrefs: `Digest frequency: ${digestFrequency}`,
           ceoName: ceoName.trim() || "CEO Agent",
           personalityPreset,
+          model,
           avatarKey,
           documents,
         },
@@ -184,7 +192,7 @@ export function OnboardingInterview({ user, onComplete }) {
       key: "goals",
       render: () => (
         <StepShell
-          eyebrow="Step 1 of 9"
+          eyebrow="Step 1 of 10"
           title="What are your financial goals?"
           subtitle={`Pick up to ${MAX_GOALS} — or add your own. Your CEO Agent uses these to focus its briefings.`}
         >
@@ -241,7 +249,7 @@ export function OnboardingInterview({ user, onComplete }) {
       key: "life",
       render: () => (
         <StepShell
-          eyebrow="Step 2 of 9"
+          eyebrow="Step 2 of 10"
           title="Tell it about your life"
           subtitle="Household, business or farm, income sources — pick what applies and add a short note if you like."
         >
@@ -271,7 +279,7 @@ export function OnboardingInterview({ user, onComplete }) {
       key: "priorities",
       render: () => (
         <StepShell
-          eyebrow="Step 3 of 9"
+          eyebrow="Step 3 of 10"
           title="What matters most right now?"
           subtitle="Select all that apply."
         >
@@ -293,7 +301,7 @@ export function OnboardingInterview({ user, onComplete }) {
       key: "communication",
       render: () => (
         <StepShell
-          eyebrow="Step 4 of 9"
+          eyebrow="Step 4 of 10"
           title="How often should it brief you?"
           subtitle="Tone follows the personality you pick in a later step."
         >
@@ -331,7 +339,7 @@ export function OnboardingInterview({ user, onComplete }) {
       key: "name",
       render: () => (
         <StepShell
-          eyebrow="Step 5 of 9"
+          eyebrow="Step 5 of 10"
           title="Name your CEO Agent"
           subtitle="The default works fine — you can change it any time in settings."
         >
@@ -349,7 +357,7 @@ export function OnboardingInterview({ user, onComplete }) {
       key: "personality",
       render: () => (
         <StepShell
-          eyebrow="Step 6 of 9"
+          eyebrow="Step 6 of 10"
           title="Pick a personality"
           subtitle="Presets only — this keeps your CEO Agent predictable and safe."
         >
@@ -386,10 +394,22 @@ export function OnboardingInterview({ user, onComplete }) {
       ),
     },
     {
+      key: "model",
+      render: () => (
+        <StepShell
+          eyebrow="Step 7 of 10"
+          title="Choose a model"
+          subtitle="Sonnet is selected by default — a strong balance for most people. You can change this anytime in settings."
+        >
+          <ModelPicker value={model} onChange={setModel} name="onboarding-ceo-model" />
+        </StepShell>
+      ),
+    },
+    {
       key: "avatar",
       render: () => (
         <StepShell
-          eyebrow="Step 7 of 9"
+          eyebrow="Step 8 of 10"
           title="Choose an avatar"
           subtitle="A simple preset — no photos, nothing generated."
         >
@@ -448,7 +468,7 @@ export function OnboardingInterview({ user, onComplete }) {
       key: "notes",
       render: () => (
         <StepShell
-          eyebrow="Step 8 of 9"
+          eyebrow="Step 9 of 10"
           title="Anything else it should know?"
           subtitle="Freeform space for context that didn't fit the earlier questions — family plans, constraints, how you like to work, whatever matters."
         >
@@ -470,7 +490,7 @@ export function OnboardingInterview({ user, onComplete }) {
       key: "documents",
       render: () => (
         <StepShell
-          eyebrow="Step 9 of 9"
+          eyebrow="Step 10 of 10"
           title="Upload documents for your CEO Agent"
           subtitle={`Optional. .txt, .md, .csv, .json, .pdf, .docx, .xlsx, or .pptx — up to ${MAX_UPLOAD_DOCS} files, ${MAX_DOC_SIZE_BYTES / 1024} KB each (no character limit). Your CEO Agent can read these when you chat.`}
         >

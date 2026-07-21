@@ -5,9 +5,11 @@ import { readJsonBody } from "../../server/http/requestHelpers.js";
 import { applySecurityHeaders } from "../../server/http/responseHelpers.js";
 import { AgentError } from "../../server/agents/errors.js";
 import {
+  ALLOWED_AGENT_MODELS,
   CEO_AGENT_CONFIG_SAFE_SELECT,
   CEO_PERSONALITY_PRESETS,
   ensureCeoAgentConfig,
+  isValidAgentModel,
   isValidAvatarKey,
   isValidPersonalityPreset,
   respondAgentApiError,
@@ -17,9 +19,9 @@ import {
 const NAME_MAX_LENGTH = 80;
 
 // Builds the update payload for PUT. Only name / personalityPreset /
-// avatarKey are updatable — personality stays preset-only (safety contract:
-// no free-text personality overrides), and profile/digest fields are owned by
-// their dedicated endpoints.
+// avatarKey / model / defaultSubAgentModel are updatable — personality stays
+// preset-only (safety contract: no free-text personality overrides), and
+// profile/digest fields are owned by their dedicated endpoints.
 function readCeoUpdate(payload) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     throw new AgentError("A JSON object body is required.", "INVALID_AGENT_PAYLOAD", 400);
@@ -55,6 +57,26 @@ function readCeoUpdate(payload) {
       );
     }
     data.avatarKey = payload.avatarKey;
+  }
+  if ("model" in payload) {
+    if (!isValidAgentModel(payload.model)) {
+      throw new AgentError(
+        `model must be one of: ${ALLOWED_AGENT_MODELS.join(", ")}.`,
+        "INVALID_AGENT_PAYLOAD",
+        400
+      );
+    }
+    data.model = payload.model;
+  }
+  if ("defaultSubAgentModel" in payload) {
+    if (!isValidAgentModel(payload.defaultSubAgentModel)) {
+      throw new AgentError(
+        `defaultSubAgentModel must be one of: ${ALLOWED_AGENT_MODELS.join(", ")}.`,
+        "INVALID_AGENT_PAYLOAD",
+        400
+      );
+    }
+    data.defaultSubAgentModel = payload.defaultSubAgentModel;
   }
   if (!Object.keys(data).length) {
     throw new AgentError("No updatable fields were provided.", "INVALID_AGENT_PAYLOAD", 400);

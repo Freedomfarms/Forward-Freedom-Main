@@ -1,6 +1,7 @@
 import { withUserContext } from "../db/prisma.js";
 import { decrypt, encrypt } from "../security/envelope.js";
 import { CEO_AGENT_MODEL, generateAgentText, isLlmConfigured } from "./llm.js";
+import { normalizeAgentModel } from "./models.js";
 import { dataSection, PROMPT_SAFETY_RULES } from "./prompts.js";
 import { renderProfileForPrompt } from "./profile.js";
 
@@ -52,6 +53,7 @@ export async function generateOnboardingSummary({
   additionalNotes = null,
   documentNames = [],
   personalityPreset = "DIRECT_EFFICIENT",
+  model = CEO_AGENT_MODEL,
 } = {}) {
   const fallback = buildTemplateSummary({ profile, additionalNotes, documentNames });
   if (!isLlmConfigured()) {
@@ -64,10 +66,11 @@ export async function generateOnboardingSummary({
       : personalityPreset === "FORMAL"
         ? "Tone: formal and professional."
         : "Tone: direct and efficient.";
+  const resolvedModel = normalizeAgentModel(model, CEO_AGENT_MODEL);
 
   try {
     const { text, usage } = await generateAgentText({
-      model: CEO_AGENT_MODEL,
+      model: resolvedModel,
       system: [
         "You are the user's CEO Agent inside Freedom OS.",
         "Write a short personal briefing (a short intro paragraph plus a few bullets) summarizing what you now know about the user from onboarding.",
@@ -88,7 +91,7 @@ export async function generateOnboardingSummary({
       maxOutputTokens: 700,
     });
     const summary = String(text || "").trim();
-    return { summary: summary || fallback, model: CEO_AGENT_MODEL, usage: usage || null };
+    return { summary: summary || fallback, model: resolvedModel, usage: usage || null };
   } catch {
     return { summary: fallback, model: null, usage: null };
   }

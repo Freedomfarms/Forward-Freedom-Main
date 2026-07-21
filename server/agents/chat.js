@@ -285,7 +285,9 @@ export async function respondToChat({
     dataSection("NEW USER MESSAGE", text)
   );
 
-  const model = agentConfig ? agentConfig.model : CEO_AGENT_MODEL;
+  const model = agentConfig
+    ? agentConfig.model || CEO_AGENT_MODEL
+    : ceoConfig?.model || CEO_AGENT_MODEL;
   const { object, usage } = await generateAgentObject({
     model,
     system: agentConfig ? SUB_AGENT_CHAT_SYSTEM_PROMPT : CEO_CHAT_SYSTEM_PROMPT,

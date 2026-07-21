@@ -69,12 +69,17 @@ test("happy path still works in order", () => {
   assert.equal(session.state.draft.scheduleWeekday, "friday");
 
   session = turn(session.state, "A weekly spending observations report is produced");
+  assert.match(session.reply, /haiku|sonnet|opus|model/i);
+
+  session = turn(session.state, "skip");
   assert.match(session.reply, /Here's the agent I'll create/);
   assert.match(session.reply, /weekly \(friday\)/);
+  assert.match(session.reply, /Sonnet/i);
 
   session = turn(session.state, "confirm");
   assert.equal(session.createPayload.agentType, "finance");
   assert.equal(session.createPayload.scheduleWeekday, "friday");
+  assert.equal(session.createPayload.model, "claude-sonnet-4-5");
   assert.match(session.createPayload.instructions, /monthly spending/);
   assert.match(session.createPayload.instructions, /Data focus: My transactions/);
   assert.match(session.createPayload.definitionOfDone, /observations report/);
@@ -149,10 +154,14 @@ test("reported CEO transcript assigns fields correctly", () => {
     session.state,
     "A concise AI platforms and trends report is produced each scheduled run"
   );
+  assert.match(session.reply, /haiku|sonnet|opus|model/i);
+
+  session = turn(session.state, "opus");
   assert.match(session.reply, /Here's the agent I'll create/);
   assert.match(session.reply, /Schedule: weekly \(monday\)/);
   assert.match(session.reply, /platforms/);
   assert.match(session.reply, /definition of done: A concise AI platforms/i);
+  assert.match(session.reply, /Opus/i);
   assert.doesNotMatch(session.reply, /Data focus: i want the report emailed/i);
   // Research agents can now email reports — to the verified account address
   // only; the third-party address is called out as unusable.
@@ -163,6 +172,7 @@ test("reported CEO transcript assigns fields correctly", () => {
   session = turn(session.state, "confirm");
   assert.equal(session.createPayload.schedulePreset, "weekly");
   assert.equal(session.createPayload.scheduleWeekday, "monday");
+  assert.equal(session.createPayload.model, "claude-opus-4-1");
   assert.match(session.createPayload.definitionOfDone, /concise AI platforms/);
   assert.deepEqual(session.createPayload.toolAccess, { email: true });
 });

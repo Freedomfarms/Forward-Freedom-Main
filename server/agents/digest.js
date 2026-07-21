@@ -2,6 +2,7 @@ import { withUserContext } from "../db/prisma.js";
 import { decryptJson, encrypt } from "../security/envelope.js";
 import { AgentError } from "./errors.js";
 import { CEO_AGENT_MODEL, generateAgentText } from "./llm.js";
+import { normalizeAgentModel } from "./models.js";
 import { dataSection, PROMPT_SAFETY_RULES } from "./prompts.js";
 import { normalizeProfile, renderProfileForPrompt } from "./profile.js";
 
@@ -60,7 +61,7 @@ export async function generateDigest(userId) {
   const { ceoConfig, runs } = await withUserContext(userId, async (tx) => {
     const ceoConfigRow = await tx.ceoAgentConfig.findFirst({
       where: { userId },
-      select: { id: true, personalityPreset: true, profileCiphertext: true },
+      select: { id: true, personalityPreset: true, profileCiphertext: true, model: true },
     });
     if (!ceoConfigRow) return { ceoConfig: null, runs: [] };
     const runRows = await tx.agentRun.findMany({
@@ -84,8 +85,9 @@ export async function generateDigest(userId) {
     ceoConfig.profileCiphertext ? decryptJson(ceoConfig.profileCiphertext) : null
   );
 
+  const model = normalizeAgentModel(ceoConfig.model, CEO_AGENT_MODEL);
   const { text, usage } = await generateAgentText({
-    model: CEO_AGENT_MODEL,
+    model,
     system: buildDigestSystemPrompt(ceoConfig.personalityPreset),
     prompt: [
       "Write the status update for the user based on the recent agent activity below.",
@@ -106,5 +108,5 @@ export async function generateDigest(userId) {
     })
   );
 
-  return { digest, generatedAt, model: CEO_AGENT_MODEL, usage };
+  return { digest, generatedAt, model, usage };
 }
