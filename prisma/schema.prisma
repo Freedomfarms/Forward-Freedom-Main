@@ -105,6 +105,7 @@ model User {
   ceoAgentConfig      CeoAgentConfig?
   agentConfigs        AgentConfig[]
   agentRuns           AgentRun[]
+  agentConversations  AgentConversation[]
   agentChatMessages   AgentChatMessage[]
   ceoDocuments        CeoDocument[]
   notifications       Notification[]
@@ -365,6 +366,7 @@ model CeoAgentConfig {
   updatedAt            DateTime             @updatedAt
   user                 User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   agentConfigs         AgentConfig[]
+  agentConversations   AgentConversation[]
   agentChatMessages    AgentChatMessage[]
   ceoDocuments         CeoDocument[]
 }
@@ -416,6 +418,7 @@ model AgentConfig {
   user             User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   ceoAgentConfig   CeoAgentConfig       @relation(fields: [ceoAgentConfigId], references: [id], onDelete: Cascade)
   agentRuns        AgentRun[]
+  agentConversations AgentConversation[]
   agentChatMessages AgentChatMessage[]
   notifications    Notification[]
 
@@ -457,13 +460,42 @@ model AgentRun {
   @@index([userId, agentType, startedAt])
 }
 
+// Multi-conversation parent for CEO and sub-agent chats. Invariant: exactly
+// one of agentConfigId / ceoAgentConfigId is set — same XOR as AgentChatMessage,
+// enforced in application code and by a Postgres CHECK constraint.
+// isSystem=true pins flows that must not appear in the normal conversation
+// list (e.g. "+ New Agent" creation); Phase 3+ APIs exclude these by default.
+model AgentConversation {
+  id               String         @id @default(cuid())
+  userId           String
+  agentConfigId    String?
+  ceoAgentConfigId String?
+  // Plaintext list title for v1 (snippet / async rename in later phases).
+  title            String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  archivedAt       DateTime?
+  isSystem         Boolean        @default(false)
+  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  agentConfig      AgentConfig?   @relation(fields: [agentConfigId], references: [id], onDelete: Cascade)
+  ceoAgentConfig   CeoAgentConfig? @relation(fields: [ceoAgentConfigId], references: [id], onDelete: Cascade)
+  messages         AgentChatMessage[]
+
+  @@index([userId, agentConfigId, updatedAt])
+  @@index([userId, ceoAgentConfigId, updatedAt])
+  @@index([userId, updatedAt])
+}
+
 // One table serves both CEO chat and every sub-agent chat. Invariant: exactly
 // one of agentConfigId / ceoAgentConfigId is set — enforced in application
 // code and by a Postgres CHECK constraint in the migration SQL:
 //   (("agentConfigId" IS NULL) <> ("ceoAgentConfigId" IS NULL))
+// conversationId scopes messages to one AgentConversation thread; agent XOR
+// columns stay denormalized for target checks and legacy lookbacks.
 model AgentChatMessage {
   id                String          @id @default(cuid())
   userId            String
+  conversationId    String
   agentConfigId     String?
   ceoAgentConfigId  String?
   role              AgentChatRole
@@ -474,10 +506,12 @@ model AgentChatMessage {
   relatedRunId      String?
   createdAt         DateTime        @default(now())
   user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversation      AgentConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   agentConfig       AgentConfig?    @relation(fields: [agentConfigId], references: [id], onDelete: Cascade)
   ceoAgentConfig    CeoAgentConfig? @relation(fields: [ceoAgentConfigId], references: [id], onDelete: Cascade)
   relatedRun        AgentRun?       @relation(fields: [relatedRunId], references: [id], onDelete: SetNull)
 
+  @@index([conversationId, createdAt])
   @@index([agentConfigId, createdAt])
   @@index([ceoAgentConfigId, createdAt])
   @@index([userId, createdAt])

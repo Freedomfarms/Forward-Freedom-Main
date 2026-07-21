@@ -18,11 +18,17 @@ import {
   serializeChatHistoryMessages,
 } from "../../../server/agents/chatHistory.js";
 
-// GET  /api/agents/:id/chat — visible message history for one sub-agent
-// POST /api/agents/:id/chat — send a message. respondToChat enforces ownership
-// and scoping (this agent's own runs and messages only). Messages that ask
-// the agent to email its report/draft are handled deterministically (no LLM):
-// the run output is emailed to the user's own verified account address.
+// GET  /api/agents/:id/chat — visible history (?conversationId= optional)
+// POST /api/agents/:id/chat — send a message ({ conversationId? }). respondToChat
+// enforces ownership and scoping. "Email me the report/draft" is handled
+// deterministically (no LLM).
+
+function readOptionalConversationId(source) {
+  const raw = source?.conversationId;
+  if (typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  return trimmed || null;
+}
 
 export default async function handler(request, response) {
   applySecurityHeaders(response);
@@ -44,6 +50,7 @@ export default async function handler(request, response) {
       const messages = await listChatHistory({
         userId: decodedToken.uid,
         agentConfigId: agentId,
+        conversationId: readOptionalConversationId(request.query),
       });
       return response.status(200).json({ messages: serializeChatHistoryMessages(messages) });
     }
@@ -57,6 +64,7 @@ export default async function handler(request, response) {
       typeof payload?.relatedRunId === "string" && payload.relatedRunId.trim()
         ? payload.relatedRunId.trim()
         : null;
+    const conversationId = readOptionalConversationId(payload);
 
     // "Email me the report/draft" → deterministic email of the (related or
     // latest) run to the user's own verified address, no LLM call.
@@ -64,6 +72,7 @@ export default async function handler(request, response) {
       const outcome = await emailRunReportFromChat({
         userId: decodedToken.uid,
         agentConfigId: agentId,
+        conversationId,
         message,
         relatedRunId,
       });
@@ -73,6 +82,7 @@ export default async function handler(request, response) {
     const { reply, messageId } = await respondToChat({
       userId: decodedToken.uid,
       agentConfigId: agentId,
+      conversationId,
       message,
       relatedRunId,
     });

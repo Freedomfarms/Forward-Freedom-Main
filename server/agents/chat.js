@@ -4,6 +4,7 @@ import { withUserContext } from "../db/prisma.js";
 import { decrypt, decryptJson, encrypt } from "../security/envelope.js";
 import { CEO_AGENT_CONFIG_SAFE_SELECT } from "./apiHelpers.js";
 import { isCreationStateContent } from "./creationFlow.js";
+import { resolveConversationForWrite, touchConversation } from "./conversations.js";
 import { loadDocumentsForPrompt } from "./documents.js";
 import { AgentError } from "./errors.js";
 import { CEO_AGENT_MODEL, generateAgentObject } from "./llm.js";
@@ -23,6 +24,9 @@ import {
 //   • the CEO chat reads run summaries across ALL the user's agents —
 //     cross-agent questions are its job — plus the living profile, which is
 //     how it answers "what do you know about me?".
+//   • Always-include context (profile, docs, run summaries) is shared across
+//     conversations for that agent. Conversation-scoped context is only the
+//     message history for the active conversationId.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const CHAT_HISTORY_LIMIT = 50;
@@ -93,6 +97,7 @@ export async function respondToChat({
   userId,
   agentConfigId = null,
   ceoAgentConfigId = null,
+  conversationId = null,
   message,
   relatedRunId = null,
 }) {
@@ -127,13 +132,20 @@ export async function respondToChat({
       }
     }
 
-    // History is captured before persisting the new message so the transcript
-    // and the current question stay distinct in the prompt.
+    // Explicit conversationId when provided; otherwise newest non-system thread.
+    const conversation = await resolveConversationForWrite(tx, {
+      userId,
+      agentConfigId: agentConfig?.id ?? null,
+      ceoAgentConfigId: ceoConfig?.id ?? null,
+      conversationId,
+      allowSystem: false,
+    });
+
+    // Conversation-scoped context only — profile / docs / runs load separately.
     const history = await tx.agentChatMessage.findMany({
       where: {
         userId,
-        agentConfigId: agentConfig?.id ?? null,
-        ceoAgentConfigId: ceoConfig?.id ?? null,
+        conversationId: conversation.id,
       },
       orderBy: { createdAt: "desc" },
       take: CHAT_HISTORY_LIMIT,
@@ -143,6 +155,7 @@ export async function respondToChat({
     await tx.agentChatMessage.create({
       data: {
         userId,
+        conversationId: conversation.id,
         agentConfigId: agentConfig?.id ?? null,
         ceoAgentConfigId: ceoConfig?.id ?? null,
         role: "USER",
@@ -150,6 +163,7 @@ export async function respondToChat({
         relatedRunId,
       },
     });
+    await touchConversation(tx, conversation.id);
 
     // Sub-agent chats are scoped to that agent's own runs; the CEO chat reads
     // summaries across every agent the user owns.
@@ -188,10 +202,24 @@ export async function respondToChat({
         select: { profileCiphertext: true },
       }));
 
-    return { agentConfig, ceoConfig, history, runs, relatedRun, profileSource };
+    return {
+      agentConfig,
+      ceoConfig,
+      conversationId: conversation.id,
+      history,
+      runs,
+      relatedRun,
+      profileSource,
+    };
   });
 
-  const { agentConfig, ceoConfig, runs, relatedRun } = context;
+  const {
+    agentConfig,
+    ceoConfig,
+    conversationId: resolvedConversationId,
+    runs,
+    relatedRun,
+  } = context;
   const history = [...context.history].reverse();
   let profile;
   try {
@@ -254,18 +282,21 @@ export async function respondToChat({
   });
 
   const reply = String(object?.reply || "").trim() || "Sorry — I could not generate a reply.";
-  const replyMessage = await withUserContext(userId, (tx) =>
-    tx.agentChatMessage.create({
+  const replyMessage = await withUserContext(userId, async (tx) => {
+    const created = await tx.agentChatMessage.create({
       data: {
         userId,
+        conversationId: resolvedConversationId,
         agentConfigId: agentConfig?.id ?? null,
         ceoAgentConfigId: ceoConfig?.id ?? null,
         role: "AGENT",
         contentCiphertext: encrypt(reply),
         relatedRunId,
       },
-    })
-  );
+    });
+    await touchConversation(tx, resolvedConversationId);
+    return created;
+  });
 
   // Profile ops arrive inside the same structured reply (no second model
   // call); applying them is best-effort and never fails the chat.

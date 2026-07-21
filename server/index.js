@@ -17,10 +17,16 @@ import agentRunHandler from "../api/agents/[id]/run.js";
 import agentRunsHandler from "../api/agents/[id]/runs.js";
 import agentRunByIdHandler from "../api/agents/[id]/runs/[runId].js";
 import agentChatHandler from "../api/agents/[id]/chat.js";
+import agentConversationsHandler from "../api/agents/[id]/conversations.js";
+import agentConversationByIdHandler from "../api/agents/[id]/conversations/[conversationId].js";
+import agentConversationMessagesHandler from "../api/agents/[id]/conversations/[conversationId]/messages.js";
 import ceoAgentHandler from "../api/agents/ceo.js";
 import ceoProfileHandler from "../api/agents/ceo/profile.js";
 import ceoDigestHandler from "../api/agents/ceo/digest.js";
 import ceoChatHandler from "../api/agents/ceo/chat.js";
+import ceoConversationsHandler from "../api/agents/ceo/conversations.js";
+import ceoConversationByIdHandler from "../api/agents/ceo/conversations/[conversationId].js";
+import ceoConversationMessagesHandler from "../api/agents/ceo/conversations/[conversationId]/messages.js";
 import ceoDocumentsHandler from "../api/agents/ceo/documents.js";
 import onboardingHandler from "../api/agents/onboarding.js";
 import notificationsHandler from "../api/notifications.js";
@@ -81,6 +87,18 @@ app.route("/api/agents/ceo/profile").get(ceoProfileHandler).patch(ceoProfileHand
 app.route("/api/agents/ceo/digest").get(ceoDigestHandler).post(ceoDigestHandler);
 app.route("/api/agents/ceo/chat").get(ceoChatHandler).post(ceoChatHandler);
 app
+  .route("/api/agents/ceo/conversations")
+  .get(ceoConversationsHandler)
+  .post(ceoConversationsHandler);
+app
+  .route("/api/agents/ceo/conversations/:conversationId")
+  .patch(ceoConversationByIdHandler)
+  .delete(ceoConversationByIdHandler);
+app.get(
+  "/api/agents/ceo/conversations/:conversationId/messages",
+  ceoConversationMessagesHandler
+);
+app
   .route("/api/agents/ceo/documents")
   .get(ceoDocumentsHandler)
   .post(ceoDocumentsHandler)
@@ -95,6 +113,18 @@ app
   .get(agentRunByIdHandler)
   .post(agentRunByIdHandler);
 app.route("/api/agents/:id/chat").get(agentChatHandler).post(agentChatHandler);
+app
+  .route("/api/agents/:id/conversations")
+  .get(agentConversationsHandler)
+  .post(agentConversationsHandler);
+app
+  .route("/api/agents/:id/conversations/:conversationId")
+  .patch(agentConversationByIdHandler)
+  .delete(agentConversationByIdHandler);
+app.get(
+  "/api/agents/:id/conversations/:conversationId/messages",
+  agentConversationMessagesHandler
+);
 app.get("/api/notifications", notificationsHandler);
 app.patch("/api/notifications/:id", notificationByIdHandler);
 app.get("/api/admin/usage", adminUsageHandler);

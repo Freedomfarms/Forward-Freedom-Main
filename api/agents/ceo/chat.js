@@ -28,20 +28,29 @@ import {
   encodeCreationState,
   startCreationSession,
 } from "../../../server/agents/creationFlow.js";
+import {
+  ensureSystemConversation,
+  touchConversation,
+} from "../../../server/agents/conversations.js";
 
-// GET  /api/agents/ceo/chat — visible message history for the CEO thread
+// GET  /api/agents/ceo/chat — visible message history for the active CEO thread
+//      (?conversationId= optional; defaults to newest non-system conversation)
 // POST /api/agents/ceo/chat — send a message (or drive "+ New Agent" creation).
-// Sending { mode: "create_agent" } starts a deterministic multi-turn creation
-// session (state hidden in the encrypted chat thread — see creationFlow.js).
-// While a session is active every message is routed to it (no LLM call); the
-// stepper extracts fields opportunistically so answers need not follow the
-// question order. Everything else goes through respondToChat.
+// Sending { mode: "create_agent" } starts/continues a deterministic multi-turn
+// creation session pinned to an isSystem conversation (never listed/resumed as
+// regular chat). Everything else goes through respondToChat.
 
 const CREATION_STATE_LOOKBACK = 60;
 
-async function findActiveCreationState(tx, userId, ceoAgentConfigId) {
+async function findActiveCreationState(tx, userId, ceoAgentConfigId, conversationId) {
   const recent = await tx.agentChatMessage.findMany({
-    where: { userId, ceoAgentConfigId, agentConfigId: null, role: "AGENT" },
+    where: {
+      userId,
+      ceoAgentConfigId,
+      agentConfigId: null,
+      conversationId,
+      role: "AGENT",
+    },
     orderBy: { createdAt: "desc" },
     take: CREATION_STATE_LOOKBACK,
     select: { contentCiphertext: true },
@@ -78,12 +87,18 @@ function isNewerState(a, b) {
 // process; across serverless invocations savedAtMs alone already differs.
 let stateSequence = 0;
 
-async function handleCreationTurn({ userId, ceoConfigId, activeState, message }) {
+async function handleCreationTurn({ userId, ceoConfigId, conversationId, activeState, message }) {
   return withUserContext(userId, async (tx) => {
-    const messageBase = { userId, ceoAgentConfigId: ceoConfigId, agentConfigId: null };
+    const messageBase = {
+      userId,
+      conversationId,
+      ceoAgentConfigId: ceoConfigId,
+      agentConfigId: null,
+    };
     await tx.agentChatMessage.create({
       data: { ...messageBase, role: "USER", contentCiphertext: encrypt(message) },
     });
+    await touchConversation(tx, conversationId);
 
     let turn;
     if (activeState) {
@@ -125,9 +140,17 @@ async function handleCreationTurn({ userId, ceoConfigId, activeState, message })
     const replyMessage = await tx.agentChatMessage.create({
       data: { ...messageBase, role: "AGENT", contentCiphertext: encrypt(reply) },
     });
+    await touchConversation(tx, conversationId);
 
     return { reply, messageId: replyMessage.id, agentCreated };
   });
+}
+
+function readOptionalConversationId(payloadOrQuery) {
+  const raw = payloadOrQuery?.conversationId;
+  if (typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  return trimmed || null;
 }
 
 async function handleHistory(request, response) {
@@ -140,6 +163,7 @@ async function handleHistory(request, response) {
     const messages = await listChatHistory({
       userId: decodedToken.uid,
       ceoAgentConfigId: ceoConfig.id,
+      conversationId: readOptionalConversationId(request.query),
     });
     return response.status(200).json({ messages: serializeChatHistoryMessages(messages) });
   } catch (error) {
@@ -167,19 +191,39 @@ async function handleSend(request, response) {
         ? payload.relatedRunId.trim()
         : null;
     const createMode = payload?.mode === "create_agent";
+    const conversationId = readOptionalConversationId(payload);
 
-    const { ceoConfig, activeState } = await withUserContext(decodedToken.uid, async (tx) => {
-      const config = await ensureCeoAgentConfig(tx, decodedToken.uid);
-      return {
-        ceoConfig: config,
-        activeState: await findActiveCreationState(tx, decodedToken.uid, config.id),
-      };
-    });
+    const ceoConfig = await withUserContext(decodedToken.uid, (tx) =>
+      ensureCeoAgentConfig(tx, decodedToken.uid)
+    );
 
-    if (createMode || activeState) {
+    // Creation is opt-in via mode: "create_agent" on every turn (client keeps
+    // sending it while NewAgentFlow is open). Abandoned system sessions never
+    // hijack the regular CEO chat.
+    if (createMode) {
+      const { systemConversationId, activeState } = await withUserContext(
+        decodedToken.uid,
+        async (tx) => {
+          const system = await ensureSystemConversation(tx, {
+            userId: decodedToken.uid,
+            ceoAgentConfigId: ceoConfig.id,
+          });
+          return {
+            systemConversationId: system.id,
+            activeState: await findActiveCreationState(
+              tx,
+              decodedToken.uid,
+              ceoConfig.id,
+              system.id
+            ),
+          };
+        }
+      );
+
       const outcome = await handleCreationTurn({
         userId: decodedToken.uid,
         ceoConfigId: ceoConfig.id,
+        conversationId: systemConversationId,
         activeState,
         message,
       });
@@ -193,6 +237,7 @@ async function handleSend(request, response) {
     const { reply, messageId } = await respondToChat({
       userId: decodedToken.uid,
       ceoAgentConfigId: ceoConfig.id,
+      conversationId,
       message,
       relatedRunId,
     });

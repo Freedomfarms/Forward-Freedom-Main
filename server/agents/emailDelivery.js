@@ -3,6 +3,7 @@ import { getFirebaseAdminAuth, isFirebaseAdminConfigured } from "../auth/firebas
 import { withUserContext } from "../db/prisma.js";
 import { decrypt, encrypt } from "../security/envelope.js";
 import { AgentError } from "./errors.js";
+import { resolveConversationForWrite, touchConversation } from "./conversations.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared email delivery for sub-agent reports (finance, research, reminders).
@@ -165,7 +166,13 @@ export function buildRunEmailContent({ agentName, agentType, run, output }) {
  * emails it to the verified account address, and writes both chat rows so
  * the exchange is part of the durable thread. Returns { reply, messageId }.
  */
-export async function emailRunReportFromChat({ userId, agentConfigId, message, relatedRunId = null }) {
+export async function emailRunReportFromChat({
+  userId,
+  agentConfigId,
+  conversationId = null,
+  message,
+  relatedRunId = null,
+}) {
   const context = await withUserContext(userId, async (tx) => {
     const agentConfig = await tx.agentConfig.findFirst({
       where: { id: agentConfigId, userId },
@@ -174,15 +181,24 @@ export async function emailRunReportFromChat({ userId, agentConfigId, message, r
       throw new AgentError("Agent not found.", "AGENT_NOT_FOUND", 404);
     }
 
+    const conversation = await resolveConversationForWrite(tx, {
+      userId,
+      agentConfigId: agentConfig.id,
+      conversationId,
+      allowSystem: false,
+    });
+
     await tx.agentChatMessage.create({
       data: {
         userId,
+        conversationId: conversation.id,
         agentConfigId: agentConfig.id,
         role: "USER",
         contentCiphertext: encrypt(String(message)),
         relatedRunId: relatedRunId || null,
       },
     });
+    await touchConversation(tx, conversation.id);
 
     const run = relatedRunId
       ? await tx.agentRun.findFirst({
@@ -193,10 +209,10 @@ export async function emailRunReportFromChat({ userId, agentConfigId, message, r
           orderBy: { startedAt: "desc" },
         });
 
-    return { agentConfig, run };
+    return { agentConfig, run, conversationId: conversation.id };
   });
 
-  const { agentConfig, run } = context;
+  const { agentConfig, run, conversationId: resolvedConversationId } = context;
 
   let reply;
   if (!run) {
@@ -223,17 +239,20 @@ export async function emailRunReportFromChat({ userId, agentConfigId, message, r
       : `I couldn't email it: ${result.status}. The full report is still available here in Freedom OS.`;
   }
 
-  const replyMessage = await withUserContext(userId, (tx) =>
-    tx.agentChatMessage.create({
+  const replyMessage = await withUserContext(userId, async (tx) => {
+    const created = await tx.agentChatMessage.create({
       data: {
         userId,
+        conversationId: resolvedConversationId,
         agentConfigId: agentConfig.id,
         role: "AGENT",
         contentCiphertext: encrypt(reply),
         relatedRunId: run?.id || null,
       },
-    })
-  );
+    });
+    await touchConversation(tx, resolvedConversationId);
+    return created;
+  });
 
   return { reply, messageId: replyMessage.id };
 }

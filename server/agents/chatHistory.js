@@ -1,61 +1,34 @@
 import { withUserContext } from "../db/prisma.js";
-import { decrypt } from "../security/envelope.js";
-import { isCreationStateContent } from "./creationFlow.js";
+import { ensureDefaultConversation } from "./conversations.js";
+import {
+  CHAT_HISTORY_DEFAULT_LIMIT,
+  decodeVisibleChatMessages,
+} from "./chatMessageCodec.js";
 import { AgentError } from "./errors.js";
 
 // Shared chat-history loader for CEO and sub-agent chats. The UI previously
 // kept messages in local React state only; these helpers restore the durable
 // thread stored in AgentChatMessage (minus hidden creation-state rows).
 
-export const CHAT_HISTORY_DEFAULT_LIMIT = 50;
+export {
+  CHAT_HISTORY_DEFAULT_LIMIT,
+  decodeVisibleChatMessages,
+  serializeChatHistoryMessages,
+} from "./chatMessageCodec.js";
+
 const CHAT_HISTORY_FETCH_CAP = 200;
 
 /**
- * Decrypts rows newest-first, drops creation-state sentinels and undecryptable
- * rows, then returns up to `limit` messages in chronological order for the UI.
- */
-export function decodeVisibleChatMessages(rows, { limit = CHAT_HISTORY_DEFAULT_LIMIT } = {}) {
-  const visible = [];
-  for (const row of rows || []) {
-    let text;
-    try {
-      text = decrypt(row.contentCiphertext);
-    } catch {
-      continue;
-    }
-    if (isCreationStateContent(text)) continue;
-    visible.push({
-      id: row.id,
-      role: row.role === "USER" ? "user" : "agent",
-      text,
-      createdAt: row.createdAt,
-    });
-    if (visible.length >= limit) break;
-  }
-  return visible.reverse();
-}
-
-/** JSON-safe chat history rows for API responses. */
-export function serializeChatHistoryMessages(messages) {
-  return (Array.isArray(messages) ? messages : []).map((row) => ({
-    id: row.id,
-    role: row.role,
-    text: row.text,
-    createdAt:
-      row.createdAt instanceof Date
-        ? row.createdAt.toISOString()
-        : row.createdAt ?? null,
-  }));
-}
-
-/**
  * Loads visible chat history for exactly one of agentConfigId / ceoAgentConfigId.
- * Verifies the target config belongs to the user before reading messages.
+ * When conversationId is omitted, uses the newest non-system conversation
+ * (creating an Original thread if needed) so GET /chat stays single-thread
+ * compatible until the UI switches to /conversations/:id/messages.
  */
 export async function listChatHistory({
   userId,
   agentConfigId = null,
   ceoAgentConfigId = null,
+  conversationId = null,
   limit = CHAT_HISTORY_DEFAULT_LIMIT,
 } = {}) {
   if (!userId) {
@@ -89,11 +62,35 @@ export async function listChatHistory({
       if (!ceo) throw new AgentError("CEO Agent not found.", "CEO_AGENT_NOT_FOUND", 404);
     }
 
+    let resolvedConversationId = conversationId;
+    if (resolvedConversationId) {
+      const conversation = await tx.agentConversation.findFirst({
+        where: {
+          id: resolvedConversationId,
+          userId,
+          agentConfigId: agentConfigId ?? null,
+          ceoAgentConfigId: ceoAgentConfigId ?? null,
+          isSystem: false,
+        },
+        select: { id: true },
+      });
+      if (!conversation) {
+        throw new AgentError("Conversation not found.", "CONVERSATION_NOT_FOUND", 404);
+      }
+      resolvedConversationId = conversation.id;
+    } else {
+      const conversation = await ensureDefaultConversation(tx, {
+        userId,
+        agentConfigId,
+        ceoAgentConfigId,
+      });
+      resolvedConversationId = conversation.id;
+    }
+
     const rows = await tx.agentChatMessage.findMany({
       where: {
         userId,
-        agentConfigId: agentConfigId ?? null,
-        ceoAgentConfigId: ceoAgentConfigId ?? null,
+        conversationId: resolvedConversationId,
       },
       orderBy: { createdAt: "desc" },
       take,

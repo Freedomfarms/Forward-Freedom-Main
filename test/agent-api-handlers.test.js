@@ -160,6 +160,19 @@ before(async () => {
       ceoProfile: (await import("../api/agents/ceo/profile.js")).default,
       ceoDigest: (await import("../api/agents/ceo/digest.js")).default,
       ceoChat: (await import("../api/agents/ceo/chat.js")).default,
+      ceoConversations: (await import("../api/agents/ceo/conversations.js")).default,
+      ceoConversationById: (await import("../api/agents/ceo/conversations/[conversationId].js"))
+        .default,
+      ceoConversationMessages: (
+        await import("../api/agents/ceo/conversations/[conversationId]/messages.js")
+      ).default,
+      agentConversations: (await import("../api/agents/[id]/conversations.js")).default,
+      agentConversationById: (
+        await import("../api/agents/[id]/conversations/[conversationId].js")
+      ).default,
+      agentConversationMessages: (
+        await import("../api/agents/[id]/conversations/[conversationId]/messages.js")
+      ).default,
       ceoDocuments: (await import("../api/agents/ceo/documents.js")).default,
       onboarding: (await import("../api/agents/onboarding.js")).default,
       notifications: (await import("../api/notifications.js")).default,
@@ -600,7 +613,13 @@ test("POST /api/agents/:id/chat delegates to respondToChat scoped to the agent",
   assert.equal(response.body.reply, "mock chat reply");
   assert.equal(response.body.messageId, "msg-123");
   assert.deepEqual(chatCalls, [
-    { userId: "u1", agentConfigId: "agent-1", message: "what did you find?", relatedRunId: "run-9" },
+    {
+      userId: "u1",
+      agentConfigId: "agent-1",
+      conversationId: null,
+      message: "what did you find?",
+      relatedRunId: "run-9",
+    },
   ]);
 });
 
@@ -694,10 +713,23 @@ test("GET /api/agents/ceo/chat returns visible history and hides creation-state 
   const ceoId = currentDb.tables.ceoAgentConfig[0].id;
   const { CREATION_STATE_SENTINEL } = await import("../server/agents/creationFlow.js");
 
+  currentDb.tables.agentConversation.push({
+    id: "conv-ceo",
+    userId: "u1",
+    ceoAgentConfigId: ceoId,
+    agentConfigId: null,
+    title: "Original thread",
+    isSystem: false,
+    archivedAt: null,
+    createdAt: new Date("2026-07-20T09:00:00Z"),
+    updatedAt: new Date("2026-07-20T12:00:00Z"),
+  });
+
   currentDb.tables.agentChatMessage.push(
     {
       id: "m1",
       userId: "u1",
+      conversationId: "conv-ceo",
       ceoAgentConfigId: ceoId,
       agentConfigId: null,
       role: "USER",
@@ -707,6 +739,7 @@ test("GET /api/agents/ceo/chat returns visible history and hides creation-state 
     {
       id: "m2",
       userId: "u1",
+      conversationId: "conv-ceo",
       ceoAgentConfigId: ceoId,
       agentConfigId: null,
       role: "AGENT",
@@ -716,6 +749,7 @@ test("GET /api/agents/ceo/chat returns visible history and hides creation-state 
     {
       id: "m3",
       userId: "u1",
+      conversationId: "conv-ceo",
       ceoAgentConfigId: ceoId,
       agentConfigId: null,
       role: "AGENT",
@@ -756,10 +790,35 @@ test("GET /api/agents/:id/chat returns that agent's history only", async (t) => 
       status: "ACTIVE",
     }
   );
+  currentDb.tables.agentConversation.push(
+    {
+      id: "conv-a1",
+      userId: "u1",
+      agentConfigId: "agent-1",
+      ceoAgentConfigId: null,
+      title: "Original thread",
+      isSystem: false,
+      archivedAt: null,
+      createdAt: new Date("2026-07-20T10:00:00Z"),
+      updatedAt: new Date("2026-07-20T11:00:00Z"),
+    },
+    {
+      id: "conv-a2",
+      userId: "u1",
+      agentConfigId: "agent-2",
+      ceoAgentConfigId: null,
+      title: "Original thread",
+      isSystem: false,
+      archivedAt: null,
+      createdAt: new Date("2026-07-20T10:00:00Z"),
+      updatedAt: new Date("2026-07-20T11:01:00Z"),
+    }
+  );
   currentDb.tables.agentChatMessage.push(
     {
       id: "a1",
       userId: "u1",
+      conversationId: "conv-a1",
       agentConfigId: "agent-1",
       ceoAgentConfigId: null,
       role: "USER",
@@ -769,6 +828,7 @@ test("GET /api/agents/:id/chat returns that agent's history only", async (t) => 
     {
       id: "a2",
       userId: "u1",
+      conversationId: "conv-a2",
       agentConfigId: "agent-2",
       ceoAgentConfigId: null,
       role: "USER",
@@ -789,14 +849,19 @@ test("GET /api/agents/:id/chat returns that agent's history only", async (t) => 
 test("CEO chat creation flow builds and creates an agent without any LLM call", async (t) => {
   if (!requireSetup(t)) return;
 
-  async function send(message, mode) {
+  // Every creation turn must send mode: "create_agent" (server pins the
+  // session to an isSystem conversation; omitting mode resumes regular chat).
+  async function send(message, { create = true } = {}) {
     return invoke(
       handlers.ceoChat,
-      authedRequest("u1", { method: "POST", body: { message, ...(mode ? { mode } : {}) } })
+      authedRequest("u1", {
+        method: "POST",
+        body: { message, ...(create ? { mode: "create_agent" } : {}) },
+      })
     );
   }
 
-  const start = await send("I want a finance agent", "create_agent");
+  const start = await send("I want a finance agent");
   assert.equal(start.statusCode, 200);
   assert.match(start.body.reply, /focus on/i);
 
@@ -825,13 +890,175 @@ test("CEO chat creation flow builds and creates an agent without any LLM call", 
   assert.match(row.instructions, /monthly spending/);
   assert.match(row.definitionOfDone, /observations report/);
 
+  // Creation messages land on the isSystem conversation, never the default list.
+  const systemConv = currentDb.tables.agentConversation.find((c) => c.isSystem === true);
+  assert.ok(systemConv, "isSystem conversation should exist");
+  assert.equal(
+    currentDb.tables.agentChatMessage.every((m) => m.conversationId === systemConv.id),
+    true
+  );
+  assert.equal(
+    currentDb.tables.agentConversation.filter((c) => !c.isSystem).length,
+    0,
+    "creation must not create a listed conversation"
+  );
+
   // The whole flow is deterministic — respondToChat (LLM) was never called...
   assert.equal(chatCalls.length, 0);
 
-  // ...and once the session is complete, normal chat resumes.
-  const followUp = await send("thanks, how are things?");
+  // ...and once the session is complete, normal chat (no mode) resumes.
+  const followUp = await send("thanks, how are things?", { create: false });
   assert.equal(followUp.statusCode, 200);
   assert.equal(chatCalls.length, 1);
+});
+
+test("CEO conversations CRUD + messages; system threads stay hidden", async (t) => {
+  if (!requireSetup(t)) return;
+
+  // Seed a system conversation (as creation would) — must never appear in list.
+  await invoke(handlers.ceo, authedRequest("u1", { method: "GET" }));
+  const ceoId = currentDb.tables.ceoAgentConfig[0].id;
+  currentDb.tables.agentConversation.push({
+    id: "sys-1",
+    userId: "u1",
+    ceoAgentConfigId: ceoId,
+    agentConfigId: null,
+    title: "New Agent",
+    isSystem: true,
+    archivedAt: null,
+    createdAt: new Date("2026-07-20T09:00:00Z"),
+    updatedAt: new Date("2026-07-20T09:00:00Z"),
+  });
+
+  const created = await invoke(
+    handlers.ceoConversations,
+    authedRequest("u1", { method: "POST", body: {} })
+  );
+  assert.equal(created.statusCode, 201);
+  assert.equal(created.body.conversation.isSystem, false);
+  assert.equal(created.body.conversation.ceoAgentConfigId, ceoId);
+  const conversationId = created.body.conversation.id;
+
+  const listed = await invoke(handlers.ceoConversations, authedRequest("u1", { method: "GET" }));
+  assert.equal(listed.statusCode, 200);
+  assert.equal(listed.body.conversations.length, 1);
+  assert.equal(listed.body.conversations[0].id, conversationId);
+  assert.ok(!listed.body.conversations.some((row) => row.isSystem));
+
+  currentDb.tables.agentChatMessage.push({
+    id: "cm1",
+    userId: "u1",
+    conversationId,
+    ceoAgentConfigId: ceoId,
+    agentConfigId: null,
+    role: "USER",
+    contentCiphertext: envelope.encrypt("hello from conversation"),
+    createdAt: new Date("2026-07-20T12:00:00Z"),
+  });
+
+  const messages = await invoke(
+    handlers.ceoConversationMessages,
+    authedRequest("u1", {
+      method: "GET",
+      params: { conversationId },
+    })
+  );
+  assert.equal(messages.statusCode, 200);
+  assert.equal(messages.body.messages.length, 1);
+  assert.match(messages.body.messages[0].text, /hello from conversation/);
+
+  const renamed = await invoke(
+    handlers.ceoConversationById,
+    authedRequest("u1", {
+      method: "PATCH",
+      params: { conversationId },
+      body: { title: "Budget review" },
+    })
+  );
+  assert.equal(renamed.statusCode, 200);
+  assert.equal(renamed.body.conversation.title, "Budget review");
+
+  const archived = await invoke(
+    handlers.ceoConversationById,
+    authedRequest("u1", {
+      method: "PATCH",
+      params: { conversationId },
+      body: { archived: true },
+    })
+  );
+  assert.equal(archived.statusCode, 200);
+  assert.ok(archived.body.conversation.archivedAt);
+
+  const listedDefault = await invoke(
+    handlers.ceoConversations,
+    authedRequest("u1", { method: "GET" })
+  );
+  assert.equal(listedDefault.body.conversations.length, 0);
+
+  const listedArchived = await invoke(
+    handlers.ceoConversations,
+    authedRequest("u1", { method: "GET", query: { includeArchived: "true" } })
+  );
+  assert.equal(listedArchived.body.conversations.length, 1);
+
+  const deleted = await invoke(
+    handlers.ceoConversationById,
+    authedRequest("u1", { method: "DELETE", params: { conversationId } })
+  );
+  assert.equal(deleted.statusCode, 200);
+  assert.equal(deleted.body.deleted, true);
+
+  const systemPatch = await invoke(
+    handlers.ceoConversationById,
+    authedRequest("u1", {
+      method: "PATCH",
+      params: { conversationId: "sys-1" },
+      body: { title: "nope" },
+    })
+  );
+  assert.equal(systemPatch.statusCode, 400);
+});
+
+test("sub-agent conversations are scoped to that agent", async (t) => {
+  if (!requireSetup(t)) return;
+  currentDb.tables.agentConfig.push(
+    {
+      id: "agent-1",
+      userId: "u1",
+      agentType: "research",
+      name: "Research Agent",
+      definitionOfDone: "done",
+      permissionLevel: "READ_ONLY",
+      status: "ACTIVE",
+    },
+    {
+      id: "agent-2",
+      userId: "u1",
+      agentType: "finance",
+      name: "Finance Agent",
+      definitionOfDone: "done",
+      permissionLevel: "READ_ONLY",
+      status: "ACTIVE",
+    }
+  );
+
+  const created = await invoke(
+    handlers.agentConversations,
+    authedRequest("u1", { method: "POST", params: { id: "agent-1" }, body: {} })
+  );
+  assert.equal(created.statusCode, 201);
+  assert.equal(created.body.conversation.agentConfigId, "agent-1");
+
+  const cross = await invoke(
+    handlers.agentConversationById,
+    authedRequest("u1", {
+      method: "PATCH",
+      params: { id: "agent-2", conversationId: created.body.conversation.id },
+      body: { title: "stolen" },
+    })
+  );
+  assert.equal(cross.statusCode, 400);
+  assert.match(String(cross.body?.message || cross.body?.error || ""), /does not belong/i);
 });
 
 // ── CEO profile ──────────────────────────────────────────────────────────────

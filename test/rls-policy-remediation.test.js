@@ -51,6 +51,7 @@ const expectedTables = Object.keys(expectedPolicyColumns).sort();
 // must enable+force RLS in its own migration instead (asserted below).
 const laterRlsModels = {
   CeoDocument: "20260720220000_ceo_documents_and_onboarding_summary",
+  AgentConversation: "20260721020000_agent_conversations",
 };
 
 test("remediation inventory is exactly every user-scoped model", () => {
