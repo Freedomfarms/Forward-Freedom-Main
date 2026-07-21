@@ -55,21 +55,46 @@ export function isValidAvatarKey(value) {
   return typeof value === "string" && AVATAR_KEY_PATTERN.test(value);
 }
 
+// Columns that exist since the original Freedom OS CEO migration. Never include
+// newer optional columns here — Prisma RETURNING / SELECT of un-migrated
+// columns throws P2022 and takes down every CEO endpoint (see schemaCapabilities).
+export const CEO_AGENT_CONFIG_SAFE_SELECT = Object.freeze({
+  id: true,
+  userId: true,
+  name: true,
+  personalityPreset: true,
+  avatarKey: true,
+  profileCiphertext: true,
+  profileUpdatedAt: true,
+  lastDigestCiphertext: true,
+  lastDigestAt: true,
+  onboardingCompletedAt: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 /**
  * Gets or creates the user's CeoAgentConfig (exactly one per user). Called by
  * every CEO-facing endpoint so the first visit works without a setup step.
  */
 export async function ensureCeoAgentConfig(tx, userId) {
-  const existing = await tx.ceoAgentConfig.findFirst({ where: { userId } });
+  const existing = await tx.ceoAgentConfig.findFirst({
+    where: { userId },
+    select: CEO_AGENT_CONFIG_SAFE_SELECT,
+  });
   if (existing) return existing;
   try {
     return await tx.ceoAgentConfig.create({
       data: { userId, name: "CEO Agent", personalityPreset: "DIRECT_EFFICIENT" },
+      select: CEO_AGENT_CONFIG_SAFE_SELECT,
     });
   } catch (error) {
     // Unique(userId) race with a concurrent first request.
     if (error?.code === "P2002") {
-      const raced = await tx.ceoAgentConfig.findFirst({ where: { userId } });
+      const raced = await tx.ceoAgentConfig.findFirst({
+        where: { userId },
+        select: CEO_AGENT_CONFIG_SAFE_SELECT,
+      });
       if (raced) return raced;
     }
     throw error;

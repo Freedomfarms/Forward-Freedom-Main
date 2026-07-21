@@ -5,6 +5,7 @@ import { readJsonBody } from "../../server/http/requestHelpers.js";
 import { applySecurityHeaders } from "../../server/http/responseHelpers.js";
 import { AgentError } from "../../server/agents/errors.js";
 import {
+  CEO_AGENT_CONFIG_SAFE_SELECT,
   CEO_PERSONALITY_PRESETS,
   ensureCeoAgentConfig,
   isValidAvatarKey,
@@ -81,7 +82,11 @@ export default async function handler(request, response) {
     const data = readCeoUpdate(await readJsonBody(request));
     const updated = await withUserContext(decodedToken.uid, async (tx) => {
       const ceoConfig = await ensureCeoAgentConfig(tx, decodedToken.uid);
-      return tx.ceoAgentConfig.update({ where: { id: ceoConfig.id }, data });
+      return tx.ceoAgentConfig.update({
+        where: { id: ceoConfig.id },
+        data,
+        select: CEO_AGENT_CONFIG_SAFE_SELECT,
+      });
     });
     return response.status(200).json({ ceoAgent: serializeCeoAgentConfig(updated) });
   } catch (error) {

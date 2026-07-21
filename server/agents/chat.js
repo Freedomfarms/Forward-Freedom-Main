@@ -2,6 +2,7 @@ import { jsonSchema } from "ai";
 
 import { withUserContext } from "../db/prisma.js";
 import { decrypt, decryptJson, encrypt } from "../security/envelope.js";
+import { CEO_AGENT_CONFIG_SAFE_SELECT } from "./apiHelpers.js";
 import { isCreationStateContent } from "./creationFlow.js";
 import { loadDocumentsForPrompt } from "./documents.js";
 import { AgentError } from "./errors.js";
@@ -117,7 +118,10 @@ export async function respondToChat({
         throw new AgentError("Agent not found.", "AGENT_NOT_FOUND", 404);
       }
     } else {
-      ceoConfig = await tx.ceoAgentConfig.findFirst({ where: { id: ceoAgentConfigId, userId } });
+      ceoConfig = await tx.ceoAgentConfig.findFirst({
+        where: { id: ceoAgentConfigId, userId },
+        select: CEO_AGENT_CONFIG_SAFE_SELECT,
+      });
       if (!ceoConfig) {
         throw new AgentError("CEO Agent not found.", "CEO_AGENT_NOT_FOUND", 404);
       }
