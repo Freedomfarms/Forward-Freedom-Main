@@ -9,6 +9,7 @@ import {
   respondAgentApiError,
 } from "../../../server/agents/apiHelpers.js";
 import { listCeoDocuments } from "../../../server/agents/documents.js";
+import { readNarrativeProfile } from "../../../server/agents/narrativeProfile.js";
 import { readOnboardingSummary } from "../../../server/agents/onboardingSummary.js";
 import {
   applyOps,
@@ -75,8 +76,9 @@ function readProfileOps(payload) {
 }
 
 async function buildProfileResponse(profile, ceoConfig, userId) {
-  const [onboardingSummary, documents] = await Promise.all([
+  const [onboardingSummary, narrativeProfile, documents] = await Promise.all([
     readOnboardingSummary(userId),
+    readNarrativeProfile(userId),
     listCeoDocuments(userId),
   ]);
   return {
@@ -88,6 +90,11 @@ async function buildProfileResponse(profile, ceoConfig, userId) {
     onboardingSummary: {
       summary: onboardingSummary.summary,
       generatedAt: onboardingSummary.generatedAt,
+    },
+    narrativeProfile: {
+      profile: narrativeProfile.profile,
+      generatedAt: narrativeProfile.generatedAt,
+      insufficient: narrativeProfile.insufficient,
     },
     documents,
   };

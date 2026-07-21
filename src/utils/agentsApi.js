@@ -42,6 +42,16 @@ export function updateCeoProfile(ops, options = {}) {
   return requestJson("/api/agents/ceo/profile", { method: "PATCH", body: { ops }, options });
 }
 
+/** Cached long-form "Read your Profile" newsletter (may be null). */
+export function fetchCeoNarrativeProfile(options = {}) {
+  return requestJson("/api/agents/ceo/profile/narrative", { options });
+}
+
+/** Generate or refresh the long-form narrative profile and persist it. */
+export function generateCeoNarrativeProfile(options = {}) {
+  return requestJson("/api/agents/ceo/profile/narrative", { method: "POST", body: {}, options });
+}
+
 export function fetchCeoDocuments(options = {}) {
   return requestJson("/api/agents/ceo/documents", { options });
 }
