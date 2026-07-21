@@ -9,6 +9,7 @@ import {
 import {
   MAX_DOC_SIZE_BYTES,
   MAX_UPLOAD_DOCS,
+  CEO_DOCUMENT_ACCEPT,
   readCeoDocumentFiles,
 } from "../../utils/ceoDocumentFiles.js";
 import { describeAgentApiError, formatRelativeTime, fosStyles } from "./freedomOsShared.js";
@@ -190,7 +191,9 @@ export function ProfileView({ user, onBack }) {
       const parsed = await readCeoDocumentFiles(files);
       const valid = parsed.filter((doc) => doc.content?.trim());
       if (!valid.length) {
-        throw new Error("Choose at least one supported file (.txt, .md, .csv, .json, or .pdf).");
+        throw new Error(
+          "Choose at least one supported file (.txt, .md, .csv, .json, .pdf, .docx, .xlsx, or .pptx)."
+        );
       }
       const payload = await uploadCeoDocuments(valid, { user });
       setDocuments((current) => [...(payload?.documents || []), ...current]);
@@ -285,9 +288,9 @@ export function ProfileView({ user, onBack }) {
         <div style={{ display: "grid", gap: 10 }}>
           <div style={fosStyles.sectionLabel}>Reference documents</div>
           <p style={{ margin: 0, color: "#9fb0c9", fontSize: 12, lineHeight: 1.55 }}>
-            Files your CEO Agent can read in chat (.txt, .md, .csv, .json, .pdf) — up
-            to {MAX_UPLOAD_DOCS} files, {MAX_DOC_SIZE_BYTES / 1024} KB each. No
-            character limit.
+            Files your CEO Agent can read in chat (.txt, .md, .csv, .json, .pdf,
+            .docx, .xlsx, .pptx) — up to {MAX_UPLOAD_DOCS} files,{" "}
+            {MAX_DOC_SIZE_BYTES / 1024} KB each. No character limit.
           </p>
           <label
             style={{
@@ -301,7 +304,7 @@ export function ProfileView({ user, onBack }) {
             {isUploading ? "Uploading…" : "Upload documents"}
             <input
               type="file"
-              accept=".txt,.md,.markdown,.csv,.json,.pdf,text/plain,text/markdown,text/csv,application/json,application/pdf"
+              accept={CEO_DOCUMENT_ACCEPT}
               multiple
               disabled={isUploading}
               style={{ display: "none" }}
