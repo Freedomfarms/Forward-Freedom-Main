@@ -234,14 +234,19 @@ async function handleSend(request, response) {
       });
     }
 
-    const { reply, messageId } = await respondToChat({
+    const outcome = await respondToChat({
       userId: decodedToken.uid,
       ceoAgentConfigId: ceoConfig.id,
       conversationId,
       message,
       relatedRunId,
     });
-    return response.status(200).json({ reply, messageId });
+    return response.status(200).json({
+      reply: outcome.reply,
+      messageId: outcome.messageId,
+      conversationId: outcome.conversationId,
+      conversationTitle: outcome.conversationTitle,
+    });
   } catch (error) {
     return respondAgentApiError(
       response,

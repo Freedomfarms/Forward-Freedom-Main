@@ -5,6 +5,10 @@ import { decrypt, decryptJson, encrypt } from "../security/envelope.js";
 import { CEO_AGENT_CONFIG_SAFE_SELECT } from "./apiHelpers.js";
 import { isCreationStateContent } from "./creationFlow.js";
 import { resolveConversationForWrite, touchConversation } from "./conversations.js";
+import {
+  applySnippetTitleIfNeeded,
+  scheduleConversationTitle,
+} from "./conversationTitle.js";
 import { loadDocumentsForPrompt } from "./documents.js";
 import { AgentError } from "./errors.js";
 import { CEO_AGENT_MODEL, generateAgentObject } from "./llm.js";
@@ -151,6 +155,7 @@ export async function respondToChat({
       take: CHAT_HISTORY_LIMIT,
       select: { role: true, contentCiphertext: true, createdAt: true },
     });
+    const isFirstExchange = history.length === 0;
 
     await tx.agentChatMessage.create({
       data: {
@@ -164,6 +169,10 @@ export async function respondToChat({
       },
     });
     await touchConversation(tx, conversation.id);
+    const conversationTitle = await applySnippetTitleIfNeeded(tx, {
+      conversationId: conversation.id,
+      messageText: text,
+    });
 
     // Sub-agent chats are scoped to that agent's own runs; the CEO chat reads
     // summaries across every agent the user owns.
@@ -206,6 +215,8 @@ export async function respondToChat({
       agentConfig,
       ceoConfig,
       conversationId: conversation.id,
+      conversationTitle,
+      isFirstExchange,
       history,
       runs,
       relatedRun,
@@ -217,6 +228,8 @@ export async function respondToChat({
     agentConfig,
     ceoConfig,
     conversationId: resolvedConversationId,
+    conversationTitle: snippetTitle,
+    isFirstExchange,
     runs,
     relatedRun,
   } = context;
@@ -310,5 +323,23 @@ export async function respondToChat({
     // Best-effort by contract.
   }
 
-  return { reply, messageId: replyMessage?.id ?? null, model, usage };
+  // Title upgrade after the first exchange — never blocks the reply.
+  if (isFirstExchange) {
+    scheduleConversationTitle({
+      userId,
+      conversationId: resolvedConversationId,
+      userMessage: text,
+      agentReply: reply,
+      snippetTitle,
+    });
+  }
+
+  return {
+    reply,
+    messageId: replyMessage?.id ?? null,
+    conversationId: resolvedConversationId,
+    conversationTitle: snippetTitle,
+    model,
+    usage,
+  };
 }
