@@ -2,6 +2,14 @@
   "crons": [{ "path": "/api/cron/agent-dispatch", "schedule": "*/15 * * * *" }],
   "rewrites": [
     {
+      "source": "/api/agents/ceo/conversations/:conversationId/messages",
+      "destination": "/api/agents/ceo/conversations/[conversationId]/messages"
+    },
+    {
+      "source": "/api/agents/ceo/conversations/:conversationId",
+      "destination": "/api/agents/ceo/conversations/[conversationId]"
+    },
+    {
       "source": "/((?!api/|sitemap\\.xml|robots\\.txt).*)",
       "destination": "/index.html"
     }
