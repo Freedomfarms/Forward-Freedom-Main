@@ -10,6 +10,14 @@ async function resolveAgentTarget(request) {
   if (!agentId) {
     throw new AgentError("An agent id is required.", "INVALID_AGENT_PAYLOAD", 400);
   }
+  // Guard against /api/agents/ceo/* being captured as :id on a misrouted host.
+  if (agentId === "ceo") {
+    throw new AgentError(
+      "Use /api/agents/ceo/conversations for CEO Agent chats.",
+      "INVALID_CHAT_TARGET",
+      400
+    );
+  }
   return { agentConfigId: agentId, ceoAgentConfigId: null };
 }
 

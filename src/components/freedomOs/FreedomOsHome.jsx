@@ -136,8 +136,7 @@ export function FreedomOsHome({ user, onOpenFinanceTool }) {
 
   const [view, setView] = useState("home"); // home | settings | profile
   const [selectedAgentId, setSelectedAgentId] = useState(null);
-  const [isChatOpen, setIsChatOpen] = useState(false);
-  const [chatMounted, setChatMounted] = useState(false);
+  const [isDigestOpen, setIsDigestOpen] = useState(false);
   const [isNewAgentOpen, setIsNewAgentOpen] = useState(false);
   const [isRefreshingDigest, setIsRefreshingDigest] = useState(false);
   const [toast, setToast] = useState("");
@@ -271,6 +270,8 @@ export function FreedomOsHome({ user, onOpenFinanceTool }) {
   }
 
   // ── Home ───────────────────────────────────────────────────────────────────
+  // ChatGPT/Claude-style primary surface: CEO conversations + chat first.
+  // Daily digest is secondary. Sub-agent chats live only on AgentDetail.
   return (
     <div style={{ display: "grid", gap: 20 }}>
       <div style={styles.pageHeader}>
@@ -290,17 +291,17 @@ export function FreedomOsHome({ user, onOpenFinanceTool }) {
 
       {toast ? <div style={fosStyles.noticeBox}>{toast}</div> : null}
 
-      {/* CEO Agent panel */}
-      <div style={{ ...styles.panel, padding: 22, display: "grid", gap: 18 }}>
+      {/* CEO Agent chat workspace */}
+      <div style={{ ...styles.panel, padding: 22, display: "grid", gap: 16 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
           <span
             style={{
-              width: 56,
-              height: 56,
+              width: 52,
+              height: 52,
               borderRadius: "50%",
               display: "grid",
               placeItems: "center",
-              fontSize: 28,
+              fontSize: 26,
               background: `${avatar.color}26`,
               border: `1px solid ${avatar.color}66`,
               boxShadow: `0 0 22px ${avatar.color}33`,
@@ -312,7 +313,8 @@ export function FreedomOsHome({ user, onOpenFinanceTool }) {
           <div style={{ flex: 1, minWidth: 180 }}>
             <div style={{ color: "white", fontSize: 20, fontWeight: 900 }}>{ceoName}</div>
             <div style={{ color: "#9fb0c9", fontSize: 12, marginTop: 4 }}>
-              {getPersonalityLabel(ceoAgent?.personalityPreset)} • Orchestrates your agents
+              {getPersonalityLabel(ceoAgent?.personalityPreset)} • Your main chat — separate from
+              sub-agent threads
             </div>
           </div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -328,75 +330,69 @@ export function FreedomOsHome({ user, onOpenFinanceTool }) {
         <div
           style={{
             borderRadius: 12,
-            border: "1px solid rgba(0,216,255,.16)",
-            background: "rgba(0,136,255,.05)",
-            padding: "16px 18px",
-            display: "grid",
-            gap: 10,
+            border: "1px solid rgba(0,216,255,.14)",
+            background: "rgba(0,136,255,.04)",
+            overflow: "hidden",
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <button
+            type="button"
+            onClick={() => setIsDigestOpen((current) => !current)}
+            style={{
+              width: "100%",
+              border: "none",
+              background: "transparent",
+              padding: "12px 16px",
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              flexWrap: "wrap",
+              cursor: "pointer",
+              textAlign: "left",
+            }}
+          >
             <div style={fosStyles.sectionLabel}>Daily digest</div>
             <span style={{ color: "#5f7896", fontSize: 11 }}>
-              {digest?.generatedAt ? `Updated ${formatRelativeTime(digest.generatedAt)}` : ""}
+              {digest?.generatedAt ? `Updated ${formatRelativeTime(digest.generatedAt)}` : "Briefing"}
             </span>
             <span style={{ flex: 1 }} />
-            <button
-              type="button"
-              style={{ ...fosStyles.subtleButton, opacity: isRefreshingDigest ? 0.6 : 1 }}
-              disabled={isRefreshingDigest}
-              onClick={() => void handleRefreshDigest()}
-            >
-              {isRefreshingDigest ? "Refreshing…" : "Refresh"}
-            </button>
-          </div>
-          {digestError ? <div style={fosStyles.errorBox}>{digestError}</div> : null}
-          {!digestError && digest?.digest ? (
-            <div style={{ color: "#d7ebff", fontSize: 13, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>
-              {digest.digest}
-            </div>
-          ) : null}
-          {!digestError && !digest?.digest ? (
-            <div style={{ color: "#8faecc", fontSize: 13 }}>
-              No digest yet — hit Refresh for your first briefing.
+            <span style={{ color: "#8feaff", fontSize: 12 }}>{isDigestOpen ? "Hide ▴" : "Show ▾"}</span>
+          </button>
+          {isDigestOpen ? (
+            <div style={{ padding: "0 16px 14px", display: "grid", gap: 10 }}>
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                <button
+                  type="button"
+                  style={{ ...fosStyles.subtleButton, opacity: isRefreshingDigest ? 0.6 : 1 }}
+                  disabled={isRefreshingDigest}
+                  onClick={() => void handleRefreshDigest()}
+                >
+                  {isRefreshingDigest ? "Refreshing…" : "Refresh"}
+                </button>
+              </div>
+              {digestError ? <div style={fosStyles.errorBox}>{digestError}</div> : null}
+              {!digestError && digest?.digest ? (
+                <div style={{ color: "#d7ebff", fontSize: 13, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>
+                  {digest.digest}
+                </div>
+              ) : null}
+              {!digestError && !digest?.digest ? (
+                <div style={{ color: "#8faecc", fontSize: 13 }}>
+                  No digest yet — hit Refresh for your first briefing.
+                </div>
+              ) : null}
             </div>
           ) : null}
         </div>
 
-        <div style={{ display: "grid", gap: 12 }}>
-          <button
-            type="button"
-            onClick={() => {
-              setIsChatOpen((current) => {
-                const next = !current;
-                if (next) setChatMounted(true);
-                return next;
-              });
-            }}
-            style={{
-              ...fosStyles.secondaryButton,
-              textAlign: "left",
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-            }}
-          >
-            <span>💬 Chat with {ceoName}</span>
-            <span style={{ color: "#8feaff" }}>{isChatOpen ? "▴" : "▾"}</span>
-          </button>
-          {/* Stay mounted after first open so collapse doesn't wipe local state;
-              server history still reloads if the home view remounts. */}
-          {chatMounted ? (
-            <div style={{ display: isChatOpen ? "block" : "none" }}>
-              <AgentChat
-                mode="ceo"
-                agentName={ceoName}
-                user={user}
-                placeholder={`Ask ${ceoName} anything about your money or your agents…`}
-              />
-            </div>
-          ) : null}
-        </div>
+        <AgentChat
+          mode="ceo"
+          agentName={ceoName}
+          user={user}
+          layout="workspace"
+          listLabel={`${ceoName} chats`}
+          placeholder={`Ask ${ceoName} anything about your money or your agents…`}
+        />
       </div>
 
       {/* Agent grid */}

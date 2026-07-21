@@ -1061,6 +1061,23 @@ test("sub-agent conversations are scoped to that agent", async (t) => {
   assert.match(String(cross.body?.message || cross.body?.error || ""), /does not belong/i);
 });
 
+test("agent conversation routes reject id=ceo so CEO chats stay on /ceo/*", async (t) => {
+  if (!requireSetup(t)) return;
+  const listed = await invoke(
+    handlers.agentConversations,
+    authedRequest("u1", { method: "GET", params: { id: "ceo" } })
+  );
+  assert.equal(listed.statusCode, 400);
+  assert.match(String(listed.body?.message || ""), /ceo\/conversations/i);
+
+  const chat = await invoke(
+    handlers.agentChat,
+    authedRequest("u1", { method: "GET", params: { id: "ceo" } })
+  );
+  assert.equal(chat.statusCode, 400);
+  assert.match(String(chat.body?.message || ""), /ceo\/chat/i);
+});
+
 // ── CEO profile ──────────────────────────────────────────────────────────────
 
 test("CEO profile PATCH applies user edits and tombstoned deletes", async (t) => {
