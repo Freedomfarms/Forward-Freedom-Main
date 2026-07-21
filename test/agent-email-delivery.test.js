@@ -74,10 +74,13 @@ test("isEmailReportRequest detects email-me phrasings and avoids mentions", (t) 
   assert.equal(isEmailReportRequest("please email the latest summary"), true);
   assert.equal(isEmailReportRequest("send me the findings by email"), true);
   assert.equal(isEmailReportRequest("send the report to my email"), true);
+  assert.equal(isEmailReportRequest("can you send email now so i can see draft?"), true);
   // Mentions of email that are not send requests must NOT trigger a send.
   assert.equal(isEmailReportRequest("does the report include email addresses?"), false);
   assert.equal(isEmailReportRequest("what's your email policy?"), false);
   assert.equal(isEmailReportRequest("summarize my spending"), false);
+  assert.equal(isEmailReportRequest("enable email after each run"), false);
+  assert.equal(isEmailReportRequest("disable email"), false);
 });
 
 test("sendAgentReportEmail skips when the email service is not configured", async (t) => {

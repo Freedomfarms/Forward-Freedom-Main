@@ -85,6 +85,8 @@ export function AgentChat({
   relatedRunId = null,
   onClearRelatedRun = null,
   onAgentCreated = null,
+  onAgentUpdated = null,
+  onRunStarted = null,
   introMessage = null,
   placeholder = "Type a message...",
   maxHeight = 380,
@@ -588,6 +590,12 @@ export function AgentChat({
         if (typeof onAgentCreated === "function") {
           onAgentCreated(payload.agentCreated);
         }
+      }
+      if (payload?.agent && typeof onAgentUpdated === "function") {
+        onAgentUpdated(payload.agent);
+      }
+      if (payload?.run && typeof onRunStarted === "function") {
+        onRunStarted(payload.run);
       }
       // Refresh list later so async LLM titles can appear.
       if (mode !== "create_agent") {
