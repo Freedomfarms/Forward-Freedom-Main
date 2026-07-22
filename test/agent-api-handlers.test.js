@@ -421,7 +421,12 @@ test("POST /api/agents creates a READ_ONLY ACTIVE agent linked to the CEO config
   assert.equal(response.body.agent.permissionLevel, "READ_ONLY");
   assert.equal(response.body.agent.status, "ACTIVE");
   assert.equal(response.body.agent.model, "claude-sonnet-4-5");
-  assert.deepEqual(response.body.agent.schedule, { preset: "weekly", weekday: "friday" });
+  assert.deepEqual(response.body.agent.schedule, {
+    preset: "weekly",
+    weekday: "friday",
+    weekdays: ["friday"],
+    hourUtc: 13,
+  });
 
   const row = currentDb.tables.agentConfig[0];
   assert.equal(row.permissionLevel, "READ_ONLY");
