@@ -9,7 +9,14 @@ import { applySnippetTitleIfNeeded } from "./conversationTitle.js";
 import { deliverAgentRunReport } from "./emailDelivery.js";
 import { AgentError } from "./errors.js";
 import { runAgent } from "./runner.js";
-import { WEEKDAY_NAMES, isValidSchedulePreset, isValidScheduleWeekday } from "./schedule.js";
+import {
+  WEEKDAY_NAMES,
+  formatHourUtcLabel,
+  isValidScheduleHourUtc,
+  isValidSchedulePreset,
+  isValidScheduleWeekday,
+  normalizeScheduleWeekdays,
+} from "./schedule.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Task-scoped actions a sub-agent may take on ITSELF via chat.
@@ -67,7 +74,21 @@ export const TASK_ACTION_JSON_SCHEMA = {
         scheduleWeekday: {
           type: "string",
           enum: [...WEEKDAY_NAMES],
-          description: "Weekday when schedulePreset is weekly (update_config only).",
+          description:
+            "Single weekday when schedulePreset is weekly (update_config only). Prefer scheduleWeekdays for multiple days.",
+        },
+        scheduleWeekdays: {
+          type: "array",
+          items: { type: "string", enum: [...WEEKDAY_NAMES] },
+          description:
+            "One or more weekdays when schedulePreset is weekly, e.g. monday+wednesday+friday (update_config only).",
+        },
+        scheduleHourUtc: {
+          type: "integer",
+          minimum: 0,
+          maximum: 23,
+          description:
+            "Hour of day in UTC (0–23) for the scheduled run. Defaults to 13 if omitted (update_config only).",
         },
         clearSchedule: {
           type: "boolean",
@@ -136,6 +157,28 @@ export function sanitizeTaskAction(raw) {
       }
       payload.scheduleWeekday = weekday;
     }
+    if (Array.isArray(raw.scheduleWeekdays)) {
+      const weekdays = normalizeScheduleWeekdays(null, raw.scheduleWeekdays);
+      if (!weekdays) {
+        throw new AgentError(
+          "scheduleWeekdays must be lowercase weekday names.",
+          "INVALID_TASK_ACTION",
+          400
+        );
+      }
+      payload.scheduleWeekdays = weekdays;
+    }
+    if (raw.scheduleHourUtc != null) {
+      const hourUtc = Number(raw.scheduleHourUtc);
+      if (!isValidScheduleHourUtc(hourUtc)) {
+        throw new AgentError(
+          "scheduleHourUtc must be an integer from 0 to 23.",
+          "INVALID_TASK_ACTION",
+          400
+        );
+      }
+      payload.scheduleHourUtc = hourUtc;
+    }
   }
   if (typeof raw.emailDelivery === "boolean") {
     payload.toolAccess = raw.emailDelivery ? { email: true } : null;
@@ -200,37 +243,75 @@ export function matchDeterministicTaskIntent(message) {
     return sanitizeTaskAction({ type: "run_now" });
   }
 
-  // "make it weekly on thursday", "change schedule to daily", "every week on monday"
+  const hourUtc = extractHourUtcFromText(text);
+  const namedWeekdays = WEEKDAY_NAMES.filter((name) => new RegExp(`\\b${name}s?\\b`).test(text));
   const weeklyMatch = text.match(
     /\b(?:schedule|run|set|make|change|switch|update).{0,40}\bweekly\b(?:\s+on\s+(\w+))?/
   );
   const everyWeekMatch = text.match(/\bevery\s+week(?:\s+on\s+(\w+))?/);
-  if (weeklyMatch || everyWeekMatch) {
+  const hasWeeklyKeyword = Boolean(weeklyMatch || everyWeekMatch);
+  const hasScheduleCue =
+    hasWeeklyKeyword ||
+    /\b(schedule|run|set|make|change|switch|update|every|each)\b/.test(text) ||
+    hourUtc != null;
+
+  // "make it weekly on thursday", "every monday and wednesday at 8am"
+  if (hasWeeklyKeyword || (namedWeekdays.length > 0 && hasScheduleCue)) {
     const weekdayRaw = weeklyMatch?.[1] || everyWeekMatch?.[1] || null;
-    const weekday = weekdayRaw && WEEKDAY_NAMES.includes(weekdayRaw) ? weekdayRaw : undefined;
+    const singleFromPhrase =
+      weekdayRaw && WEEKDAY_NAMES.includes(weekdayRaw) ? weekdayRaw : undefined;
+    const weekdays =
+      namedWeekdays.length > 0 ? namedWeekdays : singleFromPhrase ? [singleFromPhrase] : undefined;
     return sanitizeTaskAction({
       type: "update_config",
       schedulePreset: "weekly",
-      ...(weekday ? { scheduleWeekday: weekday } : {}),
+      ...(weekdays?.length === 1
+        ? { scheduleWeekday: weekdays[0] }
+        : weekdays
+          ? { scheduleWeekdays: weekdays }
+          : {}),
+      ...(hourUtc != null ? { scheduleHourUtc: hourUtc } : {}),
     });
   }
   if (
     /\b(?:schedule|run|set|make|change|switch|update).{0,40}\bdaily\b/.test(text) ||
     /\bevery\s+day\b/.test(text)
   ) {
-    return sanitizeTaskAction({ type: "update_config", schedulePreset: "daily" });
+    return sanitizeTaskAction({
+      type: "update_config",
+      schedulePreset: "daily",
+      ...(hourUtc != null ? { scheduleHourUtc: hourUtc } : {}),
+    });
   }
   if (
     /\b(?:schedule|run|set|make|change|switch|update).{0,40}\bmonthly\b/.test(text) ||
     /\bevery\s+month\b/.test(text)
   ) {
-    return sanitizeTaskAction({ type: "update_config", schedulePreset: "monthly" });
+    return sanitizeTaskAction({
+      type: "update_config",
+      schedulePreset: "monthly",
+      ...(hourUtc != null ? { scheduleHourUtc: hourUtc } : {}),
+    });
   }
   if (/\b(on[- ]?demand|no schedule|clear schedule|remove schedule|stop scheduling)\b/.test(text)) {
     return sanitizeTaskAction({ type: "update_config", clearSchedule: true });
   }
 
   return null;
+}
+
+function extractHourUtcFromText(text) {
+  const match = String(text || "").match(/\b(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)\b/i);
+  if (!match) return null;
+  let hour = Number(match[1]);
+  if (!Number.isInteger(hour) || hour < 1 || hour > 12) return null;
+  const meridiem = match[3].replace(/\./g, "").toLowerCase();
+  if (meridiem === "am") {
+    if (hour === 12) hour = 0;
+  } else if (hour !== 12) {
+    hour += 12;
+  }
+  return hour;
 }
 
 function describeConfigUpdate(payload, updated) {
@@ -240,14 +321,32 @@ function describeConfigUpdate(payload, updated) {
   if (payload.definitionOfDone != null) parts.push("updated my definition of done");
   if (payload.status === "PAUSED") parts.push("paused myself");
   if (payload.status === "ACTIVE") parts.push("resumed myself");
-  if ("schedulePreset" in payload) {
-    if (payload.schedulePreset == null) {
+  if (
+    "schedulePreset" in payload ||
+    "scheduleWeekdays" in payload ||
+    "scheduleHourUtc" in payload
+  ) {
+    if (payload.schedulePreset == null && "schedulePreset" in payload) {
       parts.push("cleared my schedule (on-demand only)");
-    } else if (payload.schedulePreset === "weekly") {
-      const day = payload.scheduleWeekday || updated.schedule?.weekday || "monday";
-      parts.push(`set my schedule to weekly (${day})`);
     } else {
-      parts.push(`set my schedule to ${payload.schedulePreset}`);
+      const schedule = updated.schedule;
+      const hourLabel = formatHourUtcLabel(schedule?.hourUtc ?? payload.scheduleHourUtc);
+      if (schedule?.preset === "weekly" || payload.schedulePreset === "weekly") {
+        const days =
+          schedule?.weekdays ||
+          payload.scheduleWeekdays ||
+          (payload.scheduleWeekday ? [payload.scheduleWeekday] : null) ||
+          (schedule?.weekday ? [schedule.weekday] : ["monday"]);
+        const dayLabel = days.join(", ");
+        parts.push(
+          hourLabel
+            ? `set my schedule to weekly (${dayLabel}) at ${hourLabel}`
+            : `set my schedule to weekly (${dayLabel})`
+        );
+      } else {
+        const preset = schedule?.preset || payload.schedulePreset;
+        parts.push(hourLabel ? `set my schedule to ${preset} at ${hourLabel}` : `set my schedule to ${preset}`);
+      }
     }
   }
   if ("toolAccess" in payload) {

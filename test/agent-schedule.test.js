@@ -10,8 +10,9 @@ import {
 } from "../server/agents/schedule.js";
 
 // Pure-function tests for the schedule preset ↔ cron mapping and the cron
-// dispatcher's due-check. Presets are the only schedule surface the API
-// exposes; unknown cron shapes must never be treated as due (fail closed).
+// dispatcher's due-check. Presets (+ optional weekdays/hour) are the only
+// schedule surface the API exposes; unknown cron shapes must never be treated
+// as due (fail closed).
 
 test("presets map to the restricted cron shapes and round-trip back", () => {
   assert.equal(schedulePresetToCron("daily"), "0 13 * * *");
@@ -21,9 +22,36 @@ test("presets map to the restricted cron shapes and round-trip back", () => {
   assert.equal(schedulePresetToCron("hourly"), null);
   assert.equal(schedulePresetToCron("weekly", "notaday"), null);
 
-  assert.deepEqual(cronToSchedulePreset("0 13 * * *"), { preset: "daily" });
-  assert.deepEqual(cronToSchedulePreset("0 13 * * 5"), { preset: "weekly", weekday: "friday" });
-  assert.deepEqual(cronToSchedulePreset("0 13 1 * *"), { preset: "monthly" });
+  assert.equal(
+    schedulePresetToCron("weekly", {
+      weekdays: ["monday", "wednesday", "friday"],
+      hourUtc: 8,
+    }),
+    "0 8 * * 1,3,5"
+  );
+  assert.equal(
+    schedulePresetToCron("daily", { hourUtc: 20 }),
+    "0 20 * * *"
+  );
+
+  assert.deepEqual(cronToSchedulePreset("0 13 * * *"), { preset: "daily", hourUtc: 13 });
+  assert.deepEqual(cronToSchedulePreset("0 13 * * 5"), {
+    preset: "weekly",
+    weekday: "friday",
+    weekdays: ["friday"],
+    hourUtc: 13,
+  });
+  assert.deepEqual(cronToSchedulePreset("0 8 * * 1,3,5"), {
+    preset: "weekly",
+    weekday: "monday",
+    weekdays: ["monday", "wednesday", "friday"],
+    hourUtc: 8,
+  });
+  assert.deepEqual(cronToSchedulePreset("0 13 1 * *"), {
+    preset: "monthly",
+    hourUtc: 13,
+    dayOfMonth: 1,
+  });
   assert.equal(cronToSchedulePreset("*/15 * * * *"), null);
   assert.equal(cronToSchedulePreset(null), null);
 });
@@ -37,6 +65,13 @@ test("parseRestrictedCron rejects everything outside the generated shapes", () =
   assert.equal(parseRestrictedCron("a b * * *"), null);
   assert.equal(parseRestrictedCron(""), null);
   assert.deepEqual(parseRestrictedCron("0 13 * * *"), { kind: "daily", minute: 0, hour: 13 });
+  assert.deepEqual(parseRestrictedCron("0 8 * * 1,3,5"), {
+    kind: "weekly",
+    minute: 0,
+    hour: 8,
+    daysOfWeek: [1, 3, 5],
+  });
+  assert.equal(parseRestrictedCron("0 8 * * 1,3,3"), null); // duplicate dow
 });
 
 test("getPreviousCronOccurrence finds the latest occurrence at or before now", () => {
@@ -50,6 +85,16 @@ test("getPreviousCronOccurrence finds the latest occurrence at or before now", (
   );
   // Weekly friday → the previous friday.
   assert.deepEqual(getPreviousCronOccurrence("0 13 * * 5", now), new Date("2026-07-17T13:00:00Z"));
+  // Multi-day weekly Mon/Wed/Fri at 08:00 — Monday has already fired.
+  assert.deepEqual(
+    getPreviousCronOccurrence("0 8 * * 1,3,5", now),
+    new Date("2026-07-20T08:00:00Z")
+  );
+  // Before Monday's fire → previous Friday (2026-07-17).
+  assert.deepEqual(
+    getPreviousCronOccurrence("0 8 * * 1,3,5", new Date("2026-07-20T07:00:00Z")),
+    new Date("2026-07-17T08:00:00Z")
+  );
   // Monthly on the 1st.
   assert.deepEqual(getPreviousCronOccurrence("0 13 1 * *", now), new Date("2026-07-01T13:00:00Z"));
   // Monthly, before this month's fire time → previous month (with year wrap).
@@ -68,6 +113,8 @@ test("isAgentDue compares the last run against the previous occurrence", () => {
   assert.equal(isAgentDue("0 13 * * *", new Date("2026-07-19T13:05:00Z"), now), true);
   // Ran after today's occurrence (including a manual run) → not due.
   assert.equal(isAgentDue("0 13 * * *", new Date("2026-07-20T13:05:00Z"), now), false);
+  // Multi-day: last run was Friday; Monday occurrence has passed → due.
+  assert.equal(isAgentDue("0 8 * * 1,3,5", new Date("2026-07-18T08:05:00Z"), now), true);
   // Unknown cron shapes are never due (fail closed).
   assert.equal(isAgentDue("*/15 * * * *", null, now), false);
   assert.equal(isAgentDue(null, null, now), false);

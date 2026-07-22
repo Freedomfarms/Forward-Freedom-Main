@@ -117,6 +117,10 @@ test("matchDeterministicTaskIntent covers run/pause/schedule/email-toggle", (t) 
     matchDeterministicTaskIntent("make it weekly on thursday")?.data?.schedule,
     "0 13 * * 4"
   );
+  assert.equal(
+    matchDeterministicTaskIntent("every monday wednesday friday at 8am")?.data?.schedule,
+    "0 8 * * 1,3,5"
+  );
   assert.equal(matchDeterministicTaskIntent("clear schedule")?.data?.schedule, null);
   assert.deepEqual(matchDeterministicTaskIntent("enable email after each run")?.data?.toolAccess, {
     email: true,
@@ -163,7 +167,33 @@ test("applySubAgentTaskAction updates this agent's schedule via chat", async (t)
   assert.equal(currentDb.tables.agentConfig[0].schedule, "0 13 * * 4");
   assert.equal(outcome.agent.schedule.preset, "weekly");
   assert.equal(outcome.agent.schedule.weekday, "thursday");
+  assert.deepEqual(outcome.agent.schedule.weekdays, ["thursday"]);
+  assert.equal(outcome.agent.schedule.hourUtc, 13);
   assert.equal(currentDb.tables.agentChatMessage.length, 2);
+});
+
+test("applySubAgentTaskAction accepts multi-day weekly + custom UTC hour", async (t) => {
+  if (!requireSetup(t)) return;
+  seedAgent();
+  const action = chatActions.sanitizeTaskAction({
+    type: "update_config",
+    schedulePreset: "weekly",
+    scheduleWeekdays: ["monday", "wednesday", "friday"],
+    scheduleHourUtc: 8,
+  });
+  const outcome = await chatActions.applySubAgentTaskAction({
+    userId: USER_ID,
+    agentConfigId: "agent-1",
+    conversationId: "conv-1",
+    message: "run monday wednesday friday at 8am",
+    action,
+    persist: true,
+  });
+  assert.match(outcome.reply, /monday, wednesday, friday/i);
+  assert.match(outcome.reply, /8:00 UTC/i);
+  assert.equal(currentDb.tables.agentConfig[0].schedule, "0 8 * * 1,3,5");
+  assert.deepEqual(outcome.agent.schedule.weekdays, ["monday", "wednesday", "friday"]);
+  assert.equal(outcome.agent.schedule.hourUtc, 8);
 });
 
 test("applySubAgentTaskAction run_now triggers the runner for this agent only", async (t) => {
