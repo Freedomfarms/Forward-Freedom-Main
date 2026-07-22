@@ -112,18 +112,20 @@ test("sendAgentReportEmail fails closed when verification cannot be confirmed", 
     else process.env.RESEND_API_KEY = previous;
   });
 
-  // Unverified address → skipped.
+  // Unverified address → skipped with verify-first guidance.
   firebaseConfigured = true;
   firebaseUserRecord = { email: "user@example.com", emailVerified: false };
   let result = await emailDelivery.sendAgentReportEmail({ userId: "u1", subject: "s", body: "b" });
   assert.equal(result.sent, false);
-  assert.match(result.status, /not verified/);
+  assert.match(result.status, /verify your account email first/i);
+  assert.match(result.status, /u\*\*\*@example\.com/);
+  assert.match(result.status, /never the site address/i);
 
   // No email on the account → skipped.
   firebaseUserRecord = { email: null, emailVerified: false };
   result = await emailDelivery.sendAgentReportEmail({ userId: "u1", subject: "s", body: "b" });
   assert.equal(result.sent, false);
-  assert.match(result.status, /no email address/);
+  assert.match(result.status, /add and verify an email/i);
 
   // Lookup failure → skipped (fail closed).
   firebaseUserRecord = new Error("firebase down");
@@ -157,8 +159,30 @@ test("sendAgentReportEmailOrThrow raises typed errors for API endpoints", async 
   firebaseUserRecord = { email: "user@example.com", emailVerified: false };
   await assert.rejects(
     () => emailDelivery.sendAgentReportEmailOrThrow({ userId: "u1", subject: "s", body: "b" }),
-    (error) => error.code === "EMAIL_NOT_VERIFIED" && error.status === 403
+    (error) =>
+      error.code === "EMAIL_NOT_VERIFIED" &&
+      error.status === 403 &&
+      /verify your account email first/i.test(error.message) &&
+      /never the site address/i.test(error.message)
   );
+});
+
+test("Resend domain errors are explained as sending-domain setup, not recipient", (t) => {
+  if (!requireSetup(t)) return;
+  const status = emailDelivery.describeEmailDeliveryFailure(
+    "The forwardfreedomfinancial.com domain is not verified. Please, add and verify your domain on https://resend.com/domains",
+    "owner@gmail.com"
+  );
+  assert.match(status, /o\*\*\*@gmail\.com/);
+  assert.match(status, /sending domain/i);
+  assert.match(status, /not the site address/i);
+  assert.doesNotMatch(status, /email delivery failed \(The forwardfreedomfinancial/);
+});
+
+test("maskEmailAddress keeps domain and hides local part", (t) => {
+  if (!requireSetup(t)) return;
+  assert.equal(emailDelivery.maskEmailAddress("alex@example.com"), "a***@example.com");
+  assert.equal(emailDelivery.maskEmailAddress(""), "your account email");
 });
 
 test("buildRunEmailContent includes summary, report, and the safety footer", (t) => {
