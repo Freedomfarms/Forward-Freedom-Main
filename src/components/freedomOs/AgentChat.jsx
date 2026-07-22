@@ -86,6 +86,7 @@ export function AgentChat({
   onClearRelatedRun = null,
   onAgentCreated = null,
   onAgentUpdated = null,
+  onDigestUpdated = null,
   onRunStarted = null,
   introMessage = null,
   placeholder = "Type a message...",
@@ -593,6 +594,9 @@ export function AgentChat({
       }
       if (payload?.agent && typeof onAgentUpdated === "function") {
         onAgentUpdated(payload.agent);
+      }
+      if (payload?.digest && typeof onDigestUpdated === "function") {
+        onDigestUpdated(payload.digest);
       }
       if (payload?.run && typeof onRunStarted === "function") {
         onRunStarted(payload.run);

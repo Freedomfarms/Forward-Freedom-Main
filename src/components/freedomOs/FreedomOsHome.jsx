@@ -335,41 +335,57 @@ export function FreedomOsHome({ user, onOpenFinanceTool }) {
             overflow: "hidden",
           }}
         >
-          <button
-            type="button"
-            onClick={() => setIsDigestOpen((current) => !current)}
+          <div
             style={{
               width: "100%",
-              border: "none",
-              background: "transparent",
               padding: "12px 16px",
               display: "flex",
               alignItems: "center",
               gap: 12,
               flexWrap: "wrap",
-              cursor: "pointer",
-              textAlign: "left",
             }}
           >
-            <div style={fosStyles.sectionLabel}>Daily digest</div>
-            <span style={{ color: "#5f7896", fontSize: 11 }}>
-              {digest?.generatedAt ? `Updated ${formatRelativeTime(digest.generatedAt)}` : "Briefing"}
-            </span>
-            <span style={{ flex: 1 }} />
-            <span style={{ color: "#8feaff", fontSize: 12 }}>{isDigestOpen ? "Hide ▴" : "Show ▾"}</span>
-          </button>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0 }}>
+              <div style={fosStyles.sectionLabel}>Daily digest</div>
+              <span style={{ color: "#5f7896", fontSize: 11 }}>
+                {digest?.generatedAt ? `Updated ${formatRelativeTime(digest.generatedAt)}` : "Briefing"}
+              </span>
+            </div>
+            {isDigestOpen ? (
+              <button
+                type="button"
+                disabled={isRefreshingDigest}
+                onClick={() => void handleRefreshDigest()}
+                style={{
+                  border: "none",
+                  background: "transparent",
+                  color: "#8feaff",
+                  fontSize: 12,
+                  padding: 0,
+                  cursor: isRefreshingDigest ? "default" : "pointer",
+                  opacity: isRefreshingDigest ? 0.6 : 1,
+                }}
+              >
+                {isRefreshingDigest ? "Refreshing…" : "Refresh"}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => setIsDigestOpen((current) => !current)}
+              style={{
+                border: "none",
+                background: "transparent",
+                color: "#8feaff",
+                fontSize: 12,
+                padding: 0,
+                cursor: "pointer",
+              }}
+            >
+              {isDigestOpen ? "Hide ▴" : "Show ▾"}
+            </button>
+          </div>
           {isDigestOpen ? (
             <div style={{ padding: "0 16px 14px", display: "grid", gap: 10 }}>
-              <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                <button
-                  type="button"
-                  style={{ ...fosStyles.subtleButton, opacity: isRefreshingDigest ? 0.6 : 1 }}
-                  disabled={isRefreshingDigest}
-                  onClick={() => void handleRefreshDigest()}
-                >
-                  {isRefreshingDigest ? "Refreshing…" : "Refresh"}
-                </button>
-              </div>
               {digestError ? <div style={fosStyles.errorBox}>{digestError}</div> : null}
               {!digestError && digest?.digest ? (
                 <div style={{ color: "#d7ebff", fontSize: 13, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>
@@ -392,6 +408,11 @@ export function FreedomOsHome({ user, onOpenFinanceTool }) {
           layout="workspace"
           listLabel={`${ceoName} chats`}
           placeholder={`Ask ${ceoName} anything about your money or your agents…`}
+          onDigestUpdated={(nextDigest) => {
+            setDigest(nextDigest || null);
+            setDigestError("");
+            setIsDigestOpen(true);
+          }}
         />
       </div>
 
