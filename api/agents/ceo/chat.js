@@ -251,6 +251,7 @@ async function handleSend(request, response) {
       messageId: outcome.messageId,
       conversationId: outcome.conversationId,
       conversationTitle: outcome.conversationTitle,
+      ...(outcome.digest ? { digest: outcome.digest } : {}),
     });
   } catch (error) {
     return respondAgentApiError(

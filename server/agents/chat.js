@@ -17,6 +17,11 @@ import {
   sanitizeTaskAction,
   TASK_ACTION_JSON_SCHEMA,
 } from "./chatActions.js";
+import {
+  applyCeoDigestAction,
+  DIGEST_ACTION_JSON_SCHEMA,
+  sanitizeDigestAction,
+} from "./digest.js";
 import { cronToSchedulePreset } from "./schedule.js";
 import { isEmailDeliveryEnabled } from "./emailDelivery.js";
 import { dataSection, PROMPT_SAFETY_RULES } from "./prompts.js";
@@ -48,8 +53,9 @@ const CEO_CHAT_REPLY_SCHEMA = jsonSchema({
   properties: {
     reply: { type: "string", description: "Your conversational reply to the user's message." },
     profileOps: PROFILE_OPS_JSON_SCHEMA,
+    digestAction: DIGEST_ACTION_JSON_SCHEMA,
   },
-  required: ["reply", "profileOps"],
+  required: ["reply", "profileOps", "digestAction"],
   additionalProperties: false,
 });
 
@@ -78,6 +84,7 @@ const SUB_AGENT_CHAT_SYSTEM_PROMPT = [
 const CEO_CHAT_SYSTEM_PROMPT = [
   "You are the user's CEO Agent inside Freedom OS: the orchestrator of their team of financially read-only agents, and their main point of contact.",
   "Answer using the provided context: recent run summaries from ALL of the user's agents (cross-agent questions are your job) and the user's long-term profile. When asked what you know about the user, answer from the profile data section.",
+  "You CAN edit the Daily Digest shown on the Freedom OS home when the user asks: set digestAction to set_content with the full body text they want there (rewrite, replace, shorten, or write whatever they request), or regenerate to rebuild the default briefing from recent agent runs. The server applies digestAction — do not claim you cannot change the digest. Output digest body only (no \"Status Update\" / \"Daily Digest\" heading). Set digestAction to null when they are not asking to change the digest.",
   "You cannot edit a sub-agent's schedule, instructions, email settings, or trigger its runs from this chat. When the user wants those changes for a specific agent, tell them to open that agent's own chat and ask the agent directly — that agent can apply those task changes itself. Do not claim the sub-agent is powerless, and do not imply that you will make the edit from here.",
   "Never give directives such as buy/sell/move money and never make investment recommendations.",
   "Also return profileOps: durable facts about the user revealed in this conversation (usually an empty array).",
@@ -302,6 +309,20 @@ export async function respondToChat({
   // Reference documents are CEO-scoped context (uploaded during onboarding /
   // from the profile page). Sub-agent chats stay on their own run scope.
   if (ceoConfig && !agentConfig) {
+    let currentDigest = null;
+    if (ceoConfig.lastDigestCiphertext) {
+      try {
+        currentDigest = decrypt(ceoConfig.lastDigestCiphertext);
+      } catch {
+        currentDigest = null;
+      }
+    }
+    sections.push(
+      dataSection(
+        "CURRENT DAILY DIGEST (shown on Freedom OS home)",
+        currentDigest || "(empty — not set yet)"
+      )
+    );
     const documents = await loadDocumentsForPrompt(userId);
     sections.push(dataSection("USER REFERENCE DOCUMENTS", documents));
   }
@@ -337,6 +358,7 @@ export async function respondToChat({
 
   let reply = String(object?.reply || "").trim() || "Sorry — I could not generate a reply.";
   let actionResult = null;
+  let digestResult = null;
 
   // Sub-agent taskAction is applied server-side after the model reply. The
   // model must not invent side effects — only this allowlisted path mutates.
@@ -363,6 +385,23 @@ export async function respondToChat({
         reply = `${reply}\n\n(I couldn't apply that change: ${error.message})`;
       } else {
         reply = `${reply}\n\n(I couldn't apply that change right now.)`;
+      }
+    }
+  } else if (ceoConfig) {
+    // CEO digestAction — same allowlisted server-apply pattern as taskAction.
+    try {
+      const action = sanitizeDigestAction(object?.digestAction ?? null);
+      if (action) {
+        digestResult = await applyCeoDigestAction(userId, action);
+        if (digestResult?.reply) {
+          reply = digestResult.reply;
+        }
+      }
+    } catch (error) {
+      if (error instanceof AgentError) {
+        reply = `${reply}\n\n(I couldn't update the Daily Digest: ${error.message})`;
+      } else {
+        reply = `${reply}\n\n(I couldn't update the Daily Digest right now.)`;
       }
     }
   }
@@ -415,5 +454,14 @@ export async function respondToChat({
     usage,
     ...(actionResult?.agent ? { agent: actionResult.agent } : {}),
     ...(actionResult?.run ? { run: actionResult.run } : {}),
+    ...(digestResult
+      ? {
+          digest: {
+            digest: digestResult.digest,
+            generatedAt: digestResult.generatedAt,
+            refreshed: true,
+          },
+        }
+      : {}),
   };
 }

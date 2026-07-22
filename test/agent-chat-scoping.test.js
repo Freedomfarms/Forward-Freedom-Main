@@ -182,13 +182,13 @@ function seedDb() {
   });
 }
 
-function installLlmMock(reply = "Here is my answer.", profileOps = []) {
+function installLlmMock(reply = "Here is my answer.", profileOps = [], digestAction = null) {
   llmCalls = [];
   setLlmImplementationForTesting({
     generateObject: async (options) => {
       llmCalls.push(options);
       return {
-        object: { reply, profileOps, taskAction: null },
+        object: { reply, profileOps, taskAction: null, digestAction },
         usage: { inputTokens: 500, outputTokens: 100 },
       };
     },
@@ -312,6 +312,40 @@ test("profile ops returned in the chat reply update the living profile without a
   assert.equal(goals[0].source, "ceo_chat");
   // The pre-existing fact survives untouched.
   assert.equal(savedProfile.categories.lifeContext[0].text, PROFILE_FACT);
+});
+
+test("CEO digestAction set_content updates the Daily Digest body", async (t) => {
+  if (!requireSetup(t)) return;
+  currentDb.tables.ceoAgentConfig[0].lastDigestCiphertext = envelope.encrypt(
+    "Old auto briefing about dining spend."
+  );
+  currentDb.tables.ceoAgentConfig[0].lastDigestAt = new Date("2026-07-12T00:00:00Z");
+
+  installLlmMock(
+    "I'll put that on your digest.",
+    [],
+    {
+      type: "set_content",
+      content: "# Status Update\n\nFocus tomorrow: call the lender before noon.",
+    }
+  );
+
+  const result = await respondToChat({
+    userId: USER_ID,
+    ceoAgentConfigId: "ceo-1",
+    message: "Put this on my daily digest: Focus tomorrow: call the lender before noon.",
+  });
+
+  assert.match(result.reply, /updated your Daily Digest/i);
+  assert.equal(result.digest.digest, "Focus tomorrow: call the lender before noon.");
+  assert.equal(
+    envelope.decrypt(currentDb.tables.ceoAgentConfig[0].lastDigestCiphertext),
+    "Focus tomorrow: call the lender before noon."
+  );
+
+  const prompt = JSON.stringify(llmCalls[0]);
+  assert.ok(prompt.includes("CURRENT DAILY DIGEST"));
+  assert.ok(prompt.includes("Old auto briefing about dining spend."));
 });
 
 test("chat targeting is validated: exactly one of agentConfigId / ceoAgentConfigId", async (t) => {
