@@ -11,8 +11,10 @@ import {
 import { CREATABLE_AGENT_TYPES } from "./registry.js";
 import {
   cronToSchedulePreset,
+  isValidScheduleHourUtc,
   isValidSchedulePreset,
   isValidScheduleWeekday,
+  normalizeScheduleWeekdays,
   schedulePresetToCron,
 } from "./schedule.js";
 
@@ -131,7 +133,8 @@ export function serializeCeoAgentConfig(config) {
 
 /**
  * Client-safe AgentConfig shape. The stored cron string is translated back to
- * its preset view ({ preset, weekday? } or null for on-demand agents).
+ * its preset view ({ preset, weekday?, weekdays?, hourUtc? } or null for
+ * on-demand agents).
  */
 export function serializeAgentConfig(config, { latestRun } = {}) {
   const serialized = {
@@ -237,8 +240,9 @@ export function sanitizeToolAccess(value) {
   return Object.fromEntries(enabledKeys.map((key) => [key, true]));
 }
 
-// Translates the API's { schedulePreset, scheduleWeekday? } pair to the cron
-// string stored on AgentConfig.schedule. Null preset = on-demand only.
+// Translates the API's schedule fields to the cron string stored on
+// AgentConfig.schedule. Null preset = on-demand only. Supported fields:
+//   schedulePreset, scheduleWeekday?, scheduleWeekdays?, scheduleHourUtc?
 function readSchedule(payload) {
   const preset = payload.schedulePreset ?? null;
   if (preset == null) return null;
@@ -251,7 +255,24 @@ function readSchedule(payload) {
   if (weekday != null && !isValidScheduleWeekday(weekday)) {
     throw invalid("scheduleWeekday must be a lowercase weekday name (e.g. \"monday\").");
   }
-  const cron = schedulePresetToCron(preset, weekday);
+  let weekdays = null;
+  if ("scheduleWeekdays" in payload && payload.scheduleWeekdays != null) {
+    if (!Array.isArray(payload.scheduleWeekdays)) {
+      throw invalid("scheduleWeekdays must be an array of lowercase weekday names.");
+    }
+    weekdays = normalizeScheduleWeekdays(null, payload.scheduleWeekdays);
+    if (!weekdays) {
+      throw invalid("scheduleWeekdays must be lowercase weekday names (e.g. \"monday\").");
+    }
+  }
+  let hourUtc;
+  if ("scheduleHourUtc" in payload && payload.scheduleHourUtc != null) {
+    hourUtc = Number(payload.scheduleHourUtc);
+    if (!isValidScheduleHourUtc(hourUtc)) {
+      throw invalid("scheduleHourUtc must be an integer from 0 to 23.");
+    }
+  }
+  const cron = schedulePresetToCron(preset, { weekday, weekdays, hourUtc });
   if (!cron) throw invalid("The requested schedule could not be resolved.");
   return cron;
 }
@@ -339,7 +360,12 @@ export function validateAgentUpdatePayload(payload) {
   if ("toolAccess" in payload) {
     data.toolAccess = sanitizeToolAccess(payload.toolAccess);
   }
-  if ("schedulePreset" in payload || "scheduleWeekday" in payload) {
+  if (
+    "schedulePreset" in payload ||
+    "scheduleWeekday" in payload ||
+    "scheduleWeekdays" in payload ||
+    "scheduleHourUtc" in payload
+  ) {
     data.schedule = readSchedule(payload);
   }
   if ("model" in payload) {

@@ -22,7 +22,7 @@ import {
   DIGEST_ACTION_JSON_SCHEMA,
   sanitizeDigestAction,
 } from "./digest.js";
-import { cronToSchedulePreset } from "./schedule.js";
+import { cronToSchedulePreset, formatHourUtcLabel } from "./schedule.js";
 import { isEmailDeliveryEnabled } from "./emailDelivery.js";
 import { dataSection, PROMPT_SAFETY_RULES } from "./prompts.js";
 import {
@@ -74,6 +74,8 @@ const SUB_AGENT_CHAT_SYSTEM_PROMPT = [
   "You are one of the user's agents inside Freedom OS, chatting with the user about your own work. Your identity, current settings, and recent activity are provided as data sections.",
   "Answer questions about your runs and findings using only the provided context.",
   "You CAN manage your own task: when the user asks you to change YOUR schedule, instructions, definition of done, name, pause/resume, enable/disable emailing them your reports, run yourself now, or email them a report — set taskAction accordingly and confirm the change in your reply. The server applies taskAction; do not claim you are unable to do these things, and do not redirect the user to the CEO Agent for your own settings.",
+  "Supported schedules for YOU: on-demand, daily, weekly on one or more weekdays (e.g. monday+wednesday+friday), or monthly — each with an optional hour in UTC (0–23; default 13). Use scheduleWeekdays for multiple days and scheduleHourUtc for the clock hour. There is no separate CEO-only \"advanced schedule\"; do not invent one or bounce the user to the CEO Agent for scheduling.",
+  "If the user asks for something outside those options (raw cron, every N hours, per-minute runs, or non-UTC timezones), say so honestly and offer the closest supported schedule.",
   "If the request is about another agent's work or creating a new agent, say so and point the user to their CEO Agent. Never invent side effects outside taskAction.",
   "Never give directives such as buy/sell/move money and never make investment recommendations.",
   "Also return profileOps: durable facts about the user revealed in this conversation (usually an empty array). Set taskAction to null when the user is only asking a question.",
@@ -86,6 +88,7 @@ const CEO_CHAT_SYSTEM_PROMPT = [
   "Answer using the provided context: recent run summaries from ALL of the user's agents (cross-agent questions are your job) and the user's long-term profile. When asked what you know about the user, answer from the profile data section.",
   "You CAN edit the Daily Digest shown on the Freedom OS home when the user asks: set digestAction to set_content with the full body text they want there (rewrite, replace, shorten, or write whatever they request), or regenerate to rebuild the default briefing from recent agent runs. The server applies digestAction — do not claim you cannot change the digest. Output digest body only (no \"Status Update\" / \"Daily Digest\" heading). Set digestAction to null when they are not asking to change the digest.",
   "You cannot edit a sub-agent's schedule, instructions, email settings, or trigger its runs from this chat. When the user wants those changes for a specific agent, tell them to open that agent's own chat and ask the agent directly — that agent can apply those task changes itself. Do not claim the sub-agent is powerless, and do not imply that you will make the edit from here.",
+  "Sub-agent schedules support: on-demand, daily, weekly on one or more weekdays, or monthly, with an optional UTC hour. There is no CEO-only advanced scheduler — do not invent one or bounce the user back and forth.",
   "Never give directives such as buy/sell/move money and never make investment recommendations.",
   "Also return profileOps: durable facts about the user revealed in this conversation (usually an empty array).",
   "Safety rules:",
@@ -95,10 +98,14 @@ const CEO_CHAT_SYSTEM_PROMPT = [
 function renderAgentSettings(agentConfig) {
   const schedule = cronToSchedulePreset(agentConfig.schedule);
   let scheduleLabel = "on-demand (no schedule)";
+  const hourLabel = formatHourUtcLabel(schedule?.hourUtc);
   if (schedule?.preset === "weekly") {
-    scheduleLabel = `weekly (${schedule.weekday || "monday"})`;
+    const days = schedule.weekdays?.length
+      ? schedule.weekdays.join(", ")
+      : schedule.weekday || "monday";
+    scheduleLabel = hourLabel ? `weekly (${days}) at ${hourLabel}` : `weekly (${days})`;
   } else if (schedule?.preset) {
-    scheduleLabel = schedule.preset;
+    scheduleLabel = hourLabel ? `${schedule.preset} at ${hourLabel}` : schedule.preset;
   }
   const emailOn = isEmailDeliveryEnabled(agentConfig.toolAccess);
   return [

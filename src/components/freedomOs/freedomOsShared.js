@@ -74,15 +74,26 @@ export const SCHEDULE_PRESET_OPTIONS = [
   { value: null, label: "On demand" },
 ];
 
+function titleCaseWeekday(day) {
+  if (!day) return "Monday";
+  return `${day.charAt(0).toUpperCase()}${day.slice(1)}`;
+}
+
 export function formatSchedule(schedule) {
   if (!schedule || !schedule.preset) return "On demand";
+  const hour =
+    Number.isInteger(schedule.hourUtc) && schedule.hourUtc >= 0 && schedule.hourUtc <= 23
+      ? `${schedule.hourUtc}:00 UTC`
+      : null;
   if (schedule.preset === "weekly") {
-    const weekday = schedule.weekday
-      ? `${schedule.weekday.charAt(0).toUpperCase()}${schedule.weekday.slice(1)}`
-      : "Monday";
-    return `Weekly (${weekday})`;
+    const days =
+      Array.isArray(schedule.weekdays) && schedule.weekdays.length > 0
+        ? schedule.weekdays.map(titleCaseWeekday).join(", ")
+        : titleCaseWeekday(schedule.weekday);
+    return hour ? `Weekly (${days}) at ${hour}` : `Weekly (${days})`;
   }
-  return `${schedule.preset.charAt(0).toUpperCase()}${schedule.preset.slice(1)}`;
+  const label = `${schedule.preset.charAt(0).toUpperCase()}${schedule.preset.slice(1)}`;
+  return hour ? `${label} at ${hour}` : label;
 }
 
 export function formatRelativeTime(value) {

@@ -1,6 +1,10 @@
 import { getAgentModelLabel, parseAgentModelChoice } from "./models.js";
 import { CREATABLE_AGENT_TYPES } from "./registry.js";
-import { WEEKDAY_NAMES } from "./schedule.js";
+import {
+  DEFAULT_RUN_HOUR_UTC,
+  WEEKDAY_NAMES,
+  formatHourUtcLabel,
+} from "./schedule.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // "+ New Agent" creation via CEO chat: a deterministic multi-turn state
@@ -36,7 +40,7 @@ const TYPE_LABELS = Object.freeze({
 });
 
 const SCHEDULE_QUESTION =
-  'How often should it run? Say "daily", "weekly" (optionally with a weekday, e.g. "weekly on friday"), "monthly", or "on demand" if you only want to trigger it manually.';
+  'How often should it run? Say "daily", "weekly" (one or more weekdays, e.g. "monday wednesday friday"), "monthly", or "on demand". You can also include a time like "at 8am" (stored as UTC hour).';
 
 const STEP_QUESTIONS = Object.freeze({
   choose_type: `What kind of agent should I set up? Available types: ${CREATABLE_AGENT_TYPES.join(", ")}. (You can say "cancel" at any point.)`,
@@ -106,34 +110,65 @@ export function looksLikeScheduleOrEmailOnly(message) {
 /**
  * Parses schedule language. Accepts day names without an explicit "weekly"
  * keyword ("every monday", "mondays and thursdays"). Multiple weekdays are
- * returned as scheduleWeekdays so the stepper can ask the user to pick one
- * (the stored schedule model supports a single weekly weekday).
+ * kept as scheduleWeekdays (multi-day weekly is supported).
  */
 export function parseSchedule(message) {
   const lower = String(message || "").toLowerCase();
+  const hourUtc = requestedTimeToHourUtc(extractRequestedTime(message));
   if (/\b(on.?demand|manual(?:ly)?|none|no schedule|only when i ask)\b/.test(lower)) {
-    return { schedulePreset: null, scheduleWeekday: null };
+    return { schedulePreset: null, scheduleWeekday: null, scheduleWeekdays: null, scheduleHourUtc: hourUtc };
   }
   if (/\b(daily|every ?day)\b/.test(lower)) {
-    return { schedulePreset: "daily", scheduleWeekday: null };
+    return {
+      schedulePreset: "daily",
+      scheduleWeekday: null,
+      scheduleWeekdays: null,
+      scheduleHourUtc: hourUtc,
+    };
   }
   if (/\bmonthly\b/.test(lower)) {
-    return { schedulePreset: "monthly", scheduleWeekday: null };
+    return {
+      schedulePreset: "monthly",
+      scheduleWeekday: null,
+      scheduleWeekdays: null,
+      scheduleHourUtc: hourUtc,
+    };
   }
 
   const weekdays = extractWeekdays(lower);
   const mentionsWeekly = /\b(weekly|every ?week)\b/.test(lower);
   if (mentionsWeekly || weekdays.length > 0) {
     if (weekdays.length > 1) {
-      return { schedulePreset: "weekly", scheduleWeekday: null, scheduleWeekdays: weekdays };
+      return {
+        schedulePreset: "weekly",
+        scheduleWeekday: weekdays[0],
+        scheduleWeekdays: weekdays,
+        scheduleHourUtc: hourUtc,
+      };
     }
     return {
       schedulePreset: "weekly",
       scheduleWeekday: weekdays[0] || null,
       scheduleWeekdays: weekdays.length ? weekdays : null,
+      scheduleHourUtc: hourUtc,
     };
   }
   return undefined;
+}
+
+function requestedTimeToHourUtc(timeStr) {
+  if (!timeStr) return null;
+  const match = String(timeStr).match(/^(\d{1,2})(?::(\d{2}))?(am|pm)$/i);
+  if (!match) return null;
+  let hour = Number(match[1]);
+  if (!Number.isInteger(hour) || hour < 1 || hour > 12) return null;
+  const meridiem = match[3].toLowerCase();
+  if (meridiem === "am") {
+    if (hour === 12) hour = 0;
+  } else if (hour !== 12) {
+    hour += 12;
+  }
+  return hour;
 }
 
 function composedInstructions(draft) {
@@ -147,10 +182,17 @@ function composedInstructions(draft) {
 function scheduleLabel(draft) {
   if (!draft.scheduleResolved) return "not set";
   if (!draft.schedulePreset) return "on demand only";
+  const hour =
+    draft.scheduleHourUtc != null ? draft.scheduleHourUtc : DEFAULT_RUN_HOUR_UTC;
+  const hourLabel = formatHourUtcLabel(hour);
   if (draft.schedulePreset === "weekly") {
-    return `weekly (${draft.scheduleWeekday || "monday"})`;
+    const days =
+      draft.scheduleWeekdays?.length > 0
+        ? draft.scheduleWeekdays.join(", ")
+        : draft.scheduleWeekday || "monday";
+    return `weekly (${days}) at ${hourLabel}`;
   }
-  return draft.schedulePreset;
+  return `${draft.schedulePreset} at ${hourLabel}`;
 }
 
 function renderReview(draft) {
@@ -164,9 +206,9 @@ function renderReview(draft) {
     `- Model: ${getAgentModelLabel(draft.model || "claude-sonnet-4-5")}`,
     "- Permissions: read-only (all new agents start read-only)",
   ];
-  if (draft.requestedTime) {
+  if (draft.requestedTime && draft.scheduleHourUtc != null) {
     lines.push(
-      `- Note: you asked for ${draft.requestedTime}, but scheduled runs currently fire at 13:00 UTC (custom times aren't configurable yet).`
+      `- Note: "${draft.requestedTime}" is stored as ${formatHourUtcLabel(draft.scheduleHourUtc)} (UTC clock hour; local timezones are not applied yet).`
     );
   }
   if (draft.agentType === "email") {
@@ -198,11 +240,6 @@ function renderReview(draft) {
 function questionForMissing(draft) {
   if (!draft.agentType) return STEP_QUESTIONS.choose_type;
   if (!draft.instructions) return STEP_QUESTIONS.clarify_purpose;
-  // Finish an in-flight multi-day schedule choice before other slots so we
-  // don't drop "monday and thursday" on the floor while re-asking for data.
-  if (draft.pendingWeekdays?.length) {
-    return `I can schedule weekly on one day right now. Which day should I use — ${draft.pendingWeekdays.join(" or ")}?`;
-  }
   if (!draft.dataFocus) return STEP_QUESTIONS.clarify_data;
   if (!draft.scheduleResolved) return SCHEDULE_QUESTION;
   if (!draft.definitionOfDone) return STEP_QUESTIONS.definition_of_done;
@@ -213,7 +250,6 @@ function questionForMissing(draft) {
 function stepForDraft(draft) {
   if (!draft.agentType) return "choose_type";
   if (!draft.instructions) return "clarify_purpose";
-  if (draft.pendingWeekdays?.length) return "clarify_schedule";
   if (!draft.dataFocus) return "clarify_data";
   if (!draft.scheduleResolved) return "clarify_schedule";
   if (!draft.definitionOfDone) return "definition_of_done";
@@ -242,15 +278,12 @@ function shouldAbsorbSchedule(message, asSlot) {
 
 function applyScheduleParse(draft, parsed) {
   if (!parsed) return null;
-  if (parsed.scheduleWeekdays?.length > 1) {
-    draft.pendingWeekdays = parsed.scheduleWeekdays;
-    draft.schedulePreset = "weekly";
-    draft.scheduleWeekday = null;
-    draft.scheduleResolved = false;
-    return `I heard ${parsed.scheduleWeekdays.join(" and ")}. I can schedule weekly on one day right now — which should I use?`;
-  }
   draft.schedulePreset = parsed.schedulePreset;
-  draft.scheduleWeekday = parsed.scheduleWeekday;
+  draft.scheduleWeekday = parsed.scheduleWeekday ?? null;
+  draft.scheduleWeekdays = parsed.scheduleWeekdays ?? null;
+  if (parsed.scheduleHourUtc != null) {
+    draft.scheduleHourUtc = parsed.scheduleHourUtc;
+  }
   draft.scheduleResolved = true;
   draft.pendingWeekdays = null;
   return null;
@@ -290,19 +323,28 @@ function absorbMessage(draft, message, { asSlot } = {}) {
   if (!text) return { ackNotes, consumedAsNonSlot: false };
 
   applyEmailSignals(draft, text);
+  if (draft.requestedTime) {
+    const hourFromTime = requestedTimeToHourUtc(draft.requestedTime);
+    if (hourFromTime != null) draft.scheduleHourUtc = hourFromTime;
+  }
 
-  // Resolve a pending multi-day choice only when the user names exactly one
-  // of the candidate days ("monday and thursday" keeps the question open).
+  // Legacy drafts may still have pendingWeekdays from older sessions — accept
+  // the full multi-day set (or a single chosen day) instead of forcing one day.
   if (draft.pendingWeekdays?.length) {
     const mentioned = extractWeekdays(text.toLowerCase()).filter((day) =>
       draft.pendingWeekdays.includes(day)
     );
-    if (mentioned.length === 1) {
+    if (mentioned.length >= 1) {
       draft.schedulePreset = "weekly";
       draft.scheduleWeekday = mentioned[0];
+      draft.scheduleWeekdays = mentioned;
       draft.scheduleResolved = true;
       draft.pendingWeekdays = null;
-      ackNotes.push(`Scheduled weekly on ${mentioned[0]}.`);
+      ackNotes.push(
+        mentioned.length === 1
+          ? `Scheduled weekly on ${mentioned[0]}.`
+          : `Scheduled weekly on ${mentioned.join(", ")}.`
+      );
     }
   }
 
@@ -315,11 +357,16 @@ function absorbMessage(draft, message, { asSlot } = {}) {
     else if (draft.scheduleResolved) {
       ackNotes.push(`Schedule set to ${scheduleLabel(draft)}.`);
     }
-  } else if (parsed !== undefined && draft.scheduleResolved && scheduleOnly) {
-    // Allow schedule corrections when the user is clearly talking schedule.
+  } else if (parsed !== undefined && draft.scheduleResolved && (scheduleOnly || absorbSchedule)) {
+    // Allow schedule corrections when the user is clearly talking schedule
+    // (including multi-day / time tweaks that aren't "schedule-only" by the
+    // strict residual-token heuristic).
     const note = applyScheduleParse(draft, parsed);
     if (note) ackNotes.push(note);
     else ackNotes.push(`Updated schedule to ${scheduleLabel(draft)}.`);
+    if (scheduleOnly || extractWeekdays(text.toLowerCase()).length > 0) {
+      return { ackNotes, consumedAsNonSlot: true };
+    }
   }
 
   if (scheduleOnly) {
@@ -408,6 +455,8 @@ export function advanceCreationSession(state, message) {
           definitionOfDone: draft.definitionOfDone,
           schedulePreset: draft.schedulePreset ?? null,
           scheduleWeekday: draft.scheduleWeekday ?? null,
+          scheduleWeekdays: draft.scheduleWeekdays ?? null,
+          scheduleHourUtc: draft.scheduleHourUtc ?? null,
           toolAccess: draft.toolAccess ?? null,
           model: draft.model || "claude-sonnet-4-5",
         },

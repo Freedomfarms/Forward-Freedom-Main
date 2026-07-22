@@ -22,16 +22,19 @@ test("parseSchedule accepts day names without an explicit weekly keyword", () =>
     schedulePreset: "weekly",
     scheduleWeekday: "monday",
     scheduleWeekdays: ["monday"],
+    scheduleHourUtc: null,
   });
   assert.deepEqual(parseSchedule("mondays and thursdays at 9pm"), {
     schedulePreset: "weekly",
-    scheduleWeekday: null,
+    scheduleWeekday: "monday",
     scheduleWeekdays: ["monday", "thursday"],
+    scheduleHourUtc: 21,
   });
   assert.deepEqual(parseSchedule("weekly on friday"), {
     schedulePreset: "weekly",
     scheduleWeekday: "friday",
     scheduleWeekdays: ["friday"],
+    scheduleHourUtc: null,
   });
   assert.equal(parseSchedule("sometime soon maybe"), undefined);
 });
@@ -105,10 +108,12 @@ test("schedule + email on the data step do not become Data focus", () => {
   );
 
   assert.equal(session.state.draft.dataFocus, undefined);
-  assert.deepEqual(session.state.draft.pendingWeekdays, ["monday", "thursday"]);
+  assert.deepEqual(session.state.draft.scheduleWeekdays, ["monday", "thursday"]);
+  assert.equal(session.state.draft.scheduleHourUtc, 21);
+  assert.equal(session.state.draft.scheduleResolved, true);
   assert.equal(session.state.draft.emailAddress, "forwardfreedomfinancial@gmail.com");
   assert.equal(session.state.draft.requestedTime, "9pm");
-  assert.match(session.reply, /monday or thursday/i);
+  assert.match(session.reply, /definition of done|Schedule set to weekly/i);
   assert.doesNotMatch(session.reply, /Data focus:/i);
 });
 
@@ -130,20 +135,16 @@ test("reported CEO transcript assigns fields correctly", () => {
     "i want the report emailed to me every monday and thursday night at 9pm. please email to forwardfreedomfinancial@gmail.com"
   );
   assert.doesNotMatch(session.state.draft.dataFocus || "", /forwardfreedomfinancial/i);
-  assert.deepEqual(session.state.draft.pendingWeekdays, ["monday", "thursday"]);
-
-  // Previously failed to parse; now recognized as multi-day weekly.
-  session = turn(session.state, "i just said monday and thursday nights at 8pm");
-  assert.deepEqual(session.state.draft.pendingWeekdays, ["monday", "thursday"]);
-  assert.equal(session.state.draft.requestedTime, "8pm");
-
-  session = turn(session.state, "weekly on every monday and thursday");
-  assert.match(session.reply, /monday or thursday/i);
-
-  session = turn(session.state, "monday");
-  assert.equal(session.state.draft.scheduleWeekday, "monday");
+  assert.deepEqual(session.state.draft.scheduleWeekdays, ["monday", "thursday"]);
+  assert.equal(session.state.draft.scheduleHourUtc, 21);
   assert.equal(session.state.draft.scheduleResolved, true);
-  assert.match(session.reply, /definition of done/i);
+
+  // Time correction keeps both days and updates the UTC hour (must not become DoD).
+  session = turn(session.state, "i just said monday and thursday nights at 8pm");
+  assert.deepEqual(session.state.draft.scheduleWeekdays, ["monday", "thursday"]);
+  assert.equal(session.state.draft.requestedTime, "8pm");
+  assert.equal(session.state.draft.scheduleHourUtc, 20);
+  assert.equal(session.state.draft.definitionOfDone, undefined);
 
   // Previously stuffed into definitionOfDone.
   session = turn(session.state, "can you send email at 8pm?");
@@ -158,7 +159,7 @@ test("reported CEO transcript assigns fields correctly", () => {
 
   session = turn(session.state, "opus");
   assert.match(session.reply, /Here's the agent I'll create/);
-  assert.match(session.reply, /Schedule: weekly \(monday\)/);
+  assert.match(session.reply, /Schedule: weekly \(monday, thursday\) at 20:00 UTC/);
   assert.match(session.reply, /platforms/);
   assert.match(session.reply, /definition of done: A concise AI platforms/i);
   assert.match(session.reply, /Opus/i);
@@ -167,11 +168,12 @@ test("reported CEO transcript assigns fields correctly", () => {
   // only; the third-party address is called out as unusable.
   assert.match(session.reply, /emailed to your own verified account address/i);
   assert.match(session.reply, /forwardfreedomfinancial@gmail.com/i);
-  assert.match(session.reply, /13:00 UTC/i);
+  assert.match(session.reply, /8pm.*20:00 UTC|20:00 UTC/i);
 
   session = turn(session.state, "confirm");
   assert.equal(session.createPayload.schedulePreset, "weekly");
-  assert.equal(session.createPayload.scheduleWeekday, "monday");
+  assert.deepEqual(session.createPayload.scheduleWeekdays, ["monday", "thursday"]);
+  assert.equal(session.createPayload.scheduleHourUtc, 20);
   assert.equal(session.createPayload.model, "claude-opus-4-1");
   assert.match(session.createPayload.definitionOfDone, /concise AI platforms/);
   assert.deepEqual(session.createPayload.toolAccess, { email: true });
