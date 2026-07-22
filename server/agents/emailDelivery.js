@@ -52,12 +52,58 @@ export async function getVerifiedAccountEmail(userId) {
       return { email: null, verified: false, reason: "no email address is on the account" };
     }
     if (!record.emailVerified) {
-      return { email: record.email, verified: false, reason: "the account email is not verified" };
+      return { email: record.email, verified: false, reason: "account_email_unverified" };
     }
     return { email: record.email, verified: true, reason: null };
   } catch {
     return { email: null, verified: false, reason: "the account email could not be looked up" };
   }
+}
+
+/** Masks an address for user-facing status (never show the full mailbox in UI). */
+export function maskEmailAddress(email) {
+  const value = String(email || "").trim();
+  const at = value.indexOf("@");
+  if (at < 1) return "your account email";
+  const local = value.slice(0, at);
+  const domain = value.slice(at + 1);
+  const visible = local.slice(0, 1);
+  return `${visible}***@${domain}`;
+}
+
+function describeUnverifiedStatus(email, reason) {
+  if (reason === "account_email_unverified") {
+    const masked = maskEmailAddress(email);
+    return (
+      `verify your account email first (${masked}). ` +
+      "Agents can only email your verified account address — never the site address or anyone else"
+    );
+  }
+  if (reason === "no email address is on the account") {
+    return (
+      "add and verify an email on your account first. " +
+      "Agents can only email your verified account address — never the site address or anyone else"
+    );
+  }
+  return (
+    `${reason}. Agents can only email your verified account address — never the site address or anyone else`
+  );
+}
+
+/**
+ * Resend's "domain is not verified" means the FROM / sending domain is not set
+ * up — not that we tried to email the site address as the recipient.
+ */
+export function describeEmailDeliveryFailure(errorMessage, recipientEmail) {
+  const msg = String(errorMessage || "unknown error");
+  const masked = maskEmailAddress(recipientEmail);
+  if (/domain is not verified|verify your domain|resend\.com\/domains/i.test(msg)) {
+    return (
+      `could not send to ${masked}: Freedom OS's sending domain is not verified in Resend yet ` +
+      `(server setup — the recipient is still your account email, not the site address)`
+    );
+  }
+  return `email delivery failed to ${masked} (${msg})`;
 }
 
 async function deliverToAddress({ email, subject, body }) {
@@ -84,13 +130,19 @@ export async function sendAgentReportEmail({ userId, subject, body }) {
   }
   const { email, verified, reason } = await getVerifiedAccountEmail(userId);
   if (!verified) {
-    return { sent: false, status: `email skipped (${reason})` };
+    return { sent: false, status: `email skipped (${describeUnverifiedStatus(email, reason)})` };
   }
   try {
     await deliverToAddress({ email, subject, body });
-    return { sent: true, status: "email sent to your verified account address" };
+    return {
+      sent: true,
+      status: `email sent to your verified account address (${maskEmailAddress(email)})`,
+    };
   } catch (error) {
-    return { sent: false, status: `email delivery failed (${error?.message || "unknown error"})` };
+    return {
+      sent: false,
+      status: describeEmailDeliveryFailure(error?.message, email),
+    };
   }
 }
 
@@ -109,7 +161,7 @@ export async function sendAgentReportEmailOrThrow({ userId, subject, body }) {
   const { email, verified, reason } = await getVerifiedAccountEmail(userId);
   if (!verified) {
     throw new AgentError(
-      `Emails can only go to your verified account address, and ${reason}. Verify your email from your account settings, then try again.`,
+      `${describeUnverifiedStatus(email, reason)}. Verify first, then try again.`,
       "EMAIL_NOT_VERIFIED",
       403
     );
@@ -118,12 +170,15 @@ export async function sendAgentReportEmailOrThrow({ userId, subject, body }) {
     await deliverToAddress({ email, subject, body });
   } catch (error) {
     throw new AgentError(
-      `Email delivery failed (${error?.message || "unknown error"}). Try again shortly.`,
+      `${describeEmailDeliveryFailure(error?.message, email)}. Try again shortly.`,
       "EMAIL_DELIVERY_FAILED",
       502
     );
   }
-  return { sent: true, status: "email sent to your verified account address" };
+  return {
+    sent: true,
+    status: `email sent to your verified account address (${maskEmailAddress(email)})`,
+  };
 }
 
 /**
@@ -217,7 +272,7 @@ export async function deliverAgentRunReport({ userId, agentConfigId, relatedRunI
   const result = await sendAgentReportEmail({ userId, subject, body });
   return {
     reply: result.sent
-      ? "Done — I've emailed that report to your verified account address."
+      ? `Done — I've emailed that report to your verified account address.`
       : `I couldn't email it: ${result.status}. The full report is still available here in Freedom OS.`,
     run,
   };
