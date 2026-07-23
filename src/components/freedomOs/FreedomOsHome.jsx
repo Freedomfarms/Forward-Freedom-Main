@@ -265,6 +265,12 @@ export function FreedomOsHome({ user, onOpenFinanceTool }) {
             )
           )
         }
+        onAgentDeleted={(deletedAgent) => {
+          setAgents((current) => (current || []).filter((agent) => agent.id !== deletedAgent.id));
+          setSelectedAgentId(null);
+          setToast(`"${deletedAgent.name}" was deleted.`);
+          window.setTimeout(() => setToast(""), 6000);
+        }}
       />
     );
   }

@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { styles } from "../../styles.js";
-import { emailAgentRun, fetchAgentRuns, triggerAgentRun, updateAgent } from "../../utils/agentsApi.js";
+import {
+  deleteAgent,
+  emailAgentRun,
+  fetchAgentRuns,
+  triggerAgentRun,
+  updateAgent,
+} from "../../utils/agentsApi.js";
 import { AgentChat } from "./AgentChat.jsx";
 import { ModelPicker } from "./ModelPicker.jsx";
 import { PermissionLedger } from "./PermissionLedger.jsx";
@@ -86,7 +92,14 @@ function RunRow({ run, onAskAboutRun, onEmailRun }) {
   );
 }
 
-export function AgentDetail({ agent, user, onBack, onAgentUpdated, onOpenFinanceTool = null }) {
+export function AgentDetail({
+  agent,
+  user,
+  onBack,
+  onAgentUpdated,
+  onAgentDeleted = null,
+  onOpenFinanceTool = null,
+}) {
   const [runs, setRuns] = useState(null);
   const [runsError, setRunsError] = useState("");
   const [hasMoreRuns, setHasMoreRuns] = useState(false);
@@ -106,6 +119,9 @@ export function AgentDetail({ agent, user, onBack, onAgentUpdated, onOpenFinance
   const [chatRelatedRunId, setChatRelatedRunId] = useState(null);
   const [isTogglingEmail, setIsTogglingEmail] = useState(false);
   const [emailToggleError, setEmailToggleError] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   const agentId = agent?.id || null;
   const meta = getAgentTypeMeta(agent?.agentType);
@@ -188,6 +204,24 @@ export function AgentDetail({ agent, user, onBack, onAgentUpdated, onOpenFinance
       setStatusError(describeAgentApiError(error, "Unable to update the agent status."));
     } finally {
       setIsTogglingStatus(false);
+    }
+  };
+
+  const handleDeleteAgent = async () => {
+    if (!agentId || isDeleting) return;
+    setIsDeleting(true);
+    setDeleteError("");
+    try {
+      await deleteAgent(agentId, { user });
+      if (typeof onAgentDeleted === "function") {
+        onAgentDeleted(agent);
+      } else {
+        onBack?.();
+      }
+    } catch (error) {
+      setDeleteError(describeAgentApiError(error, "Unable to delete this agent."));
+      setIsDeleting(false);
+      setConfirmDelete(false);
     }
   };
 
@@ -490,6 +524,77 @@ export function AgentDetail({ agent, user, onBack, onAgentUpdated, onOpenFinance
           permissionLevel={agent.permissionLevel}
         />
         <TrustLadder permissionLevel={agent.permissionLevel} />
+      </div>
+
+      <div
+        style={{
+          borderTop: "1px solid rgba(255,93,122,.18)",
+          paddingTop: 18,
+          display: "grid",
+          gap: 10,
+        }}
+      >
+        <div style={{ ...fosStyles.sectionLabel, color: "#ffb3c0" }}>Remove agent</div>
+        {!confirmDelete ? (
+          <>
+            <div style={{ color: "#8faecc", fontSize: 13, lineHeight: 1.55 }}>
+              Deletes this agent&apos;s config and chats. Past run history stays in your account for
+              audit and digest context.
+            </div>
+            <div>
+              <button
+                type="button"
+                style={{
+                  border: "none",
+                  background: "transparent",
+                  color: "#ff8fa3",
+                  cursor: "pointer",
+                  fontWeight: 800,
+                  fontSize: 13,
+                  padding: 0,
+                }}
+                onClick={() => {
+                  setDeleteError("");
+                  setConfirmDelete(true);
+                }}
+              >
+                Delete agent
+              </button>
+            </div>
+          </>
+        ) : (
+          <div style={fosStyles.errorBox}>
+            <div style={{ marginBottom: 10 }}>
+              Delete <strong>{agent.name}</strong>? Its chat and config go away. Past run history
+              stays in your account.
+            </div>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                style={{
+                  ...fosStyles.secondaryButton,
+                  border: "1px solid rgba(255,93,122,.45)",
+                  background: "rgba(255,36,77,.16)",
+                  color: "#ffd9df",
+                  opacity: isDeleting ? 0.6 : 1,
+                }}
+                disabled={isDeleting}
+                onClick={() => void handleDeleteAgent()}
+              >
+                {isDeleting ? "Deleting…" : "Yes, delete it"}
+              </button>
+              <button
+                type="button"
+                style={{ ...fosStyles.subtleButton, opacity: isDeleting ? 0.6 : 1 }}
+                disabled={isDeleting}
+                onClick={() => setConfirmDelete(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+        {deleteError ? <div style={fosStyles.errorBox}>{deleteError}</div> : null}
       </div>
     </div>
   );
