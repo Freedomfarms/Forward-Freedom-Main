@@ -85,6 +85,7 @@ export function AgentChat({
   relatedRunId = null,
   onClearRelatedRun = null,
   onAgentCreated = null,
+  onCreationDraftChange = null,
   onAgentUpdated = null,
   onDigestUpdated = null,
   onRunStarted = null,
@@ -592,6 +593,9 @@ export function AgentChat({
           onAgentCreated(payload.agentCreated);
         }
       }
+      if (payload?.creationDraft && typeof onCreationDraftChange === "function") {
+        onCreationDraftChange(payload.creationDraft);
+      }
       if (payload?.agent && typeof onAgentUpdated === "function") {
         onAgentUpdated(payload.agent);
       }
@@ -645,7 +649,7 @@ export function AgentChat({
         {showEmpty ? (
           <div style={{ color: "#8faecc", fontSize: 13, lineHeight: 1.6, padding: "10px 4px" }}>
             {mode === "create_agent"
-              ? `Tell ${agentName} what the new agent should handle — it will ask a few questions and confirm before creating anything.`
+              ? `Tell ${agentName} the outcome this agent owns — it will interview you, show a draft, and wait for your go-ahead.`
               : `Start a conversation with ${agentName}.`}
           </div>
         ) : null}

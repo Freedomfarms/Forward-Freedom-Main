@@ -1,14 +1,20 @@
 import { useState } from "react";
 import { AgentChat } from "./AgentChat.jsx";
+import { CreationDraftPanel } from "./CreationDraftPanel.jsx";
 import { fosStyles } from "./freedomOsShared.js";
 
-// "+ New Agent" — a slide-over where the CEO Agent drives creation through
-// chat (mode: "create_agent" on the server routes the whole conversation
-// through the deterministic creation session; the final confirm hits the same
-// validated creation path as POST /api/agents).
+// Aim opener — keep in sync with server/agents/creationDraft.js AIM_OPENER.
+const AIM_OPENER =
+  "What's the one outcome this agent is responsible for? Not the steps — the result.\n\n" +
+  'For example: "Every morning my inbox is empty, replies are drafted in my voice, and anything urgent is flagged."';
+
+// "+ New Agent" — slide-over where the CEO Agent interviews through chat
+// (mode: "create_agent"). Slice 1: Aim → interview → draft review → confirm.
+// Live draft panel updates from creationDraft on each turn.
 
 export function NewAgentFlow({ ceoAgent, user, onClose, onAgentCreated }) {
   const [createdAgent, setCreatedAgent] = useState(null);
+  const [creationDraft, setCreationDraft] = useState(null);
   const ceoName = ceoAgent?.name || "CEO Agent";
 
   return (
@@ -27,7 +33,7 @@ export function NewAgentFlow({ ceoAgent, user, onClose, onAgentCreated }) {
     >
       <aside
         style={{
-          width: "min(460px, 100vw)",
+          width: "min(520px, 100vw)",
           height: "100vh",
           background: "#07111d",
           borderLeft: "1px solid rgba(0,216,255,.22)",
@@ -63,19 +69,21 @@ export function NewAgentFlow({ ceoAgent, user, onClose, onAgentCreated }) {
             </button>
           </div>
           <div style={{ color: "#9fb0c9", lineHeight: 1.55, marginTop: 10, fontSize: 13 }}>
-            {ceoName} will gather purpose, data, schedule, and a definition of done (you can answer
-            naturally — details in any order are fine), then show a review before anything is
+            Answer naturally — out of order is fine. {ceoName} will show a draft before anything is
             created. New agents always start read-only.
           </div>
         </div>
 
         <div style={{ padding: 18, overflowY: "auto", display: "grid", gap: 14, alignContent: "start" }}>
+          <CreationDraftPanel draft={creationDraft} />
           <AgentChat
             mode="create_agent"
             agentName={ceoName}
             user={user}
             maxHeight={9999}
-            placeholder='e.g. "I want a research agent that tracks cattle prices"'
+            introMessage={AIM_OPENER}
+            placeholder='e.g. "Every weekday I know what needs my attention by 9am"'
+            onCreationDraftChange={setCreationDraft}
             onAgentCreated={(agent) => {
               setCreatedAgent(agent);
               onAgentCreated?.(agent);

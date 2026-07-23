@@ -51,6 +51,7 @@ const ALLOWED_TOOL_KEYS = Object.freeze(["email"]);
 const NAME_MAX_LENGTH = 80;
 const INSTRUCTIONS_MAX_LENGTH = 2000;
 const DEFINITION_OF_DONE_MAX_LENGTH = 500;
+const IDENTITY_NOTES_MAX_LENGTH = 2000;
 const AVATAR_KEY_PATTERN = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
 
 function invalid(message) {
@@ -143,6 +144,9 @@ export function serializeAgentConfig(config, { latestRun } = {}) {
     name: config.name,
     instructions: config.instructions ?? null,
     definitionOfDone: config.definitionOfDone ?? null,
+    personalityNotes: config.personalityNotes ?? null,
+    boundaries: config.boundaries ?? null,
+    workingFromNotes: config.workingFromNotes ?? null,
     permissionLevel: config.permissionLevel,
     status: config.status,
     model: normalizeAgentModel(config.model),
@@ -312,6 +316,15 @@ export function validateAgentCreatePayload(payload) {
       maxLength: DEFINITION_OF_DONE_MAX_LENGTH,
       required: true,
     }),
+    personalityNotes: readTrimmedString(payload.personalityNotes, "personalityNotes", {
+      maxLength: IDENTITY_NOTES_MAX_LENGTH,
+    }),
+    boundaries: readTrimmedString(payload.boundaries, "boundaries", {
+      maxLength: IDENTITY_NOTES_MAX_LENGTH,
+    }),
+    workingFromNotes: readTrimmedString(payload.workingFromNotes, "workingFromNotes", {
+      maxLength: IDENTITY_NOTES_MAX_LENGTH,
+    }),
     schedule: readSchedule(payload),
     toolAccess: sanitizeToolAccess(payload.toolAccess),
     ...(model ? { model } : {}),
@@ -349,6 +362,21 @@ export function validateAgentUpdatePayload(payload) {
   if ("definitionOfDone" in payload) {
     data.definitionOfDone = readTrimmedString(payload.definitionOfDone, "definitionOfDone", {
       maxLength: DEFINITION_OF_DONE_MAX_LENGTH,
+    });
+  }
+  if ("personalityNotes" in payload) {
+    data.personalityNotes = readTrimmedString(payload.personalityNotes, "personalityNotes", {
+      maxLength: IDENTITY_NOTES_MAX_LENGTH,
+    });
+  }
+  if ("boundaries" in payload) {
+    data.boundaries = readTrimmedString(payload.boundaries, "boundaries", {
+      maxLength: IDENTITY_NOTES_MAX_LENGTH,
+    });
+  }
+  if ("workingFromNotes" in payload) {
+    data.workingFromNotes = readTrimmedString(payload.workingFromNotes, "workingFromNotes", {
+      maxLength: IDENTITY_NOTES_MAX_LENGTH,
     });
   }
   if ("status" in payload) {
@@ -401,6 +429,9 @@ export async function createAgentConfig(tx, userId, validated) {
       name: validated.name,
       instructions: validated.instructions,
       definitionOfDone: validated.definitionOfDone,
+      personalityNotes: validated.personalityNotes ?? null,
+      boundaries: validated.boundaries ?? null,
+      workingFromNotes: validated.workingFromNotes ?? null,
       schedule: validated.schedule,
       toolAccess: validated.toolAccess,
       model,

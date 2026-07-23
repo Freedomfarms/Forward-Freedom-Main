@@ -21,11 +21,13 @@ import {
   serializeChatHistoryMessages,
 } from "../../../server/agents/chatHistory.js";
 import {
-  advanceCreationSession,
   buildCreationSuccessReply,
   completeCreationSession,
   decodeCreationState,
   encodeCreationState,
+  isCreationStateContent,
+  publicCreationDraft,
+  runCreationTurn,
   startCreationSession,
 } from "../../../server/agents/creationFlow.js";
 import {
@@ -36,11 +38,11 @@ import {
 // GET  /api/agents/ceo/chat — visible message history for the active CEO thread
 //      (?conversationId= optional; defaults to newest non-system conversation)
 // POST /api/agents/ceo/chat — send a message (or drive "+ New Agent" creation).
-// Sending { mode: "create_agent" } starts/continues a deterministic multi-turn
-// creation session pinned to an isSystem conversation (never listed/resumed as
-// regular chat). Everything else goes through respondToChat.
+// Sending { mode: "create_agent" } starts/continues the conversational creation
+// interview (LLM) on an isSystem conversation. Everything else → respondToChat.
 
 const CREATION_STATE_LOOKBACK = 60;
+const CREATION_TRANSCRIPT_LOOKBACK = 24;
 
 async function findActiveCreationState(tx, userId, ceoAgentConfigId, conversationId) {
   const recent = await tx.agentChatMessage.findMany({
@@ -87,7 +89,51 @@ function isNewerState(a, b) {
 // process; across serverless invocations savedAtMs alone already differs.
 let stateSequence = 0;
 
+async function loadCreationTranscript(tx, { userId, ceoConfigId, conversationId }) {
+  const rows = await tx.agentChatMessage.findMany({
+    where: {
+      userId,
+      ceoAgentConfigId: ceoConfigId,
+      agentConfigId: null,
+      conversationId,
+    },
+    orderBy: { createdAt: "desc" },
+    take: CREATION_TRANSCRIPT_LOOKBACK,
+    select: { role: true, contentCiphertext: true },
+  });
+  const messages = [];
+  for (const row of [...rows].reverse()) {
+    let content;
+    try {
+      content = decrypt(row.contentCiphertext);
+    } catch {
+      continue;
+    }
+    if (isCreationStateContent(content)) continue;
+    messages.push({ role: row.role, text: content });
+  }
+  return messages;
+}
+
 async function handleCreationTurn({ userId, ceoConfigId, conversationId, activeState, message }) {
+  // Run the LLM interview outside the write transaction so we don't hold a
+  // DB connection open across model latency.
+  let recentMessages = [];
+  if (activeState) {
+    recentMessages = await withUserContext(userId, (tx) =>
+      loadCreationTranscript(tx, { userId, ceoConfigId, conversationId })
+    );
+  }
+
+  let turn;
+  if (activeState) {
+    turn = await runCreationTurn(activeState, message, { recentMessages });
+  } else {
+    const started = startCreationSession();
+    // Opening user message answers Aim — don't bounce the canned opener back.
+    turn = await runCreationTurn(started.state, message, { recentMessages: [] });
+  }
+
   return withUserContext(userId, async (tx) => {
     const messageBase = {
       userId,
@@ -99,19 +145,6 @@ async function handleCreationTurn({ userId, ceoConfigId, conversationId, activeS
       data: { ...messageBase, role: "USER", contentCiphertext: encrypt(message) },
     });
     await touchConversation(tx, conversationId);
-
-    let turn;
-    if (activeState) {
-      turn = advanceCreationSession(activeState, message);
-    } else {
-      turn = startCreationSession();
-      // If the opening message already names a type ("I want a finance
-      // agent"), skip straight past the type question.
-      const attempt = advanceCreationSession(turn.state, message);
-      if (attempt.state?.draft?.agentType || attempt.state?.status !== "active") {
-        turn = attempt;
-      }
-    }
 
     let { state, reply } = turn;
     let agentCreated = null;
@@ -147,7 +180,12 @@ async function handleCreationTurn({ userId, ceoConfigId, conversationId, activeS
     });
     await touchConversation(tx, conversationId);
 
-    return { reply, messageId: replyMessage.id, agentCreated };
+    return {
+      reply,
+      messageId: replyMessage.id,
+      agentCreated,
+      creationDraft: turn.creationDraft || publicCreationDraft(state),
+    };
   });
 }
 
@@ -235,6 +273,7 @@ async function handleSend(request, response) {
       return response.status(200).json({
         reply: outcome.reply,
         messageId: outcome.messageId,
+        creationDraft: outcome.creationDraft,
         ...(outcome.agentCreated ? { agentCreated: outcome.agentCreated } : {}),
       });
     }
@@ -267,5 +306,6 @@ export default async function handler(request, response) {
   applySecurityHeaders(response);
   if (request.method === "GET") return handleHistory(request, response);
   if (request.method === "POST") return handleSend(request, response);
+  response.setHeader("Allow", "GET, POST");
   return response.status(405).json({ error: true, message: "Method not allowed." });
 }
