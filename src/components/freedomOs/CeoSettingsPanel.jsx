@@ -87,7 +87,28 @@ export function CeoSettingsPanel({ ceoAgent, user, onBack, onSaved, onOpenProfil
       </div>
 
       <div style={{ display: "grid", gap: 10 }}>
-        <div style={fosStyles.sectionLabel}>Name</div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 16,
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={fosStyles.sectionLabel}>Name</div>
+          <button
+            type="button"
+            style={{
+              ...fosStyles.secondaryButton,
+              padding: "8px 12px",
+              fontSize: 12,
+            }}
+            onClick={onOpenProfile}
+          >
+            Profile →
+          </button>
+        </div>
         <input
           value={name}
           onChange={(event) => setName(event.target.value)}
@@ -215,10 +236,6 @@ export function CeoSettingsPanel({ ceoAgent, user, onBack, onSaved, onOpenProfil
         {savedAt && !isDirty ? (
           <span style={{ color: "#7cf1af", fontSize: 12, fontWeight: 700 }}>Saved</span>
         ) : null}
-        <span style={{ flex: 1 }} />
-        <button type="button" style={fosStyles.secondaryButton} onClick={onOpenProfile}>
-          Profile →
-        </button>
       </div>
     </div>
   );

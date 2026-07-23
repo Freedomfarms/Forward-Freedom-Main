@@ -149,6 +149,7 @@ export function ProfileView({ user, onBack }) {
   const [isLoading, setIsLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
   const [isGeneratingNarrative, setIsGeneratingNarrative] = useState(false);
+  const [isNarrativeOpen, setIsNarrativeOpen] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
 
   useEffect(() => {
@@ -187,6 +188,7 @@ export function ProfileView({ user, onBack }) {
 
   const handleGenerateNarrative = async () => {
     setActionError("");
+    setIsNarrativeOpen(true);
     setIsGeneratingNarrative(true);
     try {
       const payload = await generateCeoNarrativeProfile({ user });
@@ -309,61 +311,102 @@ export function ProfileView({ user, onBack }) {
       ) : null}
 
       {!isLoading && !loadError ? (
-        <div style={{ display: "grid", gap: 10 }}>
-          <div style={fosStyles.sectionLabel}>Your profile</div>
-          <p style={{ margin: 0, color: "#9fb0c9", fontSize: 12, lineHeight: 1.55 }}>
-            A longer newsletter-style write-up from your CEO Agent, built from what it knows about
-            you, your chats, and the agents you&apos;ve created.
-          </p>
-          {narrativeText ? (
-            <>
-              <div
+        <div
+          style={{
+            borderRadius: 12,
+            border: "1px solid rgba(0,216,255,.14)",
+            background: "rgba(0,136,255,.04)",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              width: "100%",
+              padding: "12px 16px",
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              flexWrap: "wrap",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1, minWidth: 0 }}>
+              <div style={fosStyles.sectionLabel}>Your profile</div>
+              <span style={{ color: "#5f7896", fontSize: 11 }}>
+                {narrativeGeneratedAt
+                  ? `Updated ${formatRelativeTime(narrativeGeneratedAt)}`
+                  : "Newsletter"}
+              </span>
+            </div>
+            {isNarrativeOpen && narrativeText ? (
+              <button
+                type="button"
+                disabled={isGeneratingNarrative}
+                onClick={() => void handleGenerateNarrative()}
                 style={{
-                  borderRadius: 12,
-                  border: "1px solid rgba(0,216,255,.22)",
-                  background: "rgba(3,17,32,.72)",
-                  padding: "14px 16px",
-                  color: "#d7ebff",
-                  fontSize: 13,
-                  lineHeight: 1.75,
-                  whiteSpace: "pre-wrap",
+                  border: "none",
+                  background: "transparent",
+                  color: "#8feaff",
+                  fontSize: 12,
+                  padding: 0,
+                  cursor: isGeneratingNarrative ? "default" : "pointer",
+                  opacity: isGeneratingNarrative ? 0.6 : 1,
                 }}
               >
-                {narrativeText}
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                {isGeneratingNarrative ? "Refreshing…" : "Refresh"}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => setIsNarrativeOpen((current) => !current)}
+              style={{
+                border: "none",
+                background: "transparent",
+                color: "#8feaff",
+                fontSize: 12,
+                padding: 0,
+                cursor: "pointer",
+              }}
+            >
+              {isNarrativeOpen ? "Hide ▴" : "Show ▾"}
+            </button>
+          </div>
+          {isNarrativeOpen ? (
+            <div style={{ padding: "0 16px 14px", display: "grid", gap: 10 }}>
+              <p style={{ margin: 0, color: "#9fb0c9", fontSize: 12, lineHeight: 1.55 }}>
+                A longer newsletter-style write-up from your CEO Agent, built from what it knows about
+                you, your chats, and the agents you&apos;ve created.
+              </p>
+              {narrativeText ? (
+                <div
+                  style={{
+                    borderRadius: 12,
+                    border: "1px solid rgba(0,216,255,.22)",
+                    background: "rgba(3,17,32,.72)",
+                    padding: "14px 16px",
+                    color: "#d7ebff",
+                    fontSize: 13,
+                    lineHeight: 1.75,
+                    whiteSpace: "pre-wrap",
+                  }}
+                >
+                  {narrativeText}
+                </div>
+              ) : (
                 <button
                   type="button"
                   style={{
-                    ...fosStyles.secondaryButton,
+                    ...fosStyles.primaryButton,
+                    width: "fit-content",
                     opacity: isGeneratingNarrative ? 0.6 : 1,
                   }}
                   disabled={isGeneratingNarrative}
                   onClick={() => void handleGenerateNarrative()}
                 >
-                  {isGeneratingNarrative ? "Refreshing…" : "Refresh Profile"}
+                  {isGeneratingNarrative ? "Writing your profile…" : "Read your Profile"}
                 </button>
-                {narrativeGeneratedAt ? (
-                  <span style={{ color: "#5f7896", fontSize: 11 }}>
-                    Updated {formatRelativeTime(narrativeGeneratedAt)}
-                  </span>
-                ) : null}
-              </div>
-            </>
-          ) : (
-            <button
-              type="button"
-              style={{
-                ...fosStyles.primaryButton,
-                width: "fit-content",
-                opacity: isGeneratingNarrative ? 0.6 : 1,
-              }}
-              disabled={isGeneratingNarrative}
-              onClick={() => void handleGenerateNarrative()}
-            >
-              {isGeneratingNarrative ? "Writing your profile…" : "Read your Profile"}
-            </button>
-          )}
+              )}
+            </div>
+          ) : null}
         </div>
       ) : null}
 
