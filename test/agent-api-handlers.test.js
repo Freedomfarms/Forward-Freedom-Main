@@ -197,10 +197,13 @@ before(async () => {
               roleLine: "Watches monthly spending",
               instructions: "Watch my monthly spending and flag unusual changes",
               definitionOfDone: "A weekly spending observations report is produced",
-              personalityNotes: "Direct",
-              boundaries: "Never move money",
+              // Intentionally incomplete interview — review opens only after skip
+              // or once every topic is covered.
+              coveredTopics: ["outcome"],
             },
-            phase: "review",
+            phase: "interview",
+            topicsCoveredThisTurn: ["outcome"],
+            userSkippedRemaining: false,
             userConfirmed: false,
             userCancelled: false,
             userWantsEdits: false,
@@ -991,7 +994,7 @@ test("GET /api/agents/:id/chat returns that agent's history only", async (t) => 
   assert.match(response.body.messages[0].text, /AI tools/);
 });
 
-test("CEO chat creation flow interviews, returns a live draft, and creates on confirm", async (t) => {
+test("CEO chat creation flow finishes interview (or skip) before draft review, then creates", async (t) => {
   if (!requireSetup(t)) return;
 
   // Every creation turn must send mode: "create_agent" (server pins the
@@ -1010,11 +1013,17 @@ test("CEO chat creation flow interviews, returns a live draft, and creates on co
     "Every week I have a clear spending observations report and nothing unusual slips by."
   );
   assert.equal(aim.statusCode, 200);
-  assert.match(aim.body.reply, /got it|captured|looks good/i);
+  assert.match(aim.body.reply, /got it|captured|looks good|draft/i);
   assert.equal(aim.body.creationDraft.agentType, "finance");
-  assert.equal(aim.body.creationDraft.phase, "review");
-  assert.equal(aim.body.creationDraft.readyForReview, true);
+  // Draft review stays closed until interview topics are done or user skips.
+  assert.equal(aim.body.creationDraft.phase, "interview");
+  assert.equal(aim.body.creationDraft.readyForReview, false);
   assert.match(aim.body.creationDraft.definitionOfDone, /spending observations/i);
+
+  const skipped = await send("skip the rest");
+  assert.equal(skipped.statusCode, 200);
+  assert.equal(skipped.body.creationDraft.phase, "review");
+  assert.equal(skipped.body.creationDraft.readyForReview, true);
 
   const confirm = await send("looks good");
   assert.equal(confirm.statusCode, 200);
@@ -1029,8 +1038,9 @@ test("CEO chat creation flow interviews, returns a live draft, and creates on co
   assert.equal(row.model, "claude-sonnet-4-5");
   assert.match(row.instructions, /monthly spending|Watches monthly/i);
   assert.match(row.definitionOfDone, /observations report/);
-  assert.equal(row.personalityNotes, "Direct");
-  assert.equal(row.boundaries, "Never move money");
+  // Skip fills remaining identity fields with conservative guesses when unanswered.
+  assert.match(row.personalityNotes || "", /Direct|Clear|Practical|Concise/i);
+  assert.match(row.boundaries || "", /Never/i);
 
   // Creation messages land on the isSystem conversation, never the default list.
   const systemConv = currentDb.tables.agentConversation.find((c) => c.isSystem === true);
