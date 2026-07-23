@@ -9,8 +9,8 @@ const AIM_OPENER =
   'For example: "Every morning my inbox is empty, replies are drafted in my voice, and anything urgent is flagged."';
 
 // "+ New Agent" — slide-over where the CEO Agent interviews through chat
-// (mode: "create_agent"). Slice 1: Aim → interview → draft review → confirm.
-// Live draft panel updates from creationDraft on each turn.
+// (mode: "create_agent"). Slice 1: Aim → full interview → draft review → confirm.
+// Draft panel stays closed until the interview is finished (or the user skips).
 
 export function NewAgentFlow({ ceoAgent, user, onClose, onAgentCreated }) {
   const [createdAgent, setCreatedAgent] = useState(null);
@@ -69,8 +69,9 @@ export function NewAgentFlow({ ceoAgent, user, onClose, onAgentCreated }) {
             </button>
           </div>
           <div style={{ color: "#9fb0c9", lineHeight: 1.55, marginTop: 10, fontSize: 13 }}>
-            Answer naturally — out of order is fine. {ceoName} will show a draft before anything is
-            created. New agents always start read-only.
+            {ceoName} will ask a few questions first (you can answer naturally or say skip). The
+            draft opens only after that — nothing is created until you approve it. New agents always
+            start read-only.
           </div>
         </div>
 
@@ -82,7 +83,7 @@ export function NewAgentFlow({ ceoAgent, user, onClose, onAgentCreated }) {
             user={user}
             maxHeight={9999}
             introMessage={AIM_OPENER}
-            placeholder='e.g. "Every weekday I know what needs my attention by 9am"'
+            placeholder='e.g. "Every weekday I know what needs my attention by 9am" — or say skip later'
             onCreationDraftChange={setCreationDraft}
             onAgentCreated={(agent) => {
               setCreatedAgent(agent);

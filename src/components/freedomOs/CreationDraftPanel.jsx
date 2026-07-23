@@ -35,25 +35,11 @@ function DraftField({ label, value, guessed }) {
   );
 }
 
-function phaseLabel(phase) {
-  if (phase === "review") return "Draft review";
-  if (phase === "interview") return "Interview";
-  return "Aim";
-}
-
 export function CreationDraftPanel({ draft }) {
-  const guessed = new Set(Array.isArray(draft?.guessedFields) ? draft.guessedFields : []);
-  const hasAnything = Boolean(
-    draft &&
-      (draft.definitionOfDone ||
-        draft.name ||
-        draft.roleLine ||
-        draft.personalityNotes ||
-        draft.boundaries ||
-        draft.workingFromNotes ||
-        draft.instructions ||
-        draft.agentType)
-  );
+  // Draft sections stay closed until the interview is finished (or skipped).
+  if (!draft || draft.phase !== "review") return null;
+
+  const guessed = new Set(Array.isArray(draft.guessedFields) ? draft.guessedFields : []);
 
   return (
     <div
@@ -68,50 +54,54 @@ export function CreationDraftPanel({ draft }) {
     >
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline" }}>
         <div>
-          <div style={fosStyles.sectionLabel}>Draft so far</div>
+          <div style={fosStyles.sectionLabel}>Agent draft</div>
           <div style={{ color: "white", fontWeight: 800, fontSize: 14, marginTop: 2 }}>
-            {phaseLabel(draft?.phase)}
-            {draft?.readyForReview ? " · ready to confirm" : ""}
+            Review before creating
+            {draft.readyForReview ? " · ready to confirm" : ""}
           </div>
         </div>
-        {draft?.agentType ? (
+        {draft.agentType ? (
           <div style={{ color: "#9fb0c9", fontSize: 12, fontWeight: 700 }}>{draft.agentType}</div>
         ) : null}
       </div>
 
-      {!hasAnything ? (
-        <div style={{ color: "#8faecc", fontSize: 13, lineHeight: 1.5 }}>
-          As you answer, the outcome, personality, and boundaries will show up here.
-        </div>
-      ) : (
-        <div style={{ display: "grid", gap: 10 }}>
-          <DraftField
-            label="Name & role"
-            value={[draft.name, draft.roleLine].filter(Boolean).join(" — ")}
-            guessed={guessed.has("name") || guessed.has("roleLine")}
-          />
-          <DraftField
-            label="Outcome"
-            value={draft.definitionOfDone}
-            guessed={guessed.has("definitionOfDone")}
-          />
-          <DraftField
-            label="Personality"
-            value={draft.personalityNotes}
-            guessed={guessed.has("personalityNotes")}
-          />
-          <DraftField
-            label="Will never"
-            value={draft.boundaries}
-            guessed={guessed.has("boundaries")}
-          />
-          <DraftField
-            label="Working from"
-            value={draft.workingFromNotes}
-            guessed={guessed.has("workingFromNotes")}
-          />
-        </div>
-      )}
+      <div style={{ display: "grid", gap: 10 }}>
+        <DraftField
+          label="Name & role"
+          value={[draft.name, draft.roleLine].filter(Boolean).join(" — ")}
+          guessed={guessed.has("name") || guessed.has("roleLine")}
+        />
+        <DraftField
+          label="Outcome"
+          value={draft.definitionOfDone}
+          guessed={guessed.has("definitionOfDone") || guessed.has("outcome")}
+        />
+        <DraftField
+          label="Acts with / for"
+          value={draft.actorsNotes}
+          guessed={guessed.has("actorsNotes") || guessed.has("actors")}
+        />
+        <DraftField
+          label="Personality"
+          value={draft.personalityNotes}
+          guessed={guessed.has("personalityNotes") || guessed.has("tone")}
+        />
+        <DraftField
+          label="Will never"
+          value={draft.boundaries}
+          guessed={guessed.has("boundaries")}
+        />
+        <DraftField
+          label="Working from"
+          value={draft.workingFromNotes}
+          guessed={guessed.has("workingFromNotes") || guessed.has("history")}
+        />
+        <DraftField
+          label="Escalation"
+          value={draft.escalationNotes}
+          guessed={guessed.has("escalationNotes") || guessed.has("escalation")}
+        />
+      </div>
     </div>
   );
 }
