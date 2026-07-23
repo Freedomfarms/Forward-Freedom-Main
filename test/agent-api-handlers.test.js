@@ -171,16 +171,42 @@ before(async () => {
       },
     });
 
-    // Force template onboarding summaries in handler tests (no live LLM).
+    // Stub LLM for onboarding summaries + conversational agent creation intake.
     mock.module("../server/agents/llm.js", {
       namedExports: {
         PROFILE_EXTRACTION_MODEL: "mock-model",
         CEO_AGENT_MODEL: "mock-model",
         setLlmImplementationForTesting: () => {},
+        // Keep false so onboarding stays on the template summary path; creation
+        // still uses the generateAgent* stubs below directly.
         isLlmConfigured: () => false,
         getWebSearchTools: () => ({}),
-        generateAgentText: async () => ({ text: "mock summary", usage: null }),
-        generateAgentObject: async () => ({ object: { reply: "mock", profileOps: [] }, usage: null }),
+        generateAgentText: async () => ({
+          text: "Got it — here's what I've captured. Say looks good to create it.",
+          usage: null,
+        }),
+        generateAgentObject: async () => ({
+          object: {
+            // Shape used by conversational "+ New Agent" intake. Harmless for
+            // other callers that ignore unknown keys.
+            reply: "mock",
+            profileOps: [],
+            draftPatch: {
+              agentType: "finance",
+              name: "Finance Agent",
+              roleLine: "Watches monthly spending",
+              instructions: "Watch my monthly spending and flag unusual changes",
+              definitionOfDone: "A weekly spending observations report is produced",
+              personalityNotes: "Direct",
+              boundaries: "Never move money",
+            },
+            phase: "review",
+            userConfirmed: false,
+            userCancelled: false,
+            userWantsEdits: false,
+          },
+          usage: null,
+        }),
       },
     });
 
@@ -965,7 +991,7 @@ test("GET /api/agents/:id/chat returns that agent's history only", async (t) => 
   assert.match(response.body.messages[0].text, /AI tools/);
 });
 
-test("CEO chat creation flow builds and creates an agent without any LLM call", async (t) => {
+test("CEO chat creation flow interviews, returns a live draft, and creates on confirm", async (t) => {
   if (!requireSetup(t)) return;
 
   // Every creation turn must send mode: "create_agent" (server pins the
@@ -980,28 +1006,17 @@ test("CEO chat creation flow builds and creates an agent without any LLM call", 
     );
   }
 
-  const start = await send("I want a finance agent");
-  assert.equal(start.statusCode, 200);
-  assert.match(start.body.reply, /focus on/i);
+  const aim = await send(
+    "Every week I have a clear spending observations report and nothing unusual slips by."
+  );
+  assert.equal(aim.statusCode, 200);
+  assert.match(aim.body.reply, /got it|captured|looks good/i);
+  assert.equal(aim.body.creationDraft.agentType, "finance");
+  assert.equal(aim.body.creationDraft.phase, "review");
+  assert.equal(aim.body.creationDraft.readyForReview, true);
+  assert.match(aim.body.creationDraft.definitionOfDone, /spending observations/i);
 
-  const purpose = await send("Watch my monthly spending and flag unusual changes");
-  assert.match(purpose.body.reply, /data/i);
-
-  const data = await send("My transactions and account balances");
-  assert.match(data.body.reply, /how often/i);
-
-  const schedule = await send("weekly on friday");
-  assert.match(schedule.body.reply, /definition of done/i);
-
-  const done = await send("A weekly spending observations report is produced");
-  assert.match(done.body.reply, /haiku|sonnet|opus|model/i);
-
-  const model = await send("skip");
-  assert.match(model.body.reply, /Here's the agent I'll create/);
-  assert.match(model.body.reply, /read-only/);
-  assert.match(model.body.reply, /Sonnet/i);
-
-  const confirm = await send("confirm");
+  const confirm = await send("looks good");
   assert.equal(confirm.statusCode, 200);
   assert.equal(confirm.body.agentCreated.name, "Finance Agent");
   assert.equal(confirm.body.agentCreated.agentType, "finance");
@@ -1010,10 +1025,12 @@ test("CEO chat creation flow builds and creates an agent without any LLM call", 
   const row = currentDb.tables.agentConfig[0];
   assert.equal(row.permissionLevel, "READ_ONLY");
   assert.equal(row.status, "ACTIVE");
-  assert.equal(row.schedule, "0 13 * * 5");
+  assert.equal(row.schedule, null); // Slice 1 default: on-demand
   assert.equal(row.model, "claude-sonnet-4-5");
-  assert.match(row.instructions, /monthly spending/);
+  assert.match(row.instructions, /monthly spending|Watches monthly/i);
   assert.match(row.definitionOfDone, /observations report/);
+  assert.equal(row.personalityNotes, "Direct");
+  assert.equal(row.boundaries, "Never move money");
 
   // Creation messages land on the isSystem conversation, never the default list.
   const systemConv = currentDb.tables.agentConversation.find((c) => c.isSystem === true);
@@ -1028,10 +1045,10 @@ test("CEO chat creation flow builds and creates an agent without any LLM call", 
     "creation must not create a listed conversation"
   );
 
-  // The whole flow is deterministic — respondToChat (LLM) was never called...
+  // Creation uses the interview LLM path, not respondToChat.
   assert.equal(chatCalls.length, 0);
 
-  // ...and once the session is complete, normal chat (no mode) resumes.
+  // Once the session is complete, normal chat (no mode) resumes.
   const followUp = await send("thanks, how are things?", { create: false });
   assert.equal(followUp.statusCode, 200);
   assert.equal(chatCalls.length, 1);

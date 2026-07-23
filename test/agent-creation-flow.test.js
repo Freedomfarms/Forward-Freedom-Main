@@ -2,20 +2,18 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  advanceCreationSession,
+  applyDraftPatch,
+  buildCreatePayloadFromDraft,
+  emptyCreationDraft,
+  isDraftReadyForReview,
   looksLikeScheduleOrEmailOnly,
   parseSchedule,
+  publicCreationDraft,
   startCreationSession,
 } from "../server/agents/creationFlow.js";
-
-function turn(state, message) {
-  return advanceCreationSession(state, message);
-}
-
-function startWith(message) {
-  const started = startCreationSession();
-  return turn(started.state, message);
-}
+import { matchesCreationConfirm } from "../server/agents/creationDraft.js";
+import { runCreationTurn } from "../server/agents/creationInterview.js";
+import { setLlmImplementationForTesting } from "../server/agents/llm.js";
 
 test("parseSchedule accepts day names without an explicit weekly keyword", () => {
   assert.deepEqual(parseSchedule("every monday"), {
@@ -55,148 +53,126 @@ test("looksLikeScheduleOrEmailOnly detects delivery/schedule answers", () => {
   );
 });
 
-test("happy path still works in order", () => {
-  let session = startWith("I want a finance agent");
-  assert.match(session.reply, /focus on/i);
-  assert.equal(session.state.draft.agentType, "finance");
-  assert.equal(session.state.draft.instructions, undefined);
-
-  session = turn(session.state, "Watch my monthly spending and flag unusual changes");
-  assert.match(session.reply, /data/i);
-
-  session = turn(session.state, "My transactions and account balances");
-  assert.match(session.reply, /how often/i);
-
-  session = turn(session.state, "weekly on friday");
-  assert.match(session.reply, /definition of done/i);
-  assert.equal(session.state.draft.scheduleWeekday, "friday");
-
-  session = turn(session.state, "A weekly spending observations report is produced");
-  assert.match(session.reply, /haiku|sonnet|opus|model/i);
-
-  session = turn(session.state, "skip");
-  assert.match(session.reply, /Here's the agent I'll create/);
-  assert.match(session.reply, /weekly \(friday\)/);
-  assert.match(session.reply, /Sonnet/i);
-
-  session = turn(session.state, "confirm");
-  assert.equal(session.createPayload.agentType, "finance");
-  assert.equal(session.createPayload.scheduleWeekday, "friday");
-  assert.equal(session.createPayload.model, "claude-sonnet-4-5");
-  assert.match(session.createPayload.instructions, /monthly spending/);
-  assert.match(session.createPayload.instructions, /Data focus: My transactions/);
-  assert.match(session.createPayload.definitionOfDone, /observations report/);
+test("startCreationSession opens on Aim with an empty draft", () => {
+  const started = startCreationSession();
+  assert.equal(started.state.phase, "aim");
+  assert.equal(started.state.status, "active");
+  assert.match(started.reply, /one outcome/i);
+  assert.equal(started.state.draft.definitionOfDone, null);
 });
 
-test("opening message can fill type + purpose and skip the purpose question", () => {
-  const session = startWith(
-    "can you research the AI market and give me a report to my email?"
-  );
-  assert.equal(session.state.draft.agentType, "research");
-  assert.match(session.state.draft.instructions, /AI market/i);
-  assert.equal(session.state.draft.emailRequested, true);
-  assert.match(session.reply, /data or area/i);
-  assert.doesNotMatch(session.reply, /focus on\?/i);
+test("applyDraftPatch merges identity fields and infers a default name", () => {
+  const draft = applyDraftPatch(emptyCreationDraft(), {
+    agentType: "research",
+    definitionOfDone: "I have a clear weekly brief on cattle prices by Monday 9am.",
+    personalityNotes: "Terse\nPractical",
+    boundaries: "Never send emails externally\nNever move money",
+    guessedFields: ["personalityNotes"],
+  });
+  assert.equal(draft.agentType, "research");
+  assert.equal(draft.name, "Research Agent");
+  assert.match(draft.definitionOfDone, /cattle prices/);
+  assert.deepEqual(draft.guessedFields, ["personalityNotes"]);
+  assert.equal(isDraftReadyForReview(draft), true);
 });
 
-test("schedule + email on the data step do not become Data focus", () => {
-  let session = startWith("research agent");
-  session = turn(session.state, "Track emerging AI platforms and apps");
-  session = turn(
-    session.state,
-    "i want the report emailed to me every monday and thursday night at 9pm. please email to forwardfreedomfinancial@gmail.com"
-  );
-
-  assert.equal(session.state.draft.dataFocus, undefined);
-  assert.deepEqual(session.state.draft.scheduleWeekdays, ["monday", "thursday"]);
-  assert.equal(session.state.draft.scheduleHourUtc, 21);
-  assert.equal(session.state.draft.scheduleResolved, true);
-  assert.equal(session.state.draft.emailAddress, "forwardfreedomfinancial@gmail.com");
-  assert.equal(session.state.draft.requestedTime, "9pm");
-  assert.match(session.reply, /definition of done|Schedule set to weekly/i);
-  assert.doesNotMatch(session.reply, /Data focus:/i);
+test("buildCreatePayloadFromDraft uses on-demand + Sonnet defaults for Slice 1", () => {
+  const draft = applyDraftPatch(emptyCreationDraft(), {
+    agentType: "finance",
+    name: "Spend Watch",
+    roleLine: "Flags unusual monthly spending",
+    instructions: "Watch transactions and call out surprises",
+    definitionOfDone: "A weekly spending observations report is produced",
+    personalityNotes: "Direct",
+    boundaries: "Never recommend trades",
+  });
+  const payload = buildCreatePayloadFromDraft(draft);
+  assert.equal(payload.agentType, "finance");
+  assert.equal(payload.name, "Spend Watch");
+  assert.equal(payload.schedulePreset, null);
+  assert.equal(payload.model, "claude-sonnet-4-5");
+  assert.match(payload.instructions, /Flags unusual/);
+  assert.equal(payload.personalityNotes, "Direct");
+  assert.equal(payload.boundaries, "Never recommend trades");
 });
 
-test("reported CEO transcript assigns fields correctly", () => {
-  let session = startWith(
-    "can you research the AI market and give me a report to my email?"
-  );
-  assert.equal(session.state.draft.agentType, "research");
-
-  session = turn(
-    session.state,
-    "i want to know the latest platforms / apps, whats trending in the space and anything else you feel important"
-  );
-  assert.match(session.state.draft.dataFocus, /platforms/i);
-  assert.match(session.reply, /how often|weekly|schedule|monday or thursday/i);
-
-  session = turn(
-    session.state,
-    "i want the report emailed to me every monday and thursday night at 9pm. please email to forwardfreedomfinancial@gmail.com"
-  );
-  assert.doesNotMatch(session.state.draft.dataFocus || "", /forwardfreedomfinancial/i);
-  assert.deepEqual(session.state.draft.scheduleWeekdays, ["monday", "thursday"]);
-  assert.equal(session.state.draft.scheduleHourUtc, 21);
-  assert.equal(session.state.draft.scheduleResolved, true);
-
-  // Time correction keeps both days and updates the UTC hour (must not become DoD).
-  session = turn(session.state, "i just said monday and thursday nights at 8pm");
-  assert.deepEqual(session.state.draft.scheduleWeekdays, ["monday", "thursday"]);
-  assert.equal(session.state.draft.requestedTime, "8pm");
-  assert.equal(session.state.draft.scheduleHourUtc, 20);
-  assert.equal(session.state.draft.definitionOfDone, undefined);
-
-  // Previously stuffed into definitionOfDone.
-  session = turn(session.state, "can you send email at 8pm?");
-  assert.equal(session.state.draft.definitionOfDone, undefined);
-  assert.match(session.reply, /definition of done/i);
-
-  session = turn(
-    session.state,
-    "A concise AI platforms and trends report is produced each scheduled run"
-  );
-  assert.match(session.reply, /haiku|sonnet|opus|model/i);
-
-  session = turn(session.state, "opus");
-  assert.match(session.reply, /Here's the agent I'll create/);
-  assert.match(session.reply, /Schedule: weekly \(monday, thursday\) at 20:00 UTC/);
-  assert.match(session.reply, /platforms/);
-  assert.match(session.reply, /definition of done: A concise AI platforms/i);
-  assert.match(session.reply, /Opus/i);
-  assert.doesNotMatch(session.reply, /Data focus: i want the report emailed/i);
-  // Research agents can now email reports — to the verified account address
-  // only; the third-party address is called out as unusable.
-  assert.match(session.reply, /emailed to your own verified account address/i);
-  assert.match(session.reply, /forwardfreedomfinancial@gmail.com/i);
-  assert.match(session.reply, /8pm.*20:00 UTC|20:00 UTC/i);
-
-  session = turn(session.state, "confirm");
-  assert.equal(session.createPayload.schedulePreset, "weekly");
-  assert.deepEqual(session.createPayload.scheduleWeekdays, ["monday", "thursday"]);
-  assert.equal(session.createPayload.scheduleHourUtc, 20);
-  assert.equal(session.createPayload.model, "claude-opus-4-1");
-  assert.match(session.createPayload.definitionOfDone, /concise AI platforms/);
-  assert.deepEqual(session.createPayload.toolAccess, { email: true });
+test("publicCreationDraft exposes a client-safe snapshot", () => {
+  const started = startCreationSession();
+  const draft = applyDraftPatch(started.state.draft, {
+    agentType: "reminders",
+    definitionOfDone: "Nothing important slips past Friday.",
+  });
+  const pub = publicCreationDraft({ ...started.state, phase: "interview", draft });
+  assert.equal(pub.phase, "interview");
+  assert.equal(pub.agentType, "reminders");
+  assert.equal(pub.readyForReview, true);
+  assert.equal(pub.definitionOfDone, "Nothing important slips past Friday.");
 });
 
-test("reminders + email on data step still enables account email delivery", () => {
-  let session = startWith("reminders agent");
-  session = turn(session.state, "Remind me to review cash flow");
-  session = turn(session.state, "Cash flow checklist, and email me");
-  assert.equal(session.state.draft.toolAccess?.email, true);
-  assert.match(session.state.draft.dataFocus, /Cash flow checklist/i);
+test("runCreationTurn patches the draft from LLM output and confirms on review", async () => {
+  const previousKey = process.env.ANTHROPIC_API_KEY;
+  process.env.ANTHROPIC_API_KEY = "test-key";
+  let calls = 0;
+  setLlmImplementationForTesting({
+    generateText: async () => {
+      calls += 1;
+      return { text: "Got it — that outcome is clear. Quick one: how should this agent sound?" };
+    },
+    generateObject: async () => {
+      calls += 1;
+      return {
+        object: {
+          draftPatch: {
+            agentType: "research",
+            name: "Market Scout",
+            roleLine: "Tracks cattle market moves",
+            definitionOfDone: "Every Monday I know what moved in cattle markets and why.",
+            instructions: "Scan public market sources and summarize material changes",
+            personalityNotes: "Calm\nSpecific",
+            boundaries: "Never invent prices\nNever send messages externally",
+            guessedFields: ["boundaries"],
+          },
+          phase: "review",
+          userConfirmed: false,
+          userCancelled: false,
+          userWantsEdits: false,
+        },
+        usage: { inputTokens: 10, outputTokens: 20 },
+      };
+    },
+  });
+
+  try {
+    const started = startCreationSession();
+    const turn = await runCreationTurn(
+      started.state,
+      "Every Monday I know what moved in cattle markets and why."
+    );
+    assert.equal(turn.state.phase, "review");
+    assert.equal(turn.state.draft.agentType, "research");
+    assert.equal(turn.createPayload, null);
+    assert.match(turn.reply, /outcome is clear/i);
+    assert.equal(turn.creationDraft.readyForReview, true);
+    assert.ok(calls >= 2);
+
+    assert.equal(matchesCreationConfirm("looks good"), true);
+    const confirm = await runCreationTurn(turn.state, "looks good");
+    assert.ok(confirm.createPayload);
+    assert.equal(confirm.createPayload.agentType, "research");
+    assert.equal(confirm.createPayload.name, "Market Scout");
+    assert.match(confirm.createPayload.definitionOfDone, /cattle markets/);
+    assert.equal(confirm.createPayload.schedulePreset, null);
+  } finally {
+    setLlmImplementationForTesting(null);
+    if (previousKey == null) delete process.env.ANTHROPIC_API_KEY;
+    else process.env.ANTHROPIC_API_KEY = previousKey;
+  }
 });
 
-test("finance + email request enables account email delivery", () => {
-  let session = startWith("finance agent");
-  session = turn(session.state, "Watch my monthly spending and email me the report");
-  assert.equal(session.state.draft.toolAccess?.email, true);
-});
-
-test("email requested before the type is chosen still enables delivery", () => {
-  let session = startWith("I want reports emailed to me");
-  assert.equal(session.state.draft.emailRequested, true);
-  session = turn(session.state, "research");
-  assert.equal(session.state.draft.agentType, "research");
-  assert.equal(session.state.draft.toolAccess?.email, true);
+test("runCreationTurn cancels without creating", async () => {
+  const started = startCreationSession();
+  const turn = await runCreationTurn(started.state, "cancel");
+  assert.equal(turn.state.status, "cancelled");
+  assert.equal(turn.createPayload, null);
+  assert.match(turn.reply, /discarded/i);
 });

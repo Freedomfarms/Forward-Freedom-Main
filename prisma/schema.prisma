@@ -413,6 +413,12 @@ model AgentConfig {
   instructions     String?
   // One specific, measurable sentence describing success for this agent.
   definitionOfDone String?
+  // Conversational intake identity notes (plain fields — not a soul-file system).
+  personalityNotes String?
+  // Explicit "will never" boundaries, plain text (newline-separated list is fine).
+  boundaries       String?
+  // What the agent reverse-engineered from history / examples, if anything.
+  workingFromNotes String?
   permissionLevel  AgentPermissionLevel @default(READ_ONLY)
   // Per-agent LLM tier; a single tier is used at launch, but the field exists
   // so model tiering isn't a retrofit.

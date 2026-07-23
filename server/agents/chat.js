@@ -298,7 +298,20 @@ export async function respondToChat({
   }
 
   const identity = agentConfig
-    ? `Agent name: ${agentConfig.name}\nAgent type: ${agentConfig.agentType}\nInstructions: ${agentConfig.instructions || "(none)"}`
+    ? [
+        `Agent name: ${agentConfig.name}`,
+        `Agent type: ${agentConfig.agentType}`,
+        `Instructions: ${agentConfig.instructions || "(none)"}`,
+        agentConfig.personalityNotes
+          ? `Personality: ${agentConfig.personalityNotes}`
+          : null,
+        agentConfig.boundaries ? `Boundaries (will never): ${agentConfig.boundaries}` : null,
+        agentConfig.workingFromNotes
+          ? `Working from: ${agentConfig.workingFromNotes}`
+          : null,
+      ]
+        .filter(Boolean)
+        .join("\n")
     : `Agent name: ${ceoConfig.name}\nRole: CEO Agent (orchestrator)`;
 
   const sections = [
