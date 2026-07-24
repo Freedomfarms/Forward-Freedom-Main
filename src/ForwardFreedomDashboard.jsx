@@ -113,6 +113,8 @@ import {
   FreedomOsSignedOutCard,
 } from "./components/freedomOs/FreedomOsHome.jsx";
 import { FreedomOsDeck } from "./components/freedomOs/FreedomOsDeck.jsx";
+import { FreedomOsModuleHub } from "./components/freedomOs/FreedomOsModuleHub.jsx";
+import { FREEDOM_OS_MODULE_IDS } from "./components/freedomOs/freedomOsModules.js";
 import { AdminUsagePanel } from "./components/freedomOs/AdminUsagePanel.jsx";
 import { useViewportUIScale } from "./utils/useViewportUIScale.js";
 import { LegalModal } from "./components/LegalDocuments.jsx";
@@ -684,10 +686,26 @@ function ForwardFreedomDashboard({
   // Freedom OS uses it for the isAdmin gate on the Admin Usage tab.
   workspaceProfile = null,
 } = {}) {
-  const [initialAppState] = useState(() => initialAppStateOverride || loadPersistedAppState(storageKey));
+  const [initialAppState] = useState(() => {
+    const base = initialAppStateOverride || loadPersistedAppState(storageKey);
+    // Authenticated sign-on always opens the Freedom OS module hub first.
+    // Demo / public paths keep whatever tab their seed state uses.
+    if (initialAppStateOverride && !isDemoMode) {
+      return {
+        ...base,
+        users: (base.users || []).map((user) => ({
+          ...user,
+          activeTab: APP_TABS.FREEDOM_OS,
+        })),
+      };
+    }
+    return base;
+  });
   const [currentView, setCurrentView] = useState(initialView);
   const [users, setUsers] = useState(initialAppState.users);
   const [activeUserId, setActiveUserId] = useState(initialAppState.activeUserId);
+  // null = module hub; ceo_agents = Module 01. Module 02 switches activeTab.
+  const [freedomOsModule, setFreedomOsModule] = useState(null);
   const [editingUserId, setEditingUserId] = useState(null);
   const [draftUserName, setDraftUserName] = useState("");
   const [pendingManualEditAccountId, setPendingManualEditAccountId] = useState(null);
@@ -782,7 +800,27 @@ function ForwardFreedomDashboard({
   const setPlaidTransactionOverrides = (valueOrUpdater) =>
     setActiveUserField("plaidTransactionOverrides", valueOrUpdater);
   const setOnboarding = (valueOrUpdater) => setActiveUserField("onboarding", valueOrUpdater);
-  const setActiveTab = (valueOrUpdater) => setActiveUserField("activeTab", valueOrUpdater);
+  const setActiveTab = (valueOrUpdater) => {
+    const current = activeUser.activeTab;
+    const next =
+      typeof valueOrUpdater === "function" ? valueOrUpdater(current) : valueOrUpdater;
+    // Returning to Freedom OS always shows the module hub, not a nested module.
+    if (next === APP_TABS.FREEDOM_OS) {
+      setFreedomOsModule(null);
+    }
+    setActiveUserField("activeTab", next);
+  };
+
+  const handleSelectFreedomOsModule = (moduleId) => {
+    if (moduleId === FREEDOM_OS_MODULE_IDS.CEO_AGENTS) {
+      setFreedomOsModule(FREEDOM_OS_MODULE_IDS.CEO_AGENTS);
+      return;
+    }
+    if (moduleId === FREEDOM_OS_MODULE_IDS.FREEDOM_FINANCIAL) {
+      setFreedomOsModule(null);
+      setActiveTab(APP_TABS.DASHBOARD);
+    }
+  };
   const setActiveRange = (valueOrUpdater) => setActiveUserField("activeRange", valueOrUpdater);
   const openGuide = () => setIsGuideOpen(true);
   const closeGuide = () => setIsGuideOpen(false);
@@ -2295,22 +2333,31 @@ function ForwardFreedomDashboard({
     setIsMobileNavOpen(false);
   };
 
-  // Freedom OS is the platform home: authenticated sessions get a full-screen
-  // deck (no FFF sidebar) with a portal button into the finance dashboard.
-  // Demo and signed-out sessions keep the in-shell signed-out card below.
+  // Freedom OS is the platform home: authenticated sessions land on the module
+  // hub (CEO Agents / Freedom Financial). Demo and signed-out sessions keep the
+  // in-shell signed-out card below.
   if (activeTab === APP_TABS.FREEDOM_OS && freedomOsAuthUser) {
+    const inCeoAgents = freedomOsModule === FREEDOM_OS_MODULE_IDS.CEO_AGENTS;
     return (
       <FreedomOsDeck
         sessionControls={sessionControls}
         isAdmin={isPlatformAdmin}
-        onEnterFff={() => setActiveTab(APP_TABS.DASHBOARD)}
+        moduleLabel={inCeoAgents ? "Module 01 · CEO Agents" : "Select a module"}
+        onBackToModules={inCeoAgents ? () => setFreedomOsModule(null) : null}
         onOpenAdminUsage={() => setActiveTab(APP_TABS.ADMIN_USAGE)}
       >
-        <ViewErrorBoundary key={APP_TABS.FREEDOM_OS} viewName={APP_TABS.FREEDOM_OS}>
-          <FreedomOsHome
-            user={freedomOsAuthUser}
-            onOpenFinanceTool={() => setActiveTab(APP_TABS.DASHBOARD)}
-          />
+        <ViewErrorBoundary
+          key={inCeoAgents ? "ceo-agents" : "module-hub"}
+          viewName={APP_TABS.FREEDOM_OS}
+        >
+          {inCeoAgents ? (
+            <FreedomOsHome
+              user={freedomOsAuthUser}
+              onOpenFinanceTool={() => setActiveTab(APP_TABS.DASHBOARD)}
+            />
+          ) : (
+            <FreedomOsModuleHub onSelectModule={handleSelectFreedomOsModule} />
+          )}
         </ViewErrorBoundary>
       </FreedomOsDeck>
     );

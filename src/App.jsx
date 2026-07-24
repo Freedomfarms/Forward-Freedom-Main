@@ -1022,7 +1022,8 @@ function UnconfiguredPublicApp() {
     <FreedomOsLanding
       onSignIn={() => openAuthScreen("login")}
       onCreateAccount={() => openAuthScreen("register")}
-      onExploreFff={() => setPublicView("fff")}
+      onExploreCeoAgents={() => openAuthScreen("login")}
+      onExploreFreedomFinancial={() => setPublicView("fff")}
     />
   );
 }
@@ -1098,8 +1099,7 @@ function AppContent() {
       setPublicView("demo");
     };
 
-    // "What is FFF?" — the original Forward Freedom Financial marketing page,
-    // reachable from the Freedom OS front door.
+    // Module 02 — Freedom Financial marketing / demo entry (signed out).
     if (publicView === "fff") {
       return (
         <LandingPage
@@ -1110,13 +1110,14 @@ function AppContent() {
       );
     }
 
-    // Freedom OS landing is the main homepage: sign-in and account creation
-    // launch from here. The FFF demo sandbox is entered from the FFF page.
+    // Freedom OS landing is the main homepage: Module 01 CEO Agents and
+    // Module 02 Freedom Financial. Sign-in and account creation launch here.
     return (
       <FreedomOsLanding
         onSignIn={() => openAuthScreen()}
         onCreateAccount={() => openAuthScreen({ mode: "create-account" })}
-        onExploreFff={() => setPublicView("fff")}
+        onExploreCeoAgents={() => openAuthScreen()}
+        onExploreFreedomFinancial={() => setPublicView("fff")}
       />
     );
   }

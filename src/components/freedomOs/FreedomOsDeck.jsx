@@ -1,6 +1,6 @@
-// Freedom OS deck — the full-screen shell wrapped around FreedomOsHome for
-// authenticated sessions. Freedom OS is the platform home; FFF (the finance
-// dashboard with its sidebar) is entered through the portal button here.
+// Freedom OS deck — full-screen shell for the authenticated platform home.
+// The module hub (CEO Agents / Freedom Financial) lives here; entering CEO
+// Agents keeps this deck with a back control to the hub.
 
 const DECK_STYLES = `
 @keyframes fosd-grid-drift { from { background-position: 0 0; } to { background-position: 0 44px; } }
@@ -48,7 +48,9 @@ function DeckChipButton({ label, onClick, disabled = false }) {
 export function FreedomOsDeck({
   sessionControls = null,
   isAdmin = false,
-  onEnterFff,
+  /** When set, show a control to return to the Freedom OS module hub. */
+  onBackToModules = null,
+  moduleLabel = null,
   onOpenAdminUsage,
   children,
 }) {
@@ -158,12 +160,35 @@ export function FreedomOsDeck({
                   className="fosd-status-dot"
                   style={{ width: 7, height: 7, borderRadius: "50%", background: "#34d399" }}
                 />
-                Operator deck online
+                {moduleLabel || "Operator deck online"}
               </div>
             </div>
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            {typeof onBackToModules === "function" ? (
+              <button
+                type="button"
+                onClick={onBackToModules}
+                className="fosd-portal"
+                style={{
+                  border: "1px solid rgba(190,245,255,.6)",
+                  borderRadius: 12,
+                  background: "linear-gradient(90deg, #22d3ee, #60a5fa)",
+                  color: "#01131f",
+                  padding: "12px 20px",
+                  cursor: "pointer",
+                  fontWeight: 900,
+                  fontSize: 13,
+                  letterSpacing: 1.2,
+                  textTransform: "uppercase",
+                  boxShadow: "0 0 26px rgba(34,211,238,.38)",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                ← All Modules
+              </button>
+            ) : null}
             {isAdmin && typeof onOpenAdminUsage === "function" ? (
               <DeckChipButton label="⛭ Admin" onClick={onOpenAdminUsage} />
             ) : null}
@@ -174,27 +199,6 @@ export function FreedomOsDeck({
                 onClick={() => void sessionControls.onSignOut()}
               />
             ) : null}
-            <button
-              type="button"
-              onClick={onEnterFff}
-              className="fosd-portal"
-              style={{
-                border: "1px solid rgba(190,245,255,.6)",
-                borderRadius: 12,
-                background: "linear-gradient(90deg, #22d3ee, #60a5fa)",
-                color: "#01131f",
-                padding: "12px 20px",
-                cursor: "pointer",
-                fontWeight: 900,
-                fontSize: 13,
-                letterSpacing: 1.2,
-                textTransform: "uppercase",
-                boxShadow: "0 0 26px rgba(34,211,238,.38)",
-                whiteSpace: "nowrap",
-              }}
-            >
-              Launch FFF <span aria-hidden="true">↗</span>
-            </button>
           </div>
         </header>
 

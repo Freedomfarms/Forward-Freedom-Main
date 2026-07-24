@@ -19,9 +19,9 @@ import {
   statusBadgeStyle,
 } from "./freedomOsShared.js";
 
-// Freedom OS home — the authenticated default view. CEO Agent panel on top
-// (digest + chat + actions), agent card grid below. Finance agent cards jump
-// to the existing Command Center; every other type opens AgentDetail inline.
+// Module 01 — CEO Agents. Opened from the Freedom OS module hub. CEO Agent
+// panel on top (digest + chat + actions), agent card grid below. Finance agent
+// cards jump to Freedom Financial; every other type opens AgentDetail inline.
 
 function truncate(text, maxLength = 110) {
   const value = String(text || "").trim();

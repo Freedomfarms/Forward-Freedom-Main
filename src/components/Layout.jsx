@@ -16,8 +16,8 @@ export function AppSidebar({
   // Platform admin (from /api/me isAdmin) — gates the Admin Usage entry.
   isAdmin = false,
 }) {
-  // Freedom OS sits alone at the top; the existing finance tabs group under a
-  // "Finance" section label (labels themselves are unchanged).
+  // Freedom OS sits alone at the top; Module 02 (Freedom Financial) tabs group
+  // under that section label.
   const freedomOsItems = navMain.filter((item) => item.label === APP_TABS.FREEDOM_OS);
   const financeItems = navMain.filter((item) => item.label !== APP_TABS.FREEDOM_OS);
   const actionItems = [
@@ -132,7 +132,7 @@ export function AppSidebar({
           marginBottom: 16,
         }}
       >
-        Finance
+        Freedom Financial
       </div>
       {financeItems.map((item) => (
         <SideItem
