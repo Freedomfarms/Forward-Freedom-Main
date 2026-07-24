@@ -184,13 +184,18 @@ function seedDb() {
 
 function installLlmMock(reply = "Here is my answer.", profileOps = [], digestAction = null) {
   llmCalls = [];
+  const structured = { reply, profileOps, taskAction: null, digestAction };
+  const usage = { inputTokens: 500, outputTokens: 100 };
   setLlmImplementationForTesting({
+    // Sub-agent chat path.
     generateObject: async (options) => {
       llmCalls.push(options);
-      return {
-        object: { reply, profileOps, taskAction: null, digestAction },
-        usage: { inputTokens: 500, outputTokens: 100 },
-      };
+      return { object: structured, usage };
+    },
+    // CEO chat path (structured output + web search tools via generateText).
+    generateText: async (options) => {
+      llmCalls.push(options);
+      return { output: structured, text: reply, usage };
     },
   });
 }
@@ -275,7 +280,12 @@ test("the CEO chat reads the team roster, run summaries across all agents, and t
   });
   assert.equal(result.reply, "Here is my answer.");
 
-  const payload = JSON.stringify(llmCalls[0]);
+  const call = llmCalls[0];
+  const payload = JSON.stringify(call);
+  // CEO chat must receive provider web search for live lookups.
+  assert.ok(call.tools && call.tools.web_search, "CEO chat should include web_search tool");
+  assert.ok(call.output, "CEO chat should request structured Output.object");
+  assert.match(String(call.system || ""), /web search/i);
   // Live roster must be present even for agents the user just created.
   assert.ok(payload.includes("YOUR SUB-AGENTS"));
   assert.ok(payload.includes("Finance Agent"));
@@ -299,6 +309,17 @@ test("the CEO chat reads the team roster, run summaries across all agents, and t
     relatedRunId: "run-b1",
   });
   assert.ok(JSON.stringify(llmCalls[1]).includes("AGENT_B_FULL_OUTPUT"));
+});
+
+test("sub-agent chat does not receive web search tools", async (t) => {
+  if (!requireSetup(t)) return;
+  await respondToChat({
+    userId: USER_ID,
+    agentConfigId: "agent-a",
+    message: "How is my spending trending?",
+  });
+  assert.equal(llmCalls.length, 1);
+  assert.equal(llmCalls[0].tools, undefined);
 });
 
 test("the CEO chat still lists a newly created sub-agent with zero runs", async (t) => {

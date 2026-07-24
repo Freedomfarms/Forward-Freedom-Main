@@ -1,4 +1,4 @@
-import { jsonSchema } from "ai";
+import { jsonSchema, Output, stepCountIs } from "ai";
 
 import { withUserContext } from "../db/prisma.js";
 import { decrypt, decryptJson, encrypt } from "../security/envelope.js";
@@ -11,7 +11,12 @@ import {
 } from "./conversationTitle.js";
 import { loadDocumentsForPrompt } from "./documents.js";
 import { AgentError } from "./errors.js";
-import { CEO_AGENT_MODEL, generateAgentObject } from "./llm.js";
+import {
+  CEO_AGENT_MODEL,
+  generateAgentObject,
+  generateAgentText,
+  getWebSearchTools,
+} from "./llm.js";
 import {
   applySubAgentTaskAction,
   sanitizeTaskAction,
@@ -52,6 +57,10 @@ import {
 
 const CHAT_HISTORY_LIMIT = 50;
 const RUN_SUMMARY_LIMIT = 20;
+/** Max read-only Anthropic web searches per CEO chat turn (live facts). */
+const CEO_WEB_SEARCH_MAX_USES = 5;
+/** Tool rounds + final structured reply (structured output counts as a step). */
+const CEO_CHAT_MAX_STEPS = 8;
 
 const CEO_CHAT_REPLY_SCHEMA = jsonSchema({
   type: "object",
@@ -92,6 +101,7 @@ const SUB_AGENT_CHAT_SYSTEM_PROMPT = [
 const CEO_CHAT_SYSTEM_PROMPT = [
   "You are the user's CEO Agent inside Freedom OS: the orchestrator of their team of financially read-only agents, and their main point of contact.",
   "Answer using the provided context: YOUR SUB-AGENTS (the live team roster), recent run summaries from ALL of the user's agents (cross-agent questions are your job), the current Daily Digest, and the user's long-term profile. When asked what you know about the user, answer from the profile data section.",
+  "You have read-only web search for live / current information (sports schedules, news, weather, public market data, etc.). When the user asks something that needs up-to-date facts, use web search before answering. Briefly say what you found in plain language. Never claim you lack internet access or cannot look things up.",
   "When the user asks which agents they have, what a sub-agent does, or whether you know about an agent they just created: answer ONLY from YOUR SUB-AGENTS. If the roster is empty, say they have no sub-agents yet. Never invent, rename, or guess agents (including generic \"research\" / fintech teammates) that are not listed.",
   "A newly created agent may have zero runs — that does not mean it does not exist. Prefer the roster over run summaries for team membership questions.",
   "You CAN edit the Daily Digest shown on the Freedom OS home when the user asks: set digestAction to set_content with the full body text they want there (rewrite, replace, shorten, or write whatever they request), or regenerate to rebuild the default briefing from recent agent runs. The server applies digestAction — do not claim you cannot change the digest. Output digest body only (no \"Status Update\" / \"Daily Digest\" heading). Set digestAction to null when they are not asking to change the digest.",
@@ -382,13 +392,39 @@ export async function respondToChat({
   const model = agentConfig
     ? agentConfig.model || CEO_AGENT_MODEL
     : ceoConfig?.model || CEO_AGENT_MODEL;
-  const { object, usage } = await generateAgentObject({
-    model,
-    system: agentConfig ? SUB_AGENT_CHAT_SYSTEM_PROMPT : CEO_CHAT_SYSTEM_PROMPT,
-    prompt: sections.join("\n\n"),
-    schema: agentConfig ? SUB_AGENT_CHAT_REPLY_SCHEMA : CEO_CHAT_REPLY_SCHEMA,
-    maxOutputTokens: 1200,
-  });
+
+  // CEO chat: structured reply + Anthropic provider-executed web search so
+  // live questions (schedules, news, etc.) can be looked up. Sub-agent chat
+  // stays scoped to its own context without web search.
+  let object;
+  let usage;
+  if (ceoConfig) {
+    const result = await generateAgentText({
+      model,
+      system: CEO_CHAT_SYSTEM_PROMPT,
+      prompt: sections.join("\n\n"),
+      tools: getWebSearchTools({ maxUses: CEO_WEB_SEARCH_MAX_USES }),
+      output: Output.object({ schema: CEO_CHAT_REPLY_SCHEMA }),
+      stopWhen: stepCountIs(CEO_CHAT_MAX_STEPS),
+      maxOutputTokens: 1600,
+      // jsonTool avoids native grammar compile timeouts when tools + schema run together.
+      providerOptions: {
+        anthropic: { structuredOutputMode: "jsonTool" },
+      },
+    });
+    object = result.output;
+    usage = result.usage;
+  } else {
+    const result = await generateAgentObject({
+      model,
+      system: SUB_AGENT_CHAT_SYSTEM_PROMPT,
+      prompt: sections.join("\n\n"),
+      schema: SUB_AGENT_CHAT_REPLY_SCHEMA,
+      maxOutputTokens: 1200,
+    });
+    object = result.object;
+    usage = result.usage;
+  }
 
   let reply = String(object?.reply || "").trim() || "Sorry — I could not generate a reply.";
   let actionResult = null;
