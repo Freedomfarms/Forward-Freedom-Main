@@ -98,13 +98,13 @@ export async function runAgent({ userId, agentConfigId, trigger = "manual" }) {
     // handler produced its report. Best-effort: never fails the run.
     let summary = result.summary;
     if (config.agentType !== "reminders" && isEmailDeliveryEnabled(config.toolAccess)) {
-      const { subject, body } = buildRunEmailContent({
+      const { subject, body, html } = buildRunEmailContent({
         agentName: config.name,
         agentType: config.agentType,
         run: { summary: result.summary, startedAt: run.startedAt },
         output: result.output != null ? String(result.output) : null,
       });
-      const emailResult = await sendAgentReportEmail({ userId, subject, body });
+      const emailResult = await sendAgentReportEmail({ userId, subject, body, html });
       summary = summary ? `${summary} (${emailResult.status})` : `(${emailResult.status})`;
     }
 

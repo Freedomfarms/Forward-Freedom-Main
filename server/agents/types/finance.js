@@ -1,7 +1,7 @@
 import { withUserContext } from "../../db/prisma.js";
 import { decrypt as decryptField, decryptNumber } from "../../security/envelope.js";
 import { generateAgentObject } from "../llm.js";
-import { dataSection, PROMPT_SAFETY_RULES } from "../prompts.js";
+import { dataSection, DEFAULT_REPORT_STYLE_RULE, PROMPT_SAFETY_RULES } from "../prompts.js";
 import { jsonSchema } from "ai";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -22,7 +22,9 @@ export const FINANCE_SYSTEM_PROMPT = [
   "Your job is to surface OBSERVATIONS AND PATTERNS ONLY — for example: \"dining spend is 40% above your 3-month average\".",
   "You must NEVER give prescriptive advice or directives of any kind. Forbidden: telling the user to buy X, sell Y, move money to Z, open or close accounts, change investments, or any investment recommendation whatsoever. Do not suggest actions; only describe what the data shows.",
   "Amounts are signed: negative values are money going out, positive values are money coming in.",
-  "Write plainly and concretely. If the data is too sparse to say anything meaningful, say so.",
+  "If the data is too sparse to say anything meaningful, say so plainly.",
+  DEFAULT_REPORT_STYLE_RULE,
+  "If the user's instructions explicitly request a different format or style, follow that instead of the default.",
   "Safety rules:",
   `- ${PROMPT_SAFETY_RULES}`,
 ].join("\n");
@@ -33,11 +35,12 @@ const FINANCE_REPORT_SCHEMA = jsonSchema({
     report: {
       type: "string",
       description:
-        "A short insights report: notable observations and patterns in the aggregates, as plain text with one observation per line or short paragraph.",
+        "A short Markdown desk-brief of notable observations and patterns in the aggregates. Use ## section headings, **bold** key numbers, and short paragraphs or bullets. End with a ## Summary section of 2-4 sentences.",
     },
     summary: {
       type: "string",
-      description: "A 1-2 sentence plain-text summary of the most important observation(s).",
+      description:
+        "A 2-4 sentence plain-text (or lightly bolded Markdown) summary of the most important observation(s) — matches the report's ## Summary section.",
     },
   },
   required: ["report", "summary"],

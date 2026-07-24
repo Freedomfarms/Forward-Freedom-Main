@@ -69,7 +69,7 @@ export default async function handler(request, response) {
       );
     }
 
-    const { subject, body } = buildRunEmailContent({
+    const { subject, body, html } = buildRunEmailContent({
       agentName: agentConfig.name,
       agentType: agentConfig.agentType,
       run,
@@ -79,6 +79,7 @@ export default async function handler(request, response) {
       userId: decodedToken.uid,
       subject,
       body,
+      html,
     });
     return response.status(200).json({ emailed: true, status: result.status });
   } catch (error) {

@@ -185,17 +185,47 @@ test("maskEmailAddress keeps domain and hides local part", (t) => {
   assert.equal(emailDelivery.maskEmailAddress(""), "your account email");
 });
 
-test("buildRunEmailContent includes summary, report, and the safety footer", (t) => {
+test("buildRunEmailContent builds subject, HTML, and text fallback", (t) => {
   if (!requireSetup(t)) return;
-  const { subject, body } = emailDelivery.buildRunEmailContent({
+  const { subject, body, html } = emailDelivery.buildRunEmailContent({
     agentName: "Market Research",
     agentType: "research",
-    run: { summary: "Prices rose.", startedAt: new Date("2026-07-20T13:00:00Z") },
-    output: "Full report text.",
+    run: { summary: "Prices **rose**.", startedAt: new Date("2026-07-20T13:00:00Z") },
+    output: "## Findings\n\nPrices went **up** ([source](https://example.com)).\n\n## Summary\n\nPrices rose.",
   });
-  assert.match(subject, /Market Research/);
-  assert.match(subject, /report/);
-  assert.match(body, /Summary:\nPrices rose\./);
-  assert.match(body, /Report:\nFull report text\./);
+
+  // Subject: "<agent name> — <formatted date>", no boilerplate.
+  assert.equal(subject, "Market Research — Monday, July 20");
+
+  // HTML: branded template + rendered markdown + summary callout + footer.
+  assert.match(html, /Freedom OS/);
+  assert.match(html, /Research Brief/);
+  assert.match(html, /Monday, July 20/);
+  assert.match(html, /<h2[^>]*>Findings<\/h2>/);
+  assert.match(html, /<strong[^>]*>up<\/strong>/);
+  assert.match(html, /href="https:\/\/example\.com"/);
+  assert.match(html, /Summary<\/div>/); // callout label
+  assert.match(html, /Prices <strong[^>]*>rose<\/strong>\./); // callout content
+  assert.match(html, /only email you, never anyone else/i);
+
+  // Text fallback: markdown syntax stripped, old Summary:/Report: labels gone.
+  assert.match(body, /^Market Research — Monday, July 20/);
+  assert.match(body, /Findings\n\nPrices went up \(source \(https:\/\/example\.com\)\)/);
+  assert.doesNotMatch(body, /Report:/);
+  assert.doesNotMatch(body, /\*\*/);
   assert.match(body, /only email you, never anyone else/i);
+});
+
+test("buildRunEmailContent neutralizes HTML in agent output", (t) => {
+  if (!requireSetup(t)) return;
+  const { html } = emailDelivery.buildRunEmailContent({
+    agentName: 'Agent <script>alert("x")</script>',
+    agentType: "research",
+    run: { summary: null, startedAt: new Date("2026-07-20T13:00:00Z") },
+    output: 'Hello <script>alert("boom")</script> [bad](javascript:alert(1)) world.',
+  });
+  assert.doesNotMatch(html, /<script/);
+  assert.doesNotMatch(html, /javascript:/);
+  assert.match(html, /Hello/);
+  assert.match(html, /world\./);
 });
