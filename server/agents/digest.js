@@ -5,6 +5,11 @@ import { CEO_AGENT_MODEL, generateAgentText } from "./llm.js";
 import { normalizeAgentModel } from "./models.js";
 import { dataSection, PROMPT_SAFETY_RULES } from "./prompts.js";
 import { normalizeProfile, renderProfileForPrompt } from "./profile.js";
+import {
+  loadTeamAgents,
+  renderNamedRunSummaries,
+  renderTeamRoster,
+} from "./teamContext.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CEO Agent digest: a short readable briefing synthesized from the user's
@@ -21,6 +26,17 @@ export const DIGEST_ACTION_TYPES = Object.freeze(["set_content", "regenerate"]);
 
 export const NO_ACTIVITY_DIGEST =
   "Nothing to report yet — your agents haven't completed any runs recently. Once they start running, I'll summarize what they find here.";
+
+function noActivityDigestForTeam(agents) {
+  if (!agents?.length) return NO_ACTIVITY_DIGEST;
+  const names = agents.map((agent) => agent.name).filter(Boolean);
+  if (!names.length) return NO_ACTIVITY_DIGEST;
+  const teamList =
+    names.length === 1
+      ? names[0]
+      : `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}`;
+  return `Nothing to report yet — your team includes ${teamList}, but none have completed runs recently. Once they start running, I'll summarize what they find here.`;
+}
 
 // Personality is preset-driven by design: fixed server-side snippets keyed by
 // the CeoPersonalityPreset enum — never free text.
@@ -65,22 +81,14 @@ export const DIGEST_ACTION_JSON_SCHEMA = {
 function buildDigestSystemPrompt(personalityPreset) {
   return [
     "You are the CEO Agent inside Freedom OS: the orchestrator that coordinates a user's team of read-only agents and reports to the user.",
-    "Write a short, readable Daily Digest briefing (a few sentences to a few short bullets) summarizing what the user's agents found recently, using the run summaries provided as data.",
+    "Write a short, readable Daily Digest briefing (a few sentences to a few short bullets) summarizing what the user's agents found recently, using the run summaries and YOUR SUB-AGENTS roster provided as data.",
+    "Refer to agents by the names in YOUR SUB-AGENTS. Never invent teammates that are not listed.",
     "Output ONLY the briefing body. Do not include a title, heading, or label such as \"Status Update\", \"Daily Digest\", or markdown # headings — the UI already labels the section.",
     "You cannot take actions; you only inform. Never give directives such as buy/sell/move money and never make investment recommendations.",
     PERSONALITY_TONES[personalityPreset] || PERSONALITY_TONES.DIRECT_EFFICIENT,
     "Safety rules:",
     `- ${PROMPT_SAFETY_RULES}`,
   ].join("\n");
-}
-
-function renderRunSummaries(runs) {
-  return runs
-    .map((run) => {
-      const day = new Date(run.startedAt).toISOString().slice(0, 10);
-      return `[${day}] (${run.agentType}) ${run.summary}`;
-    })
-    .join("\n");
 }
 
 /**
@@ -221,19 +229,20 @@ export async function applyCeoDigestAction(userId, action) {
 export async function generateDigest(userId) {
   const since = new Date(Date.now() - DIGEST_WINDOW_DAYS * 24 * 60 * 60 * 1000);
 
-  const { ceoConfig, runs } = await withUserContext(userId, async (tx) => {
+  const { ceoConfig, runs, teamAgents } = await withUserContext(userId, async (tx) => {
     const ceoConfigRow = await tx.ceoAgentConfig.findFirst({
       where: { userId },
       select: { id: true, personalityPreset: true, profileCiphertext: true, model: true },
     });
-    if (!ceoConfigRow) return { ceoConfig: null, runs: [] };
+    if (!ceoConfigRow) return { ceoConfig: null, runs: [], teamAgents: [] };
+    const agents = await loadTeamAgents(tx, userId);
     const runRows = await tx.agentRun.findMany({
       where: { userId, status: "SUCCEEDED", startedAt: { gte: since }, summary: { not: null } },
       orderBy: { startedAt: "desc" },
       take: DIGEST_MAX_RUNS,
-      select: { agentType: true, summary: true, startedAt: true },
+      select: { agentConfigId: true, agentType: true, summary: true, startedAt: true },
     });
-    return { ceoConfig: ceoConfigRow, runs: runRows };
+    return { ceoConfig: ceoConfigRow, runs: runRows, teamAgents: agents };
   });
 
   if (!ceoConfig) {
@@ -241,7 +250,7 @@ export async function generateDigest(userId) {
   }
 
   if (!runs.length) {
-    const digest = normalizeDigestText(NO_ACTIVITY_DIGEST);
+    const digest = normalizeDigestText(noActivityDigestForTeam(teamAgents));
     const saved = await persistDigest(userId, ceoConfig.id, digest);
     return { ...saved, model: null, usage: null };
   }
@@ -257,7 +266,8 @@ export async function generateDigest(userId) {
     prompt: [
       "Write the Daily Digest briefing for the user based on the recent agent activity below.",
       "Remember: body only — no title or heading.",
-      dataSection("RECENT AGENT RUN SUMMARIES", renderRunSummaries(runs)),
+      dataSection("YOUR SUB-AGENTS (current team)", renderTeamRoster(teamAgents)),
+      dataSection("RECENT AGENT RUN SUMMARIES", renderNamedRunSummaries(runs, teamAgents)),
       dataSection("USER PROFILE (long-term memory)", renderProfileForPrompt(profile)),
     ].join("\n\n"),
     maxOutputTokens: 700,

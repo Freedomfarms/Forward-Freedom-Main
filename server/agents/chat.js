@@ -31,18 +31,23 @@ import {
   PROFILE_OPS_JSON_SCHEMA,
   renderProfileForPrompt,
 } from "./profile.js";
+import {
+  loadTeamAgents,
+  renderNamedRunSummaries,
+  renderTeamRoster,
+} from "./teamContext.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared chat engine for the CEO Agent chat and every sub-agent chat.
 //
 // Scoping contract (enforced in the queries, inside the user's RLS context):
 //   • a sub-agent chat may read ONLY its own runs and its own chat messages;
-//   • the CEO chat reads run summaries across ALL the user's agents —
-//     cross-agent questions are its job — plus the living profile, which is
-//     how it answers "what do you know about me?".
-//   • Always-include context (profile, docs, run summaries) is shared across
-//     conversations for that agent. Conversation-scoped context is only the
-//     message history for the active conversationId.
+//   • the CEO chat reads the live sub-agent roster + run summaries across ALL
+//     the user's agents — cross-agent questions are its job — plus the living
+//     profile, which is how it answers "what do you know about me?".
+//   • Always-include context (profile, docs, team roster, run summaries) is
+//     shared across conversations for that agent. Conversation-scoped context
+//     is only the message history for the active conversationId.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const CHAT_HISTORY_LIMIT = 50;
@@ -86,7 +91,9 @@ const SUB_AGENT_CHAT_SYSTEM_PROMPT = [
 
 const CEO_CHAT_SYSTEM_PROMPT = [
   "You are the user's CEO Agent inside Freedom OS: the orchestrator of their team of financially read-only agents, and their main point of contact.",
-  "Answer using the provided context: recent run summaries from ALL of the user's agents (cross-agent questions are your job) and the user's long-term profile. When asked what you know about the user, answer from the profile data section.",
+  "Answer using the provided context: YOUR SUB-AGENTS (the live team roster), recent run summaries from ALL of the user's agents (cross-agent questions are your job), the current Daily Digest, and the user's long-term profile. When asked what you know about the user, answer from the profile data section.",
+  "When the user asks which agents they have, what a sub-agent does, or whether you know about an agent they just created: answer ONLY from YOUR SUB-AGENTS. If the roster is empty, say they have no sub-agents yet. Never invent, rename, or guess agents (including generic \"research\" / fintech teammates) that are not listed.",
+  "A newly created agent may have zero runs — that does not mean it does not exist. Prefer the roster over run summaries for team membership questions.",
   "You CAN edit the Daily Digest shown on the Freedom OS home when the user asks: set digestAction to set_content with the full body text they want there (rewrite, replace, shorten, or write whatever they request), or regenerate to rebuild the default briefing from recent agent runs. The server applies digestAction — do not claim you cannot change the digest. Output digest body only (no \"Status Update\" / \"Daily Digest\" heading). Set digestAction to null when they are not asking to change the digest.",
   "You cannot edit a sub-agent's schedule, instructions, email settings, or trigger its runs from this chat. When the user wants those changes for a specific agent, tell them to open that agent's own chat and ask the agent directly — that agent can apply those task changes itself. Do not claim the sub-agent is powerless, and do not imply that you will make the edit from here.",
   "Sub-agent schedules support: on-demand, daily, weekly on one or more weekdays, or monthly, with an optional UTC hour. There is no CEO-only advanced scheduler — do not invent one or bounce the user back and forth.",
@@ -134,16 +141,6 @@ function renderTranscript(messages) {
     })
     .filter(Boolean);
   return lines.length ? lines.join("\n") : "(no previous messages)";
-}
-
-function renderRunSummaries(runs) {
-  if (!runs.length) return "(no completed runs yet)";
-  return runs
-    .map((run) => {
-      const day = new Date(run.startedAt).toISOString().slice(0, 10);
-      return `[${day}] (${run.agentType}, run ${run.id}) ${run.summary || "(no summary)"}`;
-    })
-    .join("\n");
 }
 
 /**
@@ -229,12 +226,19 @@ export async function respondToChat({
     });
 
     // Sub-agent chats are scoped to that agent's own runs; the CEO chat reads
-    // summaries across every agent the user owns.
+    // the live team roster plus summaries across every agent the user owns.
+    const teamAgents = agentConfig ? [] : await loadTeamAgents(tx, userId);
     const runs = await tx.agentRun.findMany({
       where: { userId, ...(agentConfig ? { agentConfigId: agentConfig.id } : {}) },
       orderBy: { startedAt: "desc" },
       take: RUN_SUMMARY_LIMIT,
-      select: { id: true, agentType: true, summary: true, startedAt: true },
+      select: {
+        id: true,
+        agentConfigId: true,
+        agentType: true,
+        summary: true,
+        startedAt: true,
+      },
     });
 
     let relatedRun = null;
@@ -272,6 +276,7 @@ export async function respondToChat({
       conversationTitle,
       isFirstExchange,
       history,
+      teamAgents,
       runs,
       relatedRun,
       profileSource,
@@ -284,6 +289,7 @@ export async function respondToChat({
     conversationId: resolvedConversationId,
     conversationTitle: snippetTitle,
     isFirstExchange,
+    teamAgents,
     runs,
     relatedRun,
   } = context;
@@ -324,13 +330,15 @@ export async function respondToChat({
     sections.push(dataSection("CURRENT SETTINGS (this agent)", renderAgentSettings(agentConfig)));
     sections.push(dataSection("DEFINITION OF DONE (user-configured)", agentConfig.definitionOfDone));
   }
-  sections.push(
-    dataSection("USER PROFILE (long-term memory)", renderProfileForPrompt(profile)),
-    dataSection("RECENT RUN SUMMARIES", renderRunSummaries(runs))
-  );
-  // Reference documents are CEO-scoped context (uploaded during onboarding /
-  // from the profile page). Sub-agent chats stay on their own run scope.
+  sections.push(dataSection("USER PROFILE (long-term memory)", renderProfileForPrompt(profile)));
+  const runLabelAgents = agentConfig ? [agentConfig] : teamAgents;
+  // Reference documents + live team roster are CEO-scoped context. Sub-agent
+  // chats stay on their own run / settings scope.
   if (ceoConfig && !agentConfig) {
+    sections.push(dataSection("YOUR SUB-AGENTS (current team)", renderTeamRoster(teamAgents)));
+    sections.push(
+      dataSection("RECENT RUN SUMMARIES", renderNamedRunSummaries(runs, runLabelAgents))
+    );
     let currentDigest = null;
     if (ceoConfig.lastDigestCiphertext) {
       try {
@@ -347,6 +355,10 @@ export async function respondToChat({
     );
     const documents = await loadDocumentsForPrompt(userId);
     sections.push(dataSection("USER REFERENCE DOCUMENTS", documents));
+  } else {
+    sections.push(
+      dataSection("RECENT RUN SUMMARIES", renderNamedRunSummaries(runs, runLabelAgents))
+    );
   }
   if (relatedRun) {
     let relatedOutput;
