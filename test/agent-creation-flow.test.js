@@ -18,7 +18,10 @@ import {
   matchesCreationConfirm,
   matchesCreationSkip,
 } from "../server/agents/creationDraft.js";
-import { runCreationTurn } from "../server/agents/creationInterview.js";
+import {
+  runCreationTurn,
+  sanitizeExtractionForInterview,
+} from "../server/agents/creationInterview.js";
 import { setLlmImplementationForTesting } from "../server/agents/llm.js";
 
 function fullyInterviewedPatch(extra = {}) {
@@ -137,6 +140,98 @@ test("buildCreatePayloadFromDraft uses on-demand + Sonnet defaults for Slice 1",
   assert.match(payload.instructions, /Flags unusual/);
   assert.equal(payload.personalityNotes, "Direct");
   assert.equal(payload.boundaries, "Never recommend trades");
+});
+
+test("sanitizeExtractionForInterview keeps Aim turns to outcome only", () => {
+  const sanitized = sanitizeExtractionForInterview({
+    phase: "aim",
+    userSkipped: false,
+    object: {
+      draftPatch: {
+        agentType: "email",
+        name: "Inbox Agent",
+        definitionOfDone: "Inbox zero every morning with drafts in my voice.",
+        personalityNotes: "Warm\nTerse",
+        boundaries: "Never send externally",
+        actorsNotes: "Acts for the user",
+        workingFromNotes: "Past sent mail",
+        escalationNotes: "Flag urgent only",
+        coveredTopics: [...INTERVIEW_TOPICS],
+        guessedFields: ["tone", "boundaries"],
+        interviewComplete: true,
+      },
+      phase: "review",
+      topicsCoveredThisTurn: [...INTERVIEW_TOPICS],
+      userSkippedRemaining: true,
+      userConfirmed: true,
+      userCancelled: false,
+      userWantsEdits: false,
+    },
+  });
+  assert.deepEqual(sanitized.topicsCoveredThisTurn, ["outcome"]);
+  assert.equal(sanitized.phase, "interview");
+  assert.equal(sanitized.userSkippedRemaining, false);
+  assert.equal(sanitized.userConfirmed, false);
+  assert.equal(sanitized.draftPatch.definitionOfDone, "Inbox zero every morning with drafts in my voice.");
+  assert.equal(sanitized.draftPatch.agentType, "email");
+  assert.equal(sanitized.draftPatch.personalityNotes, undefined);
+  assert.equal(sanitized.draftPatch.boundaries, undefined);
+  assert.equal(sanitized.draftPatch.guessedFields, undefined);
+});
+
+test("runCreationTurn rejects over-extracted Aim answers and stays in interview", async () => {
+  const previousKey = process.env.ANTHROPIC_API_KEY;
+  process.env.ANTHROPIC_API_KEY = "test-key";
+  let generateObjectCalls = 0;
+  let generateTextCalls = 0;
+  setLlmImplementationForTesting({
+    generateText: async () => {
+      generateTextCalls += 1;
+      return { text: "Got it — who should this agent act on behalf of?" };
+    },
+    generateObject: async () => {
+      generateObjectCalls += 1;
+      return {
+        object: {
+          // Model tries to invent a full draft + skip to review after Aim.
+          draftPatch: fullyInterviewedPatch({
+            guessedFields: ["actors", "tone"],
+            interviewComplete: true,
+          }),
+          phase: "review",
+          topicsCoveredThisTurn: [...INTERVIEW_TOPICS],
+          userSkippedRemaining: true,
+          userConfirmed: false,
+          userCancelled: false,
+          userWantsEdits: false,
+        },
+        usage: { inputTokens: 10, outputTokens: 20 },
+      };
+    },
+  });
+
+  try {
+    const started = startCreationSession();
+    const aim = await runCreationTurn(
+      started.state,
+      "Every Monday I know what moved in cattle markets and why."
+    );
+    assert.equal(aim.state.phase, "interview");
+    assert.equal(aim.creationDraft.phase, "interview");
+    assert.equal(aim.creationDraft.readyForReview, false);
+    assert.equal(isInterviewComplete(aim.state.draft), false);
+    assert.deepEqual(aim.state.draft.coveredTopics, ["outcome"]);
+    assert.equal(aim.state.draft.personalityNotes, null);
+    assert.equal(aim.state.draft.boundaries, null);
+    assert.match(aim.reply, /act on behalf/i);
+    // Reply + extraction should run in parallel (both invoked).
+    assert.equal(generateTextCalls, 1);
+    assert.equal(generateObjectCalls, 1);
+  } finally {
+    setLlmImplementationForTesting(null);
+    if (previousKey == null) delete process.env.ANTHROPIC_API_KEY;
+    else process.env.ANTHROPIC_API_KEY = previousKey;
+  }
 });
 
 test("runCreationTurn stays in interview until topics are done, then confirms on review", async () => {

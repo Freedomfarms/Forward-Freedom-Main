@@ -182,7 +182,7 @@ before(async () => {
         isLlmConfigured: () => false,
         getWebSearchTools: () => ({}),
         generateAgentText: async () => ({
-          text: "Got it — here's what I've captured. Say looks good to create it.",
+          text: "Got it — who should this agent interact with or act on behalf of?",
           usage: null,
         }),
         generateAgentObject: async () => ({
@@ -1013,7 +1013,9 @@ test("CEO chat creation flow finishes interview (or skip) before draft review, t
     "Every week I have a clear spending observations report and nothing unusual slips by."
   );
   assert.equal(aim.statusCode, 200);
-  assert.match(aim.body.reply, /got it|captured|looks good|draft/i);
+  // After Aim, CEO keeps interviewing — not drafting yet.
+  assert.match(aim.body.reply, /got it|who should|act on behalf|interact/i);
+  assert.doesNotMatch(aim.body.reply, /\b(here's the draft|looks good to create)\b/i);
   assert.equal(aim.body.creationDraft.agentType, "finance");
   // Draft review stays closed until interview topics are done or user skips.
   assert.equal(aim.body.creationDraft.phase, "interview");
