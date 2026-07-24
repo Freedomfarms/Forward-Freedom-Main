@@ -28,9 +28,10 @@ import { CREATABLE_AGENT_TYPES } from "./registry.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Conversational "+ New Agent" interview (Slice 1):
-// Aim → full interview → draft review → confirm.
-// The draft UI stays closed until every interview topic is covered or the user
-// skips the rest. Clarifying follow-ups during interview are encouraged.
+// Aim → full interview (ask through + clarifiers) → draft review → confirm.
+// Draft UI stays closed until every interview topic is covered or the user
+// skips. Aim/interview turns run reply + extraction in parallel and hard-gate
+// over-extraction so the first answer cannot "pull a draft".
 // ─────────────────────────────────────────────────────────────────────────────
 
 const DRAFT_PATCH_SCHEMA = jsonSchema({
@@ -135,14 +136,12 @@ const CONVERSATION_SYSTEM_PROMPT = [
   "Sound like a normal, competent human colleague — warm, concise, never robotic. Never say \"soul file\", \"system prompt\", \"JSON\", or \"interview topics\".",
   "Flow (strict order):",
   "1) AIM — land a measurable outcome. If they give tasks/steps, push back once or twice: what does \"done\" look like specifically enough to know success vs failure?",
-  "2) INTERVIEW — walk through these questions before you ever present a draft. One main question at a time is fine; ask clarifying follow-ups when an answer is vague. Accept answers out of order / bundled. Topics:",
-  "   - Who does this agent need to interact with or act on behalf of?",
-  "   - What's explicitly off-limits (money, sending things externally, deleting data, etc.)?",
-  "   - Is there existing history to learn from (past emails, a doc, past decisions)? If none, that's fine — note it.",
-  "   - How should it sound/behave — formal, casual, terse, warm?",
-  "   - Who does it flag problems to, and how urgent before it interrupts?",
-  "   Do NOT open or narrate a full draft during interview. You may briefly acknowledge what you heard (\"got it\"), then ask the next unanswered topic — or a short clarifier on the current one.",
-  "   If they say skip / that's enough / draft it / move on: acknowledge, fill reasonable guesses for anything unanswered, and THEN present the draft review.",
+  "2) INTERVIEW — match their energy:",
+  "   - If they are engaged and answering: ask through ALL of these topics (plus short clarifiers when an answer is vague). Do not rush to a draft. One main question at a time. Accept answers out of order / bundled.",
+  "     Topics: who it acts with/for; what's off-limits; any history to learn from; tone/behavior; who to escalate to and when.",
+  "     Do NOT open, narrate, or \"pull together\" a full draft while they are still answering — even if Aim was detailed. Acknowledge briefly, then ask the next unanswered topic or a short clarifier.",
+  "   - If they stall, refuse, give idk/whatever/you-decide, or after ~1–2 answers say skip / that's enough / draft it / move on: do NOT keep pressing. Acknowledge, fill reasonable guesses for anything unanswered, and go straight to the draft review.",
+  "   - If they seem stuck but haven't asked to skip, you may once offer: we can draft from what we have whenever they want (say \"skip\" or \"draft it\").",
   "3) REVIEW — only after every interview topic is covered or they skipped the rest. Present a short human draft: name & role, personality, will-never boundaries, working-from notes, outcome. Ask if it looks good or what to edit. Never silently create.",
   "Do NOT ask about schedule, model tier, or autonomy/trust yet. Assume on-demand + balanced model if asked.",
   "Infer agent type as one of: finance, research, reminders, email.",
@@ -153,17 +152,90 @@ const CONVERSATION_SYSTEM_PROMPT = [
 
 const EXTRACTION_SYSTEM_PROMPT = [
   "You extract a structured agent-creation draft patch from a CEO Agent intake turn.",
-  "Return only fields that should change based on the latest user message and the assistant reply.",
+  "Return only fields the user EXPLICITLY answered in the latest user message. Do not invent personality, boundaries, actors, history, or escalation from thin implication.",
+  "During Aim / early interview: usually only outcome (definitionOfDone) + maybe agentType. Never fill the whole draft from the first answer.",
   "definitionOfDone must be an outcome/result — prefer the user's words when measurable.",
   "Track interview topics in topicsCoveredThisTurn / draftPatch.coveredTopics using ONLY these ids: " +
     INTERVIEW_TOPICS.join(", ") +
     ".",
   "Mapping: outcome←definitionOfDone; actors←actorsNotes; boundaries←boundaries; history←workingFromNotes (including \"none\"); tone←personalityNotes; escalation←escalationNotes.",
   "Set phase to review ONLY when the interview is finished (all topics covered) OR userSkippedRemaining is true. Never jump to review mid-interview just because some fields exist.",
-  "userSkippedRemaining is true when they want to skip remaining questions and see the draft.",
+  "Do NOT set guessedFields or invent answers unless userSkippedRemaining is true.",
+  "userSkippedRemaining is true when they want to skip remaining questions and see the draft (including short idk / whatever / you decide / draft it).",
   "userConfirmed is true ONLY for clear approval to create AFTER a review. userCancelled for discard. userWantsEdits when they want draft changes.",
   `agentType must be one of: ${CREATABLE_AGENT_TYPES.join(", ")} (or null if still unknown).`,
 ].join("\n");
+
+/** Fields the extractor may fill for each interview topic. */
+const TOPIC_FIELDS = Object.freeze({
+  outcome: ["definitionOfDone", "instructions", "roleLine", "dataFocus"],
+  actors: ["actorsNotes"],
+  boundaries: ["boundaries"],
+  history: ["workingFromNotes"],
+  tone: ["personalityNotes"],
+  escalation: ["escalationNotes"],
+});
+
+/**
+ * Keep interview turns from "pulling a full draft": after Aim, only outcome may
+ * land; mid-interview only fields for topics the user actually answered this
+ * turn. Guesses / skip / review promotion stay on the deterministic skip path.
+ */
+export function sanitizeExtractionForInterview({ phase, userSkipped, object }) {
+  if (!object || typeof object !== "object") return object;
+  if (userSkipped || phase === "review") return object;
+
+  const rawPatch = object.draftPatch && typeof object.draftPatch === "object" ? object.draftPatch : {};
+  let claimedTopics = [
+    ...(Array.isArray(object.topicsCoveredThisTurn) ? object.topicsCoveredThisTurn : []),
+    ...(Array.isArray(rawPatch.coveredTopics) ? rawPatch.coveredTopics : []),
+  ]
+    .map((item) => String(item || "").trim().toLowerCase())
+    .filter((item) => INTERVIEW_TOPICS.includes(item));
+
+  // Aim answer → outcome only. Even a long first message must not auto-complete
+  // the interview or open review; the CEO still asks the other questions.
+  if (phase === "aim") {
+    claimedTopics =
+      claimedTopics.includes("outcome") || rawPatch.definitionOfDone ? ["outcome"] : [];
+  } else {
+    claimedTopics = [...new Set(claimedTopics)];
+  }
+
+  const allowedFields = new Set();
+  for (const topic of claimedTopics) {
+    for (const field of TOPIC_FIELDS[topic] || []) allowedFields.add(field);
+  }
+  if (claimedTopics.includes("outcome") || rawPatch.definitionOfDone) {
+    allowedFields.add("definitionOfDone");
+    allowedFields.add("instructions");
+    allowedFields.add("roleLine");
+    allowedFields.add("dataFocus");
+    allowedFields.add("agentType");
+    allowedFields.add("name");
+  }
+
+  const draftPatch = {};
+  for (const key of Object.keys(rawPatch)) {
+    if (key === "coveredTopics" || key === "guessedFields" || key === "interviewComplete") {
+      continue;
+    }
+    if (allowedFields.has(key) && rawPatch[key] != null) {
+      draftPatch[key] = rawPatch[key];
+    }
+  }
+  if (claimedTopics.length) draftPatch.coveredTopics = claimedTopics;
+
+  return {
+    ...object,
+    draftPatch,
+    topicsCoveredThisTurn: claimedTopics,
+    // Never trust the model to skip ahead or open review mid-interview.
+    phase: "interview",
+    userSkippedRemaining: false,
+    userConfirmed: false,
+  };
+}
 
 function renderDraftForPrompt(draft) {
   return JSON.stringify(
@@ -302,6 +374,8 @@ export async function runCreationTurn(state, message, { recentMessages = [] } = 
     phase = "interview"; // model will present review this turn
   }
 
+  const interviewStillOpen =
+    !userSkipped && !isInterviewComplete(baseDraft) && phase !== "review";
   const conversationPrompt = [
     dataSection("CURRENT PHASE", phase),
     dataSection(
@@ -324,39 +398,59 @@ export async function runCreationTurn(state, message, { recentMessages = [] } = 
     dataSection("RECENT TRANSCRIPT", renderTranscript(recentMessages)),
     dataSection("USER MESSAGE", text),
     userSkipped
-      ? "The user wants to skip remaining questions. Present the draft review now from what you have (mention any guesses briefly)."
+      ? "The user wants to stop interviewing and see a draft (skip / reluctant / you-decide). Present the draft review now from what you have (mention any guesses briefly). Do not ask another question."
       : isInterviewComplete(baseDraft) && phase !== "review"
         ? "Interview topics are covered. Present the draft review now and ask if it looks good or what to edit."
-        : "Reply as the CEO Agent. Stay in interview until topics are done (or they skip). Clarify when vague; ask the next unanswered topic. Do not present the full draft yet.",
+        : remainingInterviewTopics(baseDraft).length <= 3 &&
+            (baseDraft.coveredTopics || []).length >= 2
+          ? "Reply as the CEO Agent. They are still in interview and have been answering — keep going through remaining topics (one question). Do NOT draft yet. Only if they sound stuck, briefly note they can say \"draft it\" to skip ahead."
+          : "Reply as the CEO Agent. They are engaged in interview — ask through the remaining topics before drafting. Acknowledge briefly, clarify if vague, then ask the next unanswered topic (one question). Do NOT present a draft yet.",
   ].join("\n\n");
 
-  const { text: replyText } = await generateAgentText({
+  // Run reply + extraction together. Extraction reads the user message (and
+  // current notes), not the assistant reply — so interview turns are not stuck
+  // waiting on a second sequential "pull the draft" call after Sonnet finishes.
+  const conversationPromise = generateAgentText({
     model: CEO_AGENT_MODEL,
     system: CONVERSATION_SYSTEM_PROMPT,
     prompt: conversationPrompt,
-    maxOutputTokens: 700,
+    maxOutputTokens: interviewStillOpen ? 320 : 700,
   });
 
-  const reply =
-    String(replyText || "").trim() ||
-    (userSkipped
-      ? "Got it — I'll draft from what we have."
-      : "Got it — tell me a bit more about the outcome you want.");
-
-  const { object } = await generateAgentObject({
+  const extractionPromise = generateAgentObject({
     model: PROFILE_EXTRACTION_MODEL,
     system: EXTRACTION_SYSTEM_PROMPT,
     prompt: [
       dataSection("PHASE BEFORE TURN", phase),
       dataSection("DRAFT BEFORE TURN", renderDraftForPrompt(baseDraft)),
       dataSection("USER MESSAGE", text),
-      dataSection("ASSISTANT REPLY", reply),
       dataSection("USER ASKED TO SKIP REMAINING", userSkipped ? "yes" : "no"),
-      "Return the draft patch and phase flags for this turn.",
+      interviewStillOpen
+        ? "Interview still in progress. Extract ONLY fields/topics the user explicitly answered this turn. Do not invent the rest of the draft. Do not set phase to review."
+        : "Return the draft patch and phase flags for this turn.",
     ].join("\n\n"),
     schema: DRAFT_PATCH_SCHEMA,
-    maxOutputTokens: 900,
+    maxOutputTokens: interviewStillOpen ? 400 : 900,
   });
+
+  const [{ text: replyText }, { object: rawObject }] = await Promise.all([
+    conversationPromise,
+    extractionPromise,
+  ]);
+
+  const object = sanitizeExtractionForInterview({
+    phase,
+    userSkipped,
+    object: rawObject,
+  });
+
+  const reply =
+    String(replyText || "").trim() ||
+    (userSkipped
+      ? "Got it — I'll draft from what we have."
+      : interviewStillOpen
+        ? "Got it — who should this agent interact with or act on behalf of?"
+        : "Got it — tell me a bit more about the outcome you want.");
 
   if (object?.userCancelled) {
     const next = {
@@ -384,7 +478,10 @@ export async function runCreationTurn(state, message, { recentMessages = [] } = 
     ],
   });
 
-  if (userSkipped || object?.userSkippedRemaining) {
+  // Only the deterministic skip path may fill guesses and open review early.
+  // Do not trust the extractor's userSkippedRemaining alone — that was causing
+  // "pull the draft" right after the first Aim answer.
+  if (userSkipped) {
     draft = completeInterviewWithGuesses(draft);
   }
 
@@ -392,14 +489,37 @@ export async function runCreationTurn(state, message, { recentMessages = [] } = 
     draft = applyDraftPatch(draft, { interviewComplete: false });
   }
 
+  // Aim turn can only land the outcome — never a full draft / review.
+  // (Extractor overfill used to mark every topic covered and "pull the draft".)
+  if (phase === "aim" && !userSkipped) {
+    draft = applyDraftPatch(emptyCreationDraft(), {
+      agentType: draft.agentType,
+      name: draft.name,
+      definitionOfDone: draft.definitionOfDone,
+      instructions: draft.instructions,
+      roleLine: draft.roleLine,
+      dataFocus: draft.dataFocus,
+      coveredTopics: draft.definitionOfDone ? ["outcome"] : [],
+      interviewComplete: false,
+    });
+  }
+
   let nextPhase = normalizeCreationPhase(object?.phase || phase, draft);
   // Hard gate: never enter review until interview is complete.
   if (nextPhase === "review" && !isInterviewComplete(draft)) {
     nextPhase = draft.definitionOfDone ? "interview" : "aim";
   }
-  // Promote to review once interview is complete (skip or all topics).
-  if (isInterviewComplete(draft) && isDraftReadyForReview(draft) && !object?.userWantsEdits) {
+  // Promote to review once interview is complete (skip or all topics asked through).
+  if (
+    phase !== "aim" &&
+    isInterviewComplete(draft) &&
+    isDraftReadyForReview(draft) &&
+    !object?.userWantsEdits
+  ) {
     nextPhase = "review";
+  }
+  if (phase === "aim" && !userSkipped) {
+    nextPhase = draft.definitionOfDone ? "interview" : "aim";
   }
 
   const nextState = {
