@@ -30,9 +30,68 @@ import { CREATABLE_AGENT_TYPES } from "./registry.js";
 // Conversational "+ New Agent" interview (Slice 1):
 // Aim → full interview (ask through + clarifiers) → draft review → confirm.
 // Draft UI stays closed until every interview topic is covered or the user
-// skips. Aim/interview turns run reply + extraction in parallel and hard-gate
-// over-extraction so the first answer cannot "pull a draft".
+// skips. Interview turns use ONE fast Haiku call (reply + light notes) so
+// back-and-forth stays snappy; the heavy Sonnet draft path runs only on
+// skip / review.
 // ─────────────────────────────────────────────────────────────────────────────
+
+/** Fast interview turn: short reply + only fields answered this turn. */
+const INTERVIEW_TURN_SCHEMA = jsonSchema({
+  type: "object",
+  properties: {
+    reply: {
+      type: "string",
+      description:
+        "Short CEO Agent reply: brief acknowledge + one next question or clarifier. Never present a full draft.",
+    },
+    draftPatch: {
+      type: "object",
+      description: "Only fields the user explicitly answered this turn.",
+      properties: {
+        agentType: {
+          type: ["string", "null"],
+          description: `One of: ${CREATABLE_AGENT_TYPES.join(", ")}. Infer from the outcome when clear.`,
+        },
+        name: { type: ["string", "null"] },
+        roleLine: { type: ["string", "null"] },
+        instructions: { type: ["string", "null"] },
+        definitionOfDone: { type: ["string", "null"] },
+        personalityNotes: { type: ["string", "null"] },
+        boundaries: { type: ["string", "null"] },
+        workingFromNotes: { type: ["string", "null"] },
+        dataFocus: { type: ["string", "null"] },
+        actorsNotes: { type: ["string", "null"] },
+        escalationNotes: { type: ["string", "null"] },
+        coveredTopics: {
+          type: "array",
+          items: { type: "string", enum: [...INTERVIEW_TOPICS] },
+        },
+      },
+      additionalProperties: false,
+    },
+    topicsCoveredThisTurn: {
+      type: "array",
+      items: { type: "string", enum: [...INTERVIEW_TOPICS] },
+    },
+    userCancelled: {
+      type: "boolean",
+      description: "True when the user wants to discard the draft.",
+    },
+  },
+  required: ["reply", "draftPatch", "topicsCoveredThisTurn", "userCancelled"],
+  additionalProperties: false,
+});
+
+const INTERVIEW_TURN_SYSTEM_PROMPT = [
+  "You are the user's CEO Agent inside Freedom OS, helping create ONE scoped worker agent.",
+  "This is a FAST interview turn — reply like a natural chat (1–3 short sentences). Never present or narrate a full draft.",
+  "Acknowledge briefly, then ask ONE next unanswered topic or a short clarifier if their answer was vague.",
+  "Topics still to cover when remaining: who it acts with/for; what's off-limits; any history to learn from; tone/behavior; who to escalate to and when.",
+  "In draftPatch / topicsCoveredThisTurn, record ONLY what they explicitly answered this turn. Aim answers → outcome (+ agentType if clear). Do not invent the rest of the draft.",
+  "Never say \"soul file\", \"system prompt\", \"JSON\", or \"interview topics\".",
+  "Safety rules:",
+  `- ${PROMPT_SAFETY_RULES}`,
+].join("\n");
 
 const DRAFT_PATCH_SCHEMA = jsonSchema({
   type: "object",
@@ -407,50 +466,70 @@ export async function runCreationTurn(state, message, { recentMessages = [] } = 
           : "Reply as the CEO Agent. They are engaged in interview — ask through the remaining topics before drafting. Acknowledge briefly, clarify if vague, then ask the next unanswered topic (one question). Do NOT present a draft yet.",
   ].join("\n\n");
 
-  // Run reply + extraction together. Extraction reads the user message (and
-  // current notes), not the assistant reply — so interview turns are not stuck
-  // waiting on a second sequential "pull the draft" call after Sonnet finishes.
-  const conversationPromise = generateAgentText({
-    model: CEO_AGENT_MODEL,
-    system: CONVERSATION_SYSTEM_PROMPT,
-    prompt: conversationPrompt,
-    maxOutputTokens: interviewStillOpen ? 320 : 700,
-  });
+  // Interview turns: ONE fast Haiku call (reply + light notes). No Sonnet and
+  // no second "pull the draft" extraction — that was making Q&A feel like a
+  // 60s draft build. Heavy Sonnet + extract only when presenting review.
+  let reply;
+  let object;
 
-  const extractionPromise = generateAgentObject({
-    model: PROFILE_EXTRACTION_MODEL,
-    system: EXTRACTION_SYSTEM_PROMPT,
-    prompt: [
-      dataSection("PHASE BEFORE TURN", phase),
-      dataSection("DRAFT BEFORE TURN", renderDraftForPrompt(baseDraft)),
-      dataSection("USER MESSAGE", text),
-      dataSection("USER ASKED TO SKIP REMAINING", userSkipped ? "yes" : "no"),
-      interviewStillOpen
-        ? "Interview still in progress. Extract ONLY fields/topics the user explicitly answered this turn. Do not invent the rest of the draft. Do not set phase to review."
-        : "Return the draft patch and phase flags for this turn.",
-    ].join("\n\n"),
-    schema: DRAFT_PATCH_SCHEMA,
-    maxOutputTokens: interviewStillOpen ? 400 : 900,
-  });
-
-  const [{ text: replyText }, { object: rawObject }] = await Promise.all([
-    conversationPromise,
-    extractionPromise,
-  ]);
-
-  const object = sanitizeExtractionForInterview({
-    phase,
-    userSkipped,
-    object: rawObject,
-  });
-
-  const reply =
-    String(replyText || "").trim() ||
-    (userSkipped
-      ? "Got it — I'll draft from what we have."
-      : interviewStillOpen
-        ? "Got it — who should this agent interact with or act on behalf of?"
+  if (interviewStillOpen) {
+    const { object: interviewObject } = await generateAgentObject({
+      model: PROFILE_EXTRACTION_MODEL,
+      system: INTERVIEW_TURN_SYSTEM_PROMPT,
+      prompt: conversationPrompt,
+      schema: INTERVIEW_TURN_SCHEMA,
+      maxOutputTokens: 280,
+    });
+    const sanitized = sanitizeExtractionForInterview({
+      phase,
+      userSkipped: false,
+      object: {
+        ...interviewObject,
+        phase: "interview",
+        userSkippedRemaining: false,
+        userConfirmed: false,
+        userWantsEdits: false,
+      },
+    });
+    object = sanitized;
+    reply =
+      String(interviewObject?.reply || "").trim() ||
+      "Got it — who should this agent interact with or act on behalf of?";
+  } else {
+    const conversationPromise = generateAgentText({
+      model: CEO_AGENT_MODEL,
+      system: CONVERSATION_SYSTEM_PROMPT,
+      prompt: conversationPrompt,
+      maxOutputTokens: 700,
+    });
+    const extractionPromise = generateAgentObject({
+      model: PROFILE_EXTRACTION_MODEL,
+      system: EXTRACTION_SYSTEM_PROMPT,
+      prompt: [
+        dataSection("PHASE BEFORE TURN", phase),
+        dataSection("DRAFT BEFORE TURN", renderDraftForPrompt(baseDraft)),
+        dataSection("USER MESSAGE", text),
+        dataSection("USER ASKED TO SKIP REMAINING", userSkipped ? "yes" : "no"),
+        "Return the draft patch and phase flags for this turn.",
+      ].join("\n\n"),
+      schema: DRAFT_PATCH_SCHEMA,
+      maxOutputTokens: 900,
+    });
+    const [{ text: replyText }, { object: rawObject }] = await Promise.all([
+      conversationPromise,
+      extractionPromise,
+    ]);
+    object = sanitizeExtractionForInterview({
+      phase,
+      userSkipped,
+      object: rawObject,
+    });
+    reply =
+      String(replyText || "").trim() ||
+      (userSkipped
+        ? "Got it — I'll draft from what we have."
         : "Got it — tell me a bit more about the outcome you want.");
+  }
 
   if (object?.userCancelled) {
     const next = {
@@ -492,14 +571,15 @@ export async function runCreationTurn(state, message, { recentMessages = [] } = 
   // Aim turn can only land the outcome — never a full draft / review.
   // (Extractor overfill used to mark every topic covered and "pull the draft".)
   if (phase === "aim" && !userSkipped) {
+    const outcome = draft.definitionOfDone || text.slice(0, 500);
     draft = applyDraftPatch(emptyCreationDraft(), {
       agentType: draft.agentType,
       name: draft.name,
-      definitionOfDone: draft.definitionOfDone,
+      definitionOfDone: outcome || null,
       instructions: draft.instructions,
       roleLine: draft.roleLine,
       dataFocus: draft.dataFocus,
-      coveredTopics: draft.definitionOfDone ? ["outcome"] : [],
+      coveredTopics: outcome ? ["outcome"] : [],
       interviewComplete: false,
     });
   }
