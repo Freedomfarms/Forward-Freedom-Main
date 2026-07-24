@@ -199,8 +199,8 @@ export function CeoSettingsPanel({ ceoAgent, user, onBack, onSaved, onOpenProfil
       <div style={{ display: "grid", gap: 10 }}>
         <div style={fosStyles.sectionLabel}>CEO Agent model</div>
         <p style={{ margin: 0, color: "#9fb0c9", fontSize: 12, lineHeight: 1.55 }}>
-          Used for CEO chat, digests, and Read your Profile. Background jobs stay on a fast
-          model automatically.
+          Used for CEO chat (with read-only live web search), digests, and Read your Profile.
+          Background jobs stay on a fast model automatically.
         </p>
         <ModelPicker value={model} onChange={setModel} name="ceo-model" />
       </div>
