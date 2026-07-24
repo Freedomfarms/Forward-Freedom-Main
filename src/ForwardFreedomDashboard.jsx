@@ -113,7 +113,7 @@ import {
   FreedomOsSignedOutCard,
 } from "./components/freedomOs/FreedomOsHome.jsx";
 import { FreedomOsDeck } from "./components/freedomOs/FreedomOsDeck.jsx";
-import { FreedomOsModuleHub } from "./components/freedomOs/FreedomOsModuleHub.jsx";
+import { FreedomOsLanding } from "./components/FreedomOsLanding.jsx";
 import { FREEDOM_OS_MODULE_IDS } from "./components/freedomOs/freedomOsModules.js";
 import { AdminUsagePanel } from "./components/freedomOs/AdminUsagePanel.jsx";
 import { useViewportUIScale } from "./utils/useViewportUIScale.js";
@@ -2333,31 +2333,45 @@ function ForwardFreedomDashboard({
     setIsMobileNavOpen(false);
   };
 
-  // Freedom OS is the platform home: authenticated sessions land on the module
-  // hub (CEO Agents / Freedom Financial). Demo and signed-out sessions keep the
-  // in-shell signed-out card below.
+  // Freedom OS home is the same full landing composition as signed-out, with
+  // Sign Out (and no Create Access). Choosing a module enters that product.
+  // Demo and signed-out sessions keep the in-shell signed-out card below.
   if (activeTab === APP_TABS.FREEDOM_OS && freedomOsAuthUser) {
     const inCeoAgents = freedomOsModule === FREEDOM_OS_MODULE_IDS.CEO_AGENTS;
+
+    if (!inCeoAgents) {
+      return (
+        <ViewErrorBoundary key="freedom-os-home" viewName={APP_TABS.FREEDOM_OS}>
+          <FreedomOsLanding
+            signedIn
+            onSignOut={() => void sessionControls?.onSignOut?.()}
+            signOutBusy={Boolean(sessionControls?.isBusy)}
+            onExploreCeoAgents={() =>
+              handleSelectFreedomOsModule(FREEDOM_OS_MODULE_IDS.CEO_AGENTS)
+            }
+            onExploreFreedomFinancial={() =>
+              handleSelectFreedomOsModule(FREEDOM_OS_MODULE_IDS.FREEDOM_FINANCIAL)
+            }
+            isAdmin={isPlatformAdmin}
+            onOpenAdminUsage={() => setActiveTab(APP_TABS.ADMIN_USAGE)}
+          />
+        </ViewErrorBoundary>
+      );
+    }
+
     return (
       <FreedomOsDeck
         sessionControls={sessionControls}
         isAdmin={isPlatformAdmin}
-        moduleLabel={inCeoAgents ? "Module 01 · CEO Agents" : "Select a module"}
-        onBackToModules={inCeoAgents ? () => setFreedomOsModule(null) : null}
+        moduleLabel="Module 01 · CEO Agents"
+        onBackToModules={() => setFreedomOsModule(null)}
         onOpenAdminUsage={() => setActiveTab(APP_TABS.ADMIN_USAGE)}
       >
-        <ViewErrorBoundary
-          key={inCeoAgents ? "ceo-agents" : "module-hub"}
-          viewName={APP_TABS.FREEDOM_OS}
-        >
-          {inCeoAgents ? (
-            <FreedomOsHome
-              user={freedomOsAuthUser}
-              onOpenFinanceTool={() => setActiveTab(APP_TABS.DASHBOARD)}
-            />
-          ) : (
-            <FreedomOsModuleHub onSelectModule={handleSelectFreedomOsModule} />
-          )}
+        <ViewErrorBoundary key="ceo-agents" viewName={APP_TABS.FREEDOM_OS}>
+          <FreedomOsHome
+            user={freedomOsAuthUser}
+            onOpenFinanceTool={() => setActiveTab(APP_TABS.DASHBOARD)}
+          />
         </ViewErrorBoundary>
       </FreedomOsDeck>
     );
