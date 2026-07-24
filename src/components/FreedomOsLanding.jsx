@@ -5,7 +5,7 @@ import { LegalModal } from "./LegalDocuments.jsx";
 // account creation live here; Module 01 (CEO Agents) and Module 02 (Freedom
 // Financial) are the two portals into the product.
 
-const TAGLINE = "Your autonomous agent operating system. One account. Every mission.";
+const TAGLINE = "Your autonomous operating system for life, work, and wealth.";
 
 const BOOT_LINES = [
   { prefix: "sys", text: "freedom_os kernel loaded", tone: "ok" },
