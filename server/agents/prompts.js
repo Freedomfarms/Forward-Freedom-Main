@@ -36,3 +36,15 @@ export const PROMPT_SAFETY_RULES = [
   "You are financially read-only: never move money, trade, make payments, contact third parties, or give buy/sell/investment directives.",
   "Never include merchant names, account names or numbers, institution names, or any account identifiers in your output.",
 ].join("\n- ");
+
+// Chat bubbles render plain text (no markdown). Models still emit **bold**
+// out of habit — strip common emphasis markers so users never see asterisks.
+export function stripChatMarkdown(text) {
+  return String(text ?? "")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/__([^_]+)__/g, "$1");
+}
+
+/** Shared formatting rule for user-facing chat replies. */
+export const CHAT_PLAIN_TEXT_RULE =
+  'Write plain text only — never use markdown (no **bold**, no __underscores__, no # headings, no bullet markers like "- " for decoration). The chat UI shows your words literally.';

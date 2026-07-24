@@ -252,6 +252,30 @@ test("parseInterviewTurnText strips NOTES_JSON from the user-facing reply", () =
   assert.deepEqual(broken.object.draftPatch, {});
 });
 
+test("runCreationTurn strips markdown bold markers from the user-facing reply", async () => {
+  const previousKey = process.env.ANTHROPIC_API_KEY;
+  process.env.ANTHROPIC_API_KEY = "test-key";
+  setLlmImplementationForTesting({
+    generateText: async () => ({
+      text:
+        "Got it — switching to a **federal reserve report**. **Who should receive it?**\n" +
+        'NOTES_JSON:{"topicsCoveredThisTurn":["outcome"],"draftPatch":{"agentType":"research","definitionOfDone":"Fed rate brief"},"userCancelled":false}',
+    }),
+    generateObject: async () => ({ object: {}, usage: null }),
+  });
+  try {
+    const started = startCreationSession();
+    const aim = await runCreationTurn(started.state, "federal reserve report to my email");
+    assert.doesNotMatch(aim.reply, /\*\*/);
+    assert.match(aim.reply, /federal reserve report/i);
+    assert.match(aim.reply, /Who should receive it/i);
+  } finally {
+    setLlmImplementationForTesting(null);
+    if (previousKey == null) delete process.env.ANTHROPIC_API_KEY;
+    else process.env.ANTHROPIC_API_KEY = previousKey;
+  }
+});
+
 test("runCreationTurn rejects over-extracted Aim answers and stays in interview", async () => {
   const previousKey = process.env.ANTHROPIC_API_KEY;
   process.env.ANTHROPIC_API_KEY = "test-key";

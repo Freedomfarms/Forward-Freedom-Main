@@ -35,6 +35,13 @@ import { describeAgentApiError, fosStyles, getAgentTypeMeta } from "./freedomOsS
 //       "agent"         → sub-agent conversations + chat (requires agentId)
 // layout: "embedded" (default) | "workspace" (ChatGPT-style full pane)
 
+/** Chat bubbles are plain text — strip leftover model markdown emphasis. */
+function displayChatText(text) {
+  return String(text ?? "")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/__([^_]+)__/g, "$1");
+}
+
 let localMessageId = 0;
 function nextLocalId(prefix) {
   localMessageId += 1;
@@ -693,7 +700,7 @@ export function AgentChat({
                 whiteSpace: "pre-wrap",
               }}
             >
-              {message.text}
+              {displayChatText(message.text)}
             </div>
             {message.agentCreated ? <AgentCreatedCard agentCreated={message.agentCreated} /> : null}
           </div>
