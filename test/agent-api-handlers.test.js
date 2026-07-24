@@ -181,15 +181,31 @@ before(async () => {
         // still uses the generateAgent* stubs below directly.
         isLlmConfigured: () => false,
         getWebSearchTools: () => ({}),
-        generateAgentText: async () => ({
-          text: "Got it — who should this agent interact with or act on behalf of?",
-          usage: null,
-        }),
+        // Interview turns are plain Haiku text + trailing NOTES_JSON (no structured
+        // grammar). Skip/review uses this text for the draft presentation and
+        // generateAgentObject for the extract.
+        generateAgentText: async ({ prompt } = {}) => {
+          // Skip/review turns ask the model to present the draft; interview turns
+          // explicitly say not to. Match the instruction line, not the word "skip"
+          // buried in JSON keys like userAskedToSkipRemaining.
+          const askingToDraft =
+            typeof prompt === "string" &&
+            /Present the draft review now/i.test(prompt);
+          if (askingToDraft) {
+            return {
+              text: "Here's a draft from what we have. Look good to create?",
+              usage: null,
+            };
+          }
+          return {
+            text:
+              "Got it — who should this agent interact with or act on behalf of?\n" +
+              'NOTES_JSON:{"topicsCoveredThisTurn":["outcome"],"draftPatch":{"agentType":"finance","definitionOfDone":"A weekly spending observations report is produced","coveredTopics":["outcome"]},"userCancelled":false}',
+            usage: null,
+          };
+        },
         generateAgentObject: async () => ({
           object: {
-            // Fast interview turns read `reply` from this object; skip/review
-            // still uses generateAgentText. Extra keys are ignored by others.
-            reply: "Got it — who should this agent interact with or act on behalf of?",
             profileOps: [],
             draftPatch: {
               agentType: "finance",
