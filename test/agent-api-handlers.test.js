@@ -187,9 +187,9 @@ before(async () => {
         }),
         generateAgentObject: async () => ({
           object: {
-            // Shape used by conversational "+ New Agent" intake. Harmless for
-            // other callers that ignore unknown keys.
-            reply: "mock",
+            // Fast interview turns read `reply` from this object; skip/review
+            // still uses generateAgentText. Extra keys are ignored by others.
+            reply: "Got it — who should this agent interact with or act on behalf of?",
             profileOps: [],
             draftPatch: {
               agentType: "finance",

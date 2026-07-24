@@ -245,23 +245,20 @@ test("runCreationTurn rejects over-extracted Aim answers and stays in interview"
   setLlmImplementationForTesting({
     generateText: async () => {
       generateTextCalls += 1;
-      return { text: "Got it — who should this agent act on behalf of?" };
+      return { text: "should not be used on interview turns" };
     },
     generateObject: async () => {
       generateObjectCalls += 1;
       return {
         object: {
-          // Model tries to invent a full draft + skip to review after Aim.
+          // Fast interview schema: reply + patch. Model tries to overfill.
+          reply: "Got it — who should this agent act on behalf of?",
           draftPatch: fullyInterviewedPatch({
             guessedFields: ["actors", "tone"],
             interviewComplete: true,
           }),
-          phase: "review",
           topicsCoveredThisTurn: [...INTERVIEW_TOPICS],
-          userSkippedRemaining: true,
-          userConfirmed: false,
           userCancelled: false,
-          userWantsEdits: false,
         },
         usage: { inputTokens: 10, outputTokens: 20 },
       };
@@ -282,8 +279,8 @@ test("runCreationTurn rejects over-extracted Aim answers and stays in interview"
     assert.equal(aim.state.draft.personalityNotes, null);
     assert.equal(aim.state.draft.boundaries, null);
     assert.match(aim.reply, /act on behalf/i);
-    // Reply + extraction should run in parallel (both invoked).
-    assert.equal(generateTextCalls, 1);
+    // Interview turns use one Haiku object call — no Sonnet text call.
+    assert.equal(generateTextCalls, 0);
     assert.equal(generateObjectCalls, 1);
   } finally {
     setLlmImplementationForTesting(null);
@@ -298,26 +295,21 @@ test("runCreationTurn stays in interview until topics are done, then confirms on
   let mode = "partial";
   setLlmImplementationForTesting({
     generateText: async () => {
-      if (mode === "partial") {
-        return { text: "Got it — who should this agent act on behalf of?" };
-      }
+      // Used only on skip/review (draft presentation).
       return { text: "Here's the draft. Say looks good if you want me to create it." };
     },
     generateObject: async () => {
       if (mode === "partial") {
         return {
           object: {
+            reply: "Got it — who should this agent act on behalf of?",
             draftPatch: {
               agentType: "research",
               definitionOfDone: "Every Monday I know what moved in cattle markets and why.",
               coveredTopics: ["outcome"],
             },
-            phase: "review", // model tries to jump — server must block
             topicsCoveredThisTurn: ["outcome"],
-            userSkippedRemaining: false,
-            userConfirmed: false,
             userCancelled: false,
-            userWantsEdits: false,
           },
           usage: { inputTokens: 10, outputTokens: 20 },
         };
