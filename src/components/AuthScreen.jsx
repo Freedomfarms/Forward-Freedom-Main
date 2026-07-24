@@ -345,7 +345,7 @@ export function AuthScreen({ initialMode = "login", initialForm = null, onBackHo
                 type="email"
                 value={form.email}
                 onChange={(event) => updateForm("email", event.target.value)}
-                placeholder="you@forwardfreedomfinancial.com"
+                placeholder="you@example.com"
                 autoComplete="email"
                 required
                 aria-invalid={hasError && !form.email.trim() ? "true" : undefined}

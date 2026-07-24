@@ -137,5 +137,5 @@ app.get("/api/admin/usage", adminUsageHandler);
 app.get("/api/cron/agent-dispatch", cronAgentDispatchHandler);
 
 app.listen(PORT, () => {
-  console.log(`Forward Freedom API server listening on http://localhost:${PORT}`);
+  console.log(`Freedom OS API server listening on http://localhost:${PORT}`);
 });

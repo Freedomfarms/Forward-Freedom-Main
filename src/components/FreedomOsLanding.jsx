@@ -471,7 +471,7 @@ export function FreedomOsLanding({
           fontSize: 12,
         }}
       >
-        <div>© 2026 Forward Freedom Financial. All rights reserved.</div>
+        <div>© 2026 Freedom OS. All rights reserved.</div>
         <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
           {[
             { key: "terms", label: "Terms of Service" },

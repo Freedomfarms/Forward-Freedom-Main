@@ -202,7 +202,7 @@ export function FreedomOsDeck({
           </div>
         </header>
 
-        {/* Session status strip (mirrors the FFF sidebar session panel) */}
+        {/* Session status strip (mirrors the Freedom Financial sidebar session panel) */}
         {sessionControls?.workspaceStatus ||
         sessionControls?.notice ||
         sessionControls?.error ? (
@@ -281,7 +281,7 @@ export function FreedomOsDeck({
                   flexWrap: "wrap",
                 }}
               >
-                <span>Verify your email to unlock bank linking inside FFF.</span>
+                <span>Verify your email to unlock bank linking inside Freedom Financial.</span>
                 <DeckChipButton
                   label={sessionControls.isBusy ? "Sending…" : "Resend email"}
                   disabled={Boolean(sessionControls.isBusy)}

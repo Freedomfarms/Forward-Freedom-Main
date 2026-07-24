@@ -202,7 +202,7 @@ function AppLoadingScreen({ message = "Loading secure workspace..." }) {
               color: "#8feaff",
             }}
           >
-            FF
+            OS
           </div>
         </div>
         <div
@@ -215,7 +215,7 @@ function AppLoadingScreen({ message = "Loading secure workspace..." }) {
             opacity: 0.85,
           }}
         >
-          Forward Freedom Financial
+          Freedom OS
         </div>
         <div
           className="ff-boot-title"

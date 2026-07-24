@@ -2426,7 +2426,7 @@ function ForwardFreedomDashboard({
               ☰
             </button>
             <div>
-              <div className="mobile-topbar-eyebrow">Forward Freedom</div>
+              <div className="mobile-topbar-eyebrow">Freedom OS</div>
               <div className="mobile-topbar-title">{activeTab}</div>
             </div>
             <button

@@ -50,7 +50,7 @@ export class ErrorBoundary extends Component {
                 fontWeight: 900,
               }}
             >
-              Forward Freedom Financial
+              Freedom OS
             </div>
             <div style={{ marginTop: 12, fontSize: 28, fontWeight: 900 }}>
               Something went wrong loading this screen.

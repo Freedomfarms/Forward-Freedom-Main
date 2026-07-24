@@ -1,6 +1,6 @@
-# Forward Freedom — Security & Privacy Architecture
+# Freedom OS — Security & Privacy Architecture
 
-This document describes how Forward Freedom (FFF) handles user financial data.
+This document describes how Freedom OS handles user financial data.
 The guiding principle is **privacy over database convenience**: sensitive
 financial data is encrypted at rest with per-record envelope encryption, and no
 employee, developer, database administrator, or owner can casually read it.
@@ -11,18 +11,19 @@ read-only sub-agents, Postgres row-level security, agent audit logging, the
 living profile, and LLM data minimization. Operational details (env vars,
 cron, admin setup) live in `docs/FREEDOM_OS.md`.
 
-## 1. What FFF never has access to
+## 1. What Freedom OS never has access to
 
 - **Bank usernames, passwords, or login credentials.** These are entered only
-  inside **Plaid Link** (Plaid's hosted, tokenized flow). They never touch FFF
-  servers, logs, or database.
-- FFF only ever receives a short-lived Plaid `public_token`, which the server
-  immediately exchanges for a long-lived `access_token`. The `access_token` is
-  the only bank secret FFF holds, and it is encrypted at rest (see §4).
+  inside **Plaid Link** (Plaid's hosted, tokenized flow). They never touch
+  Freedom OS servers, logs, or database.
+- Freedom OS only ever receives a short-lived Plaid `public_token`, which the
+  server immediately exchanges for a long-lived `access_token`. The
+  `access_token` is the only bank secret Freedom OS holds, and it is encrypted
+  at rest (see §4).
 
 ## 2. Data minimization
 
-FFF requests only the Plaid products needed to build dashboards, charts,
+Freedom OS requests only the Plaid products needed to build dashboards, charts,
 budgets, and insights:
 
 - Products: `transactions` (required), `liabilities` (optional).
