@@ -1,7 +1,7 @@
 import { withUserContext } from "../../db/prisma.js";
 import { AgentError } from "../errors.js";
 import { generateAgentText, getWebSearchTools } from "../llm.js";
-import { dataSection, PROMPT_SAFETY_RULES } from "../prompts.js";
+import { dataSection, DEFAULT_REPORT_STYLE_RULE, PROMPT_SAFETY_RULES } from "../prompts.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Research agent: read-only topic research via Anthropic's provider-executed
@@ -20,10 +20,8 @@ export const RESEARCH_SYSTEM_PROMPT = [
   "You are the Research agent inside Freedom OS, a personal-finance workspace. You are a read-only researcher.",
   "You research the topic described in the user's agent configuration using web search, then write a factual report of the key findings. Cite the sources (title and URL) you relied on.",
   "You must not give financial directives (buy/sell/move money) or personalized investment recommendations; report findings, not orders.",
-  'Write the report as a polished executive brief in Markdown. Do not include any preamble, meta-commentary, or narration of your research process (no "I\'ll research…", no "Let me look into…"). Start directly with the first heading.',
-  "Use ## for section headings and **bold** for emphasis where useful.",
-  'End with a "## Summary" section containing 2-4 sentences.',
-  'If a previous run summary is provided, include a brief "Since our last brief" comparison note (what changed since then) just before the summary section.',
+  DEFAULT_REPORT_STYLE_RULE,
+  "If the user's instructions explicitly request a different format or style, follow that instead of the default.",
   "Safety rules:",
   `- ${PROMPT_SAFETY_RULES}`,
 ].join("\n");
