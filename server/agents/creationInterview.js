@@ -136,14 +136,12 @@ const CONVERSATION_SYSTEM_PROMPT = [
   "Sound like a normal, competent human colleague — warm, concise, never robotic. Never say \"soul file\", \"system prompt\", \"JSON\", or \"interview topics\".",
   "Flow (strict order):",
   "1) AIM — land a measurable outcome. If they give tasks/steps, push back once or twice: what does \"done\" look like specifically enough to know success vs failure?",
-  "2) INTERVIEW — you MUST ask through these questions (and short clarifiers) until you feel comfortable drafting. Do not present a draft after the first answer. One main question at a time; ask a clarifying follow-up when an answer is vague or thin. Accept answers out of order / bundled. Topics:",
-  "   - Who does this agent need to interact with or act on behalf of?",
-  "   - What's explicitly off-limits (money, sending things externally, deleting data, etc.)?",
-  "   - Is there existing history to learn from (past emails, a doc, past decisions)? If none, that's fine — note it.",
-  "   - How should it sound/behave — formal, casual, terse, warm?",
-  "   - Who does it flag problems to, and how urgent before it interrupts?",
-  "   Do NOT open, narrate, or \"pull together\" a full draft during interview — even if their Aim answer was detailed. Briefly acknowledge (\"got it\"), then ask the next unanswered topic or a short clarifier.",
-  "   If they say skip / that's enough / draft it / move on: acknowledge, fill reasonable guesses for anything unanswered, and THEN present the draft review.",
+  "2) INTERVIEW — match their energy:",
+  "   - If they are engaged and answering: ask through ALL of these topics (plus short clarifiers when an answer is vague). Do not rush to a draft. One main question at a time. Accept answers out of order / bundled.",
+  "     Topics: who it acts with/for; what's off-limits; any history to learn from; tone/behavior; who to escalate to and when.",
+  "     Do NOT open, narrate, or \"pull together\" a full draft while they are still answering — even if Aim was detailed. Acknowledge briefly, then ask the next unanswered topic or a short clarifier.",
+  "   - If they stall, refuse, give idk/whatever/you-decide, or after ~1–2 answers say skip / that's enough / draft it / move on: do NOT keep pressing. Acknowledge, fill reasonable guesses for anything unanswered, and go straight to the draft review.",
+  "   - If they seem stuck but haven't asked to skip, you may once offer: we can draft from what we have whenever they want (say \"skip\" or \"draft it\").",
   "3) REVIEW — only after every interview topic is covered or they skipped the rest. Present a short human draft: name & role, personality, will-never boundaries, working-from notes, outcome. Ask if it looks good or what to edit. Never silently create.",
   "Do NOT ask about schedule, model tier, or autonomy/trust yet. Assume on-demand + balanced model if asked.",
   "Infer agent type as one of: finance, research, reminders, email.",
@@ -163,7 +161,7 @@ const EXTRACTION_SYSTEM_PROMPT = [
   "Mapping: outcome←definitionOfDone; actors←actorsNotes; boundaries←boundaries; history←workingFromNotes (including \"none\"); tone←personalityNotes; escalation←escalationNotes.",
   "Set phase to review ONLY when the interview is finished (all topics covered) OR userSkippedRemaining is true. Never jump to review mid-interview just because some fields exist.",
   "Do NOT set guessedFields or invent answers unless userSkippedRemaining is true.",
-  "userSkippedRemaining is true when they want to skip remaining questions and see the draft.",
+  "userSkippedRemaining is true when they want to skip remaining questions and see the draft (including short idk / whatever / you decide / draft it).",
   "userConfirmed is true ONLY for clear approval to create AFTER a review. userCancelled for discard. userWantsEdits when they want draft changes.",
   `agentType must be one of: ${CREATABLE_AGENT_TYPES.join(", ")} (or null if still unknown).`,
 ].join("\n");
@@ -400,10 +398,13 @@ export async function runCreationTurn(state, message, { recentMessages = [] } = 
     dataSection("RECENT TRANSCRIPT", renderTranscript(recentMessages)),
     dataSection("USER MESSAGE", text),
     userSkipped
-      ? "The user wants to skip remaining questions. Present the draft review now from what you have (mention any guesses briefly)."
+      ? "The user wants to stop interviewing and see a draft (skip / reluctant / you-decide). Present the draft review now from what you have (mention any guesses briefly). Do not ask another question."
       : isInterviewComplete(baseDraft) && phase !== "review"
         ? "Interview topics are covered. Present the draft review now and ask if it looks good or what to edit."
-        : "Reply as the CEO Agent. Interview is still open — do NOT draft yet. Acknowledge briefly, clarify if vague, then ask the next unanswered topic (or a short follow-up). Keep it to one question.",
+        : remainingInterviewTopics(baseDraft).length <= 3 &&
+            (baseDraft.coveredTopics || []).length >= 2
+          ? "Reply as the CEO Agent. They are still in interview and have been answering — keep going through remaining topics (one question). Do NOT draft yet. Only if they sound stuck, briefly note they can say \"draft it\" to skip ahead."
+          : "Reply as the CEO Agent. They are engaged in interview — ask through the remaining topics before drafting. Acknowledge briefly, clarify if vague, then ask the next unanswered topic (one question). Do NOT present a draft yet.",
   ].join("\n\n");
 
   // Run reply + extraction together. Extraction reads the user message (and

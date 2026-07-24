@@ -106,6 +106,17 @@ test("partial answers do not open draft review until interview is complete", () 
 
 test("skip / completeInterviewWithGuesses opens review with guessed remaining topics", () => {
   assert.equal(matchesCreationSkip("skip the rest"), true);
+  assert.equal(matchesCreationSkip("draft it"), true);
+  assert.equal(matchesCreationSkip("whatever"), true);
+  assert.equal(matchesCreationSkip("you decide"), true);
+  assert.equal(matchesCreationSkip("idk"), true);
+  // Substantive answers are not skips even if they mention drafting later.
+  assert.equal(
+    matchesCreationSkip(
+      "It should act for me with vendors and never send anything externally without asking first"
+    ),
+    false
+  );
   const partial = applyDraftPatch(emptyCreationDraft(), {
     agentType: "finance",
     definitionOfDone: "A weekly spending observations report is produced",
@@ -118,6 +129,53 @@ test("skip / completeInterviewWithGuesses opens review with guessed remaining to
   const payload = buildCreatePayloadFromDraft(draft);
   assert.equal(payload.schedulePreset, null);
   assert.equal(payload.model, "claude-sonnet-4-5");
+});
+
+test("runCreationTurn jumps to draft when user bails after a couple answers", async () => {
+  const previousKey = process.env.ANTHROPIC_API_KEY;
+  process.env.ANTHROPIC_API_KEY = "test-key";
+  setLlmImplementationForTesting({
+    generateText: async () => ({
+      text: "Alright — here's a draft from what we have. Look good?",
+    }),
+    generateObject: async () => ({
+      object: {
+        draftPatch: {},
+        phase: "review",
+        topicsCoveredThisTurn: [],
+        userSkippedRemaining: true,
+        userConfirmed: false,
+        userCancelled: false,
+        userWantsEdits: false,
+      },
+      usage: { inputTokens: 1, outputTokens: 1 },
+    }),
+  });
+
+  try {
+    const started = startCreationSession();
+    // Seed a light interview (Aim + one topic) without going through LLM Aim.
+    const mid = {
+      ...started.state,
+      phase: "interview",
+      step: "interview",
+      draft: applyDraftPatch(emptyCreationDraft(), {
+        agentType: "research",
+        definitionOfDone: "Every Monday I know what moved in cattle markets and why.",
+        actorsNotes: "Acts on behalf of the user",
+        coveredTopics: ["outcome", "actors"],
+      }),
+    };
+    const skipped = await runCreationTurn(mid, "whatever");
+    assert.equal(skipped.state.phase, "review");
+    assert.equal(skipped.creationDraft.readyForReview, true);
+    assert.equal(isInterviewComplete(skipped.state.draft), true);
+    assert.match(skipped.reply, /draft/i);
+  } finally {
+    setLlmImplementationForTesting(null);
+    if (previousKey == null) delete process.env.ANTHROPIC_API_KEY;
+    else process.env.ANTHROPIC_API_KEY = previousKey;
+  }
 });
 
 test("buildCreatePayloadFromDraft uses on-demand + Sonnet defaults for Slice 1", () => {

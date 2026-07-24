@@ -337,10 +337,26 @@ export function matchesCreationEditRequest(message) {
   );
 }
 
-/** User wants to skip remaining interview questions and go to the draft. */
+/**
+ * User wants to skip remaining interview questions and go to the draft.
+ * Includes explicit skip language plus short "you decide / whatever / idk"
+ * bail-outs — so someone who answers Aim (+ maybe one more) and doesn't want
+ * to keep interviewing can jump to draft without fighting the questionnaire.
+ */
 export function matchesCreationSkip(message) {
-  return /\b(skip(?:\s+(?:the\s+rest|remaining|this|ahead))?|that's enough|thats enough|move on|just draft(?:\s+it)?|draft it|good enough|no more questions|finish(?:\s+up)?)\b/i.test(
-    String(message || "")
+  const text = String(message || "").trim();
+  if (!text) return false;
+  if (
+    /\b(skip(?:\s+(?:the\s+rest|remaining|this|ahead))?|that's enough|thats enough|move on|just draft(?:\s+it)?|draft it|good enough|no more questions|finish(?:\s+up)?|stop asking|enough questions)\b/i.test(
+      text
+    )
+  ) {
+    return true;
+  }
+  // Short reluctant / defer-to-agent replies (not long substantive answers).
+  if (text.length > 80) return false;
+  return /^(idk|i don'?t know|not sure|whatever|you decide|up to you|don'?t care|i don'?t care|doesn'?t matter|no preference|just (?:make|build|create) (?:one|it)|surprise me)[.!?]*$/i.test(
+    text
   );
 }
 
