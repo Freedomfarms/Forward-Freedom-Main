@@ -37,14 +37,6 @@ export const PROMPT_SAFETY_RULES = [
   "Never include merchant names, account names or numbers, institution names, or any account identifiers in your output.",
 ].join("\n- ");
 
-// Chat bubbles render plain text (no markdown). Models still emit **bold**
-// out of habit — strip common emphasis markers so users never see asterisks.
-export function stripChatMarkdown(text) {
-  return String(text ?? "")
-    .replace(/\*\*([^*]+)\*\*/g, "$1")
-    .replace(/__([^_]+)__/g, "$1");
-}
-
 /** Shared formatting rule for user-facing chat replies. */
 export const CHAT_PLAIN_TEXT_RULE =
-  'Write plain text only — never use markdown (no **bold**, no __underscores__, no # headings, no bullet markers like "- " for decoration). The chat UI shows your words literally.';
+  "For light emphasis only, you may wrap words in **bold** or __underline__. Do not use other markdown (# headings, lists, links, or code). The chat UI renders those markers as formatting — users should never see raw asterisks.";

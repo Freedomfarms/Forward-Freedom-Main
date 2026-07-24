@@ -252,7 +252,7 @@ test("parseInterviewTurnText strips NOTES_JSON from the user-facing reply", () =
   assert.deepEqual(broken.object.draftPatch, {});
 });
 
-test("runCreationTurn strips markdown bold markers from the user-facing reply", async () => {
+test("runCreationTurn keeps **bold** markers for the chat UI to render", async () => {
   const previousKey = process.env.ANTHROPIC_API_KEY;
   process.env.ANTHROPIC_API_KEY = "test-key";
   setLlmImplementationForTesting({
@@ -266,9 +266,8 @@ test("runCreationTurn strips markdown bold markers from the user-facing reply", 
   try {
     const started = startCreationSession();
     const aim = await runCreationTurn(started.state, "federal reserve report to my email");
-    assert.doesNotMatch(aim.reply, /\*\*/);
-    assert.match(aim.reply, /federal reserve report/i);
-    assert.match(aim.reply, /Who should receive it/i);
+    assert.match(aim.reply, /\*\*federal reserve report\*\*/i);
+    assert.match(aim.reply, /\*\*Who should receive it\?\*\*/);
   } finally {
     setLlmImplementationForTesting(null);
     if (previousKey == null) delete process.env.ANTHROPIC_API_KEY;

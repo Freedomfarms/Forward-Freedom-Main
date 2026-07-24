@@ -23,7 +23,7 @@ import {
   generateAgentText,
   PROFILE_EXTRACTION_MODEL,
 } from "./llm.js";
-import { CHAT_PLAIN_TEXT_RULE, dataSection, PROMPT_SAFETY_RULES, stripChatMarkdown } from "./prompts.js";
+import { CHAT_PLAIN_TEXT_RULE, dataSection, PROMPT_SAFETY_RULES } from "./prompts.js";
 import { CREATABLE_AGENT_TYPES } from "./registry.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -498,10 +498,9 @@ export async function runCreationTurn(state, message, { recentMessages = [] } = 
       },
     });
     object = sanitized;
-    reply = stripChatMarkdown(
+    reply =
       parsed.reply ||
-        "Got it — who should this agent interact with or act on behalf of?"
-    );
+      "Got it — who should this agent interact with or act on behalf of?";
   } else {
     const conversationPromise = generateAgentText({
       model: CEO_AGENT_MODEL,
@@ -535,12 +534,11 @@ export async function runCreationTurn(state, message, { recentMessages = [] } = 
       userSkipped,
       object: rawObject,
     });
-    reply = stripChatMarkdown(
+    reply =
       String(replyText || "").trim() ||
-        (userSkipped
-          ? "Got it — I'll draft from what we have."
-          : "Got it — tell me a bit more about the outcome you want.")
-    );
+      (userSkipped
+        ? "Got it — I'll draft from what we have."
+        : "Got it — tell me a bit more about the outcome you want.");
   }
 
   if (object?.userCancelled) {

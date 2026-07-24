@@ -24,7 +24,7 @@ import {
 } from "./digest.js";
 import { cronToSchedulePreset, formatHourUtcLabel } from "./schedule.js";
 import { isEmailDeliveryEnabled } from "./emailDelivery.js";
-import { CHAT_PLAIN_TEXT_RULE, dataSection, PROMPT_SAFETY_RULES, stripChatMarkdown } from "./prompts.js";
+import { CHAT_PLAIN_TEXT_RULE, dataSection, PROMPT_SAFETY_RULES } from "./prompts.js";
 import {
   extractFromChatReply,
   normalizeProfile,
@@ -378,9 +378,7 @@ export async function respondToChat({
     maxOutputTokens: 1200,
   });
 
-  let reply = stripChatMarkdown(
-    String(object?.reply || "").trim() || "Sorry — I could not generate a reply."
-  );
+  let reply = String(object?.reply || "").trim() || "Sorry — I could not generate a reply.";
   let actionResult = null;
   let digestResult = null;
 
@@ -429,8 +427,6 @@ export async function respondToChat({
       }
     }
   }
-
-  reply = stripChatMarkdown(reply);
 
   const replyMessage = await withUserContext(userId, async (tx) => {
     const created = await tx.agentChatMessage.create({
