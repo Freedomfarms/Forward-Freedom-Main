@@ -30,125 +30,88 @@ import { CREATABLE_AGENT_TYPES } from "./registry.js";
 // Conversational "+ New Agent" interview (Slice 1):
 // Aim → full interview (ask through + clarifiers) → draft review → confirm.
 // Draft UI stays closed until every interview topic is covered or the user
-// skips. Interview turns use ONE fast Haiku call (reply + light notes) so
-// back-and-forth stays snappy; the heavy Sonnet draft path runs only on
-// skip / review.
+// skips. Interview turns use ONE fast Haiku *text* call (no structured-output
+// grammar — nullable-union schemas were timing out Anthropic compilation for
+// ~minutes). Skip/review still uses Sonnet text + a lean Haiku extract.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Fast interview turn: short reply + only fields answered this turn. */
-const INTERVIEW_TURN_SCHEMA = jsonSchema({
-  type: "object",
-  properties: {
-    reply: {
-      type: "string",
-      description:
-        "Short CEO Agent reply: brief acknowledge + one next question or clarifier. Never present a full draft.",
-    },
-    draftPatch: {
-      type: "object",
-      description: "Only fields the user explicitly answered this turn.",
-      properties: {
-        agentType: {
-          type: ["string", "null"],
-          description: `One of: ${CREATABLE_AGENT_TYPES.join(", ")}. Infer from the outcome when clear.`,
-        },
-        name: { type: ["string", "null"] },
-        roleLine: { type: ["string", "null"] },
-        instructions: { type: ["string", "null"] },
-        definitionOfDone: { type: ["string", "null"] },
-        personalityNotes: { type: ["string", "null"] },
-        boundaries: { type: ["string", "null"] },
-        workingFromNotes: { type: ["string", "null"] },
-        dataFocus: { type: ["string", "null"] },
-        actorsNotes: { type: ["string", "null"] },
-        escalationNotes: { type: ["string", "null"] },
-        coveredTopics: {
-          type: "array",
-          items: { type: "string", enum: [...INTERVIEW_TOPICS] },
-        },
-      },
-      additionalProperties: false,
-    },
-    topicsCoveredThisTurn: {
-      type: "array",
-      items: { type: "string", enum: [...INTERVIEW_TOPICS] },
-    },
-    userCancelled: {
-      type: "boolean",
-      description: "True when the user wants to discard the draft.",
-    },
-  },
-  required: ["reply", "draftPatch", "topicsCoveredThisTurn", "userCancelled"],
-  additionalProperties: false,
-});
+const INTERVIEW_NOTES_MARKER = "NOTES_JSON:";
 
 const INTERVIEW_TURN_SYSTEM_PROMPT = [
   "You are the user's CEO Agent inside Freedom OS, helping create ONE scoped worker agent.",
   "This is a FAST interview turn — reply like a natural chat (1–3 short sentences). Never present or narrate a full draft.",
   "Acknowledge briefly, then ask ONE next unanswered topic or a short clarifier if their answer was vague.",
   "Topics still to cover when remaining: who it acts with/for; what's off-limits; any history to learn from; tone/behavior; who to escalate to and when.",
-  "In draftPatch / topicsCoveredThisTurn, record ONLY what they explicitly answered this turn. Aim answers → outcome (+ agentType if clear). Do not invent the rest of the draft.",
-  "Never say \"soul file\", \"system prompt\", \"JSON\", or \"interview topics\".",
+  "Never say \"soul file\", \"system prompt\", \"JSON\", or \"interview topics\" in the user-facing reply.",
+  "After the reply, on its OWN final line, output machine notes exactly like:",
+  `${INTERVIEW_NOTES_MARKER}{"topicsCoveredThisTurn":["outcome"],"draftPatch":{"definitionOfDone":"user outcome words","agentType":"research"},"userCancelled":false}`,
+  `draftPatch may only include fields they explicitly answered this turn. agentType one of: ${CREATABLE_AGENT_TYPES.join(", ")}.`,
+  "Aim answers → outcome (+ agentType if clear). Use [] / {} when nothing new. Do not invent the rest of the draft.",
   "Safety rules:",
   `- ${PROMPT_SAFETY_RULES}`,
 ].join("\n");
 
+/** Patch fields the skip/review extractor may return (optional strings — no null unions). */
+const DRAFT_PATCH_FIELDS = {
+  agentType: {
+    type: "string",
+    description: `One of: ${CREATABLE_AGENT_TYPES.join(", ")}. Infer from the outcome when clear.`,
+  },
+  name: { type: "string" },
+  roleLine: {
+    type: "string",
+    description: "One-line name & role for the draft review.",
+  },
+  instructions: {
+    type: "string",
+    description: "How the agent should do the job (purpose / focus).",
+  },
+  definitionOfDone: {
+    type: "string",
+    description: "Measurable outcome / definition of done, stored verbatim.",
+  },
+  personalityNotes: {
+    type: "string",
+    description: "2–3 short bullets on how it should sound/behave.",
+  },
+  boundaries: {
+    type: "string",
+    description: 'Explicit "will never" list, newline-separated.',
+  },
+  workingFromNotes: {
+    type: "string",
+    description: "What was learned from history/examples, or that there is none.",
+  },
+  dataFocus: { type: "string" },
+  actorsNotes: {
+    type: "string",
+    description: "Who the agent interacts with or acts on behalf of.",
+  },
+  escalationNotes: {
+    type: "string",
+    description: "Who to flag and how urgent something must be before interrupting.",
+  },
+  coveredTopics: {
+    type: "array",
+    items: { type: "string", enum: [...INTERVIEW_TOPICS] },
+    description: "Interview topics covered by this turn (additively merged).",
+  },
+  guessedFields: {
+    type: "array",
+    items: { type: "string" },
+    description: "Draft fields filled by inference because the user skipped or was vague.",
+  },
+};
+
+// Lean schema: omit unused fields (no ["string","null"] unions — those explode
+// Anthropic grammar compilation cost and caused "Grammar compilation timed out").
 const DRAFT_PATCH_SCHEMA = jsonSchema({
   type: "object",
   properties: {
     draftPatch: {
       type: "object",
       description: "Fields to merge into the structured agent draft. Omit unchanged fields.",
-      properties: {
-        agentType: {
-          type: ["string", "null"],
-          description: `One of: ${CREATABLE_AGENT_TYPES.join(", ")}. Infer from the outcome when clear.`,
-        },
-        name: { type: ["string", "null"] },
-        roleLine: {
-          type: ["string", "null"],
-          description: "One-line name & role for the draft review.",
-        },
-        instructions: {
-          type: ["string", "null"],
-          description: "How the agent should do the job (purpose / focus).",
-        },
-        definitionOfDone: {
-          type: ["string", "null"],
-          description: "Measurable outcome / definition of done, stored verbatim.",
-        },
-        personalityNotes: {
-          type: ["string", "null"],
-          description: "2–3 short bullets on how it should sound/behave.",
-        },
-        boundaries: {
-          type: ["string", "null"],
-          description: 'Explicit "will never" list, newline-separated.',
-        },
-        workingFromNotes: {
-          type: ["string", "null"],
-          description: "What was learned from history/examples, or that there is none.",
-        },
-        dataFocus: { type: ["string", "null"] },
-        actorsNotes: {
-          type: ["string", "null"],
-          description: "Who the agent interacts with or acts on behalf of.",
-        },
-        escalationNotes: {
-          type: ["string", "null"],
-          description: "Who to flag and how urgent something must be before interrupting.",
-        },
-        coveredTopics: {
-          type: "array",
-          items: { type: "string", enum: [...INTERVIEW_TOPICS] },
-          description: "Interview topics covered by this turn (additively merged).",
-        },
-        guessedFields: {
-          type: "array",
-          items: { type: "string" },
-          description: "Draft fields filled by inference because the user skipped or was vague.",
-        },
-      },
+      properties: DRAFT_PATCH_FIELDS,
       additionalProperties: false,
     },
     phase: {
@@ -189,6 +152,46 @@ const DRAFT_PATCH_SCHEMA = jsonSchema({
   ],
   additionalProperties: false,
 });
+
+/**
+ * Split user-facing reply from trailing NOTES_JSON:{...} machine line.
+ * Falls back to the full text as reply when the marker is missing/broken.
+ */
+export function parseInterviewTurnText(text) {
+  const raw = String(text || "").trim();
+  const markerIndex = raw.lastIndexOf(INTERVIEW_NOTES_MARKER);
+  if (markerIndex < 0) {
+    return {
+      reply: raw,
+      object: { draftPatch: {}, topicsCoveredThisTurn: [], userCancelled: false },
+    };
+  }
+
+  const reply = raw.slice(0, markerIndex).trim();
+  const jsonPart = raw.slice(markerIndex + INTERVIEW_NOTES_MARKER.length).trim();
+  try {
+    const parsed = JSON.parse(jsonPart);
+    const draftPatch =
+      parsed?.draftPatch && typeof parsed.draftPatch === "object" && !Array.isArray(parsed.draftPatch)
+        ? parsed.draftPatch
+        : {};
+    return {
+      reply: reply || raw,
+      object: {
+        draftPatch,
+        topicsCoveredThisTurn: Array.isArray(parsed?.topicsCoveredThisTurn)
+          ? parsed.topicsCoveredThisTurn
+          : [],
+        userCancelled: Boolean(parsed?.userCancelled),
+      },
+    };
+  } catch {
+    return {
+      reply: reply || raw,
+      object: { draftPatch: {}, topicsCoveredThisTurn: [], userCancelled: false },
+    };
+  }
+}
 
 const CONVERSATION_SYSTEM_PROMPT = [
   "You are the user's CEO Agent inside Freedom OS, helping them create ONE scoped worker agent through a natural conversation.",
@@ -466,25 +469,26 @@ export async function runCreationTurn(state, message, { recentMessages = [] } = 
           : "Reply as the CEO Agent. They are engaged in interview — ask through the remaining topics before drafting. Acknowledge briefly, clarify if vague, then ask the next unanswered topic (one question). Do NOT present a draft yet.",
   ].join("\n\n");
 
-  // Interview turns: ONE fast Haiku call (reply + light notes). No Sonnet and
-  // no second "pull the draft" extraction — that was making Q&A feel like a
-  // 60s draft build. Heavy Sonnet + extract only when presenting review.
+  // Interview turns: ONE fast Haiku *text* call (reply + trailing NOTES_JSON).
+  // Do NOT use generateObject here — Anthropic structured-output grammar
+  // compilation was timing out on the interview schema and blocking the UI.
+  // Heavy Sonnet + extract only when presenting review / skip.
   let reply;
   let object;
 
   if (interviewStillOpen) {
-    const { object: interviewObject } = await generateAgentObject({
+    const { text: replyText } = await generateAgentText({
       model: PROFILE_EXTRACTION_MODEL,
       system: INTERVIEW_TURN_SYSTEM_PROMPT,
       prompt: conversationPrompt,
-      schema: INTERVIEW_TURN_SCHEMA,
-      maxOutputTokens: 280,
+      maxOutputTokens: 320,
     });
+    const parsed = parseInterviewTurnText(replyText);
     const sanitized = sanitizeExtractionForInterview({
       phase,
       userSkipped: false,
       object: {
-        ...interviewObject,
+        ...parsed.object,
         phase: "interview",
         userSkippedRemaining: false,
         userConfirmed: false,
@@ -493,7 +497,7 @@ export async function runCreationTurn(state, message, { recentMessages = [] } = 
     });
     object = sanitized;
     reply =
-      String(interviewObject?.reply || "").trim() ||
+      parsed.reply ||
       "Got it — who should this agent interact with or act on behalf of?";
   } else {
     const conversationPromise = generateAgentText({
@@ -514,6 +518,10 @@ export async function runCreationTurn(state, message, { recentMessages = [] } = 
       ].join("\n\n"),
       schema: DRAFT_PATCH_SCHEMA,
       maxOutputTokens: 900,
+      // Prefer tool-JSON over native output_config grammar (avoids cold compile timeouts).
+      providerOptions: {
+        anthropic: { structuredOutputMode: "jsonTool" },
+      },
     });
     const [{ text: replyText }, { object: rawObject }] = await Promise.all([
       conversationPromise,

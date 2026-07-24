@@ -54,24 +54,33 @@ test("keeps only the first line of multi-line driver messages", () => {
 });
 
 test("survives malformed DATABASE_URL and errors without code or cause", () => {
+  // Non-DB messages produce an empty diagnostic (no misleading role prefix).
   const summary = describeDatabaseError(new Error("boom"), { DATABASE_URL: "not a url" });
-  assert.equal(summary.includes("boom"), true);
-  assert.equal(summary.includes("role"), false);
+  assert.equal(summary, "");
 });
 
 test("scrubs embedded secrets through the redaction layer", () => {
-  const error = new Error(
-    "request failed with Bearer eyJhbGciOi.payload.signature attached somewhere"
+  const error = Object.assign(
+    new Error(
+      "database request failed with Bearer eyJhbGciOi.payload.signature attached somewhere"
+    ),
+    { code: "XX000" }
   );
 
   const summary = describeDatabaseError(error, ENV);
   assert.equal(summary.includes("eyJhbGciOi"), false);
+  assert.equal(summary.includes("role freedom_app"), true);
+});
+
+test("ignores non-database failures so LLM errors are not labeled as role freedom_app", () => {
+  const summary = describeDatabaseError(new Error("Grammar compilation timed out."), ENV);
+  assert.equal(summary, "");
 });
 
 test("never throws from diagnostics", () => {
   assert.equal(typeof describeDatabaseError(null, ENV), "string");
   assert.equal(typeof describeDatabaseError(undefined, {}), "string");
-  const circular = new Error("circular");
+  const circular = Object.assign(new Error("database circular"), { code: "XX000" });
   circular.cause = circular;
   assert.equal(describeDatabaseError(circular, ENV).includes("circular"), true);
 });

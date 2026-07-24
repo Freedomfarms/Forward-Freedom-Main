@@ -52,3 +52,19 @@ test("respondInternalError keeps the stable message when there is nothing useful
   assert.equal(response.statusCode, 500);
   assert.equal(response.body.message, "Unable to read or update the workspace snapshot.");
 });
+
+test("respondInternalError does not label LLM failures as role freedom_app", () => {
+  process.env.DATABASE_URL =
+    "postgresql://freedom_app.abcdefghij:pw@aws-0-us-east-1.pooler.supabase.com:6543/postgres";
+  const response = mockRes();
+  respondInternalError(
+    response,
+    "api/agents/ceo/chat",
+    new Error("Grammar compilation timed out."),
+    "Unable to process the CEO Agent chat message."
+  );
+
+  assert.equal(response.statusCode, 500);
+  assert.equal(response.body.message, "Unable to process the CEO Agent chat message.");
+  assert.equal(response.body.message.includes("freedom_app"), false);
+});

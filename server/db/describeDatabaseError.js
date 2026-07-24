@@ -48,24 +48,43 @@ function firstNonEmptyLine(message) {
   );
 }
 
+const DBISH_MESSAGE =
+  /\b(postgres|database|prisma|relation|permission denied|ECONNREFUSED|ECONNRESET|SSL|Tenant or user|authentication failed|does not exist|connection|pooler|pgbouncer|schema|table)\b/i;
+
+function looksLikeDatabaseFailure(code, message) {
+  if (typeof code === "string" && code) {
+    // Postgres SQLSTATE (5 chars) or common node/pg network codes.
+    if (/^[0-9A-Z]{5}$/.test(code) || /^ECONN|^ETIMEDOUT|^ENOTFOUND|^EPIPE/.test(code)) {
+      return true;
+    }
+  }
+  return typeof message === "string" && DBISH_MESSAGE.test(message);
+}
+
 export function describeDatabaseError(error, env = process.env) {
   try {
-    const parts = [];
-
-    const role = configuredDatabaseRole(env);
-    if (role) parts.push(`role ${role}`);
-
     const chain = unwrapErrorChain(error);
 
     const code = chain
       .map((entry) => entry.code)
       .find((value) => typeof value === "string" && value);
-    if (code) parts.push(`code ${code}`);
 
     const deepestMessage = [...chain]
       .reverse()
       .map((entry) => (typeof entry.message === "string" ? firstNonEmptyLine(entry.message) : ""))
       .find(Boolean);
+
+    // Only attach role/code when this actually looks like a DB failure.
+    // LLM errors (e.g. "Grammar compilation timed out") used to surface as
+    // "role freedom_app — …" and looked like an auth/RLS problem.
+    if (!looksLikeDatabaseFailure(code, deepestMessage)) {
+      return "";
+    }
+
+    const parts = [];
+    const role = configuredDatabaseRole(env);
+    if (role) parts.push(`role ${role}`);
+    if (code) parts.push(`code ${code}`);
     if (deepestMessage) {
       parts.push(String(redactSensitive(deepestMessage)).slice(0, MAX_DIAGNOSTIC_LENGTH));
     }

@@ -19,6 +19,7 @@ import {
   matchesCreationSkip,
 } from "../server/agents/creationDraft.js";
 import {
+  parseInterviewTurnText,
   runCreationTurn,
   sanitizeExtractionForInterview,
 } from "../server/agents/creationInterview.js";
@@ -237,6 +238,20 @@ test("sanitizeExtractionForInterview keeps Aim turns to outcome only", () => {
   assert.equal(sanitized.draftPatch.guessedFields, undefined);
 });
 
+test("parseInterviewTurnText strips NOTES_JSON from the user-facing reply", () => {
+  const parsed = parseInterviewTurnText(
+    'Got it — who should this agent act on behalf of?\nNOTES_JSON:{"topicsCoveredThisTurn":["outcome"],"draftPatch":{"agentType":"research","definitionOfDone":"Markets briefed"},"userCancelled":false}'
+  );
+  assert.equal(parsed.reply, "Got it — who should this agent act on behalf of?");
+  assert.deepEqual(parsed.object.topicsCoveredThisTurn, ["outcome"]);
+  assert.equal(parsed.object.draftPatch.agentType, "research");
+  assert.equal(parsed.object.userCancelled, false);
+
+  const broken = parseInterviewTurnText("Just a reply\nNOTES_JSON:{not-json");
+  assert.equal(broken.reply, "Just a reply");
+  assert.deepEqual(broken.object.draftPatch, {});
+});
+
 test("runCreationTurn rejects over-extracted Aim answers and stays in interview", async () => {
   const previousKey = process.env.ANTHROPIC_API_KEY;
   process.env.ANTHROPIC_API_KEY = "test-key";
@@ -245,23 +260,24 @@ test("runCreationTurn rejects over-extracted Aim answers and stays in interview"
   setLlmImplementationForTesting({
     generateText: async () => {
       generateTextCalls += 1;
-      return { text: "should not be used on interview turns" };
+      // Interview path is plain text + trailing NOTES_JSON (no structured grammar).
+      // Model tries to overfill topics — sanitize + Aim gate must strip them.
+      return {
+        text:
+          "Got it — who should this agent act on behalf of?\n" +
+          `NOTES_JSON:${JSON.stringify({
+            topicsCoveredThisTurn: [...INTERVIEW_TOPICS],
+            draftPatch: fullyInterviewedPatch({
+              guessedFields: ["actors", "tone"],
+              interviewComplete: true,
+            }),
+            userCancelled: false,
+          })}`,
+      };
     },
     generateObject: async () => {
       generateObjectCalls += 1;
-      return {
-        object: {
-          // Fast interview schema: reply + patch. Model tries to overfill.
-          reply: "Got it — who should this agent act on behalf of?",
-          draftPatch: fullyInterviewedPatch({
-            guessedFields: ["actors", "tone"],
-            interviewComplete: true,
-          }),
-          topicsCoveredThisTurn: [...INTERVIEW_TOPICS],
-          userCancelled: false,
-        },
-        usage: { inputTokens: 10, outputTokens: 20 },
-      };
+      return { object: {}, usage: { inputTokens: 1, outputTokens: 1 } };
     },
   });
 
@@ -279,9 +295,10 @@ test("runCreationTurn rejects over-extracted Aim answers and stays in interview"
     assert.equal(aim.state.draft.personalityNotes, null);
     assert.equal(aim.state.draft.boundaries, null);
     assert.match(aim.reply, /act on behalf/i);
-    // Interview turns use one Haiku object call — no Sonnet text call.
-    assert.equal(generateTextCalls, 0);
-    assert.equal(generateObjectCalls, 1);
+    assert.doesNotMatch(aim.reply, /NOTES_JSON/);
+    // Interview turns use one Haiku text call — no structured-object call.
+    assert.equal(generateTextCalls, 1);
+    assert.equal(generateObjectCalls, 0);
   } finally {
     setLlmImplementationForTesting(null);
     if (previousKey == null) delete process.env.ANTHROPIC_API_KEY;
@@ -295,25 +312,18 @@ test("runCreationTurn stays in interview until topics are done, then confirms on
   let mode = "partial";
   setLlmImplementationForTesting({
     generateText: async () => {
-      // Used only on skip/review (draft presentation).
+      if (mode === "partial") {
+        return {
+          text:
+            "Got it — who should this agent act on behalf of?\n" +
+            'NOTES_JSON:{"topicsCoveredThisTurn":["outcome"],"draftPatch":{"agentType":"research","definitionOfDone":"Every Monday I know what moved in cattle markets and why.","coveredTopics":["outcome"]},"userCancelled":false}',
+        };
+      }
+      // Skip/review draft presentation (Sonnet text path).
       return { text: "Here's the draft. Say looks good if you want me to create it." };
     },
     generateObject: async () => {
-      if (mode === "partial") {
-        return {
-          object: {
-            reply: "Got it — who should this agent act on behalf of?",
-            draftPatch: {
-              agentType: "research",
-              definitionOfDone: "Every Monday I know what moved in cattle markets and why.",
-              coveredTopics: ["outcome"],
-            },
-            topicsCoveredThisTurn: ["outcome"],
-            userCancelled: false,
-          },
-          usage: { inputTokens: 10, outputTokens: 20 },
-        };
-      }
+      // Used only on skip/review extract.
       return {
         object: {
           draftPatch: fullyInterviewedPatch(),
