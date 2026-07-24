@@ -9,6 +9,7 @@ import {
   serializeAgentConfig,
   validateAgentCreatePayload,
 } from "../server/agents/apiHelpers.js";
+import { announceAgentCreatedToCeoChat } from "../server/agents/teamContext.js";
 
 // GET  /api/agents — the user's sub-agents, each with its latest run summary.
 // POST /api/agents — create a sub-agent. permissionLevel READ_ONLY and status
@@ -97,9 +98,17 @@ export default async function handler(request, response) {
     }
 
     const validated = validateAgentCreatePayload(await readJsonBody(request));
-    const agent = await withUserContext(decodedToken.uid, (tx) =>
-      createAgentConfig(tx, decodedToken.uid, validated)
-    );
+    const agent = await withUserContext(decodedToken.uid, async (tx) => {
+      const created = await createAgentConfig(tx, decodedToken.uid, validated);
+      if (created.ceoAgentConfigId) {
+        await announceAgentCreatedToCeoChat(tx, {
+          userId: decodedToken.uid,
+          ceoAgentConfigId: created.ceoAgentConfigId,
+          agent: created,
+        });
+      }
+      return created;
+    });
     return response.status(201).json({ agent: serializeAgentConfig(agent, { latestRun: null }) });
   } catch (error) {
     return respondAgentApiError(

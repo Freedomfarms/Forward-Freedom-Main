@@ -34,6 +34,7 @@ import {
   ensureSystemConversation,
   touchConversation,
 } from "../../../server/agents/conversations.js";
+import { announceAgentCreatedToCeoChat } from "../../../server/agents/teamContext.js";
 
 // GET  /api/agents/ceo/chat — visible message history for the active CEO thread
 //      (?conversationId= optional; defaults to newest non-system conversation)
@@ -161,6 +162,13 @@ async function handleCreationTurn({ userId, ceoConfigId, conversationId, activeS
         agentType: agent.agentType,
         model: agent.model,
       };
+      // Creation lives on a hidden isSystem thread — also pin a short note into
+      // the main CEO conversation so Harry can see the new teammate next turn.
+      await announceAgentCreatedToCeoChat(tx, {
+        userId,
+        ceoAgentConfigId: ceoConfigId,
+        agent,
+      });
     }
 
     // savedAtMs/savedAtSeq disambiguate state rows across turns (see

@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import crypto from "crypto";
 
 // Chat-engine scoping tests: a sub-agent chat may only see its own runs and
-// messages; the CEO chat sees run summaries across all agents plus the living
-// profile. All model calls are mocked.
+// messages; the CEO chat sees the live team roster, run summaries across all
+// agents, and the living profile. All model calls are mocked.
 //
 // Requires: node --test --experimental-test-module-mocks (npm test).
 
@@ -266,7 +266,7 @@ test("a sub-agent chat can attach its own run and gets the decrypted output", as
   assert.ok(!payload.includes("AGENT_B_FULL_OUTPUT"));
 });
 
-test("the CEO chat reads run summaries across all agents and the profile", async (t) => {
+test("the CEO chat reads the team roster, run summaries across all agents, and the profile", async (t) => {
   if (!requireSetup(t)) return;
   const result = await respondToChat({
     userId: USER_ID,
@@ -276,9 +276,15 @@ test("the CEO chat reads run summaries across all agents and the profile", async
   assert.equal(result.reply, "Here is my answer.");
 
   const payload = JSON.stringify(llmCalls[0]);
-  // Cross-agent visibility is the CEO's job.
+  // Live roster must be present even for agents the user just created.
+  assert.ok(payload.includes("YOUR SUB-AGENTS"));
+  assert.ok(payload.includes("Finance Agent"));
+  assert.ok(payload.includes("Research Agent"));
+  // Cross-agent visibility is the CEO's job; summaries include agent names.
   assert.ok(payload.includes("AGENT_A_SUMMARY_TOKEN"));
   assert.ok(payload.includes("AGENT_B_SUMMARY_TOKEN"));
+  assert.ok(payload.includes("Finance Agent, finance"));
+  assert.ok(payload.includes("Research Agent, research"));
   // "What do you know about me?" is answered from the rendered profile.
   assert.ok(payload.includes(PROFILE_FACT));
   // Sub-agent chat transcripts do not leak into the CEO chat.
@@ -293,6 +299,36 @@ test("the CEO chat reads run summaries across all agents and the profile", async
     relatedRunId: "run-b1",
   });
   assert.ok(JSON.stringify(llmCalls[1]).includes("AGENT_B_FULL_OUTPUT"));
+});
+
+test("the CEO chat still lists a newly created sub-agent with zero runs", async (t) => {
+  if (!requireSetup(t)) return;
+  currentDb.tables.agentRun.length = 0;
+  currentDb.tables.agentConfig.push({
+    id: "agent-fed",
+    userId: USER_ID,
+    ceoAgentConfigId: "ceo-1",
+    agentType: "research",
+    name: "Federal Reserve Data Agent",
+    instructions: "Track Fed releases.",
+    definitionOfDone: "Summarize the latest FOMC statement.",
+    schedule: null,
+    status: "ACTIVE",
+    model: "claude-sonnet-4-5",
+    createdAt: new Date("2026-07-24T00:00:00Z"),
+  });
+
+  await respondToChat({
+    userId: USER_ID,
+    ceoAgentConfigId: "ceo-1",
+    message: "I just created an agent with you — do you remember that?",
+  });
+
+  const payload = JSON.stringify(llmCalls[0]);
+  assert.ok(payload.includes("Federal Reserve Data Agent"));
+  assert.ok(payload.includes("Summarize the latest FOMC statement."));
+  assert.ok(payload.includes("(no completed runs yet)"));
+  assert.ok(payload.includes("Never invent"));
 });
 
 test("profile ops returned in the chat reply update the living profile without a second model call", async (t) => {
