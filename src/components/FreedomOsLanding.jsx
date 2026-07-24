@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { LegalModal } from "./LegalDocuments.jsx";
 
-// Freedom OS public landing — the first page every visitor hits. Sign-in,
-// account creation, and the FFF demo all launch from here; the original FFF
-// marketing page stays reachable through the "What is FFF?" portal.
+// Freedom OS public landing — the first page every visitor hits. Sign-in and
+// account creation live here; Module 01 (CEO Agents) and Module 02 (Freedom
+// Financial) are the two portals into the product.
 
-const TAGLINE = "Your autonomous agent operating system. One account. Every mission.";
+const TAGLINE = "Your autonomous operating system for life, work, and wealth.";
 
 const BOOT_LINES = [
   { prefix: "sys", text: "freedom_os kernel loaded", tone: "ok" },
@@ -42,7 +42,10 @@ const LANDING_STYLES = `
 .fosl-portal { transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease; }
 .fosl-portal:hover { transform: translateY(-3px); border-color: rgba(0,216,255,.65) !important; box-shadow: 0 14px 44px rgba(0,140,255,.28) !important; }
 .fosl-actions { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; }
-.fosl-portals { display: grid; gap: 16px; width: 100%; max-width: 520px; }
+.fosl-portals { display: grid; gap: 16px; width: 100%; max-width: 720px; grid-template-columns: 1fr; }
+@media (min-width: 720px) {
+  .fosl-portals { grid-template-columns: 1fr 1fr; }
+}
 @media (max-width: 640px) {
   .fosl-actions > button { width: 100%; }
 }
@@ -155,7 +158,16 @@ function PortalCard({ eyebrow, title, description, actionLabel, onClick }) {
   );
 }
 
-export function FreedomOsLanding({ onSignIn, onCreateAccount, onExploreFff }) {
+export function FreedomOsLanding({
+  onSignIn,
+  onCreateAccount,
+  onExploreCeoAgents,
+  onExploreFreedomFinancial,
+  // Legacy alias used by older call sites.
+  onExploreFff,
+}) {
+  const openCeoAgents = onExploreCeoAgents || onSignIn;
+  const openFreedomFinancial = onExploreFreedomFinancial || onExploreFff;
   const [activeDocument, setActiveDocument] = useState(null);
   const typedTagline = useTypedText(TAGLINE);
   const taglineDone = typedTagline.length === TAGLINE.length;
@@ -373,17 +385,24 @@ export function FreedomOsLanding({ onSignIn, onCreateAccount, onExploreFff }) {
           <PrimaryAction label="Create Access" variant="secondary" onClick={onCreateAccount} />
         </div>
 
-        {/* Portals */}
+        {/* Module portals */}
         <div
           className="fosl-portals fosl-rise"
           style={{ marginTop: "clamp(24px, 4.5vh, 42px)", animationDelay: "380ms" }}
         >
           <PortalCard
-            eyebrow="Module 01 — Finance"
-            title="What is FFF?"
-            description="Forward Freedom Financial: the financial command center inside Freedom OS. Accounts, budgets, forecasting, and real-time cash intelligence — including a no-sign-up demo sandbox."
-            actionLabel="Explore FFF"
-            onClick={onExploreFff}
+            eyebrow="Module 01"
+            title="CEO Agents"
+            description="Your autonomous agent operating system — CEO Agent, digests, and the team that runs missions on your behalf. Sign in to enter."
+            actionLabel="Enter CEO Agents"
+            onClick={openCeoAgents}
+          />
+          <PortalCard
+            eyebrow="Module 02"
+            title="Freedom Financial"
+            description="Accounts, budgets, forecasting, and real-time cash intelligence — including a no-sign-up demo sandbox."
+            actionLabel="Explore Freedom Financial"
+            onClick={openFreedomFinancial}
           />
         </div>
       </div>

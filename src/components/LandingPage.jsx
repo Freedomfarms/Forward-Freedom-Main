@@ -110,7 +110,7 @@ export function LandingPage({ enterApp, onEnterDemo, onBackToOs }) {
                 margin: "0 0 24px",
               }}
             >
-              <span style={{ color: "#00aaff", fontWeight: 800 }}>Forward Freedom Financial</span> is
+              <span style={{ color: "#00aaff", fontWeight: 800 }}>Freedom Financial</span> is
               a financial command center that gives you complete visibility and control of your
               money. Track, plan, and execute with confidence using real-time data, forecasting, and
               powerful financial insights.
