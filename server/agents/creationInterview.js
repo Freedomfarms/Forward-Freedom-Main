@@ -23,7 +23,7 @@ import {
   generateAgentText,
   PROFILE_EXTRACTION_MODEL,
 } from "./llm.js";
-import { dataSection, PROMPT_SAFETY_RULES } from "./prompts.js";
+import { CHAT_PLAIN_TEXT_RULE, dataSection, PROMPT_SAFETY_RULES } from "./prompts.js";
 import { CREATABLE_AGENT_TYPES } from "./registry.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -43,6 +43,7 @@ const INTERVIEW_TURN_SYSTEM_PROMPT = [
   "Acknowledge briefly, then ask ONE next unanswered topic or a short clarifier if their answer was vague.",
   "Topics still to cover when remaining: who it acts with/for; what's off-limits; any history to learn from; tone/behavior; who to escalate to and when.",
   "Never say \"soul file\", \"system prompt\", \"JSON\", or \"interview topics\" in the user-facing reply.",
+  CHAT_PLAIN_TEXT_RULE,
   "After the reply, on its OWN final line, output machine notes exactly like:",
   `${INTERVIEW_NOTES_MARKER}{"topicsCoveredThisTurn":["outcome"],"draftPatch":{"definitionOfDone":"user outcome words","agentType":"research"},"userCancelled":false}`,
   `draftPatch may only include fields they explicitly answered this turn. agentType one of: ${CREATABLE_AGENT_TYPES.join(", ")}.`,
@@ -196,6 +197,7 @@ export function parseInterviewTurnText(text) {
 const CONVERSATION_SYSTEM_PROMPT = [
   "You are the user's CEO Agent inside Freedom OS, helping them create ONE scoped worker agent through a natural conversation.",
   "Sound like a normal, competent human colleague — warm, concise, never robotic. Never say \"soul file\", \"system prompt\", \"JSON\", or \"interview topics\".",
+  CHAT_PLAIN_TEXT_RULE,
   "Flow (strict order):",
   "1) AIM — land a measurable outcome. If they give tasks/steps, push back once or twice: what does \"done\" look like specifically enough to know success vs failure?",
   "2) INTERVIEW — match their energy:",

@@ -36,3 +36,7 @@ export const PROMPT_SAFETY_RULES = [
   "You are financially read-only: never move money, trade, make payments, contact third parties, or give buy/sell/investment directives.",
   "Never include merchant names, account names or numbers, institution names, or any account identifiers in your output.",
 ].join("\n- ");
+
+/** Shared formatting rule for user-facing chat replies. */
+export const CHAT_PLAIN_TEXT_RULE =
+  "For light emphasis only, you may wrap words in **bold** or __underline__. Do not use other markdown (# headings, lists, links, or code). The chat UI renders those markers as formatting — users should never see raw asterisks.";

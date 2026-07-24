@@ -23,6 +23,7 @@ import {
   isConversationInScope,
   isRecoverableConversationError,
 } from "./conversationScope.js";
+import { parseChatEmphasis } from "../../utils/chatTextFormat.js";
 import { describeAgentApiError, fosStyles, getAgentTypeMeta } from "./freedomOsShared.js";
 
 // Reusable chat UI for the agent platform (CEO panel, AgentDetail, and the
@@ -34,6 +35,19 @@ import { describeAgentApiError, fosStyles, getAgentTypeMeta } from "./freedomOsS
 //       "create_agent"  → POST /api/agents/ceo/chat (creation session)
 //       "agent"         → sub-agent conversations + chat (requires agentId)
 // layout: "embedded" (default) | "workspace" (ChatGPT-style full pane)
+
+/** Render **bold** and __underline__ — no raw markdown asterisks in the bubble. */
+function renderChatText(text) {
+  return parseChatEmphasis(text).map((segment, index) => {
+    if (segment.type === "bold") {
+      return <strong key={index}>{segment.value}</strong>;
+    }
+    if (segment.type === "underline") {
+      return <u key={index}>{segment.value}</u>;
+    }
+    return <span key={index}>{segment.value}</span>;
+  });
+}
 
 let localMessageId = 0;
 function nextLocalId(prefix) {
@@ -693,7 +707,7 @@ export function AgentChat({
                 whiteSpace: "pre-wrap",
               }}
             >
-              {message.text}
+              {renderChatText(message.text)}
             </div>
             {message.agentCreated ? <AgentCreatedCard agentCreated={message.agentCreated} /> : null}
           </div>

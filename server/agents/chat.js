@@ -24,7 +24,7 @@ import {
 } from "./digest.js";
 import { cronToSchedulePreset, formatHourUtcLabel } from "./schedule.js";
 import { isEmailDeliveryEnabled } from "./emailDelivery.js";
-import { dataSection, PROMPT_SAFETY_RULES } from "./prompts.js";
+import { CHAT_PLAIN_TEXT_RULE, dataSection, PROMPT_SAFETY_RULES } from "./prompts.js";
 import {
   extractFromChatReply,
   normalizeProfile,
@@ -79,6 +79,7 @@ const SUB_AGENT_CHAT_SYSTEM_PROMPT = [
   "If the request is about another agent's work or creating a new agent, say so and point the user to their CEO Agent. Never invent side effects outside taskAction.",
   "Never give directives such as buy/sell/move money and never make investment recommendations.",
   "Also return profileOps: durable facts about the user revealed in this conversation (usually an empty array). Set taskAction to null when the user is only asking a question.",
+  CHAT_PLAIN_TEXT_RULE,
   "Safety rules:",
   `- ${PROMPT_SAFETY_RULES}`,
 ].join("\n");
@@ -91,6 +92,7 @@ const CEO_CHAT_SYSTEM_PROMPT = [
   "Sub-agent schedules support: on-demand, daily, weekly on one or more weekdays, or monthly, with an optional UTC hour. There is no CEO-only advanced scheduler — do not invent one or bounce the user back and forth.",
   "Never give directives such as buy/sell/move money and never make investment recommendations.",
   "Also return profileOps: durable facts about the user revealed in this conversation (usually an empty array).",
+  CHAT_PLAIN_TEXT_RULE,
   "Safety rules:",
   `- ${PROMPT_SAFETY_RULES}`,
 ].join("\n");
