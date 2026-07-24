@@ -1,5 +1,6 @@
 import { withUserContext } from "../../db/prisma.js";
 import { isEmailDeliveryEnabled, sendAgentReportEmail } from "../emailDelivery.js";
+import { buildEmailHtml, escapeHtml, formatRunDate } from "../emailTemplate.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Reminders agent: delivery needs no LLM call. It writes an IN_APP
@@ -33,7 +34,15 @@ export async function runRemindersAgent({ userId, config }) {
   let emailStatus = null;
   let emailSent = false;
   if (isEmailDeliveryEnabled(config.toolAccess)) {
-    const result = await sendAgentReportEmail({ userId, subject: title, body });
+    // Reminder text is user-authored (not markdown), so it is escaped rather
+    // than rendered before going into the shared HTML template.
+    const html = buildEmailHtml({
+      agentType: "reminders",
+      title,
+      runDate: formatRunDate(new Date()),
+      bodyHtml: `<p style="margin:0 0 14px;font-size:15px;line-height:1.65;">${escapeHtml(body).replaceAll("\n", "<br />")}</p>`,
+    });
+    const result = await sendAgentReportEmail({ userId, subject: title, body, html });
     emailStatus = result.status;
     emailSent = result.sent;
     if (result.sent) {

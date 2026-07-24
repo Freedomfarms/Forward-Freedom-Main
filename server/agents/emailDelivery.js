@@ -5,6 +5,13 @@ import { decrypt, encrypt } from "../security/envelope.js";
 import { AgentError } from "./errors.js";
 import { resolveConversationForWrite, touchConversation } from "./conversations.js";
 import { applySnippetTitleIfNeeded } from "./conversationTitle.js";
+import {
+  buildEmailHtml,
+  formatRunDate,
+  markdownToPlainText,
+  renderInlineMarkdownToEmailHtml,
+  renderMarkdownToEmailHtml,
+} from "./emailTemplate.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared email delivery for sub-agent reports (finance, research, reminders).
@@ -106,13 +113,14 @@ export function describeEmailDeliveryFailure(errorMessage, recipientEmail) {
   return `email delivery failed to ${masked} (${msg})`;
 }
 
-async function deliverToAddress({ email, subject, body }) {
+async function deliverToAddress({ email, subject, body, html }) {
   const resend = new Resend(process.env.RESEND_API_KEY);
   const { error } = await resend.emails.send({
     from: EMAIL_FROM,
     to: [email],
     subject,
     text: body,
+    ...(html ? { html } : {}),
   });
   if (error) {
     throw new Error(error.message || "Email delivery failed.");
@@ -124,7 +132,7 @@ async function deliverToAddress({ email, subject, body }) {
  * Never throws — returns { sent, status } so callers can record the outcome
  * without ever failing the run that produced the report.
  */
-export async function sendAgentReportEmail({ userId, subject, body }) {
+export async function sendAgentReportEmail({ userId, subject, body, html = null }) {
   if (!process.env.RESEND_API_KEY) {
     return { sent: false, status: "email skipped (email service is not configured)" };
   }
@@ -133,7 +141,7 @@ export async function sendAgentReportEmail({ userId, subject, body }) {
     return { sent: false, status: `email skipped (${describeUnverifiedStatus(email, reason)})` };
   }
   try {
-    await deliverToAddress({ email, subject, body });
+    await deliverToAddress({ email, subject, body, html });
     return {
       sent: true,
       status: `email sent to your verified account address (${maskEmailAddress(email)})`,
@@ -150,7 +158,7 @@ export async function sendAgentReportEmail({ userId, subject, body }) {
  * Like sendAgentReportEmail but throws typed AgentErrors for API endpoints
  * (the "Email me this run" button) where the user needs an actionable answer.
  */
-export async function sendAgentReportEmailOrThrow({ userId, subject, body }) {
+export async function sendAgentReportEmailOrThrow({ userId, subject, body, html = null }) {
   if (!process.env.RESEND_API_KEY) {
     throw new AgentError(
       "Email delivery is not configured on the server yet.",
@@ -167,7 +175,7 @@ export async function sendAgentReportEmailOrThrow({ userId, subject, body }) {
     );
   }
   try {
-    await deliverToAddress({ email, subject, body });
+    await deliverToAddress({ email, subject, body, html });
   } catch (error) {
     throw new AgentError(
       `${describeEmailDeliveryFailure(error?.message, email)}. Try again shortly.`,
@@ -201,25 +209,38 @@ export function isEmailReportRequest(message) {
   );
 }
 
+/**
+ * Builds the subject, HTML body, and plain-text fallback for a run's report
+ * email. The report (agent output) is treated as markdown: rendered and
+ * sanitized into the executive HTML template, and stripped of markdown
+ * syntax for the text fallback.
+ */
 export function buildRunEmailContent({ agentName, agentType, run, output }) {
-  const subject = `${agentName || "Your agent"} — ${
-    agentType === "reminders" ? "reminder" : "report"
-  } from Freedom OS`;
-  const startedAt = run?.startedAt ? new Date(run.startedAt).toUTCString() : null;
-  const lines = [
-    `Here is the latest output from "${agentName || "your agent"}"${startedAt ? ` (run started ${startedAt})` : ""}.`,
-    "",
-  ];
-  if (run?.summary) {
-    lines.push("Summary:", run.summary, "");
+  const title = agentName || "Your agent";
+  const runDate = formatRunDate(run?.startedAt ? new Date(run.startedAt) : new Date());
+  const subject = `${title} — ${runDate}`;
+  const reportMarkdown = output || run?.summary || "(no stored output)";
+  const summaryText = run?.summary ? String(run.summary) : null;
+
+  const html = buildEmailHtml({
+    agentType,
+    title,
+    runDate,
+    bodyHtml: renderMarkdownToEmailHtml(reportMarkdown),
+    summaryHtml: summaryText ? renderInlineMarkdownToEmailHtml(summaryText) : null,
+  });
+
+  const lines = [`${title} — ${runDate}`, ""];
+  if (summaryText) {
+    lines.push("Summary", markdownToPlainText(summaryText), "");
   }
-  lines.push("Report:", output || run?.summary || "(no stored output)");
+  lines.push(markdownToPlainText(reportMarkdown));
   lines.push(
     "",
     "—",
     "Sent by Freedom OS to your verified account email at your request. Agents can only email you, never anyone else."
   );
-  return { subject, body: lines.join("\n") };
+  return { subject, body: lines.join("\n"), html };
 }
 
 /**
@@ -263,13 +284,13 @@ export async function deliverAgentRunReport({ userId, agentConfigId, relatedRunI
       output = null;
     }
   }
-  const { subject, body } = buildRunEmailContent({
+  const { subject, body, html } = buildRunEmailContent({
     agentName: agentConfig.name,
     agentType: agentConfig.agentType,
     run,
     output,
   });
-  const result = await sendAgentReportEmail({ userId, subject, body });
+  const result = await sendAgentReportEmail({ userId, subject, body, html });
   return {
     reply: result.sent
       ? `Done — I've emailed that report to your verified account address.`
