@@ -1,17 +1,23 @@
 import { useEffect, useState } from "react";
 import { LegalModal } from "./LegalDocuments.jsx";
 
-// Freedom OS public landing — the first page every visitor hits. Sign-in and
-// account creation live here; Module 01 (CEO Agents) and Module 02 (Freedom
-// Financial) are the two portals into the product.
+// Freedom OS landing — same page signed-out and signed-in. Signed-out shows
+// Sign In + Create Access; signed-in swaps to Sign Out and modules enter the app.
 
 const TAGLINE = "Your autonomous operating system for life, work, and wealth.";
 
-const BOOT_LINES = [
+const BOOT_LINES_SIGNED_OUT = [
   { prefix: "sys", text: "freedom_os kernel loaded", tone: "ok" },
   { prefix: "sys", text: "agent mesh online — CEO agent standing by", tone: "ok" },
   { prefix: "sys", text: "encrypted channel established", tone: "ok" },
   { prefix: "sys", text: "awaiting operator authentication…", tone: "wait" },
+];
+
+const BOOT_LINES_SIGNED_IN = [
+  { prefix: "sys", text: "freedom_os kernel loaded", tone: "ok" },
+  { prefix: "sys", text: "agent mesh online — CEO agent standing by", tone: "ok" },
+  { prefix: "sys", text: "encrypted channel established", tone: "ok" },
+  { prefix: "sys", text: "operator authenticated — select a module", tone: "ok" },
 ];
 
 const LANDING_STYLES = `
@@ -81,12 +87,13 @@ function useTypedText(fullText, speedMs = 34) {
   return fullText.slice(0, visibleCount);
 }
 
-function PrimaryAction({ label, onClick, variant = "primary" }) {
+function PrimaryAction({ label, onClick, variant = "primary", disabled = false }) {
   const isPrimary = variant === "primary";
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
       className="fosl-portal"
       style={{
         color: isPrimary ? "#01131f" : "#eaf9ff",
@@ -96,13 +103,14 @@ function PrimaryAction({ label, onClick, variant = "primary" }) {
         border: isPrimary ? "1px solid rgba(190,245,255,.7)" : "1px solid rgba(0,216,255,.32)",
         borderRadius: 12,
         padding: "15px 26px",
-        cursor: "pointer",
+        cursor: disabled ? "wait" : "pointer",
         fontWeight: 900,
         fontSize: 14,
         letterSpacing: 1.4,
         textTransform: "uppercase",
         boxShadow: isPrimary ? "0 0 34px rgba(34,211,238,.4)" : "0 0 18px rgba(0,120,255,.14)",
         minWidth: 190,
+        opacity: disabled ? 0.72 : 1,
       }}
     >
       {label}
@@ -158,16 +166,26 @@ function PortalCard({ eyebrow, title, description, actionLabel, onClick }) {
   );
 }
 
+/**
+ * Freedom OS front door — same composition signed-out and signed-in.
+ * Signed-in: Sign In → Sign Out, Create Access hidden, modules enter the app.
+ */
 export function FreedomOsLanding({
+  signedIn = false,
   onSignIn,
   onCreateAccount,
+  onSignOut,
+  signOutBusy = false,
   onExploreCeoAgents,
   onExploreFreedomFinancial,
   // Legacy alias used by older call sites.
   onExploreFff,
+  isAdmin = false,
+  onOpenAdminUsage = null,
 }) {
-  const openCeoAgents = onExploreCeoAgents || onSignIn;
+  const openCeoAgents = onExploreCeoAgents || (!signedIn ? onSignIn : undefined);
   const openFreedomFinancial = onExploreFreedomFinancial || onExploreFff;
+  const bootLines = signedIn ? BOOT_LINES_SIGNED_IN : BOOT_LINES_SIGNED_OUT;
   const [activeDocument, setActiveDocument] = useState(null);
   const typedTagline = useTypedText(TAGLINE);
   const taglineDone = typedTagline.length === TAGLINE.length;
@@ -365,7 +383,7 @@ export function FreedomOsLanding({
             animationDelay: "220ms",
           }}
         >
-          {BOOT_LINES.map((line) => (
+          {bootLines.map((line) => (
             <div key={line.text} style={{ color: line.tone === "ok" ? "#9fdcc8" : "#ffd38a" }}>
               <span style={{ color: "#5f7896" }}>[{line.prefix}]</span>{" "}
               <span style={{ color: line.tone === "ok" ? "#34d399" : "#fbbf24" }}>
@@ -376,13 +394,32 @@ export function FreedomOsLanding({
           ))}
         </div>
 
-        {/* Auth actions — sign-in lives here now */}
+        {/* Auth actions — Sign In / Create Access when signed out; Sign Out when in. */}
         <div
           className="fosl-actions fosl-rise"
           style={{ marginTop: "clamp(22px, 4vh, 38px)", animationDelay: "300ms" }}
         >
-          <PrimaryAction label="Sign In" onClick={onSignIn} />
-          <PrimaryAction label="Create Access" variant="secondary" onClick={onCreateAccount} />
+          {signedIn ? (
+            <>
+              {isAdmin && typeof onOpenAdminUsage === "function" ? (
+                <PrimaryAction
+                  label="Admin"
+                  variant="secondary"
+                  onClick={onOpenAdminUsage}
+                />
+              ) : null}
+              <PrimaryAction
+                label={signOutBusy ? "Signing out…" : "Sign Out"}
+                onClick={onSignOut}
+                disabled={signOutBusy}
+              />
+            </>
+          ) : (
+            <>
+              <PrimaryAction label="Sign In" onClick={onSignIn} />
+              <PrimaryAction label="Create Access" variant="secondary" onClick={onCreateAccount} />
+            </>
+          )}
         </div>
 
         {/* Module portals */}
@@ -393,15 +430,23 @@ export function FreedomOsLanding({
           <PortalCard
             eyebrow="Module 01"
             title="CEO Agents"
-            description="Your autonomous agent operating system — CEO Agent, digests, and the team that runs missions on your behalf. Sign in to enter."
+            description={
+              signedIn
+                ? "Your autonomous agent operating system — CEO Agent, digests, and the team that runs missions on your behalf."
+                : "Your autonomous agent operating system — CEO Agent, digests, and the team that runs missions on your behalf. Sign in to enter."
+            }
             actionLabel="Enter CEO Agents"
             onClick={openCeoAgents}
           />
           <PortalCard
             eyebrow="Module 02"
             title="Freedom Financial"
-            description="Accounts, budgets, forecasting, and real-time cash intelligence — including a no-sign-up demo sandbox."
-            actionLabel="Explore Freedom Financial"
+            description={
+              signedIn
+                ? "Accounts, budgets, forecasting, and real-time cash intelligence — the financial command center inside Freedom OS."
+                : "Accounts, budgets, forecasting, and real-time cash intelligence — including a no-sign-up demo sandbox."
+            }
+            actionLabel={signedIn ? "Enter Freedom Financial" : "Explore Freedom Financial"}
             onClick={openFreedomFinancial}
           />
         </div>
