@@ -185,33 +185,34 @@ export function AuthScreen({ initialMode = "login", initialForm = null, onBackHo
               fontWeight: 900,
             }}
           >
-            Forward Freedom Financial
+            Built for serious operators
           </div>
           <h1
             className="auth-title"
             style={{ margin: "16px 0 0", fontSize: 44, lineHeight: 1.1, color: "white" }}
           >
-            Production workspace access is now protected.
+            Your life, work, and wealth — protected at the core.
           </h1>
           <p style={{ marginTop: 18, color: "#b7c9de", fontSize: 17, lineHeight: 1.75 }}>
-            Sign in to enter your financial workspace. This is the first step toward a real
-            production architecture with authenticated sessions, secure Plaid APIs, and server-side
-            persistence.
+            Freedom OS runs on production-grade identity, encryption, and bank-grade connections so
+            every module stays yours alone.
           </p>
 
           <div
             className="auth-feature-grid"
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+              gridTemplateColumns: "repeat(auto-fit, minmax(148px, 1fr))",
               gap: 14,
               marginTop: 28,
             }}
           >
             {[
-              ["Firebase Auth", "Google + email/password login for owner and future invited users."],
-              ["Postgres Ready", "Database foundation is moving toward a durable server-side source of truth."],
-              ["Plaid Hardening", "Live production usage stays off until backend security is locked down."],
+              ["Firebase Auth", "Google + email sign-in with verified sessions."],
+              ["Envelope encryption", "Sensitive data encrypted at rest."],
+              ["PostgreSQL", "Durable server-side workspace storage."],
+              ["Plaid", "Bank-grade account linking."],
+              ["Hardened API layer", "Rate limits, security headers, and consent gates."],
             ].map(([title, body]) => (
               <div
                 key={title}
