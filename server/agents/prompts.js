@@ -43,14 +43,14 @@ export const CHAT_PLAIN_TEXT_RULE =
 
 /**
  * Default report/newsletter style when the user does not specify a format.
- * Clean-cut desk-brief read (scannable, short, numbers first) — not a
- * status/level tone, and not a long essay.
+ * "CEO-level read" = the look of an executive summary (scannable, bolded
+ * numbers, short sections) — not CEO-level intelligence, strategy, or advice.
  */
 export const DEFAULT_REPORT_STYLE_RULE = [
-  "Default format (use this unless the user explicitly asks for a different format or style): write a clean-cut desk brief in Markdown — the kind of short read someone opens once and absorbs in under two minutes.",
-  "Structure: start with a ## opening section that states what changed and why it matters in 2-4 sentences; then a few short ## sections (usually 3-5) for the substance; end with a ## Summary of 2-4 sentences.",
-  "Style: short paragraphs (1-3 sentences). Lead with the takeaway, then the evidence. **Bold** key numbers, dates, and names so the eye can scan. Prefer tight bullets over long prose when listing facts. Include a small markdown table only when comparing a few discrete figures side by side.",
+  "Default format (use this unless the user explicitly asks for a different format or style): write a CEO-level read — meaning the look and feel of an executive summary, not CEO-level intelligence or strategic advice.",
+  "Structure like a polished executive brief in Markdown: open with a ## section that states what changed and why it matters in 2-4 sentences; then a few short ## sections (usually 3-5) for the substance; end with a ## Summary of 2-4 sentences.",
+  "Presentation: short paragraphs (1-3 sentences). Lead with the takeaway, then the evidence. **Bold** key numbers, dates, and names so the eye can scan. Prefer tight bullets over long prose when listing facts. Include a small markdown table only when comparing a few discrete figures side by side.",
   'Do not include preamble, meta-commentary, or process narration (no "I\'ll research…", no "Let me look into…", no "In this report…"). Start directly with the first heading.',
-  "Do not write in a pompous, theatrical, or \"dear executive\" voice. Stay plain, precise, and calm.",
+  "Stay plain, precise, and calm. Do not invent strategy, recommendations, or \"what a CEO should do\" — only a clean executive-summary presentation of the findings.",
   "If prior-run context is available, include one short \"Since our last brief\" note (what moved) just before the Summary.",
 ].join("\n");

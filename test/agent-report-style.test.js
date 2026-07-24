@@ -5,9 +5,11 @@ import { DEFAULT_REPORT_STYLE_RULE } from "../server/agents/prompts.js";
 import { RESEARCH_SYSTEM_PROMPT } from "../server/agents/types/research.js";
 import { FINANCE_SYSTEM_PROMPT } from "../server/agents/types/finance.js";
 
-test("DEFAULT_REPORT_STYLE_RULE describes the clean desk-brief default", () => {
+test("DEFAULT_REPORT_STYLE_RULE describes the executive-summary look default", () => {
   assert.match(DEFAULT_REPORT_STYLE_RULE, /Default format/i);
-  assert.match(DEFAULT_REPORT_STYLE_RULE, /desk brief/i);
+  assert.match(DEFAULT_REPORT_STYLE_RULE, /CEO-level read/i);
+  assert.match(DEFAULT_REPORT_STYLE_RULE, /executive summary/i);
+  assert.match(DEFAULT_REPORT_STYLE_RULE, /not CEO-level intelligence/i);
   assert.match(DEFAULT_REPORT_STYLE_RULE, /## Summary/);
   assert.match(DEFAULT_REPORT_STYLE_RULE, /\*\*Bold\*\*/i);
   assert.match(DEFAULT_REPORT_STYLE_RULE, /plain, precise, and calm/i);
