@@ -52,6 +52,7 @@ const expectedTables = Object.keys(expectedPolicyColumns).sort();
 const laterRlsModels = {
   CeoDocument: "20260720220000_ceo_documents_and_onboarding_summary",
   AgentConversation: "20260721020000_agent_conversations",
+  BrainJob: "20260725150000_brain_job_queue",
 };
 
 test("remediation inventory is exactly every user-scoped model", () => {

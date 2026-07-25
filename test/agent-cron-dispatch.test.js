@@ -160,7 +160,12 @@ test("cron dispatch runs due agents (header auth) and refreshes their users' dig
     createRequest({ method: "GET", headers: { authorization: "Bearer test-cron-secret" } })
   );
   assert.equal(response.statusCode, 200);
-  assert.deepEqual(response.body, { processed: 2, skipped: 0, errors: [] });
+  assert.deepEqual(response.body, {
+    processed: 2,
+    skipped: 0,
+    errors: [],
+    brainJobs: { processed: 0, failed: 0, requeuedStale: 0 },
+  });
   assert.deepEqual(
     runnerCalls.map((call) => call.agentConfigId).sort(),
     ["agent-due", "agent-never-ran"]

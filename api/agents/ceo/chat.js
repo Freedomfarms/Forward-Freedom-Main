@@ -16,6 +16,7 @@ import {
   validateAgentCreatePayload,
 } from "../../../server/agents/apiHelpers.js";
 import { respondToChat } from "../../../server/agents/chat.js";
+import { brainTurn, isBrainChatEnabled } from "../../../server/brain/index.js";
 import {
   listChatHistory,
   serializeChatHistoryMessages,
@@ -286,7 +287,12 @@ async function handleSend(request, response) {
       });
     }
 
-    const outcome = await respondToChat({
+    // Vertical slice (docs/FREEDOM_BRAIN_PLAN.md §0.6): FREEDOM_BRAIN_CHAT
+    // routes CEO chat through the Freedom Brain reasoning loop (plain-text
+    // reply + tool calling + async memory extraction). Same response shape;
+    // legacy respondToChat remains the default for production comparison.
+    const chatEngine = isBrainChatEnabled() ? brainTurn : respondToChat;
+    const outcome = await chatEngine({
       userId: decodedToken.uid,
       ceoAgentConfigId: ceoConfig.id,
       conversationId,

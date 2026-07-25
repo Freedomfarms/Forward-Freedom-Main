@@ -8,6 +8,7 @@ import { respondInternalError } from "../../server/http/errorHelpers.js";
 import { isAgentDue } from "../../server/agents/schedule.js";
 import { runAgent } from "../../server/agents/runner.js";
 import { generateDigest } from "../../server/agents/digest.js";
+import { sweepPendingBrainJobs } from "../../server/brain/jobs.js";
 
 // GET /api/cron/agent-dispatch — the Vercel Cron entry point (vercel.json
 // schedules it every 15 minutes). No Firebase auth: authenticated by
@@ -23,6 +24,7 @@ import { generateDigest } from "../../server/agents/digest.js";
 // Cap work per invocation to stay inside the serverless function timeout;
 // remaining due agents are picked up by the next 15-minute tick.
 const MAX_RUNS_PER_INVOCATION = 20;
+const MAX_BRAIN_JOBS_PER_INVOCATION = 25;
 
 function timingSafeEquals(a, b) {
   const hashA = crypto.createHash("sha256").update(String(a)).digest();
@@ -121,10 +123,25 @@ export default async function handler(request, response) {
       }
     }
 
+    // Sweep pending Freedom Brain background jobs (async memory extraction
+    // etc.) — the safety net for post-response work a dead serverless
+    // instance never finished. The service role only ENUMERATES jobs; each
+    // job is processed inside its owner's RLS context.
+    let brainJobs = { processed: 0, failed: 0, requeuedStale: 0 };
+    try {
+      brainJobs = await sweepPendingBrainJobs(service, {
+        limit: MAX_BRAIN_JOBS_PER_INVOCATION,
+        now,
+      });
+    } catch {
+      // Best-effort by contract — the next tick retries.
+    }
+
     return response.status(200).json({
       processed,
       skipped: dueAgents.length - toRun.length,
       errors,
+      brainJobs,
     });
   } catch (error) {
     return respondInternalError(

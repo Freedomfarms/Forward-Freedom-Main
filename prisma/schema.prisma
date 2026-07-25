@@ -65,6 +65,13 @@ enum NotificationChannel {
   EMAIL
 }
 
+enum BrainJobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
 model User {
   id                  String               @id
   email               String?              @unique
@@ -113,6 +120,7 @@ model User {
   agentChatMessages   AgentChatMessage[]
   ceoDocuments        CeoDocument[]
   notifications       Notification[]
+  brainJobs           BrainJob[]
 }
 
 model PlaidItem {
@@ -547,6 +555,33 @@ model AgentChatMessage {
   @@index([agentConfigId, createdAt])
   @@index([ceoAgentConfigId, createdAt])
   @@index([userId, createdAt])
+}
+
+// Freedom Brain background work queue. The chat critical path only ever
+// ENQUEUES rows here (memory extraction after a Brain reply, etc.); workers
+// process them best-effort right after the response and the 15-minute cron
+// sweeps anything left PENDING (serverless functions cannot guarantee
+// post-response work). payload holds row IDs only — never plaintext content.
+model BrainJob {
+  id          String         @id @default(cuid())
+  userId      String
+  // Job kind: "memory_extraction" now; briefings/titles later.
+  kind        String
+  // Minimized reference payload (conversationId, messageId, …) — IDs only.
+  payload     Json?
+  status      BrainJobStatus @default(PENDING)
+  attempts    Int            @default(0)
+  runAfter    DateTime       @default(now())
+  // Claim marker so the post-response worker and the cron sweep never
+  // double-process the same job.
+  lockedAt    DateTime?
+  lastError   String?
+  createdAt   DateTime       @default(now())
+  completedAt DateTime?
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status, runAfter])
+  @@index([userId, kind, createdAt])
 }
 
 // Self-notification only: agents may notify the user (in-app or via the
