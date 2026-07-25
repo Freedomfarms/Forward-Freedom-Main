@@ -45,7 +45,7 @@ import {
   renderNamedRunSummaries,
   renderTeamRoster,
 } from "./teamContext.js";
-import { isValidIanaTimeZone } from "./timezone.js";
+import { isMissingTimezoneColumnError, isValidIanaTimeZone } from "./timezone.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared chat engine for the CEO Agent chat and every sub-agent chat.
@@ -292,10 +292,18 @@ export async function respondToChat({
         select: { profileCiphertext: true },
       }));
 
-    const userRow = await tx.user.findUnique({
-      where: { id: userId },
-      select: { timezone: true },
-    });
+    let userTimezone;
+    try {
+      const userRow = await tx.user.findUnique({
+        where: { id: userId },
+        select: { timezone: true },
+      });
+      userTimezone = userRow?.timezone ?? null;
+    } catch (error) {
+      // Timezone column lag must not take down CEO chat.
+      if (!isMissingTimezoneColumnError(error)) throw error;
+      userTimezone = null;
+    }
 
     return {
       agentConfig,
@@ -308,7 +316,7 @@ export async function respondToChat({
       runs,
       relatedRun,
       profileSource,
-      userTimezone: userRow?.timezone ?? null,
+      userTimezone,
     };
   });
 

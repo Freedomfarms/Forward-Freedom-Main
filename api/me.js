@@ -10,7 +10,10 @@ import { enforceRateLimit, generalApiRateLimit } from "../server/http/rateLimit.
 import { readJsonBody } from "../server/http/requestHelpers.js";
 import { applySecurityHeaders } from "../server/http/responseHelpers.js";
 import { AgentError } from "../server/agents/errors.js";
-import { normalizeIanaTimeZone } from "../server/agents/timezone.js";
+import {
+  isMissingTimezoneColumnError,
+  normalizeIanaTimeZone,
+} from "../server/agents/timezone.js";
 
 const LEGAL_CONSENT_VERSION_MAX_LENGTH = 64;
 const LEGAL_CONSENT_METHOD_MAX_LENGTH = 32;
@@ -30,10 +33,15 @@ const LEGACY_USER_SELECT = {
   updatedAt: true,
 };
 
-function isMissingTimezoneColumnError(error) {
-  const message = String(error?.message || "");
-  return /timezone/i.test(message) && /(does not exist|Unknown column|column .* missing)/i.test(message);
-}
+// Consent-era columns without User.timezone — used when the CEO-as-OS timezone
+// migration has not landed yet. Prisma RETURNING timezone would P2022 and take
+// down /api/me, which then prevents User row creation and cascades into CEO 500s.
+const USER_SELECT_WITHOUT_TIMEZONE = {
+  ...LEGACY_USER_SELECT,
+  isAdmin: true,
+  legalConsentAt: true,
+  legalConsentVersion: true,
+};
 
 function buildUserPayload(decodedToken, userRecord = null, { consentColumnsMissing = false } = {}) {
   return {
@@ -94,6 +102,19 @@ async function upsertUserRecord(decodedToken) {
     );
     return { record, consentColumnsMissing: false };
   } catch (error) {
+    // Timezone column not migrated yet: retry without selecting/returning it
+    // so profile sync (and User row creation) still succeeds.
+    if (isMissingTimezoneColumnError(error)) {
+      const record = await withUserContext(decodedToken.uid, (tx) =>
+        tx.user.upsert({
+          where: { id: decodedToken.uid },
+          update: profileColumns,
+          create: { id: decodedToken.uid, ...profileColumns },
+          select: USER_SELECT_WITHOUT_TIMEZONE,
+        })
+      );
+      return { record, consentColumnsMissing: false };
+    }
     // Un-migrated database: the consent columns do not exist yet. A plain
     // profile sync can still succeed by not touching (or selecting) them.
     if (isMissingConsentColumnError(error)) {
@@ -141,6 +162,11 @@ async function recordLegalConsent(decodedToken, consent) {
     create: { id: decodedToken.uid, ...profileColumns, ...consentColumns },
   };
 
+  const userUpsertWithoutTimezone = {
+    ...userUpsert,
+    select: USER_SELECT_WITHOUT_TIMEZONE,
+  };
+
   try {
     const userRecord = await withUserContext(decodedToken.uid, async (tx) => {
       const record = await tx.user.upsert(userUpsert);
@@ -157,6 +183,31 @@ async function recordLegalConsent(decodedToken, consent) {
   } catch (transactionError) {
     let error = transactionError;
 
+    // Timezone column lag: consent columns may still exist — retry without
+    // RETURNING timezone so sign-in / consent recording keeps working.
+    if (isMissingTimezoneColumnError(error)) {
+      try {
+        const userRecord = await withUserContext(decodedToken.uid, async (tx) => {
+          const record = await tx.user.upsert(userUpsertWithoutTimezone);
+          try {
+            await tx.legalConsentEvent.create({
+              data: {
+                userId: decodedToken.uid,
+                version: consent.version,
+                method: consent.method,
+              },
+            });
+          } catch (historyError) {
+            if (!isMissingConsentHistoryTableError(historyError)) throw historyError;
+          }
+          return record;
+        });
+        return { userRecord, persisted: true, consentColumnsMissing: false };
+      } catch (retryError) {
+        error = retryError;
+      }
+    }
+
     // History table not migrated yet: still persist the latest consent so
     // enforcement works, but skip the audit row until the migration runs.
     if (isMissingConsentHistoryTableError(error)) {
@@ -169,6 +220,12 @@ async function recordLegalConsent(decodedToken, consent) {
         );
         return { userRecord, persisted: true, consentColumnsMissing: false };
       } catch (retryError) {
+        if (isMissingTimezoneColumnError(retryError)) {
+          const userRecord = await withUserContext(decodedToken.uid, (tx) =>
+            tx.user.upsert(userUpsertWithoutTimezone)
+          );
+          return { userRecord, persisted: true, consentColumnsMissing: false };
+        }
         if (!isMissingConsentColumnError(retryError)) throw retryError;
         error = retryError;
       }

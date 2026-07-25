@@ -9,6 +9,7 @@ import {
   sendAgentReportEmail,
 } from "./emailDelivery.js";
 import { extractFromRun } from "./profile.js";
+import { isMissingAgentRunLineageColumnError } from "./timezone.js";
 
 // Trust is staged (see prisma/schema.prisma): the runtime only honors these
 // two levels in this phase. ACTION_REQUIRED_APPROVAL and AUTONOMOUS exist in
@@ -78,23 +79,29 @@ export async function runAgent({
     parentRunId: parentRunId || null,
   };
 
+  async function createRunRow(data) {
+    try {
+      return await withUserContext(userId, (tx) => tx.agentRun.create({ data: { ...data, ...lineage } }));
+    } catch (error) {
+      // Lineage columns not migrated yet — persist the run without them so
+      // agents keep working during the schema lag window.
+      if (!isMissingAgentRunLineageColumnError(error)) throw error;
+      return withUserContext(userId, (tx) => tx.agentRun.create({ data }));
+    }
+  }
+
   const gate = evaluateRunGate(config);
   if (!gate.allowed) {
     // Policy blocks are recorded as SKIPPED runs so the audit trail shows the
     // attempt and exactly why nothing happened.
-    const skipped = await withUserContext(userId, (tx) =>
-      tx.agentRun.create({
-        data: {
-          userId,
-          agentConfigId: config.id,
-          agentType: config.agentType,
-          status: "SKIPPED",
-          error: gate.reason,
-          completedAt: new Date(),
-          ...lineage,
-        },
-      })
-    );
+    const skipped = await createRunRow({
+      userId,
+      agentConfigId: config.id,
+      agentType: config.agentType,
+      status: "SKIPPED",
+      error: gate.reason,
+      completedAt: new Date(),
+    });
     if (typeof onStarted === "function") {
       try {
         onStarted(skipped);
@@ -105,17 +112,12 @@ export async function runAgent({
     return skipped;
   }
 
-  const run = await withUserContext(userId, (tx) =>
-    tx.agentRun.create({
-      data: {
-        userId,
-        agentConfigId: config.id,
-        agentType: config.agentType,
-        status: "RUNNING",
-        ...lineage,
-      },
-    })
-  );
+  const run = await createRunRow({
+    userId,
+    agentConfigId: config.id,
+    agentType: config.agentType,
+    status: "RUNNING",
+  });
   if (typeof onStarted === "function") {
     try {
       onStarted(run);
