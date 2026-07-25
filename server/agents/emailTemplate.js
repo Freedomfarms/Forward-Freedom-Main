@@ -1,6 +1,3 @@
-import { Marked } from "marked";
-import sanitizeHtml from "sanitize-html";
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Executive HTML email template for agent report delivery.
 //
@@ -12,7 +9,42 @@ import sanitizeHtml from "sanitize-html";
 // Agent output is LLM-generated markdown, so it is ALWAYS sanitized
 // (sanitize-html) after rendering (marked) — the transformTags step below both
 // applies the inline styles and discards any attributes the model produced.
+//
+// IMPORTANT — guarded dependencies: this module sits on the import path of
+// EVERY agent API function (apiHelpers → registry → reminders → emailDelivery
+// → here). A static `import` of marked/sanitize-html that fails in the
+// serverless runtime (engine mismatch, bundler miss) crashes every one of
+// those functions at module load (FUNCTION_INVOCATION_FAILED) and takes the
+// whole Freedom OS home down. So both packages are loaded lazily inside a
+// try/catch, and rendering falls back to escaped plain text when unavailable
+// — degraded email styling, never a platform outage.
 // ─────────────────────────────────────────────────────────────────────────────
+
+let markdownRenderer = null; // Marked instance when available
+let sanitizeHtmlFn = null;
+
+async function loadRenderers() {
+  try {
+    const [{ Marked }, sanitizeModule] = await Promise.all([
+      import("marked"),
+      import("sanitize-html"),
+    ]);
+    // Isolated instance so option changes never leak into other marked consumers.
+    markdownRenderer = new Marked({ gfm: true, breaks: true });
+    sanitizeHtmlFn = sanitizeModule.default;
+  } catch (error) {
+    console.warn(
+      "[emailTemplate] markdown/sanitize renderers unavailable; falling back to plain text emails:",
+      error?.message || error
+    );
+    markdownRenderer = null;
+    sanitizeHtmlFn = null;
+  }
+}
+
+// Top-level await keeps the exported render functions synchronous for callers;
+// a failed load resolves (never rejects), so importing this module can't throw.
+await loadRenderers();
 
 const BRAND_NAME = "Freedom OS";
 const COLOR_HEADER_BG = "#041121";
@@ -127,19 +159,35 @@ const INLINE_SANITIZE_OPTIONS = Object.freeze({
   },
 });
 
-// Isolated instance so option changes never leak into other marked consumers.
-const markdown = new Marked({ gfm: true, breaks: true });
+/** Escaped plain-text fallback rendering when marked/sanitize-html are unavailable. */
+function fallbackBlockHtml(markdownText) {
+  const text = markdownToPlainText(markdownText);
+  if (!text) return "";
+  return text
+    .split(/\n{2,}/)
+    .map(
+      (paragraph) =>
+        `<p style="${BODY_TAG_STYLES.p}">${escapeHtml(paragraph).replaceAll("\n", "<br />")}</p>`
+    )
+    .join("");
+}
+
+function fallbackInlineHtml(markdownText) {
+  return escapeHtml(markdownToPlainText(markdownText)).replaceAll("\n", "<br />");
+}
 
 /** Renders agent-produced markdown into sanitized, inline-styled email HTML. */
 export function renderMarkdownToEmailHtml(markdownText) {
-  const html = markdown.parse(String(markdownText ?? ""), { async: false });
-  return sanitizeHtml(html, SANITIZE_OPTIONS).trim();
+  if (!markdownRenderer || !sanitizeHtmlFn) return fallbackBlockHtml(markdownText);
+  const html = markdownRenderer.parse(String(markdownText ?? ""), { async: false });
+  return sanitizeHtmlFn(html, SANITIZE_OPTIONS).trim();
 }
 
 /** Inline variant (no block tags) for the summary callout. */
 export function renderInlineMarkdownToEmailHtml(markdownText) {
-  const html = markdown.parseInline(String(markdownText ?? ""), { async: false });
-  return sanitizeHtml(html, INLINE_SANITIZE_OPTIONS).trim();
+  if (!markdownRenderer || !sanitizeHtmlFn) return fallbackInlineHtml(markdownText);
+  const html = markdownRenderer.parseInline(String(markdownText ?? ""), { async: false });
+  return sanitizeHtmlFn(html, INLINE_SANITIZE_OPTIONS).trim();
 }
 
 /**
