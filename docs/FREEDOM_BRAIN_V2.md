@@ -1,6 +1,8 @@
 # Freedom Brain v2 — Cognitive Operating System Design
 
-> **Status: DESIGN — awaiting review. No v2 implementation until approved.**
+> **Status: DIRECTIONALLY APPROVED with binding constraints (§0). The first
+> implementation slice — Situation Brief + Relevance Engine (§10 step 1) — is
+> in progress; later phases wait on each phase's evaluation gate.**
 >
 > Freedom Brain v1 (the vertical slice in `server/brain/`) removed the JSON
 > envelope, introduced mid-turn tool calling, added the Context Assembler, and
@@ -9,6 +11,75 @@
 > chat engine" into a cognitive operating system. The north-star test for
 > every decision in here: *does this make Freedom OS feel more like a true
 > cognitive operating system?*
+
+---
+
+## 0. Binding review constraints
+
+The v2 review approved the direction and imposed the following constraints.
+Where they conflict with later sections, these win.
+
+### 0.1 Optimize for measurable user improvement
+
+Every phase ships with a user-facing evaluation metric and does not graduate
+(and the next phase does not start) until the metric shows improvement.
+Infrastructure without a validated user-experience gain does not ship on by
+default. The per-phase metrics live in the rollout table (§10).
+
+### 0.2 Situation Brief explainability
+
+The Brain must understand context provenance, not blindly trust it. Every
+memory item in the Situation Brief carries an annotation:
+
+```
+- User wants aggressive debt payoff
+  (why: matches current topic "spending"; confidence 0.94;
+   source: user confirmed in conversation; last confirmed 2026-07-01)
+```
+
+The system prompt instructs the Brain to weigh items by this provenance —
+low-confidence or stale items are candidates for re-confirmation, not facts
+to assert.
+
+### 0.3 Planning starts simple
+
+The initial Plan body is exactly: **mission, objectives, next actions,
+blockers** (plus the bounded changeLog). Milestones, dependency graphs, risk
+registers, and any task-hierarchy features are deferred until the simple
+structure demonstrably improves reasoning (§3 is amended accordingly).
+Planning improves reasoning; it must not become a project-management app
+inside Freedom OS.
+
+### 0.4 Reflection is conservative
+
+Reflection triggers only on: a meaningful decision, a goal change, a user
+preference change, a major task completing, or an explicit user request for
+review. No reflection on ordinary turns, and no background cognitive activity
+beyond these triggers (§7 is amended accordingly).
+
+### 0.5 Events need user trust controls
+
+Every event supports severity, user visibility, per-kind mute controls, and a
+"Why am I seeing this?" explanation. Autonomy without trust is noise (§4 is
+amended accordingly).
+
+### 0.6 Narrow first slice; incremental order
+
+Implementation order (each gated on the prior phase's metric):
+
+1. Situation Brief + Relevance Engine
+2. Memory lifecycle
+3. Planning Engine
+4. Capability Events
+5. Reflection
+6. Expanded autonomy
+
+### 0.7 Final principle
+
+The objective is not the most advanced AI architecture. It is an intelligence
+users trust because it understands them, remembers what matters, helps
+execute their missions, and proactively assists without becoming annoying.
+Every v2 decision is measured against that.
 
 ---
 
@@ -100,7 +171,11 @@ score = wᵣ·relevance + w꜀·confidence + wₜ·recency + boosts
   current message + active-conversation topics (v2.2 is keyword/category
   heuristics; embeddings are a drop-in upgrade *inside this module only*).
 - **confidence** — the memory's lifecycle confidence (§5); plans and events
-  carry implicit confidence (URGENT event > NOTABLE > INFO).
+  carry implicit confidence (URGENT event > NOTABLE > INFO). In rollout
+  step 1 (before `UserMemory` exists) confidence is derived from the living
+  profile entry's source and age: user-provided sources (onboarding, profile
+  edits) seed high, extracted sources seed moderate, and both decay with time
+  since last update — the same inputs the lifecycle formalizes in step 2.
 - **recency** — decay on `lastConfirmedAt` / `occurredAt` / `updatedAt`.
 - **boosts** — `userConfirmed` memories; items linked to an ACTIVE plan;
   events not yet seen by the user; explicit financial/calendar priorities.
@@ -129,6 +204,24 @@ CURRENT SITUATION
 └─ Workspace state (capability roster, recent runs, digest)
 ```
 
+### 2.4 Explainability (binding, §0.2)
+
+Every memory item is annotated with **why it was selected, its confidence,
+its source, and when it was last confirmed** — machine-derived from the same
+scoring inputs, so the annotation is the score's explanation, not a separate
+guess:
+
+```
+- User wants aggressive debt payoff
+  (why: matches current topic "spending"; confidence 0.94;
+   source: user confirmed in conversation; last confirmed 2026-07-01)
+```
+
+The Brain's system prompt instructs it to weigh items by provenance: assert
+high-confidence user-confirmed facts; treat low-confidence/stale/inferred
+items as things to confirm naturally rather than state as truth. Events carry
+the same treatment via their "Why am I seeing this?" explanation (§4.3).
+
 The Relevance Engine is the **single place** where retrieval quality lives —
 same seam as v1's assembler, so v2.2 replaces the internals of one module
 without touching the loop, tools, or prompts.
@@ -143,20 +236,23 @@ When the user expresses a mission ("I want to launch a business"), the Brain
 creates an internal strategic plan and reasons against it in every relevant
 turn — for weeks or months.
 
-Plan structure (encrypted JSON body):
+Plan structure (encrypted JSON body) — **initial scope per §0.3**:
 
 ```
 {
-  mission:        string,
-  objectives:     [{ id, text, status }],
-  milestones:     [{ id, text, targetDate?, status }],
-  dependencies:   [{ id, text, blockedBy? }],
-  risks:          [{ id, text, severity }],
-  completedWork:  [{ id, text, completedAt }],
-  nextActions:    [{ id, text, owner: "user"|"brain", dueHint? }],
-  changeLog:      [{ at, summary }]   // bounded, newest-first (last ~50)
+  mission:      string,
+  objectives:   [{ id, text, status: "open"|"done" }],
+  nextActions:  [{ id, text, owner: "user"|"brain" }],
+  blockers:     [{ id, text }],
+  changeLog:    [{ at, summary }]   // bounded, newest-first (last ~50)
 }
 ```
+
+Deliberately absent until the simple structure proves it improves reasoning:
+milestones with dates, dependency graphs, risk registers, task hierarchy,
+progress percentages — anything that smells like a project-management app.
+Completed objectives simply flip `status: "done"` (their completion is noted
+in the changeLog), which covers "completed work" without another list.
 
 Versioning lives in the bounded `changeLog` inside the encrypted body — no
 revision table (simplicity, §8). The plan's *title* is short plaintext for
@@ -232,6 +328,29 @@ event log (§8 simplicity; same reasoning as `BrainJob`):
 
 Retention: CONSUMED events expire after a bounded window (they are inputs to
 cognition, not an audit log — `AgentRun` remains the audit trail).
+
+### 4.3 Trust controls (binding, §0.5)
+
+Autonomy without trust is noise. Every event supports, from the first
+release of this phase:
+
+- **Severity** — INFO / NOTABLE / URGENT (already in the schema); only
+  URGENT may interrupt (notification); NOTABLE/INFO wait for conversation or
+  briefing.
+- **User visibility** — a `userVisible` flag: some events exist only to
+  inform the Brain's reasoning (e.g. minor cash-flow drift) and are never
+  surfaced verbatim.
+- **Mute controls** — per capability+kind mute preferences, stored as an
+  `eventPreferences` JSON column on `CeoAgentConfig` (no new table until the
+  shape stabilizes). Muted kinds are still recorded (cognition may use them)
+  but never notify and never appear in "Since we last spoke".
+- **"Why am I seeing this?"** — every surfaced event carries its explanation,
+  derived from the publisher (capability, kind, threshold crossed, data
+  window). The Brain relays it on request, and briefing items link back to
+  the events they came from.
+- **Mute-by-conversation** — "stop telling me about X" is a Brain tool
+  (`mute_event_kind`) so trust controls are conversational, not buried in
+  settings.
 
 ---
 
@@ -343,13 +462,17 @@ loop from *doing* to *learning*:
 
 ### 7.2 Mechanics
 
-- **Trigger** — a `BrainJob` kind `reflection`, enqueued (never inline) when a
-  significance heuristic fires:
-  - a delegated run completed (success or failure),
-  - any mutating tool ran in a turn (create/update/delete agent, plan ops),
-  - a plan was touched or a milestone completed,
-  - a conversation crossed a depth threshold,
-  - an URGENT capability event was handled.
+- **Trigger** — a `BrainJob` kind `reflection`, enqueued (never inline).
+  **Conservative by mandate (§0.4)** — reflection fires only when:
+  - a meaningful decision occurred (a DECISION memory was created),
+  - a goal changed (GOAL memory created/superseded, or plan objective
+    added/completed),
+  - a user preference changed (PREFERENCE memory created/superseded),
+  - a major task completed (a delegated run the user asked for finished),
+  - the user explicitly requests a review ("how are we doing on…").
+
+  Ordinary turns never reflect. No other background cognitive activity
+  exists beyond these triggers plus the scheduled maintenance jobs (§5.2).
 - **Input** — the relevant artifact (run output / conversation tail / plan
   diff) + the Situation Brief.
 - **Output — a closed vocabulary, server-validated** (this is the safety
@@ -435,8 +558,9 @@ model Plan {
   // Short plaintext label for lists (same treatment as conversation titles).
   title                 String
   status                PlanStatus @default(ACTIVE)
-  // Encrypted structured body: mission, objectives, milestones, dependencies,
-  // risks, completedWork, nextActions, bounded changeLog (§3.1).
+  // Encrypted structured body — initial scope (§0.3): mission, objectives,
+  // nextActions, blockers, bounded changeLog. Richer fields only after the
+  // simple structure proves it improves reasoning.
   contentCiphertext     String
   // Advisory planning horizon: "weeks" | "months" | "quarters".
   horizon               String?
@@ -471,8 +595,12 @@ model CapabilityEvent {
   capability       String                  // registry name: "finance", "research", …
   kind             String                  // capability-defined: "cash_flow_changed", …
   severity         CapabilityEventSeverity @default(INFO)
+  // False = feeds the Brain's reasoning only; never surfaced verbatim (§4.3).
+  userVisible      Boolean                 @default(true)
   // Human-readable detail — encrypted (may describe finances/schedule).
   detailCiphertext String?
+  // Publisher-supplied "Why am I seeing this?" explanation — encrypted (§4.3).
+  whyCiphertext    String?
   // Suppress repeat publications within the retention window.
   dedupeKey        String?
   status           CapabilityEventStatus   @default(PENDING)
@@ -485,6 +613,10 @@ model CapabilityEvent {
   @@index([userId, capability, kind, occurredAt])
 }
 ```
+
+Mute preferences (§4.3) live in a new `eventPreferences Json?` column on
+`CeoAgentConfig` — per capability+kind mute flags; no new table until the
+shape stabilizes.
 
 ### 9.3 `UserMemory` — lifecycle fields (extends the v1-plan schema)
 
@@ -519,23 +651,19 @@ model UserMemory {
 
 ## 10. Rollout — incremental, evaluated, reversible
 
-Each increment is flag-gated or additive, ships with tests, and is evaluated
-before the next begins (same discipline as the v1 slice).
+Order per §0.6. Each increment is flag-gated or additive, ships with tests,
+and **does not graduate — and the next phase does not start — until its
+user-facing metric shows improvement** (§0.1). Technical gates are necessary
+but not sufficient.
 
-| Step | Delivers | Builds on |
-| --- | --- | --- |
-| **v2.1 Memory lifecycle** | `UserMemory` table + lifecycle ops in the extraction handler + weekly `memory_maintenance` job + living-profile backfill (dual-read, then freeze blob) | v1 `BrainJob` runner |
-| **v2.2 Relevance Engine** | `relevance.js` replaces `context.js` internals; Situation Brief; deterministic scoring + conflict notes | v2.1 memories |
-| **v2.3 Planning Engine** | `Plan` table + `create_plan`/`update_plan`/`get_plan` tools + Brief injection + weekly review reads plans | v2.2 Brief |
-| **v2.4 Capability events** | `CapabilityEvent` table + `publishCapabilityEvent` + finance/research publishers + "Since we last spoke" + briefing consumes events | v2.2 Brief |
-| **v2.5 Reflection** | `reflection` job kind + significance heuristics + closed-vocabulary Learn handlers | v2.1–v2.4 stores |
-| **v2.6 Capability UX** | Persona removal from run prompts; single-conversation-first UX; specialist chats demoted to advanced surface | product decision |
-
-Evaluation gates: v2.1 — extraction quality vs. blob (no regressions in
-profile page); v2.2 — Brief stays within token budget at 10× state volume;
-v2.3 — plan drift stays coherent over multi-week simulated conversations;
-v2.4 — no event spam (dedupe works); v2.5 — reflection ops are ≥90%
-apply-clean (validation rejects <10%).
+| Step | Delivers | User-facing metric (primary gate) | Technical gate |
+| --- | --- | --- | --- |
+| **1. Situation Brief + Relevance Engine** | `relevance.js`: scored, budgeted, provenance-annotated memory selection over the EXISTING living profile; Brief structure in the assembler | "It knows me better": fewer re-asks of known facts; replies reference the right context without prompting (session review) | Brief stays within token budget at 10× profile volume; no v1 chat-suite regressions |
+| **2. Memory lifecycle** | `UserMemory` table + lifecycle ops + weekly `memory_maintenance` + blob backfill (dual-read, freeze blob) | Corrections decline over time; stale-fact assertions drop ("it stopped repeating outdated things") | Extraction quality ≥ blob baseline; profile page parity |
+| **3. Planning Engine** | `Plan` table (simple body, §0.3) + plan tools + Brief injection + weekly review reads plans | Goals complete faster / stall less; users reference their plan unprompted | Plan coherence over multi-week simulated conversations |
+| **4. Capability events** | `CapabilityEvent` + publishers + trust controls (§4.3) + "Since we last spoke" + briefing consumes events | Notifications rated useful; mute rate stays low; "why am I seeing this" answered satisfactorily | Dedupe works (no event spam); URGENT precision |
+| **5. Reflection** | `reflection` job kind + conservative triggers (§0.4) + closed-vocabulary Learn handlers | Follow-up conversations measurably improve (continuity, fewer dropped threads) | Reflection ops ≥90% apply-clean |
+| **6. Expanded autonomy** | Weekly review + proactive follow-ups drawing on plans/events/reflections | Recommendations trusted: briefing engagement up, acceptance of suggestions, no "annoying" signal | Autonomy stays inside read-only ceiling |
 
 ---
 
