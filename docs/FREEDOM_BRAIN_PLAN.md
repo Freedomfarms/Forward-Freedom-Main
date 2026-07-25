@@ -1,8 +1,11 @@
 # Freedom Brain — Architecture Plan & Proposed Database Schema
 
 > **Status: REVIEWED — direction approved with refinements (see §0). The
-> Phase 1 vertical slice (§0.6) is being implemented; the full migration waits
-> on its evaluation.**
+> Phase 1 vertical slice (§0.6) is implemented behind `FREEDOM_BRAIN_CHAT`
+> (this is Freedom Brain v1). The v2 design — cognitive loop, Relevance
+> Engine, Planning Engine, capability events, memory lifecycle, reflection —
+> lives in `docs/FREEDOM_BRAIN_V2.md` and supersedes this document's Phases
+> 2–5 where they overlap.**
 >
 > This document is the first deliverable for refactoring Freedom OS from a
 > workflow-driven agent system into an AI-operating-system architecture with a
