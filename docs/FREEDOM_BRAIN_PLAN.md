@@ -1,6 +1,8 @@
 # Freedom Brain — Architecture Plan & Proposed Database Schema
 
-> **Status: PLAN — awaiting review. No implementation has been done.**
+> **Status: REVIEWED — direction approved with refinements (see §0). The
+> Phase 1 vertical slice (§0.6) is being implemented; the full migration waits
+> on its evaluation.**
 >
 > This document is the first deliverable for refactoring Freedom OS from a
 > workflow-driven agent system into an AI-operating-system architecture with a
@@ -8,6 +10,94 @@
 > identifies what is reused vs. changed, proposes the target architecture and
 > database schema, and lays out an incremental migration plan that never breaks
 > the running product.
+
+---
+
+## 0. Accepted review refinements
+
+The architecture review accepted the plan's direction and added the following
+binding refinements. Where they conflict with the original text below, these
+win.
+
+### 0.1 The Brain owns reasoning, not just routing
+
+The Brain turn is an explicit reasoning loop, not merely "call the model with
+tools". Every stage is a named seam in the code so it can evolve independently
+later, even while today's implementation drives all of them through a single
+Sonnet call:
+
+```
+Observe → Assemble Context → Recall Relevant Memory → Reason →
+Determine Required Tools → Execute Tool Calls → Reflect On Results →
+Respond To User → Queue Background Work
+```
+
+Implementation mapping (Phase 1): Observe = input validation + message
+persistence; Assemble Context / Recall Memory = the Context Assembler (§0.2);
+Reason / Determine Tools / Execute / Reflect = the model's tool-calling loop
+(tools return structured results the model reads before composing its reply);
+Respond = plain-text reply persistence; Queue Background Work = `BrainJob`
+enqueue (memory extraction, titles).
+
+### 0.2 Context Assembler
+
+A dedicated module (`server/brain/context.js`) is the single component
+responsible for context quality. It selects and curates — never dumps — the
+information relevant to the current request: recent conversation, relevant
+long-term memories, current goals, workspace state (roster, run summaries,
+digest), connected integrations, and available tools. The Brain receives a
+curated context package, not the raw database. All future retrieval
+improvements (memory ranking, embeddings, relevance filters) land in this one
+module.
+
+### 0.3 Richer memory metadata
+
+`UserMemory` (§6.1) additionally carries: a constrained `source` provenance
+enum (`CONVERSATION`, `IMPORTED_DATA`, `INTEGRATION`, `USER_SETTING`,
+`INFERRED`), a `userConfirmed` boolean (explicitly confirmed or entered by the
+user, ranked above inferred facts), recency via `lastConfirmedAt` (already
+present, used directly in retrieval ranking), and `supersededById` (already
+present). The Brain reasons about trustworthiness: user-confirmed > integration
+observed > inferred, weighted by confidence × recency.
+
+### 0.4 Capability Registry, not agent personalities
+
+Internally, "agents" are capabilities available to the Brain — finance,
+research, calendar, email, tasks, documents, forecasting, planning — not
+independent conversational entities. The "Agent Council" of Phase 3 is renamed
+the **Capability Registry** (still built on `server/agents/registry.js`). The
+user always experiences ONE intelligence; specialist execution is an internal
+delegation detail.
+
+### 0.5 Shallow runtime
+
+No Router → Planner → Coordinator → Executor tower. The runtime is exactly:
+
+```
+Freedom Brain → Context Assembler → Claude Sonnet → Tool Calls (0-N)
+             → Response → Background Jobs
+```
+
+The separate `server/brain/router.js` module from the original plan is
+dropped; delegation is just the `run_agent` tool executing existing
+`ceoOps.js` code.
+
+### 0.6 Vertical slice before full migration
+
+Implement and evaluate ONE slice before continuing: (1) remove the mandatory
+JSON envelope from CEO chat, (2) introduce tool calling, (3) move memory
+extraction into `BrainJob`, (4) keep all existing business logic, (5) compare
+conversational quality against production. The slice ships behind the
+`FREEDOM_BRAIN_CHAT` env flag with the legacy `respondToChat` path as the
+default, so production comparison is a flag flip. The full migration (memory
+tables, capability registry evolution, autonomy) proceeds only after the slice
+proves out.
+
+### 0.7 Preserve existing infrastructure (reaffirmed)
+
+The LLM chokepoint, agent registry, audit pipeline, envelope encryption, RLS,
+existing tool/type implementations, and the scheduler are kept as-is. The
+objective is better orchestration, not replacement.
 
 ---
 
@@ -161,8 +251,8 @@ object.
 server/
   brain/
     index.js          # brainTurn({ userId, conversationId, message }) entrypoint
-    context.js        # context assembly (messages, memories, roster, docs, digest)
-    router.js         # Agent Router: delegation policy + run monitoring
+    context.js        # Context Assembler (messages, memories, roster, docs, digest)
+    jobs.js           # BrainJob queue (enqueue + worker dispatch)
     prompts.js        # Brain persona/system prompt (plain-text reply contract)
     toolBelt.js       # binds tool registry entries into an AI-SDK tool set
   memory/
@@ -257,17 +347,16 @@ edits, and scheduling all work through tools; flag flipped to default-on.
 **Exit criteria:** chat latency unchanged (extraction fully async); profile
 page renders from `UserMemory`; blob is read-only legacy.
 
-### Phase 3 — Agent Council
+### Phase 3 — Capability Registry (formerly "Agent Council")
 
-**Goal:** specialists report to the Brain instead of acting as parallel
-chatbots.
+**Goal:** specialists are capabilities of ONE intelligence, not parallel
+chatbots (§0.4).
 
-- `server/brain/router.js` owns delegation: the Brain calls `run_agent` /
-  `ask_specialist`; the router resolves the specialist through the existing
-  registry, executes via `runAgent` (sync budget ≈45 s then async with
-  `notifyCeoDelegatedRunComplete` — both already exist), and returns results
-  into the Brain conversation.
-- Council roster (extends `registry.js`, same fail-closed pattern):
+- Delegation is the `run_agent` tool: it resolves the specialist through the
+  existing registry, executes via `runAgent` (sync budget ≈45 s then async
+  with `notifyCeoDelegatedRunComplete` — both already exist), and returns
+  results into the Brain conversation. No separate router layer (§0.5).
+- Capability roster (extends `registry.js`, same fail-closed pattern):
   - **Finance Agent** — exists (`types/finance.js`): Plaid-derived aggregates,
     budgets, forecasting, transactions.
   - **Executive Assistant Agent** — evolution of `types/reminders.js`:
@@ -376,6 +465,14 @@ enum MemoryStatus {
   RETRACTED     // user corrected/deleted it — never re-extract (replaces blob tombstones)
 }
 
+enum MemorySource {
+  CONVERSATION   // extracted from chat with the Brain
+  IMPORTED_DATA  // onboarding, reference documents, profile migration
+  INTEGRATION    // observed via a connected integration (Plaid, calendar, …)
+  USER_SETTING   // explicitly entered/edited by the user in the UI
+  INFERRED       // deduced by the Brain, not directly stated
+}
+
 model UserMemory {
   id                String         @id @default(cuid())
   userId            String
@@ -385,9 +482,11 @@ model UserMemory {
   // 0.0–1.0; extraction sets initial value, re-confirmation raises it,
   // contradiction lowers it or supersedes the row.
   confidence        Float          @default(0.7)
-  // Provenance: "chat" | "run" | "onboarding" | "user_edit" | "profile_migration"
-  source            String
-  // Optional pointer to the originating conversation or run.
+  source            MemorySource
+  // True when the user explicitly stated/confirmed the fact (ranked above
+  // inferred facts during recall — see §0.3 trust ordering).
+  userConfirmed     Boolean        @default(false)
+  // Optional pointer to the originating conversation, run, or integration.
   sourceRef         String?
   status            MemoryStatus   @default(ACTIVE)
   supersededById    String?
@@ -504,9 +603,10 @@ No changes to `AgentConfig`, `AgentRun`, `AgentConversation`, or
 | `lifeContext` | `HISTORY` |
 | tombstones | `RETRACTED` rows (so extraction never resurrects deleted facts) |
 
-Each migrated row: `source = "profile_migration"`, `sourceRef` = blob entry id,
-`confidence = 0.8` (user-curated data), `createdAt`/`lastConfirmedAt` from the
-entry's `addedAt`/`updatedAt`.
+Each migrated row: `source = IMPORTED_DATA` (or `USER_SETTING` for
+user-edited entries), `sourceRef` = blob entry id, `userConfirmed = true` for
+onboarding/user-edited entries, `confidence = 0.8` (user-curated data),
+`createdAt`/`lastConfirmedAt` from the entry's `addedAt`/`updatedAt`.
 
 ---
 
