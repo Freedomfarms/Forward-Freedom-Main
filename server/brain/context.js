@@ -8,7 +8,8 @@ import { loadDocumentsForPrompt } from "../agents/documents.js";
 import { AgentError } from "../agents/errors.js";
 import { CEO_AGENT_MODEL } from "../agents/llm.js";
 import { dataSection } from "../agents/prompts.js";
-import { normalizeProfile, renderProfileForPrompt } from "../agents/profile.js";
+import { normalizeProfile } from "../agents/profile.js";
+import { renderMemoriesWithProvenance, selectRelevantMemories } from "./relevance.js";
 import {
   loadTeamAgents,
   renderNamedRunSummaries,
@@ -29,8 +30,8 @@ import { isMissingTimezoneColumnError, isValidIanaTimeZone } from "../agents/tim
 // engine already uses (they define current production quality):
 //   • last 50 messages of the ACTIVE conversation only
 //   • last 20 run summaries across the user's agents
-//   • the living profile (long-term memory — Phase 2 swaps in UserMemory
-//     retrieval behind this same seam)
+//   • relevance-selected memories with provenance annotations (the
+//     Relevance Engine, server/brain/relevance.js — v2 step 1)
 //   • up to 8 reference documents, capped per document
 //   • the cached Daily Digest (never regenerated on the chat path)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -185,9 +186,11 @@ export async function assembleBrainContext({
   const { ceoConfig, teamAgents, runs, relatedRun, userTimezone } = gathered;
   const history = [...gathered.history].reverse();
 
-  // Recall Relevant Memory: the living profile is the long-term memory store
-  // in this slice. Phase 2 replaces this block with ranked UserMemory
-  // retrieval without touching anything outside this module.
+  // Recall Relevant Memory — via the Relevance Engine (v2 step 1): scored,
+  // budgeted selection with provenance annotations instead of a raw dump.
+  // The living profile is still the underlying store; step 2 (UserMemory
+  // lifecycle) swaps the candidate side without touching anything outside
+  // relevance.js.
   let profile;
   try {
     profile = normalizeProfile(
@@ -196,6 +199,23 @@ export async function assembleBrainContext({
   } catch {
     profile = normalizeProfile(null);
   }
+
+  // Topic signal for relevance scoring: the new message plus the user's last
+  // few messages in this thread.
+  const recentUserMessages = [];
+  for (let i = history.length - 1; i >= 0 && recentUserMessages.length < 3; i -= 1) {
+    if (history[i].role !== "USER") continue;
+    try {
+      const content = decrypt(history[i].contentCiphertext);
+      if (!isCreationStateContent(content)) recentUserMessages.push(content);
+    } catch {
+      // Undecryptable rows contribute no topic signal.
+    }
+  }
+  const selectedMemories = selectRelevantMemories(profile, {
+    message: text,
+    recentUserMessages,
+  });
 
   let currentDigest = null;
   if (ceoConfig.lastDigestCiphertext) {
@@ -219,7 +239,10 @@ export async function assembleBrainContext({
       "YOUR IDENTITY",
       `Name: ${ceoConfig.name}\nRole: Freedom Brain — the single executive intelligence of this user's Freedom OS`
     ),
-    dataSection("USER PROFILE (long-term memory)", renderProfileForPrompt(profile)),
+    dataSection(
+      "USER PROFILE (long-term memory, selected for relevance)",
+      renderMemoriesWithProvenance(selectedMemories)
+    ),
     dataSection("YOUR CAPABILITIES (specialist agent roster)", renderTeamRoster(teamAgents)),
     dataSection("RECENT RUN SUMMARIES", renderNamedRunSummaries(runs, teamAgents)),
     dataSection("USER TIMEZONE", tzLabel),
