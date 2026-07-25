@@ -1,0 +1,262 @@
+import { withUserContext } from "../db/prisma.js";
+import { decrypt, decryptJson, encrypt } from "../security/envelope.js";
+import { CEO_AGENT_CONFIG_SAFE_SELECT } from "../agents/apiHelpers.js";
+import { isCreationStateContent } from "../agents/creationFlow.js";
+import { resolveConversationForWrite, touchConversation } from "../agents/conversations.js";
+import { applySnippetTitleIfNeeded } from "../agents/conversationTitle.js";
+import { loadDocumentsForPrompt } from "../agents/documents.js";
+import { AgentError } from "../agents/errors.js";
+import { CEO_AGENT_MODEL } from "../agents/llm.js";
+import { dataSection } from "../agents/prompts.js";
+import { normalizeProfile, renderProfileForPrompt } from "../agents/profile.js";
+import {
+  loadTeamAgents,
+  renderNamedRunSummaries,
+  renderTeamRoster,
+} from "../agents/teamContext.js";
+import { isMissingTimezoneColumnError, isValidIanaTimeZone } from "../agents/timezone.js";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Context Assembler — the single component responsible for context quality.
+//
+// Before every Brain model call, this module SELECTS the information relevant
+// to the current request (recent conversation, long-term memory, workspace
+// state, capability roster, current digest) and returns a curated context
+// package — never the raw database. All future retrieval improvements (memory
+// ranking, embeddings, relevance filters) land here, in one place.
+//
+// Curation in the vertical slice mirrors the tuned limits the legacy chat
+// engine already uses (they define current production quality):
+//   • last 50 messages of the ACTIVE conversation only
+//   • last 20 run summaries across the user's agents
+//   • the living profile (long-term memory — Phase 2 swaps in UserMemory
+//     retrieval behind this same seam)
+//   • up to 8 reference documents, capped per document
+//   • the cached Daily Digest (never regenerated on the chat path)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const CHAT_HISTORY_LIMIT = 50;
+const RUN_SUMMARY_LIMIT = 20;
+
+function renderTranscript(messages) {
+  const lines = messages
+    .map((message) => {
+      let content;
+      try {
+        content = decrypt(message.contentCiphertext);
+      } catch {
+        content = "(message could not be decrypted)";
+      }
+      // Hidden agent-creation state rows are internal bookkeeping — never
+      // conversation — and must not reach a prompt.
+      if (isCreationStateContent(content)) return null;
+      return `${message.role === "USER" ? "User" : "Assistant"}: ${content}`;
+    })
+    .filter(Boolean);
+  return lines.length ? lines.join("\n") : "(no previous messages)";
+}
+
+/**
+ * Observe + Assemble Context + Recall Relevant Memory.
+ *
+ * One RLS-scoped transaction that persists the user's message and gathers the
+ * conversation-scoped rows, followed by decryption/rendering outside the
+ * transaction. Returns the curated context package the Brain reasons over:
+ * `{ ceoConfig, conversationId, conversationTitle, isFirstExchange, model,
+ *    promptSections, lastUserMessage }`.
+ */
+export async function assembleBrainContext({
+  userId,
+  ceoAgentConfigId,
+  conversationId = null,
+  message,
+  relatedRunId = null,
+}) {
+  const text = String(message || "").trim();
+  if (!userId || !text) {
+    throw new AgentError(
+      "assembleBrainContext requires userId and a non-empty message.",
+      "INVALID_ARGUMENT",
+      400
+    );
+  }
+  if (!ceoAgentConfigId) {
+    throw new AgentError("assembleBrainContext requires ceoAgentConfigId.", "INVALID_ARGUMENT", 400);
+  }
+
+  const gathered = await withUserContext(userId, async (tx) => {
+    const ceoConfig = await tx.ceoAgentConfig.findFirst({
+      where: { id: ceoAgentConfigId, userId },
+      select: CEO_AGENT_CONFIG_SAFE_SELECT,
+    });
+    if (!ceoConfig) {
+      throw new AgentError("CEO Agent not found.", "CEO_AGENT_NOT_FOUND", 404);
+    }
+
+    const conversation = await resolveConversationForWrite(tx, {
+      userId,
+      ceoAgentConfigId: ceoConfig.id,
+      conversationId,
+      allowSystem: false,
+    });
+
+    // Conversation-scoped recall: only the active thread's recent messages.
+    const history = await tx.agentChatMessage.findMany({
+      where: { userId, conversationId: conversation.id },
+      orderBy: { createdAt: "desc" },
+      take: CHAT_HISTORY_LIMIT,
+      select: { role: true, contentCiphertext: true, createdAt: true },
+    });
+    const isFirstExchange = history.length === 0;
+
+    await tx.agentChatMessage.create({
+      data: {
+        userId,
+        conversationId: conversation.id,
+        ceoAgentConfigId: ceoConfig.id,
+        agentConfigId: null,
+        role: "USER",
+        contentCiphertext: encrypt(text),
+        relatedRunId,
+      },
+    });
+    await touchConversation(tx, conversation.id);
+    const conversationTitle = await applySnippetTitleIfNeeded(tx, {
+      conversationId: conversation.id,
+      messageText: text,
+    });
+
+    // Workspace state: live capability roster + recent activity across all
+    // of the user's agents (the Brain's cross-agent view).
+    const teamAgents = await loadTeamAgents(tx, userId);
+    const runs = await tx.agentRun.findMany({
+      where: { userId },
+      orderBy: { startedAt: "desc" },
+      take: RUN_SUMMARY_LIMIT,
+      select: {
+        id: true,
+        agentConfigId: true,
+        agentType: true,
+        summary: true,
+        startedAt: true,
+      },
+    });
+
+    let relatedRun = null;
+    if (relatedRunId) {
+      relatedRun = await tx.agentRun.findFirst({
+        where: { id: relatedRunId, userId },
+      });
+      if (!relatedRun) {
+        throw new AgentError(
+          "The referenced run does not exist or is not accessible from this chat.",
+          "RUN_NOT_ACCESSIBLE",
+          404
+        );
+      }
+    }
+
+    let userTimezone;
+    try {
+      const userRow = await tx.user.findUnique({
+        where: { id: userId },
+        select: { timezone: true },
+      });
+      userTimezone = userRow?.timezone ?? null;
+    } catch (error) {
+      // Timezone column lag must not take down Brain chat.
+      if (!isMissingTimezoneColumnError(error)) throw error;
+      userTimezone = null;
+    }
+
+    return {
+      ceoConfig,
+      conversationId: conversation.id,
+      conversationTitle,
+      isFirstExchange,
+      history,
+      teamAgents,
+      runs,
+      relatedRun,
+      userTimezone,
+    };
+  });
+
+  const { ceoConfig, teamAgents, runs, relatedRun, userTimezone } = gathered;
+  const history = [...gathered.history].reverse();
+
+  // Recall Relevant Memory: the living profile is the long-term memory store
+  // in this slice. Phase 2 replaces this block with ranked UserMemory
+  // retrieval without touching anything outside this module.
+  let profile;
+  try {
+    profile = normalizeProfile(
+      ceoConfig.profileCiphertext ? decryptJson(ceoConfig.profileCiphertext) : null
+    );
+  } catch {
+    profile = normalizeProfile(null);
+  }
+
+  let currentDigest = null;
+  if (ceoConfig.lastDigestCiphertext) {
+    try {
+      currentDigest = decrypt(ceoConfig.lastDigestCiphertext);
+    } catch {
+      currentDigest = null;
+    }
+  }
+
+  const tzLabel =
+    userTimezone && isValidIanaTimeZone(userTimezone)
+      ? userTimezone
+      : "(unknown — detect from browser or ask the user for an IANA timezone; do not assume UTC)";
+
+  const documents = await loadDocumentsForPrompt(userId);
+
+  const promptSections = [
+    "Reply to the user's new message using the context below.",
+    dataSection(
+      "YOUR IDENTITY",
+      `Name: ${ceoConfig.name}\nRole: Freedom Brain — the single executive intelligence of this user's Freedom OS`
+    ),
+    dataSection("USER PROFILE (long-term memory)", renderProfileForPrompt(profile)),
+    dataSection("YOUR CAPABILITIES (specialist agent roster)", renderTeamRoster(teamAgents)),
+    dataSection("RECENT RUN SUMMARIES", renderNamedRunSummaries(runs, teamAgents)),
+    dataSection("USER TIMEZONE", tzLabel),
+    dataSection(
+      "CURRENT DAILY DIGEST (shown on Freedom OS home)",
+      currentDigest || "(empty — not set yet)"
+    ),
+    dataSection("USER REFERENCE DOCUMENTS", documents),
+  ];
+
+  if (relatedRun) {
+    let relatedOutput;
+    try {
+      relatedOutput = relatedRun.outputCiphertext ? decrypt(relatedRun.outputCiphertext) : null;
+    } catch {
+      relatedOutput = null;
+    }
+    promptSections.push(
+      dataSection(
+        "RELATED RUN (full output)",
+        `Run ${relatedRun.id} (${relatedRun.agentType}, ${relatedRun.status})\nSummary: ${relatedRun.summary || "(none)"}\nOutput:\n${relatedOutput || "(no stored output)"}`
+      )
+    );
+  }
+
+  promptSections.push(
+    dataSection("CONVERSATION SO FAR", renderTranscript(history)),
+    dataSection("NEW USER MESSAGE", text)
+  );
+
+  return {
+    ceoConfig,
+    conversationId: gathered.conversationId,
+    conversationTitle: gathered.conversationTitle,
+    isFirstExchange: gathered.isFirstExchange,
+    model: ceoConfig.model || CEO_AGENT_MODEL,
+    promptSections,
+    lastUserMessage: text,
+  };
+}

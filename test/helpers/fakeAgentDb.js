@@ -68,7 +68,25 @@ const TABLES = [
   "notification",
   "transaction",
   "account",
+  "brainJob",
 ];
+
+// Supports plain values plus the { increment } atomic update Prisma offers.
+function applyUpdateData(row, data = {}) {
+  for (const [key, value] of Object.entries(data)) {
+    if (
+      value !== null &&
+      typeof value === "object" &&
+      !(value instanceof Date) &&
+      !Array.isArray(value) &&
+      "increment" in value
+    ) {
+      row[key] = (row[key] ?? 0) + value.increment;
+    } else {
+      row[key] = value;
+    }
+  }
+}
 
 export function createFakeDb(seed = {}) {
   const tables = Object.fromEntries(TABLES.map((table) => [table, []]));
@@ -131,6 +149,16 @@ export function createFakeDb(seed = {}) {
           ...(table === "agentConversation"
             ? { updatedAt: now, isSystem: false, archivedAt: null, title: null }
             : {}),
+          ...(table === "brainJob"
+            ? {
+                status: "PENDING",
+                attempts: 0,
+                runAfter: now,
+                lockedAt: null,
+                lastError: null,
+                completedAt: null,
+              }
+            : {}),
           ...args.data,
         };
         rows().push(row);
@@ -140,8 +168,16 @@ export function createFakeDb(seed = {}) {
         calls.push({ table, method: "update", args });
         const row = rows().find((candidate) => matchesWhere(candidate, args.where));
         if (!row) throw new Error(`fakeAgentDb: no ${table} row matches ${JSON.stringify(args.where)}`);
-        Object.assign(row, args.data);
+        applyUpdateData(row, args.data);
         return { ...row };
+      },
+      async updateMany(args = {}) {
+        calls.push({ table, method: "updateMany", args });
+        const matched = rows().filter((candidate) => matchesWhere(candidate, args.where));
+        for (const row of matched) {
+          applyUpdateData(row, args.data);
+        }
+        return { count: matched.length };
       },
       async delete(args = {}) {
         calls.push({ table, method: "delete", args });
