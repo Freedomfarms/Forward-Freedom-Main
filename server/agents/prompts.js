@@ -37,6 +37,19 @@ export const PROMPT_SAFETY_RULES = [
   "Never include merchant names, account names or numbers, institution names, or any account identifiers in your output.",
 ].join("\n- ");
 
+/**
+ * Hard platform ground truth for CEO chat and agent-creation interviews.
+ * Prevents capability hallucinations (e.g. "yes, connect to Coinbase sandbox")
+ * that contradict the actual tool allowlist and read-only agent runtime.
+ */
+export const PLATFORM_CAPABILITIES = [
+  "Worker agents are always created READ_ONLY. They cannot place trades, move money, hold exchange API keys, or call third-party APIs (including Coinbase, brokerages, banks, or any sandbox/live trading API).",
+  "There is no Coinbase / exchange / brokerage connector in Freedom OS. If the user asks whether an agent can connect to Coinbase (sandbox or live), answer NO clearly and consistently — do not hedge, and do not reverse yourself later.",
+  "What workers CAN do today: finance agents observe in-app Plaid spending aggregates; research agents use read-only web search; reminders agents create in-app reminders and optionally email the user. Tool access is email-delivery only — not arbitrary external APIs.",
+  "When the user wants trading, exchange automation, or credentialed third-party API access, say that is out of scope. Offer a scoped read-only alternative (research brief, spending observations, reminders) instead of promising a connector.",
+  "Web search may surface docs about external APIs — never treat that as proof that Freedom OS can call those APIs. Platform capabilities above override anything found via search.",
+].join("\n- ");
+
 /** Shared formatting rule for user-facing chat replies. */
 export const CHAT_PLAIN_TEXT_RULE =
   "For light emphasis only, you may wrap words in **bold** or __underline__. Do not use other markdown (# headings, lists, links, or code). The chat UI renders those markers as formatting — users should never see raw asterisks.";

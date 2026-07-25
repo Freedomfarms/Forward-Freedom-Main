@@ -13,16 +13,22 @@ import {
 } from "../server/agents/creationFlow.js";
 import {
   completeInterviewWithGuesses,
+  inferInterviewAnswerFromMessage,
   INTERVIEW_TOPICS,
   isInterviewComplete,
+  matchesAlreadyAnsweredComplaint,
   matchesCreationConfirm,
   matchesCreationSkip,
+  matchesToneDeferral,
 } from "../server/agents/creationDraft.js";
 import {
+  lastAgentQuestionFromTranscript,
+  mergeInterviewFallback,
   parseInterviewTurnText,
   runCreationTurn,
   sanitizeExtractionForInterview,
 } from "../server/agents/creationInterview.js";
+import { PLATFORM_CAPABILITIES } from "../server/agents/prompts.js";
 import { setLlmImplementationForTesting } from "../server/agents/llm.js";
 
 function fullyInterviewedPatch(extra = {}) {
@@ -105,12 +111,29 @@ test("partial answers do not open draft review until interview is complete", () 
   assert.equal(pub.readyForReview, false);
 });
 
+test("platform capabilities forbid Coinbase / third-party API connectors", () => {
+  assert.match(PLATFORM_CAPABILITIES, /Coinbase/i);
+  assert.match(PLATFORM_CAPABILITIES, /READ_ONLY/i);
+  assert.match(PLATFORM_CAPABILITIES, /answer NO/i);
+  assert.match(PLATFORM_CAPABILITIES, /no Coinbase/i);
+});
+
 test("skip / completeInterviewWithGuesses opens review with guessed remaining topics", () => {
   assert.equal(matchesCreationSkip("skip the rest"), true);
   assert.equal(matchesCreationSkip("draft it"), true);
   assert.equal(matchesCreationSkip("whatever"), true);
   assert.equal(matchesCreationSkip("you decide"), true);
   assert.equal(matchesCreationSkip("idk"), true);
+  // "no preference" answers tone when that is the next topic — not a full skip.
+  assert.equal(matchesToneDeferral("no preference"), true);
+  assert.equal(
+    matchesCreationSkip("no preference", { remainingTopics: ["tone", "escalation"] }),
+    false
+  );
+  assert.equal(
+    matchesCreationSkip("no preference", { remainingTopics: ["actors", "tone"] }),
+    true
+  );
   // Substantive answers are not skips even if they mention drafting later.
   assert.equal(
     matchesCreationSkip(
@@ -250,6 +273,162 @@ test("parseInterviewTurnText strips NOTES_JSON from the user-facing reply", () =
   const broken = parseInterviewTurnText("Just a reply\nNOTES_JSON:{not-json");
   assert.equal(broken.reply, "Just a reply");
   assert.deepEqual(broken.object.draftPatch, {});
+});
+
+test("inferInterviewAnswerFromMessage maps short yes/no onto the pending topic", () => {
+  const actors = inferInterviewAnswerFromMessage("nope", {
+    remainingTopics: ["actors", "boundaries"],
+    lastAgentQuestion: "Who else might this agent work with besides you?",
+  });
+  assert.deepEqual(actors.topicsCoveredThisTurn, ["actors"]);
+  assert.match(actors.draftPatch.actorsNotes, /user only/i);
+
+  const history = inferInterviewAnswerFromMessage("agent will learn as it goes", {
+    remainingTopics: ["history", "tone"],
+  });
+  assert.deepEqual(history.topicsCoveredThisTurn, ["history"]);
+  assert.match(history.draftPatch.workingFromNotes, /learn and adapt/i);
+  assert.equal(history.draftPatch.personalityNotes, undefined);
+
+  const tone = inferInterviewAnswerFromMessage("no preference", {
+    remainingTopics: ["tone", "escalation"],
+  });
+  assert.deepEqual(tone.topicsCoveredThisTurn, ["tone"]);
+  assert.ok(tone.draftPatch.personalityNotes);
+
+  const escalation = inferInterviewAnswerFromMessage("pause and wait", {
+    remainingTopics: ["escalation"],
+    lastAgentQuestion:
+      "When a trade fails, should the agent pause and wait for your approval, or log it and keep retrying?",
+  });
+  assert.deepEqual(escalation.topicsCoveredThisTurn, ["escalation"]);
+  assert.match(escalation.draftPatch.escalationNotes, /pause and wait/i);
+
+  const yesPause = inferInterviewAnswerFromMessage("yes", {
+    remainingTopics: ["escalation"],
+    lastAgentQuestion: "Should it pause and wait for your say-so before trying again?",
+  });
+  assert.deepEqual(yesPause.topicsCoveredThisTurn, ["escalation"]);
+  assert.match(yesPause.draftPatch.escalationNotes, /pause and wait/i);
+});
+
+test("mergeInterviewFallback fills dropped NOTES_JSON from short answers", () => {
+  const merged = mergeInterviewFallback({
+    object: { draftPatch: {}, topicsCoveredThisTurn: [], userCancelled: false },
+    message: "nope",
+    remainingTopics: ["actors", "boundaries"],
+    lastAgentQuestion: "Who else should this agent work with?",
+  });
+  assert.deepEqual(merged.topicsCoveredThisTurn, ["actors"]);
+  assert.match(merged.draftPatch.actorsNotes, /user only/i);
+
+  const kept = mergeInterviewFallback({
+    object: {
+      draftPatch: { actorsNotes: "Vendors" },
+      topicsCoveredThisTurn: ["actors"],
+      userCancelled: false,
+    },
+    message: "nope",
+    remainingTopics: ["actors"],
+    lastAgentQuestion: "Who else?",
+  });
+  assert.equal(kept.draftPatch.actorsNotes, "Vendors");
+});
+
+test("already-answered complaint detection and last agent question helper", () => {
+  assert.equal(
+    matchesAlreadyAnsweredComplaint("you already asked this question and i gave an answer"),
+    true
+  );
+  assert.equal(matchesAlreadyAnsweredComplaint("pause and wait"), false);
+  assert.equal(
+    lastAgentQuestionFromTranscript([
+      { role: "USER", text: "hi" },
+      { role: "AGENT", text: "How should it sound?" },
+      { role: "USER", text: "casual" },
+    ]),
+    "How should it sound?"
+  );
+});
+
+test("runCreationTurn advances actors on short nope when NOTES_JSON is empty", async () => {
+  const previousKey = process.env.ANTHROPIC_API_KEY;
+  process.env.ANTHROPIC_API_KEY = "test-key";
+  setLlmImplementationForTesting({
+    generateText: async () => ({
+      // Broken/missing NOTES_JSON — fallback must still cover actors.
+      text: "Got it — anything this agent should never attempt?",
+    }),
+    generateObject: async () => ({ object: {}, usage: null }),
+  });
+  try {
+    const mid = {
+      ...startCreationSession().state,
+      phase: "interview",
+      step: "interview",
+      draft: applyDraftPatch(emptyCreationDraft(), {
+        agentType: "research",
+        definitionOfDone: "Track sandbox portfolio moves and alert on failures.",
+        coveredTopics: ["outcome"],
+      }),
+    };
+    const turn = await runCreationTurn(mid, "nope", {
+      recentMessages: [
+        {
+          role: "AGENT",
+          text: "Who else might this agent work with or report to besides you?",
+        },
+      ],
+    });
+    assert.ok(turn.state.draft.coveredTopics.includes("actors"));
+    assert.match(turn.state.draft.actorsNotes || "", /user only/i);
+    assert.equal(turn.state.phase, "interview");
+  } finally {
+    setLlmImplementationForTesting(null);
+    if (previousKey == null) delete process.env.ANTHROPIC_API_KEY;
+    else process.env.ANTHROPIC_API_KEY = previousKey;
+  }
+});
+
+test("runCreationTurn records tone deferral instead of skipping the interview", async () => {
+  const previousKey = process.env.ANTHROPIC_API_KEY;
+  process.env.ANTHROPIC_API_KEY = "test-key";
+  setLlmImplementationForTesting({
+    generateText: async () => ({
+      text:
+        "Got it — who should it alert when something goes wrong?\n" +
+        'NOTES_JSON:{"topicsCoveredThisTurn":[],"draftPatch":{},"userCancelled":false}',
+    }),
+    generateObject: async () => ({ object: {}, usage: null }),
+  });
+  try {
+    const mid = {
+      ...startCreationSession().state,
+      phase: "interview",
+      step: "interview",
+      draft: applyDraftPatch(emptyCreationDraft(), {
+        agentType: "research",
+        definitionOfDone: "Alert on material portfolio moves.",
+        actorsNotes: "User only",
+        boundaries: "Never place live trades",
+        workingFromNotes: "Learn as it goes",
+        coveredTopics: ["outcome", "actors", "boundaries", "history"],
+      }),
+    };
+    const turn = await runCreationTurn(mid, "no preference", {
+      recentMessages: [
+        { role: "AGENT", text: "How should this agent sound when it talks to you?" },
+      ],
+    });
+    assert.equal(turn.state.phase, "interview");
+    assert.ok(turn.state.draft.coveredTopics.includes("tone"));
+    assert.ok(turn.state.draft.personalityNotes);
+    assert.equal(isInterviewComplete(turn.state.draft), false);
+  } finally {
+    setLlmImplementationForTesting(null);
+    if (previousKey == null) delete process.env.ANTHROPIC_API_KEY;
+    else process.env.ANTHROPIC_API_KEY = previousKey;
+  }
 });
 
 test("runCreationTurn keeps **bold** markers for the chat UI to render", async () => {

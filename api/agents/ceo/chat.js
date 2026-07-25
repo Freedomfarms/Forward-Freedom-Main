@@ -43,7 +43,7 @@ import { announceAgentCreatedToCeoChat } from "../../../server/agents/teamContex
 // interview (LLM) on an isSystem conversation. Everything else → respondToChat.
 
 const CREATION_STATE_LOOKBACK = 60;
-const CREATION_TRANSCRIPT_LOOKBACK = 24;
+const CREATION_TRANSCRIPT_LOOKBACK = 40;
 
 async function findActiveCreationState(tx, userId, ceoAgentConfigId, conversationId) {
   const recent = await tx.agentChatMessage.findMany({

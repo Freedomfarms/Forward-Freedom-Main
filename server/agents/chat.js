@@ -33,7 +33,12 @@ import {
 } from "./ceoOps.js";
 import { cronToSchedulePreset, formatHourUtcLabel } from "./schedule.js";
 import { isEmailDeliveryEnabled } from "./emailDelivery.js";
-import { CHAT_PLAIN_TEXT_RULE, dataSection, PROMPT_SAFETY_RULES } from "./prompts.js";
+import {
+  CHAT_PLAIN_TEXT_RULE,
+  dataSection,
+  PLATFORM_CAPABILITIES,
+  PROMPT_SAFETY_RULES,
+} from "./prompts.js";
 import {
   extractFromChatReply,
   normalizeProfile,
@@ -123,6 +128,8 @@ const CEO_CHAT_SYSTEM_PROMPT = [
   "Never give directives such as buy/sell/move money and never make investment recommendations.",
   "Also return profileOps: durable facts about the user revealed in this conversation (usually an empty array). Set ceoActions to null when the user is only asking a question.",
   CHAT_PLAIN_TEXT_RULE,
+  "Platform capabilities (authoritative — never contradict these):",
+  `- ${PLATFORM_CAPABILITIES}`,
   "Safety rules:",
   `- ${PROMPT_SAFETY_RULES}`,
 ].join("\n");

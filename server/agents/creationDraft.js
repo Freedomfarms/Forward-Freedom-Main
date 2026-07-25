@@ -338,12 +338,27 @@ export function matchesCreationEditRequest(message) {
 }
 
 /**
+ * Short "no preference / doesn't matter" replies that answer the *tone*
+ * topic — not a request to skip the whole interview.
+ */
+export function matchesToneDeferral(message) {
+  const text = String(message || "").trim();
+  if (!text || text.length > 80) return false;
+  return /^(no preference|doesn'?t matter|don'?t care|i don'?t care|whatever(?:\s+tone)?|you decide(?:\s+the\s+tone)?|up to you|surprise me)[.!?]*$/i.test(
+    text
+  );
+}
+
+/**
  * User wants to skip remaining interview questions and go to the draft.
  * Includes explicit skip language plus short "you decide / whatever / idk"
  * bail-outs — so someone who answers Aim (+ maybe one more) and doesn't want
  * to keep interviewing can jump to draft without fighting the questionnaire.
+ *
+ * When `remainingTopics` includes "tone", bare "no preference" / "doesn't
+ * matter" answers tone instead of skipping (see matchesToneDeferral).
  */
-export function matchesCreationSkip(message) {
+export function matchesCreationSkip(message, { remainingTopics } = {}) {
   const text = String(message || "").trim();
   if (!text) return false;
   if (
@@ -355,8 +370,192 @@ export function matchesCreationSkip(message) {
   }
   // Short reluctant / defer-to-agent replies (not long substantive answers).
   if (text.length > 80) return false;
+  const remaining = Array.isArray(remainingTopics) ? remainingTopics : [];
+  // Only treat tone-deferral phrases as answers when tone is the next question.
+  if (remaining[0] === "tone" && matchesToneDeferral(text)) {
+    return false;
+  }
   return /^(idk|i don'?t know|not sure|whatever|you decide|up to you|don'?t care|i don'?t care|doesn'?t matter|no preference|just (?:make|build|create) (?:one|it)|surprise me)[.!?]*$/i.test(
     text
+  );
+}
+
+/**
+ * Deterministic draft patch when the LLM drops NOTES_JSON or under-extracts
+ * a short yes/no that clearly answers the pending interview topic.
+ * Returns null when we cannot safely map the message.
+ */
+export function inferInterviewAnswerFromMessage(
+  message,
+  { remainingTopics = [], lastAgentQuestion = "" } = {}
+) {
+  const text = String(message || "").trim();
+  if (!text) return null;
+  const pending = Array.isArray(remainingTopics) ? remainingTopics[0] : null;
+  if (!pending || !INTERVIEW_TOPICS.includes(pending)) return null;
+
+  const question = String(lastAgentQuestion || "").toLowerCase();
+
+  if (pending === "actors") {
+    if (
+      /^(nope|no|nah|none|just me|only me|nobody|no one|n\/a)[.!?]*$/i.test(text) ||
+      /\b(just me|only me|nobody else|no one else|just you and me)\b/i.test(text)
+    ) {
+      return {
+        topicsCoveredThisTurn: ["actors"],
+        draftPatch: {
+          actorsNotes: "Acts on behalf of the user only — no other stakeholders.",
+          coveredTopics: ["actors"],
+        },
+      };
+    }
+  }
+
+  if (pending === "boundaries") {
+    if (/^(nope|no|nah|none|nothing|n\/a|no boundaries)[.!?]*$/i.test(text)) {
+      return {
+        topicsCoveredThisTurn: ["boundaries"],
+        draftPatch: {
+          boundaries:
+            "No additional user-specified off-limits beyond platform read-only defaults.",
+          coveredTopics: ["boundaries"],
+        },
+      };
+    }
+  }
+
+  if (pending === "history") {
+    if (
+      /\b(learn(?:s)? as (?:it|we|you) goes?|adapt(?:s)? as (?:it|we|you)|starting fresh|no (?:prior )?history|none)\b/i.test(
+        text
+      ) ||
+      /^(nope|no|nah|none|n\/a|fresh start)[.!?]*$/i.test(text)
+    ) {
+      const notes = /\blearn|adapt\b/i.test(text)
+        ? "No prior trade/decision history provided — learn and adapt from new runs."
+        : "No prior history provided — starting fresh.";
+      return {
+        topicsCoveredThisTurn: ["history"],
+        draftPatch: { workingFromNotes: notes, coveredTopics: ["history"] },
+      };
+    }
+  }
+
+  if (pending === "tone") {
+    if (matchesToneDeferral(text)) {
+      return {
+        topicsCoveredThisTurn: ["tone"],
+        draftPatch: {
+          personalityNotes: "Clear\nPractical\nConcise",
+          coveredTopics: ["tone"],
+        },
+      };
+    }
+    if (/\b(robotic|all business|strictly|direct|formal|business)\b/i.test(text)) {
+      return {
+        topicsCoveredThisTurn: ["tone"],
+        draftPatch: {
+          personalityNotes: "Direct\nAll-business\nConcise",
+          coveredTopics: ["tone"],
+        },
+      };
+    }
+    if (/\b(casual|conversational|friendly|warm|chatty)\b/i.test(text)) {
+      return {
+        topicsCoveredThisTurn: ["tone"],
+        draftPatch: {
+          personalityNotes: "Conversational\nClear\nApproachable",
+          coveredTopics: ["tone"],
+        },
+      };
+    }
+  }
+
+  if (pending === "escalation") {
+    // Prefer pause-and-wait when the last question offered that choice.
+    if (
+      /\bpause\b/i.test(text) ||
+      (/\bwait\b/i.test(text) && /\b(approval|say-so|me|you)\b/i.test(text)) ||
+      (question.includes("pause") &&
+        /^(yes|yep|yeah|correct|right|that one)[.!?]*$/i.test(text))
+    ) {
+      return {
+        topicsCoveredThisTurn: ["escalation"],
+        draftPatch: {
+          escalationNotes:
+            "On failure (bad API response, insufficient funds, failed trade attempt): pause and wait for the user's approval before retrying. Alert only the user.",
+          coveredTopics: ["escalation"],
+        },
+      };
+    }
+    if (
+      /\b(log(?:\s+it)?(?:\s+and)?(?:\s+keep(?:\s+going)?)?|keep (?:going|retrying)|retry(?:\s+automatically)?|on its own)\b/i.test(
+        text
+      ) ||
+      (question.includes("log") &&
+        /^(yes|yep|yeah|correct|right|that one)[.!?]*$/i.test(text))
+    ) {
+      return {
+        topicsCoveredThisTurn: ["escalation"],
+        draftPatch: {
+          escalationNotes:
+            "On failure: log it and continue/retry without waiting. Alert only the user.",
+          coveredTopics: ["escalation"],
+        },
+      };
+    }
+    if (/^(nope|no|nah|none|nobody|no one|just me)[.!?]*$/i.test(text)) {
+      return {
+        topicsCoveredThisTurn: ["escalation"],
+        draftPatch: {
+          escalationNotes: "Alert only the user; no other escalation contacts.",
+          coveredTopics: ["escalation"],
+        },
+      };
+    }
+  }
+
+  // Generic: non-trivial free-text answer to the pending topic when the LLM
+  // dropped NOTES_JSON — store the user's words in the matching field.
+  if (text.length >= 8 && !/^(yes|yep|yeah|no|nope|nah|correct|right|ok|okay)[.!?]*$/i.test(text)) {
+    const fieldByTopic = {
+      outcome: "definitionOfDone",
+      actors: "actorsNotes",
+      boundaries: "boundaries",
+      history: "workingFromNotes",
+      tone: "personalityNotes",
+      escalation: "escalationNotes",
+    };
+    const field = fieldByTopic[pending];
+    if (field) {
+      return {
+        topicsCoveredThisTurn: [pending],
+        draftPatch: { [field]: text.slice(0, 500), coveredTopics: [pending] },
+      };
+    }
+  }
+
+  // Bare yes/no with a clear last question about the pending topic — capture a
+  // short paraphrase so the interview advances instead of looping.
+  if (/^(yes|yep|yeah|correct|right|ok|okay)[.!?]*$/i.test(text) && question) {
+    if (pending === "actors" && /\b(just you|only you|anyone else|who else)\b/i.test(question)) {
+      return {
+        topicsCoveredThisTurn: ["actors"],
+        draftPatch: {
+          actorsNotes: "Acts on behalf of the user only — no other stakeholders.",
+          coveredTopics: ["actors"],
+        },
+      };
+    }
+  }
+
+  return null;
+}
+
+/** True when the user claims a prior answer / objects to a repeat question. */
+export function matchesAlreadyAnsweredComplaint(message) {
+  return /\b(already (?:asked|answered|told|said|gave)|you already|i already|as i (?:said|told)|repeat(?:ing)? (?:the )?(?:same )?question)\b/i.test(
+    String(message || "")
   );
 }
 

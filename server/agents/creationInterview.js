@@ -6,9 +6,11 @@ import {
   buildCreatePayloadFromDraft,
   completeInterviewWithGuesses,
   emptyCreationDraft,
+  inferInterviewAnswerFromMessage,
   INTERVIEW_TOPICS,
   isDraftReadyForReview,
   isInterviewComplete,
+  matchesAlreadyAnsweredComplaint,
   matchesCreationCancel,
   matchesCreationConfirm,
   matchesCreationEditRequest,
@@ -23,7 +25,12 @@ import {
   generateAgentText,
   PROFILE_EXTRACTION_MODEL,
 } from "./llm.js";
-import { CHAT_PLAIN_TEXT_RULE, dataSection, PROMPT_SAFETY_RULES } from "./prompts.js";
+import {
+  CHAT_PLAIN_TEXT_RULE,
+  dataSection,
+  PLATFORM_CAPABILITIES,
+  PROMPT_SAFETY_RULES,
+} from "./prompts.js";
 import { CREATABLE_AGENT_TYPES } from "./registry.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -40,7 +47,10 @@ const INTERVIEW_NOTES_MARKER = "NOTES_JSON:";
 const INTERVIEW_TURN_SYSTEM_PROMPT = [
   "You are the user's CEO Agent inside Freedom OS, helping create ONE scoped worker agent.",
   "This is a FAST interview turn — reply like a natural chat (1–3 short sentences). Never present or narrate a full draft.",
-  "Acknowledge briefly, then ask ONE next unanswered topic or a short clarifier if their answer was vague.",
+  "Acknowledge briefly, then ask ONE next unanswered topic — never two topics in the same question.",
+  "Short answers (yes/no/nope/correct/pause and wait/just me) COUNT when they clearly answer your last question — record them in NOTES_JSON and move on. Do not re-ask the same topic.",
+  "If INTERVIEW PROGRESS lists a topic as covered, never ask it again. If the user says you already asked or they already answered, apologize once, check NOTES CAPTURED / transcript, and only ask topics still listed under remainingTopics.",
+  "Do not invent that an answer to one topic covers another (e.g. \"learn as it goes\" is history, not tone).",
   "Topics still to cover when remaining: who it acts with/for; what's off-limits; any history to learn from; tone/behavior; who to escalate to and when.",
   "Never say \"soul file\", \"system prompt\", \"JSON\", or \"interview topics\" in the user-facing reply.",
   CHAT_PLAIN_TEXT_RULE,
@@ -48,6 +58,8 @@ const INTERVIEW_TURN_SYSTEM_PROMPT = [
   `${INTERVIEW_NOTES_MARKER}{"topicsCoveredThisTurn":["outcome"],"draftPatch":{"definitionOfDone":"user outcome words","agentType":"research"},"userCancelled":false}`,
   `draftPatch may only include fields they explicitly answered this turn. agentType one of: ${CREATABLE_AGENT_TYPES.join(", ")}.`,
   "Aim answers → outcome (+ agentType if clear). Use [] / {} when nothing new. Do not invent the rest of the draft.",
+  "Platform capabilities (authoritative — never contradict these):",
+  `- ${PLATFORM_CAPABILITIES}`,
   "Safety rules:",
   `- ${PROMPT_SAFETY_RULES}`,
 ].join("\n");
@@ -201,31 +213,36 @@ const CONVERSATION_SYSTEM_PROMPT = [
   "Flow (strict order):",
   "1) AIM — land a measurable outcome. If they give tasks/steps, push back once or twice: what does \"done\" look like specifically enough to know success vs failure?",
   "2) INTERVIEW — match their energy:",
-  "   - If they are engaged and answering: ask through ALL of these topics (plus short clarifiers when an answer is vague). Do not rush to a draft. One main question at a time. Accept answers out of order / bundled.",
+  "   - If they are engaged and answering: ask through ALL of these topics. Do not rush to a draft. ONE question at a time — never bundle two topics (e.g. history + tone) into one ask. Accept answers out of order / bundled when they volunteer them.",
   "     Topics: who it acts with/for; what's off-limits; any history to learn from; tone/behavior; who to escalate to and when.",
-  "     Do NOT open, narrate, or \"pull together\" a full draft while they are still answering — even if Aim was detailed. Acknowledge briefly, then ask the next unanswered topic or a short clarifier.",
+  "     Short yes/no answers that match your last question count — record them and advance. Do not re-ask covered topics. If they say you already asked, apologize once and continue from remainingTopics only.",
+  "     Do NOT open, narrate, or \"pull together\" a full draft while they are still answering — even if Aim was detailed. Acknowledge briefly, then ask the next unanswered topic.",
   "   - If they stall, refuse, give idk/whatever/you-decide, or after ~1–2 answers say skip / that's enough / draft it / move on: do NOT keep pressing. Acknowledge, fill reasonable guesses for anything unanswered, and go straight to the draft review.",
   "   - If they seem stuck but haven't asked to skip, you may once offer: we can draft from what we have whenever they want (say \"skip\" or \"draft it\").",
-  "3) REVIEW — only after every interview topic is covered or they skipped the rest. Present a short human draft: name & role, personality, will-never boundaries, working-from notes, outcome. Ask if it looks good or what to edit. Never silently create.",
+  "3) REVIEW — only after every interview topic is covered or they skipped the rest. Present a short human draft: name & role, personality, will-never boundaries, working-from notes, outcome. Ask if it looks good or what to edit. Never silently create. Before review, if a required note is still missing, ask that ONE missing topic — do not ask the user to \"remind you\" of an answer you failed to store.",
   "Do NOT ask about schedule, model tier, or autonomy/trust yet. Assume on-demand + balanced model if asked.",
   "Infer agent type as one of: finance, research, reminders, email.",
   "Keep replies short. Natural back-and-forth beats a rigid script.",
+  "Platform capabilities (authoritative — never contradict these):",
+  `- ${PLATFORM_CAPABILITIES}`,
   "Safety rules:",
   `- ${PROMPT_SAFETY_RULES}`,
 ].join("\n");
 
 const EXTRACTION_SYSTEM_PROMPT = [
   "You extract a structured agent-creation draft patch from a CEO Agent intake turn.",
-  "Return only fields the user EXPLICITLY answered in the latest user message. Do not invent personality, boundaries, actors, history, or escalation from thin implication.",
+  "Return fields the user answered in the latest user message, including short yes/no/nope/correct replies that clearly answer the CEO's last question about a remaining topic.",
+  "Do not invent personality, boundaries, actors, history, or escalation from thin implication — but do map explicit short answers (e.g. \"just me\", \"pause and wait\", \"no preference\" for tone).",
   "During Aim / early interview: usually only outcome (definitionOfDone) + maybe agentType. Never fill the whole draft from the first answer.",
   "definitionOfDone must be an outcome/result — prefer the user's words when measurable.",
   "Track interview topics in topicsCoveredThisTurn / draftPatch.coveredTopics using ONLY these ids: " +
     INTERVIEW_TOPICS.join(", ") +
     ".",
   "Mapping: outcome←definitionOfDone; actors←actorsNotes; boundaries←boundaries; history←workingFromNotes (including \"none\"); tone←personalityNotes; escalation←escalationNotes.",
+  "\"learn as it goes\" / \"starting fresh\" → history only, never tone. Tone needs an explicit sound/behavior preference (or \"no preference\").",
   "Set phase to review ONLY when the interview is finished (all topics covered) OR userSkippedRemaining is true. Never jump to review mid-interview just because some fields exist.",
   "Do NOT set guessedFields or invent answers unless userSkippedRemaining is true.",
-  "userSkippedRemaining is true when they want to skip remaining questions and see the draft (including short idk / whatever / you decide / draft it).",
+  "userSkippedRemaining is true when they want to skip remaining questions and see the draft (including short idk / whatever / you decide / draft it). \"no preference\" while tone is still remaining is a tone answer, NOT a skip.",
   "userConfirmed is true ONLY for clear approval to create AFTER a review. userCancelled for discard. userWantsEdits when they want draft changes.",
   `agentType must be one of: ${CREATABLE_AGENT_TYPES.join(", ")} (or null if still unknown).`,
 ].join("\n");
@@ -325,16 +342,62 @@ function renderDraftForPrompt(draft) {
   );
 }
 
+/** How many recent visible turns to keep in the creation interview prompt. */
+const CREATION_TRANSCRIPT_PROMPT_TURNS = 24;
+
 function renderTranscript(messages) {
   if (!Array.isArray(messages) || !messages.length) return "(no prior turns)";
   return messages
-    .slice(-12)
+    .slice(-CREATION_TRANSCRIPT_PROMPT_TURNS)
     .map((row) => {
       const role = row.role === "USER" || row.role === "user" ? "User" : "CEO Agent";
       return `${role}: ${String(row.text || "").trim()}`;
     })
     .filter((line) => !line.endsWith(":"))
     .join("\n\n");
+}
+
+/** Most recent CEO/agent question from the creation transcript (for short-answer mapping). */
+export function lastAgentQuestionFromTranscript(messages) {
+  if (!Array.isArray(messages)) return "";
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const row = messages[i];
+    const role = row?.role;
+    if (role === "USER" || role === "user") continue;
+    const text = String(row?.text || "").trim();
+    if (text) return text;
+  }
+  return "";
+}
+
+/**
+ * When Haiku drops NOTES_JSON (or under-extracts), merge a deterministic patch
+ * for the pending interview topic so short answers still advance coverage.
+ */
+export function mergeInterviewFallback({ object, message, remainingTopics, lastAgentQuestion }) {
+  const claimed = Array.isArray(object?.topicsCoveredThisTurn)
+    ? object.topicsCoveredThisTurn
+    : [];
+  const patch =
+    object?.draftPatch && typeof object.draftPatch === "object" ? object.draftPatch : {};
+  const hasClaim =
+    claimed.length > 0 ||
+    Object.keys(patch).some(
+      (key) => key !== "coveredTopics" && key !== "guessedFields" && patch[key] != null
+    );
+  if (hasClaim) return object;
+
+  const inferred = inferInterviewAnswerFromMessage(message, {
+    remainingTopics,
+    lastAgentQuestion,
+  });
+  if (!inferred) return object;
+
+  return {
+    ...object,
+    topicsCoveredThisTurn: inferred.topicsCoveredThisTurn,
+    draftPatch: { ...(object?.draftPatch || {}), ...inferred.draftPatch },
+  };
 }
 
 /** Starts a fresh session on the Aim screen (no LLM call). */
@@ -380,7 +443,11 @@ export async function runCreationTurn(state, message, { recentMessages = [] } = 
   const text = String(message || "").trim();
   let baseDraft = applyDraftPatch(emptyCreationDraft(), state?.draft || {});
   let phase = normalizeCreationPhase(state?.phase || state?.step || "aim", baseDraft);
-  const userSkipped = matchesCreationSkip(text) && phase !== "review";
+  const remainingBefore = remainingInterviewTopics(baseDraft);
+  const lastAgentQuestion = lastAgentQuestionFromTranscript(recentMessages);
+  const userSkipped =
+    matchesCreationSkip(text, { remainingTopics: remainingBefore }) && phase !== "review";
+  const alreadyAnsweredComplaint = matchesAlreadyAnsweredComplaint(text);
 
   if (matchesCreationCancel(text)) {
     const next = {
@@ -460,15 +527,18 @@ export async function runCreationTurn(state, message, { recentMessages = [] } = 
       renderDraftForPrompt(baseDraft)
     ),
     dataSection("RECENT TRANSCRIPT", renderTranscript(recentMessages)),
+    dataSection("LAST CEO QUESTION", lastAgentQuestion || "(none)"),
     dataSection("USER MESSAGE", text),
     userSkipped
       ? "The user wants to stop interviewing and see a draft (skip / reluctant / you-decide). Present the draft review now from what you have (mention any guesses briefly). Do not ask another question."
       : isInterviewComplete(baseDraft) && phase !== "review"
         ? "Interview topics are covered. Present the draft review now and ask if it looks good or what to edit."
-        : remainingInterviewTopics(baseDraft).length <= 3 &&
-            (baseDraft.coveredTopics || []).length >= 2
-          ? "Reply as the CEO Agent. They are still in interview and have been answering — keep going through remaining topics (one question). Do NOT draft yet. Only if they sound stuck, briefly note they can say \"draft it\" to skip ahead."
-          : "Reply as the CEO Agent. They are engaged in interview — ask through the remaining topics before drafting. Acknowledge briefly, clarify if vague, then ask the next unanswered topic (one question). Do NOT present a draft yet.",
+        : alreadyAnsweredComplaint
+          ? `The user says you already asked or they already answered. Apologize once. Remaining topics only: ${remainingBefore.join(", ") || "(none)"}. Ask at most ONE truly remaining topic; if none remain, present the draft. Never ask them to remind you of a stored answer.`
+          : remainingInterviewTopics(baseDraft).length <= 3 &&
+              (baseDraft.coveredTopics || []).length >= 2
+            ? "Reply as the CEO Agent. They are still in interview and have been answering — keep going through remaining topics (one question). Do NOT draft yet. Only if they sound stuck, briefly note they can say \"draft it\" to skip ahead."
+            : "Reply as the CEO Agent. They are engaged in interview — ask through the remaining topics before drafting. Acknowledge briefly, then ask the next unanswered topic (one question). Do NOT present a draft yet.",
   ].join("\n\n");
 
   // Interview turns: ONE fast Haiku *text* call (reply + trailing NOTES_JSON).
@@ -486,9 +556,7 @@ export async function runCreationTurn(state, message, { recentMessages = [] } = 
       maxOutputTokens: 320,
     });
     const parsed = parseInterviewTurnText(replyText);
-    const sanitized = sanitizeExtractionForInterview({
-      phase,
-      userSkipped: false,
+    const withFallback = mergeInterviewFallback({
       object: {
         ...parsed.object,
         phase: "interview",
@@ -496,6 +564,14 @@ export async function runCreationTurn(state, message, { recentMessages = [] } = 
         userConfirmed: false,
         userWantsEdits: false,
       },
+      message: text,
+      remainingTopics: remainingBefore,
+      lastAgentQuestion,
+    });
+    const sanitized = sanitizeExtractionForInterview({
+      phase,
+      userSkipped: false,
+      object: withFallback,
     });
     object = sanitized;
     reply =
@@ -514,6 +590,8 @@ export async function runCreationTurn(state, message, { recentMessages = [] } = 
       prompt: [
         dataSection("PHASE BEFORE TURN", phase),
         dataSection("DRAFT BEFORE TURN", renderDraftForPrompt(baseDraft)),
+        dataSection("REMAINING TOPICS", remainingBefore.join(", ") || "(none)"),
+        dataSection("LAST CEO QUESTION", lastAgentQuestion || "(none)"),
         dataSection("USER MESSAGE", text),
         dataSection("USER ASKED TO SKIP REMAINING", userSkipped ? "yes" : "no"),
         "Return the draft patch and phase flags for this turn.",
@@ -529,16 +607,46 @@ export async function runCreationTurn(state, message, { recentMessages = [] } = 
       conversationPromise,
       extractionPromise,
     ]);
+    const withFallback = mergeInterviewFallback({
+      object: rawObject,
+      message: text,
+      remainingTopics: remainingBefore,
+      lastAgentQuestion,
+    });
     object = sanitizeExtractionForInterview({
       phase,
       userSkipped,
-      object: rawObject,
+      object: withFallback,
     });
     reply =
       String(replyText || "").trim() ||
       (userSkipped
         ? "Got it — I'll draft from what we have."
         : "Got it — tell me a bit more about the outcome you want.");
+  }
+
+  // Deterministic tone capture when tone is the next pending topic and the
+  // model still missed a clear deferral / tone preference.
+  if (
+    !userSkipped &&
+    phase !== "aim" &&
+    remainingBefore[0] === "tone" &&
+    !(object?.topicsCoveredThisTurn || []).includes("tone") &&
+    !object?.draftPatch?.personalityNotes
+  ) {
+    const toneFallback = inferInterviewAnswerFromMessage(text, {
+      remainingTopics: remainingBefore,
+      lastAgentQuestion,
+    });
+    if (toneFallback?.draftPatch?.personalityNotes) {
+      object = {
+        ...object,
+        topicsCoveredThisTurn: [
+          ...new Set([...(object?.topicsCoveredThisTurn || []), "tone"]),
+        ],
+        draftPatch: { ...(object?.draftPatch || {}), ...toneFallback.draftPatch },
+      };
+    }
   }
 
   if (object?.userCancelled) {
