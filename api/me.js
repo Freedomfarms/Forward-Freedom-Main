@@ -9,6 +9,8 @@ import { respondInternalError } from "../server/http/errorHelpers.js";
 import { enforceRateLimit, generalApiRateLimit } from "../server/http/rateLimit.js";
 import { readJsonBody } from "../server/http/requestHelpers.js";
 import { applySecurityHeaders } from "../server/http/responseHelpers.js";
+import { AgentError } from "../server/agents/errors.js";
+import { normalizeIanaTimeZone } from "../server/agents/timezone.js";
 
 const LEGAL_CONSENT_VERSION_MAX_LENGTH = 64;
 const LEGAL_CONSENT_METHOD_MAX_LENGTH = 32;
@@ -28,6 +30,11 @@ const LEGACY_USER_SELECT = {
   updatedAt: true,
 };
 
+function isMissingTimezoneColumnError(error) {
+  const message = String(error?.message || "");
+  return /timezone/i.test(message) && /(does not exist|Unknown column|column .* missing)/i.test(message);
+}
+
 function buildUserPayload(decodedToken, userRecord = null, { consentColumnsMissing = false } = {}) {
   return {
     id: decodedToken.uid,
@@ -41,6 +48,8 @@ function buildUserPayload(decodedToken, userRecord = null, { consentColumnsMissi
     // Platform admin (usage reporting). DB-only: no API can ever set it — the
     // column is flipped manually (SQL / Prisma Studio) and merely read here.
     isAdmin: Boolean(userRecord?.isAdmin),
+    // IANA timezone for local schedules / display. Null until detected or set.
+    timezone: userRecord?.timezone || null,
     legalConsentAt: userRecord?.legalConsentAt || null,
     legalConsentVersion: userRecord?.legalConsentVersion || null,
     // False while the user_legal_consent migration is pending on this
@@ -185,11 +194,45 @@ async function recordLegalConsent(decodedToken, consent) {
   }
 }
 
+async function updateUserTimezone(decodedToken, timezone) {
+  const normalized = normalizeIanaTimeZone(timezone);
+  if (!normalized) {
+    throw new AgentError(
+      "timezone must be a valid IANA timezone (e.g. America/New_York).",
+      "INVALID_TIMEZONE",
+      400
+    );
+  }
+  try {
+    const record = await withUserContext(decodedToken.uid, (tx) =>
+      tx.user.upsert({
+        where: { id: decodedToken.uid },
+        update: { timezone: normalized, ...buildProfileColumns(decodedToken) },
+        create: {
+          id: decodedToken.uid,
+          ...buildProfileColumns(decodedToken),
+          timezone: normalized,
+        },
+      })
+    );
+    return record;
+  } catch (error) {
+    if (isMissingTimezoneColumnError(error)) {
+      throw new AgentError(
+        "Timezone support is not available on this database yet.",
+        "TIMEZONE_SCHEMA_MISSING",
+        503
+      );
+    }
+    throw error;
+  }
+}
+
 export default async function handler(request, response) {
   applySecurityHeaders(response);
   if (!(await enforceRateLimit(request, response, generalApiRateLimit))) return;
 
-  if (!["GET", "POST"].includes(request.method || "")) {
+  if (!["GET", "POST", "PATCH"].includes(request.method || "")) {
     return response.status(405).json({ error: true, message: "Method not allowed." });
   }
 
@@ -197,6 +240,32 @@ export default async function handler(request, response) {
     const decodedToken = await authenticateRequest(request);
     const prisma = getPrismaClient();
     const databaseReady = Boolean(prisma) && isDatabaseConfigured();
+
+    if (request.method === "PATCH") {
+      if (!databaseReady) {
+        return response.status(503).json({
+          error: true,
+          message: "Database is not configured, so profile updates cannot be saved yet.",
+        });
+      }
+      const payload = await readJsonBody(request);
+      if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+        return response.status(400).json({
+          error: true,
+          message: "A JSON object body is required.",
+        });
+      }
+      if (!("timezone" in payload)) {
+        return response.status(400).json({
+          error: true,
+          message: "Provide timezone to update.",
+        });
+      }
+      const userRecord = await updateUserTimezone(decodedToken, payload.timezone);
+      return response.status(200).json({
+        user: buildUserPayload(decodedToken, userRecord),
+      });
+    }
 
     if (request.method === "POST") {
       const payload = await readJsonBody(request);
@@ -242,6 +311,14 @@ export default async function handler(request, response) {
     if (error instanceof AuthError) {
       return response.status(error.status).json({
         error: true,
+        message: error.message,
+      });
+    }
+
+    if (error instanceof AgentError) {
+      return response.status(error.status || 400).json({
+        error: true,
+        code: error.code,
         message: error.message,
       });
     }

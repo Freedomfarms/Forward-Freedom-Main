@@ -53,7 +53,14 @@ function evaluateRunGate(config) {
  * withUserContext transactions (RLS-scoped) rather than one long transaction,
  * so no transaction is held open across an LLM call.
  */
-export async function runAgent({ userId, agentConfigId, trigger = "manual" }) {
+export async function runAgent({
+  userId,
+  agentConfigId,
+  trigger = "manual",
+  triggeredByConversationId = null,
+  parentRunId = null,
+  onStarted = null,
+}) {
   if (!userId || !agentConfigId) {
     throw new AgentError("runAgent requires userId and agentConfigId.", "INVALID_ARGUMENT", 400);
   }
@@ -65,11 +72,17 @@ export async function runAgent({ userId, agentConfigId, trigger = "manual" }) {
     throw new AgentError("Agent configuration not found.", "AGENT_NOT_FOUND", 404);
   }
 
+  const lineage = {
+    trigger: typeof trigger === "string" && trigger.trim() ? trigger.trim() : "manual",
+    triggeredByConversationId: triggeredByConversationId || null,
+    parentRunId: parentRunId || null,
+  };
+
   const gate = evaluateRunGate(config);
   if (!gate.allowed) {
     // Policy blocks are recorded as SKIPPED runs so the audit trail shows the
     // attempt and exactly why nothing happened.
-    return withUserContext(userId, (tx) =>
+    const skipped = await withUserContext(userId, (tx) =>
       tx.agentRun.create({
         data: {
           userId,
@@ -78,16 +91,38 @@ export async function runAgent({ userId, agentConfigId, trigger = "manual" }) {
           status: "SKIPPED",
           error: gate.reason,
           completedAt: new Date(),
+          ...lineage,
         },
       })
     );
+    if (typeof onStarted === "function") {
+      try {
+        onStarted(skipped);
+      } catch {
+        // Caller callback must never fail the run path.
+      }
+    }
+    return skipped;
   }
 
   const run = await withUserContext(userId, (tx) =>
     tx.agentRun.create({
-      data: { userId, agentConfigId: config.id, agentType: config.agentType, status: "RUNNING" },
+      data: {
+        userId,
+        agentConfigId: config.id,
+        agentType: config.agentType,
+        status: "RUNNING",
+        ...lineage,
+      },
     })
   );
+  if (typeof onStarted === "function") {
+    try {
+      onStarted(run);
+    } catch {
+      // Caller callback must never fail the run path.
+    }
+  }
 
   try {
     const result = await gate.handler({ userId, config, trigger });

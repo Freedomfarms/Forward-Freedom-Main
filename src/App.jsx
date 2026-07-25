@@ -25,12 +25,14 @@ import {
 import {
   ApiRequestError,
   AUTHENTICATION_REQUIRED_MESSAGE,
+  detectBrowserTimeZone,
   fetchAuthenticatedUserProfile,
   fetchWorkspaceSnapshot,
   isApiAuthenticationError,
   isLegalConsentRequiredError,
   isWorkspaceConflictError,
   saveWorkspaceSnapshot,
+  updateUserTimezone,
 } from "./utils/api.js";
 import { flushPendingLegalConsent } from "./utils/legalConsent.js";
 import { LEGAL_CONSENT_VERSION } from "./content/legalContent.js";
@@ -431,6 +433,22 @@ function AuthenticatedWorkspaceApp({
           profilePayload = await fetchAuthenticatedUserProfile({ user });
         } catch (profileError) {
           console.warn("[workspace] Profile sync unavailable during bootstrap.", profileError);
+        }
+
+        // Auto-detect browser IANA timezone on first login / when unset.
+        // Never invent UTC; only persist when detection succeeds.
+        if (profilePayload?.user && !profilePayload.user.timezone) {
+          const detectedTz = detectBrowserTimeZone();
+          if (detectedTz) {
+            try {
+              const tzPayload = await updateUserTimezone(detectedTz, { user });
+              if (tzPayload?.user) {
+                profilePayload = tzPayload;
+              }
+            } catch (tzError) {
+              console.warn("[workspace] Timezone sync unavailable during bootstrap.", tzError);
+            }
+          }
         }
 
         // Record any legal consent accepted during sign-in on the server now
