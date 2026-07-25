@@ -90,6 +90,10 @@ model User {
   legalConsentAt      DateTime?
   legalConsentVersion String?
   legalConsentEvents  LegalConsentEvent[]
+  // IANA timezone for schedules / display (e.g. "America/New_York"). Null until
+  // the client detects it or the user sets it in Settings / CEO chat. Never
+  // silently default to UTC when interpreting "7 AM" style local times.
+  timezone            String?
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
   plaidItems          PlaidItem[]
@@ -459,6 +463,13 @@ model AgentRun {
   outputCiphertext String?
   status           AgentRunStatus @default(RUNNING)
   error            String?
+  // How the run was started: "manual" | "cron" | "ceo_delegate" | "chat".
+  // Nullable for rows created before lineage columns existed.
+  trigger          String?
+  // Conversation that asked for this work (CEO or specialist thread).
+  triggeredByConversationId String?
+  // Optional parent run when this execution was chained from another run.
+  parentRunId      String?
   // Usage accounting for per-user usage reporting in the admin panel.
   model            String?
   tokensInput      Int?
@@ -468,11 +479,16 @@ model AgentRun {
   completedAt      DateTime?
   user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   agentConfig      AgentConfig?   @relation(fields: [agentConfigId], references: [id], onDelete: SetNull)
+  triggeredByConversation AgentConversation? @relation("RunTriggeredByConversation", fields: [triggeredByConversationId], references: [id], onDelete: SetNull)
+  parentRun        AgentRun?      @relation("AgentRunLineage", fields: [parentRunId], references: [id], onDelete: SetNull)
+  childRuns        AgentRun[]     @relation("AgentRunLineage")
   chatMessages     AgentChatMessage[]
 
   @@index([userId, startedAt])
   @@index([agentConfigId, startedAt])
   @@index([userId, agentType, startedAt])
+  @@index([triggeredByConversationId, startedAt])
+  @@index([parentRunId])
 }
 
 // Multi-conversation parent for CEO and sub-agent chats. Invariant: exactly
@@ -495,6 +511,7 @@ model AgentConversation {
   agentConfig      AgentConfig?   @relation(fields: [agentConfigId], references: [id], onDelete: Cascade)
   ceoAgentConfig   CeoAgentConfig? @relation(fields: [ceoAgentConfigId], references: [id], onDelete: Cascade)
   messages         AgentChatMessage[]
+  triggeredRuns    AgentRun[]     @relation("RunTriggeredByConversation")
 
   @@index([userId, agentConfigId, updatedAt])
   @@index([userId, ceoAgentConfigId, updatedAt])

@@ -68,7 +68,7 @@ function seedDb() {
     tombstones: [],
   };
   currentDb = createFakeDb({
-    user: [{ id: USER_ID, email: "user@example.com" }],
+    user: [{ id: USER_ID, email: "user@example.com", timezone: "America/Chicago" }],
     ceoAgentConfig: [
       {
         id: "ceo-1",
@@ -182,9 +182,14 @@ function seedDb() {
   });
 }
 
-function installLlmMock(reply = "Here is my answer.", profileOps = [], digestAction = null) {
+function installLlmMock(
+  reply = "Here is my answer.",
+  profileOps = [],
+  digestAction = null,
+  ceoActions = null
+) {
   llmCalls = [];
-  const structured = { reply, profileOps, taskAction: null, digestAction };
+  const structured = { reply, profileOps, taskAction: null, digestAction, ceoActions };
   const usage = { inputTokens: 500, outputTokens: 100 };
   setLlmImplementationForTesting({
     // Sub-agent chat path.
@@ -288,8 +293,11 @@ test("the CEO chat reads the team roster, run summaries across all agents, and t
   assert.match(String(call.system || ""), /web search/i);
   // Live roster must be present even for agents the user just created.
   assert.ok(payload.includes("YOUR SUB-AGENTS"));
+  assert.ok(payload.includes("USER TIMEZONE"));
+  assert.ok(payload.includes("America/Chicago"));
   assert.ok(payload.includes("Finance Agent"));
   assert.ok(payload.includes("Research Agent"));
+  assert.match(String(call.system || ""), /ceoActions|OPERATE the platform/i);
   // Cross-agent visibility is the CEO's job; summaries include agent names.
   assert.ok(payload.includes("AGENT_A_SUMMARY_TOKEN"));
   assert.ok(payload.includes("AGENT_B_SUMMARY_TOKEN"));
@@ -403,6 +411,32 @@ test("CEO digestAction set_content updates the Daily Digest body", async (t) => 
   const prompt = JSON.stringify(llmCalls[0]);
   assert.ok(prompt.includes("CURRENT DAILY DIGEST"));
   assert.ok(prompt.includes("Old auto briefing about dining spend."));
+});
+
+test("CEO chat retries once on empty structured reply then surfaces a clear error", async (t) => {
+  if (!requireSetup(t)) return;
+  llmCalls = [];
+  let attempts = 0;
+  setLlmImplementationForTesting({
+    generateObject: async () => ({ object: { reply: "x", profileOps: [], taskAction: null }, usage: null }),
+    generateText: async () => {
+      attempts += 1;
+      llmCalls.push({ attempt: attempts });
+      return {
+        output: { reply: "", profileOps: [], digestAction: null, ceoActions: null },
+        text: "",
+        usage: null,
+      };
+    },
+  });
+
+  const result = await respondToChat({
+    userId: USER_ID,
+    ceoAgentConfigId: "ceo-1",
+    message: "Quick status?",
+  });
+  assert.equal(attempts, 2);
+  assert.match(result.reply, /generation error/i);
 });
 
 test("chat targeting is validated: exactly one of agentConfigId / ceoAgentConfigId", async (t) => {

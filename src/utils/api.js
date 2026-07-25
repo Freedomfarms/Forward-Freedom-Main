@@ -220,3 +220,29 @@ export async function recordLegalConsent({ version, method = null }, options = {
 
   return parseApiResponse(response);
 }
+
+/** Detect the browser IANA timezone; null when unavailable. */
+export function detectBrowserTimeZone() {
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return typeof tz === "string" && tz.trim() ? tz.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Persist the user's IANA timezone on /api/me (PATCH). */
+export async function updateUserTimezone(timezone, options = {}) {
+  const response = await fetch("/api/me", {
+    method: "PATCH",
+    headers: await buildAuthenticatedHeaders(
+      {
+        "Content-Type": "application/json",
+      },
+      options
+    ),
+    body: JSON.stringify({ timezone }),
+  });
+
+  return parseApiResponse(response);
+}

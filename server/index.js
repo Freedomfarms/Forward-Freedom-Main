@@ -71,7 +71,7 @@ app.use(defaultJsonParser);
 // exercise the same API entry points. Each handler also enforces its own
 // per-route rate limit on top of the app-wide backstop above.
 app.get("/api/health", healthHandler);
-app.route("/api/me").get(meHandler).post(meHandler);
+app.route("/api/me").get(meHandler).post(meHandler).patch(meHandler);
 app.route("/api/workspace").get(workspaceHandler).put(workspaceHandler);
 app.get("/api/plaid/status", plaidStatusHandler);
 app.delete("/api/plaid/item", plaidItemHandler);

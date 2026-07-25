@@ -1,6 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { styles } from "../../styles.js";
 import { updateCeoAgent } from "../../utils/agentsApi.js";
+import {
+  detectBrowserTimeZone,
+  fetchAuthenticatedUserProfile,
+  updateUserTimezone,
+} from "../../utils/api.js";
 import { CEO_AVATAR_PRESETS } from "../../data/ceoAvatars.js";
 import { ModelPicker } from "./ModelPicker.jsx";
 import {
@@ -23,16 +28,40 @@ export function CeoSettingsPanel({ ceoAgent, user, onBack, onSaved, onOpenProfil
   const [defaultSubAgentModel, setDefaultSubAgentModel] = useState(
     ceoAgent?.defaultSubAgentModel || DEFAULT_AGENT_MODEL
   );
+  const [timezone, setTimezone] = useState("");
+  const [savedTimezone, setSavedTimezone] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [savedAt, setSavedAt] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const payload = await fetchAuthenticatedUserProfile({ user });
+        if (cancelled) return;
+        const tz = payload?.user?.timezone || detectBrowserTimeZone() || "";
+        setTimezone(tz);
+        setSavedTimezone(payload?.user?.timezone || "");
+      } catch {
+        if (!cancelled) {
+          const detected = detectBrowserTimeZone() || "";
+          setTimezone(detected);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   const isDirty =
     name.trim() !== (ceoAgent?.name || "CEO Agent") ||
     personalityPreset !== (ceoAgent?.personalityPreset || "DIRECT_EFFICIENT") ||
     avatarKey !== (ceoAgent?.avatarKey || CEO_AVATAR_PRESETS[0].key) ||
     model !== (ceoAgent?.model || DEFAULT_AGENT_MODEL) ||
-    defaultSubAgentModel !== (ceoAgent?.defaultSubAgentModel || DEFAULT_AGENT_MODEL);
+    defaultSubAgentModel !== (ceoAgent?.defaultSubAgentModel || DEFAULT_AGENT_MODEL) ||
+    timezone.trim() !== savedTimezone;
 
   const handleSave = async () => {
     if (isSaving) return;
@@ -41,9 +70,18 @@ export function CeoSettingsPanel({ ceoAgent, user, onBack, onSaved, onOpenProfil
       setSaveError("The CEO Agent needs a name.");
       return;
     }
+    const trimmedTz = timezone.trim();
+    if (!trimmedTz) {
+      setSaveError("Timezone is required (IANA, e.g. America/New_York).");
+      return;
+    }
     setIsSaving(true);
     setSaveError("");
     try {
+      if (trimmedTz !== savedTimezone) {
+        await updateUserTimezone(trimmedTz, { user });
+        setSavedTimezone(trimmedTz);
+      }
       const payload = await updateCeoAgent(
         {
           name: trimmedName,
@@ -194,6 +232,21 @@ export function CeoSettingsPanel({ ceoAgent, user, onBack, onSaved, onOpenProfil
             </button>
           ))}
         </div>
+      </div>
+
+      <div style={{ display: "grid", gap: 10 }}>
+        <div style={fosStyles.sectionLabel}>Timezone</div>
+        <p style={{ margin: 0, color: "#9fb0c9", fontSize: 12, lineHeight: 1.55 }}>
+          Used for agent schedules and local times. Detected from your browser when possible —
+          schedules always mean your local time, never UTC.
+        </p>
+        <input
+          value={timezone}
+          onChange={(event) => setTimezone(event.target.value)}
+          placeholder="America/New_York"
+          maxLength={64}
+          style={{ ...fosStyles.input, maxWidth: 380 }}
+        />
       </div>
 
       <div style={{ display: "grid", gap: 10 }}>

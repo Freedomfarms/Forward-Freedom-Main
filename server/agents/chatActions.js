@@ -440,8 +440,13 @@ async function applyUpdateConfigAction({ userId, agentConfigId, action }) {
   };
 }
 
-async function applyRunNowAction({ userId, agentConfigId }) {
-  const run = await runAgent({ userId, agentConfigId, trigger: "manual" });
+async function applyRunNowAction({ userId, agentConfigId, conversationId = null }) {
+  const run = await runAgent({
+    userId,
+    agentConfigId,
+    trigger: "chat",
+    triggeredByConversationId: conversationId,
+  });
   if (run.status === "SKIPPED") {
     return {
       reply: `I couldn't run just now: ${run.error || "the run was skipped"}.`,
@@ -486,7 +491,7 @@ export async function applySubAgentTaskAction({
   } else if (action.type === "update_config") {
     outcome = await applyUpdateConfigAction({ userId, agentConfigId, action });
   } else if (action.type === "run_now") {
-    outcome = await applyRunNowAction({ userId, agentConfigId });
+    outcome = await applyRunNowAction({ userId, agentConfigId, conversationId });
   } else {
     throw new AgentError("Unsupported taskAction type.", "INVALID_TASK_ACTION", 400);
   }

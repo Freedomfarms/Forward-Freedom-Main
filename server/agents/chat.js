@@ -27,6 +27,10 @@ import {
   DIGEST_ACTION_JSON_SCHEMA,
   sanitizeDigestAction,
 } from "./digest.js";
+import {
+  applyCeoActions,
+  CEO_ACTIONS_JSON_SCHEMA,
+} from "./ceoOps.js";
 import { cronToSchedulePreset, formatHourUtcLabel } from "./schedule.js";
 import { isEmailDeliveryEnabled } from "./emailDelivery.js";
 import { CHAT_PLAIN_TEXT_RULE, dataSection, PROMPT_SAFETY_RULES } from "./prompts.js";
@@ -41,6 +45,7 @@ import {
   renderNamedRunSummaries,
   renderTeamRoster,
 } from "./teamContext.js";
+import { isValidIanaTimeZone } from "./timezone.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared chat engine for the CEO Agent chat and every sub-agent chat.
@@ -68,10 +73,15 @@ const CEO_CHAT_REPLY_SCHEMA = jsonSchema({
     reply: { type: "string", description: "Your conversational reply to the user's message." },
     profileOps: PROFILE_OPS_JSON_SCHEMA,
     digestAction: DIGEST_ACTION_JSON_SCHEMA,
+    ceoActions: CEO_ACTIONS_JSON_SCHEMA,
   },
-  required: ["reply", "profileOps", "digestAction"],
+  required: ["reply", "profileOps", "digestAction", "ceoActions"],
   additionalProperties: false,
 });
+
+const EMPTY_REPLY_FALLBACK =
+  "A generation error occurred and I could not complete that reply. Please ask again, or try rephrasing.";
+const CEO_CHAT_GENERATE_ATTEMPTS = 2;
 
 const SUB_AGENT_CHAT_REPLY_SCHEMA = jsonSchema({
   type: "object",
@@ -99,16 +109,19 @@ const SUB_AGENT_CHAT_SYSTEM_PROMPT = [
 ].join("\n");
 
 const CEO_CHAT_SYSTEM_PROMPT = [
-  "You are the user's CEO Agent inside Freedom OS: the orchestrator of their team of financially read-only agents, and their main point of contact.",
-  "Answer using the provided context: YOUR SUB-AGENTS (the live team roster), recent run summaries from ALL of the user's agents (cross-agent questions are your job), the current Daily Digest, and the user's long-term profile. When asked what you know about the user, answer from the profile data section.",
-  "You have read-only web search for live / current information (sports schedules, news, weather, public market data, etc.). When the user asks something that needs up-to-date facts, use web search before answering. Briefly say what you found in plain language. Never claim you lack internet access or cannot look things up.",
-  "When the user asks which agents they have, what a sub-agent does, or whether you know about an agent they just created: answer ONLY from YOUR SUB-AGENTS. If the roster is empty, say they have no sub-agents yet. Never invent, rename, or guess agents (including generic \"research\" / fintech teammates) that are not listed.",
-  "A newly created agent may have zero runs — that does not mean it does not exist. Prefer the roster over run summaries for team membership questions.",
-  "You CAN edit the Daily Digest shown on the Freedom OS home when the user asks: set digestAction to set_content with the full body text they want there (rewrite, replace, shorten, or write whatever they request), or regenerate to rebuild the default briefing from recent agent runs. The server applies digestAction — do not claim you cannot change the digest. Output digest body only (no \"Status Update\" / \"Daily Digest\" heading). Set digestAction to null when they are not asking to change the digest.",
-  "You cannot edit a sub-agent's schedule, instructions, email settings, or trigger its runs from this chat. When the user wants those changes for a specific agent, tell them to open that agent's own chat and ask the agent directly — that agent can apply those task changes itself. Do not claim the sub-agent is powerless, and do not imply that you will make the edit from here.",
-  "Sub-agent schedules support: on-demand, daily, weekly on one or more weekdays, or monthly, with an optional UTC hour. There is no CEO-only advanced scheduler — do not invent one or bounce the user back and forth.",
+  "You are the user's CEO Agent inside Freedom OS: the operating system for their workspace — the single conversation through which they can operate the platform.",
+  "Answer using the provided context: YOUR SUB-AGENTS (the live team roster), recent run summaries from ALL of the user's agents, the current Daily Digest, USER TIMEZONE, and the user's long-term profile. When asked what you know about the user, answer from the profile data section.",
+  "You have read-only web search for live / current information. When the user asks something that needs up-to-date facts, use web search before answering. Never claim you lack internet access.",
+  "When the user asks which agents they have: answer ONLY from YOUR SUB-AGENTS. Never invent agents that are not listed. A newly created agent may have zero runs — prefer the roster over run summaries for membership.",
+  "OPERATE the platform via ceoActions (server-applied). You CAN: create_agent, update_agent (pause/resume/schedule/instructions/email/model), run_agent (delegate work to a specialist), delete_agent (only with confirmed=true after explicit user confirmation), set_timezone. Prefer one-shot create_agent when the user gave enough detail — do not invent a separate creation mode. Ask follow-up questions only for missing required fields.",
+  "Schedules are always in the user's LOCAL timezone. Use scheduleHourLocal (0–23) and the USER TIMEZONE context. Never ask the user to think in UTC. If timezone is unknown and they request a local schedule, ask for an IANA timezone OR use set_timezone once they provide it — do not assume UTC.",
+  "Research agents already use web search; enabling email delivery is emailDelivery=true on create/update. After create_agent in the same turn you may run_agent with agentId \"__last_created__\" or omitted.",
+  "Delegate automatically when a specialist should do the work: set run_agent. The server monitors short jobs and returns results in this conversation; longer jobs notify later in this same conversation. Do not tell the user to open another screen or another agent chat for routine ops — specialist chats exist for deep SME follow-up on a report, not as a required detour.",
+  "Truthfulness: state facts from tool/context confidently; label inferences as inferences; if you do not know, say so. Never invent operational facts (agents, schedules, run statuses, triggers).",
+  "You CAN edit the Daily Digest via digestAction (set_content or regenerate). Set digestAction to null when not changing it. Output digest body only (no \"Daily Digest\" heading).",
+  "Destructive actions (delete_agent): never set confirmed=true unless the user explicitly confirmed in this conversation. Propose first, then execute on confirmation.",
   "Never give directives such as buy/sell/move money and never make investment recommendations.",
-  "Also return profileOps: durable facts about the user revealed in this conversation (usually an empty array).",
+  "Also return profileOps: durable facts about the user revealed in this conversation (usually an empty array). Set ceoActions to null when the user is only asking a question.",
   CHAT_PLAIN_TEXT_RULE,
   "Safety rules:",
   `- ${PROMPT_SAFETY_RULES}`,
@@ -279,6 +292,11 @@ export async function respondToChat({
         select: { profileCiphertext: true },
       }));
 
+    const userRow = await tx.user.findUnique({
+      where: { id: userId },
+      select: { timezone: true },
+    });
+
     return {
       agentConfig,
       ceoConfig,
@@ -290,6 +308,7 @@ export async function respondToChat({
       runs,
       relatedRun,
       profileSource,
+      userTimezone: userRow?.timezone ?? null,
     };
   });
 
@@ -302,6 +321,7 @@ export async function respondToChat({
     teamAgents,
     runs,
     relatedRun,
+    userTimezone,
   } = context;
   const history = [...context.history].reverse();
   let profile;
@@ -349,6 +369,11 @@ export async function respondToChat({
     sections.push(
       dataSection("RECENT RUN SUMMARIES", renderNamedRunSummaries(runs, runLabelAgents))
     );
+    const tzLabel =
+      userTimezone && isValidIanaTimeZone(userTimezone)
+        ? userTimezone
+        : "(unknown — detect from browser or ask the user for an IANA timezone; do not assume UTC)";
+    sections.push(dataSection("USER TIMEZONE", tzLabel));
     let currentDigest = null;
     if (ceoConfig.lastDigestCiphertext) {
       try {
@@ -399,21 +424,24 @@ export async function respondToChat({
   let object;
   let usage;
   if (ceoConfig) {
-    const result = await generateAgentText({
-      model,
-      system: CEO_CHAT_SYSTEM_PROMPT,
-      prompt: sections.join("\n\n"),
-      tools: getWebSearchTools({ maxUses: CEO_WEB_SEARCH_MAX_USES }),
-      output: Output.object({ schema: CEO_CHAT_REPLY_SCHEMA }),
-      stopWhen: stepCountIs(CEO_CHAT_MAX_STEPS),
-      maxOutputTokens: 1600,
-      // jsonTool avoids native grammar compile timeouts when tools + schema run together.
-      providerOptions: {
-        anthropic: { structuredOutputMode: "jsonTool" },
-      },
-    });
-    object = result.output;
-    usage = result.usage;
+    for (let attempt = 1; attempt <= CEO_CHAT_GENERATE_ATTEMPTS; attempt += 1) {
+      const result = await generateAgentText({
+        model,
+        system: CEO_CHAT_SYSTEM_PROMPT,
+        prompt: sections.join("\n\n"),
+        tools: getWebSearchTools({ maxUses: CEO_WEB_SEARCH_MAX_USES }),
+        output: Output.object({ schema: CEO_CHAT_REPLY_SCHEMA }),
+        stopWhen: stepCountIs(CEO_CHAT_MAX_STEPS),
+        maxOutputTokens: 1800,
+        // jsonTool avoids native grammar compile timeouts when tools + schema run together.
+        providerOptions: {
+          anthropic: { structuredOutputMode: "jsonTool" },
+        },
+      });
+      object = result.output;
+      usage = result.usage;
+      if (String(object?.reply || "").trim()) break;
+    }
   } else {
     const result = await generateAgentObject({
       model,
@@ -426,9 +454,10 @@ export async function respondToChat({
     usage = result.usage;
   }
 
-  let reply = String(object?.reply || "").trim() || "Sorry — I could not generate a reply.";
+  let reply = String(object?.reply || "").trim() || EMPTY_REPLY_FALLBACK;
   let actionResult = null;
   let digestResult = null;
+  let ceoOpsResult = null;
 
   // Sub-agent taskAction is applied server-side after the model reply. The
   // model must not invent side effects — only this allowlisted path mutates.
@@ -458,7 +487,7 @@ export async function respondToChat({
       }
     }
   } else if (ceoConfig) {
-    // CEO digestAction — same allowlisted server-apply pattern as taskAction.
+    // CEO digestAction + ceoActions — allowlisted server-apply only.
     try {
       const action = sanitizeDigestAction(object?.digestAction ?? null);
       if (action) {
@@ -474,7 +503,33 @@ export async function respondToChat({
         reply = `${reply}\n\n(I couldn't update the Daily Digest right now.)`;
       }
     }
+
+    try {
+      ceoOpsResult = await applyCeoActions({
+        userId,
+        ceoAgentConfigId: ceoConfig.id,
+        conversationId: resolvedConversationId,
+        actions: object?.ceoActions ?? null,
+      });
+      if (ceoOpsResult?.reply) {
+        // Prefer authoritative ops confirmation; keep a short model preface if useful.
+        const modelPreface = String(object?.reply || "").trim();
+        reply =
+          modelPreface && modelPreface !== EMPTY_REPLY_FALLBACK
+            ? `${modelPreface}\n\n${ceoOpsResult.reply}`
+            : ceoOpsResult.reply;
+      }
+    } catch (error) {
+      if (error instanceof AgentError) {
+        reply = `${reply}\n\n(I couldn't complete that operation: ${error.message})`;
+      } else {
+        reply = `${reply}\n\n(I couldn't complete that operation right now.)`;
+      }
+    }
   }
+
+  const relatedFromOps =
+    ceoOpsResult?.run?.id || actionResult?.run?.id || relatedRunId || null;
 
   const replyMessage = await withUserContext(userId, async (tx) => {
     const created = await tx.agentChatMessage.create({
@@ -485,7 +540,7 @@ export async function respondToChat({
         ceoAgentConfigId: ceoConfig?.id ?? null,
         role: "AGENT",
         contentCiphertext: encrypt(reply),
-        relatedRunId: actionResult?.run?.id || relatedRunId,
+        relatedRunId: relatedFromOps,
       },
     });
     await touchConversation(tx, resolvedConversationId);
@@ -522,8 +577,13 @@ export async function respondToChat({
     conversationTitle: snippetTitle,
     model,
     usage,
-    ...(actionResult?.agent ? { agent: actionResult.agent } : {}),
-    ...(actionResult?.run ? { run: actionResult.run } : {}),
+    ...(actionResult?.agent || ceoOpsResult?.agent
+      ? { agent: actionResult?.agent || ceoOpsResult?.agent }
+      : {}),
+    ...(actionResult?.run || ceoOpsResult?.run
+      ? { run: actionResult?.run || ceoOpsResult?.run }
+      : {}),
+    ...(ceoOpsResult?.mode ? { runMode: ceoOpsResult.mode } : {}),
     ...(digestResult
       ? {
           digest: {
