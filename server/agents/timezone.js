@@ -6,6 +6,24 @@ import { WEEKDAY_NAMES, schedulePresetToCron } from "./schedule.js";
 // users always speak local wall-clock time ("7 AM where I am").
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** True when Prisma/Postgres reports User.timezone is not migrated yet. */
+export function isMissingTimezoneColumnError(error) {
+  const message = String(error?.message || "");
+  return (
+    (error?.code === "P2022" || /does not exist|Unknown column|column .* missing/i.test(message)) &&
+    /timezone/i.test(message)
+  );
+}
+
+/** True when AgentRun lineage columns (trigger / conversation / parent) are missing. */
+export function isMissingAgentRunLineageColumnError(error) {
+  const message = String(error?.message || "");
+  return (
+    (error?.code === "P2022" || /does not exist|Unknown column|column .* missing/i.test(message)) &&
+    /(trigger|triggeredByConversationId|parentRunId)/i.test(message)
+  );
+}
+
 const WEEKDAY_SHORT_TO_NAME = Object.freeze({
   Sun: "sunday",
   Mon: "monday",

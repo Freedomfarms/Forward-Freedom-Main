@@ -19,6 +19,7 @@ import {
 import { announceAgentCreatedToCeoChat } from "./teamContext.js";
 import {
   formatHourLocalLabel,
+  isMissingTimezoneColumnError,
   isValidIanaTimeZone,
   localScheduleToUtcCron,
   normalizeIanaTimeZone,
@@ -190,10 +191,15 @@ function sanitizeCeoAction(raw, index) {
 }
 
 async function loadUserTimezone(userId) {
-  const user = await withUserContext(userId, (tx) =>
-    tx.user.findUnique({ where: { id: userId }, select: { timezone: true } })
-  );
-  return user?.timezone && isValidIanaTimeZone(user.timezone) ? user.timezone : null;
+  try {
+    const user = await withUserContext(userId, (tx) =>
+      tx.user.findUnique({ where: { id: userId }, select: { timezone: true } })
+    );
+    return user?.timezone && isValidIanaTimeZone(user.timezone) ? user.timezone : null;
+  } catch (error) {
+    if (isMissingTimezoneColumnError(error)) return null;
+    throw error;
+  }
 }
 
 function buildScheduleFields(action, timeZone) {
@@ -368,12 +374,23 @@ async function applyDeleteAgent(userId, action) {
 
 async function applySetTimezone(userId, action) {
   if (!action.timezone) invalidAction("set_timezone requires a valid IANA timezone.");
-  await withUserContext(userId, (tx) =>
-    tx.user.update({
-      where: { id: userId },
-      data: { timezone: action.timezone },
-    })
-  );
+  try {
+    await withUserContext(userId, (tx) =>
+      tx.user.update({
+        where: { id: userId },
+        data: { timezone: action.timezone },
+      })
+    );
+  } catch (error) {
+    if (isMissingTimezoneColumnError(error)) {
+      throw new AgentError(
+        "Timezone support is not available on this database yet.",
+        "TIMEZONE_SCHEMA_MISSING",
+        503
+      );
+    }
+    throw error;
+  }
   return { reply: `Timezone set to ${action.timezone}.`, timezone: action.timezone };
 }
 
