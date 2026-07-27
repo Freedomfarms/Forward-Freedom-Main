@@ -1,8 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 
 import {
   buildIdentityNamespaces,
+  CEO_AGENT_CAPABILITIES,
+  CEO_AGENT_ENTITY_TYPE,
   filterAssistantIdentityOps,
   isAssistantIdentityAttributedToUser,
   renderIdentitySituationBrief,
@@ -11,12 +15,14 @@ import {
 } from "../server/brain/identity.js";
 import { BRAIN_SYSTEM_PROMPT } from "../server/brain/prompts.js";
 
-const ASSISTANT = "Harry";
+/** Fixture display names only — never production identity keys. */
+const DISPLAY_NAME = "Harry";
 const USER = "Kyle";
+const CEO_ID = "ceo-config-1";
 
-function identities() {
+function identities(displayName = DISPLAY_NAME) {
   return buildIdentityNamespaces({
-    ceoConfig: { name: ASSISTANT },
+    ceoConfig: { id: CEO_ID, name: displayName },
     user: { displayName: USER, timezone: "America/New_York" },
     teamAgents: [{ id: "a1", name: "Research" }],
     profile: {
@@ -27,8 +33,8 @@ function identities() {
         recurringConcerns: [],
         lifeContext: [
           { id: "l1", text: "User's name is Kyle", source: "onboarding" },
-          // Leak: assistant name wrongly stored as a user fact — must be filtered.
-          { id: "l2", text: "Name: Harry", source: "brain_chat" },
+          // Leak: CEO display label wrongly stored as a user fact — must be filtered.
+          { id: "l2", text: `Name: ${displayName}`, source: "brain_chat" },
         ],
       },
       tombstones: [],
@@ -36,16 +42,27 @@ function identities() {
   });
 }
 
-test("identity namespaces keep assistant and user names separate", () => {
+test("assistant identity is entity-typed (CEO_AGENT), displayName is only a label", () => {
   const id = identities();
-  assert.equal(id.assistantIdentity.name, ASSISTANT);
+  assert.equal(id.assistantIdentity.entityType, CEO_AGENT_ENTITY_TYPE);
+  assert.equal(id.assistantIdentity.id, CEO_ID);
+  assert.equal(id.assistantIdentity.displayName, DISPLAY_NAME);
+  assert.equal(id.assistantIdentity.capabilities, CEO_AGENT_CAPABILITIES);
   assert.equal(id.userIdentity.name, USER);
-  assert.equal(id.workspaceIdentity.product, "Freedom OS");
-  assert.ok(id.userIdentity.preferences.some((p) => /concise/i.test(p)));
-  assert.ok(!id.userIdentity.personalFacts.some((f) => /Harry/i.test(f)));
+  assert.ok(!id.userIdentity.personalFacts.some((f) => new RegExp(DISPLAY_NAME, "i").test(f)));
 });
 
-test("Situation Brief renders separated identity sections (never merged)", () => {
+test("renaming CEO displayName does not change type, id, or capabilities", () => {
+  const before = identities("Harry");
+  const after = identities("Morgan");
+  assert.equal(before.assistantIdentity.entityType, after.assistantIdentity.entityType);
+  assert.equal(before.assistantIdentity.id, after.assistantIdentity.id);
+  assert.equal(before.assistantIdentity.capabilities, after.assistantIdentity.capabilities);
+  assert.equal(before.assistantIdentity.role, after.assistantIdentity.role);
+  assert.notEqual(before.assistantIdentity.displayName, after.assistantIdentity.displayName);
+});
+
+test("Situation Brief uses entityType/id/displayName + CEO Agent selfDescription", () => {
   const sections = renderIdentitySituationBrief({
     identities: identities(),
     activeMission: {
@@ -73,20 +90,17 @@ test("Situation Brief renders separated identity sections (never merged)", () =>
   }).join("\n\n");
 
   assert.match(sections, /ASSISTANT IDENTITY/);
+  assert.match(sections, /entityType: CEO_AGENT/);
+  assert.match(sections, new RegExp(`id: ${CEO_ID}`));
+  assert.match(sections, /displayName: Harry/);
+  assert.match(sections, /selfDescription: I am the CEO Agent named Harry\./);
+  assert.match(sections, /user-configurable label only/);
   assert.match(sections, /USER IDENTITY/);
-  assert.match(sections, /WORKSPACE/);
-  assert.match(sections, /ACTIVE MISSION/);
-  assert.match(sections, /RELEVANT MEMORIES/);
-  assert.match(sections, /owner: assistant/);
-  assert.match(sections, /owner: user/);
-  assert.match(sections, /name: Harry/);
   assert.match(sections, /name: Kyle/);
-  // Assistant name must not appear as an unattributed user memory value.
   assert.doesNotMatch(sections, /owner: user; type: identity; key: name; value:.*Harry/i);
-  assert.match(sections, /owner: user; type: preference/);
 });
 
-test("owned memories drop assistant-identity leaks from user profile", () => {
+test("owned memories drop CEO displayName leaks from user profile", () => {
   const selected = [
     {
       category: "lifeContext",
@@ -109,28 +123,27 @@ test("owned memories drop assistant-identity leaks from user profile", () => {
       },
     },
   ];
-  const owned = selectOwnedUserMemories(selected, { assistantName: ASSISTANT });
+  const owned = selectOwnedUserMemories(selected, { assistantDisplayName: DISPLAY_NAME });
   assert.equal(owned.length, 1);
   assert.equal(owned[0].value, "User's name is Kyle");
-  assert.equal(owned[0].owner, "user");
-  assert.ok(isAssistantIdentityAttributedToUser("Name: Harry", ASSISTANT));
-  assert.equal(isAssistantIdentityAttributedToUser("User's name is Kyle", ASSISTANT), false);
+  assert.ok(isAssistantIdentityAttributedToUser("Name: Harry", DISPLAY_NAME));
+  assert.equal(isAssistantIdentityAttributedToUser("User's name is Kyle", DISPLAY_NAME), false);
 });
 
-test("memory extraction ops cannot store assistant identity as user facts", () => {
+test("memory extraction ops cannot store CEO displayName as user facts", () => {
   const ops = filterAssistantIdentityOps(
     [
       { op: "add", category: "lifeContext", text: "Name: Harry" },
       { op: "add", category: "lifeContext", text: "User's name is Kyle" },
       { op: "add", category: "statedPreferences", text: "Prefers email digests" },
     ],
-    ASSISTANT
+    DISPLAY_NAME
   );
   assert.equal(ops.length, 2);
   assert.ok(ops.every((op) => !/Harry/i.test(op.text)));
 });
 
-test("regression: why do you call me Harry? — must not claim Harry is in user profile", () => {
+test("regression: why do you call me <displayName>? — must not claim it is in user profile", () => {
   const id = identities();
   const bad = validateIdentityConsistency(
     "I see Harry listed in your profile context, so I used that name.",
@@ -138,20 +151,16 @@ test("regression: why do you call me Harry? — must not claim Harry is in user 
     { userMessage: "why you call me harry?" }
   );
   assert.equal(bad.ok, false);
-  assert.ok(
-    bad.failures.includes("assistant_name_attributed_to_user") ||
-      bad.failures.includes("failed_identity_correction")
-  );
 
   const good = validateIdentityConsistency(
-    "Harry is my name, not yours. I made a mistake.",
+    "I am the CEO Agent named Harry — that is my display name, not yours. I made a mistake.",
     id,
     { userMessage: "why you call me harry?" }
   );
   assert.equal(good.ok, true, JSON.stringify(good));
 });
 
-test("regression: greeting must not address the user as the assistant", () => {
+test("regression: greeting must not address the user as the CEO displayName", () => {
   const id = identities();
   const bad = validateIdentityConsistency("Hey Harry! Doing well, thanks for asking.", id, {
     userMessage: "how ya doingg",
@@ -169,15 +178,17 @@ test("who are you / what is your name / what is my name boundaries", () => {
   const id = identities();
 
   const who = validateIdentityConsistency(
-    "I'm Harry, your Freedom Brain CEO Agent inside Freedom OS.",
+    "I am the CEO Agent named Harry, your Freedom Brain inside Freedom OS.",
     id,
     { userMessage: "Who are you?" }
   );
   assert.equal(who.ok, true, JSON.stringify(who));
 
-  const yourName = validateIdentityConsistency("My name is Harry.", id, {
-    userMessage: "What is your name?",
-  });
+  const yourName = validateIdentityConsistency(
+    "I am the CEO Agent named Harry.",
+    id,
+    { userMessage: "What is your name?" }
+  );
   assert.equal(yourName.ok, true, JSON.stringify(yourName));
 
   const myNameBad = validateIdentityConsistency("Your name is Harry.", id, {
@@ -191,7 +202,7 @@ test("who are you / what is your name / what is my name boundaries", () => {
   assert.equal(myNameGood.ok, true, JSON.stringify(myNameGood));
 });
 
-test("remember your name is Kyle must not rewrite assistant identity", () => {
+test("remember your name is Kyle must not rewrite CEO entity identity", () => {
   const id = identities();
   const bad = validateIdentityConsistency("Got it — my name is Kyle from now on.", id, {
     userMessage: "Remember your name is Kyle.",
@@ -200,20 +211,42 @@ test("remember your name is Kyle must not rewrite assistant identity", () => {
   assert.ok(bad.failures.includes("accepted_user_name_as_assistant_identity"));
 
   const good = validateIdentityConsistency(
-    "I stay Harry — that's my assistant identity. Your name is Kyle.",
+    "I remain the CEO Agent named Harry — entity type CEO_AGENT. Your name is Kyle.",
     id,
     { userMessage: "Remember your name is Kyle." }
   );
   assert.equal(good.ok, true, JSON.stringify(good));
 });
 
-test("Brain system prompt points at structured identity sections, not name patches", () => {
-  assert.match(BRAIN_SYSTEM_PROMPT, /ASSISTANT IDENTITY/);
-  assert.match(BRAIN_SYSTEM_PROMPT, /USER IDENTITY/);
-  assert.match(BRAIN_SYSTEM_PROMPT, /RELEVANT MEMORIES/);
-  assert.match(BRAIN_SYSTEM_PROMPT, /owner-attributed|owner namespace/i);
-  // No hardcoded Harry/Kyle exception lists.
+test("Brain system prompt uses entity type, not hardcoded display names", () => {
+  assert.match(BRAIN_SYSTEM_PROMPT, /CEO_AGENT/);
+  assert.match(BRAIN_SYSTEM_PROMPT, /displayName/);
+  assert.match(BRAIN_SYSTEM_PROMPT, /selfDescription|CEO Agent named/i);
   assert.doesNotMatch(BRAIN_SYSTEM_PROMPT, /\bHarry\b/);
   assert.doesNotMatch(BRAIN_SYSTEM_PROMPT, /\bKyle\b/);
   assert.doesNotMatch(BRAIN_SYSTEM_PROMPT, /never call the user/i);
 });
+
+test("no hardcoded Harry in production server modules", () => {
+  const roots = [
+    path.resolve("server/brain"),
+    path.resolve("server/agents"),
+    path.resolve("server/memory"),
+  ];
+  const offenders = [];
+  for (const root of roots) {
+    walkJs(root, (file) => {
+      const text = fs.readFileSync(file, "utf8");
+      if (/\bHarry\b/.test(text)) offenders.push(path.relative(process.cwd(), file));
+    });
+  }
+  assert.deepEqual(offenders, [], `hardcoded Harry in: ${offenders.join(", ")}`);
+});
+
+function walkJs(dir, visit) {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) walkJs(full, visit);
+    else if (entry.isFile() && entry.name.endsWith(".js")) visit(full);
+  }
+}

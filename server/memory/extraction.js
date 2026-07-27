@@ -13,7 +13,7 @@ import {
   saveProfile,
 } from "../agents/profile.js";
 import { dataSection, PROMPT_SAFETY_RULES } from "../agents/prompts.js";
-import { filterAssistantIdentityOps } from "../brain/identity.js";
+import { CEO_AGENT_ENTITY_TYPE, filterAssistantIdentityOps } from "../brain/identity.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Asynchronous memory extraction — the Brain's "Queue Background Work" stage.
@@ -45,7 +45,7 @@ const EXTRACTION_SYSTEM_PROMPT = [
   "You maintain the long-term memory profile of a Freedom OS user, based on their conversation with Freedom Brain (their assistant).",
   "You are given the current profile and the tail of one conversation. Decide whether the USER revealed anything DURABLE about themselves — goals, preferences, decisions, recurring concerns, life context, or relationships between their finances.",
   "Return profile operations only for genuinely durable facts stated or confirmed by the user. Most exchanges reveal nothing durable: return an empty ops array in that case.",
-  "Never store the assistant's own suggestions, plans, or identity as user facts. The assistant's name/role belong to owner=assistant and must never be written into the user profile. Facts must be short, plain statements. Never store merchant names, account names or numbers, or institution names.",
+  "Never store the assistant's own suggestions, plans, or identity as user facts. The assistant is entity type CEO_AGENT; its displayName is only a label (owner=assistant) and must never be written into the user profile as the user's name. Facts must be short, plain statements. Never store merchant names, account names or numbers, or institution names.",
   "Safety rules:",
   `- ${PROMPT_SAFETY_RULES}`,
 ].join("\n");
@@ -87,7 +87,7 @@ export async function extractMemoryFromConversation({ userId, conversationId }) 
   if (!transcript.trim()) return null;
 
   const profile = await getProfile(userId);
-  const assistantName = await loadAssistantName(userId);
+  const assistant = await loadAssistantIdentity(userId);
   const { object } = await generateAgentObject({
     model: PROFILE_EXTRACTION_MODEL,
     system: EXTRACTION_SYSTEM_PROMPT,
@@ -95,7 +95,13 @@ export async function extractMemoryFromConversation({ userId, conversationId }) 
       "Review this conversation tail and return profile ops for any durable facts about the user (or an empty array).",
       dataSection(
         "ASSISTANT IDENTITY (do not store as user facts)",
-        `owner: assistant\nname: ${assistantName}`
+        [
+          `owner: assistant`,
+          `entityType: ${assistant.entityType}`,
+          `id: ${assistant.id || "(unknown)"}`,
+          `displayName: ${assistant.displayName}`,
+          `selfDescription: I am the CEO Agent named ${assistant.displayName}.`,
+        ].join("\n")
       ),
       dataSection("CURRENT PROFILE", renderProfileForPrompt(profile)),
       dataSection("RECENT CONVERSATION", transcript),
@@ -104,23 +110,30 @@ export async function extractMemoryFromConversation({ userId, conversationId }) 
     maxOutputTokens: EXTRACTION_MAX_OUTPUT_TOKENS,
   });
 
-  const ops = filterAssistantIdentityOps(sanitizeProfileOps(object?.ops), assistantName);
+  const ops = filterAssistantIdentityOps(
+    sanitizeProfileOps(object?.ops),
+    assistant.displayName
+  );
   if (ops.length) {
     await saveProfile(userId, applyOps(profile, ops, { source: "brain_chat" }));
   }
   return { ops };
 }
 
-async function loadAssistantName(userId) {
+async function loadAssistantIdentity(userId) {
   try {
     const ceo = await withUserContext(userId, (tx) =>
       tx.ceoAgentConfig.findFirst({
         where: { userId },
-        select: { name: true },
+        select: { id: true, name: true },
       })
     );
-    return String(ceo?.name || "CEO Agent").trim() || "CEO Agent";
+    return {
+      entityType: CEO_AGENT_ENTITY_TYPE,
+      id: ceo?.id || null,
+      displayName: String(ceo?.name || "CEO Agent").trim() || "CEO Agent",
+    };
   } catch {
-    return "CEO Agent";
+    return { entityType: CEO_AGENT_ENTITY_TYPE, id: null, displayName: "CEO Agent" };
   }
 }

@@ -369,7 +369,13 @@ export async function respondToChat({
       ]
         .filter(Boolean)
         .join("\n")
-    : `Agent name: ${ceoConfig.name}\nRole: CEO Agent (orchestrator)`;
+    : [
+        `entityType: CEO_AGENT`,
+        `id: ${ceoConfig.id}`,
+        `displayName: ${ceoConfig.name}`,
+        `selfDescription: I am the CEO Agent named ${ceoConfig.name}.`,
+        `Role: CEO Agent (orchestrator)`,
+      ].join("\n");
 
   const sections = [
     "Reply to the user's new message using the context below.",

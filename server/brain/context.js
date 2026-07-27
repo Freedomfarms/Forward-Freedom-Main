@@ -249,8 +249,9 @@ export async function assembleBrainContext({
 
   const documents = await loadDocumentsForPrompt(userId);
 
-  // Identity namespaces — assistant / user / workspace stay separated.
-  // Assistant name (e.g. Harry) never enters USER IDENTITY or RELEVANT MEMORIES.
+  // Identity namespaces — assistant entity (CEO_AGENT) / user / workspace.
+  // Configurable displayName is a label only; it never enters USER IDENTITY
+  // or RELEVANT MEMORIES as a user fact.
   const identities = buildIdentityNamespaces({
     ceoConfig,
     user: {
@@ -262,7 +263,7 @@ export async function assembleBrainContext({
     profile,
   });
   const ownedMemories = selectOwnedUserMemories(selectedMemories, {
-    assistantName: identities.assistantIdentity.name,
+    assistantDisplayName: identities.assistantIdentity.displayName,
   });
 
   // Plaintext user turns already in this thread (oldest → newest), for mission

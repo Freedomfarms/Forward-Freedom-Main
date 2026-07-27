@@ -4,20 +4,32 @@ import { PROFILE_CATEGORIES } from "../agents/profile.js";
 // ─────────────────────────────────────────────────────────────────────────────
 // Identity namespaces for Freedom Brain.
 //
-// Assistant, user, and workspace identity are separate structured contexts.
-// Memories/facts always carry ownership metadata so the LLM never receives
-// unattributed identity claims. This module is the architectural fix for
-// assistant↔user name confusion (e.g. calling the user by the CEO's name).
+// The assistant entity is CEO_AGENT (type + id). The configurable display name
+// (e.g. whatever the user typed in settings) is only a label — never the
+// identity key for memory, reasoning, permissions, or capabilities.
+//
+// Model framing: "I am the CEO Agent named <displayName>."
+// Not: "I am <displayName>."
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Stable entity type for the Freedom Brain CEO orchestrator. */
+export const CEO_AGENT_ENTITY_TYPE = "CEO_AGENT";
+
 export const MEMORY_OWNERS = Object.freeze(["assistant", "user", "workspace"]);
+
+/** Capabilities are entity-typed — independent of display name. */
+export const CEO_AGENT_CAPABILITIES =
+  "Create, update, run, and coordinate specialist agents; maintain the Daily Digest; recall user-owned memories with provenance.";
+
+export const CEO_AGENT_ROLE = "Freedom Brain — CEO Agent (assistant entity type CEO_AGENT)";
 
 const NAME_CLAIM_RE =
   /\b(?:(?:my|the user'?s|user'?s|his|her|their)\s+name\s+is|name\s*[:=]|i(?:'?m| am)|call(?:ed)?\s+me)\s+/i;
 
 /**
  * Build the three identity namespaces from authoritative config/user rows.
- * Never derive assistant identity from the living profile blob.
+ * Never derive assistant entity identity from the living profile blob.
+ * Display name is read from CeoAgentConfig.name as a user preference only.
  */
 export function buildIdentityNamespaces({
   ceoConfig = {},
@@ -25,21 +37,24 @@ export function buildIdentityNamespaces({
   teamAgents = [],
   profile = null,
 } = {}) {
-  const assistantName = String(ceoConfig?.name || "CEO Agent").trim() || "CEO Agent";
+  const displayName = cleanPersonName(ceoConfig?.name) || "CEO Agent";
+  const entityId = ceoConfig?.id ? String(ceoConfig.id) : null;
   const userName =
     cleanPersonName(user?.displayName) ||
-    inferUserNameFromProfile(profile, assistantName) ||
+    inferUserNameFromProfile(profile, displayName) ||
     null;
 
-  const preferences = collectOwnedTexts(profile, "statedPreferences", assistantName);
-  const personalFacts = collectOwnedTexts(profile, "lifeContext", assistantName);
+  const preferences = collectOwnedTexts(profile, "statedPreferences", displayName);
+  const personalFacts = collectOwnedTexts(profile, "lifeContext", displayName);
 
   return {
     assistantIdentity: {
-      name: assistantName,
-      role: "Freedom Brain — CEO Agent (assistant)",
-      capabilities:
-        "Create, update, run, and coordinate specialist agents; maintain the Daily Digest; recall user-owned memories with provenance.",
+      entityType: CEO_AGENT_ENTITY_TYPE,
+      id: entityId,
+      /** User-configurable label only — not used as a memory/permission key. */
+      displayName,
+      role: CEO_AGENT_ROLE,
+      capabilities: CEO_AGENT_CAPABILITIES,
     },
     userIdentity: {
       name: userName,
@@ -55,8 +70,17 @@ export function buildIdentityNamespaces({
   };
 }
 
+/** Display name accessor — never treat this as the entity identity. */
+export function getAssistantDisplayName(identities) {
+  return (
+    cleanPersonName(identities?.assistantIdentity?.displayName) ||
+    cleanPersonName(identities?.assistantIdentity?.name) ||
+    null
+  );
+}
+
 /** Convert a selected relevance memory into an owned fact. */
-export function toOwnedMemory(item, { assistantName = null } = {}) {
+export function toOwnedMemory(item, { assistantDisplayName = null } = {}) {
   const entry = item?.entry || item || {};
   const text = String(entry.text || item?.value || "").trim();
   const owner = normalizeOwner(entry.owner || item?.owner || "user");
@@ -69,19 +93,24 @@ export function toOwnedMemory(item, { assistantName = null } = {}) {
     category: item?.category || entry.category || null,
     source: entry.source || item?.source || null,
     annotation: item?.annotation || null,
-    // Surface leaks so callers can drop them before prompt injection.
-    leak: owner === "user" && isAssistantIdentityAttributedToUser(text, assistantName),
+    leak:
+      owner === "user" && isAssistantIdentityAttributedToUser(text, assistantDisplayName),
   };
 }
 
 /**
  * Keep only user-owned, non-leaking memories for the RELEVANT MEMORIES section.
- * Assistant identity never enters this list as a generic memory.
+ * Assistant display names never enter this list as generic user memories.
  */
-export function selectOwnedUserMemories(selected = [], { assistantName = null } = {}) {
+export function selectOwnedUserMemories(
+  selected = [],
+  { assistantDisplayName = null, assistantName = null } = {}
+) {
+  // assistantName kept as a soft alias for older call sites.
+  const displayName = assistantDisplayName || assistantName;
   const out = [];
   for (const item of selected || []) {
-    const owned = toOwnedMemory(item, { assistantName });
+    const owned = toOwnedMemory(item, { assistantDisplayName: displayName });
     if (!owned.value) continue;
     if (owned.owner !== "user") continue;
     if (owned.leak) continue;
@@ -90,46 +119,45 @@ export function selectOwnedUserMemories(selected = [], { assistantName = null } 
   return out;
 }
 
-/** True when a profile/memory text claims the assistant's name is the user's. */
-export function isAssistantIdentityAttributedToUser(text, assistantName) {
-  const name = cleanPersonName(assistantName);
+/** True when a profile/memory text claims the assistant display name is the user's. */
+export function isAssistantIdentityAttributedToUser(text, assistantDisplayName) {
+  const name = cleanPersonName(assistantDisplayName);
   if (!name || !text) return false;
   const body = String(text);
   const nameRe = personNameRegex(name);
   if (!nameRe.test(body)) return false;
 
-  // Explicit user-name claims mentioning the assistant name.
   if (
     /\b(user'?s name|my name is|name is|call(?:ed)? me|i am|i'm)\b/i.test(body) &&
     nameRe.test(body)
   ) {
-    // Allow "My assistant is named Harry" / "CEO agent Harry"
-    if (/\b(assistant|ceo|agent|brain)\b/i.test(body)) return false;
+    // Allow facts about the assistant entity / its display label.
+    if (/\b(assistant|ceo|agent|brain|display\s*name)\b/i.test(body)) return false;
     return true;
   }
 
-  // Bare "Name: Harry" style life-context rows when Harry is the assistant.
+  // Bare "Name: <displayName>" life-context rows when that label is the CEO's.
   if (/^\s*name\s*[:=]\s*/i.test(body) && nameRe.test(body)) return true;
   return false;
 }
 
 /**
- * Drop profile ops that would store assistant identity as a user fact.
+ * Drop profile ops that would store the CEO display name as a user fact.
  * Used by memory extraction before applyOps/saveProfile.
  */
-export function filterAssistantIdentityOps(ops, assistantName) {
+export function filterAssistantIdentityOps(ops, assistantDisplayName) {
   return (Array.isArray(ops) ? ops : []).filter((op) => {
     if (!op || typeof op !== "object") return false;
     if (op.op === "remove") return true;
     const text = String(op.text || "").trim();
     if (!text) return op.op === "remove";
-    return !isAssistantIdentityAttributedToUser(text, assistantName);
+    return !isAssistantIdentityAttributedToUser(text, assistantDisplayName);
   });
 }
 
 /**
  * Situation Brief identity block — separate sections, never merged.
- * Active mission + relevant memories are optional trailing sections.
+ * Assistant identity is entity-typed; displayName is an explicit label field.
  */
 export function renderIdentitySituationBrief({
   identities,
@@ -139,15 +167,21 @@ export function renderIdentitySituationBrief({
   const assistant = identities?.assistantIdentity || {};
   const user = identities?.userIdentity || {};
   const workspace = identities?.workspaceIdentity || {};
+  const displayName = assistant.displayName || assistant.name || "CEO Agent";
+  const entityType = assistant.entityType || CEO_AGENT_ENTITY_TYPE;
 
   const sections = [
     dataSection(
       "ASSISTANT IDENTITY",
       [
         `owner: assistant`,
-        `name: ${assistant.name || "CEO Agent"}`,
-        `role: ${assistant.role || "Freedom Brain — CEO Agent (assistant)"}`,
-        `capabilities: ${assistant.capabilities || "(see YOUR CAPABILITIES)"}`,
+        `entityType: ${entityType}`,
+        `id: ${assistant.id || "(unknown)"}`,
+        `displayName: ${displayName}`,
+        `displayNameNote: user-configurable label only — not the entity identity; renaming does not change type, id, memory ownership, permissions, or capabilities`,
+        `selfDescription: I am the CEO Agent named ${displayName}.`,
+        `role: ${assistant.role || CEO_AGENT_ROLE}`,
+        `capabilities: ${assistant.capabilities || CEO_AGENT_CAPABILITIES}`,
       ].join("\n")
     ),
     dataSection(
@@ -216,70 +250,74 @@ export function renderOwnedMemories(memories = []) {
 
 /**
  * Deterministic self-consistency check before the reply is persisted.
- * Catches assistant↔user identity swaps without relying on prompt rules.
+ * Uses the configured displayName only as a label collision check — entity
+ * type/id never change when the label changes.
  */
 export function validateIdentityConsistency(reply, identities = {}, { userMessage = "" } = {}) {
   const failures = [];
   const text = String(reply || "").trim();
   if (!text) return { ok: true, failures };
 
-  const assistantName = cleanPersonName(identities?.assistantIdentity?.name);
+  const displayName = getAssistantDisplayName(identities);
   const userName = cleanPersonName(identities?.userIdentity?.name);
   const msg = String(userMessage || "");
 
-  if (assistantName) {
-    const assistantRe = personNameRegex(assistantName);
+  if (displayName) {
+    const displayRe = personNameRegex(displayName);
 
-    // "Hey Harry" / "Hi Harry," as a greeting → addressing the user as the assistant.
+    // Greeting the user with the CEO display name.
     if (
-      new RegExp(`\\b(hey|hi|hello|dear)\\s+${escapeRegex(assistantName)}\\b`, "i").test(text) &&
+      new RegExp(`\\b(hey|hi|hello|dear)\\s+${escapeRegex(displayName)}\\b`, "i").test(text) &&
       !new RegExp(
-        `\\b(i(?:'?m| am)|my name is)\\s+${escapeRegex(assistantName)}\\b`,
+        `\\b(i(?:'?m| am)|my name is|ceo agent named)\\s+${escapeRegex(displayName)}\\b`,
         "i"
       ).test(text)
     ) {
       failures.push("addressed_user_as_assistant");
     }
 
-    // Claims assistant name belongs to the user / is in the user profile.
-    // Allow corrections that clearly reclaim the name as the assistant's.
+    // Claims the CEO display name belongs to the user / is in the user profile.
     const correctingSelf =
-      /\b(my name|i made a mistake|not yours|mistakenly|incorrectly|i(?:'?m| am) (?:the )?(?:assistant|ceo|brain))\b/i.test(
+      /\b(my name|i made a mistake|not yours|mistakenly|incorrectly|i(?:'?m| am) (?:the )?(?:assistant|ceo|brain)|ceo agent named)\b/i.test(
         text
       );
     if (!correctingSelf) {
       const attributed =
         new RegExp(
-          `\\b(your name is|call you|calling you)\\s+${escapeRegex(assistantName)}\\b`,
+          `\\b(your name is|call you|calling you)\\s+${escapeRegex(displayName)}\\b`,
           "i"
         ).test(text) ||
         new RegExp(
-          `\\b${escapeRegex(assistantName)}\\b.{0,48}\\b(in your profile|listed in your profile|your profile)\\b`,
+          `\\b${escapeRegex(displayName)}\\b.{0,48}\\b(in your profile|listed in your profile|your profile)\\b`,
           "i"
         ).test(text) ||
         new RegExp(
-          `\\b(in your profile|listed in your profile|your profile).{0,48}\\b${escapeRegex(assistantName)}\\b`,
+          `\\b(in your profile|listed in your profile|your profile).{0,48}\\b${escapeRegex(displayName)}\\b`,
           "i"
         ).test(text);
       if (attributed) failures.push("assistant_name_attributed_to_user");
     }
 
-    // User challenges the mis-name and the reply still asserts Harry is the user's name.
+    // User challenges a mis-name using the current display label.
+    const challengeRe = new RegExp(
+      `\\b(why .* call me|why .* ${escapeRegex(displayName)}|${escapeRegex(displayName)} is your name|what you mean)\\b`,
+      "i"
+    );
     if (
-      /\b(why .* call me|why .* harry|harry is your name|what you mean)\b/i.test(msg) &&
-      assistantRe.test(text) &&
+      challengeRe.test(msg) &&
+      displayRe.test(text) &&
       /\b(your profile|your name|listed)\b/i.test(text) &&
-      !/\b(my name|i made a mistake|not yours|assistant)\b/i.test(text)
+      !/\b(my name|i made a mistake|not yours|assistant|ceo agent)\b/i.test(text)
     ) {
       failures.push("failed_identity_correction");
     }
   }
 
-  // User asks "what is my name?" — must not answer with the assistant name.
+  // User asks "what is my name?" — must not answer with the CEO display name.
   if (
     /\bwhat(?:'s| is) my name\b/i.test(msg) &&
-    assistantName &&
-    personNameRegex(assistantName).test(text) &&
+    displayName &&
+    personNameRegex(displayName).test(text) &&
     !/\b(i don'?t|not (?:sure|set|known)|do not have|haven'?t)\b/i.test(text)
   ) {
     if (!userName || !personNameRegex(userName).test(text)) {
@@ -296,21 +334,20 @@ export function validateIdentityConsistency(reply, identities = {}, { userMessag
     }
   }
 
-  // Reject attempts to overwrite assistant identity with the user's name via "remember".
+  // Reject attempts to overwrite CEO entity identity with the user's name.
   if (
     /\bremember (?:that )?your name is\b/i.test(msg) &&
     userName &&
-    new RegExp(`\\bmy name is\\s+${escapeRegex(userName)}\\b`, "i").test(text)
+    new RegExp(`\\bmy name is\\s+${escapeRegex(userName)}\\b`, "i").test(text) &&
+    !/\bceo agent\b/i.test(text)
   ) {
     failures.push("accepted_user_name_as_assistant_identity");
   }
 
-  // Known user name contradicted by assigning a different name as "your name is X"
-  // when X is the assistant name (already covered) or inventing identity flip.
   if (
     userName &&
-    assistantName &&
-    new RegExp(`\\byour name is\\s+${escapeRegex(assistantName)}\\b`, "i").test(text)
+    displayName &&
+    new RegExp(`\\byour name is\\s+${escapeRegex(displayName)}\\b`, "i").test(text)
   ) {
     if (!failures.includes("assistant_name_attributed_to_user")) {
       failures.push("assistant_name_attributed_to_user");
@@ -321,33 +358,37 @@ export function validateIdentityConsistency(reply, identities = {}, { userMessag
 }
 
 /**
- * Structured retry hint — re-injects namespaces (data), not behavioral rules.
+ * Structured retry hint — re-injects entity namespaces (data), not name patches.
  */
 export function renderIdentityValidationRetry(identities, failures = []) {
   const assistant = identities?.assistantIdentity || {};
   const user = identities?.userIdentity || {};
+  const displayName = getAssistantDisplayName(identities) || "CEO Agent";
   return dataSection(
     "IDENTITY NAMESPACE CORRECTION",
     [
       `validation_failed: ${failures.join(", ") || "identity_inconsistency"}`,
-      `assistant.name (owner=assistant): ${assistant.name || "CEO Agent"}`,
+      `assistant.entityType: ${assistant.entityType || CEO_AGENT_ENTITY_TYPE}`,
+      `assistant.id: ${assistant.id || "(unknown)"}`,
+      `assistant.displayName (label only): ${displayName}`,
+      `selfDescription: I am the CEO Agent named ${displayName}.`,
       `user.name (owner=user): ${user.name || "(not set — do not invent)"}`,
-      "Regenerate the reply using ASSISTANT IDENTITY / USER IDENTITY ownership. Do not assign assistant.name to the user.",
+      "Regenerate using entityType CEO_AGENT + displayName label. Do not assign the CEO displayName to the user.",
     ].join("\n")
   );
 }
 
-function collectOwnedTexts(profile, category, assistantName) {
+function collectOwnedTexts(profile, category, assistantDisplayName) {
   const entries = profile?.categories?.[category];
   if (!Array.isArray(entries)) return [];
   return entries
     .map((entry) => String(entry?.text || "").trim())
     .filter(Boolean)
-    .filter((text) => !isAssistantIdentityAttributedToUser(text, assistantName))
+    .filter((text) => !isAssistantIdentityAttributedToUser(text, assistantDisplayName))
     .slice(0, 8);
 }
 
-function inferUserNameFromProfile(profile, assistantName) {
+function inferUserNameFromProfile(profile, assistantDisplayName) {
   if (!profile?.categories) return null;
   for (const category of PROFILE_CATEGORIES) {
     for (const entry of profile.categories[category] || []) {
@@ -358,8 +399,13 @@ function inferUserNameFromProfile(profile, assistantName) {
       if (!match) continue;
       const candidate = cleanPersonName(match[1]);
       if (!candidate) continue;
-      if (assistantName && candidate.toLowerCase() === assistantName.toLowerCase()) continue;
-      if (isAssistantIdentityAttributedToUser(text, assistantName)) continue;
+      if (
+        assistantDisplayName &&
+        candidate.toLowerCase() === assistantDisplayName.toLowerCase()
+      ) {
+        continue;
+      }
+      if (isAssistantIdentityAttributedToUser(text, assistantDisplayName)) continue;
       return candidate;
     }
   }

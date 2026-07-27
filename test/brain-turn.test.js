@@ -477,8 +477,10 @@ test("brain turn: identity self-check regenerates when assistant name is assigne
       brainPrompts.push(prompt);
       if (!/IDENTITY NAMESPACE CORRECTION/.test(prompt)) {
         assert.match(prompt, /ASSISTANT IDENTITY/);
+        assert.match(prompt, /entityType: CEO_AGENT/);
+        assert.match(prompt, /displayName: Harry/);
+        assert.match(prompt, /selfDescription: I am the CEO Agent named Harry\./);
         assert.match(prompt, /USER IDENTITY/);
-        assert.match(prompt, /name: Harry/);
         assert.match(prompt, /name: Kyle/);
         return {
           text: "I see Harry listed in your profile context, so I used that.",
@@ -486,7 +488,7 @@ test("brain turn: identity self-check regenerates when assistant name is assigne
         };
       }
       return {
-        text: "Harry is my name, not yours. I made a mistake.",
+        text: "I am the CEO Agent named Harry — that is my display name, not yours. I made a mistake.",
         usage: {},
       };
     },
@@ -501,6 +503,7 @@ test("brain turn: identity self-check regenerates when assistant name is assigne
 
   assert.equal(brainPrompts.length, 2, "expected one identity regenerate");
   assert.match(brainPrompts[1], /IDENTITY NAMESPACE CORRECTION/);
-  assert.match(outcome.reply, /Harry is my name, not yours/i);
+  assert.match(brainPrompts[1], /entityType: CEO_AGENT/);
+  assert.match(outcome.reply, /CEO Agent named Harry/i);
   assert.doesNotMatch(outcome.reply, /listed in your profile/i);
 });

@@ -87,7 +87,7 @@ export function renderNamedRunSummaries(runs, agents = [], { emptyLabel = "(no c
 
 /**
  * Posts a short AGENT note into the user's main (non-system) CEO conversation
- * so Harry's next chat turn can see that a sub-agent was just created.
+ * so the CEO Agent's next chat turn can see that a sub-agent was just created.
  * Creation interviews live on a hidden isSystem thread otherwise.
  */
 export async function announceAgentCreatedToCeoChat(
