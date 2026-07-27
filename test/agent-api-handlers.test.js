@@ -23,6 +23,7 @@ let runnerResult;
 let chatCalls;
 let digestCalls;
 let narrativeProfileCalls;
+let creationTextPrompts;
 
 class FakeAuthError extends Error {
   constructor(message, status = 401) {
@@ -120,6 +121,11 @@ before(async () => {
 
     mock.module("../server/agents/digest.js", {
       namedExports: {
+        DIGEST_ACTION_TYPES: Object.freeze(["set_content", "regenerate"]),
+        DIGEST_MAX_LENGTH: 4000,
+        DIGEST_ACTION_JSON_SCHEMA: {
+          anyOf: [{ type: "null" }, { type: "object" }],
+        },
         generateDigest: async (userId) => {
           digestCalls.push(userId);
           return {
@@ -129,6 +135,11 @@ before(async () => {
             usage: null,
           };
         },
+        sanitizeDigestAction: (action) => action ?? null,
+        applyCeoDigestAction: async () => ({
+          digest: "updated digest",
+          generatedAt: new Date("2026-07-20T12:00:00Z"),
+        }),
         NO_ACTIVITY_DIGEST: "nothing yet",
       },
     });
@@ -185,6 +196,7 @@ before(async () => {
         // grammar). Skip/review uses this text for the draft presentation and
         // generateAgentObject for the extract.
         generateAgentText: async ({ prompt } = {}) => {
+          creationTextPrompts.push(typeof prompt === "string" ? prompt : "");
           // Skip/review turns ask the model to present the draft; interview turns
           // explicitly say not to. Match the instruction line, not the word "skip"
           // buried in JSON keys like userAskedToSkipRemaining.
@@ -275,6 +287,7 @@ beforeEach(() => {
   chatCalls = [];
   digestCalls = [];
   narrativeProfileCalls = [];
+  creationTextPrompts = [];
   runnerResult = {
     id: "run-1",
     agentConfigId: "agent-1",
@@ -1015,18 +1028,23 @@ test("CEO chat creation flow finishes interview (or skip) before draft review, t
 
   // Every creation turn must send mode: "create_agent" (server pins the
   // session to an isSystem conversation; omitting mode resumes regular chat).
-  async function send(message, { create = true } = {}) {
+  async function send(message, { create = true, startFresh = false } = {}) {
     return invoke(
       handlers.ceoChat,
       authedRequest("u1", {
         method: "POST",
-        body: { message, ...(create ? { mode: "create_agent" } : {}) },
+        body: {
+          message,
+          ...(create ? { mode: "create_agent" } : {}),
+          ...(startFresh ? { startFresh: true } : {}),
+        },
       })
     );
   }
 
   const aim = await send(
-    "Every week I have a clear spending observations report and nothing unusual slips by."
+    "Every week I have a clear spending observations report and nothing unusual slips by.",
+    { startFresh: true }
   );
   assert.equal(aim.statusCode, 200);
   // After Aim, CEO keeps interviewing — not drafting yet.
@@ -1060,18 +1078,21 @@ test("CEO chat creation flow finishes interview (or skip) before draft review, t
   assert.match(row.personalityNotes || "", /Direct|Clear|Practical|Concise/i);
   assert.match(row.boundaries || "", /Never/i);
 
-  // Creation messages land on the isSystem conversation, never the default list.
+  // Interview turns land on the isSystem conversation. Confirm also pins a short
+  // "team update" note onto the default CEO thread so Harry sees the new hire.
   const systemConv = currentDb.tables.agentConversation.find((c) => c.isSystem === true);
   assert.ok(systemConv, "isSystem conversation should exist");
-  assert.equal(
-    currentDb.tables.agentChatMessage.every((m) => m.conversationId === systemConv.id),
-    true
+  const systemMessages = currentDb.tables.agentChatMessage.filter(
+    (m) => m.conversationId === systemConv.id
   );
-  assert.equal(
-    currentDb.tables.agentConversation.filter((c) => !c.isSystem).length,
-    0,
-    "creation must not create a listed conversation"
+  assert.ok(systemMessages.length >= 3, "creation interview should write to isSystem thread");
+  const listed = currentDb.tables.agentConversation.filter((c) => !c.isSystem);
+  assert.equal(listed.length, 1, "confirm announces the new agent on the default CEO thread");
+  const announceMessages = currentDb.tables.agentChatMessage.filter(
+    (m) => m.conversationId === listed[0].id
   );
+  assert.equal(announceMessages.length, 1);
+  assert.match(envelope.decrypt(announceMessages[0].contentCiphertext), /Team update|Finance Agent/i);
 
   // Creation uses the interview LLM path, not respondToChat.
   assert.equal(chatCalls.length, 0);
@@ -1080,6 +1101,275 @@ test("CEO chat creation flow finishes interview (or skip) before draft review, t
   const followUp = await send("thanks, how are things?", { create: false });
   assert.equal(followUp.statusCode, 200);
   assert.equal(chatCalls.length, 1);
+});
+
+test("CEO chat create_agent discard deletes unfinished draft without a message", async (t) => {
+  if (!requireSetup(t)) return;
+
+  const { encodeCreationState, decodeCreationState } = await import(
+    "../server/agents/creationFlow.js"
+  );
+
+  await invoke(handlers.ceo, authedRequest("u1", { method: "GET" }));
+  const ceoId = currentDb.tables.ceoAgentConfig[0].id;
+  currentDb.tables.agentConversation.push({
+    id: "sys-discard",
+    userId: "u1",
+    ceoAgentConfigId: ceoId,
+    agentConfigId: null,
+    title: "New Agent",
+    isSystem: true,
+    archivedAt: null,
+    createdAt: new Date("2026-07-20T09:00:00Z"),
+    updatedAt: new Date("2026-07-20T09:00:00Z"),
+  });
+  // Older completed-session junk on the same thread should survive.
+  currentDb.tables.agentChatMessage.push(
+    {
+      id: "old-completed-msg",
+      userId: "u1",
+      conversationId: "sys-discard",
+      ceoAgentConfigId: ceoId,
+      agentConfigId: null,
+      role: "USER",
+      contentCiphertext: envelope.encrypt("prior completed creation turn"),
+      createdAt: new Date("2026-07-19T12:00:00Z"),
+    },
+    {
+      id: "discard-user",
+      userId: "u1",
+      conversationId: "sys-discard",
+      ceoAgentConfigId: ceoId,
+      agentConfigId: null,
+      role: "USER",
+      contentCiphertext: envelope.encrypt(
+        "I want a finance agent that connects to my Coinbase sandbox."
+      ),
+      createdAt: new Date("2026-07-20T09:56:00Z"),
+    },
+    {
+      id: "discard-state",
+      userId: "u1",
+      conversationId: "sys-discard",
+      ceoAgentConfigId: ceoId,
+      agentConfigId: null,
+      role: "AGENT",
+      contentCiphertext: envelope.encrypt(
+        encodeCreationState({
+          v: 3,
+          status: "active",
+          phase: "interview",
+          step: "interview",
+          savedAtMs: Date.parse("2026-07-20T10:00:00Z"),
+          savedAtSeq: 1,
+          sessionStartedAtMs: Date.parse("2026-07-20T09:55:00Z"),
+          draft: {
+            agentType: "finance",
+            definitionOfDone: "I get a Coinbase finance brief every morning.",
+            boundaries: "Never leave Coinbase sandbox",
+            coveredTopics: ["outcome"],
+            interviewComplete: false,
+            guessedFields: [],
+          },
+        })
+      ),
+      createdAt: new Date("2026-07-20T10:00:00Z"),
+    }
+  );
+
+  const discarded = await invoke(
+    handlers.ceoChat,
+    authedRequest("u1", {
+      method: "POST",
+      body: { mode: "create_agent", discard: true },
+    })
+  );
+  assert.equal(discarded.statusCode, 200);
+  assert.equal(discarded.body.deleted, true);
+  assert.ok(discarded.body.deletedCount >= 2);
+
+  // Unfinished session rows are gone; older thread rows remain.
+  assert.equal(
+    currentDb.tables.agentChatMessage.some((row) => row.id === "discard-state"),
+    false
+  );
+  assert.equal(
+    currentDb.tables.agentChatMessage.some((row) => row.id === "discard-user"),
+    false
+  );
+  assert.equal(
+    currentDb.tables.agentChatMessage.some((row) => row.id === "old-completed-msg"),
+    true
+  );
+  assert.equal(
+    currentDb.tables.agentChatMessage.some((row) => {
+      try {
+        const state = decodeCreationState(envelope.decrypt(row.contentCiphertext));
+        return state?.status === "active";
+      } catch {
+        return false;
+      }
+    }),
+    false
+  );
+
+  // A later Aim answer must start clean — no Coinbase draft fields.
+  const next = await invoke(
+    handlers.ceoChat,
+    authedRequest("u1", {
+      method: "POST",
+      body: {
+        mode: "create_agent",
+        message: "I want a social media report emailed to me",
+      },
+    })
+  );
+  assert.equal(next.statusCode, 200);
+  assert.equal(next.body.creationDraft.phase, "interview");
+  assert.doesNotMatch(next.body.creationDraft.definitionOfDone || "", /Coinbase/i);
+  assert.equal(next.body.creationDraft.boundaries, null);
+});
+
+test("CEO chat create_agent startFresh abandons prior unfinished draft + transcript", async (t) => {
+  if (!requireSetup(t)) return;
+
+  const { encodeCreationState } = await import("../server/agents/creationFlow.js");
+
+  await invoke(handlers.ceo, authedRequest("u1", { method: "GET" }));
+  const ceoId = currentDb.tables.ceoAgentConfig[0].id;
+  currentDb.tables.agentConversation.push({
+    id: "sys-create",
+    userId: "u1",
+    ceoAgentConfigId: ceoId,
+    agentConfigId: null,
+    title: "New Agent",
+    isSystem: true,
+    archivedAt: null,
+    createdAt: new Date("2026-07-20T09:00:00Z"),
+    updatedAt: new Date("2026-07-20T09:00:00Z"),
+  });
+
+  // Abandoned mid-interview Coinbase/finance draft still marked active on the
+  // shared isSystem thread (what used to resume when "+ New Agent" reopened).
+  // Leave escalation unanswered so resume stays in interview (filled escalation
+  // notes would be inferred as covering that topic and open review).
+  const abandonedState = {
+    v: 3,
+    status: "active",
+    phase: "interview",
+    step: "interview",
+    savedAtMs: Date.parse("2026-07-20T10:00:00Z"),
+    savedAtSeq: 1,
+    sessionStartedAtMs: Date.parse("2026-07-20T09:55:00Z"),
+    draft: {
+      agentType: "finance",
+      name: "Coinbase Watch",
+      roleLine: "Tracks Coinbase sandbox balances",
+      definitionOfDone: "I get a Coinbase finance brief every morning.",
+      instructions: "Connect to Coinbase and summarize balances",
+      personalityNotes: "Direct\nNumbers-first",
+      boundaries: "Never place trades\nNever leave Coinbase sandbox",
+      workingFromNotes: "Learn from prior Coinbase fills",
+      actorsNotes: "Acts for the user with Coinbase",
+      escalationNotes: null,
+      dataFocus: "Coinbase sandbox",
+      coveredTopics: ["outcome", "actors", "boundaries", "history", "tone"],
+      interviewComplete: false,
+      guessedFields: [],
+    },
+  };
+  currentDb.tables.agentChatMessage.push(
+    {
+      id: "old-u1",
+      userId: "u1",
+      conversationId: "sys-create",
+      ceoAgentConfigId: ceoId,
+      agentConfigId: null,
+      role: "USER",
+      contentCiphertext: envelope.encrypt(
+        "I want a finance agent that connects to my Coinbase sandbox."
+      ),
+      createdAt: new Date("2026-07-20T09:56:00Z"),
+    },
+    {
+      id: "old-a1",
+      userId: "u1",
+      conversationId: "sys-create",
+      ceoAgentConfigId: ceoId,
+      agentConfigId: null,
+      role: "AGENT",
+      contentCiphertext: envelope.encrypt(
+        "Got it — wrapping up your finance agent that connects to Coinbase."
+      ),
+      createdAt: new Date("2026-07-20T09:57:00Z"),
+    },
+    {
+      id: "old-state",
+      userId: "u1",
+      conversationId: "sys-create",
+      ceoAgentConfigId: ceoId,
+      agentConfigId: null,
+      role: "AGENT",
+      contentCiphertext: envelope.encrypt(encodeCreationState(abandonedState)),
+      createdAt: new Date("2026-07-20T10:00:00Z"),
+    }
+  );
+
+  // Without startFresh, reopening would continue the Coinbase interview.
+  const resumed = await invoke(
+    handlers.ceoChat,
+    authedRequest("u1", {
+      method: "POST",
+      body: {
+        mode: "create_agent",
+        message: "I want a social media report of a couple people emailed to me",
+      },
+    })
+  );
+  assert.equal(resumed.statusCode, 200);
+  assert.equal(resumed.body.creationDraft.phase, "interview");
+  assert.match(resumed.body.creationDraft.boundaries || "", /Coinbase/i);
+  assert.match(resumed.body.creationDraft.actorsNotes || "", /Coinbase/i);
+
+  // "+ New Agent" first turn sends startFresh — discard the abandoned draft.
+  const fresh = await invoke(
+    handlers.ceoChat,
+    authedRequest("u1", {
+      method: "POST",
+      body: {
+        mode: "create_agent",
+        startFresh: true,
+        message: "I want a social media report of a couple people emailed to me",
+      },
+    })
+  );
+  assert.equal(fresh.statusCode, 200);
+  assert.equal(fresh.body.creationDraft.phase, "interview");
+  assert.equal(fresh.body.creationDraft.readyForReview, false);
+  assert.doesNotMatch(fresh.body.creationDraft.definitionOfDone || "", /Coinbase/i);
+  assert.equal(fresh.body.creationDraft.boundaries, null);
+  assert.equal(fresh.body.creationDraft.personalityNotes, null);
+  assert.equal(fresh.body.creationDraft.actorsNotes, null);
+
+  // Next turn in the fresh session must not feed the old Coinbase transcript
+  // into the interview prompt (shared isSystem thread still has those rows).
+  creationTextPrompts.length = 0;
+  const followUp = await invoke(
+    handlers.ceoChat,
+    authedRequest("u1", {
+      method: "POST",
+      body: {
+        mode: "create_agent",
+        message: "It should watch a couple public accounts and email me the digest",
+      },
+    })
+  );
+  assert.equal(followUp.statusCode, 200);
+  assert.ok(creationTextPrompts.length >= 1, "expected an interview LLM prompt");
+  const latestPrompt = creationTextPrompts[creationTextPrompts.length - 1];
+  assert.doesNotMatch(latestPrompt, /Coinbase/i);
+  assert.doesNotMatch(latestPrompt, /wrapping up your finance agent/i);
+  assert.match(latestPrompt, /social media report/i);
 });
 
 test("CEO conversations CRUD + messages; system threads stay hidden", async (t) => {

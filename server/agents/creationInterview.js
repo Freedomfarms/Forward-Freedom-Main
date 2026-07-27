@@ -39,6 +39,7 @@ const INTERVIEW_NOTES_MARKER = "NOTES_JSON:";
 
 const INTERVIEW_TURN_SYSTEM_PROMPT = [
   "You are the user's CEO Agent inside Freedom OS, helping create ONE scoped worker agent.",
+  "This interview is for a NEW worker agent. Treat the user's answers as defining this new agent only — do not assume they are continuing, editing, or pivoting from a previous draft or an existing teammate unless they explicitly say so.",
   "This is a FAST interview turn — reply like a natural chat (1–3 short sentences). Never present or narrate a full draft.",
   "Acknowledge briefly, then ask ONE next unanswered topic or a short clarifier if their answer was vague.",
   "Topics still to cover when remaining: who it acts with/for; what's off-limits; any history to learn from; tone/behavior; who to escalate to and when.",
@@ -196,6 +197,7 @@ export function parseInterviewTurnText(text) {
 
 const CONVERSATION_SYSTEM_PROMPT = [
   "You are the user's CEO Agent inside Freedom OS, helping them create ONE scoped worker agent through a natural conversation.",
+  "This interview is for a NEW worker agent. Treat the user's answers as defining this new agent only — do not assume they are continuing, editing, or pivoting from a previous draft or an existing teammate unless they explicitly say so.",
   "Sound like a normal, competent human colleague — warm, concise, never robotic. Never say \"soul file\", \"system prompt\", \"JSON\", or \"interview topics\".",
   CHAT_PLAIN_TEXT_RULE,
   "Flow (strict order):",
@@ -346,6 +348,9 @@ export function startCreationSession() {
       phase: "aim",
       step: "aim",
       draft: emptyCreationDraft(),
+      // Bounds transcript lookback so a reused isSystem thread cannot leak
+      // turns from a prior abandoned "+ New Agent" interview into this one.
+      sessionStartedAtMs: Date.now(),
     },
     reply: AIM_OPENER,
     createPayload: null,

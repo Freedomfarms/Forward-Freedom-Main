@@ -87,6 +87,8 @@ test("startCreationSession opens on Aim with an empty draft", () => {
   assert.equal(started.state.status, "active");
   assert.match(started.reply, /one outcome/i);
   assert.equal(started.state.draft.definitionOfDone, null);
+  assert.equal(typeof started.state.sessionStartedAtMs, "number");
+  assert.ok(started.state.sessionStartedAtMs > 0);
 });
 
 test("partial answers do not open draft review until interview is complete", () => {

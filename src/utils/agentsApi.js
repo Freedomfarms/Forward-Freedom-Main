@@ -96,12 +96,14 @@ export function fetchCeoChatHistory({ conversationId } = {}, options = {}) {
 
 /**
  * CEO chat. Pass mode: "create_agent" on every turn of the "+ New Agent"
- * flow (pinned to an isSystem conversation). Optional conversationId selects
- * a regular thread; omitted → newest non-system conversation.
+ * flow (pinned to an isSystem conversation). Pass startFresh: true on the
+ * first turn after opening "+ New Agent" so an unfinished prior draft is
+ * discarded. Optional conversationId selects a regular thread; omitted →
+ * newest non-system conversation.
  * Response: { reply, messageId } and optionally { agentCreated }.
  */
 export function sendCeoChatMessage(
-  { message, relatedRunId = null, mode, conversationId = null } = {},
+  { message, relatedRunId = null, mode, conversationId = null, startFresh = false } = {},
   options = {}
 ) {
   const body = {
@@ -109,8 +111,22 @@ export function sendCeoChatMessage(
     ...(relatedRunId ? { relatedRunId } : {}),
     ...(mode ? { mode } : {}),
     ...(conversationId ? { conversationId } : {}),
+    ...(startFresh ? { startFresh: true } : {}),
   };
   return requestJson("/api/agents/ceo/chat", { method: "POST", body, options });
+}
+
+/**
+ * Delete any unfinished "+ New Agent" draft when the user leaves the panel
+ * without creating. The blank creation UI does not show history, so drafts
+ * are removed rather than kept for resume.
+ */
+export function discardCeoAgentCreation(options = {}) {
+  return requestJson("/api/agents/ceo/chat", {
+    method: "POST",
+    body: { mode: "create_agent", discard: true },
+    options,
+  });
 }
 
 /** List non-system CEO conversations (newest updatedAt first). */
