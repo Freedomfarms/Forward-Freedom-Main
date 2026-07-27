@@ -117,9 +117,9 @@ export function sendCeoChatMessage(
 }
 
 /**
- * Cancel any unfinished "+ New Agent" draft on the hidden creation thread.
- * The blank creation UI does not show history, so leftover active drafts are
- * discarded on open/close rather than silently resumed.
+ * Delete any unfinished "+ New Agent" draft when the user leaves the panel
+ * without creating. The blank creation UI does not show history, so drafts
+ * are removed rather than kept for resume.
  */
 export function discardCeoAgentCreation(options = {}) {
   return requestJson("/api/agents/ceo/chat", {

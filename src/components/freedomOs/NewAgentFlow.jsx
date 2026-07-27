@@ -13,9 +13,9 @@ const AIM_OPENER =
 // (mode: "create_agent"). Slice 1: Aim → full interview → draft review → confirm.
 // Draft panel stays closed until the interview is finished (or the user skips).
 //
-// This UI does not load creation history, so unfinished drafts are not a feature:
-// close discards them, and the first Aim answer sends startFresh as a backstop.
-// Resume only makes sense once we show the prior transcript in this panel.
+// This UI does not load creation history. If the user closes / selects out
+// without creating, the unfinished draft is deleted. startFresh on the first
+// Aim answer is only a backstop.
 
 export function NewAgentFlow({ ceoAgent, user, onClose, onAgentCreated }) {
   const [createdAgent, setCreatedAgent] = useState(null);
@@ -23,8 +23,7 @@ export function NewAgentFlow({ ceoAgent, user, onClose, onAgentCreated }) {
   const createdAgentRef = useRef(null);
   const ceoName = ceoAgent?.name || "CEO Agent";
 
-  // Leaving the blank panel without creating must not leave an invisible
-  // "active" draft on the shared creation thread.
+  // Selecting out of "+ New Agent" without creating deletes the draft.
   useEffect(() => {
     return () => {
       if (createdAgentRef.current) return;

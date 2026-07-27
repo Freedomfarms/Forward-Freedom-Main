@@ -1103,7 +1103,7 @@ test("CEO chat creation flow finishes interview (or skip) before draft review, t
   assert.equal(chatCalls.length, 1);
 });
 
-test("CEO chat create_agent discard cancels unfinished draft without a message", async (t) => {
+test("CEO chat create_agent discard deletes unfinished draft without a message", async (t) => {
   if (!requireSetup(t)) return;
 
   const { encodeCreationState, decodeCreationState } = await import(
@@ -1123,34 +1123,59 @@ test("CEO chat create_agent discard cancels unfinished draft without a message",
     createdAt: new Date("2026-07-20T09:00:00Z"),
     updatedAt: new Date("2026-07-20T09:00:00Z"),
   });
-  currentDb.tables.agentChatMessage.push({
-    id: "discard-state",
-    userId: "u1",
-    conversationId: "sys-discard",
-    ceoAgentConfigId: ceoId,
-    agentConfigId: null,
-    role: "AGENT",
-    contentCiphertext: envelope.encrypt(
-      encodeCreationState({
-        v: 3,
-        status: "active",
-        phase: "interview",
-        step: "interview",
-        savedAtMs: Date.parse("2026-07-20T10:00:00Z"),
-        savedAtSeq: 1,
-        sessionStartedAtMs: Date.parse("2026-07-20T09:55:00Z"),
-        draft: {
-          agentType: "finance",
-          definitionOfDone: "I get a Coinbase finance brief every morning.",
-          boundaries: "Never leave Coinbase sandbox",
-          coveredTopics: ["outcome"],
-          interviewComplete: false,
-          guessedFields: [],
-        },
-      })
-    ),
-    createdAt: new Date("2026-07-20T10:00:00Z"),
-  });
+  // Older completed-session junk on the same thread should survive.
+  currentDb.tables.agentChatMessage.push(
+    {
+      id: "old-completed-msg",
+      userId: "u1",
+      conversationId: "sys-discard",
+      ceoAgentConfigId: ceoId,
+      agentConfigId: null,
+      role: "USER",
+      contentCiphertext: envelope.encrypt("prior completed creation turn"),
+      createdAt: new Date("2026-07-19T12:00:00Z"),
+    },
+    {
+      id: "discard-user",
+      userId: "u1",
+      conversationId: "sys-discard",
+      ceoAgentConfigId: ceoId,
+      agentConfigId: null,
+      role: "USER",
+      contentCiphertext: envelope.encrypt(
+        "I want a finance agent that connects to my Coinbase sandbox."
+      ),
+      createdAt: new Date("2026-07-20T09:56:00Z"),
+    },
+    {
+      id: "discard-state",
+      userId: "u1",
+      conversationId: "sys-discard",
+      ceoAgentConfigId: ceoId,
+      agentConfigId: null,
+      role: "AGENT",
+      contentCiphertext: envelope.encrypt(
+        encodeCreationState({
+          v: 3,
+          status: "active",
+          phase: "interview",
+          step: "interview",
+          savedAtMs: Date.parse("2026-07-20T10:00:00Z"),
+          savedAtSeq: 1,
+          sessionStartedAtMs: Date.parse("2026-07-20T09:55:00Z"),
+          draft: {
+            agentType: "finance",
+            definitionOfDone: "I get a Coinbase finance brief every morning.",
+            boundaries: "Never leave Coinbase sandbox",
+            coveredTopics: ["outcome"],
+            interviewComplete: false,
+            guessedFields: [],
+          },
+        })
+      ),
+      createdAt: new Date("2026-07-20T10:00:00Z"),
+    }
+  );
 
   const discarded = await invoke(
     handlers.ceoChat,
@@ -1160,24 +1185,35 @@ test("CEO chat create_agent discard cancels unfinished draft without a message",
     })
   );
   assert.equal(discarded.statusCode, 200);
-  assert.equal(discarded.body.discarded, true);
+  assert.equal(discarded.body.deleted, true);
+  assert.ok(discarded.body.deletedCount >= 2);
 
-  const latestStateRow = [...currentDb.tables.agentChatMessage]
-    .reverse()
-    .find((row) => {
+  // Unfinished session rows are gone; older thread rows remain.
+  assert.equal(
+    currentDb.tables.agentChatMessage.some((row) => row.id === "discard-state"),
+    false
+  );
+  assert.equal(
+    currentDb.tables.agentChatMessage.some((row) => row.id === "discard-user"),
+    false
+  );
+  assert.equal(
+    currentDb.tables.agentChatMessage.some((row) => row.id === "old-completed-msg"),
+    true
+  );
+  assert.equal(
+    currentDb.tables.agentChatMessage.some((row) => {
       try {
-        return Boolean(decodeCreationState(envelope.decrypt(row.contentCiphertext)));
+        const state = decodeCreationState(envelope.decrypt(row.contentCiphertext));
+        return state?.status === "active";
       } catch {
         return false;
       }
-    });
-  assert.ok(latestStateRow);
-  const latestState = decodeCreationState(
-    envelope.decrypt(latestStateRow.contentCiphertext)
+    }),
+    false
   );
-  assert.equal(latestState.status, "cancelled");
 
-  // A later Aim answer without startFresh must not resume the cancelled draft.
+  // A later Aim answer must start clean — no Coinbase draft fields.
   const next = await invoke(
     handlers.ceoChat,
     authedRequest("u1", {
