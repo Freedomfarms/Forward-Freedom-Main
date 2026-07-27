@@ -31,7 +31,11 @@ import {
   applyCeoActions,
   CEO_ACTIONS_JSON_SCHEMA,
 } from "./ceoOps.js";
-import { CEO_MISSION_REASONING_RULES, logCeoReasoning, sketchMissionFromMessage } from "./ceoReasoning.js";
+import {
+  CEO_MISSION_REASONING_RULES,
+  logCeoReasoning,
+  sketchMissionFromConversation,
+} from "./ceoReasoning.js";
 import { cronToSchedulePreset, formatHourUtcLabel } from "./schedule.js";
 import { isEmailDeliveryEnabled } from "./emailDelivery.js";
 import { CHAT_PLAIN_TEXT_RULE, dataSection, PROMPT_SAFETY_RULES } from "./prompts.js";
@@ -194,7 +198,8 @@ export async function respondToChat({
   }
 
   if (ceoAgentConfigId) {
-    logCeoReasoning(sketchMissionFromMessage(text));
+    // Single-message sketch for legacy path; Brain uses full thread continuity.
+    logCeoReasoning(sketchMissionFromConversation([text]));
   }
 
   const context = await withUserContext(userId, async (tx) => {

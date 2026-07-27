@@ -7,7 +7,7 @@ import { scheduleConversationTitle } from "../agents/conversationTitle.js";
 import { generateAgentText } from "../agents/llm.js";
 import { assembleBrainContext } from "./context.js";
 import { BRAIN_JOB_KINDS, enqueueBrainJob, kickBrainJobSoon } from "./jobs.js";
-import { logCeoReasoning, sketchMissionFromMessage } from "../agents/ceoReasoning.js";
+import { logCeoReasoning, sketchMissionFromConversation } from "../agents/ceoReasoning.js";
 import { BRAIN_SYSTEM_PROMPT } from "./prompts.js";
 import { buildBrainToolBelt } from "./toolBelt.js";
 
@@ -63,8 +63,12 @@ export async function brainTurn({
     relatedRunId,
   });
 
-  // Dev observability: mission sketch before the model acts (not shown to user).
-  logCeoReasoning(sketchMissionFromMessage(message));
+  // Dev observability: multi-turn mission continuity (not shown to user).
+  logCeoReasoning(
+    sketchMissionFromConversation([...(context.userMessagesInOrder || []), message], {
+      existingAgents: context.teamAgents || [],
+    })
+  );
 
   // Per-turn side-effect accumulator shared by all tool executes.
   const turnState = {
