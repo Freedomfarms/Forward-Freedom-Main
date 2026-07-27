@@ -91,7 +91,10 @@ function isNewerState(a, b) {
 // process; across serverless invocations savedAtMs alone already differs.
 let stateSequence = 0;
 
-async function loadCreationTranscript(tx, { userId, ceoConfigId, conversationId }) {
+async function loadCreationTranscript(
+  tx,
+  { userId, ceoConfigId, conversationId, sinceMs = null }
+) {
   const rows = await tx.agentChatMessage.findMany({
     where: {
       userId,
@@ -101,10 +104,14 @@ async function loadCreationTranscript(tx, { userId, ceoConfigId, conversationId 
     },
     orderBy: { createdAt: "desc" },
     take: CREATION_TRANSCRIPT_LOOKBACK,
-    select: { role: true, contentCiphertext: true },
+    select: { role: true, contentCiphertext: true, createdAt: true },
   });
   const messages = [];
   for (const row of [...rows].reverse()) {
+    if (sinceMs != null) {
+      const createdAtMs = row.createdAt ? new Date(row.createdAt).getTime() : 0;
+      if (createdAtMs < sinceMs) continue;
+    }
     let content;
     try {
       content = decrypt(row.contentCiphertext);
@@ -117,19 +124,34 @@ async function loadCreationTranscript(tx, { userId, ceoConfigId, conversationId 
   return messages;
 }
 
-async function handleCreationTurn({ userId, ceoConfigId, conversationId, activeState, message }) {
+async function handleCreationTurn({
+  userId,
+  ceoConfigId,
+  conversationId,
+  activeState,
+  message,
+  startFresh = false,
+}) {
   // Run the LLM interview outside the write transaction so we don't hold a
   // DB connection open across model latency.
+  // "+ New Agent" UI always means a brand-new worker — abandon any leftover
+  // active draft on the shared isSystem thread when the client asks to start fresh.
+  const sessionState = startFresh ? null : activeState;
   let recentMessages = [];
-  if (activeState) {
+  if (sessionState) {
     recentMessages = await withUserContext(userId, (tx) =>
-      loadCreationTranscript(tx, { userId, ceoConfigId, conversationId })
+      loadCreationTranscript(tx, {
+        userId,
+        ceoConfigId,
+        conversationId,
+        sinceMs: sessionState.sessionStartedAtMs || null,
+      })
     );
   }
 
   let turn;
-  if (activeState) {
-    turn = await runCreationTurn(activeState, message, { recentMessages });
+  if (sessionState) {
+    turn = await runCreationTurn(sessionState, message, { recentMessages });
   } else {
     const started = startCreationSession();
     // Opening user message answers Aim — don't bounce the canned opener back.
@@ -243,6 +265,10 @@ async function handleSend(request, response) {
         ? payload.relatedRunId.trim()
         : null;
     const createMode = payload?.mode === "create_agent";
+    // First turn after opening "+ New Agent" — discard any unfinished draft on
+    // the shared creation thread so Harry doesn't treat a new Aim answer as a
+    // pivot away from a prior (e.g. Coinbase/finance) interview.
+    const startFresh = createMode && payload?.startFresh === true;
     const conversationId = readOptionalConversationId(payload);
 
     const ceoConfig = await withUserContext(decodedToken.uid, (tx) =>
@@ -278,6 +304,7 @@ async function handleSend(request, response) {
         conversationId: systemConversationId,
         activeState,
         message,
+        startFresh,
       });
       return response.status(200).json({
         reply: outcome.reply,

@@ -133,6 +133,10 @@ export function AgentChat({
   // so the server pins the session to the isSystem conversation. Stop after
   // an agent is created so follow-ups don't start a second creation session.
   const createSessionActiveRef = useRef(mode === "create_agent");
+  // Opening "+ New Agent" always means a brand-new worker. The first send
+  // tells the server to abandon any leftover active draft on the shared
+  // creation thread (otherwise Harry resumes the prior unfinished interview).
+  const createSessionStartFreshRef = useRef(mode === "create_agent");
   const scrollRef = useRef(null);
   const historyLoadedForRef = useRef(null);
   const conversationsLoadedForRef = useRef(null);
@@ -525,17 +529,22 @@ export function AgentChat({
           { user }
         );
       } else if (mode === "ceo" || mode === "create_agent") {
+        const startFresh =
+          mode === "create_agent" &&
+          createSessionActiveRef.current &&
+          createSessionStartFreshRef.current;
         payload = await sendCeoChatMessage(
           {
             message,
             relatedRunId: pendingRelatedRunId,
             conversationId: conversationIdForSend,
             ...(mode === "create_agent" && createSessionActiveRef.current
-              ? { mode: "create_agent" }
+              ? { mode: "create_agent", ...(startFresh ? { startFresh: true } : {}) }
               : {}),
           },
           { user }
         );
+        if (startFresh) createSessionStartFreshRef.current = false;
       } else {
         throw new Error("Unsupported chat mode.");
       }
