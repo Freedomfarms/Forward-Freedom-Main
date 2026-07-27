@@ -2,15 +2,20 @@ import { DEFAULT_AGENT_MODEL } from "./models.js";
 import { CREATABLE_AGENT_TYPES } from "./registry.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Structured draft for "+ New Agent" conversational intake (Slice 1).
-// Interview topics are asked through first; the draft/review UI only opens
-// after every topic is covered or the user skips the rest. Schedule / model /
-// trust pickers land in a later slice — defaults: on-demand + Sonnet.
+// Structured draft for "+ New Agent" mission-driven intake.
+// Reasoning pipeline (not a scripted checklist): Situation Brief → Mission →
+// Knowledge Model → Gap Analysis → Relevance → ask ONE blocking question.
+// Review opens when the mission is executable (or the user skips).
+// Schedule / model / trust pickers land in a later slice — defaults: on-demand
+// + Sonnet.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const CREATION_PHASES = Object.freeze(["aim", "interview", "review"]);
 
-/** Topics the CEO should cover before opening the draft review. */
+/**
+ * @deprecated Kept for publicCreationDraft / older session rows. Completeness
+ * is no longer "all topics covered" — use missionExecutable instead.
+ */
 export const INTERVIEW_TOPICS = Object.freeze([
   "outcome",
   "actors",
@@ -20,8 +25,11 @@ export const INTERVIEW_TOPICS = Object.freeze([
   "escalation",
 ]);
 
+/** Commit tentative agentType onto the draft only at/above this confidence. */
+export const AGENT_TYPE_COMMIT_CONFIDENCE = 0.75;
+
 export const AIM_OPENER =
-  "What's the one outcome this agent is responsible for? Not the steps — the result.\n\n" +
+  "What should this agent own for you — the outcome that means it's working?\n\n" +
   'For example: "Every morning my inbox is empty, replies are drafted in my voice, and anything urgent is flagged."';
 
 const TYPE_LABELS = Object.freeze({
@@ -42,12 +50,42 @@ const STRING_FIELDS = Object.freeze([
   "dataFocus",
   "actorsNotes",
   "escalationNotes",
+  "mission",
+  "nextQuestionFocus",
 ]);
 
 function trimTo(value, max) {
   const text = String(value ?? "").trim();
   if (!text) return null;
   return text.slice(0, max);
+}
+
+function normalizeStringList(value, { max = 20, maxLen = 240 } = {}) {
+  if (!Array.isArray(value)) return [];
+  return [
+    ...new Set(
+      value
+        .map((item) => String(item || "").trim())
+        .filter(Boolean)
+        .map((item) => item.slice(0, maxLen))
+    ),
+  ].slice(0, max);
+}
+
+function normalizeAssumptions(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const text = String(item.text || item.fact || "").trim().slice(0, 240);
+      if (!text) return null;
+      let confidence = Number(item.confidence);
+      if (!Number.isFinite(confidence)) confidence = 0.3;
+      confidence = Math.max(0, Math.min(1, confidence));
+      return { text, confidence };
+    })
+    .filter(Boolean)
+    .slice(0, 20);
 }
 
 export function emptyCreationDraft() {
@@ -66,6 +104,16 @@ export function emptyCreationDraft() {
     coveredTopics: [],
     interviewComplete: false,
     guessedFields: [],
+    // Mission-driven knowledge model (executive intake).
+    mission: null,
+    knownFacts: [],
+    missingFacts: [],
+    assumptions: [],
+    tentativeAgentType: null,
+    agentTypeConfidence: 0,
+    blockingGaps: [],
+    nextQuestionFocus: null,
+    missionExecutable: false,
     // Slice 2 will ask; Slice 1 defaults.
     model: DEFAULT_AGENT_MODEL,
     schedulePreset: null,
@@ -99,15 +147,49 @@ export function applyDraftPatch(draft, patch) {
     const type = String(patch.agentType).trim().toLowerCase();
     if (CREATABLE_AGENT_TYPES.includes(type)) {
       next.agentType = type;
+      next.tentativeAgentType = type;
       if (!next.name) next.name = `${TYPE_LABELS[type]} Agent`;
+    }
+  }
+
+  if ("tentativeAgentType" in patch && patch.tentativeAgentType != null) {
+    const type = String(patch.tentativeAgentType).trim().toLowerCase();
+    if (CREATABLE_AGENT_TYPES.includes(type)) {
+      next.tentativeAgentType = type;
+    }
+  } else if ("tentativeAgentType" in patch && patch.tentativeAgentType === null) {
+    next.tentativeAgentType = null;
+  }
+
+  if ("agentTypeConfidence" in patch && patch.agentTypeConfidence != null) {
+    const confidence = Number(patch.agentTypeConfidence);
+    if (Number.isFinite(confidence)) {
+      next.agentTypeConfidence = Math.max(0, Math.min(1, confidence));
     }
   }
 
   for (const key of STRING_FIELDS) {
     if (!(key in patch) || patch[key] == null) continue;
     const max =
-      key === "definitionOfDone" ? 500 : key === "name" || key === "roleLine" ? 80 : 2000;
+      key === "definitionOfDone" || key === "mission"
+        ? 500
+        : key === "name" || key === "roleLine" || key === "nextQuestionFocus"
+          ? 120
+          : 2000;
     next[key] = trimTo(patch[key], max);
+  }
+
+  if ("knownFacts" in patch && patch.knownFacts != null) {
+    next.knownFacts = normalizeStringList(patch.knownFacts);
+  }
+  if ("missingFacts" in patch && patch.missingFacts != null) {
+    next.missingFacts = normalizeStringList(patch.missingFacts);
+  }
+  if ("blockingGaps" in patch && patch.blockingGaps != null) {
+    next.blockingGaps = normalizeStringList(patch.blockingGaps);
+  }
+  if ("assumptions" in patch && patch.assumptions != null) {
+    next.assumptions = normalizeAssumptions(patch.assumptions);
   }
 
   if ("coveredTopics" in patch && patch.coveredTopics != null) {
@@ -116,6 +198,9 @@ export function applyDraftPatch(draft, patch) {
 
   if (typeof patch.interviewComplete === "boolean") {
     next.interviewComplete = patch.interviewComplete;
+  }
+  if (typeof patch.missionExecutable === "boolean") {
+    next.missionExecutable = patch.missionExecutable;
   }
 
   if (Array.isArray(patch.guessedFields)) {
@@ -129,9 +214,9 @@ export function applyDraftPatch(draft, patch) {
     ].slice(0, 20);
   }
 
-  // Auto-cover topics when the corresponding field was filled.
+  // Soft topic tags for older UI — do NOT auto-complete the interview from these.
   const inferred = [];
-  if (next.definitionOfDone) inferred.push("outcome");
+  if (next.definitionOfDone || next.mission) inferred.push("outcome");
   if (next.actorsNotes) inferred.push("actors");
   if (next.boundaries) inferred.push("boundaries");
   if (next.workingFromNotes != null && String(next.workingFromNotes).trim() !== "") {
@@ -145,106 +230,132 @@ export function applyDraftPatch(draft, patch) {
     next.name = `${TYPE_LABELS[next.agentType]} Agent`;
   }
 
-  if (!next.interviewComplete && isInterviewTopicsComplete(next)) {
-    next.interviewComplete = true;
+  // Mission text doubles as definitionOfDone when the user stated an outcome.
+  if (!next.definitionOfDone && next.mission) {
+    next.definitionOfDone = next.mission;
+  }
+  if (!next.mission && next.definitionOfDone) {
+    next.mission = next.definitionOfDone;
+  }
+
+  // Only treat the mission as executable when we still have a committed type
+  // and outcome — never from topic coverage alone.
+  if (next.missionExecutable && !hasExecutableCore(next)) {
+    next.missionExecutable = false;
   }
 
   return next;
 }
 
+function hasExecutableCore(draft) {
+  const outcome = String(draft?.definitionOfDone || draft?.mission || "").trim();
+  return Boolean(outcome && draft?.agentType);
+}
+
 export function isInterviewTopicsComplete(draft) {
-  const covered = new Set(draft?.coveredTopics || []);
-  return INTERVIEW_TOPICS.every((topic) => covered.has(topic));
+  // Legacy helper — mission intake no longer requires the six-topic checklist.
+  return isMissionExecutable(draft);
+}
+
+/** True when intake has enough to execute — not when every preference is filled. */
+export function isMissionExecutable(draft) {
+  if (!draft) return false;
+  if (draft.interviewComplete && hasExecutableCore(draft)) return true;
+  if (!draft.missionExecutable) return false;
+  return hasExecutableCore(draft);
 }
 
 export function isInterviewComplete(draft) {
-  return Boolean(draft?.interviewComplete) || isInterviewTopicsComplete(draft);
+  return isMissionExecutable(draft);
 }
 
 export function remainingInterviewTopics(draft) {
+  // Prefer live blocking gaps from the knowledge model.
+  const gaps = Array.isArray(draft?.blockingGaps) ? draft.blockingGaps : [];
+  if (gaps.length) return gaps.slice(0, 6);
   const covered = new Set(draft?.coveredTopics || []);
   return INTERVIEW_TOPICS.filter((topic) => !covered.has(topic));
 }
 
 /**
- * Mark remaining interview topics covered via guesses so review can open.
- * Fills thin defaults only where a field is still empty.
+ * User asked to skip — fill only the minimum required to create a payload.
+ * Do NOT invent personality, boundaries, escalation, or history as facts.
  */
 export function completeInterviewWithGuesses(draft) {
   const next = applyDraftPatch(draft, {});
-  const remaining = remainingInterviewTopics(next);
+  const guessed = [];
   const patch = {
-    coveredTopics: INTERVIEW_TOPICS.slice(),
     interviewComplete: true,
-    guessedFields: remaining.slice(),
+    missionExecutable: true,
+    blockingGaps: [],
+    missingFacts: [],
   };
 
-  if (!next.actorsNotes && remaining.includes("actors")) {
-    patch.actorsNotes = "Acts on behalf of the user within this scoped job.";
-  }
-  if (!next.boundaries && remaining.includes("boundaries")) {
-    patch.boundaries =
-      "Never move money\nNever send anything externally without asking\nNever delete data";
-  }
-  if (
-    (next.workingFromNotes == null || !String(next.workingFromNotes).trim()) &&
-    remaining.includes("history")
-  ) {
-    patch.workingFromNotes = "No prior history provided — starting fresh.";
-  }
-  if (!next.personalityNotes && remaining.includes("tone")) {
-    patch.personalityNotes = "Clear\nPractical\nConcise";
-  }
-  if (!next.escalationNotes && remaining.includes("escalation")) {
-    patch.escalationNotes = "Flag the user only for urgent or ambiguous issues.";
-  }
+  const type =
+    next.agentType ||
+    (CREATABLE_AGENT_TYPES.includes(next.tentativeAgentType) ? next.tentativeAgentType : null) ||
+    "research";
   if (!next.agentType) {
-    patch.agentType = "research";
-    patch.guessedFields = [...(patch.guessedFields || []), "agentType"];
+    patch.agentType = type;
+    guessed.push("agentType");
   }
-  if (!next.roleLine && next.definitionOfDone) {
-    patch.roleLine = String(next.definitionOfDone).trim().slice(0, 80);
+  if (!next.tentativeAgentType) {
+    patch.tentativeAgentType = type;
   }
-  if (!next.instructions && next.definitionOfDone) {
-    patch.instructions = String(next.definitionOfDone).trim();
+  if (!(next.agentTypeConfidence >= AGENT_TYPE_COMMIT_CONFIDENCE)) {
+    patch.agentTypeConfidence = AGENT_TYPE_COMMIT_CONFIDENCE;
   }
 
+  const outcome = String(next.definitionOfDone || next.mission || "").trim();
+  if (outcome) {
+    if (!next.mission) patch.mission = outcome;
+    if (!next.definitionOfDone) patch.definitionOfDone = outcome;
+    if (!next.roleLine) {
+      patch.roleLine = outcome.slice(0, 80);
+      guessed.push("roleLine");
+    }
+    if (!next.instructions) {
+      patch.instructions = outcome;
+      guessed.push("instructions");
+    }
+  }
+
+  patch.guessedFields = guessed;
   return applyDraftPatch(next, patch);
 }
 
 export function isDraftReadyForReview(draft) {
   const d = draft || {};
   return Boolean(
-    isInterviewComplete(d) &&
-      d.definitionOfDone &&
-      String(d.definitionOfDone).trim() &&
+    isMissionExecutable(d) &&
+      (d.definitionOfDone || d.mission) &&
+      String(d.definitionOfDone || d.mission || "").trim() &&
       d.agentType &&
-      (d.instructions || d.roleLine || d.definitionOfDone)
+      (d.instructions || d.roleLine || d.definitionOfDone || d.mission)
   );
 }
 
 /**
- * Phase rules: never open review until the interview is complete (all topics
- * covered or user skipped the rest). Having draft fields filled early must
- * NOT jump to review mid-interview.
+ * Phase rules: never open review until the mission is executable (or skipped).
+ * Having a few fields filled must NOT jump to review mid-intake.
  */
 export function normalizeCreationPhase(phase, draft) {
   if (phase === "review") {
     if (isDraftReadyForReview(draft)) return "review";
-    return draft?.definitionOfDone ? "interview" : "aim";
+    return draft?.definitionOfDone || draft?.mission ? "interview" : "aim";
   }
   if (phase === "interview") {
     if (isDraftReadyForReview(draft)) return "review";
     return "interview";
   }
   if (phase === "aim") {
-    if (draft?.definitionOfDone && String(draft.definitionOfDone).trim()) {
+    if (draft?.definitionOfDone || draft?.mission) {
       return isDraftReadyForReview(draft) ? "review" : "interview";
     }
     return "aim";
   }
   if (isDraftReadyForReview(draft)) return "review";
-  if (draft?.definitionOfDone) return "interview";
+  if (draft?.definitionOfDone || draft?.mission) return "interview";
   return "aim";
 }
 
@@ -256,8 +367,16 @@ export function publicCreationDraft(state) {
     phase,
     readyForReview: isDraftReadyForReview(draft),
     interviewComplete: isInterviewComplete(draft),
+    missionExecutable: isMissionExecutable(draft),
     coveredTopics: Array.isArray(draft.coveredTopics) ? draft.coveredTopics : [],
     remainingTopics: remainingInterviewTopics(draft),
+    mission: draft.mission || null,
+    knownFacts: Array.isArray(draft.knownFacts) ? draft.knownFacts : [],
+    missingFacts: Array.isArray(draft.missingFacts) ? draft.missingFacts : [],
+    blockingGaps: Array.isArray(draft.blockingGaps) ? draft.blockingGaps : [],
+    assumptions: Array.isArray(draft.assumptions) ? draft.assumptions : [],
+    tentativeAgentType: draft.tentativeAgentType || null,
+    agentTypeConfidence: draft.agentTypeConfidence || 0,
     agentType: draft.agentType || null,
     name: draft.name || null,
     roleLine: draft.roleLine || null,
@@ -279,13 +398,15 @@ function composedInstructions(draft) {
   const dataFocus = String(draft.dataFocus || "").trim();
   const actors = String(draft.actorsNotes || "").trim();
   const escalation = String(draft.escalationNotes || "").trim();
+  const known = Array.isArray(draft.knownFacts) ? draft.knownFacts.filter(Boolean) : [];
   if (role) parts.push(role);
   if (purpose && purpose !== role) parts.push(purpose);
   if (dataFocus) parts.push(`Data focus: ${dataFocus}`);
   if (actors) parts.push(`Acts with/for: ${actors}`);
   if (escalation) parts.push(`Escalation: ${escalation}`);
-  if (!parts.length && draft.definitionOfDone) {
-    parts.push(String(draft.definitionOfDone).trim());
+  if (known.length) parts.push(`Confirmed facts:\n- ${known.join("\n- ")}`);
+  if (!parts.length && (draft.definitionOfDone || draft.mission)) {
+    parts.push(String(draft.definitionOfDone || draft.mission).trim());
   }
   return parts.join("\n").slice(0, 2000);
 }
@@ -301,12 +422,14 @@ export function buildCreatePayloadFromDraft(draft) {
     String(draft.name || "").trim() ||
     (agentType ? `${TYPE_LABELS[agentType]} Agent` : null);
   if (!agentType || !name) return null;
+  const definitionOfDone = String(draft.definitionOfDone || draft.mission || "").trim();
+  if (!definitionOfDone) return null;
 
   return {
     agentType,
     name: name.slice(0, 80),
-    instructions: composedInstructions(draft) || String(draft.definitionOfDone).trim().slice(0, 2000),
-    definitionOfDone: String(draft.definitionOfDone).trim().slice(0, 500),
+    instructions: composedInstructions(draft) || definitionOfDone.slice(0, 2000),
+    definitionOfDone: definitionOfDone.slice(0, 500),
     personalityNotes: trimTo(draft.personalityNotes, 2000),
     boundaries: trimTo(draft.boundaries, 2000),
     workingFromNotes: trimTo(draft.workingFromNotes, 2000),
@@ -338,10 +461,7 @@ export function matchesCreationEditRequest(message) {
 }
 
 /**
- * User wants to skip remaining interview questions and go to the draft.
- * Includes explicit skip language plus short "you decide / whatever / idk"
- * bail-outs — so someone who answers Aim (+ maybe one more) and doesn't want
- * to keep interviewing can jump to draft without fighting the questionnaire.
+ * User wants to stop gathering gaps and go to the draft.
  */
 export function matchesCreationSkip(message) {
   const text = String(message || "").trim();
@@ -353,7 +473,6 @@ export function matchesCreationSkip(message) {
   ) {
     return true;
   }
-  // Short reluctant / defer-to-agent replies (not long substantive answers).
   if (text.length > 80) return false;
   return /^(idk|i don'?t know|not sure|whatever|you decide|up to you|don'?t care|i don'?t care|doesn'?t matter|no preference|just (?:make|build|create) (?:one|it)|surprise me)[.!?]*$/i.test(
     text

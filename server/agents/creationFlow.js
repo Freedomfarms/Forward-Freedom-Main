@@ -1,12 +1,12 @@
 import { WEEKDAY_NAMES } from "./schedule.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// "+ New Agent" creation via CEO chat (Slice 1): conversational LLM interview
-// that patches a structured draft every turn. Session state still lives as a
+// "+ New Agent" creation via CEO chat: mission-driven reasoning intake that
+// patches a structured draft every turn. Session state still lives as a
 // hidden AGENT message (CREATION_STATE_SENTINEL) on the isSystem conversation.
 //
-// Flow: Aim → interview → draft review → confirm. Schedule / model / trust
-// pickers are Slice 2 — confirm uses on-demand + Sonnet defaults for now.
+// Flow: Mission → gap questions → draft review → confirm. Schedule / model /
+// trust pickers are Slice 2 — confirm uses on-demand + Sonnet defaults for now.
 // On confirm the draft uses validateAgentCreatePayload → createAgentConfig
 // (READ_ONLY / ACTIVE pin unchanged).
 // ─────────────────────────────────────────────────────────────────────────────
@@ -24,6 +24,7 @@ export {
   buildCreatePayloadFromDraft,
   emptyCreationDraft,
   isDraftReadyForReview,
+  isMissionExecutable,
   publicCreationDraft,
 } from "./creationDraft.js";
 

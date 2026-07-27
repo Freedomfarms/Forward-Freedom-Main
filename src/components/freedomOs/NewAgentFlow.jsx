@@ -5,12 +5,12 @@ import { fosStyles } from "./freedomOsShared.js";
 
 // Aim opener — keep in sync with server/agents/creationDraft.js AIM_OPENER.
 const AIM_OPENER =
-  "What's the one outcome this agent is responsible for? Not the steps — the result.\n\n" +
+  "What should this agent own for you — the outcome that means it's working?\n\n" +
   'For example: "Every morning my inbox is empty, replies are drafted in my voice, and anything urgent is flagged."';
 
-// "+ New Agent" — slide-over where the CEO Agent interviews through chat
-// (mode: "create_agent"). Slice 1: Aim → full interview → draft review → confirm.
-// Draft panel stays closed until the interview is finished (or the user skips).
+// "+ New Agent" — slide-over where the CEO Agent reasons through a mission
+// (mode: "create_agent"): Situation → gaps → one blocking question at a time →
+// draft when executable (or skip). Not a fixed interview checklist.
 
 export function NewAgentFlow({ ceoAgent, user, onClose, onAgentCreated }) {
   const [createdAgent, setCreatedAgent] = useState(null);

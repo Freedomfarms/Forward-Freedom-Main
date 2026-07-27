@@ -36,10 +36,11 @@ function DraftField({ label, value, guessed }) {
 }
 
 export function CreationDraftPanel({ draft }) {
-  // Draft sections stay closed until the interview is finished (or skipped).
+  // Draft sections stay closed until the mission is executable (or skipped).
   if (!draft || draft.phase !== "review") return null;
 
   const guessed = new Set(Array.isArray(draft.guessedFields) ? draft.guessedFields : []);
+  const knownFacts = Array.isArray(draft.knownFacts) ? draft.knownFacts.filter(Boolean) : [];
 
   return (
     <div
@@ -72,9 +73,13 @@ export function CreationDraftPanel({ draft }) {
           guessed={guessed.has("name") || guessed.has("roleLine")}
         />
         <DraftField
-          label="Outcome"
-          value={draft.definitionOfDone}
-          guessed={guessed.has("definitionOfDone") || guessed.has("outcome")}
+          label="Mission / outcome"
+          value={draft.mission || draft.definitionOfDone}
+          guessed={guessed.has("definitionOfDone") || guessed.has("mission") || guessed.has("outcome")}
+        />
+        <DraftField
+          label="Confirmed facts"
+          value={knownFacts.length ? knownFacts.map((fact) => `• ${fact}`).join("\n") : ""}
         />
         <DraftField
           label="Acts with / for"

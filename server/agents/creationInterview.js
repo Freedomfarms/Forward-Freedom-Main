@@ -1,6 +1,7 @@
 import { jsonSchema } from "ai";
 
 import {
+  AGENT_TYPE_COMMIT_CONFIDENCE,
   AIM_OPENER,
   applyDraftPatch,
   buildCreatePayloadFromDraft,
@@ -9,6 +10,7 @@ import {
   INTERVIEW_TOPICS,
   isDraftReadyForReview,
   isInterviewComplete,
+  isMissionExecutable,
   matchesCreationCancel,
   matchesCreationConfirm,
   matchesCreationEditRequest,
@@ -27,27 +29,47 @@ import { CHAT_PLAIN_TEXT_RULE, dataSection, PROMPT_SAFETY_RULES } from "./prompt
 import { CREATABLE_AGENT_TYPES } from "./registry.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Conversational "+ New Agent" interview (Slice 1):
-// Aim → full interview (ask through + clarifiers) → draft review → confirm.
-// Draft UI stays closed until every interview topic is covered or the user
-// skips. Interview turns use ONE fast Haiku *text* call (no structured-output
-// grammar — nullable-union schemas were timing out Anthropic compilation for
-// ~minutes). Skip/review still uses Sonnet text + a lean Haiku extract.
+// Mission-driven "+ New Agent" intake (executive reasoning):
+// Situation Brief → Mission → Knowledge Model → Gap Analysis → Relevance →
+// ask ONE blocking question. Stop when the mission is executable — not when a
+// preference checklist is full. Optional fields (tone, escalation, history)
+// are never asked before execution blockers.
+// Intake turns use ONE text call + trailing NOTES_JSON (no structured-output
+// grammar — those timed out Anthropic compilation). Skip/review still uses
+// Sonnet text + a lean Haiku extract.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const INTERVIEW_NOTES_MARKER = "NOTES_JSON:";
 
+const MISSION_REASONING_RULES = [
+  "You are the user's CEO Agent inside Freedom OS — an executive that reasons, not a scripted interviewer.",
+  "This session creates ONE NEW worker agent. Do not assume continuity with a prior draft or teammate unless the user says so.",
+  "Every turn, silently run this pipeline before you reply:",
+  "1) Situation Brief — what is happening, what they want, what changed since last message.",
+  "2) Mission Extraction — the real mission in outcome terms.",
+  "3) Knowledge Model — known facts vs missing facts vs assumptions (confidence-scored). Never present assumptions as facts.",
+  "4) Gap Analysis — everything required to EXECUTE the mission (not every preference).",
+  "5) Relevance — rank missing info by execution importance. Highest priority = blocks execution.",
+  "6) Ask ONLY ONE question — the single highest-value blocking gap. Then stop.",
+  "NEVER prioritize personality, tone, escalation, history-to-learn-from, or optional preferences before core execution requirements (who/what to monitor, platforms, deliverable, frequency, recipients, etc.).",
+  "NEVER invent agent types, restrictions, behaviors, permissions, workflows, or requirements the user did not state.",
+  "If uncertain, ask. Never summarize requirements that were not explicitly confirmed.",
+  "Do not classify/commit an agent type unless confidence is high. Keep tentativeAgentType + agentTypeConfidence; only commit agentType when confidence is high.",
+  "Stop gathering as soon as the mission is executable. Minimum info for successful execution — not a full preference survey.",
+  "A human executive reading the chat should think: it asked exactly the right next question.",
+].join("\n");
+
 const INTERVIEW_TURN_SYSTEM_PROMPT = [
-  "You are the user's CEO Agent inside Freedom OS, helping create ONE scoped worker agent.",
-  "This is a FAST interview turn — reply like a natural chat (1–3 short sentences). Never present or narrate a full draft.",
-  "Acknowledge briefly, then ask ONE next unanswered topic or a short clarifier if their answer was vague.",
-  "Topics still to cover when remaining: who it acts with/for; what's off-limits; any history to learn from; tone/behavior; who to escalate to and when.",
-  "Never say \"soul file\", \"system prompt\", \"JSON\", or \"interview topics\" in the user-facing reply.",
+  MISSION_REASONING_RULES,
+  "This is a FAST intake turn — reply like a sharp executive (1–3 short sentences). Never present or narrate a full draft.",
+  "Acknowledge only what they actually said, then ask ONE blocking question.",
+  "Never say \"soul file\", \"system prompt\", \"JSON\", \"interview topics\", \"gap analysis\", or \"knowledge model\" in the user-facing reply.",
   CHAT_PLAIN_TEXT_RULE,
   "After the reply, on its OWN final line, output machine notes exactly like:",
-  `${INTERVIEW_NOTES_MARKER}{"topicsCoveredThisTurn":["outcome"],"draftPatch":{"definitionOfDone":"user outcome words","agentType":"research"},"userCancelled":false}`,
-  `draftPatch may only include fields they explicitly answered this turn. agentType one of: ${CREATABLE_AGENT_TYPES.join(", ")}.`,
-  "Aim answers → outcome (+ agentType if clear). Use [] / {} when nothing new. Do not invent the rest of the draft.",
+  `${INTERVIEW_NOTES_MARKER}{"mission":"user mission in their words","knownFacts":["..."],"missingFacts":["..."],"assumptions":[{"text":"...","confidence":0.4}],"blockingGaps":["people to monitor","platforms"],"nextQuestionFocus":"people to monitor","missionExecutable":false,"tentativeAgentType":"research","agentTypeConfidence":0.55,"draftPatch":{"definitionOfDone":"user outcome words"},"userCancelled":false}`,
+  "draftPatch may ONLY include fields the user explicitly confirmed this turn. Do not invent boundaries, personality, escalation, or agentType in draftPatch unless they said so.",
+  `tentativeAgentType one of: ${CREATABLE_AGENT_TYPES.join(", ")} (or omit). agentTypeConfidence 0–1.`,
+  "Set missionExecutable true ONLY when blockingGaps is empty and the mission can run with confirmed facts.",
   "Safety rules:",
   `- ${PROMPT_SAFETY_RULES}`,
 ].join("\n");
@@ -56,7 +78,7 @@ const INTERVIEW_TURN_SYSTEM_PROMPT = [
 const DRAFT_PATCH_FIELDS = {
   agentType: {
     type: "string",
-    description: `One of: ${CREATABLE_AGENT_TYPES.join(", ")}. Infer from the outcome when clear.`,
+    description: `One of: ${CREATABLE_AGENT_TYPES.join(", ")}. Only when confidence is high from explicit user intent.`,
   },
   name: { type: "string" },
   roleLine: {
@@ -65,47 +87,76 @@ const DRAFT_PATCH_FIELDS = {
   },
   instructions: {
     type: "string",
-    description: "How the agent should do the job (purpose / focus).",
+    description: "How the agent should do the job — only from confirmed facts.",
   },
   definitionOfDone: {
     type: "string",
-    description: "Measurable outcome / definition of done, stored verbatim.",
+    description: "Measurable outcome / definition of done, preferably user words.",
+  },
+  mission: {
+    type: "string",
+    description: "The real mission in outcome terms.",
   },
   personalityNotes: {
     type: "string",
-    description: "2–3 short bullets on how it should sound/behave.",
+    description: "Only if the user explicitly described tone/behavior.",
   },
   boundaries: {
     type: "string",
-    description: 'Explicit "will never" list, newline-separated.',
+    description: 'Explicit "will never" list only if the user stated restrictions.',
   },
   workingFromNotes: {
     type: "string",
-    description: "What was learned from history/examples, or that there is none.",
+    description: "Only if the user described history/examples to learn from.",
   },
   dataFocus: { type: "string" },
   actorsNotes: {
     type: "string",
-    description: "Who the agent interacts with or acts on behalf of.",
+    description: "Who/what the agent acts with or on — only if stated.",
   },
   escalationNotes: {
     type: "string",
-    description: "Who to flag and how urgent something must be before interrupting.",
+    description: "Only if the user described escalation rules.",
+  },
+  knownFacts: {
+    type: "array",
+    items: { type: "string" },
+    description: "Facts the user explicitly confirmed.",
+  },
+  missingFacts: {
+    type: "array",
+    items: { type: "string" },
+  },
+  blockingGaps: {
+    type: "array",
+    items: { type: "string" },
+    description: "Execution blockers ranked highest-first.",
+  },
+  nextQuestionFocus: { type: "string" },
+  tentativeAgentType: {
+    type: "string",
+    description: `One of: ${CREATABLE_AGENT_TYPES.join(", ")}.`,
+  },
+  agentTypeConfidence: {
+    type: "number",
+    description: "0–1 confidence for tentativeAgentType.",
+  },
+  missionExecutable: {
+    type: "boolean",
+    description: "True only when the mission can execute with confirmed facts.",
   },
   coveredTopics: {
     type: "array",
     items: { type: "string", enum: [...INTERVIEW_TOPICS] },
-    description: "Interview topics covered by this turn (additively merged).",
+    description: "Optional soft tags; do not use as a checklist to force questions.",
   },
   guessedFields: {
     type: "array",
     items: { type: "string" },
-    description: "Draft fields filled by inference because the user skipped or was vague.",
+    description: "Only when the user skipped and minimum fields were filled.",
   },
 };
 
-// Lean schema: omit unused fields (no ["string","null"] unions — those explode
-// Anthropic grammar compilation cost and caused "Grammar compilation timed out").
 const DRAFT_PATCH_SCHEMA = jsonSchema({
   type: "object",
   properties: {
@@ -119,7 +170,7 @@ const DRAFT_PATCH_SCHEMA = jsonSchema({
       type: "string",
       enum: ["aim", "interview", "review"],
       description:
-        "Use review ONLY after the interview is complete (all topics covered) or the user skipped remaining questions.",
+        "Use review ONLY when the mission is executable or the user skipped remaining questions.",
     },
     topicsCoveredThisTurn: {
       type: "array",
@@ -127,7 +178,7 @@ const DRAFT_PATCH_SCHEMA = jsonSchema({
     },
     userSkippedRemaining: {
       type: "boolean",
-      description: "True when the user wants to skip remaining interview questions and see the draft.",
+      description: "True when the user wants to stop gathering and see the draft.",
     },
     userConfirmed: {
       type: "boolean",
@@ -174,8 +225,26 @@ export function parseInterviewTurnText(text) {
     const parsed = JSON.parse(jsonPart);
     const draftPatch =
       parsed?.draftPatch && typeof parsed.draftPatch === "object" && !Array.isArray(parsed.draftPatch)
-        ? parsed.draftPatch
+        ? { ...parsed.draftPatch }
         : {};
+
+    // Knowledge-model fields may sit at the NOTES_JSON root — fold into patch.
+    for (const key of [
+      "mission",
+      "knownFacts",
+      "missingFacts",
+      "assumptions",
+      "blockingGaps",
+      "nextQuestionFocus",
+      "missionExecutable",
+      "tentativeAgentType",
+      "agentTypeConfidence",
+    ]) {
+      if (key in parsed && parsed[key] != null && draftPatch[key] == null) {
+        draftPatch[key] = parsed[key];
+      }
+    }
+
     return {
       reply: reply || raw,
       object: {
@@ -184,6 +253,7 @@ export function parseInterviewTurnText(text) {
           ? parsed.topicsCoveredThisTurn
           : [],
         userCancelled: Boolean(parsed?.userCancelled),
+        missionExecutable: Boolean(parsed?.missionExecutable || draftPatch.missionExecutable),
       },
     };
   } catch {
@@ -195,106 +265,117 @@ export function parseInterviewTurnText(text) {
 }
 
 const CONVERSATION_SYSTEM_PROMPT = [
-  "You are the user's CEO Agent inside Freedom OS, helping them create ONE scoped worker agent through a natural conversation.",
-  "Sound like a normal, competent human colleague — warm, concise, never robotic. Never say \"soul file\", \"system prompt\", \"JSON\", or \"interview topics\".",
+  MISSION_REASONING_RULES,
+  "Sound like a normal, competent executive colleague — warm, concise, never robotic.",
+  "Never say \"soul file\", \"system prompt\", \"JSON\", \"interview topics\", or \"gap analysis\".",
   CHAT_PLAIN_TEXT_RULE,
-  "Flow (strict order):",
-  "1) AIM — land a measurable outcome. If they give tasks/steps, push back once or twice: what does \"done\" look like specifically enough to know success vs failure?",
-  "2) INTERVIEW — match their energy:",
-  "   - If they are engaged and answering: ask through ALL of these topics (plus short clarifiers when an answer is vague). Do not rush to a draft. One main question at a time. Accept answers out of order / bundled.",
-  "     Topics: who it acts with/for; what's off-limits; any history to learn from; tone/behavior; who to escalate to and when.",
-  "     Do NOT open, narrate, or \"pull together\" a full draft while they are still answering — even if Aim was detailed. Acknowledge briefly, then ask the next unanswered topic or a short clarifier.",
-  "   - If they stall, refuse, give idk/whatever/you-decide, or after ~1–2 answers say skip / that's enough / draft it / move on: do NOT keep pressing. Acknowledge, fill reasonable guesses for anything unanswered, and go straight to the draft review.",
-  "   - If they seem stuck but haven't asked to skip, you may once offer: we can draft from what we have whenever they want (say \"skip\" or \"draft it\").",
-  "3) REVIEW — only after every interview topic is covered or they skipped the rest. Present a short human draft: name & role, personality, will-never boundaries, working-from notes, outcome. Ask if it looks good or what to edit. Never silently create.",
+  "Flow:",
+  "1) AIM / MISSION — land what \"done\" looks like. If they give only vague steps, push once for the outcome.",
+  "2) GATHER — after each answer, recompute Situation Brief + gaps. Ask the next blocking question only. Do not walk a fixed topic list.",
+  "3) REVIEW — only when the mission is executable OR they skipped. Present a short human draft from CONFIRMED facts only. Label any skip-time minimums as guesses. Ask if it looks good or what to edit. Never silently create.",
+  "If they stall / skip / you-decide: draft from confirmed facts with minimal guesses — do not invent a personality or restriction list.",
   "Do NOT ask about schedule, model tier, or autonomy/trust yet. Assume on-demand + balanced model if asked.",
-  "Infer agent type as one of: finance, research, reminders, email.",
-  "Keep replies short. Natural back-and-forth beats a rigid script.",
+  "Keep replies short.",
   "Safety rules:",
   `- ${PROMPT_SAFETY_RULES}`,
 ].join("\n");
 
 const EXTRACTION_SYSTEM_PROMPT = [
   "You extract a structured agent-creation draft patch from a CEO Agent intake turn.",
-  "Return only fields the user EXPLICITLY answered in the latest user message. Do not invent personality, boundaries, actors, history, or escalation from thin implication.",
-  "During Aim / early interview: usually only outcome (definitionOfDone) + maybe agentType. Never fill the whole draft from the first answer.",
-  "definitionOfDone must be an outcome/result — prefer the user's words when measurable.",
-  "Track interview topics in topicsCoveredThisTurn / draftPatch.coveredTopics using ONLY these ids: " +
-    INTERVIEW_TOPICS.join(", ") +
-    ".",
-  "Mapping: outcome←definitionOfDone; actors←actorsNotes; boundaries←boundaries; history←workingFromNotes (including \"none\"); tone←personalityNotes; escalation←escalationNotes.",
-  "Set phase to review ONLY when the interview is finished (all topics covered) OR userSkippedRemaining is true. Never jump to review mid-interview just because some fields exist.",
-  "Do NOT set guessedFields or invent answers unless userSkippedRemaining is true.",
-  "userSkippedRemaining is true when they want to skip remaining questions and see the draft (including short idk / whatever / you decide / draft it).",
+  "Return only fields the user EXPLICITLY confirmed. Do not invent personality, boundaries, actors, history, escalation, or agent type.",
+  "Prefer mission + knownFacts + blockingGaps over filling optional identity fields.",
+  "definitionOfDone / mission must reflect the user's outcome words when measurable.",
+  "Set missionExecutable / phase review ONLY when blocking execution gaps are gone OR userSkippedRemaining is true.",
+  "Do NOT set guessedFields or invent answers unless userSkippedRemaining is true — and even then only minimum create fields.",
+  "userSkippedRemaining is true when they want to stop gathering and see the draft.",
   "userConfirmed is true ONLY for clear approval to create AFTER a review. userCancelled for discard. userWantsEdits when they want draft changes.",
-  `agentType must be one of: ${CREATABLE_AGENT_TYPES.join(", ")} (or null if still unknown).`,
+  `tentativeAgentType / agentType one of: ${CREATABLE_AGENT_TYPES.join(", ")} only with real signal; include agentTypeConfidence 0–1.`,
 ].join("\n");
 
-/** Fields the extractor may fill for each interview topic. */
-const TOPIC_FIELDS = Object.freeze({
-  outcome: ["definitionOfDone", "instructions", "roleLine", "dataFocus"],
-  actors: ["actorsNotes"],
-  boundaries: ["boundaries"],
-  history: ["workingFromNotes"],
-  tone: ["personalityNotes"],
-  escalation: ["escalationNotes"],
-});
+/** Fields allowed from explicit user answers during open intake (not skip/review). */
+const EXPLICIT_DRAFT_FIELDS = Object.freeze([
+  "definitionOfDone",
+  "mission",
+  "instructions",
+  "roleLine",
+  "dataFocus",
+  "actorsNotes",
+  "boundaries",
+  "workingFromNotes",
+  "personalityNotes",
+  "escalationNotes",
+  "name",
+  "knownFacts",
+  "missingFacts",
+  "blockingGaps",
+  "assumptions",
+  "nextQuestionFocus",
+  "tentativeAgentType",
+  "agentTypeConfidence",
+  "missionExecutable",
+]);
 
 /**
- * Keep interview turns from "pulling a full draft": after Aim, only outcome may
- * land; mid-interview only fields for topics the user actually answered this
- * turn. Guesses / skip / review promotion stay on the deterministic skip path.
+ * Strip invented draft fields. Never commit agentType without high confidence.
+ * Never trust the model to open review mid-intake.
  */
 export function sanitizeExtractionForInterview({ phase, userSkipped, object }) {
   if (!object || typeof object !== "object") return object;
   if (userSkipped || phase === "review") return object;
 
   const rawPatch = object.draftPatch && typeof object.draftPatch === "object" ? object.draftPatch : {};
-  let claimedTopics = [
-    ...(Array.isArray(object.topicsCoveredThisTurn) ? object.topicsCoveredThisTurn : []),
-    ...(Array.isArray(rawPatch.coveredTopics) ? rawPatch.coveredTopics : []),
-  ]
-    .map((item) => String(item || "").trim().toLowerCase())
-    .filter((item) => INTERVIEW_TOPICS.includes(item));
-
-  // Aim answer → outcome only. Even a long first message must not auto-complete
-  // the interview or open review; the CEO still asks the other questions.
-  if (phase === "aim") {
-    claimedTopics =
-      claimedTopics.includes("outcome") || rawPatch.definitionOfDone ? ["outcome"] : [];
-  } else {
-    claimedTopics = [...new Set(claimedTopics)];
-  }
-
-  const allowedFields = new Set();
-  for (const topic of claimedTopics) {
-    for (const field of TOPIC_FIELDS[topic] || []) allowedFields.add(field);
-  }
-  if (claimedTopics.includes("outcome") || rawPatch.definitionOfDone) {
-    allowedFields.add("definitionOfDone");
-    allowedFields.add("instructions");
-    allowedFields.add("roleLine");
-    allowedFields.add("dataFocus");
-    allowedFields.add("agentType");
-    allowedFields.add("name");
-  }
-
   const draftPatch = {};
-  for (const key of Object.keys(rawPatch)) {
-    if (key === "coveredTopics" || key === "guessedFields" || key === "interviewComplete") {
-      continue;
-    }
-    if (allowedFields.has(key) && rawPatch[key] != null) {
-      draftPatch[key] = rawPatch[key];
+
+  for (const key of EXPLICIT_DRAFT_FIELDS) {
+    if (rawPatch[key] != null) draftPatch[key] = rawPatch[key];
+  }
+
+  // Soft topic tags are optional breadcrumbs only.
+  if (Array.isArray(rawPatch.coveredTopics)) {
+    draftPatch.coveredTopics = rawPatch.coveredTopics;
+  } else if (Array.isArray(object.topicsCoveredThisTurn)) {
+    draftPatch.coveredTopics = object.topicsCoveredThisTurn;
+  }
+
+  const tentative =
+    draftPatch.tentativeAgentType ||
+    rawPatch.tentativeAgentType ||
+    rawPatch.agentType ||
+    null;
+  let confidence = Number(
+    draftPatch.agentTypeConfidence ?? rawPatch.agentTypeConfidence ?? object.agentTypeConfidence
+  );
+  if (!Number.isFinite(confidence)) confidence = tentative ? 0.4 : 0;
+  if (tentative && CREATABLE_AGENT_TYPES.includes(String(tentative).toLowerCase())) {
+    draftPatch.tentativeAgentType = String(tentative).toLowerCase();
+    draftPatch.agentTypeConfidence = Math.max(0, Math.min(1, confidence));
+    // Only commit agentType when confidence is high — never invent Finance Agent.
+    if (draftPatch.agentTypeConfidence >= AGENT_TYPE_COMMIT_CONFIDENCE) {
+      draftPatch.agentType = draftPatch.tentativeAgentType;
     }
   }
-  if (claimedTopics.length) draftPatch.coveredTopics = claimedTopics;
+  // Drop low-confidence agentType from the raw patch.
+  if (rawPatch.agentType && !(draftPatch.agentTypeConfidence >= AGENT_TYPE_COMMIT_CONFIDENCE)) {
+    delete draftPatch.agentType;
+  }
+
+  // Aim: capture mission/outcome + explicit facts, but never open review / invent identity.
+  if (phase === "aim") {
+    delete draftPatch.personalityNotes;
+    delete draftPatch.boundaries;
+    delete draftPatch.escalationNotes;
+    delete draftPatch.workingFromNotes;
+    delete draftPatch.guessedFields;
+    draftPatch.missionExecutable = false;
+    if (!draftPatch.coveredTopics?.length && (draftPatch.definitionOfDone || draftPatch.mission)) {
+      draftPatch.coveredTopics = ["outcome"];
+    }
+  }
 
   return {
     ...object,
     draftPatch,
-    topicsCoveredThisTurn: claimedTopics,
-    // Never trust the model to skip ahead or open review mid-interview.
+    topicsCoveredThisTurn: Array.isArray(draftPatch.coveredTopics) ? draftPatch.coveredTopics : [],
     phase: "interview",
     userSkippedRemaining: false,
     userConfirmed: false,
@@ -304,10 +385,19 @@ export function sanitizeExtractionForInterview({ phase, userSkipped, object }) {
 function renderDraftForPrompt(draft) {
   return JSON.stringify(
     {
+      mission: draft.mission,
+      definitionOfDone: draft.definitionOfDone,
+      knownFacts: draft.knownFacts,
+      missingFacts: draft.missingFacts,
+      assumptions: draft.assumptions,
+      blockingGaps: draft.blockingGaps,
+      nextQuestionFocus: draft.nextQuestionFocus,
+      missionExecutable: draft.missionExecutable,
+      tentativeAgentType: draft.tentativeAgentType,
+      agentTypeConfidence: draft.agentTypeConfidence,
       agentType: draft.agentType,
       name: draft.name,
       roleLine: draft.roleLine,
-      definitionOfDone: draft.definitionOfDone,
       instructions: draft.instructions,
       personalityNotes: draft.personalityNotes,
       boundaries: draft.boundaries,
@@ -315,9 +405,6 @@ function renderDraftForPrompt(draft) {
       actorsNotes: draft.actorsNotes,
       escalationNotes: draft.escalationNotes,
       dataFocus: draft.dataFocus,
-      coveredTopics: draft.coveredTopics,
-      interviewComplete: draft.interviewComplete,
-      remainingTopics: remainingInterviewTopics(draft),
       guessedFields: draft.guessedFields,
     },
     null,
@@ -337,15 +424,24 @@ function renderTranscript(messages) {
     .join("\n\n");
 }
 
+function fallbackBlockingQuestion(draft) {
+  const focus = String(draft?.nextQuestionFocus || "").trim();
+  if (focus) return `Got it — ${focus.endsWith("?") ? focus : `what's the ${focus}?`}`;
+  const gap = Array.isArray(draft?.blockingGaps) ? draft.blockingGaps[0] : null;
+  if (gap) return `Got it — ${String(gap).trim()}?`;
+  return "Got it — what does successful execution look like for this agent?";
+}
+
 /** Starts a fresh session on the Aim screen (no LLM call). */
 export function startCreationSession() {
   return {
     state: {
-      v: 3,
+      v: 4,
       status: "active",
       phase: "aim",
       step: "aim",
       draft: emptyCreationDraft(),
+      sessionStartedAtMs: Date.now(),
     },
     reply: AIM_OPENER,
     createPayload: null,
@@ -398,7 +494,6 @@ export async function runCreationTurn(state, message, { recentMessages = [] } = 
     };
   }
 
-  // Deterministic confirm gate while on review — don't rely solely on the model.
   if (phase === "review" && matchesCreationConfirm(text) && !matchesCreationEditRequest(text)) {
     const createPayload = buildCreatePayloadFromDraft(baseDraft);
     if (createPayload) {
@@ -413,19 +508,19 @@ export async function runCreationTurn(state, message, { recentMessages = [] } = 
   }
 
   if (phase === "review" && matchesCreationEditRequest(text)) {
-    // Edits reopen interview, but keep prior coverage so we don't restart from zero.
     phase = "interview";
-    baseDraft = applyDraftPatch(baseDraft, { interviewComplete: false });
+    baseDraft = applyDraftPatch(baseDraft, {
+      interviewComplete: false,
+      missionExecutable: false,
+    });
   }
 
-  // Skip remaining interview questions → fill guesses, then let the model draft.
   if (userSkipped && phase !== "review") {
-    if (!baseDraft.definitionOfDone) {
-      // Can't draft without an outcome — stay in aim.
+    if (!baseDraft.definitionOfDone && !baseDraft.mission) {
       return {
         state: { ...state, status: "active", phase: "aim", step: "aim", draft: baseDraft },
         reply:
-          "Happy to skip ahead — I still need the one outcome this agent owns first. What does \"done\" look like?",
+          "Happy to skip ahead — I still need the mission this agent owns first. What does \"done\" look like?",
         createPayload: null,
         creationDraft: publicCreationDraft({
           ...state,
@@ -435,7 +530,7 @@ export async function runCreationTurn(state, message, { recentMessages = [] } = 
       };
     }
     baseDraft = completeInterviewWithGuesses(baseDraft);
-    phase = "interview"; // model will present review this turn
+    phase = "interview";
   }
 
   const interviewStillOpen =
@@ -443,12 +538,18 @@ export async function runCreationTurn(state, message, { recentMessages = [] } = 
   const conversationPrompt = [
     dataSection("CURRENT PHASE", phase),
     dataSection(
-      "INTERVIEW PROGRESS",
+      "KNOWLEDGE MODEL",
       JSON.stringify(
         {
-          coveredTopics: baseDraft.coveredTopics,
-          remainingTopics: remainingInterviewTopics(baseDraft),
-          interviewComplete: isInterviewComplete(baseDraft),
+          mission: baseDraft.mission,
+          knownFacts: baseDraft.knownFacts,
+          missingFacts: baseDraft.missingFacts,
+          assumptions: baseDraft.assumptions,
+          blockingGaps: baseDraft.blockingGaps,
+          nextQuestionFocus: baseDraft.nextQuestionFocus,
+          missionExecutable: isMissionExecutable(baseDraft),
+          tentativeAgentType: baseDraft.tentativeAgentType,
+          agentTypeConfidence: baseDraft.agentTypeConfidence,
           userAskedToSkipRemaining: userSkipped,
         },
         null,
@@ -456,34 +557,28 @@ export async function runCreationTurn(state, message, { recentMessages = [] } = 
       )
     ),
     dataSection(
-      "NOTES CAPTURED SO FAR (internal — do not dump as a draft unless phase is review)",
+      "NOTES CAPTURED SO FAR (internal — confirmed only; do not dump as a draft unless phase is review)",
       renderDraftForPrompt(baseDraft)
     ),
     dataSection("RECENT TRANSCRIPT", renderTranscript(recentMessages)),
     dataSection("USER MESSAGE", text),
     userSkipped
-      ? "The user wants to stop interviewing and see a draft (skip / reluctant / you-decide). Present the draft review now from what you have (mention any guesses briefly). Do not ask another question."
+      ? "The user wants to stop gathering and see a draft. Present the draft review from CONFIRMED facts only; mention any minimum guesses briefly. Do not ask another question."
       : isInterviewComplete(baseDraft) && phase !== "review"
-        ? "Interview topics are covered. Present the draft review now and ask if it looks good or what to edit."
-        : remainingInterviewTopics(baseDraft).length <= 3 &&
-            (baseDraft.coveredTopics || []).length >= 2
-          ? "Reply as the CEO Agent. They are still in interview and have been answering — keep going through remaining topics (one question). Do NOT draft yet. Only if they sound stuck, briefly note they can say \"draft it\" to skip ahead."
-          : "Reply as the CEO Agent. They are engaged in interview — ask through the remaining topics before drafting. Acknowledge briefly, clarify if vague, then ask the next unanswered topic (one question). Do NOT present a draft yet.",
+        ? "Mission is executable. Present the draft review now from confirmed facts and ask if it looks good or what to edit."
+        : "Recompute Situation Brief → Mission → Gaps → Relevance. Reply with a brief acknowledgment of what they confirmed, then ask ONLY the single highest-value blocking question. Do NOT ask about personality/tone/escalation/history before execution blockers. Do NOT invent requirements. Do NOT present a draft yet.",
   ].join("\n\n");
 
-  // Interview turns: ONE fast Haiku *text* call (reply + trailing NOTES_JSON).
-  // Do NOT use generateObject here — Anthropic structured-output grammar
-  // compilation was timing out on the interview schema and blocking the UI.
-  // Heavy Sonnet + extract only when presenting review / skip.
   let reply;
   let object;
 
   if (interviewStillOpen) {
     const { text: replyText } = await generateAgentText({
-      model: PROFILE_EXTRACTION_MODEL,
+      // Executive reasoning quality matters more than Haiku speed here.
+      model: CEO_AGENT_MODEL,
       system: INTERVIEW_TURN_SYSTEM_PROMPT,
       prompt: conversationPrompt,
-      maxOutputTokens: 320,
+      maxOutputTokens: 420,
     });
     const parsed = parseInterviewTurnText(replyText);
     const sanitized = sanitizeExtractionForInterview({
@@ -498,9 +593,7 @@ export async function runCreationTurn(state, message, { recentMessages = [] } = 
       },
     });
     object = sanitized;
-    reply =
-      parsed.reply ||
-      "Got it — who should this agent interact with or act on behalf of?";
+    reply = parsed.reply || fallbackBlockingQuestion(baseDraft);
   } else {
     const conversationPromise = generateAgentText({
       model: CEO_AGENT_MODEL,
@@ -516,11 +609,10 @@ export async function runCreationTurn(state, message, { recentMessages = [] } = 
         dataSection("DRAFT BEFORE TURN", renderDraftForPrompt(baseDraft)),
         dataSection("USER MESSAGE", text),
         dataSection("USER ASKED TO SKIP REMAINING", userSkipped ? "yes" : "no"),
-        "Return the draft patch and phase flags for this turn.",
+        "Return the draft patch and phase flags for this turn. Confirmed facts only.",
       ].join("\n\n"),
       schema: DRAFT_PATCH_SCHEMA,
       maxOutputTokens: 900,
-      // Prefer tool-JSON over native output_config grammar (avoids cold compile timeouts).
       providerOptions: {
         anthropic: { structuredOutputMode: "jsonTool" },
       },
@@ -567,39 +659,49 @@ export async function runCreationTurn(state, message, { recentMessages = [] } = 
     ],
   });
 
-  // Only the deterministic skip path may fill guesses and open review early.
-  // Do not trust the extractor's userSkippedRemaining alone — that was causing
-  // "pull the draft" right after the first Aim answer.
   if (userSkipped) {
     draft = completeInterviewWithGuesses(draft);
   }
 
   if (object?.userWantsEdits) {
-    draft = applyDraftPatch(draft, { interviewComplete: false });
+    draft = applyDraftPatch(draft, {
+      interviewComplete: false,
+      missionExecutable: false,
+    });
   }
 
-  // Aim turn can only land the outcome — never a full draft / review.
-  // (Extractor overfill used to mark every topic covered and "pull the draft".)
+  // First turn: land mission/outcome + explicit facts only — never a full draft.
   if (phase === "aim" && !userSkipped) {
-    const outcome = draft.definitionOfDone || text.slice(0, 500);
+    const outcome =
+      draft.definitionOfDone || draft.mission || text.slice(0, 500);
+    const knownFacts = Array.isArray(draft.knownFacts) ? draft.knownFacts : [];
     draft = applyDraftPatch(emptyCreationDraft(), {
-      agentType: draft.agentType,
-      name: draft.name,
+      mission: draft.mission || outcome || null,
       definitionOfDone: outcome || null,
       instructions: draft.instructions,
       roleLine: draft.roleLine,
       dataFocus: draft.dataFocus,
+      actorsNotes: draft.actorsNotes,
+      knownFacts,
+      missingFacts: draft.missingFacts,
+      blockingGaps: draft.blockingGaps,
+      assumptions: draft.assumptions,
+      nextQuestionFocus: draft.nextQuestionFocus,
+      tentativeAgentType: draft.tentativeAgentType,
+      agentTypeConfidence: draft.agentTypeConfidence,
+      // Only keep committed type if sanitize allowed it (high confidence).
+      agentType: draft.agentType,
+      name: draft.name,
       coveredTopics: outcome ? ["outcome"] : [],
       interviewComplete: false,
+      missionExecutable: false,
     });
   }
 
   let nextPhase = normalizeCreationPhase(object?.phase || phase, draft);
-  // Hard gate: never enter review until interview is complete.
   if (nextPhase === "review" && !isInterviewComplete(draft)) {
-    nextPhase = draft.definitionOfDone ? "interview" : "aim";
+    nextPhase = draft.definitionOfDone || draft.mission ? "interview" : "aim";
   }
-  // Promote to review once interview is complete (skip or all topics asked through).
   if (
     phase !== "aim" &&
     isInterviewComplete(draft) &&
@@ -609,12 +711,12 @@ export async function runCreationTurn(state, message, { recentMessages = [] } = 
     nextPhase = "review";
   }
   if (phase === "aim" && !userSkipped) {
-    nextPhase = draft.definitionOfDone ? "interview" : "aim";
+    nextPhase = draft.definitionOfDone || draft.mission ? "interview" : "aim";
   }
 
   const nextState = {
     ...state,
-    v: 3,
+    v: 4,
     status: "active",
     phase: nextPhase,
     step: nextPhase,
@@ -640,3 +742,6 @@ export async function runCreationTurn(state, message, { recentMessages = [] } = 
     creationDraft: publicCreationDraft(nextState),
   };
 }
+
+// Re-export for tests that still import remaining topics helper via interview.
+export { remainingInterviewTopics, isMissionExecutable };

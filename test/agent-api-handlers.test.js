@@ -120,6 +120,11 @@ before(async () => {
 
     mock.module("../server/agents/digest.js", {
       namedExports: {
+        DIGEST_ACTION_TYPES: Object.freeze(["set_content", "regenerate"]),
+        DIGEST_MAX_LENGTH: 4000,
+        DIGEST_ACTION_JSON_SCHEMA: {
+          anyOf: [{ type: "null" }, { type: "object" }],
+        },
         generateDigest: async (userId) => {
           digestCalls.push(userId);
           return {
@@ -129,6 +134,11 @@ before(async () => {
             usage: null,
           };
         },
+        sanitizeDigestAction: (action) => action ?? null,
+        applyCeoDigestAction: async () => ({
+          digest: "updated digest",
+          generatedAt: new Date("2026-07-20T12:00:00Z"),
+        }),
         NO_ACTIVITY_DIGEST: "nothing yet",
       },
     });
@@ -181,13 +191,9 @@ before(async () => {
         // still uses the generateAgent* stubs below directly.
         isLlmConfigured: () => false,
         getWebSearchTools: () => ({}),
-        // Interview turns are plain Haiku text + trailing NOTES_JSON (no structured
-        // grammar). Skip/review uses this text for the draft presentation and
-        // generateAgentObject for the extract.
+        // Intake turns: text + trailing NOTES_JSON. Skip/review uses Sonnet text
+        // + generateAgentObject extract.
         generateAgentText: async ({ prompt } = {}) => {
-          // Skip/review turns ask the model to present the draft; interview turns
-          // explicitly say not to. Match the instruction line, not the word "skip"
-          // buried in JSON keys like userAskedToSkipRemaining.
           const askingToDraft =
             typeof prompt === "string" &&
             /Present the draft review now/i.test(prompt);
@@ -199,8 +205,8 @@ before(async () => {
           }
           return {
             text:
-              "Got it — who should this agent interact with or act on behalf of?\n" +
-              'NOTES_JSON:{"topicsCoveredThisTurn":["outcome"],"draftPatch":{"agentType":"finance","definitionOfDone":"A weekly spending observations report is produced","coveredTopics":["outcome"]},"userCancelled":false}',
+              "Got it — what spending accounts or categories should it watch?\n" +
+              'NOTES_JSON:{"mission":"A weekly spending observations report is produced","knownFacts":["Weekly spending observations"],"blockingGaps":["accounts or categories to watch"],"nextQuestionFocus":"accounts or categories to watch","missionExecutable":false,"tentativeAgentType":"finance","agentTypeConfidence":0.85,"draftPatch":{"definitionOfDone":"A weekly spending observations report is produced","tentativeAgentType":"finance","agentTypeConfidence":0.85},"userCancelled":false}',
             usage: null,
           };
         },
@@ -213,8 +219,9 @@ before(async () => {
               roleLine: "Watches monthly spending",
               instructions: "Watch my monthly spending and flag unusual changes",
               definitionOfDone: "A weekly spending observations report is produced",
-              // Intentionally incomplete interview — review opens only after skip
-              // or once every topic is covered.
+              mission: "A weekly spending observations report is produced",
+              missionExecutable: false,
+              blockingGaps: ["accounts or categories to watch"],
               coveredTopics: ["outcome"],
             },
             phase: "interview",
@@ -1029,11 +1036,10 @@ test("CEO chat creation flow finishes interview (or skip) before draft review, t
     "Every week I have a clear spending observations report and nothing unusual slips by."
   );
   assert.equal(aim.statusCode, 200);
-  // After Aim, CEO keeps interviewing — not drafting yet.
-  assert.match(aim.body.reply, /got it|who should|act on behalf|interact/i);
+  // After Aim, CEO asks a blocking execution gap — not drafting yet.
+  assert.match(aim.body.reply, /got it|accounts|categories|watch/i);
   assert.doesNotMatch(aim.body.reply, /\b(here's the draft|looks good to create)\b/i);
   assert.equal(aim.body.creationDraft.agentType, "finance");
-  // Draft review stays closed until interview topics are done or user skips.
   assert.equal(aim.body.creationDraft.phase, "interview");
   assert.equal(aim.body.creationDraft.readyForReview, false);
   assert.match(aim.body.creationDraft.definitionOfDone, /spending observations/i);
@@ -1054,24 +1060,19 @@ test("CEO chat creation flow finishes interview (or skip) before draft review, t
   assert.equal(row.status, "ACTIVE");
   assert.equal(row.schedule, null); // Slice 1 default: on-demand
   assert.equal(row.model, "claude-sonnet-4-5");
-  assert.match(row.instructions, /monthly spending|Watches monthly/i);
+  assert.match(row.instructions, /monthly spending|Watches monthly|spending observations/i);
   assert.match(row.definitionOfDone, /observations report/);
-  // Skip fills remaining identity fields with conservative guesses when unanswered.
-  assert.match(row.personalityNotes || "", /Direct|Clear|Practical|Concise/i);
-  assert.match(row.boundaries || "", /Never/i);
+  // Skip no longer invents personality / boundaries — leave unset unless stated.
+  assert.equal(row.personalityNotes, null);
+  assert.equal(row.boundaries, null);
 
-  // Creation messages land on the isSystem conversation, never the default list.
+  // Interview turns land on isSystem; confirm may also announce on the default CEO thread.
   const systemConv = currentDb.tables.agentConversation.find((c) => c.isSystem === true);
   assert.ok(systemConv, "isSystem conversation should exist");
-  assert.equal(
-    currentDb.tables.agentChatMessage.every((m) => m.conversationId === systemConv.id),
-    true
+  const systemMessages = currentDb.tables.agentChatMessage.filter(
+    (m) => m.conversationId === systemConv.id
   );
-  assert.equal(
-    currentDb.tables.agentConversation.filter((c) => !c.isSystem).length,
-    0,
-    "creation must not create a listed conversation"
-  );
+  assert.ok(systemMessages.length >= 3, "creation interview should write to isSystem thread");
 
   // Creation uses the interview LLM path, not respondToChat.
   assert.equal(chatCalls.length, 0);
