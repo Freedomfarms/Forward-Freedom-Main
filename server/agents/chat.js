@@ -64,7 +64,11 @@ import {
   renderNamedRunSummaries,
   renderTeamRoster,
 } from "./teamContext.js";
-import { isMissingTimezoneColumnError, isValidIanaTimeZone } from "./timezone.js";
+import {
+  DEFAULT_USER_TIMEZONE,
+  isMissingTimezoneColumnError,
+  isValidIanaTimeZone,
+} from "./timezone.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared chat engine for the CEO Agent chat and every sub-agent chat.
@@ -134,7 +138,7 @@ const CEO_CHAT_SYSTEM_PROMPT = [
   "You have read-only web search for live / current information. When the user asks something that needs up-to-date facts, use web search before answering. Never claim you lack internet access.",
   "When the user asks which agents they have: answer ONLY from YOUR SUB-AGENTS. Never invent agents that are not listed. A newly created agent may have zero runs — prefer the roster over run summaries for membership.",
   "OPERATE the platform via ceoActions (server-applied). You CAN: create_agent, update_agent (pause/resume/schedule/instructions/email/model), run_agent (delegate work to a specialist), delete_agent (only with confirmed=true after explicit user confirmation), set_timezone. For create_agent: ask only execution blockers first; call create_agent only when the mission is executable — never invent type, restrictions, or personality.",
-  "Schedules are always in the user's LOCAL timezone. Use scheduleHourLocal (0–23) and the USER TIMEZONE context. Never ask the user to think in UTC. If timezone is unknown and they request a local schedule, ask for an IANA timezone OR use set_timezone once they provide it — do not assume UTC.",
+  "Schedules are always in the user's LOCAL timezone. Use scheduleHourLocal (0–23) and the USER TIMEZONE context. Never ask the user to think in UTC. If timezone is unknown, the platform defaults to America/New_York (Eastern); prefer set_timezone when the user states a different zone.",
   "Research agents already use web search; enabling email delivery is emailDelivery=true on create/update. After create_agent in the same turn you may run_agent with agentId \"__last_created__\" or omitted.",
   "Delegate automatically when a specialist should do the work: set run_agent. The server monitors short jobs and returns results in this conversation; longer jobs notify later in this same conversation. Do not tell the user to open another screen or another agent chat for routine ops — specialist chats exist for deep SME follow-up on a report, not as a required detour.",
   "Truthfulness: state facts from tool/context confidently; label inferences as inferences; if you do not know, say so. Never invent operational facts (agents, schedules, run statuses, triggers).",
@@ -429,7 +433,7 @@ export async function respondToChat({
     const tzLabel =
       userTimezone && isValidIanaTimeZone(userTimezone)
         ? userTimezone
-        : "(unknown — detect from browser or ask the user for an IANA timezone; do not assume UTC)";
+        : `${DEFAULT_USER_TIMEZONE} (platform default — Eastern Time; user may override)`;
     sections.push(dataSection("USER TIMEZONE", tzLabel));
     let currentDigest = null;
     if (ceoConfig.lastDigestCiphertext) {

@@ -106,8 +106,8 @@ model User {
   legalConsentVersion String?
   legalConsentEvents  LegalConsentEvent[]
   // IANA timezone for schedules / display (e.g. "America/New_York"). Null until
-  // the client detects it or the user sets it in Settings / CEO chat. Never
-  // silently default to UTC when interpreting "7 AM" style local times.
+  // the client detects it or the user sets it in Settings / CEO chat. When null,
+  // runtime resolves to America/New_York (Eastern) — never UTC.
   timezone            String?
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt

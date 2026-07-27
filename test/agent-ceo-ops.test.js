@@ -198,29 +198,31 @@ test("delete_agent requires confirmation before executing", async (t) => {
   assert.equal(currentDb.tables.agentConfig.some((row) => row.id === "agent-x"), false);
 });
 
-test("local schedule without timezone asks instead of assuming UTC", async (t) => {
+test("local schedule without timezone defaults to Eastern (America/New_York)", async (t) => {
   if (!requireSetup(t)) return;
   currentDb.tables.user[0].timezone = null;
 
-  await assert.rejects(
-    applyCeoActions({
-      userId: USER_ID,
-      ceoAgentConfigId: "ceo-1",
-      conversationId: "ceo-convo-1",
-      actions: [
-        {
-          type: "create_agent",
-          agentType: "research",
-          name: "Needs TZ",
-          instructions: "Topic",
-          definitionOfDone: "Done",
-          schedulePreset: "daily",
-          scheduleHourLocal: 7,
-        },
-      ],
-    }),
-    /timezone/i
-  );
+  const result = await applyCeoActions({
+    userId: USER_ID,
+    ceoAgentConfigId: "ceo-1",
+    conversationId: "ceo-convo-1",
+    actions: [
+      {
+        type: "create_agent",
+        agentType: "research",
+        name: "Eastern Default",
+        instructions: "Topic",
+        definitionOfDone: "Done",
+        schedulePreset: "daily",
+        scheduleHourLocal: 7,
+      },
+    ],
+  });
+  assert.match(result.reply, /Eastern Default|Created|America\/New_York|7:00/i);
+  const created = currentDb.tables.agentConfig.find((row) => row.name === "Eastern Default");
+  assert.ok(created);
+  // 7 AM Eastern in winter ≈ 12:00 UTC (cron hour depends on conversion sample).
+  assert.ok(created.schedule);
 });
 
 test("create_agent refuses live registration when social connectors are unavailable", async (t) => {

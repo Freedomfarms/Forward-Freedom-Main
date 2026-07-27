@@ -436,18 +436,16 @@ function AuthenticatedWorkspaceApp({
         }
 
         // Auto-detect browser IANA timezone on first login / when unset.
-        // Never invent UTC; only persist when detection succeeds.
+        // Fall back to America/New_York (Eastern) — never UTC.
         if (profilePayload?.user && !profilePayload.user.timezone) {
-          const detectedTz = detectBrowserTimeZone();
-          if (detectedTz) {
-            try {
-              const tzPayload = await updateUserTimezone(detectedTz, { user });
-              if (tzPayload?.user) {
-                profilePayload = tzPayload;
-              }
-            } catch (tzError) {
-              console.warn("[workspace] Timezone sync unavailable during bootstrap.", tzError);
+          const detectedTz = detectBrowserTimeZone() || "America/New_York";
+          try {
+            const tzPayload = await updateUserTimezone(detectedTz, { user });
+            if (tzPayload?.user) {
+              profilePayload = tzPayload;
             }
+          } catch (tzError) {
+            console.warn("[workspace] Timezone sync unavailable during bootstrap.", tzError);
           }
         }
 

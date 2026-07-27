@@ -40,13 +40,12 @@ export function CeoSettingsPanel({ ceoAgent, user, onBack, onSaved, onOpenProfil
       try {
         const payload = await fetchAuthenticatedUserProfile({ user });
         if (cancelled) return;
-        const tz = payload?.user?.timezone || detectBrowserTimeZone() || "";
+        const tz = payload?.user?.timezone || detectBrowserTimeZone() || "America/New_York";
         setTimezone(tz);
         setSavedTimezone(payload?.user?.timezone || "");
       } catch {
         if (!cancelled) {
-          const detected = detectBrowserTimeZone() || "";
-          setTimezone(detected);
+          setTimezone(detectBrowserTimeZone() || "America/New_York");
         }
       }
     })();
@@ -237,8 +236,9 @@ export function CeoSettingsPanel({ ceoAgent, user, onBack, onSaved, onOpenProfil
       <div style={{ display: "grid", gap: 10 }}>
         <div style={fosStyles.sectionLabel}>Timezone</div>
         <p style={{ margin: 0, color: "#9fb0c9", fontSize: 12, lineHeight: 1.55 }}>
-          Used for agent schedules and local times. Detected from your browser when possible —
-          schedules always mean your local time, never UTC.
+          Used for agent schedules and local times. Detected from your browser when possible;
+          otherwise defaults to Eastern Time (America/New_York). Schedules use your local time,
+          not UTC.
         </p>
         <input
           value={timezone}

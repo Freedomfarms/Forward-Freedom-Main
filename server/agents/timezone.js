@@ -4,7 +4,13 @@ import { WEEKDAY_NAMES, schedulePresetToCron } from "./schedule.js";
 // ─────────────────────────────────────────────────────────────────────────────
 // User-local timezone helpers. Schedules are stored as UTC cron internally, but
 // users always speak local wall-clock time ("7 AM where I am").
+//
+// Platform default when unset: Eastern Time (America/New_York). Prefer the
+// user's saved / browser-detected IANA zone when present.
 // ─────────────────────────────────────────────────────────────────────────────
+
+/** Default IANA timezone when the user has not set one (Eastern Time). */
+export const DEFAULT_USER_TIMEZONE = "America/New_York";
 
 /** True when Prisma/Postgres reports User.timezone is not migrated yet. */
 export function isMissingTimezoneColumnError(error) {
@@ -61,6 +67,18 @@ export function normalizeIanaTimeZone(value) {
     );
   }
   return tz;
+}
+
+/**
+ * Resolve the effective timezone for schedules/display.
+ * Prefer a valid user/browser value; otherwise America/New_York (Eastern).
+ */
+export function resolveUserTimeZone(value) {
+  if (typeof value === "string") {
+    const tz = value.trim();
+    if (tz && isValidIanaTimeZone(tz)) return tz;
+  }
+  return DEFAULT_USER_TIMEZONE;
 }
 
 /** Offset of `timeZone` at `date`: wallClockAsUtcMs - instantMs. */
@@ -158,7 +176,7 @@ function modeInt(values) {
 
 /**
  * Maps a local-time schedule into the UTC cron string stored on AgentConfig.
- * Returns { cron, hourUtc, weekdaysUtc } or throws when timezone is missing.
+ * Returns { cron, hourUtc, weekdaysUtc }. Missing timezone → America/New_York.
  */
 export function localScheduleToUtcCron({
   preset,
@@ -168,13 +186,7 @@ export function localScheduleToUtcCron({
   timeZone,
   now = new Date(),
 }) {
-  if (!isValidIanaTimeZone(timeZone)) {
-    throw new AgentError(
-      "A timezone is required to schedule in local time. Detect it from the browser or set it in Settings.",
-      "TIMEZONE_REQUIRED",
-      400
-    );
-  }
+  timeZone = resolveUserTimeZone(timeZone);
   if (!Number.isInteger(hourLocal) || hourLocal < 0 || hourLocal > 23) {
     throw new AgentError(
       "scheduleHourLocal must be an integer from 0 to 23.",

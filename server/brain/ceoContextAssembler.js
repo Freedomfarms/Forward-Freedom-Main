@@ -15,7 +15,12 @@ import {
   renderNamedRunSummaries,
   renderTeamRoster,
 } from "../agents/teamContext.js";
-import { isMissingTimezoneColumnError, isValidIanaTimeZone } from "../agents/timezone.js";
+import {
+  DEFAULT_USER_TIMEZONE,
+  isMissingTimezoneColumnError,
+  isValidIanaTimeZone,
+  resolveUserTimeZone,
+} from "../agents/timezone.js";
 import {
   listCapabilities,
   renderCapabilityRegistry,
@@ -134,10 +139,9 @@ export async function assembleCeoContext({
     }
   }
 
-  const tzLabel =
-    userTimezone && isValidIanaTimeZone(userTimezone)
-      ? userTimezone
-      : "(unknown — detect from browser or ask the user for an IANA timezone; do not assume UTC)";
+  const tzLabel = userTimezone && isValidIanaTimeZone(userTimezone)
+    ? userTimezone
+    : `${DEFAULT_USER_TIMEZONE} (platform default — Eastern Time; user may override)`;
 
   const documents = await loadDocumentsForPrompt(userId);
 
@@ -146,7 +150,7 @@ export async function assembleCeoContext({
     user: {
       displayName: userRow?.displayName ?? null,
       email: userRow?.email ?? null,
-      timezone: userTimezone && isValidIanaTimeZone(userTimezone) ? userTimezone : null,
+      timezone: resolveUserTimeZone(userTimezone),
     },
     teamAgents,
     profile,
