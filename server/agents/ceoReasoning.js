@@ -1,9 +1,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Shared CEO mission reasoning — ONE brain for information, execution, create,
-// update, and workflows. Not a separate "+ New Agent" interview.
+// Transitional mission continuity sketch (MIGRATION TARGET — do not expand).
 //
-// Pipeline (prompt-enforced + helpers for ranking / debug / tests):
-//   Situation Brief → Mission Model → Knowledge State → Relevance → ONE question
+// Phase 1: still called for ACTIVE MISSION continuity hints only.
+// Judgment authority is the LLM + CEOContextAssembler world model + tools.
+// This module must NOT override capability truth, permissions, or completion
+// gates. See server/brain/ceoReasoningDependencies.js for call-site inventory.
+//
+// Phase 2 deletion candidate: replace with durable Plan / ActiveMission store.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { CREATABLE_AGENT_TYPES } from "./registry.js";
