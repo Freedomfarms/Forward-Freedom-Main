@@ -72,6 +72,14 @@ enum BrainJobStatus {
   FAILED
 }
 
+// Durable CEO Plan status — executive memory, not conversation workflow.
+enum PlanStatus {
+  ACTIVE
+  WAITING
+  COMPLETED
+  ABANDONED
+}
+
 model User {
   id                  String               @id
   email               String?              @unique
@@ -121,6 +129,7 @@ model User {
   ceoDocuments        CeoDocument[]
   notifications       Notification[]
   brainJobs           BrainJob[]
+  plans               Plan[]
 }
 
 model PlaidItem {
@@ -555,6 +564,32 @@ model AgentChatMessage {
   @@index([agentConfigId, createdAt])
   @@index([ceoAgentConfigId, createdAt])
   @@index([userId, createdAt])
+}
+
+// Durable CEO Plan — executive intent/memory across conversations.
+// Encrypted body holds objective, situation, decisions, open items, actions.
+// Plans never grant tool permissions or execution authority (see server/brain/plans.js).
+model Plan {
+  id                   String     @id @default(cuid())
+  userId               String
+  // Short plaintext label for lists (same treatment as conversation titles).
+  title                String
+  status               PlanStatus @default(ACTIVE)
+  // Encrypted structured body (PlanBodyV1) — never log decrypted contents.
+  contentCiphertext    String
+  // Scope key for independent concurrent plans. Null/default = primary mission.
+  // At most one ACTIVE plan per (userId, missionScope) — enforced in app code.
+  missionScope         String?
+  // Advisory planning horizon: "weeks" | "months" | "quarters".
+  horizon              String?
+  sourceConversationId String?
+  lastReviewedAt       DateTime?
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
+  user                 User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status, updatedAt])
+  @@index([userId, missionScope, status])
 }
 
 // Freedom Brain background work queue. The chat critical path only ever

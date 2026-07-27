@@ -2,24 +2,25 @@
 // Migration inventory: ceoReasoning.js residual surface area.
 //
 // Phase 2A: removed from decision shaping (no question ranking / mission
-// classification in the CEO hot path). Sketch may still run as inferred
-// metadata until Plan store exists.
+// classification in the CEO hot path).
+// Phase 2B: Plan store is the durable ACTIVE MISSION source. Sketcher runs
+// only when no Plan exists (temporary inferred metadata). Never auto-convert.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Still called on the Brain hot path — but only as inferred metadata. */
+/** Still called on the Brain hot path — but only when no Plan exists. */
 export const CEO_REASONING_HOT_PATH = Object.freeze([
   Object.freeze({
     file: "server/brain/ceoContextAssembler.js",
     usage:
-      "Calls sketchMissionFromConversation to populate ACTIVE MISSION inferred metadata only (possible_objective / confidence). Not used for question ordering or control-plane steering.",
-    authority: "inferred_metadata_only",
-    phase2b: "Replace with durable Plan / ActiveMission store; then delete sketcher call.",
+      "Calls sketchMissionFromConversation only when loadPrimaryActivePlan returns null. Populates transitional inferred ACTIVE MISSION metadata. Not used for question ordering, control-plane steering, or Plan seeding.",
+    authority: "inferred_metadata_only_when_no_plan",
+    phase2b: "Delete sketcher call once Plans cover continuity; keep dual-read until then.",
   }),
   Object.freeze({
     file: "server/brain/ceoContextAssembler.js",
-    usage: "logCeoReasoning(activeMission) for debug observability.",
+    usage: "logCeoReasoning(activeMission) only on the no-Plan inferred path.",
     authority: "observability",
-    phase2b: "Log durable plan + world-model meta instead.",
+    phase2b: "Plan path logs via logPlanEvent / logCeoContextAssembly plan meta.",
   }),
 ]);
 
@@ -59,12 +60,14 @@ export const CEO_REASONING_DEPENDENCIES = Object.freeze([
 ]);
 
 export const CEO_REASONING_MIGRATION_STATUS = Object.freeze({
-  phase: "2A",
+  phase: "2B",
   role: "inferred_metadata_only",
   judgmentOwner: "llm_plus_world_model",
+  activeMissionSource: "plan_when_present_else_inferred",
   decisionShaping: false,
   questionRankingInHotPath: false,
   missionClassificationInHotPath: false,
+  autoConvertInferredToPlan: false,
   deletionCandidate: true,
   doNotExpand: true,
 });

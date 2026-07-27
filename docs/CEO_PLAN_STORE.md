@@ -1,7 +1,11 @@
 # Phase 2B — CEO Plan Store (architecture proposal)
 
-> **Status: design only — no implementation in this revision.**
+> **Status: implemented (Phase 2B) on PR #187.**
 > Continues PR #187 (Phase 2A already landed on this branch).
+>
+> Binding implementation constraints: Plan is memory not workflow; Plan ≠
+> execution proof; structured ops only; one ACTIVE per user/missionScope;
+> anti-thrash (reason + meaningful changes); dual-read migration; meta-only logs.
 >
 > Binding principle: **CODE OWNS TRUTH · DATABASE OWNS STATE · TOOLS OWN CAPABILITIES · CEO OWNS JUDGMENT**
 >
@@ -398,15 +402,20 @@ Phase 2B complete / deletion done.
 
 ---
 
-## 9. Implementation order (when coding starts — not this revision)
+## 9. Implementation status
 
-1. Prisma `Plan` + RLS migration
-2. `server/brain/plans.js` (schema, validate, apply, render)
+Shipped on PR #187:
+
+1. Prisma `Plan` + RLS migration (`20260727200000_ceo_plan_store`)
+2. `server/brain/plans.js` (validate, apply, create/update/get, render)
 3. Tools on CEO belt + assembler dual-read
-4. Prompt copy / executive contract tweak
-5. Tests: plan ops + assembler Plan→ACTIVE MISSION
-6. Remove sketcher hot path; update dependency inventory
-7. Delete or quarantine `ceoReasoning.js`
+4. Prompt / executive contract updated
+5. Tests: `test/ceo-plan-store.test.js` (6 required cases + anti-thrash)
+
+Still open (Phase 3 candidates):
+
+6. Remove sketcher hot path entirely once Plans cover continuity in practice
+7. Delete or quarantine `ceoReasoning.js` + rewrite offline acceptance tests
 
 ---
 
@@ -414,6 +423,7 @@ Phase 2B complete / deletion done.
 
 | Phase | Deliverable | On PR 187 |
 | --- | --- | --- |
-| 2A | Reduce shadow-reasoning authority | Done (code) |
-| 2B design | This document | This revision |
-| 2B code | Plan store + migration Steps A–C | Follow-up commits on same PR when approved |
+| 2A | Reduce shadow-reasoning authority | Done |
+| 2B design | This document | Done |
+| 2B code | Plan store + dual-read migration (Steps A–B) | Done |
+| 2B cleanup | Delete sketcher hot path (Step C) | Deferred to Phase 3 gate |

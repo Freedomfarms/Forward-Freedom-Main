@@ -90,6 +90,9 @@ test("CEO enabled tools match real Brain tool belt names only", () => {
   assert.ok(CEO_ENABLED_TOOLS.includes("web_search"));
   assert.ok(CEO_ENABLED_TOOLS.includes("create_agent"));
   assert.ok(CEO_ENABLED_TOOLS.includes("update_digest"));
+  assert.ok(CEO_ENABLED_TOOLS.includes("create_plan"));
+  assert.ok(CEO_ENABLED_TOOLS.includes("update_plan"));
+  assert.ok(CEO_ENABLED_TOOLS.includes("get_plan"));
   assert.ok(!CEO_ENABLED_TOOLS.includes("get_accounts"));
   assert.ok(!CEO_ENABLED_TOOLS.includes("get_budget_status"));
 });
@@ -108,6 +111,7 @@ test("ceoReasoning migration inventory is documented and non-authoritative", () 
 test("Brain prompt points at APPLICATION STATE world model and inferred mission metadata", () => {
   assert.match(BRAIN_SYSTEM_PROMPT, /APPLICATION STATE/);
   assert.match(BRAIN_SYSTEM_PROMPT, /unavailable_server_summary/);
-  assert.match(BRAIN_SYSTEM_PROMPT, /inferred metadata only/i);
+  assert.match(BRAIN_SYSTEM_PROMPT, /inferred metadata|from Plan when present/i);
+  assert.match(BRAIN_SYSTEM_PROMPT, /create_plan|update_plan|get_plan/);
   assert.match(BRAIN_SYSTEM_PROMPT, /ENABLED TOOLS/);
 });

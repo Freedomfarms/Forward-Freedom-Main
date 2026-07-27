@@ -78,8 +78,9 @@ test("control plane does not consume sketcher missionState for steering", () => 
 test("BRAIN_SYSTEM_PROMPT uses executive contract — not interview pipeline rules", () => {
   assert.match(CEO_EXECUTIVE_CONTRACT, /Ask only questions that truly block progress/i);
   assert.match(BRAIN_SYSTEM_PROMPT, /CEO_EXECUTIVE_CONTRACT|Understand the user's objective|Ask only questions that truly block/i);
-  assert.match(BRAIN_SYSTEM_PROMPT, /inferred metadata only/i);
+  assert.match(BRAIN_SYSTEM_PROMPT, /inferred metadata|from Plan when present/i);
   assert.match(BRAIN_SYSTEM_PROMPT, /allow\/deny safety/i);
+  assert.match(BRAIN_SYSTEM_PROMPT, /create_plan|update_plan|get_plan/);
   // Old interview-style rules must not appear in the live system prompt.
   assert.doesNotMatch(BRAIN_SYSTEM_PROMPT, /ONE highest-value question/i);
   assert.doesNotMatch(BRAIN_SYSTEM_PROMPT, /Situation Brief → Mission Model/i);
@@ -105,10 +106,11 @@ test("CEO Brain path is always enabled — no FREEDOM_BRAIN_CHAT opt-out", () =>
 });
 
 test("migration status: no decision shaping / question ranking on hot path", () => {
-  assert.equal(CEO_REASONING_MIGRATION_STATUS.phase, "2A");
+  assert.equal(CEO_REASONING_MIGRATION_STATUS.phase, "2B");
   assert.equal(CEO_REASONING_MIGRATION_STATUS.decisionShaping, false);
   assert.equal(CEO_REASONING_MIGRATION_STATUS.questionRankingInHotPath, false);
   assert.equal(CEO_REASONING_MIGRATION_STATUS.missionClassificationInHotPath, false);
+  assert.equal(CEO_REASONING_MIGRATION_STATUS.autoConvertInferredToPlan, false);
   assert.ok(CEO_REASONING_HOT_PATH.every((d) => d.authority !== "steering_copy"));
 });
 

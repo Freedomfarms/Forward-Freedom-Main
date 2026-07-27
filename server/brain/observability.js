@@ -27,7 +27,9 @@ export function logCeoContextAssembly(event = {}) {
     activeMission: {
       kind: event.activeMissionKind || null,
       executable: event.missionExecutable === true,
-      authority: "transitional_sketch",
+      authority: event.activeMissionAuthority || "transitional_sketch",
+      planId: event.planId || null,
+      planStatus: event.planStatus || null,
     },
     memoryCount: Number(event.memoryCount) || 0,
   };

@@ -69,6 +69,7 @@ const TABLES = [
   "transaction",
   "account",
   "brainJob",
+  "plan",
 ];
 
 // Supports plain values plus the { increment } atomic update Prisma offers.
@@ -157,6 +158,16 @@ export function createFakeDb(seed = {}) {
                 lockedAt: null,
                 lastError: null,
                 completedAt: null,
+              }
+            : {}),
+          ...(table === "plan"
+            ? {
+                status: "ACTIVE",
+                missionScope: null,
+                horizon: null,
+                sourceConversationId: null,
+                lastReviewedAt: null,
+                updatedAt: now,
               }
             : {}),
           ...args.data,

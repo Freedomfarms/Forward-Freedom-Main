@@ -5,6 +5,7 @@ import { applyCeoActions } from "../agents/ceoOps.js";
 import { AgentError } from "../agents/errors.js";
 import { getWebSearchTools } from "../agents/llm.js";
 import { WEEKDAY_NAMES } from "../agents/schedule.js";
+import { createPlan, getPlan, updatePlan } from "./plans.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Freedom Brain tool belt — Determine Required Tools / Execute / Reflect.
@@ -274,6 +275,156 @@ export function buildBrainToolBelt({ userId, ceoAgentConfigId, conversationId, t
     },
   });
 
+  const createPlanTool = tool({
+    description:
+      "Create a durable CEO Plan (executive memory) when the user expresses lasting intent. Plans store objective/situation/decisions/open items/planned actions only — never workflow scripts, tool permissions, or execution proof. Do not create Plans for ordinary one-off questions. Server dedupes similar ACTIVE Plans in the same mission scope.",
+    inputSchema: jsonSchema({
+      type: "object",
+      properties: {
+        objective: {
+          type: "string",
+          description: "What the user is trying to accomplish (durable intent).",
+        },
+        confidence: { type: "string", enum: ["low", "medium", "high"] },
+        title: { type: "string" },
+        missionScope: {
+          type: "string",
+          description:
+            "Scope key for independent concurrent plans. Omit for the primary/default mission.",
+        },
+        independent: {
+          type: "boolean",
+          description:
+            "True only when this objective is clearly independent of an existing ACTIVE Plan.",
+        },
+        horizon: { type: "string", enum: ["weeks", "months", "quarters"] },
+        reason: {
+          type: "string",
+          description: "Why this Plan is being created (durable intent signal).",
+        },
+      },
+      required: ["objective"],
+      additionalProperties: false,
+    }),
+    execute: async (input) => {
+      try {
+        const result = await createPlan({
+          userId,
+          objective: input.objective,
+          confidence: input.confidence,
+          title: input.title,
+          missionScope: input.missionScope,
+          independent: input.independent === true,
+          horizon: input.horizon,
+          sourceConversationId: conversationId,
+          reason: input.reason || "durable_intent",
+        });
+        if (result?.plan) turnState.plan = result.plan;
+        return result;
+      } catch (error) {
+        return toolResultFromError(error);
+      }
+    },
+  });
+
+  const updatePlanTool = tool({
+    description:
+      "Apply structured ops to the durable CEO Plan. Requires a reason. Allowed: objective, situation facts, decisions, open items, preferences, planned actions. Completing/failing an action REQUIRES execution evidence (tool_result | execution_record | system_state). Blocked: permissions, capabilities, workflow/next-question ops, claiming completion without evidence. Do not rewrite the whole Plan every turn — only meaningful changes.",
+    inputSchema: jsonSchema({
+      type: "object",
+      properties: {
+        planId: {
+          type: "string",
+          description: "Plan id. Omit to update the primary ACTIVE Plan.",
+        },
+        reason: {
+          type: "string",
+          description: "Why this update is meaningful (required; anti-thrash).",
+        },
+        ops: {
+          type: "array",
+          description: "List of structured Plan ops.",
+          items: {
+            type: "object",
+            properties: {
+              op: { type: "string" },
+              text: { type: "string" },
+              confidence: { type: "string", enum: ["low", "medium", "high"] },
+              status: {
+                type: "string",
+                enum: ["ACTIVE", "WAITING", "COMPLETED", "ABANDONED"],
+              },
+              horizon: { type: "string", enum: ["weeks", "months", "quarters"] },
+              field: {
+                type: "string",
+                enum: ["known", "assumptions", "constraints", "relevantContext", "preferences"],
+              },
+              by: { type: "string", enum: ["user", "ceo"] },
+              rationale: { type: "string" },
+              kind: { type: "string", enum: ["question", "blocker", "dependency"] },
+              id: { type: "string" },
+              owner: { type: "string", enum: ["user", "ceo", "agent"] },
+              summary: { type: "string" },
+              reason: { type: "string" },
+              evidence: {
+                type: "object",
+                properties: {
+                  kind: {
+                    type: "string",
+                    enum: ["tool_result", "execution_record", "system_state"],
+                  },
+                  summary: { type: "string" },
+                  ref: { type: "string" },
+                },
+                required: ["kind", "summary"],
+                additionalProperties: false,
+              },
+            },
+            required: ["op"],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ["reason", "ops"],
+      additionalProperties: false,
+    }),
+    execute: async (input) => {
+      try {
+        const result = await updatePlan({
+          userId,
+          planId: input.planId,
+          ops: input.ops,
+          reason: input.reason,
+        });
+        if (result?.plan) turnState.plan = result.plan;
+        return result;
+      } catch (error) {
+        return toolResultFromError(error);
+      }
+    },
+  });
+
+  const getPlanTool = tool({
+    description:
+      "Load the durable CEO Plan body (objective, situation, decisions, open items, actions, recent changeLog). Omit planId for the primary ACTIVE Plan. Plan is memory — not execution proof.",
+    inputSchema: jsonSchema({
+      type: "object",
+      properties: {
+        planId: { type: "string" },
+      },
+      additionalProperties: false,
+    }),
+    execute: async (input) => {
+      try {
+        const result = await getPlan({ userId, planId: input?.planId || null });
+        if (result?.plan) turnState.plan = result.plan;
+        return result;
+      } catch (error) {
+        return toolResultFromError(error);
+      }
+    },
+  });
+
   return {
     ...getWebSearchTools({ maxUses: BRAIN_WEB_SEARCH_MAX_USES }),
     create_agent: createAgent,
@@ -282,5 +433,8 @@ export function buildBrainToolBelt({ userId, ceoAgentConfigId, conversationId, t
     delete_agent: deleteAgent,
     set_timezone: setTimezone,
     update_digest: updateDigest,
+    create_plan: createPlanTool,
+    update_plan: updatePlanTool,
+    get_plan: getPlanTool,
   };
 }

@@ -34,6 +34,10 @@ import { selectRelevantMemories } from "./relevance.js";
 import { buildApplicationWorldModel } from "./worldModel.js";
 import { logCeoContextAssembly } from "./observability.js";
 import { CEO_REASONING_MIGRATION_STATUS } from "./ceoReasoningDependencies.js";
+import {
+  loadPrimaryActivePlan,
+  toActiveMissionFromPlan,
+} from "./plans.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CEOContextAssembler — every CEO turn receives a structured snapshot of reality
@@ -41,8 +45,8 @@ import { CEO_REASONING_MIGRATION_STATUS } from "./ceoReasoningDependencies.js";
 //
 // CODE OWNS TRUTH · DATABASE OWNS STATE · TOOLS OWN CAPABILITIES · CEO OWNS JUDGMENT
 //
-// ceoReasoning.js remains a transitional continuity sketch only (Phase 1).
-// It must not override world-model truth or CEO judgment.
+// Dual-read ACTIVE MISSION: durable Plan wins when present; otherwise transitional
+// inferred sketch from ceoReasoning.js (never auto-converted into a Plan).
 // ─────────────────────────────────────────────────────────────────────────────
 
 const CHAT_HISTORY_LIMIT = 50;
@@ -57,6 +61,9 @@ export const CEO_ENABLED_TOOLS = Object.freeze([
   "delete_agent",
   "set_timezone",
   "update_digest",
+  "create_plan",
+  "update_plan",
+  "get_plan",
 ]);
 
 /**
@@ -167,15 +174,21 @@ export async function assembleCeoContext({
     }
   }
 
-  // Transitional continuity sketch — NOT the judgment authority.
-  const activeMission = sketchMissionFromConversation([...userMessagesInOrder, text], {
-    existingAgents: teamAgents || [],
-  });
-  if (activeMission) {
-    activeMission.authority = CEO_REASONING_MIGRATION_STATUS.role;
-    activeMission.judgmentOwner = CEO_REASONING_MIGRATION_STATUS.judgmentOwner;
+  // Dual-read: Plan is durable ACTIVE MISSION source; sketcher is temporary only.
+  const primaryPlan = await loadPrimaryActivePlan(userId);
+  let activeMission;
+  if (primaryPlan) {
+    activeMission = toActiveMissionFromPlan(primaryPlan.row, primaryPlan.body);
+  } else {
+    activeMission = sketchMissionFromConversation([...userMessagesInOrder, text], {
+      existingAgents: teamAgents || [],
+    });
+    if (activeMission) {
+      activeMission.authority = CEO_REASONING_MIGRATION_STATUS.role;
+      activeMission.judgmentOwner = CEO_REASONING_MIGRATION_STATUS.judgmentOwner;
+    }
+    logCeoReasoning(activeMission);
   }
-  logCeoReasoning(activeMission);
 
   // Control plane: allow/deny safety only — do not pass sketcher mission as authority.
   const controlPlane = assessControlPlaneRequest({ message: text });
@@ -205,11 +218,18 @@ export async function assembleCeoContext({
     memory: {
       relevant: ownedMemories,
       activeMission,
-      // Previous decisions / unresolved questions: transitional from sketch only.
-      previousDecisions: activeMission?.decision ? [activeMission.decision] : [],
-      unresolvedQuestions: activeMission?.selectedQuestion
-        ? [activeMission.selectedQuestion]
-        : activeMission?.missing || [],
+      previousDecisions:
+        activeMission?.authority === "plan"
+          ? activeMission.decisions || []
+          : activeMission?.decision
+            ? [activeMission.decision]
+            : [],
+      unresolvedQuestions:
+        activeMission?.authority === "plan"
+          ? (activeMission.openItems || []).map((item) => item.text)
+          : activeMission?.selectedQuestion
+            ? [activeMission.selectedQuestion]
+            : activeMission?.missing || [],
     },
     operations: {
       agentRoster: teamAgents,
@@ -258,6 +278,9 @@ export async function assembleCeoContext({
     },
     activeMissionKind: activeMission?.missionKind || null,
     missionExecutable: activeMission?.missionExecutable === true,
+    activeMissionAuthority: activeMission?.authority || null,
+    planId: activeMission?.planId || null,
+    planStatus: activeMission?.status || null,
     memoryCount: ownedMemories.length,
   });
 
@@ -301,9 +324,14 @@ function buildCeoPromptSections({
   history,
   text,
 }) {
+  const missionAuthorityNote =
+    activeMission?.authority === "plan"
+      ? "ACTIVE MISSION comes from the durable Plan (executive memory). It is not proof of execution and not a workflow script."
+      : "ACTIVE MISSION is inferred metadata only (no Plan yet) — validate if relevant; you own judgment. Create a Plan only for durable intent.";
+
   const sections = [
     "Reply to the user's new message using the structured context below.",
-    "APPLICATION STATE and PLATFORM CAPABILITIES are authoritative. ACTIVE MISSION is inferred metadata only — validate if relevant; you own judgment.",
+    `APPLICATION STATE and PLATFORM CAPABILITIES are authoritative. ${missionAuthorityNote}`,
     ...renderIdentitySituationBrief({
       identities,
       activeMission,
