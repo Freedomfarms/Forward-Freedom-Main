@@ -177,14 +177,13 @@ export async function assembleCeoContext({
   }
   logCeoReasoning(activeMission);
 
-  const controlPlane = assessControlPlaneRequest({
-    message: text,
-    missionState: activeMission,
-  });
+  // Control plane: allow/deny safety only — do not pass sketcher mission as authority.
+  const controlPlane = assessControlPlaneRequest({ message: text });
   const executionState = buildExecutionState({
     intent: controlPlane.intent,
     capabilityAssessment: controlPlane.capabilityAssessment,
     agentDefinition: controlPlane.plannedAgent,
+    userMessage: text,
   });
 
   // Trusted application world model (DB-backed summaries only).
@@ -304,23 +303,10 @@ function buildCeoPromptSections({
 }) {
   const sections = [
     "Reply to the user's new message using the structured context below.",
-    "APPLICATION STATE and PLATFORM CAPABILITIES are authoritative. The ACTIVE MISSION sketch is transitional continuity support only — it must not override world-model truth or invent capabilities.",
+    "APPLICATION STATE and PLATFORM CAPABILITIES are authoritative. ACTIVE MISSION is inferred metadata only — validate if relevant; you own judgment.",
     ...renderIdentitySituationBrief({
       identities,
-      activeMission: activeMission
-        ? {
-            ...activeMission,
-            mission: activeMission.mission,
-            missionKind: activeMission.missionKind,
-            // Surface authority so the model does not treat the sketch as law.
-            known: [
-              ...(activeMission.known || []),
-              `Mission sketch authority: ${activeMission.authority || "transitional_sketch"}`,
-            ],
-            missing: activeMission.missing,
-            missionExecutable: activeMission.missionExecutable,
-          }
-        : null,
+      activeMission,
       relevantMemories: ownedMemories,
     }),
     dataSection(

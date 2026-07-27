@@ -75,7 +75,8 @@ test("Situation Brief renders separated identity sections (never merged)", () =>
   assert.match(sections, /ASSISTANT IDENTITY/);
   assert.match(sections, /USER IDENTITY/);
   assert.match(sections, /WORKSPACE/);
-  assert.match(sections, /ACTIVE MISSION/);
+  assert.match(sections, /ACTIVE MISSION \(inferred, not authoritative\)/);
+  assert.match(sections, /possible_objective:/);
   assert.match(sections, /RELEVANT MEMORIES/);
   assert.match(sections, /owner: assistant/);
   assert.match(sections, /owner: user/);

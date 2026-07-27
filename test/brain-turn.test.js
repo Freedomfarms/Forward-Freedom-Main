@@ -108,19 +108,17 @@ beforeEach(() => {
   installLlm();
 });
 
-test("isBrainChatEnabled defaults ON; opt out with 0/false", (t) => {
+test("isBrainChatEnabled always ON (CEO world-model path is mandatory)", (t) => {
   if (!requireSetup(t)) return;
   const original = process.env.FREEDOM_BRAIN_CHAT;
   try {
     delete process.env.FREEDOM_BRAIN_CHAT;
     assert.equal(isBrainChatEnabled(), true);
     process.env.FREEDOM_BRAIN_CHAT = "0";
-    assert.equal(isBrainChatEnabled(), false);
-    process.env.FREEDOM_BRAIN_CHAT = "false";
-    assert.equal(isBrainChatEnabled(), false);
-    process.env.FREEDOM_BRAIN_CHAT = "1";
     assert.equal(isBrainChatEnabled(), true);
-    process.env.FREEDOM_BRAIN_CHAT = "true";
+    process.env.FREEDOM_BRAIN_CHAT = "false";
+    assert.equal(isBrainChatEnabled(), true);
+    process.env.FREEDOM_BRAIN_CHAT = "1";
     assert.equal(isBrainChatEnabled(), true);
   } finally {
     if (original === undefined) delete process.env.FREEDOM_BRAIN_CHAT;

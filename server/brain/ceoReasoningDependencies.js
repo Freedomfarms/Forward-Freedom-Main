@@ -1,76 +1,70 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Migration inventory: ceoReasoning.js is a transitional shadow reasoner.
+// Migration inventory: ceoReasoning.js residual surface area.
 //
-// Phase 1: keep ACTIVE MISSION continuity support; do not expand; do not let it
-// override CEO judgment. World model + tools + constitution are authoritative.
-// Phase 2: replace with durable plan state and delete the regex sketcher.
+// Phase 2A: removed from decision shaping (no question ranking / mission
+// classification in the CEO hot path). Sketch may still run as inferred
+// metadata until Plan store exists.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Every live/call-site dependency on server/agents/ceoReasoning.js.
- * Keep this list honest when wiring changes — tests assert it stays documented.
- */
-export const CEO_REASONING_DEPENDENCIES = Object.freeze([
+/** Still called on the Brain hot path — but only as inferred metadata. */
+export const CEO_REASONING_HOT_PATH = Object.freeze([
   Object.freeze({
     file: "server/brain/ceoContextAssembler.js",
-    usage: "Calls sketchMissionFromConversation for transitional ACTIVE MISSION continuity.",
-    authority: "hint_only",
-    phase2: "Replace with durable Plan / ActiveMission store.",
+    usage:
+      "Calls sketchMissionFromConversation to populate ACTIVE MISSION inferred metadata only (possible_objective / confidence). Not used for question ordering or control-plane steering.",
+    authority: "inferred_metadata_only",
+    phase2b: "Replace with durable Plan / ActiveMission store; then delete sketcher call.",
   }),
   Object.freeze({
-    file: "server/brain/controlPlane.js",
-    usage: "Reads missionState.missionKind / createsNewCapability for intent + capability assessment.",
-    authority: "hint_only",
-    phase2: "Drive control-plane assessment from durable plan + tool proofs only.",
-  }),
-  Object.freeze({
-    file: "server/brain/prompts.js",
-    usage: "Imports CEO_MISSION_REASONING_RULES into BRAIN_SYSTEM_PROMPT.",
-    authority: "steering_copy",
-    phase2: "Replace with a short constitution (truth/permissions/Done) without interview pipeline copy.",
-  }),
-  Object.freeze({
-    file: "server/brain/index.js",
+    file: "server/brain/ceoContextAssembler.js",
     usage: "logCeoReasoning(activeMission) for debug observability.",
     authority: "observability",
-    phase2: "Log durable plan + world-model meta instead.",
+    phase2b: "Log durable plan + world-model meta instead.",
   }),
+]);
+
+/** Offline / test-only — not part of CEO judgment. */
+export const CEO_REASONING_OFFLINE = Object.freeze([
   Object.freeze({
     file: "server/agents/ceoEfficiencyMetrics.js",
     usage: "Efficiency metrics consume sketcher missionExecutable / questionsAsked.",
     authority: "metrics_only",
-    phase2: "Retarget metrics at durable plan resolution, or drop.",
   }),
   Object.freeze({
     file: "test/ceo-reasoning.test.js",
-    usage: "Unit coverage of sketcher heuristics.",
+    usage: "Unit coverage of sketcher heuristics (legacy).",
     authority: "tests",
-    phase2: "Delete or rewrite against Plan store.",
   }),
   Object.freeze({
     file: "test/ceo-brain-acceptance.test.js",
-    usage: "Acceptance suite asserts sketcher missionKinds / gaps.",
+    usage: "Acceptance suite asserts sketcher missionKinds / gaps (legacy).",
     authority: "tests",
-    phase2: "Retarget to world-model + tool-proof behavior.",
   }),
   Object.freeze({
     file: "test/ceo-brain-continuity.test.js",
-    usage: "Multi-turn continuity via advanceMissionState.",
+    usage: "Multi-turn continuity via advanceMissionState (legacy).",
     authority: "tests",
-    phase2: "Retarget to durable plan continuity.",
   }),
   Object.freeze({
     file: "test/ceo-brain-efficiency-metrics.test.js",
-    usage: "Efficiency ceilings against sketcher outputs.",
+    usage: "Efficiency ceilings against sketcher outputs (legacy).",
     authority: "tests",
-    phase2: "Retarget or retire with sketcher.",
   }),
 ]);
 
+/** @deprecated Use CEO_REASONING_HOT_PATH + CEO_REASONING_OFFLINE. */
+export const CEO_REASONING_DEPENDENCIES = Object.freeze([
+  ...CEO_REASONING_HOT_PATH,
+  ...CEO_REASONING_OFFLINE,
+]);
+
 export const CEO_REASONING_MIGRATION_STATUS = Object.freeze({
-  phase: 1,
-  role: "transitional_continuity_sketch",
+  phase: "2A",
+  role: "inferred_metadata_only",
   judgmentOwner: "llm_plus_world_model",
+  decisionShaping: false,
+  questionRankingInHotPath: false,
+  missionClassificationInHotPath: false,
   deletionCandidate: true,
   doNotExpand: true,
 });

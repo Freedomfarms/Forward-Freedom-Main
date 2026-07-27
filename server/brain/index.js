@@ -45,14 +45,10 @@ const EMPTY_REPLY_FALLBACK =
   "A generation error occurred and I could not complete that reply. Please ask again, or try rephrasing.";
 
 /**
- * CEO chat uses Freedom Brain by default (one brain). Set FREEDOM_BRAIN_CHAT=0
- * or false to force the legacy respondToChat JSON envelope.
+ * @deprecated CEO HTTP chat always uses brainTurn. Kept for older tests /
+ * diagnostics; opt-out no longer affects /api/agents/ceo/chat.
  */
 export function isBrainChatEnabled() {
-  const raw = String(process.env.FREEDOM_BRAIN_CHAT || "").trim().toLowerCase();
-  if (raw === "0" || raw === "false" || raw === "off") return false;
-  if (raw === "1" || raw === "true" || raw === "on") return true;
-  // Default ON — separate create_agent interview mode is retired.
   return true;
 }
 
@@ -291,6 +287,7 @@ async function enforceCapabilityConsistency({
     capabilityAssessment: controlPlane.capabilityAssessment,
     turnState,
     agentDefinition: controlPlane.plannedAgent,
+    userMessage: context.lastUserMessage,
   });
 
   for (let attempt = 0; attempt <= CAPABILITY_REGENERATE_ATTEMPTS; attempt += 1) {

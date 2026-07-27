@@ -9,27 +9,29 @@ import {
   shouldCommitAgentType,
   sketchMissionFromMessage,
 } from "../server/agents/ceoReasoning.js";
-import { BRAIN_SYSTEM_PROMPT } from "../server/brain/prompts.js";
+import { BRAIN_SYSTEM_PROMPT, CEO_EXECUTIVE_CONTRACT } from "../server/brain/prompts.js";
 import { isBrainChatEnabled } from "../server/brain/index.js";
 
-test("CEO / Brain prompts share mission reasoning rules (no checklist interview)", () => {
+test("Brain prompt uses executive contract — sketcher rules are offline only", () => {
+  // Legacy constant may still exist for offline/metrics tests.
   assert.match(CEO_MISSION_REASONING_RULES, /ONE highest-value question/i);
-  assert.match(CEO_MISSION_REASONING_RULES, /Never invent agent type/i);
-  assert.match(CEO_MISSION_REASONING_RULES, /social media reports/i);
   assert.doesNotMatch(CEO_MISSION_REASONING_RULES, /INTERVIEW_TOPICS/);
+  // Live Brain prompt must NOT include the interview pipeline.
+  assert.ok(!BRAIN_SYSTEM_PROMPT.includes(CEO_MISSION_REASONING_RULES));
+  assert.match(CEO_EXECUTIVE_CONTRACT, /Ask only questions that truly block progress/i);
   assert.match(BRAIN_SYSTEM_PROMPT, /single executive intelligence/i);
-  assert.match(BRAIN_SYSTEM_PROMPT, /Never invent agent type/i);
-  assert.match(BRAIN_SYSTEM_PROMPT, /gather execution blockers first/i);
-  assert.doesNotMatch(BRAIN_SYSTEM_PROMPT, /Prefer one-shot create_agent when the user gave enough detail/);
+  assert.match(BRAIN_SYSTEM_PROMPT, /never invent unavailable capabilities/i);
+  assert.doesNotMatch(BRAIN_SYSTEM_PROMPT, /ONE highest-value question/i);
+  assert.doesNotMatch(BRAIN_SYSTEM_PROMPT, /gather execution blockers first/i);
 });
 
-test("Brain chat is enabled by default (one brain)", () => {
+test("Brain chat path is always on (CEO world-model path)", () => {
   const previous = process.env.FREEDOM_BRAIN_CHAT;
   try {
     delete process.env.FREEDOM_BRAIN_CHAT;
     assert.equal(isBrainChatEnabled(), true);
     process.env.FREEDOM_BRAIN_CHAT = "0";
-    assert.equal(isBrainChatEnabled(), false);
+    assert.equal(isBrainChatEnabled(), true);
     process.env.FREEDOM_BRAIN_CHAT = "true";
     assert.equal(isBrainChatEnabled(), true);
   } finally {

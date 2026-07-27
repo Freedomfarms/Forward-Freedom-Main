@@ -12,13 +12,13 @@ import {
 } from "../capabilities/registry.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CEO control plane — intent ≠ execution, capability truth, execution state.
+// CEO control plane — capability truth + execution safety.
 //
-// Mirrors the identity architecture: authoritative structured state → Situation
-// Brief sections → deterministic post-reply validation → optional regenerate.
-// Prompt rules alone must not be the only guard against hallucinated "Done".
+// Answers: "Is this action allowed?" / "Can we claim Done?"
+// Does NOT answer: "What should the CEO think?" / "What question next?"
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** @deprecated Soft labels for safety gates only — not prompt steering. */
 export const CEO_INTENTS = Object.freeze({
   INFORMATION_REQUEST: "information_request",
   ONE_TIME_TASK: "one_time_task",
@@ -28,16 +28,14 @@ export const CEO_INTENTS = Object.freeze({
 });
 
 /**
- * Classify user intent separately from whether the system can execute it.
+ * Lightweight request shape for safety gates (creation vs not).
+ * Not injected as interview steering — used for Done/live validation only.
  */
-export function classifyIntent(message, missionState = null) {
+export function classifyIntent(message) {
   const text = String(message || "").trim();
   const lower = text.toLowerCase();
-  const kind = missionState?.missionKind || null;
 
   if (
-    kind === "modify" ||
-    missionState?.modifiesExisting ||
     (/\b(make my|change|update|rename|pause|resume|reschedule|tweak|edit)\b/i.test(text) &&
       /\b(agent|report|schedule|digest|reminder|brief)\b/i.test(text))
   ) {
@@ -45,14 +43,10 @@ export function classifyIntent(message, missionState = null) {
   }
 
   if (
-    kind === "create" ||
-    kind === "execute" ||
-    missionState?.createsNewCapability ||
     (/\b(create|build|set up|stand up)\b/i.test(lower) &&
       /\b(agent|bot|monitor|watcher)\b/i.test(lower)) ||
     /\b(i need an? agent|trading agent|monitoring agent)\b/i.test(lower)
   ) {
-    // Recurring vs one-shot creation
     if (
       /\b(every|daily|weekly|monday|tuesday|wednesday|thursday|friday|weekday|recurring|schedule)\b/i.test(
         lower
@@ -71,134 +65,61 @@ export function classifyIntent(message, missionState = null) {
   }
 
   if (
-    kind === "answer" ||
-    kind === "clarify" ||
-    (/\b(what|who|how|why|which|explain|tell me)\b/i.test(lower) &&
-      !/\b(create|build|set up)\b/i.test(lower))
-  ) {
-    return CEO_INTENTS.INFORMATION_REQUEST;
-  }
-
-  if (
     /\b(run|check|look up|research|summarize|remind me)\b/i.test(lower) &&
     !/\b(create|build|set up|agents?)\b/i.test(lower)
   ) {
     return CEO_INTENTS.ONE_TIME_TASK;
   }
 
-  return kind === "execute"
-    ? CEO_INTENTS.ONE_TIME_TASK
-    : CEO_INTENTS.INFORMATION_REQUEST;
+  return CEO_INTENTS.INFORMATION_REQUEST;
 }
 
 /**
- * Full control-plane assessment for a turn: intent + required capabilities +
- * planned agent definition when creation is requested but blockers exist.
+ * Control-plane assessment: required capabilities + allow/deny for mutations.
+ * Does not select questions or prescribe mission type to the model.
  */
-export function assessControlPlaneRequest({
-  message,
-  missionState = null,
-  platforms = null,
-} = {}) {
-  const intent = classifyIntent(message, missionState);
-  const platformList =
-    platforms ||
-    detectPlatformNames(message) ||
-    extractPlatformsFromKnown(missionState?.known);
-
+export function assessControlPlaneRequest({ message = "" } = {}) {
+  const text = String(message || "");
+  const intent = classifyIntent(text); // safety-gate label only
+  const platforms = detectPlatformNames(text);
   const required = resolveRequiredCapabilities({
-    message,
-    platforms: platformList,
-    missionKind: missionState?.missionKind,
-    tentativeAgentType: missionState?.tentativeAgentType,
+    message: text,
+    platforms,
   });
-
   const capabilityAssessment = assessCapabilities(required);
-  const creationIntent =
+  const creationLike =
     intent === CEO_INTENTS.NEW_AGENT_CREATION ||
-    intent === CEO_INTENTS.RECURRING_MISSION;
+    intent === CEO_INTENTS.RECURRING_MISSION ||
+    looksLikeAgentCreationRequest(text);
 
   let plannedAgent = null;
-  if (creationIntent) {
+  if (creationLike && !capabilityAssessment.allAvailable) {
     plannedAgent = buildPlannedAgentDefinition({
-      name: inferAgentName(message, missionState),
-      type: missionState?.tentativeAgentType || null,
-      purpose: missionState?.mission || String(message || "").slice(0, 200),
+      name: null,
+      type: null,
+      purpose: text.slice(0, 200) || "Planned agent",
       requiredCapabilities: required,
       schedule: intent === CEO_INTENTS.RECURRING_MISSION ? { requested: true } : null,
     });
   }
 
-  const systemAction = determineSystemAction({
-    intent,
-    capabilityAssessment,
-    missionState,
-  });
-
   return {
+    // Kept for Done validators / execution state — not for interview steering.
     intent,
     requiredCapabilities: required,
     capabilityAssessment,
     plannedAgent,
-    systemAction,
-    platforms: platformList,
-  };
-}
-
-function determineSystemAction({ intent, capabilityAssessment, missionState }) {
-  if (!capabilityAssessment.allAvailable) {
-    return {
-      possible: false,
-      action: "explain_capability_gap",
-      canClaimComplete: false,
-      nextStep:
-        "Design the agent definition and list missing connectors; do not claim the agent is live.",
-    };
-  }
-
-  if (
-    intent === CEO_INTENTS.NEW_AGENT_CREATION ||
-    intent === CEO_INTENTS.RECURRING_MISSION
-  ) {
-    if (missionState?.missionExecutable) {
-      return {
-        possible: true,
-        action: "create_agent",
-        canClaimComplete: false, // only after tool confirms
-        nextStep: "Call create_agent when execution facts are confirmed.",
-      };
-    }
-    return {
+    platforms,
+    systemAction: {
+      // Answering / explaining is always allowed.
       possible: true,
-      action: "clarify_then_create",
+      // Mutations that need missing caps are not allowed.
+      mutationsAllowed: capabilityAssessment.allAvailable || required.length === 0,
       canClaimComplete: false,
-      nextStep: "Ask the highest-value execution blocker, then create.",
-    };
-  }
-
-  if (intent === CEO_INTENTS.AGENT_MODIFICATION) {
-    return {
-      possible: true,
-      action: "update_agent",
-      canClaimComplete: false,
-      nextStep: "Call update_agent after confirming which agent to change.",
-    };
-  }
-
-  if (intent === CEO_INTENTS.ONE_TIME_TASK) {
-    return {
-      possible: true,
-      action: "run_or_answer",
-      canClaimComplete: false,
-      nextStep: "Delegate via run_agent or answer from tools/context.",
-    };
-  }
-
-  return {
-    possible: true,
-    action: "answer",
-    canClaimComplete: false,
-    nextStep: "Answer from structured context; do not invent capabilities.",
+      reason: capabilityAssessment.allAvailable
+        ? "Required capabilities available (or none required)."
+        : "Required capabilities unavailable — do not claim live completion.",
+    },
   };
 }
 
@@ -210,16 +131,20 @@ export function buildExecutionState({
   capabilityAssessment = null,
   turnState = null,
   agentDefinition = null,
+  userMessage = "",
 } = {}) {
   const assessment = capabilityAssessment || assessCapabilities([]);
   const agent = turnState?.agent || null;
   const definition = agentDefinition || null;
+  const resolvedIntent = intent || classifyIntent(userMessage);
 
   const objectCreated = Boolean(agent?.id);
   const agentRegistered = Boolean(agent?.id && agent?.agentType);
   const scheduleCreated = Boolean(
     agent?.schedule?.preset ||
-      (definition?.schedule && definition.schedule !== null && definition.status === AGENT_DEFINITION_STATUS.ACTIVE)
+      (definition?.schedule &&
+        definition.schedule !== null &&
+        definition.status === AGENT_DEFINITION_STATUS.ACTIVE)
   );
   const integrationsConnected = assessment.allAvailable;
   const dataSourceAvailable =
@@ -228,8 +153,9 @@ export function buildExecutionState({
     (assessment.required.length === 0 || assessment.available.length > 0);
 
   const creationIntent =
-    intent === CEO_INTENTS.NEW_AGENT_CREATION ||
-    intent === CEO_INTENTS.RECURRING_MISSION;
+    resolvedIntent === CEO_INTENTS.NEW_AGENT_CREATION ||
+    resolvedIntent === CEO_INTENTS.RECURRING_MISSION ||
+    looksLikeAgentCreationRequest(userMessage);
 
   const blockers = [...(assessment.blockers || [])];
   if (creationIntent && !assessment.allAvailable) {
@@ -240,7 +166,7 @@ export function buildExecutionState({
   }
   if (
     creationIntent &&
-    intent === CEO_INTENTS.RECURRING_MISSION &&
+    resolvedIntent === CEO_INTENTS.RECURRING_MISSION &&
     objectCreated &&
     !scheduleCreated
   ) {
@@ -250,7 +176,7 @@ export function buildExecutionState({
   const canClaimComplete =
     assessment.allAvailable &&
     (!creationIntent || (objectCreated && agentRegistered)) &&
-    (intent !== CEO_INTENTS.RECURRING_MISSION || scheduleCreated || !creationIntent);
+    (resolvedIntent !== CEO_INTENTS.RECURRING_MISSION || scheduleCreated || !creationIntent);
 
   return {
     objectCreated,
@@ -260,7 +186,7 @@ export function buildExecutionState({
     dataSourceAvailable,
     canClaimComplete,
     blockers: uniqueStrings(blockers),
-    intent,
+    intent: resolvedIntent,
     agentId: agent?.id || definition?.id || null,
     agentStatus: definition?.status || (agent ? AGENT_DEFINITION_STATUS.ACTIVE : null),
   };
@@ -268,7 +194,6 @@ export function buildExecutionState({
 
 /**
  * Deterministic check: reject hallucinated completion claims.
- * Does not rely on prompt rules.
  */
 export function validateCapabilityConsistency(
   reply,
@@ -284,9 +209,14 @@ export function validateCapabilityConsistency(
   if (!text) return { ok: true, failures };
 
   const assessment = capabilityAssessment || assessCapabilities([]);
+  const resolvedIntent = intent || classifyIntent(userMessage);
   const state =
     executionState ||
-    buildExecutionState({ intent, capabilityAssessment: assessment });
+    buildExecutionState({
+      intent: resolvedIntent,
+      capabilityAssessment: assessment,
+      userMessage,
+    });
 
   const claimsComplete = claimsMissionComplete(text);
   const claimsLiveAgent = claimsAgentLive(text);
@@ -297,8 +227,8 @@ export function validateCapabilityConsistency(
   }
 
   if (
-    (intent === CEO_INTENTS.NEW_AGENT_CREATION ||
-      intent === CEO_INTENTS.RECURRING_MISSION ||
+    (resolvedIntent === CEO_INTENTS.NEW_AGENT_CREATION ||
+      resolvedIntent === CEO_INTENTS.RECURRING_MISSION ||
       looksLikeAgentCreationRequest(userMessage)) &&
     !assessment.allAvailable &&
     claimsLiveAgent &&
@@ -311,15 +241,13 @@ export function validateCapabilityConsistency(
     failures.push("claimed_done_without_execution_state");
   }
 
-  // Specific unavailable domains mentioned as fulfilled.
   if (!assessment.allAvailable) {
     for (const cap of assessment.unavailable) {
       if (cap.id === "stock_trading" && claimsTradingLive(text) && !acknowledgesGap) {
         failures.push("claimed_trading_capability");
       }
       if (
-        (cap.id === "social_media_monitoring" ||
-          cap.id.endsWith("_connector")) &&
+        (cap.id === "social_media_monitoring" || cap.id.endsWith("_connector")) &&
         claimsSocialLive(text) &&
         !acknowledgesGap
       ) {
@@ -350,26 +278,22 @@ export function renderCapabilitySituationBrief({
     const assessment = controlPlane.capabilityAssessment || assessCapabilities([]);
     sections.push(
       dataSection(
-        "CONTROL PLANE ASSESSMENT",
+        "CONTROL PLANE ASSESSMENT (allow/deny safety — not judgment)",
         [
-          `intent: ${controlPlane.intent || "(unknown)"}`,
-          `system_action: ${controlPlane.systemAction?.action || "(none)"}`,
-          `action_possible: ${controlPlane.systemAction?.possible ? "yes" : "no"}`,
+          `mutations_allowed: ${controlPlane.systemAction?.mutationsAllowed ? "yes" : "no"}`,
           `required_capabilities: ${formatList(controlPlane.requiredCapabilities)}`,
           `unavailable: ${formatList(assessment.unavailable.map((c) => c.id))}`,
           `blockers: ${formatList(assessment.blockers)}`,
-          `next_step: ${controlPlane.systemAction?.nextStep || "(none)"}`,
+          `reason: ${controlPlane.systemAction?.reason || "(none)"}`,
           controlPlane.plannedAgent
             ? [
-                "planned_agent:",
-                `  name: ${controlPlane.plannedAgent.name || "(unnamed)"}`,
-                `  type: ${controlPlane.plannedAgent.type || "(uncommitted)"}`,
-                `  purpose: ${controlPlane.plannedAgent.purpose}`,
+                "planned_agent_if_blocked:",
                 `  status: ${controlPlane.plannedAgent.status}`,
+                `  purpose: ${controlPlane.plannedAgent.purpose}`,
                 `  capabilities: ${formatList(controlPlane.plannedAgent.capabilities)}`,
                 `  blockers: ${formatList(controlPlane.plannedAgent.blockers)}`,
               ].join("\n")
-            : "planned_agent: (none)",
+            : "planned_agent_if_blocked: (none)",
         ].join("\n")
       )
     );
@@ -401,13 +325,11 @@ export function renderCapabilityValidationRetry(controlPlane, failures = [], exe
     "CAPABILITY CONTROL-PLANE CORRECTION",
     [
       `validation_failed: ${failures.join(", ") || "capability_inconsistency"}`,
-      `intent: ${controlPlane?.intent || "(unknown)"}`,
       `unavailable_capabilities: ${formatList(assessment.unavailable.map((c) => c.id))}`,
       `blockers: ${formatList(assessment.blockers)}`,
       `execution.can_claim_complete: ${executionState?.canClaimComplete ? "yes" : "no"}`,
       'Do not claim the agent is live or say "Done." Explain that required capabilities are not connected.',
       'Preferred framing: "I can design this agent, but these capabilities are not currently connected."',
-      "Propose the next concrete step (connect integrations, or offer an available limited substitute clearly labeled as limited).",
     ].join("\n")
   );
 }
@@ -439,7 +361,9 @@ function acknowledgesCapabilityGap(text) {
 function claimsTradingLive(text) {
   return (
     /\b(trading agent|stock trading|brokerage)\b/i.test(text) &&
-    (claimsMissionComplete(text) || claimsAgentLive(text) || /\b(will trade|can trade|execute trades)\b/i.test(text))
+    (claimsMissionComplete(text) ||
+      claimsAgentLive(text) ||
+      /\b(will trade|can trade|execute trades)\b/i.test(text))
   );
 }
 
@@ -453,25 +377,10 @@ function claimsSocialLive(text) {
 }
 
 function looksLikeAgentCreationRequest(message) {
-  return /\b(create|build|set up|stand up)\b/i.test(message || "") &&
-    /\b(agent|monitor|trading|watcher)\b/i.test(message || "");
-}
-
-function extractPlatformsFromKnown(known = []) {
-  const platforms = [];
-  for (const fact of known || []) {
-    platforms.push(...detectPlatformNames(String(fact)));
-  }
-  return [...new Set(platforms)];
-}
-
-function inferAgentName(message, missionState) {
-  if (/\bsocial\b/i.test(message || "") || /\bsocial\b/i.test(missionState?.mission || "")) {
-    return "Social Media Review";
-  }
-  if (/\btrad(e|ing)\b/i.test(message || "")) return "Stock Trading";
-  if (/\bcompetitor/i.test(message || "")) return "Competitor Watch";
-  return null;
+  return (
+    /\b(create|build|set up|stand up)\b/i.test(message || "") &&
+    /\b(agent|monitor|trading|watcher)\b/i.test(message || "")
+  );
 }
 
 function formatList(items) {

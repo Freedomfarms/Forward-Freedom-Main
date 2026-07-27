@@ -47,7 +47,9 @@ test("regression: stock trading agent — CEO cannot claim Done", () => {
   assert.equal(controlPlane.intent, CEO_INTENTS.NEW_AGENT_CREATION);
   assert.ok(controlPlane.requiredCapabilities.includes("stock_trading"));
   assert.equal(controlPlane.capabilityAssessment.allAvailable, false);
-  assert.equal(controlPlane.systemAction.possible, false);
+  // Answering is always possible; mutations that need missing caps are not.
+  assert.equal(controlPlane.systemAction.possible, true);
+  assert.equal(controlPlane.systemAction.mutationsAllowed, false);
   assert.equal(controlPlane.systemAction.canClaimComplete, false);
   assert.equal(controlPlane.plannedAgent.status, AGENT_DEFINITION_STATUS.PLANNED);
 
@@ -138,7 +140,7 @@ test("regression: social media monitoring — checks capability registry before 
   );
 });
 
-test("intent classification separates information, tasks, missions, create, modify", () => {
+test("intent labels remain available for safety gates only (not prompt steering)", () => {
   assert.equal(
     classifyIntent("What agents do I have?"),
     CEO_INTENTS.INFORMATION_REQUEST
@@ -152,17 +154,11 @@ test("intent classification separates information, tasks, missions, create, modi
     CEO_INTENTS.NEW_AGENT_CREATION
   );
   assert.equal(
-    classifyIntent(
-      "Create an agent to review Instagram posts daily at 6pm.",
-      { missionKind: "create", createsNewCapability: true }
-    ),
+    classifyIntent("Create an agent to review Instagram posts daily at 6pm."),
     CEO_INTENTS.RECURRING_MISSION
   );
   assert.equal(
-    classifyIntent("Make my supplier agent send reports earlier.", {
-      missionKind: "modify",
-      modifiesExisting: true,
-    }),
+    classifyIntent("Make my supplier agent send reports earlier."),
     CEO_INTENTS.AGENT_MODIFICATION
   );
 });
@@ -249,6 +245,8 @@ test("Brain system prompt points at control-plane sections, not ad-hoc capabilit
   assert.match(BRAIN_SYSTEM_PROMPT, /CONTROL PLANE ASSESSMENT/);
   assert.match(BRAIN_SYSTEM_PROMPT, /EXECUTION STATE/);
   assert.match(BRAIN_SYSTEM_PROMPT, /APPLICATION STATE/);
+  assert.match(BRAIN_SYSTEM_PROMPT, /allow\/deny safety/i);
+  assert.doesNotMatch(BRAIN_SYSTEM_PROMPT, /ONE highest-value question/i);
   // Registry content is data, not hardcoded Instagram/trading exception lists in the system prompt.
   assert.doesNotMatch(BRAIN_SYSTEM_PROMPT, /WendyOcrypto/);
   assert.doesNotMatch(BRAIN_SYSTEM_PROMPT, /never say Done.*Instagram/i);

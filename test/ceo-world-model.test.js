@@ -96,6 +96,7 @@ test("CEO enabled tools match real Brain tool belt names only", () => {
 
 test("ceoReasoning migration inventory is documented and non-authoritative", () => {
   assert.equal(CEO_REASONING_MIGRATION_STATUS.judgmentOwner, "llm_plus_world_model");
+  assert.equal(CEO_REASONING_MIGRATION_STATUS.decisionShaping, false);
   assert.equal(CEO_REASONING_MIGRATION_STATUS.deletionCandidate, true);
   assert.equal(CEO_REASONING_MIGRATION_STATUS.doNotExpand, true);
   assert.ok(CEO_REASONING_DEPENDENCIES.length >= 5);
@@ -104,9 +105,9 @@ test("ceoReasoning migration inventory is documented and non-authoritative", () 
   );
 });
 
-test("Brain prompt points at APPLICATION STATE world model and transitional mission authority", () => {
+test("Brain prompt points at APPLICATION STATE world model and inferred mission metadata", () => {
   assert.match(BRAIN_SYSTEM_PROMPT, /APPLICATION STATE/);
   assert.match(BRAIN_SYSTEM_PROMPT, /unavailable_server_summary/);
-  assert.match(BRAIN_SYSTEM_PROMPT, /transitional continuity sketch/i);
+  assert.match(BRAIN_SYSTEM_PROMPT, /inferred metadata only/i);
   assert.match(BRAIN_SYSTEM_PROMPT, /ENABLED TOOLS/);
 });

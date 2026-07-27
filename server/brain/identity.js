@@ -175,21 +175,44 @@ export function renderIdentitySituationBrief({
 
   sections.push(
     dataSection(
-      "ACTIVE MISSION",
-      activeMission
-        ? [
-            `mission: ${activeMission.mission || "(none)"}`,
-            `kind: ${activeMission.missionKind || "(none)"}`,
-            `executable: ${activeMission.missionExecutable ? "yes" : "no"}`,
-            `known: ${formatList(activeMission.known)}`,
-            `missing: ${formatList(activeMission.missing)}`,
-          ].join("\n")
-        : "(no active mission sketch)"
+      "ACTIVE MISSION (inferred, not authoritative)",
+      renderInferredMission(activeMission)
     )
   );
 
   sections.push(dataSection("RELEVANT MEMORIES", renderOwnedMemories(relevantMemories)));
   return sections;
+}
+
+/**
+ * Transitional inferred context until durable Plan store exists.
+ * Must not force question ordering or mission classification.
+ */
+export function renderInferredMission(activeMission) {
+  if (!activeMission) {
+    return "(no inferred conversation context)";
+  }
+  const objective = String(activeMission.mission || "").trim() || "(unclear)";
+  const confidence = inferMissionConfidence(activeMission);
+  const signals = (activeMission.known || [])
+    .filter((fact) => !/Mission sketch authority|Capability gap:/i.test(String(fact)))
+    .slice(0, 6);
+
+  return [
+    "authority: inferred_from_conversation",
+    "status: transitional_metadata",
+    `possible_objective: ${objective}`,
+    `confidence: ${confidence}`,
+    "note: Validate if relevant. Do not treat this as a required interview checklist. You decide what matters.",
+    signals.length ? `observed_signals: ${formatList(signals)}` : "observed_signals: (none)",
+  ].join("\n");
+}
+
+function inferMissionConfidence(activeMission) {
+  if (activeMission?.missionExecutable) return "medium";
+  if (activeMission?.mission && !(activeMission.missing || []).length) return "medium";
+  if (activeMission?.mission) return "low";
+  return "low";
 }
 
 /** Render owned memories; every line carries owner metadata. */
