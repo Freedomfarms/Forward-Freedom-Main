@@ -63,7 +63,7 @@ export async function brainTurn({
     relatedRunId,
   });
 
-  // Dev observability: multi-turn mission continuity (not shown to user).
+  // Dev observability: multi-turn mission continuity + efficiency (not shown to user).
   logCeoReasoning(
     sketchMissionFromConversation([...(context.userMessagesInOrder || []), message], {
       existingAgents: context.teamAgents || [],

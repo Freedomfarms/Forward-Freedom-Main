@@ -12,7 +12,7 @@ security rollout: `docs/RLS_ROLLOUT.md`.
 | `CRON_SECRET` | Authenticates Vercel Cron calls to `/api/cron/agent-dispatch` (Bearer token). Dispatch fails closed (503 when unset, 401 on mismatch). |
 | `RESEND_API_KEY` | Resend key for reminder emails (self-notification only). When missing, email is skipped with an explanation and the in-app notification still delivers. |
 | `FREEDOM_BRAIN_CHAT` | CEO chat uses Freedom Brain by default (one brain for ask/create/run). Set to `0`/`false` to force the legacy structured-JSON chat engine. See `docs/FREEDOM_BRAIN_PLAN.md`. |
-| `FREEDOM_OS_DEBUG_CEO` | Set to `1`/`true` to always log CEO mission-reasoning sketches (`Situation` / `Mission` / `Known` / `Missing` / …). Also logs in non-production by default. |
+| `FREEDOM_OS_DEBUG_CEO` | Set to `1`/`true` to always log CEO mission-reasoning sketches (`Situation` / `Mission` / `Known` / `Missing` / …) and efficiency metrics (`missionStartedAt`, `missionExecutableAt`, `questionsAsked`, `blockingGapsResolved`, `deferredPreferences`, `reaskedFields`). Also logs in non-production by default. |
 | `DATABASE_URL` | `freedom_app` connection string — non-bypass role, subject to RLS. Supavisor pooler username format is `freedom_app.<project-ref>` (see `docs/RLS_ROLLOUT.md`). |
 | `SERVICE_DATABASE_URL` | `freedom_service` connection string (`BYPASSRLS`) — used only by `server/db/servicePrisma.js` for the cron dispatcher, the Plaid webhook owner lookup, and admin usage reporting. |
 | `DIRECT_URL` | Owner-role direct connection — Prisma CLI migrations only. |

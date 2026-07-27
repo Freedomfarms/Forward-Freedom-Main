@@ -7,6 +7,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { CREATABLE_AGENT_TYPES } from "./registry.js";
+import {
+  cloneEfficiencyLog,
+  emptyEfficiencyLog,
+  logCeoEfficiency,
+  updateEfficiencyLog,
+} from "./ceoEfficiencyMetrics.js";
 
 export const AGENT_TYPE_COMMIT_CONFIDENCE = 0.75;
 
@@ -17,6 +23,7 @@ export const CEO_MISSION_REASONING_RULES = [
   "Never follow a fixed interview checklist (personality, tone, escalation, boundaries, category). Never ask preference questions before mission-critical execution facts are known.",
   "Never invent agent type, domain, restrictions, permissions, workflow behavior, or personality. If uncertain, ask. Maintain Decision / Confidence / Evidence before committing type, tools, permissions, or workflows.",
   "Stop asking when the mission is executable. Do not collect unnecessary preferences. Successful execution beats a completed questionnaire.",
+  "Optimize for minimum clarification questions required to reach an executable mission. Every question must resolve a blocking dependency — never re-ask captured facts or collect deferrable preferences before blockers.",
   "When the user refers to an existing agent/capability (e.g. \"my supplier agent\"), modify that capability — do not create a duplicate.",
   "Maintain continuity across turns: do not restart intake when the user answers a blocker, corrects a detail, or states a standing preference. Update the mission model; ask only remaining gaps.",
   "Assumptions must never be presented as facts. Label them clearly or ask.",
@@ -48,8 +55,15 @@ export function logCeoReasoning(state = {}) {
     "Candidate questions: " + formatList(state.candidateQuestions),
     "Selected question: " + (state.selectedQuestion || "(none)"),
     "Reason selected: " + (state.reasonSelected || "(none)"),
+    "Efficiency: missionStartedAt=" +
+      (state.efficiency?.missionStartedAt || "(none)") +
+      " missionExecutableAt=" +
+      (state.efficiency?.missionExecutableAt || "(none)") +
+      " questionsAsked=" +
+      (state.efficiency?.questionsAsked?.length ?? 0),
   ];
   console.info(`[ceo-reasoning]\n${lines.join("\n")}`);
+  if (state.efficiency) logCeoEfficiency(state.efficiency);
 }
 
 /** Blank continuity state for multi-turn mission building. */
@@ -75,6 +89,7 @@ export function emptyMissionState() {
     selectedQuestion: null,
     candidateQuestions: [],
     reasonSelected: null,
+    efficiency: emptyEfficiencyLog(),
   };
 }
 
@@ -431,13 +446,14 @@ export function sketchMissionFromMessage(message, { existingAgents = [] } = {}) 
     ? null
     : selectHighestValueQuestion(missing, { known });
 
-  return {
+  const sketch = {
     situation,
     mission,
     missionKind,
     known,
     missing,
     assumptions,
+    preferences: [],
     candidateQuestions: selection?.candidateQuestions || [],
     selectedQuestion: selection?.selectedQuestion || null,
     reasonSelected: selection?.reasonSelected || null,
@@ -447,7 +463,13 @@ export function sketchMissionFromMessage(message, { existingAgents = [] } = {}) 
     createsNewCapability: missionKind === "create" || missionKind === "execute",
     modifiesExisting: missionKind === "modify",
     existingAgentReferenced: existingRef,
+    changedFacts: [...known],
   };
+  sketch.efficiency = updateEfficiencyLog(emptyEfficiencyLog(), {
+    prior: emptyMissionState(),
+    next: sketch,
+  });
+  return sketch;
 }
 
 function detectExistingAgentReference(text, existingAgents = []) {
@@ -696,6 +718,16 @@ export function advanceMissionState(priorState, message, options = {}) {
   }
   next.conversationHistory = history;
   next.changedFacts = uniqueStrings(changedFacts);
+  // Only continue the efficiency log across follow-up turns of the same mission.
+  // Fresh / replacement missions start a new measurement window.
+  const efficiencyBase = followUp
+    ? prev.efficiency || emptyEfficiencyLog()
+    : emptyEfficiencyLog();
+  next.efficiency = updateEfficiencyLog(efficiencyBase, {
+    prior: followUp ? prev : emptyMissionState(),
+    next,
+    now: options.now,
+  });
   return next;
 }
 
@@ -723,6 +755,7 @@ function cloneMissionState(state) {
     conversationHistory: [...(state.conversationHistory || [])],
     changedFacts: [...(state.changedFacts || [])],
     candidateQuestions: [...(state.candidateQuestions || [])],
+    efficiency: cloneEfficiencyLog(state.efficiency),
   };
 }
 
