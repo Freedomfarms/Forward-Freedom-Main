@@ -5,6 +5,8 @@ import { applyCeoActions } from "../agents/ceoOps.js";
 import { AgentError } from "../agents/errors.js";
 import { getWebSearchTools } from "../agents/llm.js";
 import { WEEKDAY_NAMES } from "../agents/schedule.js";
+import { activityKeyForTool } from "./activityStream.js";
+import { createPlan, getPlan, updatePlan } from "./plans.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Freedom Brain tool belt — Determine Required Tools / Execute / Reflect.
@@ -57,7 +59,13 @@ function toolResultFromError(error) {
  * response, and tracks the last created agent id so run_agent can chain onto
  * a create_agent from the same turn.
  */
-export function buildBrainToolBelt({ userId, ceoAgentConfigId, conversationId, turnState }) {
+export function buildBrainToolBelt({
+  userId,
+  ceoAgentConfigId,
+  conversationId,
+  turnState,
+  activities = null,
+}) {
   async function applySingleCeoAction(action) {
     const result = await applyCeoActions({
       userId,
@@ -274,7 +282,157 @@ export function buildBrainToolBelt({ userId, ceoAgentConfigId, conversationId, t
     },
   });
 
-  return {
+  const createPlanTool = tool({
+    description:
+      "Create a durable CEO Plan (executive memory) when the user expresses lasting intent. Plans store objective/situation/decisions/open items/planned actions only — never workflow scripts, tool permissions, or execution proof. Do not create Plans for ordinary one-off questions. Server dedupes similar ACTIVE Plans in the same mission scope.",
+    inputSchema: jsonSchema({
+      type: "object",
+      properties: {
+        objective: {
+          type: "string",
+          description: "What the user is trying to accomplish (durable intent).",
+        },
+        confidence: { type: "string", enum: ["low", "medium", "high"] },
+        title: { type: "string" },
+        missionScope: {
+          type: "string",
+          description:
+            "Scope key for independent concurrent plans. Omit for the primary/default mission.",
+        },
+        independent: {
+          type: "boolean",
+          description:
+            "True only when this objective is clearly independent of an existing ACTIVE Plan.",
+        },
+        horizon: { type: "string", enum: ["weeks", "months", "quarters"] },
+        reason: {
+          type: "string",
+          description: "Why this Plan is being created (durable intent signal).",
+        },
+      },
+      required: ["objective"],
+      additionalProperties: false,
+    }),
+    execute: async (input) => {
+      try {
+        const result = await createPlan({
+          userId,
+          objective: input.objective,
+          confidence: input.confidence,
+          title: input.title,
+          missionScope: input.missionScope,
+          independent: input.independent === true,
+          horizon: input.horizon,
+          sourceConversationId: conversationId,
+          reason: input.reason || "durable_intent",
+        });
+        if (result?.plan) turnState.plan = result.plan;
+        return result;
+      } catch (error) {
+        return toolResultFromError(error);
+      }
+    },
+  });
+
+  const updatePlanTool = tool({
+    description:
+      "Apply structured ops to the durable CEO Plan. Requires a reason. Allowed: objective, situation facts, decisions, open items, preferences, planned actions. Completing/failing an action REQUIRES execution evidence (tool_result | execution_record | system_state). Blocked: permissions, capabilities, workflow/next-question ops, claiming completion without evidence. Do not rewrite the whole Plan every turn — only meaningful changes.",
+    inputSchema: jsonSchema({
+      type: "object",
+      properties: {
+        planId: {
+          type: "string",
+          description: "Plan id. Omit to update the primary ACTIVE Plan.",
+        },
+        reason: {
+          type: "string",
+          description: "Why this update is meaningful (required; anti-thrash).",
+        },
+        ops: {
+          type: "array",
+          description: "List of structured Plan ops.",
+          items: {
+            type: "object",
+            properties: {
+              op: { type: "string" },
+              text: { type: "string" },
+              confidence: { type: "string", enum: ["low", "medium", "high"] },
+              status: {
+                type: "string",
+                enum: ["ACTIVE", "WAITING", "COMPLETED", "ABANDONED"],
+              },
+              horizon: { type: "string", enum: ["weeks", "months", "quarters"] },
+              field: {
+                type: "string",
+                enum: ["known", "assumptions", "constraints", "relevantContext", "preferences"],
+              },
+              by: { type: "string", enum: ["user", "ceo"] },
+              rationale: { type: "string" },
+              kind: { type: "string", enum: ["question", "blocker", "dependency"] },
+              id: { type: "string" },
+              owner: { type: "string", enum: ["user", "ceo", "agent"] },
+              summary: { type: "string" },
+              reason: { type: "string" },
+              evidence: {
+                type: "object",
+                properties: {
+                  kind: {
+                    type: "string",
+                    enum: ["tool_result", "execution_record", "system_state"],
+                  },
+                  summary: { type: "string" },
+                  ref: { type: "string" },
+                },
+                required: ["kind", "summary"],
+                additionalProperties: false,
+              },
+            },
+            required: ["op"],
+            additionalProperties: false,
+          },
+        },
+      },
+      required: ["reason", "ops"],
+      additionalProperties: false,
+    }),
+    execute: async (input) => {
+      try {
+        const result = await updatePlan({
+          userId,
+          planId: input.planId,
+          ops: input.ops,
+          reason: input.reason,
+        });
+        if (result?.plan) turnState.plan = result.plan;
+        return result;
+      } catch (error) {
+        return toolResultFromError(error);
+      }
+    },
+  });
+
+  const getPlanTool = tool({
+    description:
+      "Load the durable CEO Plan body (objective, situation, decisions, open items, actions, recent changeLog). Omit planId for the primary ACTIVE Plan. Plan is memory — not execution proof.",
+    inputSchema: jsonSchema({
+      type: "object",
+      properties: {
+        planId: { type: "string" },
+      },
+      additionalProperties: false,
+    }),
+    execute: async (input) => {
+      try {
+        const result = await getPlan({ userId, planId: input?.planId || null });
+        if (result?.plan) turnState.plan = result.plan;
+        return result;
+      } catch (error) {
+        return toolResultFromError(error);
+      }
+    },
+  });
+
+  const tools = {
     ...getWebSearchTools({ maxUses: BRAIN_WEB_SEARCH_MAX_USES }),
     create_agent: createAgent,
     update_agent: updateAgent,
@@ -282,5 +440,62 @@ export function buildBrainToolBelt({ userId, ceoAgentConfigId, conversationId, t
     delete_agent: deleteAgent,
     set_timezone: setTimezone,
     update_digest: updateDigest,
+    create_plan: createPlanTool,
+    update_plan: updatePlanTool,
+    get_plan: getPlanTool,
   };
+  return wrapToolsWithActivity(tools, activities);
+}
+
+function buildToolActivityMeta(toolName, input = {}) {
+  const meta = { toolName };
+  if (typeof input?.name === "string" && input.name.trim()) {
+    meta.agentName = input.name.trim();
+  }
+  if (typeof input?.agentType === "string" && input.agentType.trim()) {
+    meta.agentType = input.agentType.trim();
+  }
+  return meta;
+}
+
+/** Wrap allowlisted tool executes so CEO Activity Stream tracks WORKING events. */
+function wrapToolsWithActivity(tools, activities) {
+  if (!activities) return tools;
+  const wrapped = {};
+  for (const [name, toolDef] of Object.entries(tools)) {
+    if (!toolDef || typeof toolDef.execute !== "function") {
+      wrapped[name] = toolDef;
+      continue;
+    }
+    const originalExecute = toolDef.execute.bind(toolDef);
+    wrapped[name] = {
+      ...toolDef,
+      execute: async (input, options) => {
+        const key = activityKeyForTool(name);
+        const meta = buildToolActivityMeta(name, input);
+        if (key === "COORDINATING_AGENT" && name === "run_agent") {
+          activities.start("RUNNING_ANALYSIS", meta);
+        }
+        if (key) activities.start(key, meta);
+        try {
+          const result = await originalExecute(input, options);
+          const doneMeta = { ...meta };
+          if (result?.agent?.name) doneMeta.agentName = result.agent.name;
+          if (result?.agent?.agentType) doneMeta.agentType = result.agent.agentType;
+          if (key) activities.complete(key, doneMeta);
+          if (key === "COORDINATING_AGENT" && name === "run_agent") {
+            activities.complete("RUNNING_ANALYSIS", doneMeta);
+          }
+          return result;
+        } catch (error) {
+          if (key) activities.fail(key, meta);
+          if (key === "COORDINATING_AGENT" && name === "run_agent") {
+            activities.fail("RUNNING_ANALYSIS", meta);
+          }
+          throw error;
+        }
+      },
+    };
+  }
+  return wrapped;
 }

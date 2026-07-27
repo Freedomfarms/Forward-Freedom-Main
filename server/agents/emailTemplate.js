@@ -67,14 +67,14 @@ export function agentTypeLabel(agentType) {
   return AGENT_TYPE_LABELS[agentType] || "Agent Report";
 }
 
-/** "Friday, July 24" — used in subject lines and the email header. */
+/** "Friday, July 24" — used in subject lines and the email header (Eastern). */
 export function formatRunDate(date) {
   const value = date instanceof Date && !Number.isNaN(date.getTime()) ? date : new Date();
   return new Intl.DateTimeFormat("en-US", {
     weekday: "long",
     month: "long",
     day: "numeric",
-    timeZone: "UTC",
+    timeZone: "America/New_York",
   }).format(value);
 }
 

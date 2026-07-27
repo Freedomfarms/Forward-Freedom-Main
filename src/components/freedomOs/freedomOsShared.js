@@ -79,11 +79,35 @@ function titleCaseWeekday(day) {
   return `${day.charAt(0).toUpperCase()}${day.slice(1)}`;
 }
 
+/** Approximate UTC hour → Eastern wall-clock label (EST/EDT via America/New_York). */
+function formatHourEasternFromUtc(hourUtc) {
+  if (!Number.isInteger(hourUtc) || hourUtc < 0 || hourUtc > 23) return null;
+  // Use a mid-week winter sample so the offset is stable for display of a lone hour.
+  const sample = new Date(Date.UTC(2026, 0, 12, hourUtc, 0, 0));
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+      timeZoneName: "short",
+    }).formatToParts(sample);
+    const hour = parts.find((p) => p.type === "hour")?.value;
+    const minute = parts.find((p) => p.type === "minute")?.value || "00";
+    const dayPeriod = parts.find((p) => p.type === "dayPeriod")?.value || "";
+    const tzName = parts.find((p) => p.type === "timeZoneName")?.value || "ET";
+    if (!hour) return `${hourUtc}:00 UTC`;
+    return `${hour}:${minute} ${dayPeriod} ${tzName}`.replace(/\s+/g, " ").trim();
+  } catch {
+    return `${hourUtc}:00 UTC`;
+  }
+}
+
 export function formatSchedule(schedule) {
   if (!schedule || !schedule.preset) return "On demand";
   const hour =
     Number.isInteger(schedule.hourUtc) && schedule.hourUtc >= 0 && schedule.hourUtc <= 23
-      ? `${schedule.hourUtc}:00 UTC`
+      ? formatHourEasternFromUtc(schedule.hourUtc)
       : null;
   if (schedule.preset === "weekly") {
     const days =

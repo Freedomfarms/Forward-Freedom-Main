@@ -2,9 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  DEFAULT_USER_TIMEZONE,
   isValidIanaTimeZone,
   localScheduleToUtcCron,
   normalizeIanaTimeZone,
+  resolveUserTimeZone,
   zonedLocalTimeToUtc,
 } from "../server/agents/timezone.js";
 
@@ -42,14 +44,21 @@ test("zonedLocalTimeToUtc converts America/Los_Angeles wall clock", () => {
   assert.equal(utc.toISOString(), "2026-07-15T14:00:00.000Z");
 });
 
-test("localScheduleToUtcCron requires timezone", () => {
-  assert.throws(
-    () =>
-      localScheduleToUtcCron({
-        preset: "daily",
-        hourLocal: 7,
-        timeZone: null,
-      }),
-    /timezone is required/i
-  );
+test("resolveUserTimeZone defaults to America/New_York (Eastern)", () => {
+  assert.equal(DEFAULT_USER_TIMEZONE, "America/New_York");
+  assert.equal(resolveUserTimeZone(null), "America/New_York");
+  assert.equal(resolveUserTimeZone(""), "America/New_York");
+  assert.equal(resolveUserTimeZone("America/Chicago"), "America/Chicago");
+});
+
+test("localScheduleToUtcCron defaults missing timezone to Eastern", () => {
+  const now = new Date("2026-01-12T15:00:00Z");
+  const resolved = localScheduleToUtcCron({
+    preset: "daily",
+    hourLocal: 7,
+    timeZone: null,
+    now,
+  });
+  // 7 AM America/New_York in January = 12:00 UTC
+  assert.equal(resolved.hourUtc, 12);
 });

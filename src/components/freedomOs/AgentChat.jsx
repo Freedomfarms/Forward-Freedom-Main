@@ -18,6 +18,7 @@ import {
   updateCeoConversation,
 } from "../../utils/agentsApi.js";
 import { ConversationList } from "./ConversationList.jsx";
+import CeoActivityStream from "./CeoActivityStream.jsx";
 import {
   filterConversationsInScope,
   isConversationInScope,
@@ -32,6 +33,18 @@ import { describeAgentApiError, fosStyles, getAgentTypeMeta } from "./freedomOsS
 // mode: "ceo"   → CEO conversations + chat
 //       "agent" → sub-agent conversations + chat (requires agentId)
 // layout: "embedded" (default) | "workspace" (ChatGPT-style full pane)
+
+/** Merge a live activity event by key (status transitions keep one row per key). */
+function mergeActivityEvent(current, activity) {
+  if (!activity?.key) return current;
+  const list = Array.isArray(current) ? [...current] : [];
+  const index = list.findIndex((row) => row.key === activity.key);
+  if (index >= 0) {
+    list[index] = { ...list[index], ...activity };
+    return list;
+  }
+  return [...list, activity];
+}
 
 /** Render **bold** and __underline__ — no raw markdown asterisks in the bubble. */
 function renderChatText(text) {
@@ -120,6 +133,8 @@ export function AgentChat({
   );
   const [draft, setDraft] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [liveActivities, setLiveActivities] = useState([]);
+  const [activityStartedAt, setActivityStartedAt] = useState(null);
   const [isLoadingHistory, setIsLoadingHistory] = useState(loadsHistory);
   const [historyError, setHistoryError] = useState("");
   const [sendError, setSendError] = useState("");
@@ -497,6 +512,21 @@ export function AgentChat({
     setDraft("");
     setSendError("");
     setIsSending(true);
+    setLiveActivities(
+      mode === "ceo"
+        ? [
+            {
+              id: "local-understanding",
+              key: "UNDERSTANDING_REQUEST",
+              phase: "ASSESSING",
+              label: "Understanding request",
+              status: "active",
+              elapsedMs: 0,
+            },
+          ]
+        : []
+    );
+    setActivityStartedAt(mode === "ceo" ? Date.now() : null);
     setMessages((current) => [
       ...current,
       {
@@ -538,7 +568,12 @@ export function AgentChat({
             relatedRunId: pendingRelatedRunId,
             conversationId: conversationIdForSend,
           },
-          { user }
+          {
+            user,
+            onActivity: (activity) => {
+              setLiveActivities((current) => mergeActivityEvent(current, activity));
+            },
+          }
         );
       } else {
         throw new Error("Unsupported chat mode.");
@@ -600,6 +635,8 @@ export function AgentChat({
           role: "agent",
           text: payload?.reply || "(no reply)",
           agentCreated: payload?.agentCreated || null,
+          activities:
+            mode === "ceo" && Array.isArray(payload?.activities) ? payload.activities : null,
         },
       ]);
       if (pendingRelatedRunId && typeof onClearRelatedRun === "function") {
@@ -630,6 +667,8 @@ export function AgentChat({
       }
     } finally {
       setIsSending(false);
+      setLiveActivities([]);
+      setActivityStartedAt(null);
     }
   };
 
@@ -694,6 +733,13 @@ export function AgentChat({
                 {agentName}
               </div>
             ) : null}
+            {message.role === "agent" &&
+            Array.isArray(message.activities) &&
+            message.activities.length ? (
+              <div style={{ marginBottom: 10 }}>
+                <CeoActivityStream agentName={agentName} activities={message.activities} />
+              </div>
+            ) : null}
             <div
               style={{
                 color: message.role === "user" ? "#eef6ff" : "#d7ebff",
@@ -708,18 +754,27 @@ export function AgentChat({
           </div>
         ))}
         {isSending ? (
-          <div
-            style={{
-              borderRadius: 16,
-              padding: "12px 14px",
-              border: "1px solid rgba(0,136,255,.22)",
-              background: "rgba(3,17,32,.86)",
-              color: "#8faecc",
-              fontSize: 13,
-            }}
-          >
-            {agentName} is thinking…
-          </div>
+          mode === "ceo" ? (
+            <CeoActivityStream
+              agentName={agentName}
+              activities={liveActivities}
+              live
+              startedAt={activityStartedAt}
+            />
+          ) : (
+            <div
+              style={{
+                borderRadius: 16,
+                padding: "12px 14px",
+                border: "1px solid rgba(0,136,255,.22)",
+                background: "rgba(3,17,32,.86)",
+                color: "#8faecc",
+                fontSize: 13,
+              }}
+            >
+              {agentName} is working…
+            </div>
+          )
         ) : null}
       </div>
 

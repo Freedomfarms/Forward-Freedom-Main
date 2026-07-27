@@ -108,19 +108,17 @@ beforeEach(() => {
   installLlm();
 });
 
-test("isBrainChatEnabled defaults ON; opt out with 0/false", (t) => {
+test("isBrainChatEnabled always ON (CEO world-model path is mandatory)", (t) => {
   if (!requireSetup(t)) return;
   const original = process.env.FREEDOM_BRAIN_CHAT;
   try {
     delete process.env.FREEDOM_BRAIN_CHAT;
     assert.equal(isBrainChatEnabled(), true);
     process.env.FREEDOM_BRAIN_CHAT = "0";
-    assert.equal(isBrainChatEnabled(), false);
-    process.env.FREEDOM_BRAIN_CHAT = "false";
-    assert.equal(isBrainChatEnabled(), false);
-    process.env.FREEDOM_BRAIN_CHAT = "1";
     assert.equal(isBrainChatEnabled(), true);
-    process.env.FREEDOM_BRAIN_CHAT = "true";
+    process.env.FREEDOM_BRAIN_CHAT = "false";
+    assert.equal(isBrainChatEnabled(), true);
+    process.env.FREEDOM_BRAIN_CHAT = "1";
     assert.equal(isBrainChatEnabled(), true);
   } finally {
     if (original === undefined) delete process.env.FREEDOM_BRAIN_CHAT;
@@ -144,6 +142,16 @@ test("brain turn: plain-text reply, no JSON envelope, tools offered, extraction 
   assert.equal(outcome.reply, "You have two agents on the team.");
   assert.equal(outcome.conversationId, "ceo-convo-1");
   assert.ok(outcome.messageId);
+  assert.ok(Array.isArray(outcome.activities));
+  assert.ok(outcome.activities.some((row) => row.key === "UNDERSTANDING_REQUEST"));
+  assert.ok(outcome.activities.some((row) => row.key === "CHECKING_EVIDENCE"));
+  assert.ok(
+    outcome.activities.every(
+      (row) =>
+        typeof row.label === "string" &&
+        !/\b(i think|chain of thought|because)\b/i.test(row.label)
+    )
+  );
 
   // The conversational call is free text: no output schema, no envelope.
   const textCall = llmCalls.find((call) => call.method === "generateText");

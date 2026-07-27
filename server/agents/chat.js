@@ -38,7 +38,21 @@ import {
 } from "./ceoReasoning.js";
 import { cronToSchedulePreset, formatHourUtcLabel } from "./schedule.js";
 import { isEmailDeliveryEnabled } from "./emailDelivery.js";
+import {
+  buildExecutionEvidence,
+  classifyAgentRequest,
+  guardAgentReply,
+  isMutatingActionAllowed,
+  logExecutionGuard,
+  renderRequestClassificationSection,
+  renderSubAgentAuthoritySection,
+} from "./executionContract.js";
 import { CHAT_PLAIN_TEXT_RULE, dataSection, PROMPT_SAFETY_RULES } from "./prompts.js";
+import {
+  loadPrimaryActivePlan,
+  renderPlanMission,
+  toActiveMissionFromPlan,
+} from "../brain/plans.js";
 import {
   extractFromChatReply,
   normalizeProfile,
@@ -50,7 +64,11 @@ import {
   renderNamedRunSummaries,
   renderTeamRoster,
 } from "./teamContext.js";
-import { isMissingTimezoneColumnError, isValidIanaTimeZone } from "./timezone.js";
+import {
+  DEFAULT_USER_TIMEZONE,
+  isMissingTimezoneColumnError,
+  isValidIanaTimeZone,
+} from "./timezone.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared chat engine for the CEO Agent chat and every sub-agent chat.
@@ -120,7 +138,7 @@ const CEO_CHAT_SYSTEM_PROMPT = [
   "You have read-only web search for live / current information. When the user asks something that needs up-to-date facts, use web search before answering. Never claim you lack internet access.",
   "When the user asks which agents they have: answer ONLY from YOUR SUB-AGENTS. Never invent agents that are not listed. A newly created agent may have zero runs — prefer the roster over run summaries for membership.",
   "OPERATE the platform via ceoActions (server-applied). You CAN: create_agent, update_agent (pause/resume/schedule/instructions/email/model), run_agent (delegate work to a specialist), delete_agent (only with confirmed=true after explicit user confirmation), set_timezone. For create_agent: ask only execution blockers first; call create_agent only when the mission is executable — never invent type, restrictions, or personality.",
-  "Schedules are always in the user's LOCAL timezone. Use scheduleHourLocal (0–23) and the USER TIMEZONE context. Never ask the user to think in UTC. If timezone is unknown and they request a local schedule, ask for an IANA timezone OR use set_timezone once they provide it — do not assume UTC.",
+  "Schedules are always in the user's LOCAL timezone. Use scheduleHourLocal (0–23) and the USER TIMEZONE context. Never ask the user to think in UTC. If timezone is unknown, the platform defaults to America/New_York (Eastern); prefer set_timezone when the user states a different zone.",
   "Research agents already use web search; enabling email delivery is emailDelivery=true on create/update. After create_agent in the same turn you may run_agent with agentId \"__last_created__\" or omitted.",
   "Delegate automatically when a specialist should do the work: set run_agent. The server monitors short jobs and returns results in this conversation; longer jobs notify later in this same conversation. Do not tell the user to open another screen or another agent chat for routine ops — specialist chats exist for deep SME follow-up on a report, not as a required detour.",
   "Truthfulness: state facts from tool/context confidently; label inferences as inferences; if you do not know, say so. Never invent operational facts (agents, schedules, run statuses, triggers).",
@@ -371,13 +389,37 @@ export async function respondToChat({
         .join("\n")
     : `Agent name: ${ceoConfig.name}\nRole: CEO Agent (orchestrator)`;
 
+  const requestKind = classifyAgentRequest(text);
+
   const sections = [
     "Reply to the user's new message using the context below.",
     dataSection("AGENT IDENTITY", identity),
+    dataSection("REQUEST CLASSIFICATION", renderRequestClassificationSection(requestKind)),
   ];
   if (agentConfig) {
+    sections.push(
+      dataSection("AGENT AUTHORITY (CEO control plane)", renderSubAgentAuthoritySection())
+    );
     sections.push(dataSection("CURRENT SETTINGS (this agent)", renderAgentSettings(agentConfig)));
     sections.push(dataSection("DEFINITION OF DONE (user-configured)", agentConfig.definitionOfDone));
+    // Read-only CEO Plan context — sub-agents cannot create/update Plans.
+    try {
+      const primaryPlan = await loadPrimaryActivePlan(userId);
+      if (primaryPlan) {
+        const mission = toActiveMissionFromPlan(primaryPlan.row, primaryPlan.body);
+        sections.push(
+          dataSection(
+            "CEO ACTIVE PLAN (executive intent — read-only)",
+            [
+              renderPlanMission(mission),
+              "note: You may reason against this intent and return evidence. You cannot create or update Plans.",
+            ].join("\n")
+          )
+        );
+      }
+    } catch {
+      // Plan load is best-effort for sub-agent context.
+    }
   }
   sections.push(dataSection("USER PROFILE (long-term memory)", renderProfileForPrompt(profile)));
   const runLabelAgents = agentConfig ? [agentConfig] : teamAgents;
@@ -391,7 +433,7 @@ export async function respondToChat({
     const tzLabel =
       userTimezone && isValidIanaTimeZone(userTimezone)
         ? userTimezone
-        : "(unknown — detect from browser or ask the user for an IANA timezone; do not assume UTC)";
+        : `${DEFAULT_USER_TIMEZONE} (platform default — Eastern Time; user may override)`;
     sections.push(dataSection("USER TIMEZONE", tzLabel));
     let currentDigest = null;
     if (ceoConfig.lastDigestCiphertext) {
@@ -477,25 +519,37 @@ export async function respondToChat({
   let actionResult = null;
   let digestResult = null;
   let ceoOpsResult = null;
+  let appliedTaskActionType = null;
 
   // Sub-agent taskAction is applied server-side after the model reply. The
   // model must not invent side effects — only this allowlisted path mutates.
+  // Status / information asks never execute mutating actions (intent ≠ execution).
   if (agentConfig) {
     try {
       const action = sanitizeTaskAction(object?.taskAction ?? null);
       if (action) {
-        actionResult = await applySubAgentTaskAction({
-          userId,
-          agentConfigId: agentConfig.id,
-          conversationId: resolvedConversationId,
-          message: text,
-          action,
-          relatedRunId,
-          persist: false,
-        });
-        // Prefer the authoritative server confirmation over a hedged model reply.
-        if (actionResult?.reply) {
-          reply = actionResult.reply;
+        if (!isMutatingActionAllowed(requestKind, action.type)) {
+          logExecutionGuard({
+            event: "task_action_blocked",
+            requestKind,
+            actionBlocked: true,
+            failures: [`blocked_action:${action.type}`],
+          });
+        } else {
+          appliedTaskActionType = action.type;
+          actionResult = await applySubAgentTaskAction({
+            userId,
+            agentConfigId: agentConfig.id,
+            conversationId: resolvedConversationId,
+            message: text,
+            action,
+            relatedRunId,
+            persist: false,
+          });
+          // Prefer the authoritative server confirmation over a hedged model reply.
+          if (actionResult?.reply) {
+            reply = actionResult.reply;
+          }
         }
       }
     } catch (error) {
@@ -546,6 +600,31 @@ export async function respondToChat({
       }
     }
   }
+
+  // Shared execution-contract guard — CEO and sub-agents inherit the same rules.
+  const evidence = buildExecutionEvidence({
+    actionResult,
+    taskActionType: appliedTaskActionType,
+    turnState: ceoOpsResult
+      ? {
+          agent: ceoOpsResult.agent || null,
+          run: ceoOpsResult.run || null,
+          confirmations: ceoOpsResult.reply ? [ceoOpsResult.reply] : [],
+        }
+      : null,
+    relatedRun,
+    recentRuns: runs,
+    emailDeliveryEnabled: agentConfig
+      ? isEmailDeliveryEnabled(agentConfig.toolAccess)
+      : false,
+  });
+  const guarded = guardAgentReply({
+    reply,
+    userMessage: text,
+    evidence,
+    requestKind,
+  });
+  reply = guarded.reply;
 
   const relatedFromOps =
     ceoOpsResult?.run?.id || actionResult?.run?.id || relatedRunId || null;

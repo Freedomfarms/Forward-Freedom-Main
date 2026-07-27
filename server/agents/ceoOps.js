@@ -29,9 +29,9 @@ import { announceAgentCreatedToCeoChat } from "./teamContext.js";
 import {
   formatHourLocalLabel,
   isMissingTimezoneColumnError,
-  isValidIanaTimeZone,
   localScheduleToUtcCron,
   normalizeIanaTimeZone,
+  resolveUserTimeZone,
 } from "./timezone.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -204,9 +204,9 @@ async function loadUserTimezone(userId) {
     const user = await withUserContext(userId, (tx) =>
       tx.user.findUnique({ where: { id: userId }, select: { timezone: true } })
     );
-    return user?.timezone && isValidIanaTimeZone(user.timezone) ? user.timezone : null;
+    return resolveUserTimeZone(user?.timezone);
   } catch (error) {
-    if (isMissingTimezoneColumnError(error)) return null;
+    if (isMissingTimezoneColumnError(error)) return resolveUserTimeZone(null);
     throw error;
   }
 }
@@ -237,26 +237,20 @@ function buildScheduleFields(action, timeZone) {
   }
 
   if (action.scheduleHourLocal != null) {
-    if (!timeZone) {
-      throw new AgentError(
-        "I need your timezone before I can schedule a local time. Set it in Settings or tell me your IANA timezone (e.g. America/New_York).",
-        "TIMEZONE_REQUIRED",
-        400
-      );
-    }
+    const effectiveTz = resolveUserTimeZone(timeZone);
     const hourLocal = Number(action.scheduleHourLocal);
     const resolved = localScheduleToUtcCron({
       preset: payload.schedulePreset || "weekly",
       weekday: payload.scheduleWeekday,
       weekdays: payload.scheduleWeekdays,
       hourLocal,
-      timeZone,
+      timeZone: effectiveTz,
     });
     payload.scheduleHourUtc = resolved.hourUtc;
     if (payload.schedulePreset === "weekly" && resolved.weekdaysUtc?.length) {
       payload.scheduleWeekdays = resolved.weekdaysUtc;
     }
-    payload._localLabel = formatHourLocalLabel(hourLocal, timeZone);
+    payload._localLabel = formatHourLocalLabel(hourLocal, effectiveTz);
   }
 
   return payload;

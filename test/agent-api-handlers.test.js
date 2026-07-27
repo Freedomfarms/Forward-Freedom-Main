@@ -21,6 +21,7 @@ let currentServiceClient;
 let runnerCalls;
 let runnerResult;
 let chatCalls;
+let brainCalls;
 let digestCalls;
 let narrativeProfileCalls;
 
@@ -115,6 +116,23 @@ before(async () => {
           chatCalls.push(args);
           return { reply: "mock chat reply", messageId: "msg-123", model: "m", usage: null };
         },
+      },
+    });
+
+    mock.module("../server/brain/index.js", {
+      namedExports: {
+        brainTurn: async (args) => {
+          brainCalls.push(args);
+          return {
+            reply: "mock brain reply",
+            messageId: "msg-brain-123",
+            conversationId: args.conversationId || "ceo-convo-1",
+            conversationTitle: "Main",
+            model: "m",
+            usage: null,
+          };
+        },
+        isBrainChatEnabled: () => true,
       },
     });
 
@@ -281,10 +299,9 @@ before(async () => {
 
 beforeEach(() => {
   if (setupError) return;
-  // These tests stub respondToChat — keep Brain opt-out unless a case enables it.
-  process.env.FREEDOM_BRAIN_CHAT = "0";
   runnerCalls = [];
   chatCalls = [];
+  brainCalls = [];
   digestCalls = [];
   narrativeProfileCalls = [];
   runnerResult = {
@@ -868,17 +885,18 @@ test("POST /api/agents/:id/chat 'email me the report' is handled without an LLM 
   assert.equal(chatCalls.length, 1);
 });
 
-test("POST /api/agents/ceo/chat delegates to respondToChat scoped to the CEO config", async (t) => {
+test("POST /api/agents/ceo/chat always uses brainTurn (one world-model path)", async (t) => {
   if (!requireSetup(t)) return;
   const response = await invoke(
     handlers.ceoChat,
     authedRequest("u1", { method: "POST", body: { message: "how are my finances?" } })
   );
   assert.equal(response.statusCode, 200);
-  assert.equal(response.body.reply, "mock chat reply");
-  assert.equal(chatCalls.length, 1);
-  assert.equal(chatCalls[0].ceoAgentConfigId, currentDb.tables.ceoAgentConfig[0].id);
-  assert.equal(chatCalls[0].message, "how are my finances?");
+  assert.equal(response.body.reply, "mock brain reply");
+  assert.equal(brainCalls.length, 1);
+  assert.equal(chatCalls.length, 0);
+  assert.equal(brainCalls[0].ceoAgentConfigId, currentDb.tables.ceoAgentConfig[0].id);
+  assert.equal(brainCalls[0].message, "how are my finances?");
 });
 
 test("GET /api/agents/ceo/chat returns visible history and hides creation-state rows", async (t) => {
@@ -1025,32 +1043,26 @@ test("GET /api/agents/:id/chat returns that agent's history only", async (t) => 
 test("CEO chat ignores legacy mode:create_agent and uses the one CEO brain path", async (t) => {
   if (!requireSetup(t)) return;
 
-  // Force legacy respondToChat so the handler test stays deterministic without
-  // spinning the full Brain tool loop (mocked as chatCalls).
-  const previousBrain = process.env.FREEDOM_BRAIN_CHAT;
+  // FREEDOM_BRAIN_CHAT opt-out no longer bypasses the world-model path.
   process.env.FREEDOM_BRAIN_CHAT = "0";
-  try {
-    const response = await invoke(
-      handlers.ceoChat,
-      authedRequest("u1", {
-        method: "POST",
-        body: {
-          mode: "create_agent",
-          message: "I want an agent that emails me social media reports on a couple people.",
-        },
-      })
-    );
-    assert.equal(response.statusCode, 200);
-    assert.equal(response.body.reply, "mock chat reply");
-    assert.equal(response.body.creationDraft, undefined);
-    assert.equal(response.body.agentCreated, undefined);
-    assert.equal(chatCalls.length, 1);
-    assert.match(chatCalls[0].message, /social media reports/i);
-    assert.ok(chatCalls[0].ceoAgentConfigId);
-  } finally {
-    if (previousBrain == null) delete process.env.FREEDOM_BRAIN_CHAT;
-    else process.env.FREEDOM_BRAIN_CHAT = previousBrain;
-  }
+  const response = await invoke(
+    handlers.ceoChat,
+    authedRequest("u1", {
+      method: "POST",
+      body: {
+        mode: "create_agent",
+        message: "I want an agent that emails me social media reports on a couple people.",
+      },
+    })
+  );
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.reply, "mock brain reply");
+  assert.equal(response.body.creationDraft, undefined);
+  assert.equal(response.body.agentCreated, undefined);
+  assert.equal(brainCalls.length, 1);
+  assert.equal(chatCalls.length, 0);
+  assert.match(brainCalls[0].message, /social media reports/i);
+  assert.ok(brainCalls[0].ceoAgentConfigId);
 });
 
 test("CEO conversations CRUD + messages; system threads stay hidden", async (t) => {

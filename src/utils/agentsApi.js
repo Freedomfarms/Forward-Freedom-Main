@@ -97,17 +97,82 @@ export function fetchCeoChatHistory({ conversationId } = {}, options = {}) {
 /**
  * CEO chat — single brain for ask / create / run. Optional conversationId
  * selects a thread; omitted → newest non-system conversation.
+ *
+ * Pass `onActivity` to receive live Activity Stream events (SSE). Labels are
+ * backend-controlled — never model chain-of-thought.
  */
-export function sendCeoChatMessage(
+export async function sendCeoChatMessage(
   { message, relatedRunId = null, conversationId = null } = {},
   options = {}
 ) {
+  const onActivity = typeof options.onActivity === "function" ? options.onActivity : null;
   const body = {
     message,
     ...(relatedRunId ? { relatedRunId } : {}),
     ...(conversationId ? { conversationId } : {}),
+    ...(onActivity ? { stream: true } : {}),
   };
-  return requestJson("/api/agents/ceo/chat", { method: "POST", body, options });
+
+  if (!onActivity) {
+    return requestJson("/api/agents/ceo/chat", { method: "POST", body, options });
+  }
+
+  const headers = await buildAuthenticatedHeaders(
+    { "Content-Type": "application/json", Accept: "text/event-stream" },
+    options
+  );
+  const response = await fetch("/api/agents/ceo/chat", {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    return parseApiResponse(response);
+  }
+
+  const contentType = String(response.headers.get("content-type") || "");
+  if (!contentType.includes("text/event-stream") || !response.body) {
+    return parseApiResponse(response);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let result = null;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const chunks = buffer.split("\n\n");
+    buffer = chunks.pop() || "";
+    for (const chunk of chunks) {
+      const line = chunk
+        .split("\n")
+        .map((row) => row.trim())
+        .find((row) => row.startsWith("data:"));
+      if (!line) continue;
+      let payload;
+      try {
+        payload = JSON.parse(line.slice(5).trim());
+      } catch {
+        continue;
+      }
+      if (payload?.type === "activity" && payload.activity) {
+        onActivity(payload.activity);
+      } else if (payload?.type === "done" && payload.result) {
+        result = payload.result;
+      } else if (payload?.type === "error") {
+        throw new Error(payload.message || "CEO chat stream failed.");
+      }
+    }
+  }
+
+  if (!result) {
+    throw new Error("CEO chat stream ended without a result.");
+  }
+  return result;
 }
 
 /** List non-system CEO conversations (newest updatedAt first). */

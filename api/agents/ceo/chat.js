@@ -12,24 +12,42 @@ import {
   ensureCeoAgentConfig,
   respondAgentApiError,
 } from "../../../server/agents/apiHelpers.js";
-import { respondToChat } from "../../../server/agents/chat.js";
-import { brainTurn, isBrainChatEnabled } from "../../../server/brain/index.js";
+import { brainTurn } from "../../../server/brain/index.js";
+import { assertSafeActivityEvent } from "../../../server/brain/activityStream.js";
 import {
   listChatHistory,
   serializeChatHistoryMessages,
 } from "../../../server/agents/chatHistory.js";
 
 // GET  /api/agents/ceo/chat — visible message history for the active CEO thread
-//      (?conversationId= optional; defaults to newest non-system conversation)
-// POST /api/agents/ceo/chat — ONE CEO brain for information, execution, create,
-//      update, and workflows. There is no separate "+ New Agent" interview mode;
-//      legacy { mode: "create_agent" } is ignored and handled as normal CEO chat.
+// POST /api/agents/ceo/chat — ONE CEO brain path (world model + tools).
+//      Optional body.stream=true → SSE activity events, then a final result.
+//      Activity labels are backend-controlled (never LLM / chain-of-thought).
 
 function readOptionalConversationId(payloadOrQuery) {
   const raw = payloadOrQuery?.conversationId;
   if (typeof raw !== "string") return null;
   const trimmed = raw.trim();
   return trimmed || null;
+}
+
+function serializeCeoOutcome(outcome) {
+  return {
+    reply: outcome.reply,
+    messageId: outcome.messageId,
+    conversationId: outcome.conversationId,
+    conversationTitle: outcome.conversationTitle,
+    activities: Array.isArray(outcome.activities)
+      ? outcome.activities.filter(assertSafeActivityEvent)
+      : [],
+    ...(outcome.digest ? { digest: outcome.digest } : {}),
+    ...(outcome.agent ? { agent: outcome.agent } : {}),
+    ...(outcome.run ? { run: outcome.run } : {}),
+  };
+}
+
+function writeSse(response, payload) {
+  response.write(`data: ${JSON.stringify(payload)}\n\n`);
 }
 
 async function handleHistory(request, response) {
@@ -70,37 +88,63 @@ async function handleSend(request, response) {
         ? payload.relatedRunId.trim()
         : null;
     const conversationId = readOptionalConversationId(payload);
+    const stream = payload?.stream === true;
 
     const ceoConfig = await withUserContext(decodedToken.uid, (tx) =>
       ensureCeoAgentConfig(tx, decodedToken.uid)
     );
 
-    // One CEO brain. Legacy clients may still send mode: "create_agent" — ignore
-    // it and use the same engine as every other CEO message.
-    const chatEngine = isBrainChatEnabled() ? brainTurn : respondToChat;
-    const outcome = await chatEngine({
+    if (stream) {
+      applySecurityHeaders(response);
+      response.statusCode = 200;
+      response.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+      response.setHeader("Cache-Control", "no-cache, no-transform");
+      response.setHeader("Connection", "keep-alive");
+      if (typeof response.flushHeaders === "function") response.flushHeaders();
+
+      const outcome = await brainTurn({
+        userId: decodedToken.uid,
+        ceoAgentConfigId: ceoConfig.id,
+        conversationId,
+        message,
+        relatedRunId,
+        onActivity: (event) => {
+          if (!assertSafeActivityEvent(event)) return;
+          writeSse(response, { type: "activity", activity: event });
+        },
+      });
+      writeSse(response, { type: "done", result: serializeCeoOutcome(outcome) });
+      response.end();
+      return undefined;
+    }
+
+    const outcome = await brainTurn({
       userId: decodedToken.uid,
       ceoAgentConfigId: ceoConfig.id,
       conversationId,
       message,
       relatedRunId,
     });
-    return response.status(200).json({
-      reply: outcome.reply,
-      messageId: outcome.messageId,
-      conversationId: outcome.conversationId,
-      conversationTitle: outcome.conversationTitle,
-      ...(outcome.digest ? { digest: outcome.digest } : {}),
-      ...(outcome.agent ? { agent: outcome.agent } : {}),
-      ...(outcome.run ? { run: outcome.run } : {}),
-    });
+    return response.status(200).json(serializeCeoOutcome(outcome));
   } catch (error) {
-    return respondAgentApiError(
-      response,
-      "api/agents/ceo/chat",
-      error,
-      "Unable to process the CEO Agent chat message."
-    );
+    if (!response.headersSent) {
+      return respondAgentApiError(
+        response,
+        "api/agents/ceo/chat",
+        error,
+        "Unable to process the CEO Agent chat message."
+      );
+    }
+    try {
+      writeSse(response, {
+        type: "error",
+        message: error?.message || "Unable to process the CEO Agent chat message.",
+      });
+      response.end();
+    } catch {
+      // ignore
+    }
+    return undefined;
   }
 }
 
