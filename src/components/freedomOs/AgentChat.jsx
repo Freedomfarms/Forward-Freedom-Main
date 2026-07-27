@@ -447,32 +447,42 @@ export function AgentChat({
     setHistoryError("");
   };
 
-  const handleArchiveConversation = async (conversationId) => {
+  const handleRenameConversation = async (conversationId, title) => {
+    const nextTitle = String(title || "").trim();
+    if (!conversationId || !nextTitle) return;
     try {
+      let updated;
       if (mode === "agent") {
-        await updateAgentConversation(agentId, conversationId, { archived: true }, { user });
+        updated = await updateAgentConversation(
+          agentId,
+          conversationId,
+          { title: nextTitle },
+          { user }
+        );
       } else if (mode === "ceo") {
-        await updateCeoConversation(conversationId, { archived: true }, { user });
+        updated = await updateCeoConversation(conversationId, { title: nextTitle }, { user });
       } else {
         return;
       }
-      const rows = await refreshConversationList();
-      if (conversationId === activeConversationId) {
-        historyLoadedForRef.current = null;
-        const nextId = rows[0]?.id || null;
-        if (!nextId) {
-          await handleNewChat();
-        } else {
-          setActiveConversationId(nextId);
-          setMessages([]);
-        }
-      }
+      const nextTitleValue = updated?.title || nextTitle;
+      setConversations((current) =>
+        current.map((row) =>
+          row.id === conversationId
+            ? {
+                ...row,
+                title: nextTitleValue,
+                updatedAt: updated?.updatedAt || new Date().toISOString(),
+              }
+            : row
+        )
+      );
     } catch (error) {
       if (isRecoverableConversationError(error)) {
         await recoverFromBadConversation(conversationId, error);
       } else {
-        setListError(describeAgentApiError(error, "Could not archive that chat."));
+        setListError(describeAgentApiError(error, "Could not rename that chat."));
       }
+      throw error;
     }
   };
 
@@ -1005,7 +1015,7 @@ export function AgentChat({
         listMaxHeight={isWorkspace ? 520 : 168}
         onSelect={handleSelectConversation}
         onNewChat={() => void handleNewChat()}
-        onArchive={(id) => void handleArchiveConversation(id)}
+        onRename={(id, title) => handleRenameConversation(id, title)}
         onDelete={(id) => void handleDeleteConversation(id)}
       />
       {chatBody}
