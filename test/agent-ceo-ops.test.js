@@ -222,3 +222,35 @@ test("local schedule without timezone asks instead of assuming UTC", async (t) =
     /timezone/i
   );
 });
+
+test("create_agent refuses live registration when social connectors are unavailable", async (t) => {
+  if (!requireSetup(t)) return;
+
+  const before = currentDb.tables.agentConfig.length;
+  const result = await applyCeoActions({
+    userId: USER_ID,
+    ceoAgentConfigId: "ceo-1",
+    conversationId: "ceo-convo-1",
+    actions: [
+      {
+        type: "create_agent",
+        agentType: "research",
+        name: "Social Media Review",
+        instructions:
+          "Review Instagram, TikTok, and X posts from WendyOcrypto and Raoul Pal.",
+        definitionOfDone: "Weekday social media review report.",
+        schedulePreset: "weekly",
+        scheduleWeekdays: ["monday", "tuesday", "wednesday", "thursday", "friday"],
+        scheduleHourLocal: 18,
+      },
+    ],
+  });
+
+  assert.equal(result.created, false);
+  assert.equal(result.agent, null);
+  assert.equal(result.plannedAgent?.status, "planned");
+  assert.match(result.reply, /not currently connected/i);
+  assert.match(result.reply, /No live agent was registered/i);
+  assert.ok(result.capabilityAssessment?.unavailable?.some((c) => c.id === "social_media_monitoring"));
+  assert.equal(currentDb.tables.agentConfig.length, before);
+});

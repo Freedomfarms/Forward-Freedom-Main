@@ -1,5 +1,14 @@
 import { withUserContext } from "../db/prisma.js";
 import {
+  assessCapabilities,
+  detectPlatformNames,
+  resolveRequiredCapabilities,
+} from "../capabilities/registry.js";
+import {
+  agentDefinitionFromConfig,
+  buildPlannedAgentDefinition,
+} from "./agentDefinition.js";
+import {
   createAgentConfig,
   serializeAgentConfig,
   serializeAgentRun,
@@ -261,6 +270,57 @@ async function applyCreateAgent(userId, ceoAgentConfigId, action, timeZone) {
   const toolAccess =
     action.emailDelivery === true ? { email: true } : action.emailDelivery === false ? null : undefined;
 
+  const purposeText = [
+    action.name,
+    action.instructions,
+    action.definitionOfDone,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  // Fail closed: do not register a live agent when required platform
+  // capabilities are unavailable. Return a planned definition instead.
+  const requiredCapabilities = resolveRequiredCapabilities({
+    message: purposeText,
+    platforms: detectPlatformNames(purposeText),
+    missionKind: "create",
+    tentativeAgentType: action.agentType || null,
+  });
+  const capabilityAssessment = assessCapabilities(requiredCapabilities);
+  if (!capabilityAssessment.allAvailable) {
+    const plannedAgent = buildPlannedAgentDefinition({
+      name: action.name || null,
+      type: action.agentType || null,
+      purpose:
+        action.definitionOfDone ||
+        action.instructions ||
+        action.name ||
+        "Planned agent",
+      requiredCapabilities,
+      schedule: scheduleFields.schedulePreset
+        ? {
+            preset: scheduleFields.schedulePreset,
+            weekday: scheduleFields.scheduleWeekday || null,
+            weekdays: scheduleFields.scheduleWeekdays || null,
+            hourUtc: scheduleFields.scheduleHourUtc ?? null,
+          }
+        : null,
+      permissions: ["READ_ONLY"],
+    });
+    return {
+      reply: [
+        `I can design this agent, but these capabilities are not currently connected.`,
+        `Planned agent "${plannedAgent.name || action.name}" status=${plannedAgent.status}.`,
+        `Blockers: ${capabilityAssessment.blockers.join(" ")}`,
+        "No live agent was registered.",
+      ].join(" "),
+      agent: null,
+      plannedAgent,
+      capabilityAssessment,
+      created: false,
+    };
+  }
+
   const validated = validateAgentCreatePayload({
     agentType: action.agentType,
     name: action.name,
@@ -297,9 +357,16 @@ async function applyCreateAgent(userId, ceoAgentConfigId, action, timeZone) {
       ? " Email delivery enabled."
       : "";
 
+  const agentDefinition = agentDefinitionFromConfig(agent, {
+    capabilityIds: requiredCapabilities,
+  });
+
   return {
     reply: `Created "${agent.name}" (${agent.agentType}).${scheduleNote}${emailNote}`,
     agent: serializeAgentConfig(agent),
+    agentDefinition,
+    capabilityAssessment,
+    created: true,
   };
 }
 
@@ -510,6 +577,9 @@ export async function applyCeoActions({
   let lastAgent = null;
   let lastRun = null;
   let mode = null;
+  let plannedAgent = null;
+  let agentDefinition = null;
+  let capabilityAssessment = null;
 
   for (const action of list) {
     if (action.type === "set_timezone") {
@@ -520,8 +590,13 @@ export async function applyCeoActions({
     }
     if (action.type === "create_agent") {
       const result = await applyCreateAgent(userId, ceoAgentConfigId, action, timeZone);
-      lastCreatedId = result.agent.id;
-      lastAgent = result.agent;
+      if (result.agent?.id) {
+        lastCreatedId = result.agent.id;
+        lastAgent = result.agent;
+      }
+      if (result.plannedAgent) plannedAgent = result.plannedAgent;
+      if (result.agentDefinition) agentDefinition = result.agentDefinition;
+      if (result.capabilityAssessment) capabilityAssessment = result.capabilityAssessment;
       replies.push(result.reply);
       continue;
     }
@@ -574,6 +649,10 @@ export async function applyCeoActions({
     agent: lastAgent,
     run: lastRun,
     mode,
+    ...(plannedAgent ? { plannedAgent } : {}),
+    ...(agentDefinition ? { agentDefinition } : {}),
+    ...(capabilityAssessment ? { capabilityAssessment } : {}),
+    created: Boolean(lastAgent?.id),
   };
 }
 

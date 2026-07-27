@@ -8,6 +8,11 @@
 
 import { CREATABLE_AGENT_TYPES } from "./registry.js";
 import {
+  assessCapabilities,
+  detectPlatformNames,
+  resolveRequiredCapabilities,
+} from "../capabilities/registry.js";
+import {
   cloneEfficiencyLog,
   emptyEfficiencyLog,
   logCeoEfficiency,
@@ -83,6 +88,9 @@ export function emptyMissionState() {
     createsNewCapability: false,
     modifiesExisting: false,
     missionExecutable: false,
+    requiredCapabilities: [],
+    capabilityAssessment: null,
+    capabilityBlocked: false,
     conversationHistory: [],
     changedFacts: [],
     decision: null,
@@ -442,9 +450,41 @@ export function sketchMissionFromMessage(message, { existingAgents = [] } = {}) 
   missing.length = 0;
   missing.push(...cleanedMissing);
 
-  const selection = missionExecutable
-    ? null
-    : selectHighestValueQuestion(missing, { known });
+  // Control-plane gate: information-complete ≠ capability-available.
+  // Native social / trading / other unavailable registry entries block execution.
+  const requiredCapabilities = resolveRequiredCapabilities({
+    message: text,
+    platforms: platforms.length ? platforms : detectPlatformNames(text),
+    missionKind,
+    tentativeAgentType,
+  });
+  const capabilityAssessment = assessCapabilities(requiredCapabilities);
+  const capabilityBlocked = !capabilityAssessment.allAvailable;
+  // Would the mission be executable on information alone?
+  const informationComplete = missionExecutable;
+  if (capabilityBlocked) {
+    missionExecutable = false;
+    if (missionKind === "execute") missionKind = "create";
+    for (const blocker of capabilityAssessment.blockers) {
+      if (!known.some((fact) => fact === `Capability gap: ${blocker}`)) {
+        known.push(`Capability gap: ${blocker}`);
+      }
+    }
+    if (informationComplete) {
+      situation =
+        "Mission is defined, but required platform capabilities are not connected.";
+      if (!missing.some((gap) => /capability|connector|integration/i.test(gap))) {
+        missing.push("available platform capabilities / connectors for this mission");
+      }
+    }
+  }
+
+  // When info is complete but capabilities are missing, explain the gap — do not
+  // keep interviewing. When info is still missing, ask the highest-value gap.
+  const selection =
+    missionExecutable || (capabilityBlocked && informationComplete)
+      ? null
+      : selectHighestValueQuestion(missing, { known });
 
   const sketch = {
     situation,
@@ -456,10 +496,24 @@ export function sketchMissionFromMessage(message, { existingAgents = [] } = {}) 
     preferences: [],
     candidateQuestions: selection?.candidateQuestions || [],
     selectedQuestion: selection?.selectedQuestion || null,
-    reasonSelected: selection?.reasonSelected || null,
+    reasonSelected:
+      capabilityBlocked && informationComplete
+        ? "Capability registry blocks execution."
+        : selection?.reasonSelected || null,
     tentativeAgentType,
     agentTypeConfidence,
     missionExecutable,
+    requiredCapabilities,
+    capabilityAssessment,
+    capabilityBlocked,
+    decision:
+      capabilityBlocked && informationComplete
+        ? "Explain capability gaps; design a planned agent — do not claim live completion."
+        : missionExecutable
+          ? "Mission executable — proceed to act."
+          : selection?.selectedQuestion
+            ? `Ask: ${selection.selectedQuestion}`
+            : "Await clarification.",
     createsNewCapability: missionKind === "create" || missionKind === "execute",
     modifiesExisting: missionKind === "modify",
     existingAgentReferenced: existingRef,
@@ -755,6 +809,16 @@ function cloneMissionState(state) {
     conversationHistory: [...(state.conversationHistory || [])],
     changedFacts: [...(state.changedFacts || [])],
     candidateQuestions: [...(state.candidateQuestions || [])],
+    requiredCapabilities: [...(state.requiredCapabilities || [])],
+    capabilityAssessment: state.capabilityAssessment
+      ? {
+          ...state.capabilityAssessment,
+          required: [...(state.capabilityAssessment.required || [])],
+          available: [...(state.capabilityAssessment.available || [])],
+          unavailable: [...(state.capabilityAssessment.unavailable || [])],
+          blockers: [...(state.capabilityAssessment.blockers || [])],
+        }
+      : null,
     efficiency: cloneEfficiencyLog(state.efficiency),
   };
 }
@@ -886,10 +950,53 @@ function finalizeContinuityState(state) {
   // Drop preference-style gaps always
   next.missing = (next.missing || []).filter((gap) => !/personality|tone|escalat|boundar/i.test(gap));
 
-  // Executable when create/modify mission has no remaining gaps
+  // Re-assess capabilities from the accumulated mission transcript.
+  const missionText = [...(next.conversationHistory || []), next.mission || ""]
+    .filter(Boolean)
+    .join("\n");
+  const requiredCapabilities = resolveRequiredCapabilities({
+    message: missionText,
+    platforms: detectPlatformNames(missionText),
+    missionKind: next.missionKind,
+    tentativeAgentType: next.tentativeAgentType,
+  });
+  const capabilityAssessment = assessCapabilities(requiredCapabilities);
+  next.requiredCapabilities = requiredCapabilities;
+  next.capabilityAssessment = capabilityAssessment;
+  next.capabilityBlocked = !capabilityAssessment.allAvailable;
+
+  for (const blocker of capabilityAssessment.blockers || []) {
+    const fact = `Capability gap: ${blocker}`;
+    if (!next.known.some((row) => row === fact)) next.known.push(fact);
+  }
+
+  // Drop capability-gap placeholders from missing before info-completeness check;
+  // those are control-plane blockers, not interview questions.
+  const infoMissing = (next.missing || []).filter(
+    (gap) => !/capability|connector|integration/i.test(gap)
+  );
+  next.missing = infoMissing;
+
+  // Executable when create/modify mission has no remaining info gaps
   const openCreate =
     next.missionKind === "create" || next.missionKind === "execute" || next.missionKind === "modify";
-  if (openCreate && next.mission && !(next.missing || []).length) {
+  const informationComplete = openCreate && next.mission && !infoMissing.length;
+
+  if (informationComplete && next.capabilityBlocked) {
+    next.missionExecutable = false;
+    if (next.missionKind === "execute") next.missionKind = "create";
+    next.situation =
+      "Mission is defined, but required platform capabilities are not connected.";
+    next.missing = ["available platform capabilities / connectors for this mission"];
+    next.decision =
+      "Explain capability gaps; design a planned agent — do not claim live completion.";
+    next.selectedQuestion = null;
+    next.candidateQuestions = [];
+    next.reasonSelected = "Capability registry blocks execution.";
+    return next;
+  }
+
+  if (informationComplete) {
     next.missionExecutable = true;
     if (next.missionKind === "create") next.missionKind = "execute";
     next.situation = next.situation || "Mission is sufficiently defined to execute or create.";

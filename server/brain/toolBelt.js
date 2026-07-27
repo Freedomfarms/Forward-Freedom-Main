@@ -77,7 +77,7 @@ export function buildBrainToolBelt({ userId, ceoAgentConfigId, conversationId, t
 
   const createAgent = tool({
     description:
-      "Create a new specialist agent for the user. Prefer one-shot creation when the user gave enough detail. Schedules use the user's local timezone via scheduleHourLocal.",
+      "Create a new specialist agent for the user when required PLATFORM CAPABILITIES are available. If capabilities are unavailable, returns a planned agent definition without registering a live agent. Prefer one-shot creation when the user gave enough detail. Schedules use the user's local timezone via scheduleHourLocal.",
     inputSchema: jsonSchema({
       type: "object",
       properties: {
@@ -99,7 +99,21 @@ export function buildBrainToolBelt({ userId, ceoAgentConfigId, conversationId, t
       try {
         const result = await applySingleCeoAction({ type: "create_agent", ...input });
         turnState.lastCreatedAgentId = result?.agent?.id ?? turnState.lastCreatedAgentId;
-        return { ok: true, result: result?.reply, agent: result?.agent ?? null };
+        if (result?.plannedAgent) turnState.plannedAgent = result.plannedAgent;
+        if (result?.agentDefinition) turnState.agentDefinition = result.agentDefinition;
+        if (result?.capabilityAssessment) {
+          turnState.capabilityAssessment = result.capabilityAssessment;
+        }
+        const created = Boolean(result?.agent?.id);
+        return {
+          ok: true,
+          created,
+          result: result?.reply,
+          agent: result?.agent ?? null,
+          agentDefinition: result?.agentDefinition ?? result?.plannedAgent ?? null,
+          capabilityAssessment: result?.capabilityAssessment ?? null,
+          blockers: result?.capabilityAssessment?.blockers ?? [],
+        };
       } catch (error) {
         return toolResultFromError(error);
       }

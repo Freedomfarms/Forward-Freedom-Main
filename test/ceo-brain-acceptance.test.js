@@ -378,11 +378,13 @@ const CASES = [
     input:
       "Every morning email me a summary of Elon Musk and Jensen Huang posts from X and LinkedIn.",
     expect: {
-      missionKinds: ["execute", "create"],
-      executable: true,
-      knownMatch: /Elon Musk|Jensen Huang/i,
+      // Info-complete social mission — blocked by unavailable native connectors.
+      missionKinds: ["create", "execute"],
+      executable: false,
+      knownMatch: /Elon Musk|Jensen Huang|Capability gap/i,
       mustNotAskPeopleOrPlatforms: true,
       questionMustNotMatch: PREFERENCE_RE,
+      capabilityBlocked: true,
     },
   },
   {
@@ -414,10 +416,12 @@ const CASES = [
     category: "complete",
     input: "Daily at 7am email me X posts from Satya Nadella.",
     expect: {
-      missionKinds: ["execute", "create"],
-      executable: true,
-      knownMatch: /Satya Nadella|X|email|Schedule/i,
+      // Information-complete, but native X monitoring is unavailable in the registry.
+      missionKinds: ["create", "execute"],
+      executable: false,
+      knownMatch: /Satya Nadella|X|email|Schedule|Capability gap/i,
       mustNotAskPeopleOrPlatforms: true,
+      capabilityBlocked: true,
     },
   },
   {
@@ -461,10 +465,12 @@ const CASES = [
     input:
       "Every weekday morning email me LinkedIn and X highlights for Fiona Green and Jensen Huang.",
     expect: {
-      missionKinds: ["execute", "create"],
-      executable: true,
+      // Defined mission, but LinkedIn/X connectors are unavailable — not live-executable.
+      missionKinds: ["create", "execute"],
+      executable: false,
       mustNotAskPeopleOrPlatforms: true,
       questionMustNotMatch: PREFERENCE_RE,
+      capabilityBlocked: true,
     },
   },
 ];
@@ -517,11 +523,14 @@ function runCase(caseDef) {
       sketch.missionKind === "modify",
     `${caseDef.id}: agent type committed too early\n${JSON.stringify(report, null, 2)}`
   );
-  assert.equal(
-    report["Was this the highest-value question?"],
-    true,
-    `${caseDef.id}: not highest-value question\n${JSON.stringify(report, null, 2)}`
-  );
+  // Capability-blocked, info-complete missions explain the gap (no intake question).
+  if (!exp.capabilityBlocked) {
+    assert.equal(
+      report["Was this the highest-value question?"],
+      true,
+      `${caseDef.id}: not highest-value question\n${JSON.stringify(report, null, 2)}`
+    );
+  }
 
   if (exp.missionKinds) {
     assert.ok(
@@ -602,9 +611,28 @@ function runCase(caseDef) {
       false,
       `${caseDef.id}: expected not executable\n${JSON.stringify(report, null, 2)}`
     );
+    // Capability-blocked missions explain the gap instead of asking another intake question.
+    if (!exp.capabilityBlocked) {
+      assert.ok(
+        sketch.selectedQuestion,
+        `${caseDef.id}: expected a clarifying question\n${JSON.stringify(report, null, 2)}`
+      );
+    }
+  }
+  if (exp.capabilityBlocked) {
+    assert.equal(
+      sketch.capabilityBlocked,
+      true,
+      `${caseDef.id}: expected capabilityBlocked\n${JSON.stringify(report, null, 2)}`
+    );
     assert.ok(
-      sketch.selectedQuestion,
-      `${caseDef.id}: expected a clarifying question\n${JSON.stringify(report, null, 2)}`
+      sketch.requiredCapabilities?.length,
+      `${caseDef.id}: expected requiredCapabilities\n${JSON.stringify(report, null, 2)}`
+    );
+    assert.match(
+      sketch.decision || "",
+      /capability|planned|not claim/i,
+      `${caseDef.id}: expected capability-gap decision\n${JSON.stringify(report, null, 2)}`
     );
   }
   if (exp.mustNotAskPeopleOrPlatforms) {

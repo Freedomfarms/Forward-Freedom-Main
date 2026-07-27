@@ -61,7 +61,7 @@ test("Test 2: ambiguous competitors — ask who/which competitors", () => {
   assert.doesNotMatch(sketch.selectedQuestion || "", /personality|platform|linkedin/i);
 });
 
-test("Test 3: complete social request — mostly executable, no people/platform gaps", () => {
+test("Test 3: complete social request — info-complete but capability-blocked", () => {
   const sketch = sketchMissionFromMessage(
     "Every morning email me a summary of Elon Musk and Jensen Huang posts from X and LinkedIn."
   );
@@ -74,6 +74,10 @@ test("Test 3: complete social request — mostly executable, no people/platform 
   assert.ok(
     !sketch.missing.some((gap) => /personality|tone|escalat|boundary/i.test(gap))
   );
+  // Native social connectors are unavailable — must not be live-executable.
+  assert.equal(sketch.capabilityBlocked, true);
+  assert.equal(sketch.missionExecutable, false);
+  assert.ok(sketch.requiredCapabilities.includes("social_media_monitoring"));
 });
 
 test("rankMissingByRelevance prioritizes execution blockers over personality", () => {

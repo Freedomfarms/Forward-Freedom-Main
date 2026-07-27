@@ -14,6 +14,11 @@ import {
   renderIdentitySituationBrief,
   selectOwnedUserMemories,
 } from "./identity.js";
+import {
+  assessControlPlaneRequest,
+  buildExecutionState,
+  renderCapabilitySituationBrief,
+} from "./controlPlane.js";
 import { selectRelevantMemories } from "./relevance.js";
 import { sketchMissionFromConversation } from "../agents/ceoReasoning.js";
 import {
@@ -281,6 +286,17 @@ export async function assembleBrainContext({
     existingAgents: teamAgents || [],
   });
 
+  // Control plane: intent ≠ execution; capability registry is authoritative.
+  const controlPlane = assessControlPlaneRequest({
+    message: text,
+    missionState: activeMission,
+  });
+  const executionState = buildExecutionState({
+    intent: controlPlane.intent,
+    capabilityAssessment: controlPlane.capabilityAssessment,
+    agentDefinition: controlPlane.plannedAgent,
+  });
+
   const promptSections = [
     "Reply to the user's new message using the structured context below.",
     ...renderIdentitySituationBrief({
@@ -288,6 +304,7 @@ export async function assembleBrainContext({
       activeMission,
       relevantMemories: ownedMemories,
     }),
+    ...renderCapabilitySituationBrief({ controlPlane, executionState }),
     dataSection("YOUR CAPABILITIES (specialist agent roster)", renderTeamRoster(teamAgents)),
     dataSection("RECENT RUN SUMMARIES", renderNamedRunSummaries(runs, teamAgents)),
     dataSection("USER TIMEZONE", tzLabel),
@@ -330,6 +347,8 @@ export async function assembleBrainContext({
     teamAgents,
     identities,
     activeMission,
+    controlPlane,
+    executionState,
   };
 }
 
