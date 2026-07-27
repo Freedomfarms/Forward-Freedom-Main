@@ -22,6 +22,7 @@ import {
   classifyAgentRequest,
   guardAgentReply,
 } from "../agents/executionContract.js";
+import { createActivityRecorder } from "./activityStream.js";
 import { BRAIN_SYSTEM_PROMPT } from "./prompts.js";
 import { buildBrainToolBelt } from "./toolBelt.js";
 import { logCeoDecision } from "./observability.js";
@@ -58,10 +59,12 @@ export function isBrainChatEnabled() {
 }
 
 /**
- * One full Brain turn. Same inputs/outputs as the legacy respondToChat CEO
- * path, so the API route and frontend need no changes:
- * `{ reply, messageId, conversationId, conversationTitle, model, usage,
- *    agent?, run?, runMode?, digest? }`.
+ * One full Brain turn.
+ * Returns `{ reply, messageId, conversationId, conversationTitle, model, usage,
+ *    activities, agent?, run?, runMode?, digest? }`.
+ *
+ * `onActivity` receives controlled Activity Stream events as the runtime
+ * progresses (for SSE). Events never include chain-of-thought.
  */
 export async function brainTurn({
   userId,
@@ -69,8 +72,16 @@ export async function brainTurn({
   conversationId = null,
   message,
   relatedRunId = null,
+  onActivity = null,
 }) {
+  const activities = createActivityRecorder({
+    onEvent: typeof onActivity === "function" ? onActivity : undefined,
+  });
+
+  activities.start("UNDERSTANDING_REQUEST");
+
   // Observe / Assemble world-model context (identity, capabilities, app state).
+  activities.start("REVIEWING_CONTEXT");
   const context = await assembleBrainContext({
     userId,
     ceoAgentConfigId,
@@ -78,6 +89,21 @@ export async function brainTurn({
     message,
     relatedRunId,
   });
+  activities.complete("UNDERSTANDING_REQUEST");
+  activities.complete("REVIEWING_CONTEXT");
+
+  if (context.activeMission?.authority === "plan") {
+    activities.start("EVALUATING_ACTIVE_PLANS", {
+      planStatus: context.activeMission.status || "ACTIVE",
+    });
+    activities.complete("EVALUATING_ACTIVE_PLANS", {
+      planStatus: context.activeMission.status || "ACTIVE",
+    });
+  }
+
+  activities.start("CHECKING_CONSTRAINTS");
+  activities.complete("CHECKING_CONSTRAINTS");
+  activities.start("PRIORITIZING_ACTIONS");
 
   // Per-turn side-effect accumulator shared by all tool executes.
   const turnState = {
@@ -94,6 +120,7 @@ export async function brainTurn({
     ceoAgentConfigId,
     conversationId: context.conversationId,
     turnState,
+    activities,
   });
 
   let prompt = context.promptSections.join("\n\n");
@@ -110,6 +137,9 @@ export async function brainTurn({
       tools,
       stopWhen: stepCountIs(BRAIN_MAX_STEPS),
       maxOutputTokens: BRAIN_MAX_OUTPUT_TOKENS,
+      onStepFinish: (step) => {
+        recordWebSearchActivity(activities, step);
+      },
     });
     usage = result.totalUsage ?? result.usage ?? usage;
     reply = String(result.text || "").trim();
@@ -119,12 +149,14 @@ export async function brainTurn({
     // server confirmations instead.
     if (turnState.confirmations.length) break;
   }
+  activities.complete("PRIORITIZING_ACTIONS");
   if (!reply) {
     reply = turnState.confirmations.join("\n\n") || EMPTY_REPLY_FALLBACK;
   }
 
   // Self-consistency: catch assistant↔user identity swaps before persist.
   // Regenerate once without tools when no side effects have run yet.
+  activities.start("VALIDATING_RESULTS");
   const identityPass = await enforceIdentityConsistency({
     reply,
     context,
@@ -148,6 +180,7 @@ export async function brainTurn({
   if (capabilityPass.usage) usage = capabilityPass.usage;
 
   // Shared Agent Execution Contract — same evidence gate as sub-agents.
+  activities.start("CHECKING_EVIDENCE");
   const requestKind = classifyAgentRequest(context.lastUserMessage);
   const executionEvidence = buildExecutionEvidence({
     turnState,
@@ -164,6 +197,10 @@ export async function brainTurn({
     safetyChecksTriggered.push(`execution:${executionGuard.failures.join("|")}`);
   }
   reply = executionGuard.reply;
+  activities.complete("CHECKING_EVIDENCE");
+  activities.complete("VALIDATING_RESULTS");
+  activities.start("CONFIRMING_COMPLETION");
+  activities.complete("CONFIRMING_COMPLETION");
 
   logCeoDecision({
     conversationId: context.conversationId,
@@ -174,6 +211,9 @@ export async function brainTurn({
     agentCreated: Boolean(turnState.agent?.id),
     runDelegated: Boolean(turnState.run?.id),
   });
+
+  activities.start("PREPARING_SUMMARY");
+  activities.start("FORMATTING_RECOMMENDATION");
 
   // Respond To User.
   const relatedFromOps = turnState.run?.id || relatedRunId || null;
@@ -192,6 +232,8 @@ export async function brainTurn({
     await touchConversation(tx, context.conversationId);
     return created;
   });
+  activities.complete("PREPARING_SUMMARY");
+  activities.complete("FORMATTING_RECOMMENDATION");
 
   // Queue Background Work — the reply above is already final; everything
   // below is best-effort and must never fail or delay the chat.
@@ -223,11 +265,24 @@ export async function brainTurn({
     conversationTitle: context.conversationTitle,
     model: context.model,
     usage,
+    activities: activities.list(),
     ...(turnState.agent ? { agent: turnState.agent } : {}),
     ...(turnState.run ? { run: turnState.run } : {}),
     ...(turnState.runMode ? { runMode: turnState.runMode } : {}),
     ...(turnState.digest ? { digest: turnState.digest } : {}),
   };
+}
+
+function recordWebSearchActivity(activities, step) {
+  if (!activities || !step) return;
+  const names = [
+    ...(step.toolCalls || []).map((call) => call.toolName || call.name),
+    ...(step.toolResults || []).map((result) => result.toolName || result.name),
+  ].filter(Boolean);
+  if (names.includes("web_search")) {
+    activities.start("GATHERING_INFORMATION", { toolName: "web_search" });
+    activities.complete("GATHERING_INFORMATION", { toolName: "web_search" });
+  }
 }
 
 /**

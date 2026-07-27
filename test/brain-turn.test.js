@@ -142,6 +142,16 @@ test("brain turn: plain-text reply, no JSON envelope, tools offered, extraction 
   assert.equal(outcome.reply, "You have two agents on the team.");
   assert.equal(outcome.conversationId, "ceo-convo-1");
   assert.ok(outcome.messageId);
+  assert.ok(Array.isArray(outcome.activities));
+  assert.ok(outcome.activities.some((row) => row.key === "UNDERSTANDING_REQUEST"));
+  assert.ok(outcome.activities.some((row) => row.key === "CHECKING_EVIDENCE"));
+  assert.ok(
+    outcome.activities.every(
+      (row) =>
+        typeof row.label === "string" &&
+        !/\b(i think|chain of thought|because)\b/i.test(row.label)
+    )
+  );
 
   // The conversational call is free text: no output schema, no envelope.
   const textCall = llmCalls.find((call) => call.method === "generateText");

@@ -5,6 +5,7 @@ import { applyCeoActions } from "../agents/ceoOps.js";
 import { AgentError } from "../agents/errors.js";
 import { getWebSearchTools } from "../agents/llm.js";
 import { WEEKDAY_NAMES } from "../agents/schedule.js";
+import { activityKeyForTool } from "./activityStream.js";
 import { createPlan, getPlan, updatePlan } from "./plans.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -58,7 +59,13 @@ function toolResultFromError(error) {
  * response, and tracks the last created agent id so run_agent can chain onto
  * a create_agent from the same turn.
  */
-export function buildBrainToolBelt({ userId, ceoAgentConfigId, conversationId, turnState }) {
+export function buildBrainToolBelt({
+  userId,
+  ceoAgentConfigId,
+  conversationId,
+  turnState,
+  activities = null,
+}) {
   async function applySingleCeoAction(action) {
     const result = await applyCeoActions({
       userId,
@@ -425,7 +432,7 @@ export function buildBrainToolBelt({ userId, ceoAgentConfigId, conversationId, t
     },
   });
 
-  return {
+  const tools = {
     ...getWebSearchTools({ maxUses: BRAIN_WEB_SEARCH_MAX_USES }),
     create_agent: createAgent,
     update_agent: updateAgent,
@@ -437,4 +444,58 @@ export function buildBrainToolBelt({ userId, ceoAgentConfigId, conversationId, t
     update_plan: updatePlanTool,
     get_plan: getPlanTool,
   };
+  return wrapToolsWithActivity(tools, activities);
+}
+
+function buildToolActivityMeta(toolName, input = {}) {
+  const meta = { toolName };
+  if (typeof input?.name === "string" && input.name.trim()) {
+    meta.agentName = input.name.trim();
+  }
+  if (typeof input?.agentType === "string" && input.agentType.trim()) {
+    meta.agentType = input.agentType.trim();
+  }
+  return meta;
+}
+
+/** Wrap allowlisted tool executes so CEO Activity Stream tracks WORKING events. */
+function wrapToolsWithActivity(tools, activities) {
+  if (!activities) return tools;
+  const wrapped = {};
+  for (const [name, toolDef] of Object.entries(tools)) {
+    if (!toolDef || typeof toolDef.execute !== "function") {
+      wrapped[name] = toolDef;
+      continue;
+    }
+    const originalExecute = toolDef.execute.bind(toolDef);
+    wrapped[name] = {
+      ...toolDef,
+      execute: async (input, options) => {
+        const key = activityKeyForTool(name);
+        const meta = buildToolActivityMeta(name, input);
+        if (key === "COORDINATING_AGENT" && name === "run_agent") {
+          activities.start("RUNNING_ANALYSIS", meta);
+        }
+        if (key) activities.start(key, meta);
+        try {
+          const result = await originalExecute(input, options);
+          const doneMeta = { ...meta };
+          if (result?.agent?.name) doneMeta.agentName = result.agent.name;
+          if (result?.agent?.agentType) doneMeta.agentType = result.agent.agentType;
+          if (key) activities.complete(key, doneMeta);
+          if (key === "COORDINATING_AGENT" && name === "run_agent") {
+            activities.complete("RUNNING_ANALYSIS", doneMeta);
+          }
+          return result;
+        } catch (error) {
+          if (key) activities.fail(key, meta);
+          if (key === "COORDINATING_AGENT" && name === "run_agent") {
+            activities.fail("RUNNING_ANALYSIS", meta);
+          }
+          throw error;
+        }
+      },
+    };
+  }
+  return wrapped;
 }
