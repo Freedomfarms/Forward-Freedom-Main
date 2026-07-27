@@ -430,3 +430,77 @@ test("cron sweep processes due jobs and requeues stale RUNNING jobs", async (t) 
     "RUNNING"
   );
 });
+
+test("brain turn: identity self-check regenerates when assistant name is assigned to user", async (t) => {
+  if (!requireSetup(t)) return;
+
+  currentDb = createFakeDb({
+    user: [
+      {
+        id: USER_ID,
+        email: "kyle@example.com",
+        displayName: "Kyle",
+        timezone: "America/Chicago",
+      },
+    ],
+    ceoAgentConfig: [
+      {
+        id: "ceo-1",
+        userId: USER_ID,
+        name: "Harry",
+        personalityPreset: "DIRECT_EFFICIENT",
+        model: "claude-sonnet-4-5",
+        defaultSubAgentModel: "claude-sonnet-4-5",
+      },
+    ],
+    agentConversation: [
+      {
+        id: "ceo-convo-1",
+        userId: USER_ID,
+        ceoAgentConfigId: "ceo-1",
+        agentConfigId: null,
+        title: "Main",
+        isSystem: false,
+        updatedAt: new Date("2026-07-20T00:00:00Z"),
+      },
+    ],
+  });
+
+  const brainPrompts = [];
+  installLlm({
+    generateText: async (options) => {
+      const prompt = String(options.prompt || "");
+      // Ignore async title-generation calls (no identity brief).
+      if (!/ASSISTANT IDENTITY/.test(prompt) && !/IDENTITY NAMESPACE CORRECTION/.test(prompt)) {
+        return { text: "Main", usage: {} };
+      }
+      brainPrompts.push(prompt);
+      if (!/IDENTITY NAMESPACE CORRECTION/.test(prompt)) {
+        assert.match(prompt, /ASSISTANT IDENTITY/);
+        assert.match(prompt, /USER IDENTITY/);
+        assert.match(prompt, /name: Harry/);
+        assert.match(prompt, /name: Kyle/);
+        return {
+          text: "I see Harry listed in your profile context, so I used that.",
+          usage: {},
+        };
+      }
+      return {
+        text: "Harry is my name, not yours. I made a mistake.",
+        usage: {},
+      };
+    },
+  });
+
+  const outcome = await brainTurn({
+    userId: USER_ID,
+    ceoAgentConfigId: "ceo-1",
+    conversationId: "ceo-convo-1",
+    message: "why you call me harry?",
+  });
+
+  assert.equal(brainPrompts.length, 2, "expected one identity regenerate");
+  assert.match(brainPrompts[1], /IDENTITY NAMESPACE CORRECTION/);
+  assert.match(outcome.reply, /Harry is my name, not yours/i);
+  assert.doesNotMatch(outcome.reply, /listed in your profile/i);
+});

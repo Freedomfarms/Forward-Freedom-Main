@@ -233,8 +233,13 @@ test("brainTurn injects the relevance-selected profile with provenance into the 
 
   assert.match(outcome.reply, /debt payoff goal/);
   const prompt = llmCalls[0].options.prompt;
-  assert.match(prompt, /USER PROFILE \(long-term memory, selected for relevance\)/);
+  assert.match(prompt, /ASSISTANT IDENTITY/);
+  assert.match(prompt, /USER IDENTITY/);
+  assert.match(prompt, /RELEVANT MEMORIES/);
   assert.match(prompt, /Wants aggressive debt payoff/);
+  assert.match(prompt, /owner: user/);
   assert.match(prompt, /\(why: matches current topic/);
   assert.match(prompt, /confidence 0\.\d+; source: user confirmed \(profile edit\)/);
+  // Assistant identity must stay out of RELEVANT MEMORIES as a user name claim.
+  assert.doesNotMatch(prompt, /YOUR IDENTITY/);
 });

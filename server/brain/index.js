@@ -6,8 +6,13 @@ import { touchConversation } from "../agents/conversations.js";
 import { scheduleConversationTitle } from "../agents/conversationTitle.js";
 import { generateAgentText } from "../agents/llm.js";
 import { assembleBrainContext } from "./context.js";
+import {
+  renderIdentityValidationRetry,
+  validateIdentityConsistency,
+} from "./identity.js";
 import { BRAIN_JOB_KINDS, enqueueBrainJob, kickBrainJobSoon } from "./jobs.js";
-import { logCeoReasoning, sketchMissionFromConversation } from "../agents/ceoReasoning.js";
+import { logCeoReasoning } from "../agents/ceoReasoning.js";
+import { dataSection } from "../agents/prompts.js";
 import { BRAIN_SYSTEM_PROMPT } from "./prompts.js";
 import { buildBrainToolBelt } from "./toolBelt.js";
 
@@ -17,7 +22,7 @@ import { buildBrainToolBelt } from "./toolBelt.js";
 // separate "+ New Agent" interview engine.
 //
 //   Observe → Assemble Context → Reason (mission pipeline in system prompt)
-//   → Tools when executable → Respond → Background memory jobs
+//   → Tools when executable → Identity self-check → Respond → Background jobs
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Tool rounds + the final text step. */
@@ -25,6 +30,8 @@ const BRAIN_MAX_STEPS = 8;
 const BRAIN_MAX_OUTPUT_TOKENS = 1800;
 /** Retry an empty generation once — but only if no side effects ran yet. */
 const BRAIN_GENERATE_ATTEMPTS = 2;
+/** One regenerate when identity self-consistency fails (no tool re-run). */
+const IDENTITY_REGENERATE_ATTEMPTS = 1;
 
 const EMPTY_REPLY_FALLBACK =
   "A generation error occurred and I could not complete that reply. Please ask again, or try rephrasing.";
@@ -54,7 +61,7 @@ export async function brainTurn({
   message,
   relatedRunId = null,
 }) {
-  // Observe / Assemble Context / Recall Memory.
+  // Observe / Assemble Context / Recall Memory (identity namespaces included).
   const context = await assembleBrainContext({
     userId,
     ceoAgentConfigId,
@@ -64,11 +71,9 @@ export async function brainTurn({
   });
 
   // Dev observability: multi-turn mission continuity + efficiency (not shown to user).
-  logCeoReasoning(
-    sketchMissionFromConversation([...(context.userMessagesInOrder || []), message], {
-      existingAgents: context.teamAgents || [],
-    })
-  );
+  if (context.activeMission) {
+    logCeoReasoning(context.activeMission);
+  }
 
   // Per-turn side-effect accumulator shared by all tool executes.
   const turnState = {
@@ -86,6 +91,8 @@ export async function brainTurn({
     turnState,
   });
 
+  let prompt = context.promptSections.join("\n\n");
+
   // Reason / Determine Tools / Execute / Reflect — the model drives all four
   // through the tool loop; its final output is plain conversational text.
   let reply = "";
@@ -94,7 +101,7 @@ export async function brainTurn({
     const result = await generateAgentText({
       model: context.model,
       system: BRAIN_SYSTEM_PROMPT,
-      prompt: context.promptSections.join("\n\n"),
+      prompt,
       tools,
       stopWhen: stepCountIs(BRAIN_MAX_STEPS),
       maxOutputTokens: BRAIN_MAX_OUTPUT_TOKENS,
@@ -110,6 +117,17 @@ export async function brainTurn({
   if (!reply) {
     reply = turnState.confirmations.join("\n\n") || EMPTY_REPLY_FALLBACK;
   }
+
+  // Self-consistency: catch assistant↔user identity swaps before persist.
+  // Regenerate once without tools when no side effects have run yet.
+  const identityPass = await enforceIdentityConsistency({
+    reply,
+    context,
+    prompt,
+    turnState,
+  });
+  reply = identityPass.reply;
+  if (identityPass.usage) usage = identityPass.usage;
 
   // Respond To User.
   const relatedFromOps = turnState.run?.id || relatedRunId || null;
@@ -164,4 +182,55 @@ export async function brainTurn({
     ...(turnState.runMode ? { runMode: turnState.runMode } : {}),
     ...(turnState.digest ? { digest: turnState.digest } : {}),
   };
+}
+
+/**
+ * Validate the draft reply against structured identity namespaces.
+ * On failure, regenerate once (text-only) with a namespace correction section.
+ */
+async function enforceIdentityConsistency({ reply, context, prompt, turnState }) {
+  let nextReply = String(reply || "").trim();
+  let usage = null;
+  const identities = context.identities;
+  if (!identities) return { reply: nextReply, usage };
+
+  for (let attempt = 0; attempt <= IDENTITY_REGENERATE_ATTEMPTS; attempt += 1) {
+    const check = validateIdentityConsistency(nextReply, identities, {
+      userMessage: context.lastUserMessage,
+    });
+    if (check.ok) return { reply: nextReply, usage };
+
+    // Never re-enter the tool loop after side effects.
+    if (turnState.confirmations.length || turnState.agent || turnState.run) {
+      console.info(
+        `[ceo-identity] validation failed after tools; skipping regenerate: ${check.failures.join(", ")}`
+      );
+      return { reply: nextReply, usage };
+    }
+    if (attempt >= IDENTITY_REGENERATE_ATTEMPTS) {
+      console.info(
+        `[ceo-identity] validation still failing after regenerate: ${check.failures.join(", ")}`
+      );
+      return { reply: nextReply, usage };
+    }
+
+    console.info(`[ceo-identity] regenerating once: ${check.failures.join(", ")}`);
+    const retryPrompt = [
+      prompt,
+      renderIdentityValidationRetry(identities, check.failures),
+      dataSection("PRIOR DRAFT (rejected for identity inconsistency)", nextReply),
+    ].join("\n\n");
+
+    const result = await generateAgentText({
+      model: context.model,
+      system: BRAIN_SYSTEM_PROMPT,
+      prompt: retryPrompt,
+      // Text-only regenerate — no tools.
+      maxOutputTokens: BRAIN_MAX_OUTPUT_TOKENS,
+    });
+    usage = result.totalUsage ?? result.usage ?? usage;
+    const regenerated = String(result.text || "").trim();
+    if (regenerated) nextReply = regenerated;
+  }
+  return { reply: nextReply, usage };
 }
