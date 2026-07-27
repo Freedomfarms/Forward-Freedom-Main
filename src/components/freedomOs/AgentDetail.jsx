@@ -370,6 +370,7 @@ export function AgentDetail({
           agentId={agent.id}
           agentName={agent.name}
           user={user}
+          layout="workspace"
           relatedRunId={chatRelatedRunId}
           onClearRelatedRun={() => setChatRelatedRunId(null)}
           onAgentUpdated={(updated) => {
