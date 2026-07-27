@@ -10,6 +10,11 @@ import {
   renderIdentityValidationRetry,
   validateIdentityConsistency,
 } from "./identity.js";
+import {
+  buildExecutionState,
+  renderCapabilityValidationRetry,
+  validateCapabilityConsistency,
+} from "./controlPlane.js";
 import { BRAIN_JOB_KINDS, enqueueBrainJob, kickBrainJobSoon } from "./jobs.js";
 import { logCeoReasoning } from "../agents/ceoReasoning.js";
 import { dataSection } from "../agents/prompts.js";
@@ -22,7 +27,8 @@ import { buildBrainToolBelt } from "./toolBelt.js";
 // separate "+ New Agent" interview engine.
 //
 //   Observe → Assemble Context → Reason (mission pipeline in system prompt)
-//   → Tools when executable → Identity self-check → Respond → Background jobs
+//   → Tools when executable → Identity + capability self-check → Respond
+//   → Background jobs
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Tool rounds + the final text step. */
@@ -32,6 +38,8 @@ const BRAIN_MAX_OUTPUT_TOKENS = 1800;
 const BRAIN_GENERATE_ATTEMPTS = 2;
 /** One regenerate when identity self-consistency fails (no tool re-run). */
 const IDENTITY_REGENERATE_ATTEMPTS = 1;
+/** One regenerate when capability/execution-state self-consistency fails. */
+const CAPABILITY_REGENERATE_ATTEMPTS = 1;
 
 const EMPTY_REPLY_FALLBACK =
   "A generation error occurred and I could not complete that reply. Please ask again, or try rephrasing.";
@@ -128,6 +136,17 @@ export async function brainTurn({
   });
   reply = identityPass.reply;
   if (identityPass.usage) usage = identityPass.usage;
+
+  // Control-plane self-consistency: never claim Done/live without registry +
+  // execution state. Architectural guard (not a prompt rule).
+  const capabilityPass = await enforceCapabilityConsistency({
+    reply,
+    context,
+    prompt,
+    turnState,
+  });
+  reply = capabilityPass.reply;
+  if (capabilityPass.usage) usage = capabilityPass.usage;
 
   // Respond To User.
   const relatedFromOps = turnState.run?.id || relatedRunId || null;
@@ -233,4 +252,100 @@ async function enforceIdentityConsistency({ reply, context, prompt, turnState })
     if (regenerated) nextReply = regenerated;
   }
   return { reply: nextReply, usage };
+}
+
+/**
+ * Validate the draft reply against the capability registry + execution state.
+ * On failure, regenerate once (text-only) with a control-plane correction.
+ */
+async function enforceCapabilityConsistency({ reply, context, prompt, turnState }) {
+  let nextReply = String(reply || "").trim();
+  let usage = null;
+  const controlPlane = context.controlPlane;
+  if (!controlPlane) return { reply: nextReply, usage };
+
+  const executionState = buildExecutionState({
+    intent: controlPlane.intent,
+    capabilityAssessment: controlPlane.capabilityAssessment,
+    turnState,
+    agentDefinition: controlPlane.plannedAgent,
+  });
+
+  for (let attempt = 0; attempt <= CAPABILITY_REGENERATE_ATTEMPTS; attempt += 1) {
+    const check = validateCapabilityConsistency(nextReply, {
+      userMessage: context.lastUserMessage,
+      intent: controlPlane.intent,
+      capabilityAssessment: controlPlane.capabilityAssessment,
+      executionState,
+    });
+    if (check.ok) return { reply: nextReply, usage };
+
+    // After tools ran, rewrite from authoritative state rather than re-entering
+    // the tool loop (side effects must not duplicate).
+    if (turnState.confirmations.length || turnState.agent || turnState.run) {
+      console.info(
+        `[ceo-capability] validation failed after tools; applying grounded reply: ${check.failures.join(", ")}`
+      );
+      nextReply = groundedCapabilityGapReply(controlPlane, executionState, turnState);
+      return { reply: nextReply, usage };
+    }
+
+    if (attempt >= CAPABILITY_REGENERATE_ATTEMPTS) {
+      console.info(
+        `[ceo-capability] validation still failing after regenerate: ${check.failures.join(", ")}`
+      );
+      nextReply = groundedCapabilityGapReply(controlPlane, executionState, turnState);
+      return { reply: nextReply, usage };
+    }
+
+    console.info(`[ceo-capability] regenerating once: ${check.failures.join(", ")}`);
+    const retryPrompt = [
+      prompt,
+      renderCapabilityValidationRetry(controlPlane, check.failures, executionState),
+      dataSection("PRIOR DRAFT (rejected for capability inconsistency)", nextReply),
+    ].join("\n\n");
+
+    const result = await generateAgentText({
+      model: context.model,
+      system: BRAIN_SYSTEM_PROMPT,
+      prompt: retryPrompt,
+      maxOutputTokens: BRAIN_MAX_OUTPUT_TOKENS,
+    });
+    usage = result.totalUsage ?? result.usage ?? usage;
+    const regenerated = String(result.text || "").trim();
+    if (regenerated) nextReply = regenerated;
+  }
+  return { reply: nextReply, usage };
+}
+
+/** Deterministic fallback when the model still hallucinates completion. */
+function groundedCapabilityGapReply(controlPlane, executionState, turnState) {
+  const blockers = [
+    ...(controlPlane?.capabilityAssessment?.blockers || []),
+    ...(executionState?.blockers || []),
+  ].filter(Boolean);
+  const uniqueBlockers = [...new Set(blockers)];
+  const planned = controlPlane?.plannedAgent;
+  const lines = [
+    "I can design this agent, but these capabilities are not currently connected.",
+  ];
+  if (planned?.purpose) {
+    lines.push(`Proposed purpose: ${planned.purpose}`);
+  }
+  if (planned?.status) {
+    lines.push(`Agent definition status: ${planned.status} (not live).`);
+  }
+  if (uniqueBlockers.length) {
+    lines.push(`Blockers: ${uniqueBlockers.join(" ")}`);
+  }
+  if (turnState?.agent?.id) {
+    lines.push(
+      `Note: a specialist config was written (id=${turnState.agent.id}), but unavailable platform connectors mean the requested mission is not fully live.`
+    );
+  } else {
+    lines.push(
+      "Next step: connect the missing integrations, or I can set up a limited substitute using only available capabilities (clearly labeled as limited)."
+    );
+  }
+  return lines.join("\n");
 }
