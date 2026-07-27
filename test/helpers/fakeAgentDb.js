@@ -186,6 +186,19 @@ export function createFakeDb(seed = {}) {
         const [removed] = rows().splice(index, 1);
         return { ...removed };
       },
+      async deleteMany(args = {}) {
+        calls.push({ table, method: "deleteMany", args });
+        const list = rows();
+        const keep = [];
+        let count = 0;
+        for (const row of list) {
+          if (matchesWhere(row, args.where)) count += 1;
+          else keep.push(row);
+        }
+        list.length = 0;
+        list.push(...keep);
+        return { count };
+      },
     };
   }
 

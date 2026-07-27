@@ -90,6 +90,8 @@ test("startCreationSession opens on Aim with an empty draft", () => {
   assert.match(started.reply, /what should this agent own/i);
   assert.equal(started.state.draft.definitionOfDone, null);
   assert.equal(started.state.draft.missionExecutable, false);
+  assert.equal(typeof started.state.sessionStartedAtMs, "number");
+  assert.ok(started.state.sessionStartedAtMs > 0);
 });
 
 test("partial answers do not open draft review until the mission is executable", () => {

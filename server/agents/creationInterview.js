@@ -57,6 +57,7 @@ const MISSION_REASONING_RULES = [
 
 const INTERVIEW_TURN_SYSTEM_PROMPT = [
   MISSION_REASONING_RULES,
+  "This interview is for a NEW worker agent. Treat the user's answers as defining this new agent only — do not assume they are continuing, editing, or pivoting from a previous draft or an existing teammate unless they explicitly say so.",
   "This is a FAST intake turn — reply like a sharp executive (1–3 short sentences). Never present or narrate a full draft.",
   "Acknowledge only what they actually said, then ask ONE blocking question.",
   "Never say \"soul file\", \"system prompt\", \"JSON\", \"interview topics\", \"gap analysis\", or \"knowledge model\" in the user-facing reply.",
@@ -262,6 +263,7 @@ export function parseInterviewTurnText(text) {
 
 const CONVERSATION_SYSTEM_PROMPT = [
   MISSION_REASONING_RULES,
+  "This interview is for a NEW worker agent. Treat the user's answers as defining this new agent only — do not assume they are continuing, editing, or pivoting from a previous draft or an existing teammate unless they explicitly say so.",
   "Sound like a normal, competent executive colleague — warm, concise, never robotic.",
   "Never say \"soul file\", \"system prompt\", \"JSON\", \"interview topics\", or \"gap analysis\".",
   CHAT_PLAIN_TEXT_RULE,
@@ -437,6 +439,8 @@ export function startCreationSession() {
       phase: "aim",
       step: "aim",
       draft: emptyCreationDraft(),
+      // Bounds transcript lookback so a reused isSystem thread cannot leak
+      // turns from a prior abandoned interview into this one.
       sessionStartedAtMs: Date.now(),
     },
     reply: AIM_OPENER,

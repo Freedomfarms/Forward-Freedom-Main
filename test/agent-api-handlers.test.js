@@ -194,6 +194,9 @@ before(async () => {
         // Intake turns: text + trailing NOTES_JSON. Skip/review uses Sonnet text
         // + generateAgentObject extract.
         generateAgentText: async ({ prompt } = {}) => {
+          // Skip/review turns ask the model to present the draft; interview turns
+          // explicitly say not to. Match the instruction line, not the word "skip"
+          // buried in JSON keys like userAskedToSkipRemaining.
           const askingToDraft =
             typeof prompt === "string" &&
             /Present the draft review now/i.test(prompt);
