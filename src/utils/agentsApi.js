@@ -116,6 +116,19 @@ export function sendCeoChatMessage(
   return requestJson("/api/agents/ceo/chat", { method: "POST", body, options });
 }
 
+/**
+ * Cancel any unfinished "+ New Agent" draft on the hidden creation thread.
+ * The blank creation UI does not show history, so leftover active drafts are
+ * discarded on open/close rather than silently resumed.
+ */
+export function discardCeoAgentCreation(options = {}) {
+  return requestJson("/api/agents/ceo/chat", {
+    method: "POST",
+    body: { mode: "create_agent", discard: true },
+    options,
+  });
+}
+
 /** List non-system CEO conversations (newest updatedAt first). */
 export function fetchCeoConversations({ limit, before, includeArchived = false } = {}, options = {}) {
   const params = new URLSearchParams();

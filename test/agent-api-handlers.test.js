@@ -1103,6 +1103,97 @@ test("CEO chat creation flow finishes interview (or skip) before draft review, t
   assert.equal(chatCalls.length, 1);
 });
 
+test("CEO chat create_agent discard cancels unfinished draft without a message", async (t) => {
+  if (!requireSetup(t)) return;
+
+  const { encodeCreationState, decodeCreationState } = await import(
+    "../server/agents/creationFlow.js"
+  );
+
+  await invoke(handlers.ceo, authedRequest("u1", { method: "GET" }));
+  const ceoId = currentDb.tables.ceoAgentConfig[0].id;
+  currentDb.tables.agentConversation.push({
+    id: "sys-discard",
+    userId: "u1",
+    ceoAgentConfigId: ceoId,
+    agentConfigId: null,
+    title: "New Agent",
+    isSystem: true,
+    archivedAt: null,
+    createdAt: new Date("2026-07-20T09:00:00Z"),
+    updatedAt: new Date("2026-07-20T09:00:00Z"),
+  });
+  currentDb.tables.agentChatMessage.push({
+    id: "discard-state",
+    userId: "u1",
+    conversationId: "sys-discard",
+    ceoAgentConfigId: ceoId,
+    agentConfigId: null,
+    role: "AGENT",
+    contentCiphertext: envelope.encrypt(
+      encodeCreationState({
+        v: 3,
+        status: "active",
+        phase: "interview",
+        step: "interview",
+        savedAtMs: Date.parse("2026-07-20T10:00:00Z"),
+        savedAtSeq: 1,
+        sessionStartedAtMs: Date.parse("2026-07-20T09:55:00Z"),
+        draft: {
+          agentType: "finance",
+          definitionOfDone: "I get a Coinbase finance brief every morning.",
+          boundaries: "Never leave Coinbase sandbox",
+          coveredTopics: ["outcome"],
+          interviewComplete: false,
+          guessedFields: [],
+        },
+      })
+    ),
+    createdAt: new Date("2026-07-20T10:00:00Z"),
+  });
+
+  const discarded = await invoke(
+    handlers.ceoChat,
+    authedRequest("u1", {
+      method: "POST",
+      body: { mode: "create_agent", discard: true },
+    })
+  );
+  assert.equal(discarded.statusCode, 200);
+  assert.equal(discarded.body.discarded, true);
+
+  const latestStateRow = [...currentDb.tables.agentChatMessage]
+    .reverse()
+    .find((row) => {
+      try {
+        return Boolean(decodeCreationState(envelope.decrypt(row.contentCiphertext)));
+      } catch {
+        return false;
+      }
+    });
+  assert.ok(latestStateRow);
+  const latestState = decodeCreationState(
+    envelope.decrypt(latestStateRow.contentCiphertext)
+  );
+  assert.equal(latestState.status, "cancelled");
+
+  // A later Aim answer without startFresh must not resume the cancelled draft.
+  const next = await invoke(
+    handlers.ceoChat,
+    authedRequest("u1", {
+      method: "POST",
+      body: {
+        mode: "create_agent",
+        message: "I want a social media report emailed to me",
+      },
+    })
+  );
+  assert.equal(next.statusCode, 200);
+  assert.equal(next.body.creationDraft.phase, "interview");
+  assert.doesNotMatch(next.body.creationDraft.definitionOfDone || "", /Coinbase/i);
+  assert.equal(next.body.creationDraft.boundaries, null);
+});
+
 test("CEO chat create_agent startFresh abandons prior unfinished draft + transcript", async (t) => {
   if (!requireSetup(t)) return;
 

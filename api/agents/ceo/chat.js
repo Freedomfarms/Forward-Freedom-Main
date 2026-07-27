@@ -42,6 +42,11 @@ import { announceAgentCreatedToCeoChat } from "../../../server/agents/teamContex
 // POST /api/agents/ceo/chat — send a message (or drive "+ New Agent" creation).
 // Sending { mode: "create_agent" } starts/continues the conversational creation
 // interview (LLM) on an isSystem conversation. Everything else → respondToChat.
+//
+// Product rule: the "+ New Agent" UI does not load creation history, so an
+// unfinished draft must never silently resume. Clients discard on open/close
+// ({ mode: "create_agent", discard: true }) and send startFresh on the first
+// Aim answer as a safety net.
 
 const CREATION_STATE_LOOKBACK = 60;
 const CREATION_TRANSCRIPT_LOOKBACK = 24;
@@ -124,6 +129,67 @@ async function loadCreationTranscript(
   return messages;
 }
 
+/**
+ * Mark an active creation session cancelled. No user-visible reply — the blank
+ * "+ New Agent" UI does not resume drafts, so leftover state is junk.
+ *
+ * Re-reads the latest active row before writing. Optional match* guards stop a
+ * slow discard from cancelling a newer session that started in the meantime.
+ */
+async function discardActiveCreationSession({
+  userId,
+  ceoConfigId,
+  conversationId,
+  matchSessionStartedAtMs = undefined,
+  matchSavedAtMs = undefined,
+}) {
+  return withUserContext(userId, async (tx) => {
+    const latest = await findActiveCreationState(
+      tx,
+      userId,
+      ceoConfigId,
+      conversationId
+    );
+    if (!latest) {
+      return { discarded: false, creationDraft: null };
+    }
+    if (
+      matchSessionStartedAtMs !== undefined &&
+      latest.sessionStartedAtMs !== matchSessionStartedAtMs
+    ) {
+      return { discarded: false, creationDraft: null };
+    }
+    if (matchSavedAtMs !== undefined && latest.savedAtMs !== matchSavedAtMs) {
+      return { discarded: false, creationDraft: null };
+    }
+
+    stateSequence += 1;
+    const cancelled = {
+      ...latest,
+      status: "cancelled",
+      phase: "aim",
+      step: "aim",
+      savedAtMs: Date.now(),
+      savedAtSeq: stateSequence,
+    };
+    await tx.agentChatMessage.create({
+      data: {
+        userId,
+        conversationId,
+        ceoAgentConfigId: ceoConfigId,
+        agentConfigId: null,
+        role: "AGENT",
+        contentCiphertext: encrypt(encodeCreationState(cancelled)),
+      },
+    });
+    await touchConversation(tx, conversationId);
+    return {
+      discarded: true,
+      creationDraft: publicCreationDraft(cancelled),
+    };
+  });
+}
+
 async function handleCreationTurn({
   userId,
   ceoConfigId,
@@ -136,6 +202,15 @@ async function handleCreationTurn({
   // DB connection open across model latency.
   // "+ New Agent" UI always means a brand-new worker — abandon any leftover
   // active draft on the shared isSystem thread when the client asks to start fresh.
+  if (startFresh && activeState) {
+    await discardActiveCreationSession({
+      userId,
+      ceoConfigId,
+      conversationId,
+      matchSessionStartedAtMs: activeState.sessionStartedAtMs,
+      matchSavedAtMs: activeState.savedAtMs,
+    });
+  }
   const sessionState = startFresh ? null : activeState;
   let recentMessages = [];
   if (sessionState) {
@@ -256,15 +331,18 @@ async function handleSend(request, response) {
   try {
     const decodedToken = await authenticateRequest(request);
     const payload = await readJsonBody(request);
+    const createMode = payload?.mode === "create_agent";
+    // Blank "+ New Agent" UI never shows creation history — drop leftover drafts
+    // on open/close instead of silently resuming them.
+    const discard = createMode && payload?.discard === true;
     const message = typeof payload?.message === "string" ? payload.message.trim() : "";
-    if (!message) {
+    if (!message && !discard) {
       throw new AgentError("A non-empty message is required.", "INVALID_AGENT_PAYLOAD", 400);
     }
     const relatedRunId =
       typeof payload?.relatedRunId === "string" && payload.relatedRunId.trim()
         ? payload.relatedRunId.trim()
         : null;
-    const createMode = payload?.mode === "create_agent";
     // First turn after opening "+ New Agent" — discard any unfinished draft on
     // the shared creation thread so Harry doesn't treat a new Aim answer as a
     // pivot away from a prior (e.g. Coinbase/finance) interview.
@@ -279,23 +357,33 @@ async function handleSend(request, response) {
     // sending it while NewAgentFlow is open). Abandoned system sessions never
     // hijack the regular CEO chat.
     if (createMode) {
-      const { systemConversationId, activeState } = await withUserContext(
-        decodedToken.uid,
-        async (tx) => {
-          const system = await ensureSystemConversation(tx, {
-            userId: decodedToken.uid,
-            ceoAgentConfigId: ceoConfig.id,
-          });
-          return {
-            systemConversationId: system.id,
-            activeState: await findActiveCreationState(
-              tx,
-              decodedToken.uid,
-              ceoConfig.id,
-              system.id
-            ),
-          };
-        }
+      const systemConversationId = await withUserContext(decodedToken.uid, async (tx) => {
+        const system = await ensureSystemConversation(tx, {
+          userId: decodedToken.uid,
+          ceoAgentConfigId: ceoConfig.id,
+        });
+        return system.id;
+      });
+
+      if (discard) {
+        const outcome = await discardActiveCreationSession({
+          userId: decodedToken.uid,
+          ceoConfigId: ceoConfig.id,
+          conversationId: systemConversationId,
+        });
+        return response.status(200).json({
+          discarded: outcome.discarded,
+          creationDraft: outcome.creationDraft,
+        });
+      }
+
+      const activeState = await withUserContext(decodedToken.uid, (tx) =>
+        findActiveCreationState(
+          tx,
+          decodedToken.uid,
+          ceoConfig.id,
+          systemConversationId
+        )
       );
 
       const outcome = await handleCreationTurn({

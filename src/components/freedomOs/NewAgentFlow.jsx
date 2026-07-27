@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { discardCeoAgentCreation } from "../../utils/agentsApi.js";
 import { AgentChat } from "./AgentChat.jsx";
 import { CreationDraftPanel } from "./CreationDraftPanel.jsx";
 import { fosStyles } from "./freedomOsShared.js";
@@ -11,11 +12,32 @@ const AIM_OPENER =
 // "+ New Agent" — slide-over where the CEO Agent interviews through chat
 // (mode: "create_agent"). Slice 1: Aim → full interview → draft review → confirm.
 // Draft panel stays closed until the interview is finished (or the user skips).
+//
+// This UI does not load creation history, so unfinished drafts are not a feature:
+// close discards them, and the first Aim answer sends startFresh as a backstop.
+// Resume only makes sense once we show the prior transcript in this panel.
 
 export function NewAgentFlow({ ceoAgent, user, onClose, onAgentCreated }) {
   const [createdAgent, setCreatedAgent] = useState(null);
   const [creationDraft, setCreationDraft] = useState(null);
+  const createdAgentRef = useRef(null);
   const ceoName = ceoAgent?.name || "CEO Agent";
+
+  // Leaving the blank panel without creating must not leave an invisible
+  // "active" draft on the shared creation thread.
+  useEffect(() => {
+    return () => {
+      if (createdAgentRef.current) return;
+      void discardCeoAgentCreation({ user }).catch(() => {});
+    };
+  }, [user]);
+
+  const handleClose = () => {
+    if (!createdAgentRef.current) {
+      void discardCeoAgentCreation({ user }).catch(() => {});
+    }
+    onClose?.();
+  };
 
   return (
     <div
@@ -28,7 +50,7 @@ export function NewAgentFlow({ ceoAgent, user, onClose, onAgentCreated }) {
         justifyContent: "flex-end",
       }}
       onClick={(event) => {
-        if (event.target === event.currentTarget) onClose?.();
+        if (event.target === event.currentTarget) handleClose();
       }}
     >
       <aside
@@ -52,7 +74,7 @@ export function NewAgentFlow({ ceoAgent, user, onClose, onAgentCreated }) {
             </div>
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               aria-label="Close"
               style={{
                 borderRadius: 999,
@@ -86,13 +108,14 @@ export function NewAgentFlow({ ceoAgent, user, onClose, onAgentCreated }) {
             placeholder='e.g. "Every weekday I know what needs my attention by 9am" — or say skip later'
             onCreationDraftChange={setCreationDraft}
             onAgentCreated={(agent) => {
+              createdAgentRef.current = agent;
               setCreatedAgent(agent);
               onAgentCreated?.(agent);
             }}
           />
           {createdAgent ? (
             <div style={{ display: "flex", justifyContent: "flex-end" }}>
-              <button type="button" style={fosStyles.primaryButton} onClick={onClose}>
+              <button type="button" style={fosStyles.primaryButton} onClick={handleClose}>
                 Done — back to Freedom OS
               </button>
             </div>
