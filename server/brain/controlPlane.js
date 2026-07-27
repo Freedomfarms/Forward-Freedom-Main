@@ -334,13 +334,17 @@ export function validateCapabilityConsistency(
 export function renderCapabilitySituationBrief({
   controlPlane = null,
   executionState = null,
+  includeRegistry = true,
 } = {}) {
-  const sections = [
-    dataSection(
-      "PLATFORM CAPABILITIES (authoritative registry)",
-      renderCapabilityRegistry(listCapabilities())
-    ),
-  ];
+  const sections = [];
+  if (includeRegistry) {
+    sections.push(
+      dataSection(
+        "PLATFORM CAPABILITIES (authoritative registry)",
+        renderCapabilityRegistry(listCapabilities())
+      )
+    );
+  }
 
   if (controlPlane) {
     const assessment = controlPlane.capabilityAssessment || assessCapabilities([]);

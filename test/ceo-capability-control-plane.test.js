@@ -248,7 +248,7 @@ test("Brain system prompt points at control-plane sections, not ad-hoc capabilit
   assert.match(BRAIN_SYSTEM_PROMPT, /PLATFORM CAPABILITIES/);
   assert.match(BRAIN_SYSTEM_PROMPT, /CONTROL PLANE ASSESSMENT/);
   assert.match(BRAIN_SYSTEM_PROMPT, /EXECUTION STATE/);
-  assert.match(BRAIN_SYSTEM_PROMPT, /intent from execution/i);
+  assert.match(BRAIN_SYSTEM_PROMPT, /APPLICATION STATE/);
   // Registry content is data, not hardcoded Instagram/trading exception lists in the system prompt.
   assert.doesNotMatch(BRAIN_SYSTEM_PROMPT, /WendyOcrypto/);
   assert.doesNotMatch(BRAIN_SYSTEM_PROMPT, /never say Done.*Instagram/i);

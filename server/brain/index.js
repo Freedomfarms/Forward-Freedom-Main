@@ -16,19 +16,19 @@ import {
   validateCapabilityConsistency,
 } from "./controlPlane.js";
 import { BRAIN_JOB_KINDS, enqueueBrainJob, kickBrainJobSoon } from "./jobs.js";
-import { logCeoReasoning } from "../agents/ceoReasoning.js";
 import { dataSection } from "../agents/prompts.js";
 import { BRAIN_SYSTEM_PROMPT } from "./prompts.js";
 import { buildBrainToolBelt } from "./toolBelt.js";
+import { logCeoDecision } from "./observability.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Freedom Brain — the ONE CEO reasoning loop for Freedom OS.
-// Agent creation is a tool capability inside this conversation — there is no
-// separate "+ New Agent" interview engine.
 //
-//   Observe → Assemble Context → Reason (mission pipeline in system prompt)
-//   → Tools when executable → Identity + capability self-check → Respond
-//   → Background jobs
+//   Observe → CEOContextAssembler (world model) → Reason / Tools
+//   → Identity + capability self-check → Respond → Background jobs
+//
+// Constitution (unchanged): capability truth, permissions, identity validation,
+// READ_ONLY finance, no false completion claims.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Tool rounds + the final text step. */
@@ -69,7 +69,7 @@ export async function brainTurn({
   message,
   relatedRunId = null,
 }) {
-  // Observe / Assemble Context / Recall Memory (identity namespaces included).
+  // Observe / Assemble world-model context (identity, capabilities, app state).
   const context = await assembleBrainContext({
     userId,
     ceoAgentConfigId,
@@ -77,11 +77,6 @@ export async function brainTurn({
     message,
     relatedRunId,
   });
-
-  // Dev observability: multi-turn mission continuity + efficiency (not shown to user).
-  if (context.activeMission) {
-    logCeoReasoning(context.activeMission);
-  }
 
   // Per-turn side-effect accumulator shared by all tool executes.
   const turnState = {
@@ -92,6 +87,7 @@ export async function brainTurn({
     lastCreatedAgentId: null,
     confirmations: [],
   };
+  const safetyChecksTriggered = [];
   const tools = buildBrainToolBelt({
     userId,
     ceoAgentConfigId,
@@ -133,6 +129,7 @@ export async function brainTurn({
     context,
     prompt,
     turnState,
+    safetyChecksTriggered,
   });
   reply = identityPass.reply;
   if (identityPass.usage) usage = identityPass.usage;
@@ -144,9 +141,20 @@ export async function brainTurn({
     context,
     prompt,
     turnState,
+    safetyChecksTriggered,
   });
   reply = capabilityPass.reply;
   if (capabilityPass.usage) usage = capabilityPass.usage;
+
+  logCeoDecision({
+    conversationId: context.conversationId,
+    toolsInvoked: inferToolsInvoked(turnState),
+    actionSelected: inferActionSelected(turnState, context),
+    safetyChecksTriggered,
+    confirmationsCount: turnState.confirmations.length,
+    agentCreated: Boolean(turnState.agent?.id),
+    runDelegated: Boolean(turnState.run?.id),
+  });
 
   // Respond To User.
   const relatedFromOps = turnState.run?.id || relatedRunId || null;
@@ -207,7 +215,13 @@ export async function brainTurn({
  * Validate the draft reply against structured identity namespaces.
  * On failure, regenerate once (text-only) with a namespace correction section.
  */
-async function enforceIdentityConsistency({ reply, context, prompt, turnState }) {
+async function enforceIdentityConsistency({
+  reply,
+  context,
+  prompt,
+  turnState,
+  safetyChecksTriggered = [],
+}) {
   let nextReply = String(reply || "").trim();
   let usage = null;
   const identities = context.identities;
@@ -218,6 +232,8 @@ async function enforceIdentityConsistency({ reply, context, prompt, turnState })
       userMessage: context.lastUserMessage,
     });
     if (check.ok) return { reply: nextReply, usage };
+
+    safetyChecksTriggered.push(`identity:${check.failures.join("|")}`);
 
     // Never re-enter the tool loop after side effects.
     if (turnState.confirmations.length || turnState.agent || turnState.run) {
@@ -258,7 +274,13 @@ async function enforceIdentityConsistency({ reply, context, prompt, turnState })
  * Validate the draft reply against the capability registry + execution state.
  * On failure, regenerate once (text-only) with a control-plane correction.
  */
-async function enforceCapabilityConsistency({ reply, context, prompt, turnState }) {
+async function enforceCapabilityConsistency({
+  reply,
+  context,
+  prompt,
+  turnState,
+  safetyChecksTriggered = [],
+}) {
   let nextReply = String(reply || "").trim();
   let usage = null;
   const controlPlane = context.controlPlane;
@@ -279,6 +301,8 @@ async function enforceCapabilityConsistency({ reply, context, prompt, turnState 
       executionState,
     });
     if (check.ok) return { reply: nextReply, usage };
+
+    safetyChecksTriggered.push(`capability:${check.failures.join("|")}`);
 
     // After tools ran, rewrite from authoritative state rather than re-entering
     // the tool loop (side effects must not duplicate).
@@ -316,6 +340,23 @@ async function enforceCapabilityConsistency({ reply, context, prompt, turnState 
     if (regenerated) nextReply = regenerated;
   }
   return { reply: nextReply, usage };
+}
+
+function inferToolsInvoked(turnState) {
+  const tools = [];
+  if (turnState.agent) tools.push(turnState.agent.id ? "create_agent_or_update_agent" : "agent_op");
+  if (turnState.run) tools.push("run_agent");
+  if (turnState.digest) tools.push("update_digest");
+  if (turnState.confirmations.length && !tools.length) tools.push("ceo_op");
+  return tools;
+}
+
+function inferActionSelected(turnState, context) {
+  if (turnState.run) return "run_agent";
+  if (turnState.agent) return "agent_mutation";
+  if (turnState.digest) return "update_digest";
+  if (context.controlPlane?.systemAction?.action) return context.controlPlane.systemAction.action;
+  return "respond";
 }
 
 /** Deterministic fallback when the model still hallucinates completion. */

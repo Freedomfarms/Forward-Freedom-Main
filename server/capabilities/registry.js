@@ -30,12 +30,9 @@ export const PLATFORM_CAPABILITIES = Object.freeze({
     id: "finance_aggregates",
     status: CAPABILITY_STATUS.AVAILABLE,
     description:
-      "Read-only financial aggregates (accounts, cash flow, budgets) via connected bank data.",
-    tools: Object.freeze([
-      "get_accounts",
-      "get_transactions_summary",
-      "get_budget_status",
-    ]),
+      "Read-only financial aggregates (balances by account type, category spend totals, transaction counts) from connected bank data. Surfaced in the CEO world-model context and via the finance specialist agent. No direct get_* callable tools.",
+    // No imaginary get_accounts / get_transactions_summary / get_budget_status tools.
+    tools: Object.freeze([]),
     permissions: Object.freeze(["READ_ONLY"]),
     supported_platforms: Object.freeze(["plaid"]),
     agentTypes: Object.freeze(["finance"]),
@@ -53,8 +50,10 @@ export const PLATFORM_CAPABILITIES = Object.freeze({
   reminders: Object.freeze({
     id: "reminders",
     status: CAPABILITY_STATUS.AVAILABLE,
-    description: "In-app reminders and optional email delivery of reminder text.",
-    tools: Object.freeze(["create_notification", "email_delivery"]),
+    description:
+      "In-app reminders via the reminders specialist agent (run_agent). Optional email after runs when email delivery is enabled.",
+    // Reminder creation is not a standalone Brain tool — it runs through the specialist.
+    tools: Object.freeze(["run_agent"]),
     permissions: Object.freeze(["READ_ONLY", "DRAFT_ONLY"]),
     supported_platforms: Object.freeze(["in_app", "email"]),
     agentTypes: Object.freeze(["reminders"]),
@@ -62,16 +61,18 @@ export const PLATFORM_CAPABILITIES = Object.freeze({
   email_delivery: Object.freeze({
     id: "email_delivery",
     status: CAPABILITY_STATUS.AVAILABLE,
-    description: "Email the user after an agent run (toolAccess.email).",
-    tools: Object.freeze(["email_delivery"]),
+    description:
+      "Email the user after an agent run when enabled on the agent (create_agent/update_agent emailDelivery → toolAccess.email).",
+    tools: Object.freeze(["create_agent", "update_agent"]),
     permissions: Object.freeze(["email"]),
     supported_platforms: Object.freeze(["email"]),
   }),
   scheduling: Object.freeze({
     id: "scheduling",
     status: CAPABILITY_STATUS.AVAILABLE,
-    description: "Cron-backed agent schedules in the user's local timezone.",
-    tools: Object.freeze(["set_schedule", "clear_schedule"]),
+    description:
+      "Cron-backed agent schedules in the user's local timezone via create_agent / update_agent schedule fields.",
+    tools: Object.freeze(["create_agent", "update_agent"]),
     permissions: Object.freeze([]),
     supported_platforms: Object.freeze(["cron"]),
   }),
@@ -79,7 +80,7 @@ export const PLATFORM_CAPABILITIES = Object.freeze({
     id: "daily_digest",
     status: CAPABILITY_STATUS.AVAILABLE,
     description: "Daily Digest content on the Freedom OS home surface.",
-    tools: Object.freeze(["update_digest", "regenerate_digest"]),
+    tools: Object.freeze(["update_digest"]),
     permissions: Object.freeze([]),
     supported_platforms: Object.freeze(["freedom_os_home"]),
   }),
