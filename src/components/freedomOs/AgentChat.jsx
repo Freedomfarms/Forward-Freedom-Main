@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { styles } from "../../styles.js";
 import { ApiRequestError } from "../../utils/api.js";
 import {
@@ -26,14 +26,11 @@ import {
 import { parseChatEmphasis } from "../../utils/chatTextFormat.js";
 import { describeAgentApiError, fosStyles, getAgentTypeMeta } from "./freedomOsShared.js";
 
-// Reusable chat UI for the agent platform (CEO panel, AgentDetail, and the
-// "+ New Agent" flow). CEO and sub-agent modes load durable multi-conversation
-// history scoped to exactly one target; create_agent mode stays ephemeral on
-// the isSystem creation thread.
+// Reusable chat UI for the agent platform (CEO panel + AgentDetail).
+// CEO mode is the single brain for ask / create / run — no separate builder.
 //
-// mode: "ceo"           → CEO conversations + chat
-//       "create_agent"  → POST /api/agents/ceo/chat (creation session)
-//       "agent"         → sub-agent conversations + chat (requires agentId)
+// mode: "ceo"   → CEO conversations + chat
+//       "agent" → sub-agent conversations + chat (requires agentId)
 // layout: "embedded" (default) | "workspace" (ChatGPT-style full pane)
 
 /** Render **bold** and __underline__ — no raw markdown asterisks in the bubble. */
@@ -92,14 +89,13 @@ function mapHistoryMessages(payload) {
 }
 
 export function AgentChat({
-  mode = "ceo",
+  mode: modeProp = "ceo",
   agentId = null,
   agentName = "CEO Agent",
   user = null,
   relatedRunId = null,
   onClearRelatedRun = null,
   onAgentCreated = null,
-  onCreationDraftChange = null,
   onAgentUpdated = null,
   onDigestUpdated = null,
   onRunStarted = null,
@@ -108,7 +104,10 @@ export function AgentChat({
   maxHeight = 380,
   layout = "embedded",
   listLabel = "Chats",
+  composeApiRef = null,
 }) {
+  // Legacy create_agent mode is retired — behave as CEO chat.
+  const mode = modeProp === "create_agent" ? "ceo" : modeProp;
   const loadsHistory = mode === "ceo" || (mode === "agent" && Boolean(agentId));
   const isWorkspace = layout === "workspace";
   const userScopeKey = user?.uid || user?.id || "anon";
@@ -129,14 +128,22 @@ export function AgentChat({
   const [isLoadingConversations, setIsLoadingConversations] = useState(loadsHistory);
   const [isCreatingConversation, setIsCreatingConversation] = useState(false);
   const [listError, setListError] = useState("");
-  // While create_agent mode is active, every turn sends mode: "create_agent"
-  // so the server pins the session to the isSystem conversation. Stop after
-  // an agent is created so follow-ups don't start a second creation session.
-  const createSessionActiveRef = useRef(mode === "create_agent");
   const scrollRef = useRef(null);
+  const composerRef = useRef(null);
   const historyLoadedForRef = useRef(null);
   const conversationsLoadedForRef = useRef(null);
   const recoveringRef = useRef(false);
+
+  useImperativeHandle(
+    composeApiRef,
+    () => ({
+      seedCompose(text) {
+        setDraft(String(text || ""));
+        queueMicrotask(() => composerRef.current?.focus?.());
+      },
+    }),
+    []
+  );
 
   const listConversations = useCallback(async () => {
     if (mode === "agent") return fetchAgentConversations(agentId, {}, { user });
@@ -486,7 +493,7 @@ export function AgentChat({
     if (loadsHistory && (isLoadingConversations || !activeConversationId)) return;
 
     const pendingRelatedRunId = relatedRunId || null;
-    const conversationIdForSend = mode === "create_agent" ? null : activeConversationId;
+    const conversationIdForSend = activeConversationId;
     setDraft("");
     setSendError("");
     setIsSending(true);
@@ -524,15 +531,12 @@ export function AgentChat({
           },
           { user }
         );
-      } else if (mode === "ceo" || mode === "create_agent") {
+      } else if (mode === "ceo") {
         payload = await sendCeoChatMessage(
           {
             message,
             relatedRunId: pendingRelatedRunId,
             conversationId: conversationIdForSend,
-            ...(mode === "create_agent" && createSessionActiveRef.current
-              ? { mode: "create_agent" }
-              : {}),
           },
           { user }
         );
@@ -540,7 +544,7 @@ export function AgentChat({
         throw new Error("Unsupported chat mode.");
       }
 
-      if (payload?.conversationId && mode !== "create_agent") {
+      if (payload?.conversationId) {
         setActiveConversationId(payload.conversationId);
         setConversations((current) => {
           const title = payload.conversationTitle || null;
@@ -601,17 +605,12 @@ export function AgentChat({
       if (pendingRelatedRunId && typeof onClearRelatedRun === "function") {
         onClearRelatedRun();
       }
-      if (payload?.agentCreated) {
-        createSessionActiveRef.current = false;
-        if (typeof onAgentCreated === "function") {
-          onAgentCreated(payload.agentCreated);
-        }
+      if (payload?.agentCreated && typeof onAgentCreated === "function") {
+        onAgentCreated(payload.agentCreated);
       }
-      if (payload?.creationDraft && typeof onCreationDraftChange === "function") {
-        onCreationDraftChange(payload.creationDraft);
-      }
-      if (payload?.agent && typeof onAgentUpdated === "function") {
-        onAgentUpdated(payload.agent);
+      if (payload?.agent) {
+        if (typeof onAgentCreated === "function") onAgentCreated(payload.agent);
+        if (typeof onAgentUpdated === "function") onAgentUpdated(payload.agent);
       }
       if (payload?.digest && typeof onDigestUpdated === "function") {
         onDigestUpdated(payload.digest);
@@ -620,11 +619,9 @@ export function AgentChat({
         onRunStarted(payload.run);
       }
       // Refresh list later so async LLM titles can appear.
-      if (mode !== "create_agent") {
-        window.setTimeout(() => {
-          void refreshConversationList();
-        }, 2500);
-      }
+      window.setTimeout(() => {
+        void refreshConversationList();
+      }, 2500);
     } catch (error) {
       if (conversationIdForSend && isRecoverableConversationError(error)) {
         await recoverFromBadConversation(conversationIdForSend, error);
@@ -662,9 +659,7 @@ export function AgentChat({
         ) : null}
         {showEmpty ? (
           <div style={{ color: "#8faecc", fontSize: 13, lineHeight: 1.6, padding: "10px 4px" }}>
-            {mode === "create_agent"
-              ? `Tell ${agentName} the outcome this agent owns — it will interview you, show a draft, and wait for your go-ahead.`
-              : `Start a conversation with ${agentName}.`}
+            {`Talk to ${agentName} — ask questions, create agents, or run work from this chat.`}
           </div>
         ) : null}
         {messages.map((message) => (
@@ -774,6 +769,7 @@ export function AgentChat({
         style={{ display: "grid", gap: 8 }}
       >
         <textarea
+          ref={composerRef}
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={(event) => {

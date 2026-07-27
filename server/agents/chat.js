@@ -31,6 +31,7 @@ import {
   applyCeoActions,
   CEO_ACTIONS_JSON_SCHEMA,
 } from "./ceoOps.js";
+import { CEO_MISSION_REASONING_RULES, logCeoReasoning, sketchMissionFromMessage } from "./ceoReasoning.js";
 import { cronToSchedulePreset, formatHourUtcLabel } from "./schedule.js";
 import { isEmailDeliveryEnabled } from "./emailDelivery.js";
 import { CHAT_PLAIN_TEXT_RULE, dataSection, PROMPT_SAFETY_RULES } from "./prompts.js";
@@ -109,11 +110,12 @@ const SUB_AGENT_CHAT_SYSTEM_PROMPT = [
 ].join("\n");
 
 const CEO_CHAT_SYSTEM_PROMPT = [
-  "You are the user's CEO Agent inside Freedom OS: the operating system for their workspace — the single conversation through which they can operate the platform.",
+  "You are the user's CEO Agent inside Freedom OS — the single conversation through which they operate the platform. There is no separate agent-builder mode.",
+  CEO_MISSION_REASONING_RULES,
   "Answer using the provided context: YOUR SUB-AGENTS (the live team roster), recent run summaries from ALL of the user's agents, the current Daily Digest, USER TIMEZONE, and the user's long-term profile. When asked what you know about the user, answer from the profile data section.",
   "You have read-only web search for live / current information. When the user asks something that needs up-to-date facts, use web search before answering. Never claim you lack internet access.",
   "When the user asks which agents they have: answer ONLY from YOUR SUB-AGENTS. Never invent agents that are not listed. A newly created agent may have zero runs — prefer the roster over run summaries for membership.",
-  "OPERATE the platform via ceoActions (server-applied). You CAN: create_agent, update_agent (pause/resume/schedule/instructions/email/model), run_agent (delegate work to a specialist), delete_agent (only with confirmed=true after explicit user confirmation), set_timezone. Prefer one-shot create_agent when the user gave enough detail — do not invent a separate creation mode. Ask follow-up questions only for missing required fields.",
+  "OPERATE the platform via ceoActions (server-applied). You CAN: create_agent, update_agent (pause/resume/schedule/instructions/email/model), run_agent (delegate work to a specialist), delete_agent (only with confirmed=true after explicit user confirmation), set_timezone. For create_agent: ask only execution blockers first; call create_agent only when the mission is executable — never invent type, restrictions, or personality.",
   "Schedules are always in the user's LOCAL timezone. Use scheduleHourLocal (0–23) and the USER TIMEZONE context. Never ask the user to think in UTC. If timezone is unknown and they request a local schedule, ask for an IANA timezone OR use set_timezone once they provide it — do not assume UTC.",
   "Research agents already use web search; enabling email delivery is emailDelivery=true on create/update. After create_agent in the same turn you may run_agent with agentId \"__last_created__\" or omitted.",
   "Delegate automatically when a specialist should do the work: set run_agent. The server monitors short jobs and returns results in this conversation; longer jobs notify later in this same conversation. Do not tell the user to open another screen or another agent chat for routine ops — specialist chats exist for deep SME follow-up on a report, not as a required detour.",
@@ -189,6 +191,10 @@ export async function respondToChat({
       "INVALID_CHAT_TARGET",
       400
     );
+  }
+
+  if (ceoAgentConfigId) {
+    logCeoReasoning(sketchMissionFromMessage(text));
   }
 
   const context = await withUserContext(userId, async (tx) => {

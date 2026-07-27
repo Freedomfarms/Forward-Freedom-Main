@@ -7,27 +7,17 @@ import { scheduleConversationTitle } from "../agents/conversationTitle.js";
 import { generateAgentText } from "../agents/llm.js";
 import { assembleBrainContext } from "./context.js";
 import { BRAIN_JOB_KINDS, enqueueBrainJob, kickBrainJobSoon } from "./jobs.js";
+import { logCeoReasoning, sketchMissionFromMessage } from "../agents/ceoReasoning.js";
 import { BRAIN_SYSTEM_PROMPT } from "./prompts.js";
 import { buildBrainToolBelt } from "./toolBelt.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Freedom Brain — the reasoning loop that replaces the legacy one-shot JSON
-// envelope for CEO chat. Shallow by design (§0.5 of the plan): no router /
-// planner / coordinator layers.
+// Freedom Brain — the ONE CEO reasoning loop for Freedom OS.
+// Agent creation is a tool capability inside this conversation — there is no
+// separate "+ New Agent" interview engine.
 //
-//   Observe               → input validation + user-message persistence
-//   Assemble Context      → Context Assembler (server/brain/context.js)
-//   Recall Relevant Memory→ inside the assembler (profile → UserMemory later)
-//   Reason                → one Sonnet-class generateAgentText call …
-//   Determine Tools       → … in which the model chooses tools …
-//   Execute Tool Calls    → … whose execute() runs allowlisted server code …
-//   Reflect On Results    → … and reads each result before composing text
-//   Respond To User       → plain-text reply, persisted encrypted
-//   Queue Background Work → BrainJob (memory extraction) + async title
-//
-// Vertical-slice scope: the CEO chat surface only, behind FREEDOM_BRAIN_CHAT.
-// Sub-agent chats and the creation interview stay on the legacy path until
-// this slice is evaluated against production.
+//   Observe → Assemble Context → Reason (mission pipeline in system prompt)
+//   → Tools when executable → Respond → Background memory jobs
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Tool rounds + the final text step. */
@@ -39,10 +29,16 @@ const BRAIN_GENERATE_ATTEMPTS = 2;
 const EMPTY_REPLY_FALLBACK =
   "A generation error occurred and I could not complete that reply. Please ask again, or try rephrasing.";
 
-/** Flag gate for the vertical slice; legacy respondToChat is the default. */
+/**
+ * CEO chat uses Freedom Brain by default (one brain). Set FREEDOM_BRAIN_CHAT=0
+ * or false to force the legacy respondToChat JSON envelope.
+ */
 export function isBrainChatEnabled() {
   const raw = String(process.env.FREEDOM_BRAIN_CHAT || "").trim().toLowerCase();
-  return raw === "1" || raw === "true";
+  if (raw === "0" || raw === "false" || raw === "off") return false;
+  if (raw === "1" || raw === "true" || raw === "on") return true;
+  // Default ON — separate create_agent interview mode is retired.
+  return true;
 }
 
 /**
@@ -66,6 +62,9 @@ export async function brainTurn({
     message,
     relatedRunId,
   });
+
+  // Dev observability: mission sketch before the model acts (not shown to user).
+  logCeoReasoning(sketchMissionFromMessage(message));
 
   // Per-turn side-effect accumulator shared by all tool executes.
   const turnState = {

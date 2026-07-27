@@ -1,6 +1,5 @@
 import { authenticateRequest } from "../../../server/auth/verifyAuth.js";
 import { withUserContext } from "../../../server/db/prisma.js";
-import { decrypt, encrypt } from "../../../server/security/envelope.js";
 import {
   agentLlmRateLimit,
   enforceRateLimit,
@@ -10,10 +9,8 @@ import { readJsonBody } from "../../../server/http/requestHelpers.js";
 import { applySecurityHeaders } from "../../../server/http/responseHelpers.js";
 import { AgentError } from "../../../server/agents/errors.js";
 import {
-  createAgentConfig,
   ensureCeoAgentConfig,
   respondAgentApiError,
-  validateAgentCreatePayload,
 } from "../../../server/agents/apiHelpers.js";
 import { respondToChat } from "../../../server/agents/chat.js";
 import { brainTurn, isBrainChatEnabled } from "../../../server/brain/index.js";
@@ -21,182 +18,12 @@ import {
   listChatHistory,
   serializeChatHistoryMessages,
 } from "../../../server/agents/chatHistory.js";
-import {
-  buildCreationSuccessReply,
-  completeCreationSession,
-  decodeCreationState,
-  encodeCreationState,
-  isCreationStateContent,
-  publicCreationDraft,
-  runCreationTurn,
-  startCreationSession,
-} from "../../../server/agents/creationFlow.js";
-import {
-  ensureSystemConversation,
-  touchConversation,
-} from "../../../server/agents/conversations.js";
-import { announceAgentCreatedToCeoChat } from "../../../server/agents/teamContext.js";
 
 // GET  /api/agents/ceo/chat — visible message history for the active CEO thread
 //      (?conversationId= optional; defaults to newest non-system conversation)
-// POST /api/agents/ceo/chat — send a message (or drive "+ New Agent" creation).
-// Sending { mode: "create_agent" } starts/continues the conversational creation
-// interview (LLM) on an isSystem conversation. Everything else → respondToChat.
-
-const CREATION_STATE_LOOKBACK = 60;
-const CREATION_TRANSCRIPT_LOOKBACK = 24;
-
-async function findActiveCreationState(tx, userId, ceoAgentConfigId, conversationId) {
-  const recent = await tx.agentChatMessage.findMany({
-    where: {
-      userId,
-      ceoAgentConfigId,
-      agentConfigId: null,
-      conversationId,
-      role: "AGENT",
-    },
-    orderBy: { createdAt: "desc" },
-    take: CREATION_STATE_LOOKBACK,
-    select: { contentCiphertext: true },
-  });
-  // Messages written in one turn share the same createdAt (Postgres now() is
-  // the transaction timestamp), so row order alone cannot identify the latest
-  // state. Each state row carries its own marker (savedAtMs + a per-process
-  // sequence, set in handleCreationTurn); the newest one wins.
-  let latest = null;
-  for (const row of recent) {
-    let content;
-    try {
-      content = decrypt(row.contentCiphertext);
-    } catch {
-      continue;
-    }
-    const state = decodeCreationState(content);
-    if (state && (!latest || isNewerState(state, latest))) {
-      latest = state;
-    }
-  }
-  // Only the LATEST state counts; completed/cancelled sessions are over.
-  return latest?.status === "active" ? latest : null;
-}
-
-function isNewerState(a, b) {
-  if ((a.savedAtMs || 0) !== (b.savedAtMs || 0)) {
-    return (a.savedAtMs || 0) > (b.savedAtMs || 0);
-  }
-  return (a.savedAtSeq || 0) > (b.savedAtSeq || 0);
-}
-
-// Same-millisecond tiebreaker for state rows. Only meaningful within one
-// process; across serverless invocations savedAtMs alone already differs.
-let stateSequence = 0;
-
-async function loadCreationTranscript(tx, { userId, ceoConfigId, conversationId }) {
-  const rows = await tx.agentChatMessage.findMany({
-    where: {
-      userId,
-      ceoAgentConfigId: ceoConfigId,
-      agentConfigId: null,
-      conversationId,
-    },
-    orderBy: { createdAt: "desc" },
-    take: CREATION_TRANSCRIPT_LOOKBACK,
-    select: { role: true, contentCiphertext: true },
-  });
-  const messages = [];
-  for (const row of [...rows].reverse()) {
-    let content;
-    try {
-      content = decrypt(row.contentCiphertext);
-    } catch {
-      continue;
-    }
-    if (isCreationStateContent(content)) continue;
-    messages.push({ role: row.role, text: content });
-  }
-  return messages;
-}
-
-async function handleCreationTurn({ userId, ceoConfigId, conversationId, activeState, message }) {
-  // Run the LLM interview outside the write transaction so we don't hold a
-  // DB connection open across model latency.
-  let recentMessages = [];
-  if (activeState) {
-    recentMessages = await withUserContext(userId, (tx) =>
-      loadCreationTranscript(tx, { userId, ceoConfigId, conversationId })
-    );
-  }
-
-  let turn;
-  if (activeState) {
-    turn = await runCreationTurn(activeState, message, { recentMessages });
-  } else {
-    const started = startCreationSession();
-    // Opening user message answers Aim — don't bounce the canned opener back.
-    turn = await runCreationTurn(started.state, message, { recentMessages: [] });
-  }
-
-  return withUserContext(userId, async (tx) => {
-    const messageBase = {
-      userId,
-      conversationId,
-      ceoAgentConfigId: ceoConfigId,
-      agentConfigId: null,
-    };
-    await tx.agentChatMessage.create({
-      data: { ...messageBase, role: "USER", contentCiphertext: encrypt(message) },
-    });
-    await touchConversation(tx, conversationId);
-
-    let { state, reply } = turn;
-    let agentCreated = null;
-    if (turn.createPayload) {
-      // Same validation + creation path as POST /api/agents — the READ_ONLY /
-      // ACTIVE pin is enforced inside createAgentConfig.
-      const validated = validateAgentCreatePayload(turn.createPayload);
-      const agent = await createAgentConfig(tx, userId, validated);
-      state = completeCreationSession(state, agent);
-      reply = buildCreationSuccessReply(agent);
-      agentCreated = {
-        id: agent.id,
-        name: agent.name,
-        agentType: agent.agentType,
-        model: agent.model,
-      };
-      // Creation lives on a hidden isSystem thread — also pin a short note into
-      // the main CEO conversation so Harry can see the new teammate next turn.
-      await announceAgentCreatedToCeoChat(tx, {
-        userId,
-        ceoAgentConfigId: ceoConfigId,
-        agent,
-      });
-    }
-
-    // savedAtMs/savedAtSeq disambiguate state rows across turns (see
-    // findActiveCreationState); a fresh state always supersedes older ones.
-    stateSequence += 1;
-    await tx.agentChatMessage.create({
-      data: {
-        ...messageBase,
-        role: "AGENT",
-        contentCiphertext: encrypt(
-          encodeCreationState({ ...state, savedAtMs: Date.now(), savedAtSeq: stateSequence })
-        ),
-      },
-    });
-    const replyMessage = await tx.agentChatMessage.create({
-      data: { ...messageBase, role: "AGENT", contentCiphertext: encrypt(reply) },
-    });
-    await touchConversation(tx, conversationId);
-
-    return {
-      reply,
-      messageId: replyMessage.id,
-      agentCreated,
-      creationDraft: turn.creationDraft || publicCreationDraft(state),
-    };
-  });
-}
+// POST /api/agents/ceo/chat — ONE CEO brain for information, execution, create,
+//      update, and workflows. There is no separate "+ New Agent" interview mode;
+//      legacy { mode: "create_agent" } is ignored and handled as normal CEO chat.
 
 function readOptionalConversationId(payloadOrQuery) {
   const raw = payloadOrQuery?.conversationId;
@@ -242,55 +69,14 @@ async function handleSend(request, response) {
       typeof payload?.relatedRunId === "string" && payload.relatedRunId.trim()
         ? payload.relatedRunId.trim()
         : null;
-    const createMode = payload?.mode === "create_agent";
     const conversationId = readOptionalConversationId(payload);
 
     const ceoConfig = await withUserContext(decodedToken.uid, (tx) =>
       ensureCeoAgentConfig(tx, decodedToken.uid)
     );
 
-    // Creation is opt-in via mode: "create_agent" on every turn (client keeps
-    // sending it while NewAgentFlow is open). Abandoned system sessions never
-    // hijack the regular CEO chat.
-    if (createMode) {
-      const { systemConversationId, activeState } = await withUserContext(
-        decodedToken.uid,
-        async (tx) => {
-          const system = await ensureSystemConversation(tx, {
-            userId: decodedToken.uid,
-            ceoAgentConfigId: ceoConfig.id,
-          });
-          return {
-            systemConversationId: system.id,
-            activeState: await findActiveCreationState(
-              tx,
-              decodedToken.uid,
-              ceoConfig.id,
-              system.id
-            ),
-          };
-        }
-      );
-
-      const outcome = await handleCreationTurn({
-        userId: decodedToken.uid,
-        ceoConfigId: ceoConfig.id,
-        conversationId: systemConversationId,
-        activeState,
-        message,
-      });
-      return response.status(200).json({
-        reply: outcome.reply,
-        messageId: outcome.messageId,
-        creationDraft: outcome.creationDraft,
-        ...(outcome.agentCreated ? { agentCreated: outcome.agentCreated } : {}),
-      });
-    }
-
-    // Vertical slice (docs/FREEDOM_BRAIN_PLAN.md §0.6): FREEDOM_BRAIN_CHAT
-    // routes CEO chat through the Freedom Brain reasoning loop (plain-text
-    // reply + tool calling + async memory extraction). Same response shape;
-    // legacy respondToChat remains the default for production comparison.
+    // One CEO brain. Legacy clients may still send mode: "create_agent" — ignore
+    // it and use the same engine as every other CEO message.
     const chatEngine = isBrainChatEnabled() ? brainTurn : respondToChat;
     const outcome = await chatEngine({
       userId: decodedToken.uid,
@@ -305,6 +91,8 @@ async function handleSend(request, response) {
       conversationId: outcome.conversationId,
       conversationTitle: outcome.conversationTitle,
       ...(outcome.digest ? { digest: outcome.digest } : {}),
+      ...(outcome.agent ? { agent: outcome.agent } : {}),
+      ...(outcome.run ? { run: outcome.run } : {}),
     });
   } catch (error) {
     return respondAgentApiError(

@@ -29,14 +29,10 @@ import { CHAT_PLAIN_TEXT_RULE, dataSection, PROMPT_SAFETY_RULES } from "./prompt
 import { CREATABLE_AGENT_TYPES } from "./registry.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Mission-driven "+ New Agent" intake (executive reasoning):
-// Situation Brief → Mission → Knowledge Model → Gap Analysis → Relevance →
-// ask ONE blocking question. Stop when the mission is executable — not when a
-// preference checklist is full. Optional fields (tone, escalation, history)
-// are never asked before execution blockers.
-// Intake turns use ONE text call + trailing NOTES_JSON (no structured-output
-// grammar — those timed out Anthropic compilation). Skip/review still uses
-// Sonnet text + a lean Haiku extract.
+// DEPRECATED — not used by the live CEO path.
+// Agent creation is a tool on the single CEO brain (`brainTurn` / `respondToChat`
+// + `ceoReasoning.js`). `/api/agents/ceo/chat` no longer calls `runCreationTurn`.
+// Kept temporarily for unit tests / draft helpers; do not wire UI or API to this.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const INTERVIEW_NOTES_MARKER = "NOTES_JSON:";

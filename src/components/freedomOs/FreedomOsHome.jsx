@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { styles } from "../../styles.js";
 import { regenerateCeoDigest } from "../../utils/agentsApi.js";
 import { getCeoAvatarPreset } from "../../data/ceoAvatars.js";
@@ -6,7 +6,6 @@ import { useFreedomOsBootstrap } from "../../hooks/useFreedomOsBootstrap.js";
 import { AgentChat } from "./AgentChat.jsx";
 import { AgentDetail } from "./AgentDetail.jsx";
 import { CeoSettingsPanel } from "./CeoSettingsPanel.jsx";
-import { NewAgentFlow } from "./NewAgentFlow.jsx";
 import { NotificationsBell } from "./NotificationsBell.jsx";
 import { OnboardingInterview } from "./OnboardingInterview.jsx";
 import { ProfileView } from "./ProfileView.jsx";
@@ -19,9 +18,8 @@ import {
   statusBadgeStyle,
 } from "./freedomOsShared.js";
 
-// Module 01 — CEO Agents. Opened from the Freedom OS module hub. CEO Agent
-// panel on top (digest + chat + actions), agent card grid below. Finance agent
-// cards jump to Freedom Financial; every other type opens AgentDetail inline.
+// Module 01 — CEO Agents. One CEO conversation for information, execution,
+// creating agents, and managing the team. No separate "+ New Agent" builder.
 
 function truncate(text, maxLength = 110) {
   const value = String(text || "").trim();
@@ -137,12 +135,16 @@ export function FreedomOsHome({ user, onOpenFinanceTool }) {
   const [view, setView] = useState("home"); // home | settings | profile
   const [selectedAgentId, setSelectedAgentId] = useState(null);
   const [isDigestOpen, setIsDigestOpen] = useState(false);
-  const [isNewAgentOpen, setIsNewAgentOpen] = useState(false);
   const [isRefreshingDigest, setIsRefreshingDigest] = useState(false);
   const [toast, setToast] = useState("");
+  const ceoComposeApiRef = useRef(null);
 
   const ceoName = ceoAgent?.name || "CEO Agent";
   const avatar = getCeoAvatarPreset(ceoAgent?.avatarKey);
+
+  const focusCeoComposer = (seed = "I want a new agent that ") => {
+    ceoComposeApiRef.current?.seedCompose?.(seed);
+  };
 
   const handleRefreshDigest = async () => {
     if (isRefreshingDigest) return;
@@ -319,14 +321,11 @@ export function FreedomOsHome({ user, onOpenFinanceTool }) {
           <div style={{ flex: 1, minWidth: 180 }}>
             <div style={{ color: "white", fontSize: 20, fontWeight: 900 }}>{ceoName}</div>
             <div style={{ color: "#9fb0c9", fontSize: 12, marginTop: 4 }}>
-              {getPersonalityLabel(ceoAgent?.personalityPreset)} • Your main chat — separate from
-              sub-agent threads
+              {getPersonalityLabel(ceoAgent?.personalityPreset)} • Your single CEO chat — ask,
+              create, and run from here
             </div>
           </div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <button type="button" style={fosStyles.primaryButton} onClick={() => setIsNewAgentOpen(true)}>
-              + New Agent
-            </button>
             <button type="button" style={fosStyles.secondaryButton} onClick={() => setView("settings")}>
               Settings
             </button>
@@ -413,7 +412,9 @@ export function FreedomOsHome({ user, onOpenFinanceTool }) {
           user={user}
           layout="workspace"
           listLabel={`${ceoName} chats`}
-          placeholder={`Ask ${ceoName} anything about your money or your agents…`}
+          placeholder={`Ask ${ceoName} anything — create agents, run work, or get answers…`}
+          composeApiRef={ceoComposeApiRef}
+          onAgentCreated={handleAgentCreated}
           onDigestUpdated={(nextDigest) => {
             setDigest(nextDigest || null);
             setDigestError("");
@@ -448,10 +449,10 @@ export function FreedomOsHome({ user, onOpenFinanceTool }) {
             <div style={{ fontSize: 34 }}>◈</div>
             <div style={{ color: "white", fontWeight: 800, fontSize: 16 }}>No agents yet</div>
             <div style={{ color: "#9fb0c9", fontSize: 13 }}>
-              Ask your CEO Agent to create one — it takes under a minute.
+              Tell your CEO what you need — it will ask only what matters, then create it here.
             </div>
-            <button type="button" style={fosStyles.primaryButton} onClick={() => setIsNewAgentOpen(true)}>
-              + New Agent
+            <button type="button" style={fosStyles.primaryButton} onClick={() => focusCeoComposer()}>
+              Ask {ceoName}
             </button>
           </div>
         ) : null}
@@ -480,14 +481,6 @@ export function FreedomOsHome({ user, onOpenFinanceTool }) {
         ) : null}
       </div>
 
-      {isNewAgentOpen ? (
-        <NewAgentFlow
-          ceoAgent={ceoAgent}
-          user={user}
-          onClose={() => setIsNewAgentOpen(false)}
-          onAgentCreated={handleAgentCreated}
-        />
-      ) : null}
     </div>
   );
 }

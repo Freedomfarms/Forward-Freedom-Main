@@ -2,12 +2,9 @@ import { DEFAULT_AGENT_MODEL } from "./models.js";
 import { CREATABLE_AGENT_TYPES } from "./registry.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Structured draft for "+ New Agent" mission-driven intake.
-// Reasoning pipeline (not a scripted checklist): Situation Brief → Mission →
-// Knowledge Model → Gap Analysis → Relevance → ask ONE blocking question.
-// Review opens when the mission is executable (or the user skips).
-// Schedule / model / trust pickers land in a later slice — defaults: on-demand
-// + Sonnet.
+// DEPRECATED draft helpers for the retired create_agent interview path.
+// Live CEO reasoning uses `server/agents/ceoReasoning.js` + Brain tools.
+// INTERVIEW_TOPICS / remainingInterviewTopics are legacy — do not drive CEO Q&A.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const CREATION_PHASES = Object.freeze(["aim", "interview", "review"]);

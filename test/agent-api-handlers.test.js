@@ -278,6 +278,8 @@ before(async () => {
 
 beforeEach(() => {
   if (setupError) return;
+  // These tests stub respondToChat — keep Brain opt-out unless a case enables it.
+  process.env.FREEDOM_BRAIN_CHAT = "0";
   runnerCalls = [];
   chatCalls = [];
   digestCalls = [];
@@ -1017,70 +1019,35 @@ test("GET /api/agents/:id/chat returns that agent's history only", async (t) => 
   assert.match(response.body.messages[0].text, /AI tools/);
 });
 
-test("CEO chat creation flow finishes interview (or skip) before draft review, then creates", async (t) => {
+test("CEO chat ignores legacy mode:create_agent and uses the one CEO brain path", async (t) => {
   if (!requireSetup(t)) return;
 
-  // Every creation turn must send mode: "create_agent" (server pins the
-  // session to an isSystem conversation; omitting mode resumes regular chat).
-  async function send(message, { create = true } = {}) {
-    return invoke(
+  // Force legacy respondToChat so the handler test stays deterministic without
+  // spinning the full Brain tool loop (mocked as chatCalls).
+  const previousBrain = process.env.FREEDOM_BRAIN_CHAT;
+  process.env.FREEDOM_BRAIN_CHAT = "0";
+  try {
+    const response = await invoke(
       handlers.ceoChat,
       authedRequest("u1", {
         method: "POST",
-        body: { message, ...(create ? { mode: "create_agent" } : {}) },
+        body: {
+          mode: "create_agent",
+          message: "I want an agent that emails me social media reports on a couple people.",
+        },
       })
     );
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.reply, "mock chat reply");
+    assert.equal(response.body.creationDraft, undefined);
+    assert.equal(response.body.agentCreated, undefined);
+    assert.equal(chatCalls.length, 1);
+    assert.match(chatCalls[0].message, /social media reports/i);
+    assert.ok(chatCalls[0].ceoAgentConfigId);
+  } finally {
+    if (previousBrain == null) delete process.env.FREEDOM_BRAIN_CHAT;
+    else process.env.FREEDOM_BRAIN_CHAT = previousBrain;
   }
-
-  const aim = await send(
-    "Every week I have a clear spending observations report and nothing unusual slips by."
-  );
-  assert.equal(aim.statusCode, 200);
-  // After Aim, CEO asks a blocking execution gap — not drafting yet.
-  assert.match(aim.body.reply, /got it|accounts|categories|watch/i);
-  assert.doesNotMatch(aim.body.reply, /\b(here's the draft|looks good to create)\b/i);
-  assert.equal(aim.body.creationDraft.agentType, "finance");
-  assert.equal(aim.body.creationDraft.phase, "interview");
-  assert.equal(aim.body.creationDraft.readyForReview, false);
-  assert.match(aim.body.creationDraft.definitionOfDone, /spending observations/i);
-
-  const skipped = await send("skip the rest");
-  assert.equal(skipped.statusCode, 200);
-  assert.equal(skipped.body.creationDraft.phase, "review");
-  assert.equal(skipped.body.creationDraft.readyForReview, true);
-
-  const confirm = await send("looks good");
-  assert.equal(confirm.statusCode, 200);
-  assert.equal(confirm.body.agentCreated.name, "Finance Agent");
-  assert.equal(confirm.body.agentCreated.agentType, "finance");
-  assert.equal(confirm.body.agentCreated.model, "claude-sonnet-4-5");
-
-  const row = currentDb.tables.agentConfig[0];
-  assert.equal(row.permissionLevel, "READ_ONLY");
-  assert.equal(row.status, "ACTIVE");
-  assert.equal(row.schedule, null); // Slice 1 default: on-demand
-  assert.equal(row.model, "claude-sonnet-4-5");
-  assert.match(row.instructions, /monthly spending|Watches monthly|spending observations/i);
-  assert.match(row.definitionOfDone, /observations report/);
-  // Skip no longer invents personality / boundaries — leave unset unless stated.
-  assert.equal(row.personalityNotes, null);
-  assert.equal(row.boundaries, null);
-
-  // Interview turns land on isSystem; confirm may also announce on the default CEO thread.
-  const systemConv = currentDb.tables.agentConversation.find((c) => c.isSystem === true);
-  assert.ok(systemConv, "isSystem conversation should exist");
-  const systemMessages = currentDb.tables.agentChatMessage.filter(
-    (m) => m.conversationId === systemConv.id
-  );
-  assert.ok(systemMessages.length >= 3, "creation interview should write to isSystem thread");
-
-  // Creation uses the interview LLM path, not respondToChat.
-  assert.equal(chatCalls.length, 0);
-
-  // Once the session is complete, normal chat (no mode) resumes.
-  const followUp = await send("thanks, how are things?", { create: false });
-  assert.equal(followUp.statusCode, 200);
-  assert.equal(chatCalls.length, 1);
 });
 
 test("CEO conversations CRUD + messages; system threads stay hidden", async (t) => {
