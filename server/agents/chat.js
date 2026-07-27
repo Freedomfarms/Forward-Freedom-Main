@@ -423,8 +423,8 @@ export async function respondToChat({
   }
   sections.push(dataSection("USER PROFILE (long-term memory)", renderProfileForPrompt(profile)));
   const runLabelAgents = agentConfig ? [agentConfig] : teamAgents;
-  // Reference documents + live team roster are CEO-scoped context. Sub-agent
-  // chats stay on their own run / settings scope.
+  // Live team roster / digest stay CEO-scoped. Reference documents are shared
+  // so uploads from CEO or sub-agent chat are available in both.
   if (ceoConfig && !agentConfig) {
     sections.push(dataSection("YOUR SUB-AGENTS (current team)", renderTeamRoster(teamAgents)));
     sections.push(
@@ -449,13 +449,13 @@ export async function respondToChat({
         currentDigest || "(empty — not set yet)"
       )
     );
-    const documents = await loadDocumentsForPrompt(userId);
-    sections.push(dataSection("USER REFERENCE DOCUMENTS", documents));
   } else {
     sections.push(
       dataSection("RECENT RUN SUMMARIES", renderNamedRunSummaries(runs, runLabelAgents))
     );
   }
+  const documents = await loadDocumentsForPrompt(userId);
+  sections.push(dataSection("USER REFERENCE DOCUMENTS", documents));
   if (relatedRun) {
     let relatedOutput;
     try {

@@ -16,7 +16,13 @@ import {
   sendCeoChatMessage,
   updateAgentConversation,
   updateCeoConversation,
+  uploadCeoDocuments,
 } from "../../utils/agentsApi.js";
+import {
+  CEO_DOCUMENT_ACCEPT,
+  MAX_UPLOAD_DOCS,
+  readCeoDocumentFiles,
+} from "../../utils/ceoDocumentFiles.js";
 import { ConversationList } from "./ConversationList.jsx";
 import CeoActivityStream from "./CeoActivityStream.jsx";
 import {
@@ -143,8 +149,12 @@ export function AgentChat({
   const [isLoadingConversations, setIsLoadingConversations] = useState(loadsHistory);
   const [isCreatingConversation, setIsCreatingConversation] = useState(false);
   const [listError, setListError] = useState("");
+  const [isUploadingDocs, setIsUploadingDocs] = useState(false);
+  const [uploadNotice, setUploadNotice] = useState("");
+  const [uploadError, setUploadError] = useState("");
   const scrollRef = useRef(null);
   const composerRef = useRef(null);
+  const fileInputRef = useRef(null);
   const historyLoadedForRef = useRef(null);
   const conversationsLoadedForRef = useRef(null);
   const recoveringRef = useRef(false);
@@ -502,6 +512,37 @@ export function AgentChat({
     }
   };
 
+  const handleUploadDocuments = async (fileList) => {
+    setUploadError("");
+    setUploadNotice("");
+    setIsUploadingDocs(true);
+    try {
+      const files = Array.from(fileList || []);
+      if (!files.length) return;
+      if (files.length > MAX_UPLOAD_DOCS) {
+        throw new Error(`You can upload up to ${MAX_UPLOAD_DOCS} documents at once.`);
+      }
+      const parsed = await readCeoDocumentFiles(files);
+      const valid = parsed.filter((doc) => doc.content?.trim());
+      if (!valid.length) {
+        throw new Error(
+          "Choose at least one supported file (.txt, .md, .csv, .json, .pdf, .docx, .xlsx, or .pptx)."
+        );
+      }
+      await uploadCeoDocuments(valid, { user });
+      const names = valid.map((doc) => doc.filename).join(", ");
+      setUploadNotice(
+        valid.length === 1
+          ? `Uploaded ${names}. Agents can use it in the next message.`
+          : `Uploaded ${valid.length} documents (${names}). Agents can use them in the next message.`
+      );
+    } catch (error) {
+      setUploadError(describeAgentApiError(error, "Document upload failed."));
+    } finally {
+      setIsUploadingDocs(false);
+    }
+  };
+
   const sendMessage = async (rawValue) => {
     const message = String(rawValue || "").trim();
     if (!message || isSending) return;
@@ -675,6 +716,7 @@ export function AgentChat({
   const showEmpty = messages.length === 0 && !isSending && !isLoadingHistory;
   const composerDisabled =
     isSending || (loadsHistory && (isLoadingConversations || !activeConversationId));
+  const uploadDisabled = composerDisabled || isUploadingDocs;
   const chatMaxHeight = isWorkspace ? "min(62vh, 640px)" : maxHeight;
 
   const chatBody = (
@@ -780,6 +822,21 @@ export function AgentChat({
 
       {historyError ? <div style={fosStyles.errorBox}>{historyError}</div> : null}
       {sendError ? <div style={fosStyles.errorBox}>{sendError}</div> : null}
+      {uploadError ? <div style={fosStyles.errorBox}>{uploadError}</div> : null}
+      {uploadNotice ? (
+        <div
+          style={{
+            borderRadius: 10,
+            border: "1px solid rgba(34,197,94,.28)",
+            background: "rgba(34,197,94,.08)",
+            color: "#b7f7d0",
+            fontSize: 12,
+            padding: "8px 12px",
+          }}
+        >
+          {uploadNotice}
+        </div>
+      ) : null}
 
       {relatedRunId ? (
         <div
@@ -851,7 +908,52 @@ export function AgentChat({
             opacity: composerDisabled ? 0.7 : 1,
           }}
         />
-        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept={CEO_DOCUMENT_ACCEPT}
+              multiple
+              disabled={uploadDisabled}
+              style={{ display: "none" }}
+              onChange={(event) => {
+                const input = event.target;
+                void handleUploadDocuments(input.files).finally(() => {
+                  input.value = "";
+                });
+              }}
+            />
+            <button
+              type="button"
+              title="Upload documents"
+              aria-label="Upload documents"
+              disabled={uploadDisabled}
+              onClick={() => fileInputRef.current?.click()}
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 12,
+                border: "1px solid rgba(0,216,255,.28)",
+                background: "rgba(0,136,255,.10)",
+                color: "#eef6ff",
+                cursor: uploadDisabled ? "default" : "pointer",
+                opacity: uploadDisabled ? 0.55 : 1,
+                fontWeight: 900,
+                fontSize: 22,
+                lineHeight: 1,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: 0,
+              }}
+            >
+              {isUploadingDocs ? "…" : "+"}
+            </button>
+            <span style={{ color: "#6f8aa8", fontSize: 11 }}>
+              {isUploadingDocs ? "Uploading…" : "Add document"}
+            </span>
+          </div>
           <button
             type="submit"
             disabled={composerDisabled || !draft.trim()}
