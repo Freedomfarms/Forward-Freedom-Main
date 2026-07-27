@@ -11,7 +11,8 @@ security rollout: `docs/RLS_ROLLOUT.md`.
 | `ANTHROPIC_API_KEY` | The single platform LLM key every agent call uses (no BYOK). When missing, runs degrade cleanly to a recorded `LLM_NOT_CONFIGURED` failure instead of crashing. |
 | `CRON_SECRET` | Authenticates Vercel Cron calls to `/api/cron/agent-dispatch` (Bearer token). Dispatch fails closed (503 when unset, 401 on mismatch). |
 | `RESEND_API_KEY` | Resend key for reminder emails (self-notification only). When missing, email is skipped with an explanation and the in-app notification still delivers. |
-| `FREEDOM_BRAIN_CHAT` | Set to `1`/`true` to route CEO chat through the Freedom Brain reasoning loop (plain-text replies, tool calling, async memory extraction via `BrainJob`) instead of the legacy structured-JSON chat engine. Off by default; see `docs/FREEDOM_BRAIN_PLAN.md` §0.6. |
+| `FREEDOM_BRAIN_CHAT` | CEO chat uses Freedom Brain by default (one brain for ask/create/run). Set to `0`/`false` to force the legacy structured-JSON chat engine. See `docs/FREEDOM_BRAIN_PLAN.md`. |
+| `FREEDOM_OS_DEBUG_CEO` | Set to `1`/`true` to always log CEO mission-reasoning sketches (`Situation` / `Mission` / `Known` / `Missing` / …). Also logs in non-production by default. |
 | `DATABASE_URL` | `freedom_app` connection string — non-bypass role, subject to RLS. Supavisor pooler username format is `freedom_app.<project-ref>` (see `docs/RLS_ROLLOUT.md`). |
 | `SERVICE_DATABASE_URL` | `freedom_service` connection string (`BYPASSRLS`) — used only by `server/db/servicePrisma.js` for the cron dispatcher, the Plaid webhook owner lookup, and admin usage reporting. |
 | `DIRECT_URL` | Owner-role direct connection — Prisma CLI migrations only. |

@@ -6,6 +6,7 @@ import {
   buildCreatePayloadFromDraft,
   emptyCreationDraft,
   isDraftReadyForReview,
+  isMissionExecutable,
   looksLikeScheduleOrEmailOnly,
   parseSchedule,
   publicCreationDraft,
@@ -25,20 +26,21 @@ import {
 } from "../server/agents/creationInterview.js";
 import { setLlmImplementationForTesting } from "../server/agents/llm.js";
 
-function fullyInterviewedPatch(extra = {}) {
+function executableMissionPatch(extra = {}) {
   return {
     agentType: "research",
     name: "Market Scout",
     roleLine: "Tracks cattle market moves",
     definitionOfDone: "Every Monday I know what moved in cattle markets and why.",
+    mission: "Every Monday I know what moved in cattle markets and why.",
     instructions: "Scan public market sources and summarize material changes",
-    personalityNotes: "Calm\nSpecific",
-    boundaries: "Never invent prices\nNever send messages externally",
-    workingFromNotes: "No prior history — starting fresh.",
-    actorsNotes: "Acts on behalf of the user",
-    escalationNotes: "Flag the user for urgent market moves only",
-    coveredTopics: [...INTERVIEW_TOPICS],
+    knownFacts: ["Weekly cattle-market brief", "Monday delivery"],
+    blockingGaps: [],
+    missingFacts: [],
+    missionExecutable: true,
     interviewComplete: true,
+    agentTypeConfidence: 0.9,
+    tentativeAgentType: "research",
     ...extra,
   };
 }
@@ -85,21 +87,25 @@ test("startCreationSession opens on Aim with an empty draft", () => {
   const started = startCreationSession();
   assert.equal(started.state.phase, "aim");
   assert.equal(started.state.status, "active");
-  assert.match(started.reply, /one outcome/i);
+  assert.match(started.reply, /what should this agent own/i);
   assert.equal(started.state.draft.definitionOfDone, null);
+  assert.equal(started.state.draft.missionExecutable, false);
   assert.equal(typeof started.state.sessionStartedAtMs, "number");
   assert.ok(started.state.sessionStartedAtMs > 0);
 });
 
-test("partial answers do not open draft review until interview is complete", () => {
+test("partial answers do not open draft review until the mission is executable", () => {
   const draft = applyDraftPatch(emptyCreationDraft(), {
     agentType: "research",
     definitionOfDone: "I have a clear weekly brief on cattle prices by Monday 9am.",
+    mission: "I have a clear weekly brief on cattle prices by Monday 9am.",
     personalityNotes: "Terse\nPractical",
     boundaries: "Never send emails externally\nNever move money",
+    missionExecutable: false,
+    blockingGaps: ["which markets", "delivery channel"],
   });
   assert.equal(draft.agentType, "research");
-  assert.equal(draft.name, "Research Agent");
+  assert.equal(isMissionExecutable(draft), false);
   assert.equal(isInterviewComplete(draft), false);
   assert.equal(isDraftReadyForReview(draft), false);
   const pub = publicCreationDraft({ phase: "interview", draft });
@@ -107,13 +113,12 @@ test("partial answers do not open draft review until interview is complete", () 
   assert.equal(pub.readyForReview, false);
 });
 
-test("skip / completeInterviewWithGuesses opens review with guessed remaining topics", () => {
+test("skip / completeInterviewWithGuesses opens review without inventing personality", () => {
   assert.equal(matchesCreationSkip("skip the rest"), true);
   assert.equal(matchesCreationSkip("draft it"), true);
   assert.equal(matchesCreationSkip("whatever"), true);
   assert.equal(matchesCreationSkip("you decide"), true);
   assert.equal(matchesCreationSkip("idk"), true);
-  // Substantive answers are not skips even if they mention drafting later.
   assert.equal(
     matchesCreationSkip(
       "It should act for me with vendors and never send anything externally without asking first"
@@ -121,17 +126,26 @@ test("skip / completeInterviewWithGuesses opens review with guessed remaining to
     false
   );
   const partial = applyDraftPatch(emptyCreationDraft(), {
-    agentType: "finance",
     definitionOfDone: "A weekly spending observations report is produced",
+    mission: "A weekly spending observations report is produced",
     instructions: "Watch spending",
+    tentativeAgentType: "finance",
+    agentTypeConfidence: 0.6,
   });
   const draft = completeInterviewWithGuesses(partial);
-  assert.equal(isInterviewComplete(draft), true);
+  assert.equal(isMissionExecutable(draft), true);
   assert.equal(isDraftReadyForReview(draft), true);
-  assert.ok(draft.guessedFields.length > 0);
+  assert.equal(draft.agentType, "finance");
+  // Minimum create fields only — do not invent identity preferences.
+  assert.equal(draft.personalityNotes, null);
+  assert.equal(draft.boundaries, null);
+  assert.equal(draft.escalationNotes, null);
+  assert.ok(draft.guessedFields.includes("agentType") || draft.agentType === "finance");
   const payload = buildCreatePayloadFromDraft(draft);
   assert.equal(payload.schedulePreset, null);
   assert.equal(payload.model, "claude-sonnet-4-5");
+  assert.equal(payload.personalityNotes, null);
+  assert.equal(payload.boundaries, null);
 });
 
 test("runCreationTurn jumps to draft when user bails after a couple answers", async () => {
@@ -157,22 +171,24 @@ test("runCreationTurn jumps to draft when user bails after a couple answers", as
 
   try {
     const started = startCreationSession();
-    // Seed a light interview (Aim + one topic) without going through LLM Aim.
     const mid = {
       ...started.state,
       phase: "interview",
       step: "interview",
       draft: applyDraftPatch(emptyCreationDraft(), {
-        agentType: "research",
+        tentativeAgentType: "research",
+        agentTypeConfidence: 0.7,
         definitionOfDone: "Every Monday I know what moved in cattle markets and why.",
+        mission: "Every Monday I know what moved in cattle markets and why.",
         actorsNotes: "Acts on behalf of the user",
-        coveredTopics: ["outcome", "actors"],
+        knownFacts: ["Monday cattle brief"],
+        blockingGaps: ["which sources"],
       }),
     };
     const skipped = await runCreationTurn(mid, "whatever");
     assert.equal(skipped.state.phase, "review");
     assert.equal(skipped.creationDraft.readyForReview, true);
-    assert.equal(isInterviewComplete(skipped.state.draft), true);
+    assert.equal(isMissionExecutable(skipped.state.draft), true);
     assert.match(skipped.reply, /draft/i);
   } finally {
     setLlmImplementationForTesting(null);
@@ -183,12 +199,13 @@ test("runCreationTurn jumps to draft when user bails after a couple answers", as
 
 test("buildCreatePayloadFromDraft uses on-demand + Sonnet defaults for Slice 1", () => {
   const draft = applyDraftPatch(emptyCreationDraft(), {
-    ...fullyInterviewedPatch({
+    ...executableMissionPatch({
       agentType: "finance",
       name: "Spend Watch",
       roleLine: "Flags unusual monthly spending",
       instructions: "Watch transactions and call out surprises",
       definitionOfDone: "A weekly spending observations report is produced",
+      mission: "A weekly spending observations report is produced",
       personalityNotes: "Direct",
       boundaries: "Never recommend trades",
     }),
@@ -203,20 +220,27 @@ test("buildCreatePayloadFromDraft uses on-demand + Sonnet defaults for Slice 1",
   assert.equal(payload.boundaries, "Never recommend trades");
 });
 
-test("sanitizeExtractionForInterview keeps Aim turns to outcome only", () => {
+test("sanitizeExtractionForInterview never invents identity or low-confidence types", () => {
   const sanitized = sanitizeExtractionForInterview({
     phase: "aim",
     userSkipped: false,
     object: {
       draftPatch: {
-        agentType: "email",
-        name: "Inbox Agent",
-        definitionOfDone: "Inbox zero every morning with drafts in my voice.",
+        agentType: "finance",
+        tentativeAgentType: "finance",
+        agentTypeConfidence: 0.4,
+        name: "Finance Agent",
+        definitionOfDone: "Email me social media reports on a couple people.",
+        mission: "Email me social media reports on a couple people.",
         personalityNotes: "Warm\nTerse",
         boundaries: "Never send externally",
         actorsNotes: "Acts for the user",
         workingFromNotes: "Past sent mail",
         escalationNotes: "Flag urgent only",
+        knownFacts: ["Deliver reports by email"],
+        blockingGaps: ["people to monitor", "platforms"],
+        nextQuestionFocus: "people to monitor",
+        missionExecutable: true,
         coveredTopics: [...INTERVIEW_TOPICS],
         guessedFields: ["tone", "boundaries"],
         interviewComplete: true,
@@ -229,24 +253,52 @@ test("sanitizeExtractionForInterview keeps Aim turns to outcome only", () => {
       userWantsEdits: false,
     },
   });
-  assert.deepEqual(sanitized.topicsCoveredThisTurn, ["outcome"]);
   assert.equal(sanitized.phase, "interview");
   assert.equal(sanitized.userSkippedRemaining, false);
   assert.equal(sanitized.userConfirmed, false);
-  assert.equal(sanitized.draftPatch.definitionOfDone, "Inbox zero every morning with drafts in my voice.");
-  assert.equal(sanitized.draftPatch.agentType, "email");
+  assert.equal(sanitized.draftPatch.definitionOfDone, "Email me social media reports on a couple people.");
+  assert.equal(sanitized.draftPatch.agentType, undefined);
+  assert.equal(sanitized.draftPatch.tentativeAgentType, "finance");
   assert.equal(sanitized.draftPatch.personalityNotes, undefined);
   assert.equal(sanitized.draftPatch.boundaries, undefined);
-  assert.equal(sanitized.draftPatch.guessedFields, undefined);
+  assert.equal(sanitized.draftPatch.missionExecutable, false);
+  assert.deepEqual(sanitized.draftPatch.blockingGaps, ["people to monitor", "platforms"]);
 });
 
-test("parseInterviewTurnText strips NOTES_JSON from the user-facing reply", () => {
+test("sanitizeExtractionForInterview commits agentType only at high confidence", () => {
+  const sanitized = sanitizeExtractionForInterview({
+    phase: "interview",
+    userSkipped: false,
+    object: {
+      draftPatch: {
+        tentativeAgentType: "research",
+        agentTypeConfidence: 0.9,
+        definitionOfDone: "Weekly social digest emailed to me",
+        knownFacts: ["Email delivery", "Public social accounts"],
+        blockingGaps: [],
+        missionExecutable: true,
+      },
+      phase: "interview",
+      topicsCoveredThisTurn: ["outcome"],
+      userSkippedRemaining: false,
+      userConfirmed: false,
+      userCancelled: false,
+      userWantsEdits: false,
+    },
+  });
+  assert.equal(sanitized.draftPatch.agentType, "research");
+  assert.equal(sanitized.draftPatch.agentTypeConfidence, 0.9);
+});
+
+test("parseInterviewTurnText strips NOTES_JSON and folds knowledge fields", () => {
   const parsed = parseInterviewTurnText(
-    'Got it — who should this agent act on behalf of?\nNOTES_JSON:{"topicsCoveredThisTurn":["outcome"],"draftPatch":{"agentType":"research","definitionOfDone":"Markets briefed"},"userCancelled":false}'
+    'Got it — which people should it monitor?\nNOTES_JSON:{"mission":"Social media reports emailed to me","knownFacts":["Deliver by email"],"blockingGaps":["people to monitor"],"nextQuestionFocus":"people to monitor","missionExecutable":false,"tentativeAgentType":"research","agentTypeConfidence":0.6,"draftPatch":{"definitionOfDone":"Social media reports emailed to me"},"userCancelled":false}'
   );
-  assert.equal(parsed.reply, "Got it — who should this agent act on behalf of?");
-  assert.deepEqual(parsed.object.topicsCoveredThisTurn, ["outcome"]);
-  assert.equal(parsed.object.draftPatch.agentType, "research");
+  assert.equal(parsed.reply, "Got it — which people should it monitor?");
+  assert.equal(parsed.object.draftPatch.mission, "Social media reports emailed to me");
+  assert.deepEqual(parsed.object.draftPatch.knownFacts, ["Deliver by email"]);
+  assert.deepEqual(parsed.object.draftPatch.blockingGaps, ["people to monitor"]);
+  assert.equal(parsed.object.draftPatch.tentativeAgentType, "research");
   assert.equal(parsed.object.userCancelled, false);
 
   const broken = parseInterviewTurnText("Just a reply\nNOTES_JSON:{not-json");
@@ -261,7 +313,7 @@ test("runCreationTurn keeps **bold** markers for the chat UI to render", async (
     generateText: async () => ({
       text:
         "Got it — switching to a **federal reserve report**. **Who should receive it?**\n" +
-        'NOTES_JSON:{"topicsCoveredThisTurn":["outcome"],"draftPatch":{"agentType":"research","definitionOfDone":"Fed rate brief"},"userCancelled":false}',
+        'NOTES_JSON:{"mission":"Fed rate brief","knownFacts":["Email delivery"],"blockingGaps":["recipient"],"nextQuestionFocus":"recipient","missionExecutable":false,"tentativeAgentType":"research","agentTypeConfidence":0.7,"draftPatch":{"definitionOfDone":"Fed rate brief"},"userCancelled":false}',
     }),
     generateObject: async () => ({ object: {}, usage: null }),
   });
@@ -277,7 +329,7 @@ test("runCreationTurn keeps **bold** markers for the chat UI to render", async (
   }
 });
 
-test("runCreationTurn rejects over-extracted Aim answers and stays in interview", async () => {
+test("runCreationTurn rejects invented Aim overfill and asks a blocking gap", async () => {
   const previousKey = process.env.ANTHROPIC_API_KEY;
   process.env.ANTHROPIC_API_KEY = "test-key";
   let generateObjectCalls = 0;
@@ -285,17 +337,28 @@ test("runCreationTurn rejects over-extracted Aim answers and stays in interview"
   setLlmImplementationForTesting({
     generateText: async () => {
       generateTextCalls += 1;
-      // Interview path is plain text + trailing NOTES_JSON (no structured grammar).
-      // Model tries to overfill topics — sanitize + Aim gate must strip them.
       return {
         text:
-          "Got it — who should this agent act on behalf of?\n" +
+          "Got it — which people should those social reports cover?\n" +
           `NOTES_JSON:${JSON.stringify({
-            topicsCoveredThisTurn: [...INTERVIEW_TOPICS],
-            draftPatch: fullyInterviewedPatch({
-              guessedFields: ["actors", "tone"],
-              interviewComplete: true,
-            }),
+            mission: "Email me social media reports on a couple people.",
+            knownFacts: ["Deliver reports by email"],
+            missingFacts: ["people to monitor", "platforms", "frequency"],
+            blockingGaps: ["people to monitor", "platforms"],
+            nextQuestionFocus: "people to monitor",
+            missionExecutable: false,
+            tentativeAgentType: "research",
+            agentTypeConfidence: 0.55,
+            draftPatch: {
+              agentType: "finance",
+              name: "Finance Agent",
+              definitionOfDone: "Email me social media reports on a couple people.",
+              personalityNotes: "Warm",
+              boundaries: "Never leave sandbox",
+              missionExecutable: true,
+              coveredTopics: [...INTERVIEW_TOPICS],
+              guessedFields: ["tone", "boundaries"],
+            },
             userCancelled: false,
           })}`,
       };
@@ -310,18 +373,20 @@ test("runCreationTurn rejects over-extracted Aim answers and stays in interview"
     const started = startCreationSession();
     const aim = await runCreationTurn(
       started.state,
-      "Every Monday I know what moved in cattle markets and why."
+      "I want an agent that emails me social media reports on a couple people."
     );
     assert.equal(aim.state.phase, "interview");
     assert.equal(aim.creationDraft.phase, "interview");
     assert.equal(aim.creationDraft.readyForReview, false);
-    assert.equal(isInterviewComplete(aim.state.draft), false);
-    assert.deepEqual(aim.state.draft.coveredTopics, ["outcome"]);
+    assert.equal(isMissionExecutable(aim.state.draft), false);
+    assert.equal(aim.state.draft.agentType, null);
     assert.equal(aim.state.draft.personalityNotes, null);
     assert.equal(aim.state.draft.boundaries, null);
-    assert.match(aim.reply, /act on behalf/i);
+    assert.match(aim.state.draft.definitionOfDone, /social media/i);
+    assert.deepEqual(aim.state.draft.blockingGaps.slice(0, 1), ["people to monitor"]);
+    assert.match(aim.reply, /people/i);
     assert.doesNotMatch(aim.reply, /NOTES_JSON/);
-    // Interview turns use one Haiku text call — no structured-object call.
+    assert.doesNotMatch(aim.reply, /Finance Agent/i);
     assert.equal(generateTextCalls, 1);
     assert.equal(generateObjectCalls, 0);
   } finally {
@@ -331,7 +396,7 @@ test("runCreationTurn rejects over-extracted Aim answers and stays in interview"
   }
 });
 
-test("runCreationTurn stays in interview until topics are done, then confirms on review", async () => {
+test("runCreationTurn stays gathering until executable, then confirms on review", async () => {
   const previousKey = process.env.ANTHROPIC_API_KEY;
   process.env.ANTHROPIC_API_KEY = "test-key";
   let mode = "partial";
@@ -340,20 +405,18 @@ test("runCreationTurn stays in interview until topics are done, then confirms on
       if (mode === "partial") {
         return {
           text:
-            "Got it — who should this agent act on behalf of?\n" +
-            'NOTES_JSON:{"topicsCoveredThisTurn":["outcome"],"draftPatch":{"agentType":"research","definitionOfDone":"Every Monday I know what moved in cattle markets and why.","coveredTopics":["outcome"]},"userCancelled":false}',
+            "Got it — which people should it monitor?\n" +
+            'NOTES_JSON:{"mission":"Every Monday I know what moved in cattle markets and why.","knownFacts":["Monday cattle brief"],"blockingGaps":["sources"],"nextQuestionFocus":"sources","missionExecutable":false,"tentativeAgentType":"research","agentTypeConfidence":0.7,"draftPatch":{"definitionOfDone":"Every Monday I know what moved in cattle markets and why."},"userCancelled":false}',
         };
       }
-      // Skip/review draft presentation (Sonnet text path).
       return { text: "Here's the draft. Say looks good if you want me to create it." };
     },
     generateObject: async () => {
-      // Used only on skip/review extract.
       return {
         object: {
-          draftPatch: fullyInterviewedPatch(),
+          draftPatch: executableMissionPatch(),
           phase: "review",
-          topicsCoveredThisTurn: [...INTERVIEW_TOPICS],
+          topicsCoveredThisTurn: ["outcome"],
           userSkippedRemaining: true,
           userConfirmed: false,
           userCancelled: false,
@@ -372,19 +435,18 @@ test("runCreationTurn stays in interview until topics are done, then confirms on
     );
     assert.equal(aim.state.phase, "interview");
     assert.equal(aim.creationDraft.readyForReview, false);
-    assert.match(aim.reply, /act on behalf/i);
+    assert.match(aim.reply, /people|sources|monitor/i);
 
     mode = "skip";
     const skipped = await runCreationTurn(aim.state, "skip the rest");
     assert.equal(skipped.state.phase, "review");
     assert.equal(skipped.creationDraft.readyForReview, true);
-    assert.equal(isInterviewComplete(skipped.state.draft), true);
+    assert.equal(isMissionExecutable(skipped.state.draft), true);
 
     assert.equal(matchesCreationConfirm("looks good"), true);
     const confirm = await runCreationTurn(skipped.state, "looks good");
     assert.ok(confirm.createPayload);
     assert.equal(confirm.createPayload.agentType, "research");
-    assert.equal(confirm.createPayload.name, "Market Scout");
     assert.match(confirm.createPayload.definitionOfDone, /cattle markets/);
     assert.equal(confirm.createPayload.schedulePreset, null);
   } finally {

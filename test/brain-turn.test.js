@@ -108,13 +108,15 @@ beforeEach(() => {
   installLlm();
 });
 
-test("isBrainChatEnabled follows the FREEDOM_BRAIN_CHAT flag", (t) => {
+test("isBrainChatEnabled defaults ON; opt out with 0/false", (t) => {
   if (!requireSetup(t)) return;
   const original = process.env.FREEDOM_BRAIN_CHAT;
   try {
     delete process.env.FREEDOM_BRAIN_CHAT;
-    assert.equal(isBrainChatEnabled(), false);
+    assert.equal(isBrainChatEnabled(), true);
     process.env.FREEDOM_BRAIN_CHAT = "0";
+    assert.equal(isBrainChatEnabled(), false);
+    process.env.FREEDOM_BRAIN_CHAT = "false";
     assert.equal(isBrainChatEnabled(), false);
     process.env.FREEDOM_BRAIN_CHAT = "1";
     assert.equal(isBrainChatEnabled(), true);
