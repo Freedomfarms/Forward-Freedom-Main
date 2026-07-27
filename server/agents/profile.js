@@ -56,9 +56,17 @@ function normalizeEntry(entry) {
   const text = String(entry.text || "").trim();
   if (!text) return null;
   const now = new Date().toISOString();
+  const ownerRaw = String(entry.owner || "user").toLowerCase();
+  const owner =
+    ownerRaw === "assistant" || ownerRaw === "workspace" || ownerRaw === "user"
+      ? ownerRaw
+      : "user";
   return {
     id: String(entry.id || crypto.randomUUID()),
     text,
+    // Living-profile entries are user-owned by default. Assistant identity
+    // must never be stored here as a generic unattributed fact.
+    owner,
     source: String(entry.source || "unknown"),
     addedAt: entry.addedAt || now,
     updatedAt: entry.updatedAt || entry.addedAt || now,
@@ -176,6 +184,7 @@ export function applyOps(profile, ops, { source = "unknown", now = new Date() } 
       entries.push({
         id: op.id ? String(op.id) : crypto.randomUUID(),
         text,
+        owner: "user",
         source,
         addedAt: timestamp,
         updatedAt: timestamp,

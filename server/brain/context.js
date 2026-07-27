@@ -9,7 +9,13 @@ import { AgentError } from "../agents/errors.js";
 import { CEO_AGENT_MODEL } from "../agents/llm.js";
 import { dataSection } from "../agents/prompts.js";
 import { normalizeProfile } from "../agents/profile.js";
-import { renderMemoriesWithProvenance, selectRelevantMemories } from "./relevance.js";
+import {
+  buildIdentityNamespaces,
+  renderIdentitySituationBrief,
+  selectOwnedUserMemories,
+} from "./identity.js";
+import { selectRelevantMemories } from "./relevance.js";
+import { sketchMissionFromConversation } from "../agents/ceoReasoning.js";
 import {
   loadTeamAgents,
   renderNamedRunSummaries,
@@ -157,17 +163,26 @@ export async function assembleBrainContext({
       }
     }
 
-    let userTimezone;
+    let userRow;
     try {
-      const userRow = await tx.user.findUnique({
+      userRow = await tx.user.findUnique({
         where: { id: userId },
-        select: { timezone: true },
+        select: { timezone: true, displayName: true, email: true },
       });
-      userTimezone = userRow?.timezone ?? null;
     } catch (error) {
-      // Timezone column lag must not take down Brain chat.
-      if (!isMissingTimezoneColumnError(error)) throw error;
-      userTimezone = null;
+      // Timezone / displayName column lag must not take down Brain chat.
+      if (!isMissingTimezoneColumnError(error) && !isMissingUserIdentityColumnError(error)) {
+        throw error;
+      }
+      try {
+        userRow = await tx.user.findUnique({
+          where: { id: userId },
+          select: { timezone: true },
+        });
+      } catch (fallbackError) {
+        if (!isMissingTimezoneColumnError(fallbackError)) throw fallbackError;
+        userRow = null;
+      }
     }
 
     return {
@@ -179,11 +194,12 @@ export async function assembleBrainContext({
       teamAgents,
       runs,
       relatedRun,
-      userTimezone,
+      userRow,
     };
   });
 
-  const { ceoConfig, teamAgents, runs, relatedRun, userTimezone } = gathered;
+  const { ceoConfig, teamAgents, runs, relatedRun, userRow } = gathered;
+  const userTimezone = userRow?.timezone ?? null;
   const history = [...gathered.history].reverse();
 
   // Recall Relevant Memory — via the Relevance Engine (v2 step 1): scored,
@@ -233,16 +249,45 @@ export async function assembleBrainContext({
 
   const documents = await loadDocumentsForPrompt(userId);
 
+  // Identity namespaces — assistant / user / workspace stay separated.
+  // Assistant name (e.g. Harry) never enters USER IDENTITY or RELEVANT MEMORIES.
+  const identities = buildIdentityNamespaces({
+    ceoConfig,
+    user: {
+      displayName: userRow?.displayName ?? null,
+      email: userRow?.email ?? null,
+      timezone: userTimezone && isValidIanaTimeZone(userTimezone) ? userTimezone : null,
+    },
+    teamAgents,
+    profile,
+  });
+  const ownedMemories = selectOwnedUserMemories(selectedMemories, {
+    assistantName: identities.assistantIdentity.name,
+  });
+
+  // Plaintext user turns already in this thread (oldest → newest), for mission
+  // continuity sketches. Does not include the new message yet.
+  const userMessagesInOrder = [];
+  for (const row of history) {
+    if (row.role !== "USER") continue;
+    try {
+      const content = decrypt(row.contentCiphertext);
+      if (!isCreationStateContent(content)) userMessagesInOrder.push(content);
+    } catch {
+      // skip undecryptable
+    }
+  }
+  const activeMission = sketchMissionFromConversation([...userMessagesInOrder, text], {
+    existingAgents: teamAgents || [],
+  });
+
   const promptSections = [
-    "Reply to the user's new message using the context below.",
-    dataSection(
-      "YOUR IDENTITY",
-      `Name: ${ceoConfig.name}\nRole: Freedom Brain — the single executive intelligence of this user's Freedom OS`
-    ),
-    dataSection(
-      "USER PROFILE (long-term memory, selected for relevance)",
-      renderMemoriesWithProvenance(selectedMemories)
-    ),
+    "Reply to the user's new message using the structured context below.",
+    ...renderIdentitySituationBrief({
+      identities,
+      activeMission,
+      relevantMemories: ownedMemories,
+    }),
     dataSection("YOUR CAPABILITIES (specialist agent roster)", renderTeamRoster(teamAgents)),
     dataSection("RECENT RUN SUMMARIES", renderNamedRunSummaries(runs, teamAgents)),
     dataSection("USER TIMEZONE", tzLabel),
@@ -273,19 +318,6 @@ export async function assembleBrainContext({
     dataSection("NEW USER MESSAGE", text)
   );
 
-  // Plaintext user turns already in this thread (oldest → newest), for mission
-  // continuity sketches. Does not include the new message.
-  const userMessagesInOrder = [];
-  for (const row of history) {
-    if (row.role !== "USER") continue;
-    try {
-      const content = decrypt(row.contentCiphertext);
-      if (!isCreationStateContent(content)) userMessagesInOrder.push(content);
-    } catch {
-      // skip undecryptable
-    }
-  }
-
   return {
     ceoConfig,
     conversationId: gathered.conversationId,
@@ -296,5 +328,15 @@ export async function assembleBrainContext({
     lastUserMessage: text,
     userMessagesInOrder,
     teamAgents,
+    identities,
+    activeMission,
   };
+}
+
+function isMissingUserIdentityColumnError(error) {
+  const message = String(error?.message || "");
+  return (
+    error?.code === "P2022" &&
+    (/displayName/i.test(message) || /email/i.test(message) || /User/i.test(message))
+  );
 }
