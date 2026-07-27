@@ -273,6 +273,19 @@ export async function assembleBrainContext({
     dataSection("NEW USER MESSAGE", text)
   );
 
+  // Plaintext user turns already in this thread (oldest → newest), for mission
+  // continuity sketches. Does not include the new message.
+  const userMessagesInOrder = [];
+  for (const row of history) {
+    if (row.role !== "USER") continue;
+    try {
+      const content = decrypt(row.contentCiphertext);
+      if (!isCreationStateContent(content)) userMessagesInOrder.push(content);
+    } catch {
+      // skip undecryptable
+    }
+  }
+
   return {
     ceoConfig,
     conversationId: gathered.conversationId,
@@ -281,5 +294,7 @@ export async function assembleBrainContext({
     model: ceoConfig.model || CEO_AGENT_MODEL,
     promptSections,
     lastUserMessage: text,
+    userMessagesInOrder,
+    teamAgents,
   };
 }

@@ -18,6 +18,7 @@ export const CEO_MISSION_REASONING_RULES = [
   "Never invent agent type, domain, restrictions, permissions, workflow behavior, or personality. If uncertain, ask. Maintain Decision / Confidence / Evidence before committing type, tools, permissions, or workflows.",
   "Stop asking when the mission is executable. Do not collect unnecessary preferences. Successful execution beats a completed questionnaire.",
   "When the user refers to an existing agent/capability (e.g. \"my supplier agent\"), modify that capability — do not create a duplicate.",
+  "Maintain continuity across turns: do not restart intake when the user answers a blocker, corrects a detail, or states a standing preference. Update the mission model; ask only remaining gaps.",
   "Assumptions must never be presented as facts. Label them clearly or ask.",
   'Example: user says "email me social media reports on a couple people" → acknowledge the mission, then ask who to track — do NOT invent a Finance Agent or ask about personality.',
 ].join("\n");
@@ -35,16 +36,46 @@ export function isCeoReasoningDebugEnabled() {
 export function logCeoReasoning(state = {}) {
   if (!isCeoReasoningDebugEnabled()) return;
   const lines = [
-    "Situation: " + (state.situation || "(none)"),
-    "Mission: " + (state.mission || "(none)"),
+    "Conversation history: " + formatList(state.conversationHistory),
+    "Current Situation: " + (state.situation || "(none)"),
+    "Updated Mission: " + (state.mission || "(none)"),
+    "Changed Facts: " + formatList(state.changedFacts),
     "Known: " + formatList(state.known),
-    "Missing: " + formatList(state.missing),
+    "Remaining Gaps: " + formatList(state.missing),
     "Assumptions: " + formatAssumptions(state.assumptions),
+    "Preferences: " + formatList(state.preferences),
+    "Decision: " + (state.decision || "(none)"),
     "Candidate questions: " + formatList(state.candidateQuestions),
     "Selected question: " + (state.selectedQuestion || "(none)"),
     "Reason selected: " + (state.reasonSelected || "(none)"),
   ];
   console.info(`[ceo-reasoning]\n${lines.join("\n")}`);
+}
+
+/** Blank continuity state for multi-turn mission building. */
+export function emptyMissionState() {
+  return {
+    mission: null,
+    missionKind: null,
+    situation: null,
+    known: [],
+    missing: [],
+    assumptions: [],
+    preferences: [],
+    deliveryChannel: null,
+    tentativeAgentType: null,
+    agentTypeConfidence: 0,
+    existingAgentReferenced: null,
+    createsNewCapability: false,
+    modifiesExisting: false,
+    missionExecutable: false,
+    conversationHistory: [],
+    changedFacts: [],
+    decision: null,
+    selectedQuestion: null,
+    candidateQuestions: [],
+    reasonSelected: null,
+  };
 }
 
 function formatList(items) {
@@ -174,9 +205,12 @@ export function sketchMissionFromMessage(message, { existingAgents = [] } = {}) 
   const industry = extractIndustry(text);
   const sourcesMentioned = platforms.length > 0 || sources.length > 0;
 
+  const reviewAsk =
+    /\b(review|summarize|look at)\b/i.test(text) && /\breport\b/i.test(text);
   const createIntent =
     !modifyIntent &&
     !vagueAsk &&
+    !reviewAsk &&
     /\b(agent|build me|create|set up|stand up|watch(?:es|ing)?|monitor|track|report|email me|summary|need a)\b/i.test(
       text
     );
@@ -554,6 +588,371 @@ const STOP_ENTITY_WORDS = new Set([
   "Do",
   "Keep",
 ]);
+
+/**
+ * Fold one user turn into prior mission state (executive continuity).
+ * Short answers, corrections, and preferences update the open mission —
+ * they do not restart intake from scratch.
+ */
+export function advanceMissionState(priorState, message, options = {}) {
+  const prev = priorState ? cloneMissionState(priorState) : emptyMissionState();
+  const text = String(message || "").trim();
+  const history = [...(prev.conversationHistory || []), text];
+  const turn = sketchMissionFromMessage(text, options);
+  const changedFacts = [];
+
+  const correction = detectCorrection(text);
+  const preference = detectPreference(text);
+  const alreadyHas = detectAlreadyHasCapability(text, options.existingAgents || []);
+  const followUp =
+    Boolean(prev.mission) &&
+    !alreadyHas &&
+    (isLikelyFollowUpAnswer(text, prev, turn) || Boolean(correction) || Boolean(preference));
+
+  let next;
+
+  if (alreadyHas) {
+    next = {
+      ...emptyMissionState(),
+      mission: `Use existing capability: ${alreadyHas}`,
+      missionKind: "modify",
+      situation: `User already has ${alreadyHas}; do not create a duplicate.`,
+      known: [`Existing capability referenced: ${alreadyHas}`],
+      missing: [],
+      existingAgentReferenced: alreadyHas,
+      createsNewCapability: false,
+      modifiesExisting: true,
+      missionExecutable: true,
+      decision: `Recognize existing ${alreadyHas}; do not create a duplicate.`,
+    };
+    changedFacts.push(`Recognized existing capability: ${alreadyHas}`);
+  } else if (followUp) {
+    next = applyFollowUpToMission(prev, text, turn, correction, preference, changedFacts);
+  } else {
+    // Fresh mission sketch (or replace when user clearly starts a new create/modify)
+    next = {
+      ...emptyMissionState(),
+      mission: turn.mission,
+      missionKind: turn.missionKind,
+      situation: turn.situation,
+      known: [...turn.known],
+      missing: [...turn.missing],
+      assumptions: [...(turn.assumptions || [])],
+      preferences: [...(prev.preferences || [])],
+      deliveryChannel: inferDeliveryChannel(text, turn) || prev.deliveryChannel,
+      tentativeAgentType: turn.tentativeAgentType,
+      agentTypeConfidence: turn.agentTypeConfidence,
+      existingAgentReferenced: turn.existingAgentReferenced,
+      createsNewCapability: turn.createsNewCapability,
+      modifiesExisting: turn.modifiesExisting,
+      missionExecutable: turn.missionExecutable,
+      decision: turn.missionExecutable
+        ? "Mission executable — proceed to act."
+        : turn.selectedQuestion
+          ? `Ask: ${turn.selectedQuestion}`
+          : "Await clarification.",
+    };
+    if (preference) {
+      next.preferences = uniqueStrings([...(next.preferences || []), preference]);
+      changedFacts.push(`Standing preference: ${preference}`);
+    }
+    for (const fact of turn.known) changedFacts.push(fact);
+  }
+
+  // Standing preferences persist across turns
+  if (preference && !next.preferences.includes(preference)) {
+    next.preferences = uniqueStrings([...(next.preferences || []), preference]);
+  }
+  if (prev.preferences?.length) {
+    next.preferences = uniqueStrings([...(prev.preferences || []), ...(next.preferences || [])]);
+  }
+
+  // Apply preferences to later work (e.g. "review this report")
+  const isReviewAsk = /\b(review|summarize|look at)\b/i.test(text) && /\breport\b/i.test(text);
+  if (isReviewAsk && next.preferences.some((p) => /executive summar/i.test(p))) {
+    const applied = "Apply preference: executive summaries";
+    next.mission = next.mission || "Review the report.";
+    next.missionKind = "execute";
+    next.situation = "User asked to review a report; applying standing preferences.";
+    next.createsNewCapability = false;
+    next.missing = [];
+    next.missionExecutable = true;
+    if (!next.known.includes(applied)) {
+      next.known = [...next.known, applied];
+      changedFacts.push(applied);
+    }
+    next.decision = "Review using executive-summary preference.";
+    next.selectedQuestion = null;
+    next.candidateQuestions = [];
+  }
+
+  next = finalizeContinuityState(next);
+  // Preserve explicit review decision after finalize
+  if (isReviewAsk && next.preferences.some((p) => /executive summar/i.test(p))) {
+    next.decision = "Review using executive-summary preference.";
+    next.missionExecutable = true;
+    next.selectedQuestion = null;
+    next.missing = [];
+  }
+  next.conversationHistory = history;
+  next.changedFacts = uniqueStrings(changedFacts);
+  return next;
+}
+
+/**
+ * Run the full user-message transcript through continuity folding.
+ * @param {string[]} userMessages
+ */
+export function sketchMissionFromConversation(userMessages = [], options = {}) {
+  let state = emptyMissionState();
+  for (const message of userMessages) {
+    if (!String(message || "").trim()) continue;
+    state = advanceMissionState(state, message, options);
+  }
+  return state;
+}
+
+function cloneMissionState(state) {
+  return {
+    ...emptyMissionState(),
+    ...state,
+    known: [...(state.known || [])],
+    missing: [...(state.missing || [])],
+    assumptions: [...(state.assumptions || [])],
+    preferences: [...(state.preferences || [])],
+    conversationHistory: [...(state.conversationHistory || [])],
+    changedFacts: [...(state.changedFacts || [])],
+    candidateQuestions: [...(state.candidateQuestions || [])],
+  };
+}
+
+function isLikelyFollowUpAnswer(text, prev, turn) {
+  const trimmed = String(text || "").trim();
+  if (!trimmed || !prev.mission) return false;
+  // Corrections / channel changes are follow-ups even if they look like new intents
+  if (detectCorrection(trimmed)) return true;
+  if (detectPreference(trimmed)) return true;
+  // Short answers to open gaps
+  if (trimmed.length <= 80 && prev.missing?.length) return true;
+  // Mentions of schedule/delivery while a create mission is open
+  if (
+    (prev.missionKind === "create" || prev.missionKind === "execute") &&
+    /\b(weekly|daily|email|teams|slack|monday|friday)\b/i.test(trimmed)
+  ) {
+    return true;
+  }
+  // Entity-style answers while supplier/competitor gaps remain
+  if (
+    prev.missing?.some((gap) => /supplier|competitor|people|account/i.test(gap)) &&
+    turn.missionKind === "answer"
+  ) {
+    return true;
+  }
+  // "Pratt suppliers" still sketches as create (supplier keyword) — treat as follow-up
+  // when prior mission is the same domain and the message is mostly an entity answer.
+  if (
+    prev.mission &&
+    /supplier/i.test(prev.mission || "") &&
+    /\bsuppliers?\b/i.test(trimmed) &&
+    trimmed.length <= 60
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function applyFollowUpToMission(prev, text, turn, correction, preference, changedFacts) {
+  const next = cloneMissionState(prev);
+  next.situation = `Continuing open mission: ${prev.mission}`;
+  next.missionKind = prev.missionKind === "execute" ? "create" : prev.missionKind || "create";
+  next.createsNewCapability = prev.createsNewCapability;
+  next.modifiesExisting = prev.modifiesExisting;
+  next.missionExecutable = false;
+
+  // Delivery / channel correction
+  if (correction) {
+    if (correction.removeEmail) {
+      next.known = next.known.filter((fact) => !/\bemail\b/i.test(fact));
+      next.missing = next.missing.filter((gap) => !/how to deliver/i.test(gap));
+      changedFacts.push("Removed email delivery");
+    }
+    if (correction.channel) {
+      next.deliveryChannel = correction.channel;
+      const fact = `Deliver via ${correction.channel}`;
+      next.known = uniqueStrings([...next.known, fact]);
+      next.missing = next.missing.filter((gap) => !/how to deliver|delivery|channel/i.test(gap));
+      changedFacts.push(fact);
+    }
+  }
+
+  // Schedule / cadence
+  if (/\b(weekly|daily|monday|friday|morning|every)\b/i.test(text)) {
+    const fact = /\bweekly\b/i.test(text)
+      ? "Cadence: weekly"
+      : /\bdaily\b/i.test(text)
+        ? "Cadence: daily"
+        : "Schedule mentioned in request";
+    next.known = uniqueStrings([...next.known, fact]);
+    next.missing = next.missing.filter((gap) => !/frequency|schedule|cadence/i.test(gap));
+    changedFacts.push(fact);
+  }
+
+  // Email delivery (unless corrected away this turn)
+  if (/\bemail\b/i.test(text) && !correction?.removeEmail) {
+    next.deliveryChannel = next.deliveryChannel || "email";
+    next.known = uniqueStrings([...next.known, "Deliver by email"]);
+    next.missing = next.missing.filter((gap) => !/how to deliver/i.test(gap));
+    changedFacts.push("Deliver by email");
+  }
+
+  // Supplier entity answers ("Pratt suppliers", "Acme and Globex")
+  if (next.missing.some((gap) => /supplier/i.test(gap)) || /supplier/i.test(next.mission || "")) {
+    const suppliers = extractSupplierAnswer(text);
+    if (suppliers.length) {
+      const fact = `Suppliers: ${suppliers.join(", ")}`;
+      next.known = uniqueStrings([...next.known, fact]);
+      next.missing = next.missing.filter((gap) => !/supplier/i.test(gap));
+      changedFacts.push(fact);
+    }
+  }
+
+  // Competitor / people entity answers
+  if (next.missing.some((gap) => /competitor|people/i.test(gap))) {
+    const entities = extractNamedEntities(text);
+    if (entities.length) {
+      const label = next.missing.some((gap) => /people/i.test(gap)) ? "People" : "Competitors / entities";
+      const fact = `${label}: ${entities.join(", ")}`;
+      next.known = uniqueStrings([...next.known, fact]);
+      next.missing = next.missing.filter(
+        (gap) => !/competitor|people to monitor|which competitor/i.test(gap)
+      );
+      changedFacts.push(fact);
+    }
+  }
+
+  // Merge any non-conflicting facts from the turn sketch
+  for (const fact of turn.known || []) {
+    if (/Domain:|Existing capability/i.test(fact)) continue;
+    if (!next.known.some((k) => k.toLowerCase() === fact.toLowerCase())) {
+      next.known.push(fact);
+      changedFacts.push(fact);
+    }
+  }
+
+  if (preference) {
+    next.preferences = uniqueStrings([...(next.preferences || []), preference]);
+    changedFacts.push(`Standing preference: ${preference}`);
+  }
+
+  next.decision = null; // finalizeContinuityState fills ask vs execute
+  return next;
+}
+
+function finalizeContinuityState(state) {
+  const next = cloneMissionState(state);
+  // Drop preference-style gaps always
+  next.missing = (next.missing || []).filter((gap) => !/personality|tone|escalat|boundar/i.test(gap));
+
+  // Executable when create/modify mission has no remaining gaps
+  const openCreate =
+    next.missionKind === "create" || next.missionKind === "execute" || next.missionKind === "modify";
+  if (openCreate && next.mission && !(next.missing || []).length) {
+    next.missionExecutable = true;
+    if (next.missionKind === "create") next.missionKind = "execute";
+    next.situation = next.situation || "Mission is sufficiently defined to execute or create.";
+    next.decision = next.decision || "Mission executable — proceed to act.";
+    next.selectedQuestion = null;
+    next.candidateQuestions = [];
+    next.reasonSelected = null;
+    return next;
+  }
+
+  next.missionExecutable = false;
+  const selection = selectHighestValueQuestion(next.missing, { known: next.known });
+  next.selectedQuestion = selection?.selectedQuestion || null;
+  next.candidateQuestions = selection?.candidateQuestions || [];
+  next.reasonSelected = selection?.reasonSelected || null;
+  if (!next.decision || next.decision === "Await clarification.") {
+    next.decision = next.selectedQuestion
+      ? `Ask: ${next.selectedQuestion}`
+      : "Await clarification.";
+  }
+  return next;
+}
+
+function detectCorrection(text) {
+  const lower = String(text || "").toLowerCase();
+  const looksLikeCorrection =
+    /\b(actually|instead|rather than|not email|put it in|send (it )?via|use teams|use slack)\b/i.test(
+      lower
+    );
+  if (!looksLikeCorrection) return null;
+  const correction = { removeEmail: false, channel: null };
+  if (/\bnot email\b|\binstead of email\b|\brather than email\b/i.test(lower)) {
+    correction.removeEmail = true;
+  }
+  if (/\bteams\b/i.test(lower)) correction.channel = "Teams";
+  else if (/\bslack\b/i.test(lower)) correction.channel = "Slack";
+  if (!correction.channel && !correction.removeEmail) return null;
+  return correction;
+}
+
+function detectPreference(text) {
+  const m = String(text || "").match(
+    /\balways\s+(.+?)(?:\.|$)/i
+  );
+  if (!m) return null;
+  return m[1].trim().replace(/\.$/, "");
+}
+
+function detectAlreadyHasCapability(text, existingAgents = []) {
+  const lower = String(text || "").toLowerCase();
+  if (!/\b(already have|i have a|i've got a)\b/i.test(lower)) return null;
+  const ref = detectExistingAgentReference(text, existingAgents);
+  if (ref) return ref;
+  if (/\bsupplier\b/i.test(lower)) return "supplier agent";
+  if (/\bresearch\b/i.test(lower)) return "research agent";
+  if (/\bfinance\b|portfolio\b/i.test(lower)) return "finance agent";
+  return "existing agent";
+}
+
+function extractSupplierAnswer(text) {
+  const trimmed = String(text || "").trim();
+  const asList = trimmed.match(/^(.+?)\s+suppliers?\.?$/i);
+  if (asList) {
+    return asList[1]
+      .split(/\s*(?:,|\band\b|&)\s*/i)
+      .map((part) => part.trim())
+      .filter(Boolean);
+  }
+  const entities = extractNamedEntities(trimmed);
+  if (entities.length) return entities;
+  // Single token / short phrase entity answer
+  if (/^[A-Z][A-Za-z0-9.&-]{1,40}$/.test(trimmed)) return [trimmed];
+  return [];
+}
+
+function inferDeliveryChannel(text, turn) {
+  if (/\bteams\b/i.test(text)) return "Teams";
+  if (/\bslack\b/i.test(text)) return "Slack";
+  if (/\bemail\b/i.test(text)) return "email";
+  if ((turn.known || []).some((fact) => /\bemail\b/i.test(fact))) return "email";
+  return null;
+}
+
+function uniqueStrings(items) {
+  const out = [];
+  const seen = new Set();
+  for (const item of items || []) {
+    const key = String(item || "").trim();
+    if (!key) continue;
+    const norm = key.toLowerCase();
+    if (seen.has(norm)) continue;
+    seen.add(norm);
+    out.push(key);
+  }
+  return out;
+}
 
 export function shouldCommitAgentType(confidence, evidence = []) {
   const conf = Number(confidence);
