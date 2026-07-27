@@ -17,6 +17,11 @@ import {
 } from "./controlPlane.js";
 import { BRAIN_JOB_KINDS, enqueueBrainJob, kickBrainJobSoon } from "./jobs.js";
 import { dataSection } from "../agents/prompts.js";
+import {
+  buildExecutionEvidence,
+  classifyAgentRequest,
+  guardAgentReply,
+} from "../agents/executionContract.js";
 import { BRAIN_SYSTEM_PROMPT } from "./prompts.js";
 import { buildBrainToolBelt } from "./toolBelt.js";
 import { logCeoDecision } from "./observability.js";
@@ -141,6 +146,24 @@ export async function brainTurn({
   });
   reply = capabilityPass.reply;
   if (capabilityPass.usage) usage = capabilityPass.usage;
+
+  // Shared Agent Execution Contract — same evidence gate as sub-agents.
+  const requestKind = classifyAgentRequest(context.lastUserMessage);
+  const executionEvidence = buildExecutionEvidence({
+    turnState,
+    relatedRun: null,
+    recentRuns: context.worldModel?.operations?.recentRuns || [],
+  });
+  const executionGuard = guardAgentReply({
+    reply,
+    userMessage: context.lastUserMessage,
+    evidence: executionEvidence,
+    requestKind,
+  });
+  if (executionGuard.rewritten) {
+    safetyChecksTriggered.push(`execution:${executionGuard.failures.join("|")}`);
+  }
+  reply = executionGuard.reply;
 
   logCeoDecision({
     conversationId: context.conversationId,

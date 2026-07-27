@@ -38,7 +38,21 @@ import {
 } from "./ceoReasoning.js";
 import { cronToSchedulePreset, formatHourUtcLabel } from "./schedule.js";
 import { isEmailDeliveryEnabled } from "./emailDelivery.js";
+import {
+  buildExecutionEvidence,
+  classifyAgentRequest,
+  guardAgentReply,
+  isMutatingActionAllowed,
+  logExecutionGuard,
+  renderRequestClassificationSection,
+  renderSubAgentAuthoritySection,
+} from "./executionContract.js";
 import { CHAT_PLAIN_TEXT_RULE, dataSection, PROMPT_SAFETY_RULES } from "./prompts.js";
+import {
+  loadPrimaryActivePlan,
+  renderPlanMission,
+  toActiveMissionFromPlan,
+} from "../brain/plans.js";
 import {
   extractFromChatReply,
   normalizeProfile,
@@ -371,13 +385,37 @@ export async function respondToChat({
         .join("\n")
     : `Agent name: ${ceoConfig.name}\nRole: CEO Agent (orchestrator)`;
 
+  const requestKind = classifyAgentRequest(text);
+
   const sections = [
     "Reply to the user's new message using the context below.",
     dataSection("AGENT IDENTITY", identity),
+    dataSection("REQUEST CLASSIFICATION", renderRequestClassificationSection(requestKind)),
   ];
   if (agentConfig) {
+    sections.push(
+      dataSection("AGENT AUTHORITY (CEO control plane)", renderSubAgentAuthoritySection())
+    );
     sections.push(dataSection("CURRENT SETTINGS (this agent)", renderAgentSettings(agentConfig)));
     sections.push(dataSection("DEFINITION OF DONE (user-configured)", agentConfig.definitionOfDone));
+    // Read-only CEO Plan context — sub-agents cannot create/update Plans.
+    try {
+      const primaryPlan = await loadPrimaryActivePlan(userId);
+      if (primaryPlan) {
+        const mission = toActiveMissionFromPlan(primaryPlan.row, primaryPlan.body);
+        sections.push(
+          dataSection(
+            "CEO ACTIVE PLAN (executive intent — read-only)",
+            [
+              renderPlanMission(mission),
+              "note: You may reason against this intent and return evidence. You cannot create or update Plans.",
+            ].join("\n")
+          )
+        );
+      }
+    } catch {
+      // Plan load is best-effort for sub-agent context.
+    }
   }
   sections.push(dataSection("USER PROFILE (long-term memory)", renderProfileForPrompt(profile)));
   const runLabelAgents = agentConfig ? [agentConfig] : teamAgents;
@@ -477,25 +515,37 @@ export async function respondToChat({
   let actionResult = null;
   let digestResult = null;
   let ceoOpsResult = null;
+  let appliedTaskActionType = null;
 
   // Sub-agent taskAction is applied server-side after the model reply. The
   // model must not invent side effects — only this allowlisted path mutates.
+  // Status / information asks never execute mutating actions (intent ≠ execution).
   if (agentConfig) {
     try {
       const action = sanitizeTaskAction(object?.taskAction ?? null);
       if (action) {
-        actionResult = await applySubAgentTaskAction({
-          userId,
-          agentConfigId: agentConfig.id,
-          conversationId: resolvedConversationId,
-          message: text,
-          action,
-          relatedRunId,
-          persist: false,
-        });
-        // Prefer the authoritative server confirmation over a hedged model reply.
-        if (actionResult?.reply) {
-          reply = actionResult.reply;
+        if (!isMutatingActionAllowed(requestKind, action.type)) {
+          logExecutionGuard({
+            event: "task_action_blocked",
+            requestKind,
+            actionBlocked: true,
+            failures: [`blocked_action:${action.type}`],
+          });
+        } else {
+          appliedTaskActionType = action.type;
+          actionResult = await applySubAgentTaskAction({
+            userId,
+            agentConfigId: agentConfig.id,
+            conversationId: resolvedConversationId,
+            message: text,
+            action,
+            relatedRunId,
+            persist: false,
+          });
+          // Prefer the authoritative server confirmation over a hedged model reply.
+          if (actionResult?.reply) {
+            reply = actionResult.reply;
+          }
         }
       }
     } catch (error) {
@@ -546,6 +596,31 @@ export async function respondToChat({
       }
     }
   }
+
+  // Shared execution-contract guard — CEO and sub-agents inherit the same rules.
+  const evidence = buildExecutionEvidence({
+    actionResult,
+    taskActionType: appliedTaskActionType,
+    turnState: ceoOpsResult
+      ? {
+          agent: ceoOpsResult.agent || null,
+          run: ceoOpsResult.run || null,
+          confirmations: ceoOpsResult.reply ? [ceoOpsResult.reply] : [],
+        }
+      : null,
+    relatedRun,
+    recentRuns: runs,
+    emailDeliveryEnabled: agentConfig
+      ? isEmailDeliveryEnabled(agentConfig.toolAccess)
+      : false,
+  });
+  const guarded = guardAgentReply({
+    reply,
+    userMessage: text,
+    evidence,
+    requestKind,
+  });
+  reply = guarded.reply;
 
   const relatedFromOps =
     ceoOpsResult?.run?.id || actionResult?.run?.id || relatedRunId || null;

@@ -81,6 +81,9 @@ test("isEmailReportRequest detects email-me phrasings and avoids mentions", (t) 
   assert.equal(isEmailReportRequest("summarize my spending"), false);
   assert.equal(isEmailReportRequest("enable email after each run"), false);
   assert.equal(isEmailReportRequest("disable email"), false);
+  // Status questions must never short-circuit into a send.
+  assert.equal(isEmailReportRequest("Did you email this run or did you just run it?"), false);
+  assert.equal(isEmailReportRequest("Have you emailed the report?"), false);
 });
 
 test("sendAgentReportEmail skips when the email service is not configured", async (t) => {

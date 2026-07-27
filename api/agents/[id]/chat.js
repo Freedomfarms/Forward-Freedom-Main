@@ -19,6 +19,10 @@ import {
   isEmailReportRequest,
 } from "../../../server/agents/emailDelivery.js";
 import {
+  classifyAgentRequest,
+  isMutatingActionAllowed,
+} from "../../../server/agents/executionContract.js";
+import {
   listChatHistory,
   serializeChatHistoryMessages,
 } from "../../../server/agents/chatHistory.js";
@@ -91,9 +95,12 @@ export default async function handler(request, response) {
         : null;
     const conversationId = readOptionalConversationId(payload);
 
+    const requestKind = classifyAgentRequest(message);
+
     // "Email me the report/draft" → deterministic email of the (related or
     // latest) run to the user's own verified address, no LLM call.
-    if (isEmailReportRequest(message)) {
+    // Status questions ("Did you email…?") never take this path.
+    if (isEmailReportRequest(message) && isMutatingActionAllowed(requestKind, "email_report")) {
       const outcome = await emailRunReportFromChat({
         userId: decodedToken.uid,
         agentConfigId: agentId,
@@ -106,8 +113,12 @@ export default async function handler(request, response) {
 
     // Clear self-management asks (run now, pause/resume, schedule, email
     // toggle) apply immediately — no LLM, no CEO handoff.
+    // Status / information asks fall through to respondToChat (no mutation).
     const deterministicAction = matchDeterministicTaskIntent(message);
-    if (deterministicAction) {
+    if (
+      deterministicAction &&
+      isMutatingActionAllowed(requestKind, deterministicAction.type)
+    ) {
       const outcome = await applySubAgentTaskAction({
         userId: decodedToken.uid,
         agentConfigId: agentId,

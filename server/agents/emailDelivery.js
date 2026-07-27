@@ -12,6 +12,7 @@ import {
   renderInlineMarkdownToEmailHtml,
   renderMarkdownToEmailHtml,
 } from "./emailTemplate.js";
+import { AGENT_REQUEST_KINDS, classifyAgentRequest } from "./executionContract.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared email delivery for sub-agent reports (finance, research, reminders).
@@ -193,12 +194,21 @@ export async function sendAgentReportEmailOrThrow({ userId, subject, body, html 
  * True when a chat message is asking the agent to email its report/draft.
  * Deliberately conservative: requires an email verb-with-object phrasing so
  * questions that merely mention email do not trigger a send.
+ * Status questions ("Did you email this?") are never send requests.
  */
 export function isEmailReportRequest(message) {
   const text = String(message || "").toLowerCase();
   if (!/\be-?mail/.test(text)) return false;
   // Settings toggles ("enable email", "turn off email") are not send requests.
   if (/\b(enable|disable|turn on|turn off|stop)\b.{0,40}\be-?mail/.test(text)) {
+    return false;
+  }
+  // Intent ≠ execution: status/info questions must not short-circuit into a send.
+  const kind = classifyAgentRequest(message);
+  if (
+    kind === AGENT_REQUEST_KINDS.STATUS_QUESTION ||
+    kind === AGENT_REQUEST_KINDS.INFORMATION_REQUEST
+  ) {
     return false;
   }
   return (
@@ -296,6 +306,8 @@ export async function deliverAgentRunReport({ userId, agentConfigId, relatedRunI
       ? `Done — I've emailed that report to your verified account address.`
       : `I couldn't email it: ${result.status}. The full report is still available here in Freedom OS.`,
     run,
+    sent: result.sent === true,
+    emailStatus: result.status || null,
   };
 }
 
