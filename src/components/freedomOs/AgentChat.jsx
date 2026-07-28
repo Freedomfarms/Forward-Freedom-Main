@@ -396,8 +396,12 @@ export function AgentChat({
 
   useEffect(() => {
     const node = scrollRef.current;
-    if (node) node.scrollTop = node.scrollHeight;
-  }, [messages, isSending, isLoadingHistory]);
+    if (!node) return;
+    const frame = window.requestAnimationFrame(() => {
+      node.scrollTop = node.scrollHeight;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [messages, isSending, isLoadingHistory, liveActivities]);
 
   const refreshConversationList = async () => {
     try {
@@ -727,20 +731,33 @@ export function AgentChat({
   const composerDisabled =
     isSending || (loadsHistory && (isLoadingConversations || !activeConversationId));
   const uploadDisabled = composerDisabled || isUploadingDocs;
-  const chatMaxHeight = isWorkspace ? "min(62vh, 640px)" : maxHeight;
+  const chatMaxHeight = isWorkspace ? "min(52vh, 520px)" : maxHeight;
 
   const chatBody = (
-    <div style={{ display: "grid", gap: 10, minWidth: 0, ...(isWorkspace ? { minHeight: 0 } : {}) }}>
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 10,
+        minWidth: 0,
+        minHeight: 0,
+        ...(isWorkspace ? { height: "100%", overflow: "hidden" } : {}),
+      }}
+      className={isWorkspace ? "fos-chat-body" : undefined}
+    >
       <div
         ref={scrollRef}
+        className={isWorkspace ? "fos-chat-scroll" : undefined}
         style={{
           overflowY: "auto",
-          maxHeight: chatMaxHeight,
-          minHeight: isWorkspace ? 280 : 120,
+          flex: isWorkspace ? "1 1 0" : undefined,
+          maxHeight: isWorkspace ? undefined : chatMaxHeight,
+          minHeight: isWorkspace ? 0 : 120,
           display: "grid",
           gap: 10,
           alignContent: "start",
-          padding: 2,
+          padding: "2px 2px 18px",
+          minWidth: 0,
         }}
       >
         {isLoadingHistory ? (
@@ -888,7 +905,7 @@ export function AgentChat({
           event.preventDefault();
           void sendMessage(draft);
         }}
-        style={{ display: "grid", gap: 8 }}
+        style={{ display: "grid", gap: 8, flexShrink: 0 }}
       >
         <textarea
           ref={composerRef}
@@ -1000,29 +1017,48 @@ export function AgentChat({
               background: "rgba(2,14,28,.55)",
               padding: 12,
               minHeight: 420,
+              height: "min(72vh, 720px)",
+              maxHeight: "min(72vh, 720px)",
+              overflow: "hidden",
             }
           : {}),
       }}
       className="fos-chat-with-conversations"
     >
-      <ConversationList
-        conversations={conversations}
-        activeConversationId={activeConversationId}
-        isLoading={isLoadingConversations}
-        isCreating={isCreatingConversation}
-        error={listError}
-        sectionLabel={listLabel}
-        listMaxHeight={isWorkspace ? 520 : 168}
-        onSelect={handleSelectConversation}
-        onNewChat={() => void handleNewChat()}
-        onRename={(id, title) => handleRenameConversation(id, title)}
-        onDelete={(id) => void handleDeleteConversation(id)}
-      />
-      {chatBody}
+      <div style={isWorkspace ? { minHeight: 0, overflow: "hidden", height: "100%" } : undefined}>
+        <ConversationList
+          conversations={conversations}
+          activeConversationId={activeConversationId}
+          isLoading={isLoadingConversations}
+          isCreating={isCreatingConversation}
+          error={listError}
+          sectionLabel={listLabel}
+          listMaxHeight={isWorkspace ? 560 : 168}
+          onSelect={handleSelectConversation}
+          onNewChat={() => void handleNewChat()}
+          onRename={(id, title) => handleRenameConversation(id, title)}
+          onDelete={(id) => void handleDeleteConversation(id)}
+        />
+      </div>
+      <div style={isWorkspace ? { minHeight: 0, overflow: "hidden", height: "100%" } : undefined}>
+        {chatBody}
+      </div>
       <style>{`
         @media (max-width: 720px) {
           .fos-chat-with-conversations {
             grid-template-columns: 1fr !important;
+            height: auto !important;
+            max-height: none !important;
+            overflow: visible !important;
+          }
+          .fos-chat-body {
+            height: auto !important;
+            overflow: visible !important;
+          }
+          .fos-chat-scroll {
+            flex: none !important;
+            min-height: 200px !important;
+            max-height: ${typeof chatMaxHeight === "number" ? `${chatMaxHeight}px` : chatMaxHeight} !important;
           }
         }
       `}</style>
