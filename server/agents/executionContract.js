@@ -11,6 +11,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { isCeoObservabilityEnabled } from "../brain/observability.js";
+import {
+  groundedOwnershipReply,
+  isCreationLikeIntent,
+  isModificationIntent,
+} from "../brain/worldModelOwnership.js";
 
 export const AGENT_REQUEST_KINDS = Object.freeze({
   INFORMATION_REQUEST: "information_request",
@@ -318,11 +323,38 @@ export function validateExecutionClaims(reply, evidence, { requestKind = null } 
 
 /**
  * Rewrite unsupported claims into a truthful status response.
+ *
+ * Ownership invariant: create/update intents must never be answered from
+ * generic recentRuns. Historical runs are status/context only.
  */
-export function groundedExecutionReply(evidence, { requestKind = null, failures = [] } = {}) {
+export function groundedExecutionReply(
+  evidence,
+  {
+    requestKind = null,
+    failures = [],
+    intent = null,
+    userMessage = "",
+    worldModelFacts = null,
+    capabilityAssessment = null,
+    draftReply = "",
+  } = {}
+) {
   const bits = [];
   const tt = evidence?.thisTurn || {};
   const hist = evidence?.historical || {};
+  const creationLike = isCreationLikeIntent(intent, userMessage);
+  const modificationLike = isModificationIntent(intent);
+
+  // Create / update: Registry ownership path — never "completed run on record".
+  if ((creationLike || modificationLike) && !tt.agentCreated) {
+    return groundedOwnershipReply({
+      facts: worldModelFacts,
+      userMessage,
+      failures: ["creation_answered_with_run_history"],
+      capabilityAssessment,
+      draftReply,
+    });
+  }
 
   if (tt.runTriggered) {
     if (tt.runFailed) {
@@ -332,7 +364,11 @@ export function groundedExecutionReply(evidence, { requestKind = null, failures 
     } else {
       bits.push("A run was triggered.");
     }
-  } else if (hist.relatedRunStatus === "SUCCEEDED" || hist.latestRunSummary) {
+  } else if (
+    requestKind === AGENT_REQUEST_KINDS.STATUS_QUESTION &&
+    (hist.relatedRunStatus === "SUCCEEDED" || hist.latestRunSummary)
+  ) {
+    // Status questions may cite Run History. Action/create intents must not.
     bits.push("I have a completed run on record.");
   }
 
@@ -376,6 +412,9 @@ export function guardAgentReply({
   userMessage,
   evidence = null,
   requestKind = null,
+  intent = null,
+  worldModelFacts = null,
+  capabilityAssessment = null,
 } = {}) {
   const kind = requestKind || classifyAgentRequest(userMessage);
   const bag = evidence || buildExecutionEvidence({});
@@ -395,6 +434,11 @@ export function guardAgentReply({
   const rewritten = groundedExecutionReply(bag, {
     requestKind: kind,
     failures: check.failures,
+    intent,
+    userMessage,
+    worldModelFacts,
+    capabilityAssessment,
+    draftReply: reply,
   });
 
   logExecutionGuard({
@@ -402,6 +446,7 @@ export function guardAgentReply({
     requestKind: kind,
     failures: check.failures,
     claimed: check.claimed,
+    intent: intent || null,
   });
 
   return {

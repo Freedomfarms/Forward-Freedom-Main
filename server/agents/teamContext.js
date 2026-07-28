@@ -74,13 +74,20 @@ export function agentNameById(agents) {
 export function renderNamedRunSummaries(runs, agents = [], { emptyLabel = "(no completed runs yet)" } = {}) {
   if (!runs?.length) return emptyLabel;
   const names = agentNameById(agents);
+  const rosterIds = new Set((agents || []).map((agent) => agent?.id).filter(Boolean));
   return runs
     .map((run) => {
       const day = new Date(run.startedAt).toISOString().slice(0, 10);
       const name = run.agentConfigId ? names.get(run.agentConfigId) : null;
-      const label = name ? `${name}, ${run.agentType}` : run.agentType;
+      const orphaned = !run.agentConfigId || !rosterIds.has(run.agentConfigId);
+      const label = name
+        ? `${name}, ${run.agentType}`
+        : orphaned
+          ? `${run.agentType}, orphaned_run`
+          : run.agentType;
       const runIdPart = run.id ? `, run ${run.id}` : "";
-      return `[${day}] (${label}${runIdPart}) ${run.summary || "(no summary)"}`;
+      const orphanNote = orphaned ? " [not an active agent — history only]" : "";
+      return `[${day}] (${label}${runIdPart})${orphanNote} ${run.summary || "(no summary)"}`;
     })
     .join("\n");
 }

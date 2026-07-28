@@ -26,6 +26,11 @@ import { createActivityRecorder } from "./activityStream.js";
 import { BRAIN_SYSTEM_PROMPT } from "./prompts.js";
 import { buildBrainToolBelt } from "./toolBelt.js";
 import { logCeoDecision } from "./observability.js";
+import {
+  buildWorldModelFacts,
+  enforceWorldModelOwnership,
+  logClaimProvenance,
+} from "./worldModelOwnership.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Freedom Brain — the ONE CEO reasoning loop for Freedom OS.
@@ -180,8 +185,21 @@ export async function brainTurn({
   if (capabilityPass.usage) usage = capabilityPass.usage;
 
   // Shared Agent Execution Contract — same evidence gate as sub-agents.
+  // World-model ownership is a hard invariant: Registry owns membership;
+  // Run History never answers create/existence claims.
   activities.start("CHECKING_EVIDENCE");
   const requestKind = classifyAgentRequest(context.lastUserMessage);
+  const rosterAgents =
+    Array.isArray(context.teamAgents) && context.teamAgents.length
+      ? context.teamAgents
+      : Object.values(context.worldModelFacts?.agents?.byId || {});
+  const worldModelFacts = buildWorldModelFacts({
+    teamAgents: rosterAgents,
+    runs: context.worldModel?.operations?.recentRuns || context.worldModelFacts?.runs?.recent || [],
+    activeMission: context.activeMission,
+    turnState,
+    priorAssistantReplies: context.priorAssistantReplies || [],
+  });
   const executionEvidence = buildExecutionEvidence({
     turnState,
     relatedRun: null,
@@ -192,11 +210,33 @@ export async function brainTurn({
     userMessage: context.lastUserMessage,
     evidence: executionEvidence,
     requestKind,
+    intent: context.controlPlane?.intent || null,
+    worldModelFacts,
+    capabilityAssessment: context.controlPlane?.capabilityAssessment || null,
   });
   if (executionGuard.rewritten) {
     safetyChecksTriggered.push(`execution:${executionGuard.failures.join("|")}`);
   }
   reply = executionGuard.reply;
+
+  const ownershipGuard = enforceWorldModelOwnership({
+    reply,
+    facts: worldModelFacts,
+    intent: context.controlPlane?.intent || null,
+    requestKind,
+    userMessage: context.lastUserMessage,
+    turnState,
+    capabilityAssessment: context.controlPlane?.capabilityAssessment || null,
+  });
+  if (ownershipGuard.rewritten) {
+    safetyChecksTriggered.push(`ownership:${ownershipGuard.failures.join("|")}`);
+  }
+  reply = ownershipGuard.reply;
+  logClaimProvenance(ownershipGuard.claims || [], {
+    conversationId: context.conversationId,
+    rewritten: ownershipGuard.rewritten,
+    intent: context.controlPlane?.intent || null,
+  });
   activities.complete("CHECKING_EVIDENCE");
   activities.complete("VALIDATING_RESULTS");
   activities.start("CONFIRMING_COMPLETION");
@@ -210,6 +250,7 @@ export async function brainTurn({
     confirmationsCount: turnState.confirmations.length,
     agentCreated: Boolean(turnState.agent?.id),
     runDelegated: Boolean(turnState.run?.id),
+    claimCount: Array.isArray(ownershipGuard.claims) ? ownershipGuard.claims.length : 0,
   });
 
   activities.start("PREPARING_SUMMARY");

@@ -148,7 +148,7 @@ export function renderIdentitySituationBrief({
         `owner: assistant`,
         `name: ${assistant.name || "CEO Agent"}`,
         `role: ${assistant.role || "Freedom Brain — CEO Agent (assistant)"}`,
-        `capabilities: ${assistant.capabilities || "(see YOUR CAPABILITIES)"}`,
+        `capabilities: ${assistant.capabilities || "(see AGENT REGISTRY)"}`,
       ].join("\n")
     ),
     dataSection(

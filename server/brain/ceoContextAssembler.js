@@ -43,6 +43,11 @@ import {
   loadPrimaryActivePlan,
   toActiveMissionFromPlan,
 } from "./plans.js";
+import {
+  buildWorldModelFacts,
+  extractPriorAssistantReplies,
+  renderWorldModelOwnershipSection,
+} from "./worldModelOwnership.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CEOContextAssembler — every CEO turn receives a structured snapshot of reality
@@ -210,6 +215,15 @@ export async function assembleCeoContext({
   const availableCaps = capabilities.filter((c) => c.status === "available").map((c) => c.id);
   const unavailableCaps = capabilities.filter((c) => c.status === "unavailable").map((c) => c.id);
 
+  const priorAssistantReplies = extractPriorAssistantReplies(history, decrypt);
+  const worldModelFacts = buildWorldModelFacts({
+    teamAgents,
+    runs,
+    activeMission,
+    turnState: null,
+    priorAssistantReplies,
+  });
+
   const worldModel = {
     identity: identities,
     capabilities: {
@@ -241,6 +255,7 @@ export async function assembleCeoContext({
       executionState,
       controlPlane,
     },
+    ownership: worldModelFacts,
   };
 
   const promptSections = buildCeoPromptSections({
@@ -258,6 +273,7 @@ export async function assembleCeoContext({
     relatedRun,
     history,
     text,
+    worldModelFacts,
   });
 
   logCeoContextAssembly({
@@ -303,6 +319,8 @@ export async function assembleCeoContext({
     controlPlane,
     executionState,
     worldModel,
+    worldModelFacts,
+    priorAssistantReplies,
     applicationState,
   };
 }
@@ -327,6 +345,7 @@ function buildCeoPromptSections({
   relatedRun,
   history,
   text,
+  worldModelFacts = null,
 }) {
   const missionAuthorityNote =
     activeMission?.authority === "plan"
@@ -336,6 +355,8 @@ function buildCeoPromptSections({
   const sections = [
     "Reply to the user's new message using the structured context below.",
     `APPLICATION STATE and PLATFORM CAPABILITIES are authoritative. ${missionAuthorityNote}`,
+    "AGENT REGISTRY is the sole source of agent existence/membership. RUN HISTORY is past execution only — never proof that an agent exists.",
+    dataSection("WORLD MODEL OWNERSHIP", renderWorldModelOwnershipSection(worldModelFacts)),
     ...renderIdentitySituationBrief({
       identities,
       activeMission,
@@ -367,8 +388,14 @@ function buildCeoPromptSections({
       "APPLICATION STATE (Freedom Financial world model)",
       renderApplicationState(applicationState)
     ),
-    dataSection("YOUR CAPABILITIES (specialist agent roster)", renderTeamRoster(teamAgents)),
-    dataSection("RECENT RUN SUMMARIES", renderNamedRunSummaries(runs, teamAgents)),
+    dataSection(
+      "AGENT REGISTRY (sole source of agent membership)",
+      renderTeamRoster(teamAgents)
+    ),
+    dataSection(
+      "RUN HISTORY (past executions — not membership; orphaned runs marked)",
+      renderNamedRunSummaries(runs, teamAgents)
+    ),
     dataSection("USER TIMEZONE", tzLabel),
     dataSection(
       "CURRENT DAILY DIGEST (shown on Freedom OS home)",
