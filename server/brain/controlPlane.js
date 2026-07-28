@@ -376,9 +376,9 @@ function claimsSocialLive(text) {
   );
 }
 
-function looksLikeAgentCreationRequest(message) {
+export function looksLikeAgentCreationRequest(message) {
   return (
-    /\b(create|build|set up|stand up)\b/i.test(message || "") &&
+    /\b(create|build|set up|stand up|i(?:'d| would) like to create)\b/i.test(message || "") &&
     /\b(agent|monitor|trading|watcher)\b/i.test(message || "")
   );
 }
