@@ -1,91 +1,133 @@
 # CEO World-Model Ownership
 
-> **Status:** Approved and implemented.
+> **Status:** Approved and implemented. Core CEO invariant.
 >
-> Hard invariants for CEO world-model consistency. Prevents Run History (and
-> other secondary stores) from being treated as proof of agent membership.
+> **Principle:** Context can enrich a decision. Context cannot redefine reality.
+
+Harry must always distinguish:
+
+- **“I did this before”** → Run History (historical context only)
+- **“I currently have this operating for you”** → Agent Registry (verified current state)
 
 ---
 
 ## 1. Binding ownership map (hard invariant)
 
-Every fact type has **exactly one** authoritative store. No fallback inference
-between entity types.
+Every fact type has **exactly one** authoritative store. No cross-entity inference.
 
 | Fact | Authority ONLY |
 |---|---|
 | Agent existence | **Agent Registry** (`AgentConfig`) |
-| Agent configuration | **Agent Registry** |
+| Agent status / configuration | **Agent Registry** |
 | Plan state | **Plan Store** |
 | Mission state | **Mission Store / Plan** |
-| Historical execution | **Run History** (`AgentRun`) |
+| Execution history | **Run History** (`AgentRun`) |
 | User preferences | **Memory** |
 
-A Run History record may provide **optional context**, but it **cannot** satisfy:
+Run History may **enrich** a proposal. It must **never** satisfy:
 
 - “Do I have this agent?”
 - “Modify this agent”
 - “This agent already exists”
+- A `new_agent_creation` request
 
-Allowed history framing:
+### Allowed
 
-> “I don't currently have a Federal Reserve agent. I found that you previously
-> ran a similar report. Would you like me to create a new recurring agent based
-> on that?”
+> Your Agent Registry has no Federal Reserve Monitor. I found a previous Federal
+> Reserve report in Run History. Would you like me to create a new agent?
 
-Forbidden:
+### Not allowed
 
-> “I have a completed run on record.” *(as the answer to a create/existence ask)*
+> You have a Federal Reserve agent because a previous run exists.
+
+### Entity resurrection (deleted agent)
+
+Lifecycle: create → run → delete → Run History remains → user asks about agent.
+
+Expected:
+
+> No active agent exists. I found historical runs from that agent.
+
+Never:
+
+> The agent exists because historical runs exist.
 
 ---
 
-## 2. Root cause (investigation summary)
+## 2. Creation fulfillment
 
-Intent classification correctly returned `new_agent_creation`. The Agent
-Registry correctly returned 0 agents. The user-visible sentence *“I have a
-completed run on record.”* was produced by `groundedExecutionReply` in the
-Execution Contract, which used historical `AgentRun` rows as rewrite evidence
-on create-intent turns.
+For `new_agent_creation`, the CEO may only complete via:
 
-Full path analysis lives in git history for this document’s first revision;
-implementation below encodes the durable fix.
+| Path | Meaning |
+|---|---|
+| **A** | Agent Registry confirms creation (this-turn `create_agent`) |
+| **B** | Missing information / confirm-to-create is requested |
+| **C** | Creation blocked with a reason (capabilities, etc.) |
+
+Run History may improve the proposal. It must never satisfy the creation request.
 
 ---
 
-## 3. Implementation
+## 3. Claim provenance (debug)
+
+For development/debugging, every ownership-grounded reply emits structured claims:
+
+```
+Claim:
+"I don't have a Federal Reserve agent."
+
+Source:
+Agent Registry
+
+Confidence:
+Verified current state
+
+---
+
+Claim:
+"You previously ran a Federal Reserve report."
+
+Source:
+Run History
+
+Confidence:
+Historical context only
+```
+
+Implementation:
+
+- `buildResponseClaims` / `formatClaimProvenance` / `logClaimProvenance` in
+  `server/brain/worldModelOwnership.js`
+- Logged when `FREEDOM_OS_DEBUG_CEO` observability is on (`[ceo-observability]`
+  phase `claim_provenance`)
+
+---
+
+## 4. Implementation map
 
 | Piece | Location |
 |---|---|
-| Ownership map + validators | `server/brain/worldModelOwnership.js` |
-| Execution-contract scoping | `server/agents/executionContract.js` (`groundedExecutionReply` / `guardAgentReply`) |
+| Ownership map + validators + claims | `server/brain/worldModelOwnership.js` |
+| Execution-contract scoping | `server/agents/executionContract.js` |
 | Assembler labels + facts | `server/brain/ceoContextAssembler.js` |
 | Orphan run labeling | `server/agents/teamContext.js` |
 | Prompt constitution | `server/brain/prompts.js` |
-| Turn wiring | `server/brain/index.js` (`enforceWorldModelOwnership` after execution guard) |
-| Regression tests | `test/ceo-world-model-ownership.test.js` |
+| Turn wiring + claim logs | `server/brain/index.js` |
+| Lifecycle / resurrection tests | `test/ceo-world-model-ownership.test.js` |
 
 ### Validators (before final persist)
 
-1. **Source-of-truth** — block run→agent, plan→execution, memory→capability cross claims.
-2. **Conversation consistency** — prior “no agents” + current run-as-agent framing requires clarification.
-3. **Creation fulfillment** — create-agent turns may only end as:
-   - **A)** Agent created + Registry/turn evidence
-   - **B)** Missing information / confirm-to-create
-   - **C)** Creation blocked with reason  
-   Never a historical-run-only summary.
-
-### Execution Contract
-
-- `new_agent_creation` / modification intents **never** rewrite via generic `recentRuns`.
-- Status questions may still cite Run History.
-- Create/update claims require Registry / this-turn tool evidence.
+1. **Source-of-truth** — block run→agent, plan→execution, memory→capability
+2. **Conversation consistency** — prior “no agents” vs run-as-agent framing
+3. **Creation fulfillment** — A / B / C only
+4. **Modification against Registry** — cannot modify a non-existent agent from runs
+5. **Entity resurrection** — deleted agents are not revived from Run History
 
 ---
 
-## 4. Evaluation gate
+## 5. Evaluation gate
 
-Given registry = 0 and an orphan Fed run:
-
-1. Create-intent must not yield “completed run on record.”
-2. Reply must state no Federal Reserve agent on the registry and may offer recreate from history.
-3. Challenge turn must acknowledge the mismatch and explain historical run ≠ active agent.
+1. 0 agents + historical Fed run + create request → Registry-negative + history as context + offer create
+2. Deleted agent + orphan runs + “how’s my Fed agent?” → no active agent + historical runs noted
+3. Challenge contradiction → explain historical run ≠ active agent
+4. Claim provenance logs Registry vs Run History with correct confidence

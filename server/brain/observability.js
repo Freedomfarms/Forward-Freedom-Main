@@ -51,6 +51,7 @@ export function logCeoDecision(event = {}) {
     confirmationsCount: Number(event.confirmationsCount) || 0,
     agentCreated: event.agentCreated === true,
     runDelegated: event.runDelegated === true,
+    claimCount: Number.isFinite(event.claimCount) ? event.claimCount : undefined,
   };
   console.info(`[ceo-observability] ${JSON.stringify(payload)}`);
 }

@@ -29,6 +29,7 @@ import { logCeoDecision } from "./observability.js";
 import {
   buildWorldModelFacts,
   enforceWorldModelOwnership,
+  logClaimProvenance,
 } from "./worldModelOwnership.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -231,6 +232,11 @@ export async function brainTurn({
     safetyChecksTriggered.push(`ownership:${ownershipGuard.failures.join("|")}`);
   }
   reply = ownershipGuard.reply;
+  logClaimProvenance(ownershipGuard.claims || [], {
+    conversationId: context.conversationId,
+    rewritten: ownershipGuard.rewritten,
+    intent: context.controlPlane?.intent || null,
+  });
   activities.complete("CHECKING_EVIDENCE");
   activities.complete("VALIDATING_RESULTS");
   activities.start("CONFIRMING_COMPLETION");
@@ -244,6 +250,7 @@ export async function brainTurn({
     confirmationsCount: turnState.confirmations.length,
     agentCreated: Boolean(turnState.agent?.id),
     runDelegated: Boolean(turnState.run?.id),
+    claimCount: Array.isArray(ownershipGuard.claims) ? ownershipGuard.claims.length : 0,
   });
 
   activities.start("PREPARING_SUMMARY");

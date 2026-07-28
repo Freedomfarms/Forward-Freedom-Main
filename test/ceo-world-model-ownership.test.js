@@ -9,13 +9,20 @@ import {
 } from "../server/agents/executionContract.js";
 import { classifyIntent, CEO_INTENTS } from "../server/brain/controlPlane.js";
 import {
+  CLAIM_CONFIDENCE,
+  CLAIM_SOURCES,
   WORLD_MODEL_OWNERS,
+  WORLD_MODEL_OWNERSHIP_PRINCIPLE,
+  buildResponseClaims,
   buildWorldModelFacts,
   enforceWorldModelOwnership,
   extractRequestedAgentTopic,
+  formatClaimProvenance,
   groundedOwnershipReply,
   validateConversationConsistency,
   validateCreationFulfillment,
+  validateEntityResurrection,
+  validateModificationAgainstRegistry,
   validateSourceOfTruthConsistency,
 } from "../server/brain/worldModelOwnership.js";
 import { renderNamedRunSummaries } from "../server/agents/teamContext.js";
@@ -38,6 +45,8 @@ function emptyRegistryFacts(overrides = {}) {
 }
 
 test("ownership map is explicit and registry-only for agent existence", () => {
+  assert.match(WORLD_MODEL_OWNERSHIP_PRINCIPLE, /Context can enrich a decision/i);
+  assert.match(WORLD_MODEL_OWNERSHIP_PRINCIPLE, /cannot redefine reality/i);
   assert.equal(WORLD_MODEL_OWNERS.AGENT_EXISTENCE, "agent_registry");
   assert.equal(WORLD_MODEL_OWNERS.AGENT_CONFIGURATION, "agent_registry");
   assert.equal(WORLD_MODEL_OWNERS.PLAN_STATE, "plan_store");
@@ -81,9 +90,10 @@ test("0 agents + Fed run history: create request never answers with completed ru
 
   assert.equal(guarded.rewritten, true);
   assert.doesNotMatch(guarded.reply, /completed run on record/i);
-  assert.match(guarded.reply, /don't currently have a Federal Reserve agent/i);
-  assert.match(guarded.reply, /previously ran a similar report/i);
-  assert.match(guarded.reply, /create a new recurring agent/i);
+  assert.match(guarded.reply, /Agent Registry has no Federal Reserve agent/i);
+  assert.match(guarded.reply, /previous Federal Reserve report in Run History|previously ran/i);
+  assert.match(guarded.reply, /create a new agent/i);
+  assert.doesNotMatch(guarded.reply, /because a previous run exists/i);
 });
 
 test("groundedExecutionReply scopes historical runs out of create intents", () => {
@@ -168,8 +178,8 @@ test("conversation consistency: prior no-agents + run-as-agent requires clarific
     turnState: {},
   });
   assert.equal(enforced.rewritten, true);
-  assert.match(enforced.reply, /historical run evidence|history only/i);
-  assert.match(enforced.reply, /not an active agent|no agents on your registry|don't currently have/i);
+  assert.match(enforced.reply, /historical runs?|history only|Run History/i);
+  assert.match(enforced.reply, /No active .+ agent exists|not an active agent|no agents|has no/i);
   assert.match(enforced.reply, /Federal Reserve/i);
   assert.doesNotMatch(enforced.reply, /^I have a completed run on record/i);
 });
@@ -229,10 +239,11 @@ test("end-to-end ownership: 0 agents + Fed orphan run → create path offers rec
     facts,
     userMessage,
     failures: ["creation_answered_with_run_history"],
+    intent: CEO_INTENTS.NEW_AGENT_CREATION,
   });
-  assert.match(grounded, /don't currently have a Federal Reserve agent/i);
-  assert.match(grounded, /previously ran a similar report/i);
-  assert.match(grounded, /create a new recurring agent based on that/i);
+  assert.match(grounded, /Agent Registry has no Federal Reserve agent/i);
+  assert.match(grounded, /previous Federal Reserve report in Run History/i);
+  assert.match(grounded, /create a new agent/i);
 
   // When create_agent actually ran, ownership allows the success claim path.
   const afterCreate = enforceWorldModelOwnership({
@@ -250,4 +261,146 @@ test("end-to-end ownership: 0 agents + Fed orphan run → create path offers rec
   assert.equal(afterCreate.ok, true);
   assert.equal(afterCreate.rewritten, false);
   assert.equal(afterCreate.creationPath, "created");
+});
+
+test("lifecycle: deleted agent with historical runs is never resurrected", () => {
+  // CREATE → RUN → DELETE leaves orphan Run History only.
+  const facts = buildWorldModelFacts({
+    teamAgents: [],
+    runs: [
+      {
+        ...FED_RUN,
+        agentConfigId: null,
+        summary: "Federal Reserve Monitor weekly brief (agent later deleted).",
+      },
+    ],
+    priorAssistantReplies: [],
+  });
+  const userMessage = "How is my Federal Reserve Monitor agent doing?";
+
+  const bad = enforceWorldModelOwnership({
+    reply: "Your Federal Reserve Monitor agent is still active — I have historical runs proving it exists.",
+    facts,
+    intent: CEO_INTENTS.INFORMATION_REQUEST,
+    requestKind: AGENT_REQUEST_KINDS.INFORMATION_REQUEST,
+    userMessage,
+    turnState: {},
+  });
+  assert.equal(bad.rewritten, true);
+  assert.match(bad.reply, /No active .+ agent exists/i);
+  assert.match(bad.reply, /historical runs from that agent/i);
+  assert.doesNotMatch(bad.reply, /still active|because historical runs exist/i);
+
+  const resurrectionCheck = validateEntityResurrection(
+    "The Federal Reserve agent exists because historical runs exist.",
+    { userMessage, facts, turnState: {} }
+  );
+  assert.equal(resurrectionCheck.ok, false);
+  assert.ok(resurrectionCheck.failures.includes("entity_resurrection_from_runs"));
+});
+
+test("lifecycle: existing agent modification requires Registry, not Run History", () => {
+  const userMessage = "Update my Federal Reserve agent to run every Monday.";
+  assert.equal(classifyIntent(userMessage), CEO_INTENTS.AGENT_MODIFICATION);
+
+  const empty = emptyRegistryFacts();
+  const blocked = validateModificationAgainstRegistry(
+    "Sure — I'll update your Federal Reserve agent's schedule.",
+    {
+      intent: CEO_INTENTS.AGENT_MODIFICATION,
+      userMessage,
+      facts: empty,
+      turnState: {},
+    }
+  );
+  assert.equal(blocked.ok, false);
+  assert.ok(blocked.failures.includes("modification_without_registry"));
+
+  const enforced = enforceWorldModelOwnership({
+    reply: "I'll change your Federal Reserve agent schedule using the prior run.",
+    facts: empty,
+    intent: CEO_INTENTS.AGENT_MODIFICATION,
+    userMessage,
+    turnState: {},
+  });
+  assert.equal(enforced.rewritten, true);
+  assert.match(enforced.reply, /no .+ agent|No active/i);
+  assert.doesNotMatch(enforced.reply, /I'll update your Federal Reserve agent/i);
+
+  const live = buildWorldModelFacts({
+    teamAgents: [
+      {
+        id: "agent-fed",
+        name: "Federal Reserve Monitor",
+        agentType: "research",
+        status: "ACTIVE",
+      },
+    ],
+    runs: [{ ...FED_RUN, agentConfigId: "agent-fed" }],
+  });
+  const ok = validateModificationAgainstRegistry(
+    "Updated your Federal Reserve Monitor to Mondays.",
+    {
+      intent: CEO_INTENTS.AGENT_MODIFICATION,
+      userMessage,
+      facts: live,
+      turnState: {},
+    }
+  );
+  assert.equal(ok.ok, true);
+});
+
+test("lifecycle: user challenges contradiction between zero agents and run history", () => {
+  const facts = emptyRegistryFacts();
+  const enforced = enforceWorldModelOwnership({
+    reply: "I have a completed Federal Reserve agent run, so you do have that agent.",
+    facts,
+    intent: CEO_INTENTS.INFORMATION_REQUEST,
+    requestKind: AGENT_REQUEST_KINDS.CLARIFICATION_NEEDED,
+    userMessage: "You just told me there were no agents — which is it?",
+    turnState: {},
+  });
+  assert.equal(enforced.rewritten, true);
+  assert.match(enforced.reply, /historical runs?|history only|Agent Registry|Run History/i);
+  assert.match(enforced.reply, /No active .+ agent exists|not an active agent|no agents|don't have|has no/i);
+  assert.doesNotMatch(enforced.reply, /so you do have that agent/i);
+});
+
+test("claim provenance traces Registry vs Run History with confidence", () => {
+  const userMessage = "I'd like to create a Federal Reserve agent.";
+  const facts = emptyRegistryFacts();
+  const claims = buildResponseClaims({
+    facts,
+    userMessage,
+    reply:
+      "Your Agent Registry has no Federal Reserve agent. I found a previous Federal Reserve report in Run History.",
+    intent: CEO_INTENTS.NEW_AGENT_CREATION,
+  });
+
+  assert.ok(claims.length >= 2);
+  const registryClaim = claims.find((row) => row.source === CLAIM_SOURCES.AGENT_REGISTRY);
+  const historyClaim = claims.find((row) => row.source === CLAIM_SOURCES.RUN_HISTORY);
+  assert.ok(registryClaim);
+  assert.match(registryClaim.claim, /don't have a Federal Reserve agent/i);
+  assert.equal(registryClaim.confidence, CLAIM_CONFIDENCE.VERIFIED_CURRENT_STATE);
+  assert.ok(historyClaim);
+  assert.match(historyClaim.claim, /previously ran a Federal Reserve report/i);
+  assert.equal(historyClaim.confidence, CLAIM_CONFIDENCE.HISTORICAL_CONTEXT_ONLY);
+
+  const formatted = formatClaimProvenance(claims);
+  assert.match(formatted, /Source: Agent Registry/i);
+  assert.match(formatted, /Confidence: Verified current state/i);
+  assert.match(formatted, /Source: Run History/i);
+  assert.match(formatted, /Confidence: Historical context only/i);
+
+  const enforced = enforceWorldModelOwnership({
+    reply: "I have a completed run on record.",
+    facts,
+    intent: CEO_INTENTS.NEW_AGENT_CREATION,
+    userMessage,
+    turnState: {},
+  });
+  assert.ok(Array.isArray(enforced.claims));
+  assert.ok(enforced.claims.some((row) => row.source === CLAIM_SOURCES.AGENT_REGISTRY));
+  assert.ok(enforced.claims.some((row) => row.source === CLAIM_SOURCES.RUN_HISTORY));
 });

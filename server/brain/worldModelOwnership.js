@@ -1,11 +1,18 @@
 import { CEO_INTENTS, looksLikeAgentCreationRequest } from "./controlPlane.js";
+import { isCeoObservabilityEnabled } from "./observability.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // World-model ownership — hard invariants.
 //
+// Core principle: Context can enrich a decision. Context cannot redefine reality.
+//
 // Every fact type has exactly one authoritative store. Other stores may provide
 // optional context but must never satisfy cross-entity proofs.
 // ─────────────────────────────────────────────────────────────────────────────
+
+/** Binding ownership principle for prompts, docs, and validators. */
+export const WORLD_MODEL_OWNERSHIP_PRINCIPLE =
+  "Context can enrich a decision. Context cannot redefine reality.";
 
 /** Binding ownership map. No fallback inference between entity types. */
 export const WORLD_MODEL_OWNERS = Object.freeze({
@@ -17,6 +24,21 @@ export const WORLD_MODEL_OWNERS = Object.freeze({
   USER_PREFERENCES: "memory",
 });
 
+export const CLAIM_SOURCES = Object.freeze({
+  AGENT_REGISTRY: "Agent Registry",
+  PLAN_STORE: "Plan Store",
+  MISSION_STORE: "Mission Store",
+  RUN_HISTORY: "Run History",
+  MEMORY: "Memory",
+  TURN_TOOLS: "This-turn tool results",
+});
+
+export const CLAIM_CONFIDENCE = Object.freeze({
+  VERIFIED_CURRENT_STATE: "Verified current state",
+  HISTORICAL_CONTEXT_ONLY: "Historical context only",
+  THIS_TURN_EVIDENCE: "Verified this-turn evidence",
+});
+
 export const OWNERSHIP_FAILURES = Object.freeze({
   RUN_EVIDENCE_FOR_AGENT_CLAIM: "run_evidence_used_for_agent_claim",
   AGENT_EXISTENCE_WITHOUT_REGISTRY: "agent_existence_without_registry",
@@ -26,6 +48,8 @@ export const OWNERSHIP_FAILURES = Object.freeze({
   CONVERSATION_RUN_VS_REGISTRY: "conversation_consistency_run_vs_registry",
   CREATION_ANSWERED_WITH_RUN_HISTORY: "creation_answered_with_run_history",
   CREATION_UNFULFILLED: "creation_unfulfilled",
+  ENTITY_RESURRECTION_FROM_RUNS: "entity_resurrection_from_runs",
+  MODIFICATION_WITHOUT_REGISTRY: "modification_without_registry",
 });
 
 /**
@@ -415,7 +439,8 @@ export function validateCreationFulfillment(
 
 /** Best-effort topic from the user message, run history, or prior replies. */
 export function resolveAgentTopic(userMessage = "", facts = null, draftReply = "") {
-  const fromMessage = extractRequestedAgentTopic(userMessage);
+  const fromMessage =
+    extractRequestedAgentTopic(userMessage) || extractTopicFromText(userMessage);
   if (fromMessage) return fromMessage;
   const fromDraft = extractRequestedAgentTopic(draftReply) || extractTopicFromText(draftReply);
   if (fromDraft) return fromDraft;
@@ -449,6 +474,145 @@ function extractTopicFromRuns(runs = []) {
   return null;
 }
 
+/** True when the user is asking about / modifying an agent that only lives in history. */
+export function isEntityResurrectionAsk(userMessage = "", facts = null) {
+  const text = String(userMessage || "");
+  const topic = resolveAgentTopic(text, facts, "");
+  if (!topic) return false;
+  if (registryHasTopic(facts, topic)) return false;
+  const hasHistory = Boolean(
+    findSimilarHistoricalRun(facts?.runs?.recent || facts?.runs?.orphaned || [], topic)
+  );
+  if (!hasHistory) return false;
+  return (
+    /\b(my|the|that)\b.{0,40}\b(agent|monitor|watcher)\b/i.test(text) ||
+    /\b(how is|how's|status of|what about|where is|update|change|modify|edit|rename|pause|resume|reschedule)\b/i.test(
+      text
+    ) ||
+    isModificationIntent(classifyIntentSafe(text))
+  );
+}
+
+function classifyIntentSafe(message) {
+  try {
+    return looksLikeAgentCreationRequest(message)
+      ? CEO_INTENTS.NEW_AGENT_CREATION
+      : /\b(make my|change|update|rename|pause|resume|reschedule|tweak|edit)\b/i.test(message) &&
+          /\b(agent|report|schedule|digest|reminder|brief)\b/i.test(message)
+        ? CEO_INTENTS.AGENT_MODIFICATION
+        : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Build debuggable claim provenance for a reply grounded in ownership facts.
+ * Context may enrich; only Registry verifies current agent reality.
+ */
+export function buildResponseClaims({
+  facts = null,
+  userMessage = "",
+  reply = "",
+  intent = null,
+  turnState = null,
+} = {}) {
+  const claims = [];
+  const topic = resolveAgentTopic(userMessage, facts, reply);
+  const count = facts?.agents?.count || 0;
+  const similar = findSimilarHistoricalRun(
+    facts?.runs?.recent || facts?.runs?.orphaned || [],
+    topic
+  );
+  const discussesAgents =
+    /\b(agent|monitor|watcher|registry|run history|historical runs?)\b/i.test(
+      `${userMessage} ${reply}`
+    ) ||
+    isCreationLikeIntent(intent, userMessage) ||
+    isModificationIntent(intent) ||
+    Boolean(topic);
+
+  if (discussesAgents) {
+    let membershipClaim;
+    if (turnState?.agent?.id || facts?.turn?.agentCreated) {
+      membershipClaim = {
+        claim: `Created/registered ${turnState?.agent?.name || topic || "agent"} on the Agent Registry.`,
+        source: CLAIM_SOURCES.AGENT_REGISTRY,
+        sourceKey: WORLD_MODEL_OWNERS.AGENT_EXISTENCE,
+        confidence: CLAIM_CONFIDENCE.THIS_TURN_EVIDENCE,
+      };
+    } else if (topic) {
+      membershipClaim = {
+        claim:
+          count === 0 || !registryHasTopic(facts, topic)
+            ? `I don't have a ${topic} agent.`
+            : `${topic} is present on the Agent Registry.`,
+        source: CLAIM_SOURCES.AGENT_REGISTRY,
+        sourceKey: WORLD_MODEL_OWNERS.AGENT_EXISTENCE,
+        confidence: CLAIM_CONFIDENCE.VERIFIED_CURRENT_STATE,
+      };
+    } else {
+      membershipClaim = {
+        claim:
+          count === 0
+            ? "No active agent exists."
+            : `Agent Registry currently has ${count} agent${count === 1 ? "" : "s"}.`,
+        source: CLAIM_SOURCES.AGENT_REGISTRY,
+        sourceKey: WORLD_MODEL_OWNERS.AGENT_EXISTENCE,
+        confidence: CLAIM_CONFIDENCE.VERIFIED_CURRENT_STATE,
+      };
+    }
+    claims.push(membershipClaim);
+  }
+
+  if (similar && (count === 0 || (topic && !registryHasTopic(facts, topic)))) {
+    claims.push({
+      claim: topic
+        ? `You previously ran a ${topic} report.`
+        : "You previously ran a similar report.",
+      source: CLAIM_SOURCES.RUN_HISTORY,
+      sourceKey: WORLD_MODEL_OWNERS.HISTORICAL_EXECUTION,
+      confidence: CLAIM_CONFIDENCE.HISTORICAL_CONTEXT_ONLY,
+    });
+  }
+
+  return claims;
+}
+
+/** Human-readable claim provenance block for logs/debug. */
+export function formatClaimProvenance(claims = []) {
+  if (!Array.isArray(claims) || !claims.length) return "(no claims)";
+  return claims
+    .map(
+      (row, index) =>
+        [
+          `Claim ${index + 1}:`,
+          `  text: ${row.claim}`,
+          `  source: ${row.source}`,
+          `  confidence: ${row.confidence}`,
+        ].join("\n")
+    )
+    .join("\n\n");
+}
+
+export function logClaimProvenance(claims = [], meta = {}) {
+  if (!isCeoObservabilityEnabled()) return;
+  const payload = {
+    phase: "claim_provenance",
+    conversationId: meta.conversationId || null,
+    rewritten: meta.rewritten === true,
+    intent: meta.intent || null,
+    principle: WORLD_MODEL_OWNERSHIP_PRINCIPLE,
+    claims: (claims || []).map((row) => ({
+      claim: row.claim,
+      source: row.source,
+      sourceKey: row.sourceKey || null,
+      confidence: row.confidence,
+    })),
+  };
+  console.info(`[ceo-observability] ${JSON.stringify(payload)}`);
+}
+
 /**
  * Grounded reply that respects ownership: Registry for membership, runs as context only.
  */
@@ -458,6 +622,7 @@ export function groundedOwnershipReply({
   failures = [],
   capabilityAssessment = null,
   draftReply = "",
+  intent = null,
 } = {}) {
   const topic = resolveAgentTopic(userMessage, facts, draftReply);
   const count = facts?.agents?.count || 0;
@@ -467,18 +632,46 @@ export function groundedOwnershipReply({
   );
   const capsBlocked = capabilityAssessment && capabilityAssessment.allAvailable === false;
   const topicLabel = topic || "requested";
+  const resurrection =
+    failures.includes(OWNERSHIP_FAILURES.ENTITY_RESURRECTION_FROM_RUNS) ||
+    failures.includes(OWNERSHIP_FAILURES.MODIFICATION_WITHOUT_REGISTRY) ||
+    isEntityResurrectionAsk(userMessage, facts);
 
   if (capsBlocked) {
     return `I can design a ${topicLabel} agent, but required capabilities are not currently connected, so I cannot create it as a live agent yet.`;
   }
 
+  // Deleted agent + leftover runs: never resurrect from history.
+  if (resurrection && similar && (count === 0 || (topic && !registryHasTopic(facts, topic)))) {
+    if (topic) {
+      return `No active ${topic} agent exists. I found historical runs from that agent. Would you like me to create a new one?`;
+    }
+    return "No active agent exists. I found historical runs from that agent. Would you like me to create a new one?";
+  }
+
   const membership = topic
-    ? count === 0
-      ? `I don't currently have a ${topic} agent.`
-      : `I don't see a ${topic} agent on your registry.`
+    ? count === 0 || !registryHasTopic(facts, topic)
+      ? `Your Agent Registry has no ${topic} agent.`
+      : `${topic} is on your Agent Registry.`
     : count === 0
       ? "You still have no agents on your registry."
       : "That agent is not on your registry.";
+
+  // Prefer the approved create framing when enriching with history.
+  if (
+    similar &&
+    (isCreationLikeIntent(intent, userMessage) ||
+      failures.includes(OWNERSHIP_FAILURES.CREATION_ANSWERED_WITH_RUN_HISTORY) ||
+      failures.includes(OWNERSHIP_FAILURES.RUN_EVIDENCE_FOR_AGENT_CLAIM))
+  ) {
+    const clarify = failures.includes(OWNERSHIP_FAILURES.CONVERSATION_RUN_VS_REGISTRY)
+      ? " That earlier result is historical run evidence, not an active agent — those are different things."
+      : "";
+    const registryLine = topic
+      ? `Your Agent Registry has no ${topic} agent.`
+      : membership;
+    return `${registryLine}${clarify} I found a previous ${topic || "similar"} report in Run History. Would you like me to create a new agent?`;
+  }
 
   const needsConversationClarify = failures.includes(
     OWNERSHIP_FAILURES.CONVERSATION_RUN_VS_REGISTRY
@@ -495,8 +688,13 @@ export function groundedOwnershipReply({
     return `${membership} A past run is history only and does not mean an active agent exists. Would you like me to create a new ${topicLabel} agent now?`;
   }
 
+  if (isModificationIntent(intent) && (count === 0 || (topic && !registryHasTopic(facts, topic)))) {
+    return `${membership} There is no active agent to modify. Would you like me to create a new ${topicLabel} agent?`;
+  }
+
   return `${membership} Would you like me to create one now?`;
 }
+
 /**
  * Enforce ownership + conversation + creation fulfillment. Pure; call before persist.
  */
@@ -518,15 +716,35 @@ export function enforceWorldModelOwnership({
     turnState,
     capabilityAssessment,
   });
+  const modification = validateModificationAgainstRegistry(reply, {
+    intent,
+    userMessage,
+    facts,
+    turnState,
+  });
+  const resurrection = validateEntityResurrection(reply, {
+    userMessage,
+    facts,
+    turnState,
+  });
 
   const failures = [
     ...source.failures,
     ...conversation.failures,
     ...creation.failures,
+    ...modification.failures,
+    ...resurrection.failures,
   ];
   const unique = [...new Set(failures)];
 
   if (!unique.length) {
+    const claims = buildResponseClaims({
+      facts,
+      userMessage,
+      reply,
+      intent,
+      turnState,
+    });
     return {
       ok: true,
       rewritten: false,
@@ -534,6 +752,7 @@ export function enforceWorldModelOwnership({
       failures: [],
       requestKind: requestKind || null,
       creationPath: creation.path,
+      claims,
     };
   }
 
@@ -543,6 +762,14 @@ export function enforceWorldModelOwnership({
     failures: unique,
     capabilityAssessment,
     draftReply: reply,
+    intent,
+  });
+  const claims = buildResponseClaims({
+    facts,
+    userMessage,
+    reply: rewritten,
+    intent,
+    turnState,
   });
 
   return {
@@ -552,7 +779,84 @@ export function enforceWorldModelOwnership({
     failures: unique,
     requestKind: requestKind || null,
     creationPath: creation.path,
+    claims,
   };
+}
+
+/** Modification requires a live Registry entity — runs cannot resurrect one. */
+export function validateModificationAgainstRegistry(
+  reply,
+  { intent = null, userMessage = "", facts = null, turnState = null } = {}
+) {
+  const failures = [];
+  if (!isModificationIntent(intent) && !/\b(update|change|modify|edit|rename|reschedule)\b.{0,40}\bagent\b/i.test(userMessage || "")) {
+    return { ok: true, failures };
+  }
+  if (turnState?.agent?.id) return { ok: true, failures };
+
+  const topic = resolveAgentTopic(userMessage, facts, reply);
+  if (topic && registryHasTopic(facts, topic)) return { ok: true, failures };
+  if ((facts?.agents?.count || 0) > 0 && !topic) return { ok: true, failures };
+
+  // Draft implies the agent exists / will be modified without registry membership.
+  if (
+    claimsAgentAlreadyExists(reply) ||
+    /\b(i(?:'ll| will)|updating|changed|modified|renamed|rescheduled)\b.{0,40}\b(agent|monitor|schedule)\b/i.test(
+      reply || ""
+    ) ||
+    isHistoricalRunPrimaryReply(reply) ||
+    claimsAgentMembershipFromRunHistory(reply)
+  ) {
+    failures.push(OWNERSHIP_FAILURES.MODIFICATION_WITHOUT_REGISTRY);
+  } else if ((facts?.agents?.count || 0) === 0 || (topic && !registryHasTopic(facts, topic))) {
+    // Even a vague "sure, I'll tweak it" against empty registry is invalid.
+    if (/\b(agent|monitor|schedule|tweak|update|change)\b/i.test(reply || "")) {
+      failures.push(OWNERSHIP_FAILURES.MODIFICATION_WITHOUT_REGISTRY);
+    }
+  }
+
+  return { ok: failures.length === 0, failures };
+}
+
+/** Deleted agents must not be resurrected from orphan Run History. */
+export function validateEntityResurrection(
+  reply,
+  { userMessage = "", facts = null, turnState = null } = {}
+) {
+  const failures = [];
+  if (turnState?.agent?.id || facts?.turn?.agentCreated) {
+    return { ok: true, failures };
+  }
+  const topic = resolveAgentTopic(userMessage, facts, reply);
+  const historyOnly =
+    topic &&
+    !registryHasTopic(facts, topic) &&
+    Boolean(findSimilarHistoricalRun(facts?.runs?.recent || facts?.runs?.orphaned || [], topic));
+
+  if (!historyOnly && !isEntityResurrectionAsk(userMessage, facts)) {
+    return { ok: true, failures };
+  }
+
+  if (
+    claimsAgentAlreadyExists(reply) ||
+    claimsAgentMembershipFromRunHistory(reply) ||
+    isHistoricalRunPrimaryReply(reply) ||
+    /\b(your|the|that)\b.{0,40}\b(federal reserve|fed).{0,40}\b(agent|monitor)\b.{0,40}\b(is|exists|still|running|active)\b/i.test(
+      reply || ""
+    )
+  ) {
+    failures.push(OWNERSHIP_FAILURES.ENTITY_RESURRECTION_FROM_RUNS);
+  }
+
+  // Asking about a deleted agent while affirming current existence.
+  if (
+    isEntityResurrectionAsk(userMessage, facts) &&
+    /\b(is (?:still )?active|still (?:exists|running)|on your (?:team|roster))\b/i.test(reply || "")
+  ) {
+    failures.push(OWNERSHIP_FAILURES.ENTITY_RESURRECTION_FROM_RUNS);
+  }
+
+  return { ok: failures.length === 0, failures: [...new Set(failures)] };
 }
 
 /** Prompt-facing ownership constitution (structured, not soft style advice). */
@@ -561,6 +865,7 @@ export function renderWorldModelOwnershipSection(facts = null) {
   const orphaned = facts?.runs?.orphaned?.length ?? 0;
   return [
     "WORLD MODEL OWNERSHIP (hard invariants — no cross-entity inference):",
+    `principle: ${WORLD_MODEL_OWNERSHIP_PRINCIPLE}`,
     `- agent_existence_owner: ${WORLD_MODEL_OWNERS.AGENT_EXISTENCE}`,
     `- agent_configuration_owner: ${WORLD_MODEL_OWNERS.AGENT_CONFIGURATION}`,
     `- plan_state_owner: ${WORLD_MODEL_OWNERS.PLAN_STATE}`,
@@ -570,11 +875,14 @@ export function renderWorldModelOwnershipSection(facts = null) {
     `- registry_agent_count: ${count}`,
     `- orphaned_runs_in_history: ${orphaned}`,
     "rules:",
-    "- Agent existence/membership/configuration: AGENT REGISTRY only.",
-    "- Run History is optional context. It never proves an agent exists, is modifiable, or should block creating a new agent.",
+    "- Agent existence/status/configuration: AGENT REGISTRY only.",
+    "- Run History can enrich a proposal. It never proves an agent exists, is modifiable, or should block creating a new agent.",
+    "- Deleted agents are not resurrected from historical runs.",
     "- Plans/missions are intent memory, not execution proof and not agent membership.",
     "- Memory stores preferences, not capabilities or agent membership.",
-    '- Allowed history framing: "I found that you previously ran X. Would you like me to recreate that agent?"',
+    '- Distinguish "I did this before" (Run History) from "I currently have this operating for you" (Agent Registry).',
+    '- Allowed: "Your Agent Registry has no Federal Reserve Monitor. I found a previous Federal Reserve report in Run History. Would you like me to create a new agent?"',
+    '- Forbidden: "You have a Federal Reserve agent because a previous run exists."',
   ].join("\n");
 }
 
