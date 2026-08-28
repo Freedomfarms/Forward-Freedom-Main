@@ -49,7 +49,7 @@ export const AGENT_MODEL_OPTIONS = [
     description: "Strong default for most chats and agents.",
   },
   {
-    value: "claude-opus-4-1",
+    value: "claude-opus-4-8",
     shortLabel: "Opus",
     label: "Opus — Smartest",
     description: "Deepest reasoning for harder decisions.",

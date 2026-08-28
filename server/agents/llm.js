@@ -2,7 +2,7 @@ import { generateText as aiGenerateText, generateObject as aiGenerateObject } fr
 import { anthropic, createAnthropic } from "@ai-sdk/anthropic";
 
 import { AgentError } from "./errors.js";
-import { DEFAULT_AGENT_MODEL } from "./models.js";
+import { DEFAULT_AGENT_MODEL, normalizeAgentModel } from "./models.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Single chokepoint for every model call the agent platform makes.
@@ -56,16 +56,20 @@ export function getWebSearchTools({ maxUses = 5 } = {}) {
 
 // `model` is always a string model id (e.g. from AgentConfig.model); it is
 // resolved to a provider model here so callers never touch the provider.
+// Normalizing here guarantees retired/unknown ids stored on old config rows
+// (e.g. claude-opus-4-1) can never reach the API and 404.
 export async function generateAgentText({ model, ...options }) {
+  const resolvedModel = normalizeAgentModel(model);
   if (llmImplementationOverride?.generateText) {
-    return llmImplementationOverride.generateText({ model, ...options });
+    return llmImplementationOverride.generateText({ model: resolvedModel, ...options });
   }
-  return aiGenerateText({ model: getProvider()(model), ...options });
+  return aiGenerateText({ model: getProvider()(resolvedModel), ...options });
 }
 
 export async function generateAgentObject({ model, ...options }) {
+  const resolvedModel = normalizeAgentModel(model);
   if (llmImplementationOverride?.generateObject) {
-    return llmImplementationOverride.generateObject({ model, ...options });
+    return llmImplementationOverride.generateObject({ model: resolvedModel, ...options });
   }
-  return aiGenerateObject({ model: getProvider()(model), ...options });
+  return aiGenerateObject({ model: getProvider()(resolvedModel), ...options });
 }

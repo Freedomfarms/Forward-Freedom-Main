@@ -1,10 +1,12 @@
+import { resolveLegacyAgentModel } from "./models.js";
+
 // USD pricing per MILLION tokens for the model ids the platform uses.
 // AgentConfig.model defaults to claude-sonnet-4-5; profile extraction runs on
 // the Haiku tier (see PROFILE_EXTRACTION_MODEL in llm.js).
 export const MODEL_PRICING_USD_PER_MILLION_TOKENS = Object.freeze({
   "claude-sonnet-4-5": Object.freeze({ input: 3, output: 15 }),
   "claude-haiku-4-5": Object.freeze({ input: 1, output: 5 }),
-  "claude-opus-4-1": Object.freeze({ input: 15, output: 75 }),
+  "claude-opus-4-8": Object.freeze({ input: 5, output: 25 }),
 });
 
 // `usage` is the AI SDK usage result ({ inputTokens, outputTokens }). Returns
@@ -12,7 +14,9 @@ export const MODEL_PRICING_USD_PER_MILLION_TOKENS = Object.freeze({
 // or null when the model has no pricing entry or usage is absent — unknown
 // costs are stored as NULL, never guessed.
 export function estimateCost(model, usage) {
-  const pricing = MODEL_PRICING_USD_PER_MILLION_TOKENS[model];
+  // Legacy ids on old config rows are priced as the replacement model the
+  // call actually ran on (see resolveLegacyAgentModel in llm.js/models.js).
+  const pricing = MODEL_PRICING_USD_PER_MILLION_TOKENS[resolveLegacyAgentModel(model)];
   if (!pricing || !usage) return null;
 
   const inputTokens = Number(usage.inputTokens);

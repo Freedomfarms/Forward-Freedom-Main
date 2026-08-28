@@ -465,12 +465,20 @@ test("PUT /api/agents/ceo accepts model and defaultSubAgentModel allowlist", asy
     handlers.ceo,
     authedRequest("u1", {
       method: "PUT",
-      body: { model: "claude-opus-4-1", defaultSubAgentModel: "claude-haiku-4-5" },
+      body: { model: "claude-opus-4-8", defaultSubAgentModel: "claude-haiku-4-5" },
     })
   );
   assert.equal(good.statusCode, 200);
-  assert.equal(good.body.ceoAgent.model, "claude-opus-4-1");
+  assert.equal(good.body.ceoAgent.model, "claude-opus-4-8");
   assert.equal(good.body.ceoAgent.defaultSubAgentModel, "claude-haiku-4-5");
+
+  // Retired ids from stale clients are stored as their replacement.
+  const legacy = await invoke(
+    handlers.ceo,
+    authedRequest("u1", { method: "PUT", body: { model: "claude-opus-4-1" } })
+  );
+  assert.equal(legacy.statusCode, 200);
+  assert.equal(legacy.body.ceoAgent.model, "claude-opus-4-8");
 });
 
 // ── Sub-agent CRUD ───────────────────────────────────────────────────────────
@@ -517,7 +525,7 @@ test("POST /api/agents uses defaultSubAgentModel unless model is provided", asyn
     userId: "u1",
     name: "CEO Agent",
     personalityPreset: "DIRECT_EFFICIENT",
-    model: "claude-opus-4-1",
+    model: "claude-opus-4-8",
     defaultSubAgentModel: "claude-haiku-4-5",
   });
 
@@ -543,12 +551,12 @@ test("POST /api/agents uses defaultSubAgentModel unless model is provided", asyn
         agentType: "reminders",
         name: "Cash Nudge",
         definitionOfDone: "A reminder is delivered on schedule.",
-        model: "claude-opus-4-1",
+        model: "claude-opus-4-8",
       },
     })
   );
   assert.equal(explicit.statusCode, 201);
-  assert.equal(explicit.body.agent.model, "claude-opus-4-1");
+  assert.equal(explicit.body.agent.model, "claude-opus-4-8");
 });
 
 test("POST /api/agents rejects invalid types and permissionLevel injection", async (t) => {

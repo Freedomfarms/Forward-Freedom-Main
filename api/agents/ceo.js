@@ -12,6 +12,7 @@ import {
   isValidAgentModel,
   isValidAvatarKey,
   isValidPersonalityPreset,
+  resolveLegacyAgentModel,
   respondAgentApiError,
   serializeCeoAgentConfig,
 } from "../../server/agents/apiHelpers.js";
@@ -59,24 +60,26 @@ function readCeoUpdate(payload) {
     data.avatarKey = payload.avatarKey;
   }
   if ("model" in payload) {
-    if (!isValidAgentModel(payload.model)) {
+    const resolvedModel = resolveLegacyAgentModel(payload.model);
+    if (!isValidAgentModel(resolvedModel)) {
       throw new AgentError(
         `model must be one of: ${ALLOWED_AGENT_MODELS.join(", ")}.`,
         "INVALID_AGENT_PAYLOAD",
         400
       );
     }
-    data.model = payload.model;
+    data.model = resolvedModel;
   }
   if ("defaultSubAgentModel" in payload) {
-    if (!isValidAgentModel(payload.defaultSubAgentModel)) {
+    const resolvedSubAgentModel = resolveLegacyAgentModel(payload.defaultSubAgentModel);
+    if (!isValidAgentModel(resolvedSubAgentModel)) {
       throw new AgentError(
         `defaultSubAgentModel must be one of: ${ALLOWED_AGENT_MODELS.join(", ")}.`,
         "INVALID_AGENT_PAYLOAD",
         400
       );
     }
-    data.defaultSubAgentModel = payload.defaultSubAgentModel;
+    data.defaultSubAgentModel = resolvedSubAgentModel;
   }
   if (!Object.keys(data).length) {
     throw new AgentError("No updatable fields were provided.", "INVALID_AGENT_PAYLOAD", 400);

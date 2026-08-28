@@ -7,8 +7,20 @@ export const DEFAULT_AGENT_MODEL = "claude-sonnet-4-5";
 export const ALLOWED_AGENT_MODELS = Object.freeze([
   "claude-haiku-4-5",
   "claude-sonnet-4-5",
-  "claude-opus-4-1",
+  "claude-opus-4-8",
 ]);
+
+// Retired Anthropic ids that may still be stored on existing AgentConfig /
+// CeoAgentConfig rows (or sent by stale clients). Requests to retired ids
+// fail with a 404 at the API, so resolve them to Anthropic's recommended
+// replacement instead. claude-opus-4-1 was retired on 2026-08-05.
+export const LEGACY_AGENT_MODEL_ALIASES = Object.freeze({
+  "claude-opus-4-1": "claude-opus-4-8",
+});
+
+export function resolveLegacyAgentModel(value) {
+  return LEGACY_AGENT_MODEL_ALIASES[value] ?? value;
+}
 
 /** Friendly labels for UI / chat prompts (no billing language). */
 export const AGENT_MODEL_OPTIONS = Object.freeze([
@@ -25,7 +37,7 @@ export const AGENT_MODEL_OPTIONS = Object.freeze([
     description: "Strong default for most chats and agents.",
   },
   {
-    value: "claude-opus-4-1",
+    value: "claude-opus-4-8",
     shortLabel: "Opus",
     label: "Opus — Smartest",
     description: "Deepest reasoning for harder decisions.",
@@ -37,7 +49,8 @@ export function isValidAgentModel(value) {
 }
 
 export function normalizeAgentModel(value, fallback = DEFAULT_AGENT_MODEL) {
-  return isValidAgentModel(value) ? value : fallback;
+  const resolved = resolveLegacyAgentModel(value);
+  return isValidAgentModel(resolved) ? resolved : fallback;
 }
 
 /** Parse casual chat answers like "haiku", "sonnet please", "use opus". */
@@ -46,7 +59,7 @@ export function parseAgentModelChoice(message) {
   if (!lower.trim()) return null;
   // Prefer explicit model names before skip/default synonyms.
   if (/\bhaiku\b/.test(lower)) return "claude-haiku-4-5";
-  if (/\bopus\b/.test(lower)) return "claude-opus-4-1";
+  if (/\bopus\b/.test(lower)) return "claude-opus-4-8";
   if (/\bsonnet\b/.test(lower)) return "claude-sonnet-4-5";
   if (/\b(skip|default|recommended)\b/.test(lower)) return "claude-sonnet-4-5";
   return null;

@@ -12,6 +12,7 @@ import {
   isValidAgentModel,
   isValidAvatarKey,
   isValidPersonalityPreset,
+  resolveLegacyAgentModel,
   respondAgentApiError,
   serializeCeoAgentConfig,
 } from "../../server/agents/apiHelpers.js";
@@ -96,7 +97,7 @@ function parseOnboardingPayload(payload) {
   if (avatarKey != null && !isValidAvatarKey(avatarKey)) {
     throw invalid("avatarKey must be a preset avatar key (short slug) or null.");
   }
-  const model = payload.model ?? null;
+  const model = payload.model != null ? resolveLegacyAgentModel(payload.model) : null;
   if (model != null && !isValidAgentModel(model)) {
     throw invalid(`model must be one of: ${ALLOWED_AGENT_MODELS.join(", ")}.`);
   }

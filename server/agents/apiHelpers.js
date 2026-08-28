@@ -7,6 +7,7 @@ import {
   DEFAULT_AGENT_MODEL,
   isValidAgentModel,
   normalizeAgentModel,
+  resolveLegacyAgentModel,
 } from "./models.js";
 import { CREATABLE_AGENT_TYPES } from "./registry.js";
 import {
@@ -18,7 +19,7 @@ import {
   schedulePresetToCron,
 } from "./schedule.js";
 
-export { ALLOWED_AGENT_MODELS, DEFAULT_AGENT_MODEL, isValidAgentModel };
+export { ALLOWED_AGENT_MODELS, DEFAULT_AGENT_MODEL, isValidAgentModel, resolveLegacyAgentModel };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared helpers for the agent-platform API handlers (api/agents/*,
@@ -303,10 +304,11 @@ export function validateAgentCreatePayload(payload) {
   }
   let model;
   if ("model" in payload && payload.model != null) {
-    if (!isValidAgentModel(payload.model)) {
+    const resolved = resolveLegacyAgentModel(payload.model);
+    if (!isValidAgentModel(resolved)) {
       throw invalid(`model must be one of: ${ALLOWED_AGENT_MODELS.join(", ")}.`);
     }
-    model = payload.model;
+    model = resolved;
   }
 
   return {
@@ -400,10 +402,11 @@ export function validateAgentUpdatePayload(payload) {
     data.schedule = readSchedule(payload);
   }
   if ("model" in payload) {
-    if (!isValidAgentModel(payload.model)) {
+    const resolved = resolveLegacyAgentModel(payload.model);
+    if (!isValidAgentModel(resolved)) {
       throw invalid(`model must be one of: ${ALLOWED_AGENT_MODELS.join(", ")}.`);
     }
-    data.model = payload.model;
+    data.model = resolved;
   }
 
   if (!Object.keys(data).length) {
