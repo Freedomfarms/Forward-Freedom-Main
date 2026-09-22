@@ -63,13 +63,67 @@ const PLAID_CATEGORY_RULES = [
   { pattern: /HOUSING|MORTGAGE|RENT/, category: "Housing", confidence: 86 },
 ];
 
-export function normalizeMerchantName(merchant) {
-  return String(merchant || "")
-    .toUpperCase()
+// Words that appear in card descriptors but never identify the merchant.
+const GENERIC_DESCRIPTOR_WORDS =
+  /\b(PAYMENT|PURCHASE|DEBIT|CREDIT|POS|ONLINE|ACH|CARD|AUTHORIZED|RECURRING|CHECKCARD)\b/g;
+
+function collapseDescriptor(text) {
+  return String(text || "")
     .replace(/[^A-Z0-9\s]/g, " ")
-    .replace(/\b(PAYMENT|PURCHASE|DEBIT|CREDIT|POS|ONLINE|ACH|CARD)\b/g, " ")
+    .replace(GENERIC_DESCRIPTOR_WORDS, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+// Bank card descriptors bury the merchant identity in per-swipe noise, e.g.
+// "PURCHASE AUTHORIZED ON 08/24 P&W MIDDLETOWN CT S466236607143302 CARD 6709".
+// Learned category rules are keyed by this normalization, so anything that
+// changes between two visits to the same merchant — swipe dates, reference /
+// serial numbers, card suffixes — must be stripped, or a rule taught on one
+// swipe can never match the next. Short (1-2 digit) numbers are kept so names
+// like "FOREVER 21" survive. Re-running on an already-normalized key yields
+// the same key, which lets stored rule keys from the older, looser
+// normalization migrate through this same function.
+export function normalizeMerchantName(merchant) {
+  const raw = String(merchant || "").toUpperCase();
+  const stable = raw
+    // Space-separated swipe dates anchored on "ON" ("ON 08 24"), the form
+    // found in keys saved by the pre-migration normalizer (which had already
+    // stripped the slashes). Must run before the phrase strip below removes
+    // the "ON" anchor.
+    .replace(/\bON\s+\d{1,2}\s+\d{1,2}(?:\s+\d{2,4})?\b/g, " ")
+    // Slash/dash swipe dates: "08/24", "8-24-26".
+    .replace(/\b\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?\b/g, " ")
+    // Remaining "AUTHORIZED ON" boilerplate, stripped as a phrase so the
+    // dangling "ON" never leaks into the key once its date is removed.
+    .replace(/\bAUTHORIZED\s+ON\b/g, " ")
+    // Card suffixes ("CARD 6709") and masked numbers ("XXXXXX1234").
+    .replace(/\bCARD\s*#?\s*\d+\b/g, " ")
+    .replace(/\bX{2,}\d+\b/g, " ")
+    // Reference/serial tokens (anything with a 5+ digit run) and standalone
+    // 3+ digit numbers (store/batch/phone fragments).
+    .replace(/\b[A-Z]*\d{5,}[A-Z0-9]*\b/g, " ")
+    .replace(/\b\d{3,}\b/g, " ");
+  // A descriptor that was ALL noise still needs a non-empty, deterministic
+  // key, so fall back to collapsing the raw text.
+  return collapseDescriptor(stable) || collapseDescriptor(raw);
+}
+
+// Re-keys a stored rule map through the current merchant normalization.
+// Rules learned before volatile-token stripping were keyed with per-swipe
+// noise (dates, reference numbers) baked in, so they could never match a
+// future transaction. Run at consumption time because server-hydrated
+// workspace state does not pass through the load-time normalizers.
+export function normalizeMerchantCategoryRules(rules) {
+  if (!rules || typeof rules !== "object" || Array.isArray(rules)) return {};
+
+  const normalized = {};
+  Object.entries(rules).forEach(([merchant, category]) => {
+    if (typeof category !== "string" || !category.trim()) return;
+    const key = normalizeMerchantName(merchant);
+    if (key) normalized[key] = category.trim();
+  });
+  return normalized;
 }
 
 function buildValidCategorySet(budgetRows) {
@@ -225,7 +279,11 @@ export function categorizeTransaction(transaction, { budgetRows, merchantCategor
 }
 
 export function categorizeTransactions(transactions, options) {
-  return transactions.map((transaction) => categorizeTransaction(transaction, options));
+  const normalizedOptions = {
+    ...options,
+    merchantCategoryRules: normalizeMerchantCategoryRules(options?.merchantCategoryRules),
+  };
+  return transactions.map((transaction) => categorizeTransaction(transaction, normalizedOptions));
 }
 
 export function buildMerchantCategoryRules(currentRules, merchant, category) {
