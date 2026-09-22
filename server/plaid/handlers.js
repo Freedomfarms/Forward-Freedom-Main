@@ -502,6 +502,18 @@ async function persistPlaidTransactions({
 
     if (!mappedTransaction) continue;
 
+    // A transaction must reference a persisted account. Storing it with a
+    // NULL accountId creates an orphan row that can never be attributed to an
+    // account again (it would previously surface as a phantom "Plaid Account"
+    // entry in the client). Skip and log instead.
+    if (!accountRecord) {
+      logPlaidServerEvent("warn", "transaction_account_missing", {
+        plaidTransactionId: transaction.transaction_id,
+        plaidAccountId: transaction.account_id,
+      });
+      continue;
+    }
+
     // postedAt is a required column; skip (and log) a transaction with an
     // unparseable date instead of failing the whole item sync on it.
     const postedAt = toPlaidDate(transaction.date);
@@ -517,7 +529,7 @@ async function persistPlaidTransactions({
       ? {
           workspaceUserId,
           plaidItemRecordId,
-          accountId: accountRecord?.id || null,
+          accountId: accountRecord.id,
           syncSource: "Plaid",
           // Merchant, category and amount are encrypted at rest; plaintext NULL.
           merchant: null,
@@ -533,7 +545,7 @@ async function persistPlaidTransactions({
       : {
           workspaceUserId,
           plaidItemRecordId,
-          accountId: accountRecord?.id || null,
+          accountId: accountRecord.id,
           syncSource: "Plaid",
           merchant: mappedTransaction.merchant || "",
           category: mappedTransaction.category || null,
@@ -659,6 +671,10 @@ async function buildWorkspaceSyncPayload(prisma, userId, workspaceUserId, { encr
         userId,
         workspaceUserId,
         source: "PLAID",
+        // Exclude orphaned rows whose account was deleted (accountId is set
+        // NULL on account deletion). They cannot be attributed to any linked
+        // account and would render as a phantom "Plaid Account" in the client.
+        accountId: { not: null },
       },
       ...(encryptionColumns
         ? {
@@ -881,6 +897,25 @@ async function syncPlaidWorkspace({
     });
   }
 
+  // Self-heal: purge orphaned Plaid transactions left behind by earlier
+  // account deletions (accountId was set NULL by the relation's onDelete).
+  // They are excluded from the sync payload, so removing them only drops
+  // rows the client can never display or attribute again.
+  const orphanPurge = await prisma.transaction.deleteMany({
+    where: {
+      userId,
+      workspaceUserId,
+      source: "PLAID",
+      accountId: null,
+    },
+  });
+  if (orphanPurge.count > 0) {
+    logPlaidServerEvent("info", "orphaned_transactions_purged", {
+      workspaceUserId,
+      purgedCount: orphanPurge.count,
+    });
+  }
+
   return buildWorkspaceSyncPayload(prisma, userId, workspaceUserId, { encryptionColumns });
 }
 
@@ -970,12 +1005,17 @@ async function deletePlaidItems({ prisma, userId, plaidItems }) {
 
   const plaidItemIds = plaidItems.map((item) => item.id);
   if (plaidItemIds.length) {
+    // Match transactions by item reference OR by their account's item
+    // reference: a row whose plaidItemRecordId was nulled out earlier would
+    // otherwise survive account deletion as an orphan (accountId set NULL by
+    // the relation's onDelete) and surface as a phantom "Plaid Account".
     await prisma.transaction.deleteMany({
       where: {
         userId,
-        plaidItemRecordId: {
-          in: plaidItemIds,
-        },
+        OR: [
+          { plaidItemRecordId: { in: plaidItemIds } },
+          { account: { plaidItemRecordId: { in: plaidItemIds } } },
+        ],
       },
     });
     await prisma.account.deleteMany({

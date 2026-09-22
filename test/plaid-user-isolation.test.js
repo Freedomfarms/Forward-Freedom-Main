@@ -192,7 +192,7 @@ async function seedUser(uid, { itemId, workspaceUserId, accountName, balance, me
       status: "CONNECTED",
     },
   });
-  await prisma.account.create({
+  const account = await prisma.account.create({
     data: {
       userId: uid,
       workspaceUserId,
@@ -214,6 +214,9 @@ async function seedUser(uid, { itemId, workspaceUserId, accountName, balance, me
       userId: uid,
       workspaceUserId,
       plaidItemRecordId: item.id,
+      // Healthy synced rows always reference their account; account-less rows
+      // are orphans, which the sync payload deliberately excludes.
+      accountId: account.id,
       plaidTransactionId: `tx-${uid}`,
       source: "PLAID",
       syncSource: "Plaid",
