@@ -298,8 +298,12 @@ export function TransactionsView({
 
   const manualAccountValue = selectedAccount ? defaultTransactionalAccount : manualForm.account;
   const accountOptions = transactionCapableAccounts.map((account) => account.name);
+  // Display names cover ALL accounts — including Plaid-linked ones, which are
+  // excluded from manual entry above — so nicknames render in the account
+  // filter dropdown and table rows. View-only: filtering and manual entry
+  // still match on the underlying account.name.
   const accountDisplayNames = Object.fromEntries(
-    transactionCapableAccounts.map((account) => [account.name, account.nickname || account.name])
+    accounts.map((account) => [account.name, account.nickname || account.name])
   );
   const categoryOptions = Array.from(
     new Set([
