@@ -822,6 +822,24 @@ function ForwardFreedomDashboard({
     }
   };
   const setActiveRange = (valueOrUpdater) => setActiveUserField("activeRange", valueOrUpdater);
+  // Switching household profiles must keep the current page. The active tab is
+  // stored per profile (so it persists per user across sessions), which means
+  // the target profile's saved/default tab — Freedom OS home for a profile
+  // that never navigated — would otherwise yank the view away mid-task. Carry
+  // the tab the switcher is looking at over to the target profile.
+  const switchActiveUser = (userId) => {
+    if (userId !== activeUserId) {
+      const tabToKeep = activeTab;
+      setUsers((currentUsers) =>
+        currentUsers.map((user) =>
+          user.id === userId && user.activeTab !== tabToKeep
+            ? { ...user, activeTab: tabToKeep }
+            : user
+        )
+      );
+    }
+    setActiveUserId(userId);
+  };
   const openGuide = () => setIsGuideOpen(true);
   const closeGuide = () => setIsGuideOpen(false);
   const openOnboardingStep = (step) => {
@@ -2156,7 +2174,7 @@ function ForwardFreedomDashboard({
     const targetIndex = users.findIndex((user) => user.id === userId);
     if (!targetUser) return;
 
-    setActiveUserId(userId);
+    switchActiveUser(userId);
     setEditingUserId(userId);
     setDraftUserName(getDisplayUserName(targetUser, targetIndex >= 0 ? targetIndex : 0));
   };
@@ -2283,7 +2301,7 @@ function ForwardFreedomDashboard({
     draftUserName,
     setDraftUserName,
     onSelectUser: (userId) => {
-      setActiveUserId(userId);
+      switchActiveUser(userId);
       if (editingUserId && editingUserId !== userId) {
         cancelUserRename();
       }
