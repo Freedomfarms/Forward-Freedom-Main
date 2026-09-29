@@ -22,8 +22,11 @@
 //   - The model step is AI SDK streamText on engine.openStream's resolved
 //     LanguageModel. Vendor SDKs are not imported here.
 //   - Tool calls are never executed by the AI SDK. Authorize, then
-//     ToolExecutor. Until Phase 4 installs the gate pipeline, the executor
-//     fail-closes.
+//     ToolExecutor. requiresConfirmation tools are the mutation ids passed
+//     to ApprovalCoordinator. Read tools are not. The executor re-checks
+//     that grant; it does not approve anything itself.
+//   - caller on the tool call is the same caller as the model call, including
+//     kind "schedule". This file does not schedule.
 //   - A batch that needs approval is not half-executed before suspension.
 //     Calls already allowed by policy are stored as preApprovedCallIds and
 //     run, with the decision, on resume. Denied siblings still get synthetic
@@ -52,6 +55,21 @@ import {
 } from "../protocol/index.js";
 import { ApprovalCoordinator, ReviewDecisionType } from "./approvals.js";
 import { ToolExecutor } from "../tools/executor.js";
+
+export function classifyToolCalls(calls, specs) {
+  if (!Array.isArray(specs) || specs.length === 0) {
+    return { mutationIds: calls.map((call) => call.callId), readIds: [] };
+  }
+  const byName = new Map(specs.map((spec) => [spec.name, spec]));
+  const mutationIds = [];
+  const readIds = [];
+  for (const call of calls) {
+    const spec = byName.get(call.name);
+    if (spec && spec.requiresConfirmation !== true) readIds.push(call.callId);
+    else mutationIds.push(call.callId);
+  }
+  return { mutationIds, readIds };
+}
 
 export const TurnPhase = Object.freeze({
   PREPARE: "prepare",
@@ -135,6 +153,7 @@ export class TurnMachine {
     }
     this._sessionId = record.id;
     this._checkpoint = record.checkpoint;
+    if (!Array.isArray(this._checkpoint.sessionTaint)) this._checkpoint.sessionTaint = [];
     this._approvals.restore(record.id, this._checkpoint.approvedForSession ?? []);
 
     const op = parsed.op;
@@ -351,18 +370,22 @@ export class TurnMachine {
 
   async _authorize(execution, toolCalls) {
     execution.phase = TurnPhase.TOOL_AUTHORIZE;
+    const classification = classifyToolCalls(toolCalls, this._toolSpecs);
     const decision = this._approvals.authorize(
       this._sessionId,
       toolCalls,
-      toolCalls.map((call) => call.callId)
+      classification.mutationIds
     );
     if (decision.type === "execute") {
-      await this._executeCalls(execution, toolCalls);
+      const granted = new Set(
+        classification.mutationIds.filter((callId) => decision.permissions.forCall(callId).mutation)
+      );
+      await this._executeCalls(execution, toolCalls, granted);
       return "continue";
     }
-    const preApprovedCallIds = toolCalls
-      .map((call) => call.callId)
-      .filter((callId) => decision.permissions.forCall(callId).mutation);
+    const preApprovedCallIds = classification.mutationIds.filter(
+      (callId) => decision.permissions.forCall(callId).mutation
+    );
     this._checkpoint.pendingApproval = {
       id: decision.request.id,
       turnId: execution.turnId,
@@ -370,6 +393,8 @@ export class TurnMachine {
       calls: toolCalls,
       requestedCallIds: decision.request.callIds,
       preApprovedCallIds,
+      mutationCallIds: classification.mutationIds,
+      readCallIds: classification.readIds,
     };
     this._emit(eventMsg.execApprovalRequest(this._checkpoint.pendingApproval));
     await this._persist({ approval: { opened: true } });
@@ -377,7 +402,7 @@ export class TurnMachine {
     return "suspended";
   }
 
-  async _executeCalls(execution, calls) {
+  async _executeCalls(execution, calls, grantedMutations = new Set()) {
     execution.phase = TurnPhase.EXECUTE;
     const results = [];
     for (const call of calls) {
@@ -393,7 +418,14 @@ export class TurnMachine {
         userId: this._userId,
         sessionId: this._sessionId,
         turnId: execution.turnId,
+        agentId: "chief",
+        caller: { kind: this._callerKind, id: execution.turnId, trigger: "turn" },
+        mutationApproved: grantedMutations.has(call.callId),
+        sessionTaint: this._checkpoint.sessionTaint ?? [],
       });
+      if (Array.isArray(result.sessionTaint)) {
+        this._checkpoint.sessionTaint = result.sessionTaint;
+      }
       this._checkpoint.executionStats.toolCalls += 1;
       this._emit(
         eventMsg.toolCallEnd({
@@ -446,10 +478,16 @@ export class TurnMachine {
       permissions
     );
     this._checkpoint.approvedForSession = this._approvals.exportKeys(this._sessionId);
+    const mutationCallIds = pending.mutationCallIds ?? pending.calls.map((call) => call.callId);
+    const readCallIds = pending.readCallIds ?? [];
     const granted = new Set(
       decision.type === ReviewDecisionType.DENIED ? [] : pending.requestedCallIds
     );
     for (const callId of pending.preApprovedCallIds ?? []) granted.add(callId);
+    for (const callId of readCallIds) granted.add(callId);
+    const grantedMutations = new Set(
+      [...granted].filter((callId) => mutationCallIds.includes(callId))
+    );
     const toRun = [];
     const denied = [];
     for (const call of pending.calls) {
@@ -482,7 +520,7 @@ export class TurnMachine {
       deniedMessages.push(message);
     }
     if (deniedMessages.length) await this._persist({ transcriptDelta: deniedMessages });
-    if (toRun.length) await this._executeCalls(execution, toRun);
+    if (toRun.length) await this._executeCalls(execution, toRun, grantedMutations);
     await this._modelLoop();
   }
 

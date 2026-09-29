@@ -88,6 +88,22 @@ Conventions used in this repository:
 - `server/chief/models/budget.js` is not a port. The cap idea is reference-only (see
   jarvis-architecture below). The check is CHIEF's own and lives in the model layer
   (ADR-0003).
+- Ported modules in this repository (Phase 4), from commit `5e5f5ef`:
+  - `server/chief/tools/spec.js` ← `src/openjarvis/tools/_stubs.py` (`ToolSpec`, `BaseTool`)
+  - `server/chief/tools/executor.js` ← `src/openjarvis/tools/_stubs.py` (`ToolExecutor.execute`)
+  - `server/chief/security/taint.js` ← `src/openjarvis/security/taint.py`
+  - `server/chief/security/rate-limit.js` ← `src/openjarvis/security/rate_limiter.py`
+    (`TokenBucket.consume`) and `rust/crates/openjarvis-security/src/rate_limiter.rs` (`check`)
+  - `server/chief/security/injection.js` ← `src/openjarvis/security/injection_scanner.py`
+    (`_INJECTION_PATTERNS`, `_scan_python`)
+  - `server/chief/security/boundary.js` ← `src/openjarvis/security/boundary.py`
+    (`check_outbound` shape only; scanners are not ported, so block mode refuses non-local
+    tools instead of running an empty scanner)
+- The Rust tool executor is not ported. OpenJarvis `DEFAULT_TOOL_CAPABILITIES` is not copied.
+  `ApprovalStore` is not a second approval path. Read-versus-mutation uses möbius
+  `ApprovalRequirement` (`requires_approval` / `requiresConfirmation`) at commit `3e1aaf5`.
+  `@modelcontextprotocol/sdk` is not installed: MCP invoke is a remote tool that block mode
+  refuses before any network call.
 - Obligations: Apache-2.0 attribution — the full upstream license text is included
   verbatim at `licenses/MOBIUS-LICENSE-APACHE-2.0.txt` — **plus propagation of the
   upstream NOTICE** for derivative material, reproduced in full at

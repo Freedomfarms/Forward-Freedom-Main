@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import { handleChiefChat } from "../api/chief/chat.js";
 import { handleChiefApprovals } from "../api/chief/approvals.js";
 import { MemoryCheckpointStore } from "../server/chief/runtime/checkpoint.js";
+import { lookupExecutor } from "./chief-tool-fixture.js";
 import { ToolExecutor } from "../server/chief/tools/executor.js";
 
 function textEngine(text = "Hello") {
@@ -192,11 +193,9 @@ test("approvals lists a pending batch and a decision resumes it", async () => {
     store,
     engine,
     authenticate: auth("user-1"),
-    toolExecutor: new ToolExecutor({
-      handler: async (call) => {
-        executed.push(call.name);
-        return { output: "ok" };
-      },
+    toolExecutor: lookupExecutor({
+      onExecute: (call) => executed.push(call.name),
+      output: "ok",
     }),
   };
   const chat = mockResponse();

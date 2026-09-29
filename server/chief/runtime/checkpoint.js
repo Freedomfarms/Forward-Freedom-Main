@@ -60,6 +60,9 @@ export function emptyCheckpoint() {
     transcript: [],
     approvedForSession: [],
     modelRoute: null,
+    // Labels accumulated from tool arguments and outputs. Persisted so a
+    // later invocation of this session applies the same taint policy.
+    sessionTaint: [],
   };
 }
 

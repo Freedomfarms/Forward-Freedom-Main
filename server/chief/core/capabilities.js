@@ -29,9 +29,10 @@
 //   - loadPolicyDocument/savePolicyDocument operate on parsed objects instead
 //     of file paths: in this deployment policies live in Postgres
 //     (chief_capability_grant), not on disk. Validation rules are unchanged.
-//   - DEFAULT_TOOL_CAPABILITIES starts as CHIEF's inventory (empty until
-//     Phase 3 registers tools); the fail-closed rule is what is ported, not
-//     OpenJarvis's list of its own in-tree tools.
+//   - DEFAULT_TOOL_CAPABILITIES stays empty. The live CHIEF inventory is
+//     passed in by ToolExecutor (server/chief/tools/inventory.js). An omitted
+//     inventory still fails closed as system:admin. OpenJarvis's own tool
+//     list is not copied.
 
 export const Capability = Object.freeze({
   FILE_READ: "file:read",
@@ -226,15 +227,16 @@ export class CapabilityPolicy {
 // tools are registered in Phase 3.
 export const DEFAULT_TOOL_CAPABILITIES = Object.freeze({});
 
-export function canonicalToolCapabilities(toolName, { remote = false } = {}) {
+export function canonicalToolCapabilities(toolName, { remote = false, inventory = DEFAULT_TOOL_CAPABILITIES } = {}) {
   if (remote) {
     // Remote (e.g. MCP) tool names are remote-controlled: resolve provenance
     // before the name table so a server cannot impersonate a reviewed-safe
     // local tool.
     return [Capability.TOOL_INVOKE];
   }
-  if (Object.prototype.hasOwnProperty.call(DEFAULT_TOOL_CAPABILITIES, toolName)) {
-    return [...DEFAULT_TOOL_CAPABILITIES[toolName]];
+  const floor = inventory ?? DEFAULT_TOOL_CAPABILITIES;
+  if (Object.prototype.hasOwnProperty.call(floor, toolName)) {
+    return [...floor[toolName]];
   }
   // An in-tree tool registered without being inventoried fails closed as
   // system:admin instead of silently becoming unrestricted.
