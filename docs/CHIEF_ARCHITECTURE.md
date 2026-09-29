@@ -1,0 +1,454 @@
+# CHIEF — Final Architecture and Implementation Sequence (Module 03)
+
+Status: design for approval. No production code has been written. Companion document:
+[CHIEF_GITHUB_REUSE_AUDIT.md](./CHIEF_GITHUB_REUSE_AUDIT.md) (the approved audit; commit-pinned
+source findings and classifications referenced throughout as "audit §N").
+
+Governing objective: **compose and integrate existing proven work — do not reinvent it.**
+For every major component this document answers: _why are we building this instead of
+reusing/adapting something that already exists?_
+
+Absolute constraints honored throughout:
+
+- Module 01 and Module 02 are not part of CHIEF: no imports, no dependencies, no modifications,
+  no architectural derivation (§4 dependency boundaries make this mechanically enforceable).
+- cortex-map is REUSE DIRECTLY: vendored as-is under a third-party boundary (§8).
+- OpenJarvis reuse is prioritized before building equivalents (§6 sourcing rule, §7.1).
+- möbius durable-turn/approval/checkpoint/subagent semantics are adapted, not paralleled (§7.2).
+- PORT/ADAPT preserves original semantics; deviations are documented inline (§10 ledger).
+- REFERENCE ONLY material is never represented as reusable implementation.
+- BUILD NEW always carries a documented reason (§10.4).
+
+---
+
+## 1. Architecture overview
+
+CHIEF is a TypeScript control plane that runs inside Freedom OS's existing Vercel + Postgres
+deployment. Its internals are ports of the two strongest audited implementations — OpenJarvis
+primitives (registries, agents, tools, memory, routing, traces, events, scheduling) and möbius
+durability semantics (turn state machine, checkpoints, approvals, protocol) — persisted in
+Postgres via Prisma. Heavy capabilities beyond the serverless envelope are not rebuilt: they are
+obtained by **wrapping the OpenJarvis server** as an optional sidecar reached through CHIEF's
+provider/tool boundary. The Command Center UI reuses the vendored cortex-map renderer for the
+3D memory/knowledge map.
+
+```
+                        FREEDOM OS (Vercel + Postgres + Firebase auth)
+ ┌────────────────┬─────────────────┬──────────────────────────────────────────────────┐
+ │   MODULE 01    │    MODULE 02    │              MODULE 03 — CHIEF                   │
+ │  (untouched,   │   (untouched,   │                                                  │
+ │   no imports)  │    no imports)  │  ┌────────────────────────────────────────────┐  │
+ └────────────────┴─────────────────┘  │ COMMAND CENTER UI (src/components/chief)   │  │
+                                       │  panels: status/agents/tasks/approvals/    │  │
+                                       │  traces/memory · SSE live feed             │  │
+                                       │  3D map: vendored cortex-map               │  │
+                                       │  (src/third_party/cortex-map, MIT, as-is)  │  │
+                                       └──────────────────┬─────────────────────────┘  │
+                                                          │ HTTPS + Firebase bearer     │
+                                                          │ POST ops / SSE events       │
+                                       ┌──────────────────▼─────────────────────────┐  │
+                                       │ CHIEF API (api/chief/*, api/cron/chief-*)  │  │
+                                       │ [BUILD NEW: thin serverless shell]         │  │
+                                       └──────────────────┬─────────────────────────┘  │
+                                       ┌──────────────────▼─────────────────────────┐  │
+                                       │ CHIEF CORE (server/chief)                  │  │
+                                       │                                            │  │
+                                       │ runtime/   turn state machine, checkpoints,│  │
+                                       │            approvals      [PORT: möbius]   │  │
+                                       │ agents/    Base→ToolUsing→Orchestrator/    │  │
+                                       │            Operative  [PORT: OpenJarvis]   │  │
+                                       │ tools/     ToolSpec+Executor gate pipeline │  │
+                                       │            [PORT: OpenJarvis] + MCP        │  │
+                                       │            [REUSE: official TS SDK]        │  │
+                                       │ memory/    facts+trust tiers, FTS+pgvector │  │
+                                       │            +RRF, knowledge graph           │  │
+                                       │            [PORT: OpenJarvis]              │  │
+                                       │ models/    engine layer [REUSE: AI SDK] +  │  │
+                                       │            HeuristicRouter [PORT: OpenJ.]  │  │
+                                       │ traces/    trace store + collector         │  │
+                                       │            [PORT: OpenJarvis]              │  │
+                                       │ scheduler/ once/interval/cron tasks        │  │
+                                       │            [PORT: OpenJarvis + möbius]     │  │
+                                       │ core/      registries, event taxonomy,     │  │
+                                       │            capabilities [PORT: OpenJarvis] │  │
+                                       │ protocol/  Op/EventMsg wire [PORT: möbius] │  │
+                                       │ sidecar/   OpenJarvis client adapter       │  │
+                                       │            [WRAP boundary]                 │  │
+                                       └───────┬──────────────────┬─────────────────┘  │
+                                               │ Prisma (atomic   │ HTTPS, Bearer      │
+                                               │ transactions)    │ OpenAI-compatible  │
+                                       ┌───────▼────────┐ ┌───────▼─────────────────┐  │
+                                       │ POSTGRES       │ │ OPENJARVIS SIDECAR      │  │
+                                       │ chief_* tables │ │ (optional container:    │  │
+                                       │ + pgvector     │ │ Docker/Render/Fly)      │  │
+                                       │ RLS + at-rest  │ │ [WRAP/INTEGRATE]        │  │
+                                       │ encryption     │ │ local models, deep      │  │
+                                       └────────────────┘ │ research, channels      │  │
+                                                          └─────────────────────────┘  │
+ Model providers: AI SDK → xAI Grok (primary) · Anthropic · OpenAI · Google ·           │
+                  any OpenAI-compatible endpoint (which is how the sidecar plugs in)    │
+ ────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 2. Major components and responsibilities
+
+Each component lists provenance (which audited implementation it comes from) and the one-line
+answer to "why not reuse something that exists?".
+
+| Component (location)                     | Responsibility                                                                                                                                                                                            | Provenance / reuse answer                                                                                                                                                                                                           |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `server/chief/core/registry`             | Typed registries for agents, tools, memory backends, engines, policies; decorator/imperative registration, per-registry isolation                                                                         | PORT of OpenJarvis `core/registry.py` (~189 LOC). It IS the reuse — smallest possible faithful translation                                                                                                                          |
+| `server/chief/core/events`               | Event taxonomy (~40 types incl. security events) + per-request emitter; every subsystem publishes here                                                                                                    | PORT of OpenJarvis `core/events.py` taxonomy verbatim; only the transport changes (in-process thread bus → per-request emitter + persisted journal) because serverless has no long-lived process                                    |
+| `server/chief/core/capabilities`         | Capability RBAC (`file:read`, `network:fetch`, `memory:*`, `schedule:create`, `system:admin`, …), autonomy levels 0–4, audit logging                                                                      | PORT of OpenJarvis `CapabilityPolicy` + `AuditLogger`; möbius approval decisions layered on top                                                                                                                                     |
+| `server/chief/protocol`                  | Frontend-neutral `Op` (message, interrupt, exec_approval, set_model, resume_session) and `EventMsg` types; JSON-over-SSE encoding; presentation separation (frontends never branch on capability names)   | PORT of möbius `src/protocol/`; transport changes from Noise WebSocket to SSE+POST because Freedom OS already has HTTPS + Firebase auth                                                                                             |
+| `server/chief/runtime/checkpoint`        | Durable session state: checkpoint JSON, transcript deltas, execution journal, event journal, middleware state; atomic `saveWithEvents()` in one transaction; `fork()` for delegation                      | PORT of möbius `SqliteCheckpoint` schema v10 onto Prisma/Postgres. Only storage engine changes; table shapes and atomic-commit rule preserved                                                                                       |
+| `server/chief/runtime/turn`              | The turn state machine: prepare → model step → tool authorization (Execute vs Approval) → execute → …→ completion; interrupts; stop hooks; **pending-approval suspension and resume-from-DB**             | PORT of möbius `continue_turn` phase machine. Deviation (documented): phases resume per HTTP invocation instead of living in a tokio task — this is the serverless adaptation, not a redesign                                       |
+| `server/chief/runtime/approvals`         | `ApprovalPolicy` (ask/allow/allow_network/full_access mapped to CHIEF autonomy levels), `ReviewDecision` (approved/approved_for_session/denied/abort), sticky session approvals (SHA-256 keyed, capped)   | PORT of möbius `approval.rs` semantics incl. partial-batch denial and synthetic error ToolResults                                                                                                                                   |
+| `server/chief/agents`                    | `BaseAgent → ToolUsingAgent → OrchestratorAgent` (function-calling loop, bounded turns, parallel tools, `before_tool_call` hook) and `OperativeAgent` (state-key model, tick execution, auto-persist)     | PORT of OpenJarvis agent hierarchy; model I/O delegated to `models/` (AI SDK) instead of the Python engine zoo                                                                                                                      |
+| `server/chief/agents/managed`            | Product-level agent lifecycle: managed agents, tasks, messages, tick stats, rolling summary                                                                                                               | PORT of OpenJarvis `AgentManager`/`AgentExecutor` schema (SQLite `agents.db` → Prisma)                                                                                                                                              |
+| `server/chief/tools`                     | `ToolSpec`/`BaseTool`/registry; **ToolExecutor with the exact gate order** rate limit → boundary guard → capability RBAC → taint policy → confirmation → timeout → output taint/injection scan            | PORT of OpenJarvis tool system. The gate order is preserved verbatim — it is the audited security invariant                                                                                                                         |
+| `server/chief/tools/mcp`                 | MCP tool loading (HTTP/SSE transports)                                                                                                                                                                    | REUSE DIRECTLY: official `@modelcontextprotocol/sdk` (MIT). Building/porting a client would duplicate the official implementation of the same protocol OpenJarvis targets                                                           |
+| `server/chief/memory`                    | Fact store with trust tiers (auto/trusted/untrusted), dedupe/caps, injection-scan-before-extract; hybrid retrieval (Postgres FTS + pgvector + Reciprocal Rank Fusion); knowledge-graph entities/relations | PORT of OpenJarvis FactStore/MemoryService/hybrid backend/KG backend; storage JSONL+SQLite → Prisma + repo at-rest encryption. Consolidation job design guided by jarvis-architecture (REFERENCE)                                   |
+| `server/chief/models`                    | Engine layer + provider registry + model catalog; heuristic routing (`score_complexity`, `classify_query`, 6 ordered rules); later trace-driven `LearnedRouterPolicy`                                     | REUSE DIRECTLY: Vercel AI SDK + `@ai-sdk/xai` (Grok primary), `@ai-sdk/anthropic`, `@ai-sdk/openai`(-compatible) as transports. PORT: OpenJarvis routing logic on top. Provider-private data never enters checkpoints (möbius rule) |
+| `server/chief/traces`                    | `Trace`/`TraceStep` recording via collector subscribed to events; activity history; learning substrate                                                                                                    | PORT of OpenJarvis trace schema + collector pattern (SQLite WAL → Prisma)                                                                                                                                                           |
+| `server/chief/scheduler`                 | Scheduled tasks (once/interval/cron), run logs, retries; due-task dispatch                                                                                                                                | PORT of OpenJarvis scheduler store merged with möbius routines ("fresh conversation per run", run-status table); daemon thread → Vercel cron tick; croniter → `cron-parser` (npm, MIT)                                              |
+| `server/chief/sidecar`                   | The OpenJarvis integration boundary: health/config, provider registration (OpenAI-compatible), capability adapters exposing sidecar agents as CHIEF tools                                                 | WRAP/INTEGRATE (audit §2.4); this module is the ONLY place that knows a sidecar exists                                                                                                                                              |
+| `api/chief/*`, `api/cron/chief-dispatch` | Serverless shell: auth → load/resume → run phase(s) → atomic persist → stream SSE; cron tick for scheduler                                                                                                | BUILD NEW (thin). Reason: no audited implementation targets Vercel functions + Prisma + Firebase; all logic inside the shell is ported, only the shell is new (§10.4)                                                               |
+| `src/components/chief` (Command Center)  | Panels: system status, active agents, running tasks, approvals inbox, activity/trace feed, memory browser; SSE consumption; 3D memory map embedding                                                       | BUILD NEW (UI composition on Freedom OS design language). The 3D map itself is NOT built — vendored cortex-map                                                                                                                      |
+| `src/third_party/cortex-map`             | 3D memory/knowledge map renderer                                                                                                                                                                          | REUSE DIRECTLY: vendored MIT source, unmodified (audit §5). Do not recreate or redesign                                                                                                                                             |
+
+---
+
+## 3. Capability sourcing rule
+
+Applied to every present and future CHIEF capability, in order:
+
+1. **REUSE DIRECTLY** — vendored source, npm package, or wrapped service already does it.
+2. **WRAP/INTEGRATE** — a proven foreign-runtime implementation does it; reach it over its API
+   (OpenJarvis sidecar is the standing example).
+3. **PORT/ADAPT** — translate the audited implementation, preserving semantics; document any
+   deviation and its CHIEF-specific reason.
+4. **BUILD NEW** — only with a written justification of why 1–3 failed (recorded in §10.4 or a
+   future ADR).
+
+---
+
+## 4. Dependency boundaries (mechanically enforced)
+
+**`server/chief/**` may import:\*\*
+
+- Node stdlib and npm dependencies: `ai`, `@ai-sdk/xai`, `@ai-sdk/anthropic`, `@ai-sdk/openai`,
+  `@modelcontextprotocol/sdk`, `cron-parser`, `@prisma/client`.
+- Shared **platform** infrastructure only (module-agnostic, used by the whole app): Firebase
+  auth verification (`server/auth/verifyAuth.js`), the Prisma client/db helpers, and the at-rest
+  encryption utilities. These are Freedom OS platform facts, not Module 01/02 architecture
+  (audit §11).
+
+**`server/chief/**` must NOT import (and vice versa):\*\*
+
+- `server/brain/**`, `server/agents/**`, `server/memory/**`, `server/capabilities/**` (Module 01
+  server code), any `api/agents*` handler, or Module 01/02 UI code.
+
+**UI boundaries:** `src/components/chief/**` may import `src/third_party/cortex-map` and global
+platform CSS; it must not import `src/components/freedomOs/**` or Module 02 components. CHIEF
+defines its own UI tokens.
+
+**Shared files touched (additive-only):** `vercel.json` (one new cron entry for
+`/api/cron/chief-dispatch` — Module 01's cron entry is not modified), `prisma/schema.prisma`
+(new `Chief*` models only; no changes to existing models), `package.json` (new deps only),
+module hub registration (one new module id + card; Module 01/02 entries untouched).
+
+**Enforcement:** an ESLint `no-restricted-imports` rule fails the build if any file under
+`server/chief/` or `src/components/chief/` imports from the forbidden paths, and if Module 01/02
+paths import from CHIEF. Added in Phase 0 so the boundary is enforced before any code exists.
+
+**Module 01/02 as external systems (later, per Module 03 spec):** if/when CHIEF needs their
+data, it consumes defined **read-only interfaces** exposed as CHIEF tools behind capability
+gates — the same way it would consume any external API. Not part of the core build; explicitly
+out of scope until approved separately.
+
+---
+
+## 5. Data flows, event flows, persistence boundaries
+
+### 5.1 One CHIEF turn (durable, resumable — the möbius semantics on serverless)
+
+```
+Client                    api/chief/chat                CHIEF runtime                    Postgres
+  │  POST Op::Message  ─────►│                               │                              │
+  │                          │ verifyAuth (platform)         │                              │
+  │                          │──── load checkpoint ──────────┼────── SELECT chief_session ──►│
+  │                          │                               │ resume rules (möbius):        │
+  │                          │                               │  pending_approval? re-emit    │
+  │                          │                               │  active_execution? continue   │
+  │  ◄── SSE: turn_started ──│◄── events ────────────────────│                              │
+  │                          │      phase: MODEL             │── AI SDK → router → provider │
+  │  ◄── SSE: deltas ────────│◄── ModelEvents (normalized;   │   (Grok primary; provider-   │
+  │                          │    provider-private fields    │    private data excluded)    │
+  │                          │    never persisted)           │                              │
+  │                          │      phase: TOOL AUTHORIZE    │ ToolExecutor gates:          │
+  │                          │                               │ rate→boundary→RBAC→taint→    │
+  │                          │                               │ confirm→timeout→scan         │
+  │                          │        ├─ Execute ────────────│ run tools (parallel, bounded)│
+  │  ◄── SSE: approval req ──│◄───────┴─ Approval ───────────│ persist pending_approval,    │
+  │                          │                               │ END INVOCATION (suspend)     │
+  │  POST Op::ExecApproval ─►│  (any later invocation)       │ resume → execute or deny     │
+  │                          │      phase: COMPLETION        │                              │
+  │                          │ atomic saveWithEvents(): checkpoint + transcript_delta +     │
+  │                          │ execution_journal + event_journal  ── ONE TRANSACTION ──────►│
+  │  ◄── SSE: turn_complete ─│                               │ TraceCollector → chief_trace │
+```
+
+Any Vercel function instance can serve any step: all state lives in Postgres, never in process
+memory. This is the deliberate consequence of porting möbius's checkpoint design (audit §7).
+
+### 5.2 Background flow (scheduler tick)
+
+```
+Vercel cron (new entry) → api/cron/chief-dispatch (CRON secret, timing-safe)
+  → scheduler: claim due ChiefScheduledTask rows (bounded batch, at-least-once)
+     ├─ operative agent ticks  (OpenJarvis execute_tick semantics: lock, run, stats, summary)
+     ├─ memory extraction      (injection scan → facts w/ trust tiers)   [OpenJarvis MemoryService]
+     ├─ KG consolidation       (embed → cosine-KNN auto-link → edge decay → duplicate merge)
+     │                          [concept from jarvis-architecture — REFERENCE ONLY, implemented
+     │                           on ported OpenJarvis KG schema]
+     └─ retries / failure handling → ChiefTaskRun status rows            [möbius routine_runs]
+```
+
+### 5.3 Event flow
+
+One taxonomy, three sinks — no parallel event systems:
+
+1. **Emit:** every subsystem publishes typed events (OpenJarvis EventType taxonomy + möbius
+   EventMsg turn/approval events) to the per-request emitter.
+2. **Stream:** the API shell forwards presentation-safe events over SSE to the Command Center
+   (möbius presentation-separation rule: the UI never branches on internal capability names).
+3. **Persist:** events are journaled in the same transaction as the checkpoint
+   (`chief_event_journal`) — the activity history is replayable after the fact.
+4. **Collect:** the TraceCollector subscribes and materializes `ChiefTrace`/`ChiefTraceStep`
+   rows on turn completion — the substrate for the Activity Center and, later, the learned
+   router.
+
+### 5.4 Persistence boundaries
+
+All CHIEF state is in Postgres under `chief_`-prefixed Prisma models — no home directories, no
+SQLite, no sidecar-owned state that CHIEF depends on:
+
+| Store (Prisma models)                                                                                        | Ported from                                                                                                | Content notes                                                                                            |
+| ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `ChiefSession`, `ChiefTranscriptDelta`, `ChiefExecutionJournal`, `ChiefEventJournal`, `ChiefMiddlewareState` | möbius checkpoint schema v10                                                                               | Atomic `saveWithEvents` transaction; `fork` support; version column on checkpoint JSON                   |
+| `ChiefAgent`, `ChiefAgentTask`, `ChiefAgentMessage` (+ learning log)                                         | OpenJarvis `agents.db`                                                                                     | Managed-agent lifecycle, tick stats, rolling summary                                                     |
+| `ChiefTrace`, `ChiefTraceStep`                                                                               | OpenJarvis `traces.db`                                                                                     | Steps typed route/retrieve/generate/tool_call/respond; outcome + feedback fields for learning            |
+| `ChiefFact`                                                                                                  | OpenJarvis FactStore                                                                                       | Trust tier enum (auto/trusted/untrusted), importance/confidence, dedupe key, caps, **encrypted at rest** |
+| `ChiefKnowledgeEntity`, `ChiefKnowledgeRelation`                                                             | OpenJarvis KG backend                                                                                      | pgvector embedding column; relation `origin` explicit/semantic (matches cortex-map's edge model)         |
+| `ChiefScheduledTask`, `ChiefTaskRun`                                                                         | OpenJarvis scheduler + möbius routine_runs                                                                 | Kinds once/interval/cron; run status; retry counters                                                     |
+| `ChiefApproval`, `ChiefCapabilityGrant`, `ChiefAuditLog`, `ChiefBudget`                                      | OpenJarvis ApprovalStore/RBAC + möbius decisions; budget caps concept from jarvis-architecture (REFERENCE) | Approval records with decision enum; sticky grants (hash-keyed, capped); per-run/per-period USD caps     |
+
+Cross-cutting rules: RLS on every `chief_*` table (existing repo convention); only foreign key
+into non-CHIEF tables is `User`; sensitive text columns use the platform encryption helpers;
+pgvector enabled via one migration (`CREATE EXTENSION IF NOT EXISTS vector`); retention/expiry
+columns on memory and journal tables so old data cannot silently stay authoritative forever.
+
+The sidecar's own storage (its SQLite home volume) is **outside** CHIEF's persistence boundary:
+CHIEF treats sidecar results like any external tool output — untrusted until it passes the
+memory trust-tier gate.
+
+---
+
+## 6. Communication summary (how the pieces talk)
+
+| Path                            | Mechanism                                                                                                                             |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Command Center → CHIEF API      | HTTPS POST with Firebase bearer token; Ops as JSON (möbius Op taxonomy)                                                               |
+| CHIEF API → Command Center      | SSE stream of EventMsg JSON (turn lifecycle, deltas, tool begin/end, approval requests, token counts)                                 |
+| CHIEF core → Postgres           | Prisma; checkpoint saves are single transactions (atomic-commit rule from möbius)                                                     |
+| CHIEF core → model providers    | Vercel AI SDK provider instances (xAI/Anthropic/OpenAI/Google); router selects per HeuristicRouter rules                              |
+| CHIEF core → OpenJarvis sidecar | HTTPS + Bearer: (a) as a model provider via its OpenAI-compatible `/v1/chat/completions`; (b) as tools via capability adapters (§7.1) |
+| CHIEF core → MCP servers        | `@modelcontextprotocol/sdk` over HTTP/SSE transports; tools surfaced through the ToolRegistry with `required_capabilities`            |
+| Vercel cron → CHIEF scheduler   | New HTTPS endpoint guarded by timing-safe CRON secret comparison                                                                      |
+| Modules 01/02 ↔ CHIEF           | None in this build. Later: read-only interfaces consumed as external tools (§4)                                                       |
+
+---
+
+## 7. Integration boundaries in detail
+
+### 7.1 OpenJarvis boundary (WRAP first, then PORT — per approved constraint)
+
+Reuse priority applied in three tiers:
+
+- **Tier W1 — wrapped as a model provider (zero CHIEF-side invention):** an OpenJarvis
+  container (its own Docker image + Render blueprint; Fly/Railway equivalent) registered in
+  CHIEF's provider registry as an OpenAI-compatible endpoint. This immediately reuses its engine
+  zoo (Ollama/vLLM local models, cloud engines) and any server-side agent it exposes through
+  that API. Configuration: `CHIEF_SIDECAR_URL` + `CHIEF_SIDECAR_API_KEY`; feature-flagged;
+  health-checked; CHIEF is fully functional without it.
+- **Tier W2 — wrapped capabilities as CHIEF tools:** thin adapters in `server/chief/sidecar/`
+  expose selected sidecar endpoints (`/v1/managed-agents`, deep_research, speech) as
+  CHIEF `ToolSpec`s with `required_capabilities` and confirmation flags. Sidecar output enters
+  CHIEF memory only through the trust-tier gate (`auto`/`untrusted` until reviewed).
+- **Tier P — ported primitives (the audited PORT/ADAPT set):** registry, agent hierarchy,
+  ToolExecutor pipeline, fact store, hybrid retrieval, router, traces, events, scheduler — these
+  run inside CHIEF because the multi-user Postgres/serverless substrate requires it (audit
+  §2.2/§2.4). Porting preserves semantics; each ported module carries a provenance header
+  naming its OpenJarvis source file.
+
+Deployment note: the sidecar is **per-deployment single-user by design** (its own state model —
+audit §2.4). It is documented as an operator-provisioned option, not a hard dependency.
+
+### 7.2 möbius boundary (PORT of semantics; no parallel implementations)
+
+möbius code cannot execute in this stack (Rust single-owner gateway, OS sandboxes — audit §3.2),
+so its boundary is a **semantic contract** CHIEF implements once, in one place:
+
+- The turn phase machine, suspension/resume rules, and interrupt semantics live only in
+  `server/chief/runtime/turn` — no second loop implementation anywhere in CHIEF.
+- The checkpoint table shapes, atomic `saveWithEvents`, and `fork` live only in
+  `server/chief/runtime/checkpoint`.
+- Approval policy/decision semantics (incl. partial-batch denial, sticky approvals, abort) live
+  only in `server/chief/runtime/approvals` and are consumed by the ToolExecutor's confirmation
+  gate — the OpenJarvis gate pipeline calls the möbius-semantics approval component rather than
+  having its own approval logic (this is the one designed junction of the two ports, documented
+  here as required by constraint 6).
+- The Op/EventMsg protocol lives only in `server/chief/protocol`.
+- Subagent coordination (checkpoint fork, typed peer messages, depth/concurrency limits,
+  wait/interrupt tools) is a later phase built on the same checkpoint store — not a separate
+  mechanism.
+
+Documented deviations from möbius (each with its CHIEF-specific reason): execution resumes per
+HTTP invocation instead of a resident tokio task (serverless); Postgres instead of SQLite
+(multi-user platform); schema evolution via Prisma migrations instead of möbius's
+reject-on-mismatch policy (a hosted product cannot strand user sessions); SSE+POST instead of
+Noise WebSocket (platform already provides authenticated HTTPS).
+
+### 7.3 cortex-map boundary (REUSE DIRECTLY, vendored)
+
+- Vendored at `src/third_party/cortex-map/` from commit `68db7b1` — source of
+  `packages/cortex-map` with `LICENSE` (MIT, Jack Stovell/NoctemJack) and a `VENDORED.md`
+  recording upstream URL + commit; entry added to `THIRD_PARTY_NOTICES.md`.
+- **Unmodified**: customization happens exclusively through its public surface (`theme`,
+  `nodes/edges/clusters`, `projection`, `lite`, `reduceMotion`, imperative handle). Any patch
+  ever needed is recorded in `VENDORED.md` for upstream re-application. No redesign, no rewrite.
+- CHIEF supplies data via a mapping adapter (`ChiefKnowledgeEntity/Relation` → `CortexMapNode/
+Edge`) in the Command Center — the adapter is CHIEF code; the renderer is not.
+- Its runtime deps (`three@^0.184`, `react-force-graph-3d@^1.29`, `react-force-graph-2d@^1.29`)
+  are installed from npm (MIT). `lite`/2D fallback is wired to reduced-motion and low-power
+  clients from day one.
+
+---
+
+## 8. Reuse ledger (single source of truth)
+
+### 8.1 REUSE DIRECTLY
+
+| Artifact                                           | Form                            | Used for                                    |
+| -------------------------------------------------- | ------------------------------- | ------------------------------------------- |
+| cortex-map (`68db7b1`)                             | Vendored MIT source, unmodified | Command Center 3D memory/knowledge map      |
+| `three`, `react-force-graph-3d`/`-2d`              | npm (MIT)                       | cortex-map runtime deps                     |
+| Vercel AI SDK + `@ai-sdk/xai`/`anthropic`/`openai` | npm (Apache-2.0)                | Model transports (Grok primary)             |
+| `@modelcontextprotocol/sdk`                        | npm (MIT)                       | MCP tool client                             |
+| `cron-parser`                                      | npm (MIT)                       | Cron expression parsing (replaces croniter) |
+
+### 8.2 WRAP/INTEGRATE
+
+| System                     | Boundary                                                                    | Notes                                                     |
+| -------------------------- | --------------------------------------------------------------------------- | --------------------------------------------------------- |
+| OpenJarvis server (Docker) | `server/chief/sidecar/` — OpenAI-compatible provider + tool adapters (§7.1) | Optional, feature-flagged, per-deployment; health-checked |
+
+### 8.3 PORT/ADAPT (semantics preserved; provenance headers on every ported module)
+
+From OpenJarvis (`5e5f5ef`): registry pattern; BaseAgent/ToolUsingAgent/Orchestrator loop
+(+`before_tool_call`); Operative state-key/tick model + Monitor strategy axes; AgentManager/
+Executor lifecycle schema; ToolSpec/BaseTool/ToolRegistry; **ToolExecutor gate order**; FactStore
+trust tiers + MemoryService extraction (injection-scan first); hybrid retrieval with RRF; KG
+entity/relation schema; HeuristicRouter + `score_complexity` + `classify_query`;
+LearnedRouterPolicy (deferred phase); Trace/TraceStep schema + collector; EventType taxonomy;
+scheduler kinds + run-log schema; CapabilityPolicy RBAC + ApprovalStore + AuditLogger shapes.
+
+From möbius (`3e1aaf5`): turn phase machine with pending-approval suspension; checkpoint schema
+
+- atomic save + fork; ApprovalPolicy/ReviewDecision/sticky approvals/deny-and-abort semantics;
+  Op/EventMsg protocol + presentation separation; reduced middleware hook set (prompt_section,
+  tool_exposure, pre/post_tool_use, turn_end); subagent coordination model (later phase);
+  "provider-private data never in checkpoints" rule.
+
+### 8.4 BUILD NEW — with documented reasons (constraint 8)
+
+| New component                                                     | Why no audited implementation could be reused/adapted                                                                                                                                                                                                             |
+| ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Serverless API shell (`api/chief/*`, SSE handlers, cron endpoint) | No audited system targets Vercel functions: OpenJarvis's shell is FastAPI+daemon threads; möbius's is a resident Rust gateway. The shell contains no domain logic — every decision it executes is ported code. (~thin glue by design)                             |
+| Prisma persistence adapters behind ported store interfaces        | The audited stores are SQLite/JSONL single-user implementations; the _schemas_ are ported (§5.4), but the Postgres/RLS/encryption adapter code is necessarily specific to this platform                                                                           |
+| cortex-map data adapter (KG rows → CortexMap props)               | By design: cortex-map is "bring your own nodes"; the adapter is the intended integration surface, not a gap in reuse                                                                                                                                              |
+| Command Center panels                                             | UI composition against Freedom OS's own design language; the audited UIs (OpenJarvis React app, möbius TUI) serve different products. The one substantial visualization (3D map) IS reused. OpenJarvis's agents/traces/approvals screens are used as UX reference |
+| Module 01/02 read-only interface adapters (deferred)              | Freedom-OS-specific by definition; consumed as external tools per §4; out of scope until separately approved                                                                                                                                                      |
+
+Anything not listed here is not being built new. If implementation surfaces a genuine new-build
+need, it gets an ADR with this same justification before code.
+
+---
+
+## 9. Implementation sequence
+
+Each phase is a separately reviewable PR with its own tests; a phase does not start until the
+previous one is merged or explicitly waived. Verification per repo policy: `npm run lint`,
+`npm test`, `npm run build`.
+
+- **Phase 0 — Guardrails and provenance (no behavior).** ESLint import-boundary rules (§4);
+  `THIRD_PARTY_NOTICES.md` (OpenJarvis Apache-2.0, möbius Apache-2.0 + its Codex/Ratatui NOTICE,
+  cortex-map MIT, npm deps); ADR template; this document merged as the reference architecture.
+- **Phase 1 — Core ports + schema.** Prisma migration: all `chief_*` models (§5.4) + pgvector
+  extension (with FTS-only fallback if the extension cannot be enabled yet); `core/registry`,
+  `core/events` (taxonomy), `core/capabilities`, `protocol/` types. Unit tests translated from
+  the corresponding OpenJarvis/möbius test intents.
+- **Phase 2 — Model layer.** AI SDK provider registry (xAI Grok primary, Anthropic, OpenAI(-
+  compatible) — the latter is also the sidecar socket); HeuristicRouter + complexity scorer
+  ports; budget-cap checks (`ChiefBudget`). New env: `XAI_API_KEY` (+ optional sidecar vars).
+- **Phase 3 — Durable runtime (highest risk, most tests).** Checkpoint store with atomic
+  `saveWithEvents` + fork; turn phase machine with suspension/resume; approvals component;
+  `api/chief/chat` SSE + `api/chief/approvals`; resume-mid-turn and resume-pending-approval
+  integration tests (the möbius runtime-test scenarios re-expressed in Node's test runner).
+- **Phase 4 — Tools + memory.** ToolExecutor gate pipeline; first tool set (memory ops, KG ops,
+  scheduling ops — no code execution, §10 of audit); MCP client integration; FactStore + trust
+  tiers + extraction task; hybrid FTS+pgvector+RRF retrieval; KG store + consolidation job.
+- **Phase 5 — Scheduler + operatives.** Task store + `api/cron/chief-dispatch` (additive
+  `vercel.json` entry); operative tick agents (OpenJarvis execute_tick semantics); retries,
+  failure handling, notifications.
+- **Phase 6 — Sidecar boundary.** `server/chief/sidecar/` provider registration + health;
+  deep_research/managed-agent tool adapters; deployment recipe doc (Docker/Render/Fly) — all
+  feature-flagged and optional.
+- **Phase 7 — Command Center.** Vendor cortex-map (+ npm deps three/react-force-graph); KG →
+  map adapter; panels (status, agents, tasks, approvals, traces, memory) on the SSE feed;
+  module hub registration for Module 03 (additive).
+- **Phase 8 — Hardening + learning.** RLS review across `chief_*`; audit-log surfacing; budget
+  enforcement UX; LearnedRouterPolicy port once real traces exist; subagent coordination
+  (checkpoint fork + peer messages) if approved; ADRs for any deviations discovered.
+
+---
+
+## 10. Major technical risks and mitigations
+
+| Risk                                                                                               | Mitigation                                                                                                                                                                                                                            |
+| -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Turn durability across serverless invocation limits** (function dies mid-model-call or mid-tool) | The ported möbius design is the mitigation: checkpoint before/after every phase; journal batches atomically; resume rules re-emit pending approvals and continue active executions; tools are journaled so replays are idempotent     |
+| **Long agent turns vs Vercel max duration**                                                        | Bounded steps per invocation; continuation via client-driven follow-up or cron-driven resume of `active_execution`; partial results streamed as they occur                                                                            |
+| **Port-fidelity drift** (subtle semantic changes from the Rust/Python originals)                   | Provenance headers naming the source file/commit on every ported module; test intents translated from the originals' suites (möbius runtime tests, OpenJarvis executor/memory tests); deviations only with a documented reason (§7.2) |
+| **pgvector unavailable at migration time**                                                         | Extension creation isolated in its own migration; retrieval degrades to FTS+RRF-of-one until enabled; no schema depends on vector ops except the embedding column                                                                     |
+| **cortex-map immaturity (v0.1.0, no tests)**                                                       | Leaf UI dependency (cannot touch data/agents); vendored commit pinned; `lite`/2D fallback wired; upstream tracked via `VENDORED.md`                                                                                                   |
+| **Sidecar operational burden / single-user state model**                                           | Optional + feature-flagged; CHIEF fully functional without it; sidecar output passes the memory trust-tier gate; per-deployment provisioning documented, never assumed                                                                |
+| **Prompt injection / memory poisoning**                                                            | Ported OpenJarvis defenses: injection scan before extraction; trust tiers with no silent promotion; ToolExecutor output taint detection; approval gates fail closed (denied ⇒ synthetic error result, never silent skip)              |
+| **Cost runaway from autonomous/background execution**                                              | `ChiefBudget` caps (per-run/per-period) enforced in the model layer before autonomy levels 3–4 are ever enabled; kill-switch flag; cheap-model tiering via the router's existing rules                                                |
+| **Cross-module contamination** (accidental coupling to Module 01/02)                               | ESLint import-boundary rules from Phase 0; `chief_*` table namespace with only-`User` FKs; additive-only touches to shared files; PR review checklist item                                                                            |
+| **Schema evolution of checkpoints**                                                                | Version column on checkpoint JSON + Prisma migrations (documented deviation from möbius reject-on-mismatch, §7.2)                                                                                                                     |
+| **Licensing hygiene**                                                                              | Phase 0 delivers `THIRD_PARTY_NOTICES.md` before any ported/vendored code lands; Apache-2.0 attribution headers on ported modules; möbius NOTICE propagated; nothing copied from the unlicensed jarvis-architecture repo              |
+
+---
+
+## 11. Approval requested
+
+1. The architecture, boundaries, and flows (§1–§7).
+2. The reuse ledger, including the five BUILD NEW items and their justifications (§8).
+3. The phase sequence (§9) — implementation would begin with Phase 0 (guardrails/notices only)
+   and pause for review at each phase boundary.
+
+No production code will be written until this document is approved.
