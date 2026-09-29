@@ -78,9 +78,7 @@ export function parseApprovalPolicy(value) {
 }
 
 export function policyNetworkAccess(policy) {
-  return policy === ApprovalPolicy.ALLOW
-    ? NetworkAccess.DENIED
-    : NetworkAccess.ALLOWED;
+  return policy === ApprovalPolicy.ALLOW ? NetworkAccess.DENIED : NetworkAccess.ALLOWED;
 }
 
 export function policySandboxMode(policy) {
@@ -145,6 +143,24 @@ export class ApprovalCoordinator {
     this._states.delete(sessionId);
   }
 
+  // Phase 3 persistence: sticky keys live in the checkpoint so another
+  // serverless instance can restore them. The cap rule is the same one
+  // resolve() uses.
+  restore(sessionId, keys = []) {
+    this.sessionStart(sessionId);
+    const state = this._state(sessionId);
+    for (const key of keys) {
+      if (state.approvedForSession.size >= MAX_SESSION_APPROVALS) {
+        state.approvedForSession.clear();
+      }
+      state.approvedForSession.add(key);
+    }
+  }
+
+  exportKeys(sessionId) {
+    return [...this._state(sessionId).approvedForSession];
+  }
+
   _state(sessionId) {
     const state = this._states.get(sessionId);
     if (!state) {
@@ -164,10 +180,7 @@ export class ApprovalCoordinator {
       if (!call) {
         throw new Error(`unknown mutation call \`${callId}\``);
       }
-      if (
-        policy !== ApprovalPolicy.ASK ||
-        state.approvedForSession.has(callKey(sessionId, call))
-      ) {
+      if (policy !== ApprovalPolicy.ASK || state.approvedForSession.has(callKey(sessionId, call))) {
         approved.push(callId);
       } else {
         requested.push(callId);
@@ -177,7 +190,7 @@ export class ApprovalCoordinator {
       sessionId,
       policySandboxMode(policy),
       policyNetworkAccess(policy),
-      approved,
+      approved
     );
     if (requested.length === 0) {
       return { type: "execute", permissions };
@@ -207,9 +220,7 @@ export class ApprovalCoordinator {
     if (decision.type !== ReviewDecisionType.APPROVED_FOR_SESSION) {
       return permissions;
     }
-    const keys = approvalCallIds.map((callId) =>
-      callKey(sessionId, callsById.get(callId)),
-    );
+    const keys = approvalCallIds.map((callId) => callKey(sessionId, callsById.get(callId)));
     const state = this._state(sessionId);
     for (const key of keys) {
       if (state.approvedForSession.size >= MAX_SESSION_APPROVALS) {
