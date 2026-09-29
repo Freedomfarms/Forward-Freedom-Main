@@ -148,6 +148,23 @@ test("vendored third_party code cannot reach into the application", async () => 
   );
 });
 
+test("CHIEF model layer cannot reuse Module 01's LLM wrapper", async () => {
+  // server/agents/llm.js is Module 01's Anthropic client; CHIEF's provider
+  // layer must go through its own descriptors (server/chief/models/providers.js).
+  await assertBlocked(
+    "server/chief/models/providers.js",
+    'import { createAnthropic } from "../../agents/llm.js";'
+  );
+  await assertAllowed(
+    "server/chief/models/providers.js",
+    'import { createXai } from "@ai-sdk/xai";'
+  );
+  await assertAllowed(
+    "server/chief/models/engine.js",
+    'import { ModelRegistry } from "../core/registry.js";'
+  );
+});
+
 test("bare npm specifiers are never affected", async () => {
   await assertAllowed("server/chief/models/router.js", 'import { generateText } from "ai";');
   await assertAllowed(

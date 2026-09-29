@@ -72,9 +72,7 @@ export class RegistryBase {
   static create(key, ...args) {
     const entry = this.get(key);
     if (typeof entry !== "function") {
-      throw new TypeError(
-        `${this.name} entry '${key}' is not callable and cannot be instantiated`,
-      );
+      throw new TypeError(`${this.name} entry '${key}' is not callable and cannot be instantiated`);
     }
     return new entry(...args);
   }
@@ -98,6 +96,9 @@ export class RegistryBase {
 
 // Typed registries used by the CHIEF architecture (docs/CHIEF_ARCHITECTURE.md §2).
 export class ModelRegistry extends RegistryBase {}
+// Corresponds to upstream EngineRegistry: holds model-provider descriptors
+// (server/chief/models/providers.js). Named for the AI SDK concept it stores.
+export class ProviderRegistry extends RegistryBase {}
 export class AgentRegistry extends RegistryBase {}
 export class ToolRegistry extends RegistryBase {}
 export class MemoryRegistry extends RegistryBase {}
