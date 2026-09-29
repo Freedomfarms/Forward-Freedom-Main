@@ -27,9 +27,19 @@ Conventions used in this repository:
   gate pipeline, memory fact store with trust tiers, hybrid retrieval (Reciprocal Rank
   Fusion), knowledge-graph schema, heuristic and trace-driven model routing, trace schema
   and collector, event taxonomy, scheduler schema, capability policy and approval store
-  shapes. Ported modules land in later phases; each will carry a provenance header.
+  shapes. Each ported module carries a provenance header naming the upstream source file
+  and commit.
+- Ported modules in this repository (Phase 1):
+  - `server/chief/core/registry.js` ← `src/openjarvis/core/registry.py`
+  - `server/chief/core/events.js` ← `src/openjarvis/core/events.py`
+  - `server/chief/core/capabilities.js` ← `src/openjarvis/security/capabilities.py`
+  - `chief_agent*`, `chief_trace*`, `chief_fact`, `chief_knowledge_*`,
+    `chief_scheduled_task` Prisma models ← OpenJarvis persistence schemas
+    (`prisma/migrations/20260929120000_chief_foundation/`)
 - Obligations: retain attribution and license notice for derivative material; the full
-  Apache-2.0 text is added under `licenses/APACHE-2.0.txt` with the first ported module.
+  upstream license text is included verbatim at
+  `licenses/OPENJARVIS-LICENSE-APACHE-2.0.txt` (including its copyright line,
+  "Copyright 2025 The OpenJarvis Authors").
 - Optionally, an OpenJarvis server container may be deployed as an external sidecar
   service. In that configuration it is used unmodified over its HTTP API and its own
   license file ships with its own container image; no additional obligation attaches to
@@ -44,10 +54,19 @@ Conventions used in this repository:
   the durable turn phase machine with pending-approval suspension, checkpoint schema with
   atomic save and fork, approval policy/decision semantics (including sticky session
   approvals and deny/abort behavior), the frontend-neutral operation/event protocol
-  taxonomy, a reduced middleware hook set, and the subagent coordination model. Ported
-  modules land in later phases; each will carry a provenance header.
-- Obligations: Apache-2.0 attribution as above, **plus propagation of the upstream NOTICE**
-  for derivative material, reproduced here in relevant part:
+  taxonomy, a reduced middleware hook set, and the subagent coordination model. Each ported
+  module carries a provenance header naming the upstream source file and commit.
+- Ported modules in this repository (Phase 1):
+  - `server/chief/runtime/approvals.js` ← `src/backend/sandbox/approval.rs`
+  - `server/chief/protocol/index.js` ← `src/protocol/mod.rs`, `src/protocol/events.rs`
+  - `chief_session`, `chief_transcript_delta`, `chief_execution_journal`,
+    `chief_event_journal`, `chief_middleware_state`, `chief_approval` Prisma models ←
+    möbius checkpoint/approval schemas
+    (`prisma/migrations/20260929120000_chief_foundation/`)
+- Obligations: Apache-2.0 attribution — the full upstream license text is included
+  verbatim at `licenses/MOBIUS-LICENSE-APACHE-2.0.txt` — **plus propagation of the
+  upstream NOTICE** for derivative material, reproduced in full at
+  `licenses/MOBIUS-NOTICE.txt` and here in relevant part:
 
   > möbius
   >
@@ -62,8 +81,8 @@ Conventions used in this repository:
 
   (The remainder of the upstream NOTICE covers möbius's terminal/Apple client assets —
   Nord palettes, HugeIcons, HighlightSwift, highlight.js, thinking-orbs — which CHIEF does
-  not port; if any such material is ever carried over, the corresponding NOTICE entries
-  must be reproduced here as well.)
+  not port; the complete NOTICE is nevertheless reproduced verbatim at
+  `licenses/MOBIUS-NOTICE.txt`.)
 
 ## cortex-map (StovBuilds/cortex-map)
 

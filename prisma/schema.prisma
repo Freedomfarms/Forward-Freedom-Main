@@ -130,6 +130,27 @@ model User {
   notifications       Notification[]
   brainJobs           BrainJob[]
   plans               Plan[]
+  // Module 03 (CHIEF) back-relations. CHIEF tables reference ONLY User among
+  // non-CHIEF tables (docs/CHIEF_ARCHITECTURE.md §5.4) — additive-only edit.
+  chiefSessions           ChiefSession[]
+  chiefTranscriptDeltas   ChiefTranscriptDelta[]
+  chiefExecutionJournal   ChiefExecutionJournal[]
+  chiefEventJournal       ChiefEventJournal[]
+  chiefMiddlewareStates   ChiefMiddlewareState[]
+  chiefAgents             ChiefAgent[]
+  chiefAgentTasks         ChiefAgentTask[]
+  chiefAgentMessages      ChiefAgentMessage[]
+  chiefTraces             ChiefTrace[]
+  chiefTraceSteps         ChiefTraceStep[]
+  chiefFacts              ChiefFact[]
+  chiefKnowledgeEntities  ChiefKnowledgeEntity[]
+  chiefKnowledgeRelations ChiefKnowledgeRelation[]
+  chiefScheduledTasks     ChiefScheduledTask[]
+  chiefTaskRuns           ChiefTaskRun[]
+  chiefApprovals          ChiefApproval[]
+  chiefCapabilityGrants   ChiefCapabilityGrant[]
+  chiefAuditLogs          ChiefAuditLog[]
+  chiefBudgets            ChiefBudget[]
 }
 
 model PlaidItem {
@@ -617,6 +638,493 @@ model BrainJob {
 
   @@index([status, runAfter])
   @@index([userId, kind, createdAt])
+}
+
+// ── Freedom OS Module 03: CHIEF ──────────────────────────────────────────────
+//
+// All CHIEF state lives in `chief_`-prefixed tables (docs/CHIEF_ARCHITECTURE.md
+// §5.4). Table shapes are ported from the audited upstreams (provenance in
+// docs/CHIEF_GITHUB_REUSE_AUDIT.md §8 and THIRD_PARTY_NOTICES.md):
+//   - checkpoint tables (session/transcript_delta/execution_journal/
+//     event_journal/middleware_state): möbius checkpoint schema v10
+//   - agent/trace/fact/knowledge/scheduler tables: OpenJarvis agents.db,
+//     traces.db, FactStore, KG backend, scheduler
+//   - approval/capability tables: möbius approval semantics + OpenJarvis RBAC
+// Cross-cutting rules: RLS on every table (see the chief_foundation
+// migration); the ONLY foreign key into non-CHIEF tables is User; sensitive
+// text columns are encrypted at rest (…Ciphertext); pgvector `embedding`
+// columns are created conditionally by the migration (FTS/recency-only
+// fallback when the extension is unavailable) and are declared Unsupported so
+// the Prisma client never selects them directly.
+
+enum ChiefSessionStatus {
+  ACTIVE
+  PENDING_APPROVAL
+  ARCHIVED
+}
+
+// OpenJarvis FactStore trust tiers: external information never automatically
+// becomes trusted memory. AUTO = automatically extracted, pending review.
+enum ChiefTrustTier {
+  AUTO
+  TRUSTED
+  UNTRUSTED
+}
+
+// möbius ReviewDecision variants plus PENDING for a not-yet-decided request.
+enum ChiefApprovalDecision {
+  PENDING
+  APPROVED
+  APPROVED_FOR_SESSION
+  DENIED
+  ABORTED
+}
+
+enum ChiefTaskKind {
+  ONCE
+  INTERVAL
+  CRON
+}
+
+enum ChiefScheduledTaskStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+  CANCELLED
+}
+
+enum ChiefTaskRunStatus {
+  RUNNING
+  SUCCEEDED
+  FAILED
+  SKIPPED
+}
+
+// OpenJarvis Trace step taxonomy.
+enum ChiefTraceStepType {
+  ROUTE
+  RETRIEVE
+  GENERATE
+  TOOL_CALL
+  RESPOND
+}
+
+// Knowledge-graph relation origin (matches cortex-map's edge model).
+enum ChiefRelationOrigin {
+  EXPLICIT
+  SEMANTIC
+}
+
+// One durable CHIEF conversation/checkpoint root (möbius `sessions`).
+// PENDING_APPROVAL is the suspended-turn state: any serverless instance can
+// resume the turn from the journals below after an ExecApproval Op arrives.
+model ChiefSession {
+  id                  String             @id @default(cuid())
+  userId              String
+  title               String?
+  status              ChiefSessionStatus @default(ACTIVE)
+  // Version of the checkpoint payload layout (möbius rejects on mismatch;
+  // CHIEF migrates forward via Prisma migrations — documented deviation).
+  checkpointVersion   Int                @default(1)
+  // SessionContext (owner/workspace/origin labels) — correlation metadata
+  // only, never authorization (möbius SessionContext rule).
+  contextJson         Json?
+  modelRoute          String?
+  // Checkpoint fork support (möbius `fork`): a forked session records its
+  // parent; deleting the parent must not destroy the fork.
+  forkedFromSessionId String?
+  // Monotonic checkpoint sequence; incremented by each atomic saveWithEvents.
+  lastSequence        Int                @default(0)
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  user                User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  forkedFromSession   ChiefSession?      @relation("ChiefSessionFork", fields: [forkedFromSessionId], references: [id], onDelete: SetNull)
+  forkedSessions      ChiefSession[]     @relation("ChiefSessionFork")
+  transcriptDeltas    ChiefTranscriptDelta[]
+  executionJournal    ChiefExecutionJournal[]
+  eventJournal        ChiefEventJournal[]
+  middlewareStates    ChiefMiddlewareState[]
+
+  @@index([userId, updatedAt])
+  @@index([userId, status])
+  @@map("chief_session")
+}
+
+// Append-only model-context deltas per checkpoint sequence (möbius
+// `transcript_delta`). Provider-private data never enters checkpoints.
+model ChiefTranscriptDelta {
+  id              String       @id @default(cuid())
+  userId          String
+  sessionId       String
+  sequence        Int
+  itemsCiphertext String
+  createdAt       DateTime     @default(now())
+  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session         ChiefSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, sequence])
+  @@index([userId])
+  @@map("chief_transcript_delta")
+}
+
+// Durable execution state per checkpoint sequence (möbius
+// `execution_journal`): turn phase machine position, pending tool batch,
+// pending approval — everything needed to resume a suspended turn.
+model ChiefExecutionJournal {
+  id              String       @id @default(cuid())
+  userId          String
+  sessionId       String
+  sequence        Int
+  turnId          String?
+  // Turn phase at save time (prepare/model/tool_authorize/execute/completion).
+  phase           String?
+  stateCiphertext String
+  createdAt       DateTime     @default(now())
+  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session         ChiefSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, sequence])
+  @@index([userId])
+  @@map("chief_execution_journal")
+}
+
+// Frontend events journaled in the same transaction as the checkpoint
+// (möbius `event_journal`) — the activity history is replayable.
+model ChiefEventJournal {
+  id                String       @id @default(cuid())
+  userId            String
+  sessionId         String
+  sequence          Int
+  eventIndex        Int
+  submissionId      String?
+  // EventMsg wire tag, plaintext for filtering; payload is encrypted.
+  eventType         String
+  payloadCiphertext String
+  createdAt         DateTime     @default(now())
+  user              User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session           ChiefSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, sequence, eventIndex])
+  @@index([userId, createdAt])
+  @@map("chief_event_journal")
+}
+
+// Per-middleware durable state (möbius `middleware_state`).
+model ChiefMiddlewareState {
+  id              String       @id @default(cuid())
+  userId          String
+  sessionId       String
+  middlewareId    String
+  stateCiphertext String
+  updatedAt       DateTime     @updatedAt
+  user            User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session         ChiefSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, middlewareId])
+  @@index([userId])
+  @@map("chief_middleware_state")
+}
+
+// Managed-agent lifecycle (OpenJarvis `agents.db`): tick stats and a rolling
+// summary maintained by scheduler ticks.
+model ChiefAgent {
+  id                String    @id @default(cuid())
+  userId            String
+  name              String
+  purpose           String?
+  // Open string on purpose (idle/running/paused/stopped) — no migration per
+  // new lifecycle state.
+  status            String    @default("idle")
+  configJson        Json?
+  tickCount         Int       @default(0)
+  lastTickAt        DateTime?
+  statsJson         Json?
+  summaryCiphertext String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tasks             ChiefAgentTask[]
+  messages          ChiefAgentMessage[]
+
+  @@index([userId])
+  @@map("chief_agent")
+}
+
+// Work items owned by a managed agent (OpenJarvis agent task queue).
+model ChiefAgentTask {
+  id                    String     @id @default(cuid())
+  userId                String
+  agentId               String
+  status                String     @default("pending")
+  descriptionCiphertext String?
+  resultCiphertext      String?
+  createdAt             DateTime   @default(now())
+  startedAt             DateTime?
+  completedAt           DateTime?
+  user                  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  agent                 ChiefAgent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@index([agentId, createdAt])
+  @@index([userId, createdAt])
+  @@map("chief_agent_task")
+}
+
+// Agent-to-agent / user-to-agent messages (OpenJarvis agent inbox).
+model ChiefAgentMessage {
+  id                String     @id @default(cuid())
+  userId            String
+  agentId           String
+  fromAgentId       String?
+  contentCiphertext String
+  readAt            DateTime?
+  createdAt         DateTime   @default(now())
+  user              User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  agent             ChiefAgent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@index([agentId, createdAt])
+  @@map("chief_agent_message")
+}
+
+// One completed (or in-flight) turn/run trace (OpenJarvis `traces.db`).
+// Correlation ids are plain strings, not FKs, so the audit trail survives
+// session/agent deletion.
+model ChiefTrace {
+  id               String    @id @default(cuid())
+  userId           String
+  sessionId        String?
+  turnId           String?
+  agentId          String?
+  model            String?
+  tokensInput      Int?
+  tokensOutput     Int?
+  estimatedCostUsd Decimal?  @db.Decimal(10, 6)
+  outcome          String?
+  // Learning signal (FEEDBACK_RECEIVED events land here).
+  feedback         Int?
+  startedAt        DateTime  @default(now())
+  completedAt      DateTime?
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  steps            ChiefTraceStep[]
+
+  @@index([userId, startedAt])
+  @@index([sessionId, startedAt])
+  @@map("chief_trace")
+}
+
+// Typed steps within a trace (OpenJarvis TraceStep).
+model ChiefTraceStep {
+  id               String             @id @default(cuid())
+  userId           String
+  traceId          String
+  stepIndex        Int
+  stepType         ChiefTraceStepType
+  name             String?
+  status           String?
+  detailCiphertext String?
+  startedAt        DateTime           @default(now())
+  completedAt      DateTime?
+  user             User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  trace            ChiefTrace         @relation(fields: [traceId], references: [id], onDelete: Cascade)
+
+  @@unique([traceId, stepIndex])
+  @@index([userId])
+  @@map("chief_trace_step")
+}
+
+// Long-term memory facts (OpenJarvis FactStore): trust tiers, importance/
+// confidence, dedupe key, retention expiry. Content encrypted at rest.
+model ChiefFact {
+  id                String                 @id @default(cuid())
+  userId            String
+  contentCiphertext String
+  dedupeKey         String
+  trustTier         ChiefTrustTier         @default(AUTO)
+  source            String?
+  importance        Float                  @default(0.5)
+  confidence        Float                  @default(0.5)
+  expiresAt         DateTime?
+  lastAccessedAt    DateTime?
+  // pgvector embedding; created conditionally by the migration. Unsupported
+  // keeps it out of Prisma client selects (raw SQL only).
+  embedding         Unsupported("vector")?
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+  user              User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dedupeKey])
+  @@index([userId, trustTier])
+  @@map("chief_fact")
+}
+
+// Knowledge-graph entities (OpenJarvis KG backend). Name/type are plaintext
+// (retrieval fallback runs FTS over them); attribute payload is encrypted.
+model ChiefKnowledgeEntity {
+  id                   String                 @id @default(cuid())
+  userId               String
+  name                 String
+  entityType           String?
+  weight               Float                  @default(1)
+  // cortex-map node role (core|hub|subhub|leaf) — assigned by consolidation.
+  nodeRole             String?
+  attributesCiphertext String?
+  embedding            Unsupported("vector")?
+  lastSeenAt           DateTime?
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+  user                 User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  outgoingRelations    ChiefKnowledgeRelation[] @relation("ChiefRelationSource")
+  incomingRelations    ChiefKnowledgeRelation[] @relation("ChiefRelationTarget")
+
+  @@unique([userId, name])
+  @@map("chief_knowledge_entity")
+}
+
+// Knowledge-graph relations (OpenJarvis KG backend); `origin` distinguishes
+// explicit relations from semantic auto-links (embed → cosine-KNN concept —
+// jarvis-architecture, REFERENCE ONLY).
+model ChiefKnowledgeRelation {
+  id               String               @id @default(cuid())
+  userId           String
+  sourceEntityId   String
+  targetEntityId   String
+  relationType     String
+  origin           ChiefRelationOrigin  @default(EXPLICIT)
+  weight           Float                @default(1)
+  lastReinforcedAt DateTime?
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  user             User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sourceEntity     ChiefKnowledgeEntity @relation("ChiefRelationSource", fields: [sourceEntityId], references: [id], onDelete: Cascade)
+  targetEntity     ChiefKnowledgeEntity @relation("ChiefRelationTarget", fields: [targetEntityId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, sourceEntityId, targetEntityId, relationType])
+  @@index([targetEntityId])
+  @@map("chief_knowledge_relation")
+}
+
+// Background schedule definitions (OpenJarvis scheduler: once/interval/cron).
+// lockedAt is the claim marker so concurrent cron invocations never
+// double-process a task (same pattern as BrainJob).
+model ChiefScheduledTask {
+  id              String                   @id @default(cuid())
+  userId          String
+  name            String
+  kind            ChiefTaskKind
+  cronExpr        String?
+  intervalSeconds Int?
+  runAt           DateTime?
+  payload         Json?
+  agentId         String?
+  status          ChiefScheduledTaskStatus @default(ACTIVE)
+  nextRunAt       DateTime?
+  lastRunAt       DateTime?
+  lockedAt        DateTime?
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
+  user            User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  runs            ChiefTaskRun[]
+
+  @@index([status, nextRunAt])
+  @@index([userId])
+  @@map("chief_scheduled_task")
+}
+
+// Execution records for scheduled tasks (möbius routine_runs semantics:
+// status + retry counters). SetNull so run history survives task deletion.
+model ChiefTaskRun {
+  id               String              @id @default(cuid())
+  userId           String
+  scheduledTaskId  String?
+  status           ChiefTaskRunStatus  @default(RUNNING)
+  attempts         Int                 @default(0)
+  error            String?
+  resultCiphertext String?
+  startedAt        DateTime            @default(now())
+  completedAt      DateTime?
+  user             User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scheduledTask    ChiefScheduledTask? @relation(fields: [scheduledTaskId], references: [id], onDelete: SetNull)
+
+  @@index([scheduledTaskId, startedAt])
+  @@index([userId, startedAt])
+  @@map("chief_task_run")
+}
+
+// Approval requests + decisions (möbius approval semantics + OpenJarvis
+// ApprovalStore). sessionId/turnId are plain correlation strings so the
+// approval audit trail is immutable. stickyKey holds the SHA-256 session
+// approval key for APPROVED_FOR_SESSION decisions (capped in app logic at
+// MAX_SESSION_APPROVALS per session — server/chief/runtime/approvals.js).
+model ChiefApproval {
+  id               String                @id @default(cuid())
+  userId           String
+  sessionId        String?
+  turnId           String?
+  reason           String
+  // The paused tool batch (call ids, names, arguments) — encrypted: tool
+  // arguments can contain sensitive content.
+  callsCiphertext  String
+  decision         ChiefApprovalDecision @default(PENDING)
+  rejectionReason  String?
+  stickyKey        String?
+  decidedAt        DateTime?
+  createdAt        DateTime              @default(now())
+  user             User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([sessionId, stickyKey])
+  @@map("chief_approval")
+}
+
+// RBAC capability grants/denies (OpenJarvis CapabilityPolicy persistence).
+// agentId is a plain string: the `_default` wildcard agent is a valid id.
+model ChiefCapabilityGrant {
+  id         String   @id @default(cuid())
+  userId     String
+  agentId    String
+  capability String
+  pattern    String   @default("*")
+  deny       Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, agentId])
+  @@map("chief_capability_grant")
+}
+
+// Immutable audit log for privileged CHIEF actions (capability denials,
+// approval decisions, budget events, admin operations).
+model ChiefAuditLog {
+  id               String   @id @default(cuid())
+  userId           String
+  actor            String?
+  action           String
+  resource         String?
+  summary          String?
+  detailCiphertext String?
+  createdAt        DateTime @default(now())
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("chief_audit_log")
+}
+
+// Spend caps per scope/period (budget-cap concept from jarvis-architecture —
+// REFERENCE ONLY; implementation is CHIEF's own on this schema).
+model ChiefBudget {
+  id          String    @id @default(cuid())
+  userId      String
+  scope       String    @default("global")
+  periodType  String    @default("month")
+  capUsd      Decimal   @db.Decimal(12, 6)
+  spentUsd    Decimal   @default(0) @db.Decimal(12, 6)
+  periodStart DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, scope, periodType])
+  @@map("chief_budget")
 }
 
 // Self-notification only: agents may notify the user (in-app or via the
