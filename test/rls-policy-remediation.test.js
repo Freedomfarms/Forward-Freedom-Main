@@ -49,12 +49,43 @@ const expectedTables = Object.keys(expectedPolicyColumns).sort();
 
 // User-scoped models added AFTER the remediation migration shipped. Each one
 // must enable+force RLS in its own migration instead (asserted below).
+const chiefFoundationMigration = "20260929120000_chief_foundation";
 const laterRlsModels = {
   CeoDocument: "20260720220000_ceo_documents_and_onboarding_summary",
   AgentConversation: "20260721020000_agent_conversations",
   BrainJob: "20260725150000_brain_job_queue",
   Plan: "20260727200000_ceo_plan_store",
+  // Module 03 (CHIEF): every chief_* table ships RLS in its foundation
+  // migration (docs/CHIEF_ARCHITECTURE.md §5.4).
+  ChiefSession: chiefFoundationMigration,
+  ChiefTranscriptDelta: chiefFoundationMigration,
+  ChiefExecutionJournal: chiefFoundationMigration,
+  ChiefEventJournal: chiefFoundationMigration,
+  ChiefMiddlewareState: chiefFoundationMigration,
+  ChiefAgent: chiefFoundationMigration,
+  ChiefAgentTask: chiefFoundationMigration,
+  ChiefAgentMessage: chiefFoundationMigration,
+  ChiefTrace: chiefFoundationMigration,
+  ChiefTraceStep: chiefFoundationMigration,
+  ChiefFact: chiefFoundationMigration,
+  ChiefKnowledgeEntity: chiefFoundationMigration,
+  ChiefKnowledgeRelation: chiefFoundationMigration,
+  ChiefScheduledTask: chiefFoundationMigration,
+  ChiefTaskRun: chiefFoundationMigration,
+  ChiefApproval: chiefFoundationMigration,
+  ChiefCapabilityGrant: chiefFoundationMigration,
+  ChiefAuditLog: chiefFoundationMigration,
+  ChiefBudget: chiefFoundationMigration,
 };
+
+// CHIEF models map to snake_case physical tables via @@map; the RLS
+// statements in the migration target the physical table name.
+function physicalTableName(model) {
+  const body = prismaSchema.match(
+    new RegExp(`^model\\s+${model}\\s+\\{([\\s\\S]*?)^\\}`, "m")
+  )?.[1];
+  return body?.match(/@@map\("([^"]+)"\)/)?.[1] ?? model;
+}
 
 test("remediation inventory is exactly every user-scoped model", () => {
   assert.equal(expectedTables.length, 17);
@@ -66,6 +97,7 @@ test("remediation inventory is exactly every user-scoped model", () => {
 
 test("models added after the remediation enable and force RLS in their own migration", () => {
   for (const [model, migration] of Object.entries(laterRlsModels)) {
+    const table = physicalTableName(model);
     const sql = withoutComments(
       readFileSync(
         new URL(`../prisma/migrations/${migration}/migration.sql`, import.meta.url),
@@ -74,17 +106,17 @@ test("models added after the remediation enable and force RLS in their own migra
     );
     assert.match(
       sql,
-      new RegExp(`ALTER TABLE "${model}" ENABLE ROW LEVEL SECURITY;`),
+      new RegExp(`ALTER TABLE "${table}" ENABLE ROW LEVEL SECURITY;`),
       `${model} must enable RLS in ${migration}`
     );
     assert.match(
       sql,
-      new RegExp(`ALTER TABLE "${model}" FORCE ROW LEVEL SECURITY;`),
+      new RegExp(`ALTER TABLE "${table}" FORCE ROW LEVEL SECURITY;`),
       `${model} must force RLS in ${migration}`
     );
     assert.match(
       sql,
-      new RegExp(`CREATE POLICY "user_isolation" ON "${model}"`),
+      new RegExp(`CREATE POLICY "user_isolation" ON "${table}"`),
       `${model} must create the user_isolation policy in ${migration}`
     );
   }
