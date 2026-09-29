@@ -36,6 +36,22 @@ Conventions used in this repository:
   - `chief_agent*`, `chief_trace*`, `chief_fact`, `chief_knowledge_*`,
     `chief_scheduled_task` Prisma models ← OpenJarvis persistence schemas
     (`prisma/migrations/20260929120000_chief_foundation/`)
+- Ported modules in this repository (Phase 2 — model layer):
+  - `server/chief/models/types.js` ← `src/openjarvis/core/types.py` (ModelSpec,
+    Quantization, RoutingContext)
+  - `server/chief/models/complexity.js` ← `src/openjarvis/learning/routing/complexity.py`
+  - `server/chief/models/classify.js` ← `src/openjarvis/learning/routing/_utils.py`
+  - `server/chief/models/router.js` ← `src/openjarvis/learning/routing/router.py`,
+    `src/openjarvis/learning/routing/heuristic_policy.py`,
+    `src/openjarvis/learning/_stubs.py` (RouterPolicy, QueryAnalyzer)
+  - `server/chief/models/catalog.js` ← `src/openjarvis/intelligence/model_catalog.py`
+    (register/merge semantics and the Anthropic catalog rows; xAI rows are new data)
+  - `server/chief/models/config.js` ← `src/openjarvis/core/config.py` (IntelligenceConfig,
+    RoutingLearningConfig defaults)
+  - `server/chief/models/engine.js` ← `src/openjarvis/engine/_stubs.py` (InferenceEngine
+    surface), `src/openjarvis/cli/ask.py` (router integration order),
+    `src/openjarvis/agents/_stubs.py` (INFERENCE_START/END payloads). The engine zoo itself
+    is not ported — the Vercel AI SDK is used directly (audit §2.3).
 - Obligations: retain attribution and license notice for derivative material; the full
   upstream license text is included verbatim at
   `licenses/OPENJARVIS-LICENSE-APACHE-2.0.txt` (including its copyright line,
@@ -128,14 +144,16 @@ Conventions used in this repository:
   philosophy, human-in-the-loop reversibility rules) inform CHIEF's design, as recorded in
   the audit.
 
-## npm dependencies planned for later CHIEF phases
+## npm dependencies used by CHIEF
 
 Installed through npm with licenses shipped in `node_modules`; listed here so the reuse
 plan is explicit:
 
-| Package                                                                | License    | Planned use (phase)                       |
-| ---------------------------------------------------------------------- | ---------- | ----------------------------------------- |
-| `@ai-sdk/xai`, `@ai-sdk/openai` (+ existing `ai`, `@ai-sdk/anthropic`) | Apache-2.0 | Model provider transports (Phase 2)       |
-| `@modelcontextprotocol/sdk`                                            | MIT        | MCP tool client (Phase 4)                 |
-| `cron-parser`                                                          | MIT        | Schedule parsing (Phase 5)                |
-| `three`, `react-force-graph-3d`, `react-force-graph-2d`                | MIT        | cortex-map runtime dependencies (Phase 7) |
+| Package                                                 | License    | Status / use                                                                        |
+| ------------------------------------------------------- | ---------- | ----------------------------------------------------------------------------------- |
+| `@ai-sdk/xai` (`^5.0.12`)                               | Apache-2.0 | **Installed (Phase 2)** — xAI Grok transport, `server/chief/models/providers.js`    |
+| `ai`, `@ai-sdk/anthropic` (pre-existing platform deps)  | Apache-2.0 | **Used (Phase 2)** — provider registry / generateText; Anthropic transport (opt-in) |
+| `@ai-sdk/openai-compatible` or `@ai-sdk/openai`         | Apache-2.0 | Planned — OpenAI-compatible socket for the optional OpenJarvis sidecar (Phase 6)    |
+| `@modelcontextprotocol/sdk`                             | MIT        | Planned — MCP tool client (Phase 4)                                                 |
+| `cron-parser`                                           | MIT        | Planned — schedule parsing (Phase 5)                                                |
+| `three`, `react-force-graph-3d`, `react-force-graph-2d` | MIT        | Planned — cortex-map runtime dependencies (Phase 7)                                 |
