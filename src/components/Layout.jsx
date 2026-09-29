@@ -20,23 +20,6 @@ export function AppSidebar({
   // under that section label.
   const freedomOsItems = navMain.filter((item) => item.label === APP_TABS.FREEDOM_OS);
   const financeItems = navMain.filter((item) => item.label !== APP_TABS.FREEDOM_OS);
-  const actionItems = [
-    {
-      label: "Review transactions",
-      note: "Catch uncategorized and recent activity.",
-      tab: APP_TABS.TRANSACTIONS,
-    },
-    {
-      label: "Tune the budget",
-      note: "Adjust categories and monthly pressure.",
-      tab: APP_TABS.BUDGET_COMMAND_CENTER,
-    },
-    {
-      label: "Update accounts",
-      note: "Refresh balances and add missing assets.",
-      tab: APP_TABS.ADD_ACCOUNTS,
-    },
-  ];
 
   return (
     <aside className={`app-sidebar ${className}`.trim()} style={styles.sidebar}>
@@ -331,52 +314,6 @@ export function AppSidebar({
           onNavigate?.();
         }}
       />
-
-      <div
-        style={{
-          ...styles.panel,
-          marginTop: onboardingProgress?.isActive ? 18 : 48,
-          padding: 20,
-        }}
-      >
-        <div style={{ color: "#8feaff", fontSize: 12, fontWeight: 900, letterSpacing: 1.1 }}>
-          ACTION CENTER
-        </div>
-        <div style={{ color: "white", fontSize: 18, fontWeight: 800, marginTop: 8 }}>
-          Jump back into the highest-value work.
-        </div>
-        <div style={{ color: "#c8d7ea", fontSize: 12, lineHeight: 1.6, marginTop: 10 }}>
-          Keep the command center feel, but focus this space on useful next actions instead of status
-          chrome.
-        </div>
-        <div style={{ display: "grid", gap: 10, marginTop: 18 }}>
-          {actionItems.map((item) => (
-            <button
-              key={item.label}
-              type="button"
-              onClick={() => {
-                setActiveTab(item.tab);
-                onNavigate?.();
-              }}
-              style={{
-                textAlign: "left",
-                padding: "12px 14px",
-                borderRadius: 10,
-                border: "1px solid rgba(0,216,255,.16)",
-                background:
-                  activeTab === item.tab
-                    ? "linear-gradient(90deg, rgba(0,119,255,.2), rgba(0,216,255,.16))"
-                    : "rgba(0,108,255,.06)",
-                color: "#eaf3ff",
-                cursor: "pointer",
-              }}
-            >
-              <div style={{ fontWeight: 800, fontSize: 13 }}>{item.label}</div>
-              <div style={{ color: "#9fb0c9", fontSize: 11, marginTop: 4 }}>{item.note}</div>
-            </button>
-          ))}
-        </div>
-      </div>
     </aside>
   );
 }
