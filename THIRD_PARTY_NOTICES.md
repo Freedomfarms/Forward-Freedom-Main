@@ -79,6 +79,15 @@ Conventions used in this repository:
     `chief_event_journal`, `chief_middleware_state`, `chief_approval` Prisma models ←
     möbius checkpoint/approval schemas
     (`prisma/migrations/20260929120000_chief_foundation/`)
+- Ported modules in this repository (Phase 3):
+  - `server/chief/runtime/turn.js` ← `src/agent/turn.rs`, `src/agent/turn/model.rs`,
+    `src/agent/mod.rs`
+  - `server/chief/runtime/checkpoint.js` ← `src/backend/checkpoint/sqlite.rs`
+  - `server/chief/runtime/approvals.js` `restore` / `exportKeys` persist the Phase 1
+    sticky-key set on the checkpoint
+- `server/chief/models/budget.js` is not a port. The cap idea is reference-only (see
+  jarvis-architecture below). The check is CHIEF's own and lives in the model layer
+  (ADR-0003).
 - Obligations: Apache-2.0 attribution — the full upstream license text is included
   verbatim at `licenses/MOBIUS-LICENSE-APACHE-2.0.txt` — **plus propagation of the
   upstream NOTICE** for derivative material, reproduced in full at
@@ -152,7 +161,7 @@ plan is explicit:
 | Package                                                 | License    | Status / use                                                                        |
 | ------------------------------------------------------- | ---------- | ----------------------------------------------------------------------------------- |
 | `@ai-sdk/xai` (`^5.0.12`)                               | Apache-2.0 | **Installed (Phase 2)** — xAI Grok transport, `server/chief/models/providers.js`    |
-| `ai`, `@ai-sdk/anthropic` (pre-existing platform deps)  | Apache-2.0 | **Used (Phase 2)** — provider registry / generateText; Anthropic transport (opt-in) |
+| `ai`, `@ai-sdk/anthropic` (pre-existing platform deps)  | Apache-2.0 | **Used (Phase 2–3)** — provider registry, generateText, streamText; Anthropic transport (opt-in) |
 | `@ai-sdk/openai-compatible` or `@ai-sdk/openai`         | Apache-2.0 | Planned — OpenAI-compatible socket for the optional OpenJarvis sidecar (Phase 6)    |
 | `@modelcontextprotocol/sdk`                             | MIT        | Planned — MCP tool client (Phase 4)                                                 |
 | `cron-parser`                                           | MIT        | Planned — schedule parsing (Phase 5)                                                |

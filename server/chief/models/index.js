@@ -58,6 +58,13 @@ export {
   loadModelConfig,
 } from "./config.js";
 export {
+  BudgetExceededError,
+  MemoryBudgetStore,
+  PrismaBudgetStore,
+  estimateCallUsd,
+  periodWindowStart,
+} from "./budget.js";
+export {
   ENGINE_ID,
   CALLER_KINDS,
   normalizeCaller,

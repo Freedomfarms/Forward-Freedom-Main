@@ -1,0 +1,530 @@
+// CHIEF turn state machine — one durable turn, resumable across invocations.
+//
+// PORT/ADAPT of möbius (citizenhicks, Apache-2.0; NOTICE reproduced in
+// THIRD_PARTY_NOTICES.md — derived in part from OpenAI Codex and Ratatui)
+//   Upstream: https://github.com/citizenhicks/mobius
+//   Source files: src/agent/turn.rs, src/agent/turn/model.rs, src/agent/mod.rs
+//   Commit: 3e1aaf5039f5069c3142861cb145fc0fb5521284
+//   License text: licenses/MOBIUS-LICENSE-APACHE-2.0.txt (NOTICE: licenses/MOBIUS-NOTICE.txt)
+//
+// Preserved upstream semantics:
+//   - phases prepare → model → tool authorize (execute vs approval) → execute
+//     → model → completion
+//   - pending_approval suspends the turn; a later invocation re-emits the
+//     request until an ExecApproval for that id arrives
+//   - denied calls become synthetic error tool results; abort ends the turn
+//   - approved_for_session sticky keys survive on the checkpoint
+//   - interrupts end the turn
+//   - provider-private fields are not written to the checkpoint
+// Documented adaptations (CHIEF-specific reasons):
+//   - A turn runs inside one HTTP invocation and suspends by returning.
+//     There is no resident task (docs/CHIEF_ARCHITECTURE.md §7.2).
+//   - The model step is AI SDK streamText on engine.openStream's resolved
+//     LanguageModel. Vendor SDKs are not imported here.
+//   - Tool calls are never executed by the AI SDK. Authorize, then
+//     ToolExecutor. Until Phase 4 installs the gate pipeline, the executor
+//     fail-closes.
+//   - A batch that needs approval is not half-executed before suspension.
+//     Calls already allowed by policy are stored as preApprovedCallIds and
+//     run, with the decision, on resume. Denied siblings still get synthetic
+//     errors (möbius partial-batch rule).
+//   - A crash during streamText leaves the checkpoint at phase "model", so
+//     resume repeats the model step (at-least-once). The checkpoint is saved
+//     before the call and after it, not mid-token.
+//   - caller on the model call defaults to user_turn. A future scheduler tick
+//     passes kind "schedule" into the same machine; this file does not schedule.
+
+import { randomUUID } from "node:crypto";
+
+import { jsonSchema, tool } from "ai";
+
+import { BudgetExceededError } from "../models/budget.js";
+import { ModelLayerPausedError, ModelUnavailableError } from "../models/engine.js";
+import {
+  EventMsgType,
+  ModelStepContentPhase,
+  OpType,
+  eventMsg,
+  makeEvent,
+  parseReviewDecision,
+  parseSubmission,
+  tokenUsageCheckedAdd,
+} from "../protocol/index.js";
+import { ApprovalCoordinator, ReviewDecisionType } from "./approvals.js";
+import { ToolExecutor } from "../tools/executor.js";
+
+export const TurnPhase = Object.freeze({
+  PREPARE: "prepare",
+  MODEL: "model",
+  TOOL_AUTHORIZE: "tool_authorize",
+  EXECUTE: "execute",
+  COMPLETION: "completion",
+});
+
+export const MAX_MODEL_STEPS = 8;
+
+const DECISION_ENUM = {
+  [ReviewDecisionType.APPROVED]: "APPROVED",
+  [ReviewDecisionType.APPROVED_FOR_SESSION]: "APPROVED_FOR_SESSION",
+  [ReviewDecisionType.DENIED]: "DENIED",
+  [ReviewDecisionType.ABORT]: "ABORTED",
+};
+
+function lastUserText(transcript) {
+  for (let i = transcript.length - 1; i >= 0; i -= 1) {
+    const message = transcript[i];
+    if (message?.role !== "user") continue;
+    if (typeof message.content === "string") return message.content;
+  }
+  return "";
+}
+
+export function toolSpecsToAiTools(specs = []) {
+  const tools = {};
+  for (const spec of specs) {
+    if (typeof spec.execute === "function") {
+      throw new Error(`refusing executable tool spec '${spec.name}'`);
+    }
+    const definition = tool({
+      description: spec.description ?? spec.name,
+      inputSchema: jsonSchema(spec.parameters ?? { type: "object", properties: {} }),
+    });
+    if (typeof definition.execute === "function") {
+      throw new Error(`refusing executable tool spec '${spec.name}'`);
+    }
+    tools[spec.name] = definition;
+  }
+  return Object.keys(tools).length ? tools : undefined;
+}
+
+export class TurnMachine {
+  constructor({
+    store,
+    engine,
+    approvals = new ApprovalCoordinator(),
+    toolExecutor = new ToolExecutor(),
+    maxModelSteps = MAX_MODEL_STEPS,
+    callerKind = "user_turn",
+  }) {
+    if (!store || !engine) throw new TypeError("TurnMachine requires store and engine");
+    this._store = store;
+    this._engine = engine;
+    this._approvals = approvals;
+    this._toolExecutor = toolExecutor;
+    this._maxModelSteps = maxModelSteps;
+    this._callerKind = callerKind;
+  }
+
+  async run({ userId, sessionId = null, submission, signal, onEvent, toolSpecs = [] } = {}) {
+    const parsed = parseSubmission(submission);
+    this._userId = userId;
+    this._submissionId = parsed.id;
+    this._signal = signal;
+    this._onEvent = onEvent;
+    this._toolSpecs = toolSpecs;
+    this._unsaved = [];
+    this._drained = false;
+    this._status = "completed";
+
+    let record = sessionId ? await this._store.load(userId, sessionId) : null;
+    if (!record) {
+      if (parsed.op.type !== OpType.MESSAGE) {
+        throw new Error("session not found");
+      }
+      record = await this._store.createSession({ userId, sessionId: sessionId ?? undefined });
+    }
+    this._sessionId = record.id;
+    this._checkpoint = record.checkpoint;
+    this._approvals.restore(record.id, this._checkpoint.approvedForSession ?? []);
+
+    const op = parsed.op;
+    if (this._checkpoint.pendingApproval && op.type !== OpType.EXEC_APPROVAL) {
+      if (op.type === OpType.MESSAGE) {
+        this._checkpoint.pendingMessages.push({
+          text: op.message.text,
+          submissionId: parsed.id,
+        });
+        await this._persist();
+      }
+      if (op.type === OpType.INTERRUPT) {
+        await this._abort(op.turn_id, "interrupted");
+        return this._done("aborted");
+      }
+      this._emit(eventMsg.execApprovalRequest(this._checkpoint.pendingApproval));
+      await this._persist();
+      return this._done("suspended");
+    }
+
+    switch (op.type) {
+      case OpType.MESSAGE:
+        if (this._checkpoint.pendingMessages.length && !this._checkpoint.activeExecution) {
+          this._checkpoint.pendingMessages.push({ text: op.message.text, submissionId: parsed.id });
+          await this._drainOnePending();
+        } else {
+          await this._beginTurn(op.message.text);
+        }
+        break;
+      case OpType.RESUME_SESSION:
+        if (this._checkpoint.activeExecution) await this._modelLoop();
+        else if (this._checkpoint.pendingMessages.length) await this._drainOnePending();
+        else this._emit(eventMsg.warning("nothing to resume"));
+        break;
+      case OpType.EXEC_APPROVAL:
+        await this._resumeApproval(op);
+        break;
+      case OpType.INTERRUPT:
+        await this._abort(op.turn_id, "interrupted");
+        break;
+      case OpType.SET_MODEL:
+        this._checkpoint.modelRoute = op.route;
+        this._emit({ type: EventMsgType.MODEL_CHANGED, route: op.route });
+        await this._persist();
+        break;
+      default:
+        this._emit(eventMsg.warning(`op '${op.type}' is not handled by the turn machine`));
+        break;
+    }
+    return this._done(this._status);
+  }
+
+  _done(status) {
+    return { sessionId: this._sessionId, status, checkpoint: this._checkpoint };
+  }
+
+  _emit(msg) {
+    const event = makeEvent(msg, this._submissionId);
+    this._unsaved.push(event);
+    this._onEvent?.(event);
+  }
+
+  async _persist({ transcriptDelta = null, approval = null } = {}) {
+    const events = this._unsaved;
+    this._unsaved = [];
+    try {
+      await this._store.saveWithEvents(this._userId, this._sessionId, {
+        checkpoint: this._checkpoint,
+        events,
+        transcriptDelta,
+        approval,
+      });
+    } catch (error) {
+      this._unsaved = events.concat(this._unsaved);
+      throw error;
+    }
+  }
+
+  async _beginTurn(text) {
+    const turnId = randomUUID();
+    this._checkpoint.activeExecution = { turnId, phase: TurnPhase.PREPARE, modelSteps: 0 };
+    this._checkpoint.transcript.push({ role: "user", content: text });
+    this._emit(eventMsg.turnStarted(turnId));
+    await this._persist({ transcriptDelta: [{ role: "user", content: text }] });
+    await this._modelLoop();
+  }
+
+  async _modelLoop() {
+    const execution = this._checkpoint.activeExecution;
+    if (!execution) return;
+    while (execution.modelSteps < this._maxModelSteps) {
+      if (this._signal?.aborted) {
+        await this._abort(execution.turnId, "interrupted");
+        return;
+      }
+      execution.phase = TurnPhase.MODEL;
+      execution.modelSteps += 1;
+      this._checkpoint.executionStats.modelSteps += 1;
+      await this._persist();
+
+      let streamed;
+      try {
+        streamed = await this._consumeModel(execution);
+      } catch (error) {
+        if (error instanceof BudgetExceededError) {
+          this._emit(eventMsg.error({ kind: "budget_exceeded", message: error.message }));
+          await this._abort(execution.turnId, "budget_exceeded");
+          return;
+        }
+        if (error instanceof ModelLayerPausedError || error instanceof ModelUnavailableError) {
+          this._emit(eventMsg.error({ kind: "model_unavailable", message: error.message }));
+          await this._abort(execution.turnId, error.name);
+          return;
+        }
+        if (error?.name === "TurnInterrupted") {
+          await this._abort(execution.turnId, "interrupted");
+          return;
+        }
+        throw error;
+      }
+
+      this._checkpoint.transcript.push(streamed.assistant);
+      if (streamed.usage) {
+        tokenUsageCheckedAdd(this._checkpoint.totalUsage, streamed.usage);
+        this._emit(eventMsg.tokenCount(this._checkpoint.totalUsage));
+      }
+
+      if (streamed.toolCalls.length === 0) {
+        execution.phase = TurnPhase.COMPLETION;
+        this._emit(eventMsg.turnComplete(execution.turnId));
+        this._checkpoint.activeExecution = null;
+        await this._persist({ transcriptDelta: [streamed.assistant] });
+        await this._drainOnePending();
+        return;
+      }
+
+      const outcome = await this._authorize(execution, streamed.toolCalls);
+      if (outcome === "suspended") return;
+      if (outcome === "aborted") return;
+    }
+    await this._abort(execution.turnId, "max_model_steps");
+  }
+
+  async _consumeModel(execution) {
+    const tools = toolSpecsToAiTools(this._toolSpecs);
+    const opened = await this._engine.openStream(this._checkpoint.transcript, {
+      model: this._checkpoint.modelRoute,
+      query: lastUserText(this._checkpoint.transcript),
+      caller: { kind: this._callerKind, id: execution.turnId, trigger: "turn" },
+      userId: this._userId,
+      tools,
+      abortSignal: this._signal,
+    });
+    let text = "";
+    const toolCalls = [];
+    const modelStepId = randomUUID();
+    for await (const part of opened.fullStream) {
+      if (this._signal?.aborted) {
+        const abortError = new Error("interrupted");
+        abortError.name = "TurnInterrupted";
+        throw abortError;
+      }
+      if (part.type === "text-delta" && part.text) {
+        text += part.text;
+        this._emit(
+          eventMsg.assistantContentDelta({
+            sessionId: this._sessionId,
+            turnId: execution.turnId,
+            modelStepId,
+            delta: part.text,
+            phase: ModelStepContentPhase.FINAL_ANSWER,
+          })
+        );
+      } else if (part.type === "reasoning-delta" && part.text) {
+        this._emit(
+          eventMsg.assistantContentDelta({
+            sessionId: this._sessionId,
+            turnId: execution.turnId,
+            modelStepId,
+            delta: part.text,
+            phase: ModelStepContentPhase.REASONING,
+          })
+        );
+      } else if (part.type === "tool-call") {
+        toolCalls.push({
+          callId: part.toolCallId,
+          name: part.toolName,
+          arguments: part.input ?? {},
+        });
+      } else if (part.type === "tool-result" || part.type === "tool-error") {
+        throw new Error("model stream executed a tool outside ToolExecutor");
+      }
+    }
+    const finalized = await opened.finalize();
+    const content = [];
+    if (text) content.push({ type: "text", text });
+    for (const call of toolCalls) {
+      content.push({
+        type: "tool-call",
+        toolCallId: call.callId,
+        toolName: call.name,
+        input: call.arguments,
+      });
+    }
+    return {
+      assistant: {
+        role: "assistant",
+        content: content.length === 1 && content[0].type === "text" ? text : content,
+      },
+      toolCalls,
+      usage: usageForCheckpoint(finalized.usage),
+    };
+  }
+
+  async _authorize(execution, toolCalls) {
+    execution.phase = TurnPhase.TOOL_AUTHORIZE;
+    const decision = this._approvals.authorize(
+      this._sessionId,
+      toolCalls,
+      toolCalls.map((call) => call.callId)
+    );
+    if (decision.type === "execute") {
+      await this._executeCalls(execution, toolCalls);
+      return "continue";
+    }
+    const preApprovedCallIds = toolCalls
+      .map((call) => call.callId)
+      .filter((callId) => decision.permissions.forCall(callId).mutation);
+    this._checkpoint.pendingApproval = {
+      id: decision.request.id,
+      turnId: execution.turnId,
+      reason: decision.request.reason,
+      calls: toolCalls,
+      requestedCallIds: decision.request.callIds,
+      preApprovedCallIds,
+    };
+    this._emit(eventMsg.execApprovalRequest(this._checkpoint.pendingApproval));
+    await this._persist({ approval: { opened: true } });
+    this._status = "suspended";
+    return "suspended";
+  }
+
+  async _executeCalls(execution, calls) {
+    execution.phase = TurnPhase.EXECUTE;
+    const results = [];
+    for (const call of calls) {
+      this._emit(
+        eventMsg.toolCallBegin({
+          turnId: execution.turnId,
+          callId: call.callId,
+          name: call.name,
+          args: call.arguments,
+        })
+      );
+      const result = await this._toolExecutor.execute(call, {
+        userId: this._userId,
+        sessionId: this._sessionId,
+        turnId: execution.turnId,
+      });
+      this._checkpoint.executionStats.toolCalls += 1;
+      this._emit(
+        eventMsg.toolCallEnd({
+          turnId: execution.turnId,
+          callId: call.callId,
+          name: call.name,
+          output: result.output,
+          isError: result.isError,
+        })
+      );
+      results.push(toolResultMessage(call, result.output));
+    }
+    this._checkpoint.transcript.push(...results);
+    await this._persist({ transcriptDelta: results });
+  }
+
+  async _resumeApproval(op) {
+    const pending = this._checkpoint.pendingApproval;
+    if (!pending || pending.id !== op.id) {
+      this._emit(eventMsg.error({ kind: "approval", message: "no matching pending approval" }));
+      this._status = pending ? "suspended" : this._status;
+      await this._persist();
+      return;
+    }
+    const decision = parseReviewDecision(op.decision);
+    const execution = this._checkpoint.activeExecution ?? {
+      turnId: pending.turnId,
+      phase: TurnPhase.TOOL_AUTHORIZE,
+      modelSteps: 1,
+    };
+    this._checkpoint.activeExecution = execution;
+    if (decision.type === ReviewDecisionType.ABORT) {
+      this._checkpoint.pendingApproval = null;
+      await this._persist({
+        approval: { decided: true, id: pending.id, decision: "ABORTED" },
+      });
+      await this._abort(pending.turnId, "approval_abort");
+      return;
+    }
+    const permissions = this._approvals.authorize(
+      this._sessionId,
+      pending.calls,
+      pending.preApprovedCallIds ?? []
+    ).permissions;
+    this._approvals.resolve(
+      this._sessionId,
+      pending.calls,
+      pending.requestedCallIds,
+      decision,
+      permissions
+    );
+    this._checkpoint.approvedForSession = this._approvals.exportKeys(this._sessionId);
+    const granted = new Set(
+      decision.type === ReviewDecisionType.DENIED ? [] : pending.requestedCallIds
+    );
+    for (const callId of pending.preApprovedCallIds ?? []) granted.add(callId);
+    const toRun = [];
+    const denied = [];
+    for (const call of pending.calls) {
+      if (granted.has(call.callId)) toRun.push(call);
+      else denied.push(call);
+    }
+    this._checkpoint.pendingApproval = null;
+    await this._persist({
+      approval: {
+        decided: true,
+        id: pending.id,
+        decision: DECISION_ENUM[decision.type],
+        rejection: decision.rejection ?? null,
+      },
+    });
+    const deniedMessages = [];
+    for (const call of denied) {
+      const output = `denied: ${decision.rejection ?? "rejected"}`;
+      this._emit(
+        eventMsg.toolCallEnd({
+          turnId: execution.turnId,
+          callId: call.callId,
+          name: call.name,
+          output,
+          isError: true,
+        })
+      );
+      const message = toolResultMessage(call, output);
+      this._checkpoint.transcript.push(message);
+      deniedMessages.push(message);
+    }
+    if (deniedMessages.length) await this._persist({ transcriptDelta: deniedMessages });
+    if (toRun.length) await this._executeCalls(execution, toRun);
+    await this._modelLoop();
+  }
+
+  async _abort(turnId, reason) {
+    this._status = "aborted";
+    this._checkpoint.pendingApproval = null;
+    this._checkpoint.activeExecution = null;
+    this._emit(eventMsg.turnAborted(turnId, reason));
+    await this._persist();
+  }
+
+  async _drainOnePending() {
+    if (this._drained) return;
+    const next = this._checkpoint.pendingMessages.shift();
+    if (!next) return;
+    this._drained = true;
+    await this._beginTurn(next.text);
+  }
+}
+
+function toolResultMessage(call, output) {
+  return {
+    role: "tool",
+    content: [
+      {
+        type: "tool-result",
+        toolCallId: call.callId,
+        toolName: call.name,
+        output: { type: "text", value: output },
+      },
+    ],
+  };
+}
+
+function usageForCheckpoint(usage) {
+  if (!usage) return null;
+  return {
+    input_tokens: usage.prompt_tokens ?? 0,
+    cached_input_tokens: usage.cached_prompt_tokens ?? 0,
+    cache_write_input_tokens: 0,
+    output_tokens: usage.completion_tokens ?? 0,
+    reasoning_output_tokens: usage.reasoning_tokens ?? 0,
+    total_tokens: usage.total_tokens ?? 0,
+  };
+}

@@ -5,6 +5,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 
 import { ESLint } from "eslint";
@@ -163,6 +164,21 @@ test("CHIEF model layer cannot reuse Module 01's LLM wrapper", async () => {
     "server/chief/models/engine.js",
     'import { ModelRegistry } from "../core/registry.js";'
   );
+});
+
+test("Phase 3 orchestration does not import a provider SDK", () => {
+  const files = [
+    "server/chief/runtime/turn.js",
+    "server/chief/runtime/checkpoint.js",
+    "server/chief/tools/executor.js",
+    "api/chief/chat.js",
+    "api/chief/approvals.js",
+  ];
+  for (const file of files) {
+    const source = readFileSync(path.join(repoRoot, file), "utf8");
+    assert.doesNotMatch(source, /@ai-sdk\//, `${file} imports a provider SDK`);
+    assert.doesNotMatch(source, /server\/(brain|agents|memory)\//, `${file} imports Module 01`);
+  }
 });
 
 test("bare npm specifiers are never affected", async () => {

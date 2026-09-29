@@ -529,11 +529,22 @@ previous one is merged or explicitly waived. Verification per repo policy: `npm 
   the corresponding OpenJarvis/möbius test intents.
 - **Phase 2 — Model layer.** AI SDK provider registry (xAI Grok primary, Anthropic, OpenAI(-
   compatible) — the latter is also the sidecar socket); HeuristicRouter + complexity scorer
-  ports; budget-cap checks (`ChiefBudget`). New env: `XAI_API_KEY` (+ optional sidecar vars).
-- **Phase 3 — Durable runtime (highest risk, most tests).** Checkpoint store with atomic
-  `saveWithEvents` + fork; turn phase machine with suspension/resume; approvals component;
-  `api/chief/chat` SSE + `api/chief/approvals`; resume-mid-turn and resume-pending-approval
-  integration tests (the möbius runtime-test scenarios re-expressed in Node's test runner).
+  ports. New env: `XAI_API_KEY` (+ optional sidecar vars).
+  **Budget-cap checks (`ChiefBudget`) were specified in this phase and are not dropped.**
+  The approved Phase 2 scope stopped before any caller invoked a provider, so the check
+  had no call site yet. It is implemented in Phase 3, still inside the model layer (the
+  original architectural home — see the cost-runaway row in §10 and ADR-0003). It is not
+  relocated to Phase 8, and it is not implemented only inside the turn machine: a
+  turn-only check would let a later autonomous tick bypass it.
+- **Phase 3 — Durable runtime (highest risk, most tests).** `ChiefBudget` enforcement at
+  the model-layer seam, before `streamText` (carried from Phase 2; ADR-0003). Checkpoint
+  store with atomic `saveWithEvents` + fork; turn phase machine with suspension/resume;
+  approvals wired into that machine; `api/chief/chat` SSE + `api/chief/approvals`;
+  resume-mid-turn and resume-pending-approval integration tests (the möbius runtime-test
+  scenarios re-expressed in Node's test runner). The model step calls AI SDK `streamText`
+  on the resolved `LanguageModel` only. Tool calls are authorized here and executed only
+  through the `ToolExecutor` boundary; the gate pipeline itself remains Phase 4, and the
+  boundary fail-closes until those gates exist. No generic AI SDK tool `execute` callback.
 - **Phase 4 — Tools + memory.** ToolExecutor gate pipeline; first tool set (memory ops, KG ops,
   scheduling ops — no code execution, §10 of audit); MCP client integration; FactStore + trust
   tiers + extraction task; hybrid FTS+pgvector+RRF retrieval; KG store + consolidation job.
@@ -570,7 +581,7 @@ previous one is merged or explicitly waived. Verification per repo policy: `npm 
 | **3D interface hurts usability or performance** (density, motion, mobile, WebGL limits)            | Action parity rule (§7.4): every 3D action has a 2D path; built-in `lite`/`reduceMotion` 2D renderer with identical data; projector node budget within the renderer's verified ~2k-node comfort band (older leaves collapse into hubs); restrained theme defaults — readability wins every conflict |
 | **Sidecar operational burden / single-user state model**                                           | Optional + feature-flagged; CHIEF fully functional without it; sidecar output passes the memory trust-tier gate; per-deployment provisioning documented, never assumed                                                                                                                              |
 | **Prompt injection / memory poisoning**                                                            | Ported OpenJarvis defenses: injection scan before extraction; trust tiers with no silent promotion; ToolExecutor output taint detection; approval gates fail closed (denied ⇒ synthetic error result, never silent skip)                                                                            |
-| **Cost runaway from autonomous/background execution**                                              | `ChiefBudget` caps (per-run/per-period) enforced in the model layer before autonomy levels 3–4 are ever enabled; `CHIEF_MODELS_ENABLED=false` pauses every caller at `resolve`/`generate` (§5.5); cheap-model tiering via the router's existing urgency rule                                        |
+| **Cost runaway from autonomous/background execution**                                              | `ChiefBudget` caps (per-run/per-period) enforced in the model layer before `streamText` / `generateText` (Phase 3, carried from the Phase 2 ledger — ADR-0003), so a later autonomous tick cannot bypass the turn machine; `CHIEF_MODELS_ENABLED=false` pauses every caller (§5.5); cheap-model tiering via the router's existing urgency rule. A missing `chief_budget` row means no cap is configured. Autonomy levels 3–4 stay off until they share this check.                                        |
 | **Cross-module contamination** (accidental coupling to Module 01/02)                               | ESLint import-boundary rules from Phase 0; `chief_*` table namespace with only-`User` FKs; additive-only touches to shared files; PR review checklist item                                                                                                                                          |
 | **Schema evolution of checkpoints**                                                                | Version column on checkpoint JSON + Prisma migrations (documented deviation from möbius reject-on-mismatch, §7.2)                                                                                                                                                                                   |
 | **Licensing hygiene**                                                                              | Phase 0 delivers `THIRD_PARTY_NOTICES.md` before any ported/vendored code lands; Apache-2.0 attribution headers on ported modules; möbius NOTICE propagated; nothing copied from the unlicensed jarvis-architecture repo                                                                            |
