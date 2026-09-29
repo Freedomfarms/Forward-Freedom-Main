@@ -59,7 +59,10 @@ export {
 } from "./config.js";
 export {
   ENGINE_ID,
+  CALLER_KINDS,
+  normalizeCaller,
   ModelUnavailableError,
+  ModelLayerPausedError,
   ChiefModelEngine,
   createModelEngine,
   normalizeGenerateResult,

@@ -46,9 +46,21 @@
 //     model only); the RoutingContext itself is left as upstream computes it.
 //   - `languageModelMiddleware` is passed through to the AI SDK registry: the
 //     seam where ChiefBudget enforcement attaches in a later phase without
-//     touching callers.
+//     touching callers. Every caller — interactive turns and the future
+//     autonomous loop (docs/CHIEF_ARCHITECTURE.md §5.5) — must obtain models
+//     through this engine so that middleware cannot be bypassed.
 //   - stream() is intentionally absent: the Phase 3 turn machine drives AI
 //     SDK streamText on the resolved `languageModel` directly.
+//   - Caller-agnostic contract (§5.5). resolve()/generate() do not require a
+//     user chat turn: `query` is whatever text the caller is routing on (a
+//     user message, an operative instruction, an event summary). An optional
+//     `caller` { kind, id, trigger } is copied onto inference events so a
+//     scheduled tick, an event reaction, and a delegation are auditable on
+//     the same EventBus. Kinds are user_turn | schedule | event | delegation.
+//     This is correlation metadata only — the engine does not schedule,
+//     decide, or approve anything.
+//   - CHIEF_MODELS_ENABLED=false makes resolve/generate/languageModel throw
+//     ModelLayerPausedError. One pause covers prompted and autonomous use.
 
 import { createProviderRegistry, generateText } from "ai";
 
@@ -62,6 +74,43 @@ import { buildRoutingContext, ensureHeuristicRegistered } from "./router.js";
 
 export const ENGINE_ID = "chief-ai-sdk";
 const MODEL_ID_SEPARATOR = ":";
+
+// Who asked for this inference. Kept closed so event payloads stay a stable
+// contract the trace collector and the Constellation bridge can rely on.
+export const CALLER_KINDS = Object.freeze({
+  USER_TURN: "user_turn",
+  SCHEDULE: "schedule",
+  EVENT: "event",
+  DELEGATION: "delegation",
+});
+
+const CALLER_KIND_VALUES = new Set(Object.values(CALLER_KINDS));
+
+export function normalizeCaller(caller) {
+  if (caller == null) return null;
+  if (typeof caller !== "object" || Array.isArray(caller)) {
+    throw new TypeError("caller must be an object { kind, id?, trigger? }");
+  }
+  if (!CALLER_KIND_VALUES.has(caller.kind)) {
+    throw new TypeError(`caller.kind must be one of ${[...CALLER_KIND_VALUES].join(", ")}`);
+  }
+  return Object.freeze({
+    kind: caller.kind,
+    id: caller.id == null ? null : String(caller.id),
+    trigger: caller.trigger == null ? null : String(caller.trigger),
+  });
+}
+
+function withCaller(data, caller) {
+  return caller ? { ...data, caller } : data;
+}
+
+export class ModelLayerPausedError extends Error {
+  constructor() {
+    super("CHIEF model layer is paused (CHIEF_MODELS_ENABLED=false)");
+    this.name = "ModelLayerPausedError";
+  }
+}
 
 export class ModelUnavailableError extends Error {
   constructor(message, { modelKey = null, candidates = [] } = {}) {
@@ -188,10 +237,18 @@ export class ChiefModelEngine {
       defaultModel: this._config.defaultModel,
       fallbackModel: this._config.fallbackModel,
       routerPolicy: this._config.routerPolicy,
+      modelsEnabled: this._config.modelsEnabled !== false,
     };
   }
 
+  _assertEnabled() {
+    if (this._config.modelsEnabled === false) {
+      throw new ModelLayerPausedError();
+    }
+  }
+
   languageModel(modelKey) {
+    this._assertEnabled();
     const candidates = this.availableModelKeys();
     if (!candidates.includes(modelKey)) {
       throw new ModelUnavailableError(
@@ -217,7 +274,12 @@ export class ChiefModelEngine {
     return policyKey;
   }
 
-  resolve(query = "", { urgency = 0.5, model = null, routerPolicy = undefined } = {}) {
+  resolve(
+    query = "",
+    { urgency = 0.5, model = null, routerPolicy = undefined, caller = null } = {}
+  ) {
+    this._assertEnabled();
+    const normalizedCaller = normalizeCaller(caller);
     const candidates = this.availableModelKeys();
     if (!candidates.length) {
       throw new ModelUnavailableError(
@@ -235,7 +297,11 @@ export class ChiefModelEngine {
         });
       }
       const routingContext = buildRoutingContext(text, { urgency, model });
-      return this._resolution(model, routingContext, { routed: false, policy: null });
+      return this._resolution(model, routingContext, {
+        routed: false,
+        policy: null,
+        caller: normalizedCaller,
+      });
     }
 
     const preferred = candidates.includes(this._config.defaultModel)
@@ -261,10 +327,14 @@ export class ChiefModelEngine {
         routed = true;
       }
     }
-    return this._resolution(selected, routingContext, { routed, policy: policyKey });
+    return this._resolution(selected, routingContext, {
+      routed,
+      policy: policyKey,
+      caller: normalizedCaller,
+    });
   }
 
-  _resolution(modelKey, routingContext, { routed, policy }) {
+  _resolution(modelKey, routingContext, { routed, policy, caller }) {
     const spec = ModelRegistry.get(modelKey);
     const tier = routingContext.metadata?.complexity_tier;
     const baseTokens = TOKEN_TIERS[tier] ?? routingContext.suggestedMaxTokens;
@@ -277,6 +347,7 @@ export class ChiefModelEngine {
       maxTokens: adjustTokensForModel(baseTokens, modelKey),
       routed,
       policy,
+      caller,
     });
   }
 
@@ -293,6 +364,7 @@ export class ChiefModelEngine {
       toolChoice = undefined,
       abortSignal = undefined,
       providerOptions = undefined,
+      caller = null,
     } = {}
   ) {
     if (!Array.isArray(messages) || messages.length === 0) {
@@ -302,15 +374,22 @@ export class ChiefModelEngine {
       urgency,
       model,
       routerPolicy,
+      caller,
     });
     const maxOutputTokens = maxTokens ?? Math.max(this._config.maxTokens, resolution.maxTokens);
 
-    this._bus?.publish(EventType.INFERENCE_START, {
-      model: resolution.modelKey,
-      engine: this.engineId,
-      provider: resolution.providerId,
-      routed: resolution.routed,
-    });
+    this._bus?.publish(
+      EventType.INFERENCE_START,
+      withCaller(
+        {
+          model: resolution.modelKey,
+          engine: this.engineId,
+          provider: resolution.providerId,
+          routed: resolution.routed,
+        },
+        resolution.caller
+      )
+    );
 
     const result = await generateText({
       model: resolution.languageModel,
@@ -331,13 +410,19 @@ export class ChiefModelEngine {
       providerId: resolution.providerId,
     });
 
-    this._bus?.publish(EventType.INFERENCE_END, {
-      model: normalized.model,
-      usage: normalized.usage,
-      content: normalized.content,
-      tool_calls: normalized.tool_calls,
-      finish_reason: normalized.finish_reason,
-    });
+    this._bus?.publish(
+      EventType.INFERENCE_END,
+      withCaller(
+        {
+          model: normalized.model,
+          usage: normalized.usage,
+          content: normalized.content,
+          tool_calls: normalized.tool_calls,
+          finish_reason: normalized.finish_reason,
+        },
+        resolution.caller
+      )
+    );
 
     return normalized;
   }

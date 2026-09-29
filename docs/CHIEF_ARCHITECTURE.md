@@ -255,6 +255,72 @@ The sidecar's own storage (its SQLite home volume) is **outside** CHIEF's persis
 CHIEF treats sidecar results like any external tool output — untrusted until it passes the
 memory trust-tier gate.
 
+### 5.5 Controlled autonomous operating loop (future capability; not built in Phase 2)
+
+CHIEF must be able to act without a user prompt on every step. That capability is a
+**controlled loop over the components already specified above**, not a second scheduler,
+router, event bus, or approval system. The reuse source is the audited OpenJarvis
+operative + scheduler (audit §2.1, commit `5e5f5ef`): `ScheduledTask` kinds once /
+interval / cron, `execute_tick` (lock, run, tick stats, rolling summary, per-agent
+`router_policy`), and the operative state key `operator:{id}:state` with auto-persist of
+results. möbius supplies the approval gate, the interrupt, and "fresh conversation per
+routine run". Nothing in this section is implemented by the Phase 2 model layer.
+
+```
+TRIGGERS / SCHEDULES / EVENTS          ChiefScheduledTask (once/interval/cron) claimed by
+                                       api/cron/chief-dispatch; EventBus events
+                                       (CHANNEL_*, MEMORY_*, SCHEDULER_*, AGENT_TICK_*)
+        → PERCEPTION / MONITORING      operative tick reads authorized sources through
+                                       ToolExecutor-gated tools (no private side channel)
+        → MEMORY / STATE               ChiefFact / ChiefKnowledge* / operative state key /
+                                       last ChiefTaskRun; trust tiers apply to anything read
+        → REASONING                    the SAME model engine as a user turn:
+                                       engine.resolve(instruction, { caller, urgency,
+                                       routerPolicy, model }) → LanguageModel
+                                       (server/chief/models; query is an instruction,
+                                       not necessarily a chat message)
+        → DECISION                     ported agent loop (Orchestrator / Operative).
+                                       "Nothing warrants attention" is a valid decision
+                                       and ends the tick without notifying
+        → CAPABILITY / POLICY CHECK    CapabilityPolicy (autonomy levels 0–4), the
+                                       ToolExecutor gate order, ChiefBudget
+        → APPROVAL IF REQUIRED         the same ApprovalPolicy / ReviewDecision /
+                                       pending_approval suspension as an interactive turn
+        → ACTION / DELEGATION          authorized tools, or a subagent via checkpoint
+                                       fork (later phase) — caller kind "delegation"
+        → TRACE / EVENT                the same EventBus taxonomy and ChiefTrace rows.
+                                       Inference events carry caller { kind, id, trigger }
+                                       so a scheduled run is distinguishable from a
+                                       user turn. The Constellation (§7.4) renders these
+                                       events through the same SSE → flash/ignite/focus
+                                       bridge; no separate visualization path
+        → MEMORY / STATE UPDATE        facts and operative state written back through
+                                       the trust-tier gate; ChiefTaskRun status updated
+        → CONTINUE OR SLEEP            schedule a follow-up ChiefScheduledTask, or stop
+                                       until the next trigger. No resident daemon
+```
+
+Autonomy constraints, all enforced by those existing components:
+
+- **Permissioned** — capability grants and autonomy levels; uninventoried tools fail closed.
+- **Auditable** — `ChiefAuditLog`, the event journal, and `caller` on inference events.
+- **Interruptible** — möbius interrupt Op for turns; `abortSignal` on `generate()` for the
+  model call itself.
+- **Rate/budget limited** — ToolExecutor rate gate, `ChiefBudget` enforced at the model
+  layer's `languageModelMiddleware` seam (before autonomy levels 3–4), router cheap-model
+  tiering via the existing urgency rule.
+- **Traceable** — `ChiefTrace` / `ChiefTraceStep` from the same collector as interactive turns.
+- **Capable of being paused** — `CHIEF_MODELS_ENABLED=false` refuses `resolve`, `generate`,
+  and `languageModel` (`ModelLayerPausedError`) for every caller. The scheduler's own
+  pause (stop claiming ticks) is a Phase 5 control on top of this, not a replacement.
+- **Subject to capability and approval policies** — a proactive tick has no path around
+  the confirmation gate. Denied actions produce the synthetic error result, never a skip.
+
+Phase 2's only obligation to this loop is the model contract: routing input is an arbitrary
+instruction, per-call `model` / `routerPolicy` match OpenJarvis's per-agent tick override,
+and `caller` is correlation metadata. The loop itself waits for the runtime (Phase 3),
+tools and memory (Phase 4), and scheduler/operatives (Phase 5).
+
 ---
 
 ## 6. Communication summary (how the pieces talk)
@@ -473,7 +539,9 @@ previous one is merged or explicitly waived. Verification per repo policy: `npm 
   tiers + extraction task; hybrid FTS+pgvector+RRF retrieval; KG store + consolidation job.
 - **Phase 5 — Scheduler + operatives.** Task store + `api/cron/chief-dispatch` (additive
   `vercel.json` entry); operative tick agents (OpenJarvis execute_tick semantics); retries,
-  failure handling, notifications.
+  failure handling, notifications. This phase is what makes the §5.5 loop run; it does
+  not introduce a second scheduler. Notifications fire only when a tick decides something
+  warrants attention.
 - **Phase 6 — Sidecar boundary.** `server/chief/sidecar/` provider registration + health;
   deep_research/managed-agent tool adapters; deployment recipe doc (Docker/Render/Fly) — all
   feature-flagged and optional.
@@ -502,7 +570,7 @@ previous one is merged or explicitly waived. Verification per repo policy: `npm 
 | **3D interface hurts usability or performance** (density, motion, mobile, WebGL limits)            | Action parity rule (§7.4): every 3D action has a 2D path; built-in `lite`/`reduceMotion` 2D renderer with identical data; projector node budget within the renderer's verified ~2k-node comfort band (older leaves collapse into hubs); restrained theme defaults — readability wins every conflict |
 | **Sidecar operational burden / single-user state model**                                           | Optional + feature-flagged; CHIEF fully functional without it; sidecar output passes the memory trust-tier gate; per-deployment provisioning documented, never assumed                                                                                                                              |
 | **Prompt injection / memory poisoning**                                                            | Ported OpenJarvis defenses: injection scan before extraction; trust tiers with no silent promotion; ToolExecutor output taint detection; approval gates fail closed (denied ⇒ synthetic error result, never silent skip)                                                                            |
-| **Cost runaway from autonomous/background execution**                                              | `ChiefBudget` caps (per-run/per-period) enforced in the model layer before autonomy levels 3–4 are ever enabled; kill-switch flag; cheap-model tiering via the router's existing rules                                                                                                              |
+| **Cost runaway from autonomous/background execution**                                              | `ChiefBudget` caps (per-run/per-period) enforced in the model layer before autonomy levels 3–4 are ever enabled; `CHIEF_MODELS_ENABLED=false` pauses every caller at `resolve`/`generate` (§5.5); cheap-model tiering via the router's existing urgency rule                                        |
 | **Cross-module contamination** (accidental coupling to Module 01/02)                               | ESLint import-boundary rules from Phase 0; `chief_*` table namespace with only-`User` FKs; additive-only touches to shared files; PR review checklist item                                                                                                                                          |
 | **Schema evolution of checkpoints**                                                                | Version column on checkpoint JSON + Prisma migrations (documented deviation from möbius reject-on-mismatch, §7.2)                                                                                                                                                                                   |
 | **Licensing hygiene**                                                                              | Phase 0 delivers `THIRD_PARTY_NOTICES.md` before any ported/vendored code lands; Apache-2.0 attribution headers on ported modules; möbius NOTICE propagated; nothing copied from the unlicensed jarvis-architecture repo                                                                            |

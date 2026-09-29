@@ -20,9 +20,12 @@ import {
   loadModelConfig,
 } from "../server/chief/models/config.js";
 import {
+  CALLER_KINDS,
   ChiefModelEngine,
+  ModelLayerPausedError,
   ModelUnavailableError,
   createModelEngine,
+  normalizeCaller,
   normalizeGenerateResult,
 } from "../server/chief/models/engine.js";
 import { ensureHeuristicRegistered } from "../server/chief/models/router.js";
@@ -495,6 +498,73 @@ test("normalizeGenerateResult tolerates missing fields", () => {
     provider: "p",
     response_model: null,
   });
+});
+
+test("an operative-style instruction routes without a user chat turn", async () => {
+  // Future autonomous ticks (docs/CHIEF_ARCHITECTURE.md §5.5) call the same
+  // resolve/generate contract with an instruction and a schedule caller.
+  // Nothing here starts a scheduler.
+  const acme = setupAcme();
+  const bus = new EventBus({ recordHistory: true });
+  const engine = acmeEngine(ACME_ENV, { eventBus: bus });
+  const instruction =
+    "Review the last run state and explain step by step whether the balance change warrants attention";
+  const caller = { kind: CALLER_KINDS.SCHEDULE, id: "task-run-1", trigger: "cron:daily" };
+
+  const resolution = engine.resolve(instruction, { caller });
+  assert.equal(resolution.modelKey, "acme-large");
+  assert.deepEqual(resolution.caller, {
+    kind: "schedule",
+    id: "task-run-1",
+    trigger: "cron:daily",
+  });
+
+  const result = await engine.generate([{ role: "system", content: instruction }], {
+    query: instruction,
+    caller,
+  });
+  assert.equal(result.model, "acme-large");
+  assert.equal(acme.languageModels["acme-large"].doGenerateCalls.length, 1);
+  for (const event of bus.history) {
+    assert.deepEqual(event.data.caller, resolution.caller);
+  }
+  assert.deepEqual(
+    bus.history.map((event) => event.eventType),
+    [EventType.INFERENCE_START, EventType.INFERENCE_END]
+  );
+});
+
+test("caller is omitted from events when absent, and rejected when malformed", () => {
+  setupAcme();
+  const engine = acmeEngine();
+  assert.equal(engine.resolve("Hi").caller, null);
+  assert.throws(() => engine.resolve("Hi", { caller: { kind: "self" } }), TypeError);
+  assert.throws(() => normalizeCaller("schedule"), TypeError);
+  assert.deepEqual(normalizeCaller({ kind: CALLER_KINDS.EVENT, id: 7 }), {
+    kind: "event",
+    id: "7",
+    trigger: null,
+  });
+  assert.deepEqual(Object.values(CALLER_KINDS), ["user_turn", "schedule", "event", "delegation"]);
+});
+
+test("CHIEF_MODELS_ENABLED=false pauses resolve, generate, and languageModel", async () => {
+  setupAcme();
+  const engine = acmeEngine({ ...ACME_ENV, CHIEF_MODELS_ENABLED: "false" });
+  assert.equal(engine.health().modelsEnabled, false);
+  assert.ok(engine.availableModelKeys().includes("acme-large"));
+  assert.throws(() => engine.resolve("Hi"), ModelLayerPausedError);
+  assert.throws(() => engine.languageModel("acme-large"), ModelLayerPausedError);
+  await assert.rejects(
+    engine.generate([{ role: "user", content: "Hi" }], { caller: { kind: "schedule", id: "run" } }),
+    ModelLayerPausedError
+  );
+});
+
+test("CHIEF_MODELS_ENABLED defaults to true and rejects unknown values", () => {
+  assert.equal(loadModelConfig({}).modelsEnabled, true);
+  assert.equal(loadModelConfig({ CHIEF_MODELS_ENABLED: "off" }).modelsEnabled, false);
+  assert.throws(() => loadModelConfig({ CHIEF_MODELS_ENABLED: "maybe" }), RangeError);
 });
 
 test("ChiefModelEngine constructor validates its inputs", () => {

@@ -28,6 +28,10 @@
 //   - Provider secrets are NOT part of this object; providers.js resolves
 //     them from the same `env` at instantiation time so the config can be
 //     logged and serialized.
+//   - modelsEnabled (CHIEF_MODELS_ENABLED, default true) is the model-layer
+//     pause/kill switch (docs/CHIEF_ARCHITECTURE.md §5.5, §10). It gates every
+//     caller — a user turn and a future scheduled tick alike — so autonomous
+//     runs cannot keep reasoning after the layer is paused.
 
 export const DEFAULT_ENABLED_PROVIDERS = Object.freeze(["xai"]);
 export const DEFAULT_MODEL = "grok-4.7";
@@ -56,6 +60,14 @@ function numberOr(value, fallback) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function booleanOr(value, fallback, name) {
+  if (typeof value !== "string" || value.trim() === "") return fallback;
+  const normalized = value.trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "off"].includes(normalized)) return false;
+  throw new RangeError(`${name} must be true or false`);
+}
+
 export function loadModelConfig(env = process.env) {
   const config = {
     enabledProviders: csv(env.CHIEF_MODEL_PROVIDERS) ?? [...DEFAULT_ENABLED_PROVIDERS],
@@ -65,6 +77,7 @@ export function loadModelConfig(env = process.env) {
     modelAllowlist: csv(env.CHIEF_MODEL_ALLOWLIST),
     temperature: numberOr(env.CHIEF_MODEL_TEMPERATURE, DEFAULT_TEMPERATURE),
     maxTokens: numberOr(env.CHIEF_MODEL_MAX_TOKENS, DEFAULT_MAX_TOKENS),
+    modelsEnabled: booleanOr(env.CHIEF_MODELS_ENABLED, true, "CHIEF_MODELS_ENABLED"),
   };
   if (config.temperature < 0 || config.temperature > 2) {
     throw new RangeError("CHIEF_MODEL_TEMPERATURE must be between 0 and 2");

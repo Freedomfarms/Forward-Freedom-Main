@@ -83,3 +83,6 @@ decisions that keep the layer provider-agnostic.
     are not modelled.
   - `THIRD_PARTY_NOTICES.md` updated (Phase 2 ported modules; `@ai-sdk/xai` installed);
     `.env.example` documents the `CHIEF_*` variables.
+- The same engine is the reasoning step of the future autonomous loop. That loop,
+  its constraints, and the caller/pause contract are recorded in
+  [ADR-0002](./0002-chief-autonomous-loop.md).
