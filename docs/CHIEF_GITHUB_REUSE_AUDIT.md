@@ -212,25 +212,57 @@ prose and diagrams. Only the uncopyrightable ideas/facts may inform design.
 A real, working, MIT-licensed React 3D knowledge-graph renderer — the same component that renders
 the private Jarvis fleet's live memory map.
 
-- **Stack:** TypeScript strict; deps `react-force-graph-3d`/`-2d` (^1.29.1, MIT) + `three`
-  (^0.184.0, MIT); peer deps `react >= 18`; ESM build via tsup; **no** react-three-fiber.
-- **API:** `<CortexMap nodes edges clusters theme onNodeSelect search inspector reduceMotion
-lite projection />` + imperative handle `flash(ids) / ignite(ids) / focus(id)`. Node model
-  (`id, label, cluster, type, summary, weight, role: core|hub|subhub|leaf, parentId,
-lastSeenAt`) and edge model (`relation, strength, origin: explicit|semantic`) map naturally
-  onto a memory/knowledge graph.
-- **Rendering:** WebGL via three.js; pinned layout (no live physics); GLSL sea, starfield,
-  bloom (UnrealBloomPass), ACES tone mapping; render-on-demand sleep/wake; DPR cap; 2D canvas
-  fallback for lite/reduced-motion. Comfort band: a few hundred to ~2k nodes.
-- **Maturity:** v0.1.0, strong docs (`docs/data-format.md`, `docs/theming.md`), working Vite +
-  React 19 demo (exactly Freedom OS's stack), CI typecheck+build, **no tests**.
-- **Availability:** **not published to npm** — reuse means vendoring `packages/cortex-map`
-  (~2.8k LOC, MIT headers retained) or a git dependency; its two runtime deps come from npm.
+### 5.1 Verified component record
 
-| Component                       | Classification                          | Why                                                                                                                                                                                                                                |
-| ------------------------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| cortex-map renderer             | **REUSE DIRECTLY** (vendored under MIT) | Purpose-built for exactly CHIEF's "living memory map" UI; drop-in for React 19 + Vite; MIT permits vendoring with attribution. Mitigation for v0.1.0/no-tests: it is a leaf UI dependency — a failure cannot affect data or agents |
-| `react-force-graph-3d`, `three` | **REUSE DIRECTLY** (npm, MIT)           | Mature (force-graph suite ~3.3k–6.4k stars); installed as cortex-map's runtime deps                                                                                                                                                |
+Facts verified directly from `packages/cortex-map/package.json`, the repository's tags/releases,
+and the npm registry (not from the README):
+
+- **License:** MIT (declared in `package.json` `"license": "MIT"` and repo `LICENSE`,
+  Copyright (c) 2026 Jack Stovell / NoctemJack).
+- **Size:** ~2.8k LOC TypeScript/React (strict mode), in `packages/cortex-map/src`
+  (`CortexMap.tsx` ~1,406, `scene.ts` ~850, plus layout/types/styles).
+- **Stack compatibility:** React 19 + Vite confirmed — peer deps `react >= 18`, dev types React
+  19.1, and the bundled `demo/` app is itself React 19 + Vite (the same stack as Freedom OS).
+  ESM-only (`"type": "module"`), built with tsup, `sideEffects: false`.
+- **Rendering dependencies:** `three` (^0.184.0, MIT) and `react-force-graph-3d` /
+  `react-force-graph-2d` (^1.29.1, MIT). No react-three-fiber, no direct d3.
+- **Tests:** none (CI runs typecheck + build only).
+- **Maturity:** v0.1.0 — early version, but with strong docs (`docs/data-format.md`,
+  `docs/theming.md`) and a working demo app.
+- **Intended use in CHIEF:** the Command Center's 3D memory/knowledge map, fed by the
+  `ChiefKnowledgeEntity` / `ChiefKnowledgeRelation` tables (§8).
+- **npm publication: unverified/not found.** The package is publish-shaped (`prepublishOnly`
+  build script, `files: ["dist"]`) but the registry returns 404 for `cortex-map`,
+  `@stovbuilds/cortex-map`, and `@noctemjack/cortex-map`, and the repository has **no git tags
+  and no GitHub releases**. Treat as unpublished source.
+
+### 5.2 Reuse decision
+
+**REUSE DIRECTLY — as vendored MIT source, not as an npm dependency.** "Reuse directly" here
+means the existing implementation is dropped into CHIEF with minimal modification; the
+distribution channel is vendoring because no published package exists:
+
+- Vendor `packages/cortex-map` into the repo under a third-party boundary (e.g.
+  `src/third_party/cortex-map/`), preserving its `LICENSE` file, copyright attribution, and an
+  entry in `THIRD_PARTY_NOTICES.md`.
+- Keep vendored code unmodified wherever practical (theme/props are the customization surface —
+  the component is explicitly "bring your own nodes; theme everything"). Any local patches are
+  documented in the vendored directory so upstream updates can be re-applied.
+- Its two runtime dependencies (`three`, `react-force-graph-3d`/`-2d`) are added from npm.
+- **Do not redesign or recreate cortex-map.** The existing implementation is used as-is.
+
+Other details for integration: API is `<CortexMap nodes edges clusters theme onNodeSelect search
+inspector reduceMotion lite projection />` + imperative handle `flash(ids) / ignite(ids) /
+focus(id)`; node model (`id, label, cluster, type, summary, weight, role: core|hub|subhub|leaf,
+parentId, lastSeenAt`) and edge model (`relation, strength, origin: explicit|semantic`) map
+naturally onto a memory/knowledge graph. Rendering: WebGL via three.js, pinned layout (no live
+physics), bloom/ACES post-processing, render-on-demand sleep/wake, DPR cap, and a 2D canvas
+fallback for lite/reduced-motion. Comfort band: a few hundred to ~2k nodes.
+
+| Component                       | Classification                                             | Why                                                                                                                                                                                                                                                  |
+| ------------------------------- | ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| cortex-map renderer             | **REUSE DIRECTLY** (vendored MIT source under third_party) | Purpose-built for exactly CHIEF's "living memory map" UI; drop-in for React 19 + Vite; unpublished on npm so reuse = vendoring with attribution. Mitigation for v0.1.0/no-tests: it is a leaf UI dependency — a failure cannot affect data or agents |
+| `react-force-graph-3d`, `three` | **REUSE DIRECTLY** (npm, MIT)                              | Mature (force-graph suite ~3.3k–6.4k stars); installed as cortex-map's runtime deps                                                                                                                                                                  |
 
 ---
 
@@ -241,7 +273,7 @@ lastSeenAt`) and edge model (`relation, strength, origin: explicit|semantic`) ma
 | OpenJarvis                                                            | Apache-2.0                                                        | Ported/translated code is a derivative: retain attribution + license reference in file headers of ported modules; add entries to a `THIRD_PARTY_NOTICES.md`. Patent grant included. Commercial/proprietary use permitted |
 | möbius                                                                | Apache-2.0, **with NOTICE (derived from OpenAI Codex / Ratatui)** | Same as above, and NOTICE contents must be propagated in `THIRD_PARTY_NOTICES.md` for any ported material. Commercial use permitted                                                                                      |
 | jarvis-architecture                                                   | **None**                                                          | No copying of any kind (code, prose, diagrams). Concepts/facts only                                                                                                                                                      |
-| cortex-map                                                            | MIT                                                               | Vendor with `LICENSE` + copyright line (Jack Stovell / NoctemJack) intact; note in `THIRD_PARTY_NOTICES.md`                                                                                                              |
+| cortex-map                                                            | MIT (npm publication not found — vendored source reuse)           | Vendor under a `third_party/` boundary with `LICENSE` + copyright line (Jack Stovell / NoctemJack) intact; note in `THIRD_PARTY_NOTICES.md`                                                                              |
 | react-force-graph-3d, three, cron-parser, `@modelcontextprotocol/sdk` | MIT                                                               | Standard npm usage; notices ship in `node_modules`                                                                                                                                                                       |
 | Vercel AI SDK + `@ai-sdk/*` providers                                 | Apache-2.0                                                        | Standard npm usage                                                                                                                                                                                                       |
 
@@ -307,8 +339,9 @@ existing row-level security approach; retention/expiry columns on memory and jou
 
 ## 9. What can realistically be reused vs what must be rewritten
 
-**Reused directly (as artifacts):** cortex-map (vendored, MIT) with react-force-graph-3d +
-three; Vercel AI SDK + `@ai-sdk/xai`/`@ai-sdk/anthropic`/(others) as the engine layer;
+**Reused directly (as artifacts):** cortex-map (unpublished on npm — vendored MIT source under a
+`third_party/` boundary, reused as-is per §5.2) with react-force-graph-3d + three from npm;
+Vercel AI SDK + `@ai-sdk/xai`/`@ai-sdk/anthropic`/(others) as the engine layer;
 `@modelcontextprotocol/sdk` for MCP tools; `cron-parser` for schedule parsing.
 
 **Ported (implementation semantics carried, storage/runtime translated):** OpenJarvis registry
