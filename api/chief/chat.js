@@ -11,7 +11,7 @@ import { encodeSseEvent, eventMsg, makeEvent } from "../../server/chief/protocol
 import { ApprovalCoordinator } from "../../server/chief/runtime/approvals.js";
 import { PrismaCheckpointStore } from "../../server/chief/runtime/checkpoint.js";
 import { TurnMachine } from "../../server/chief/runtime/turn.js";
-import { ToolExecutor } from "../../server/chief/tools/executor.js";
+import { createChiefTooling } from "../../server/chief/tools/builtin.js";
 import { applySecurityHeaders } from "../../server/http/responseHelpers.js";
 import { enforceRateLimit, generalApiRateLimit } from "../../server/http/rateLimit.js";
 
@@ -19,7 +19,7 @@ function defaultDeps() {
   return {
     store: new PrismaCheckpointStore(),
     engine: createModelEngine({ budget: new PrismaBudgetStore() }),
-    toolExecutor: new ToolExecutor(),
+    toolExecutor: null,
     authenticate: authenticateRequest,
   };
 }
@@ -53,11 +53,19 @@ export async function handleChiefChat(request, response, deps = {}) {
   const controller = new AbortController();
   request.on?.("close", () => controller.abort());
 
+  let toolExecutor = deps.toolExecutor ?? null;
+  let toolSpecs = deps.toolSpecs ?? null;
+  if (!toolExecutor) {
+    const tooling = await createChiefTooling({ userId });
+    toolExecutor = tooling.executor;
+    toolSpecs = deps.toolSpecs ?? tooling.specs;
+  }
+
   const machine = new TurnMachine({
     store: deps.store ?? new PrismaCheckpointStore(),
     engine: deps.engine ?? createModelEngine({ budget: new PrismaBudgetStore() }),
     approvals: new ApprovalCoordinator(),
-    toolExecutor: deps.toolExecutor ?? new ToolExecutor(),
+    toolExecutor,
   });
 
   try {
@@ -66,7 +74,7 @@ export async function handleChiefChat(request, response, deps = {}) {
       sessionId: body.session_id ?? null,
       submission: body.submission,
       signal: controller.signal,
-      toolSpecs: deps.toolSpecs ?? [],
+      toolSpecs: toolSpecs ?? [],
       onEvent: (event) => {
         response.write(encodeSseEvent(event));
       },

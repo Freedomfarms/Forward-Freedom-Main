@@ -171,6 +171,12 @@ test("Phase 3 orchestration does not import a provider SDK", () => {
     "server/chief/runtime/turn.js",
     "server/chief/runtime/checkpoint.js",
     "server/chief/tools/executor.js",
+    "server/chief/tools/builtin.js",
+    "server/chief/tools/spec.js",
+    "server/chief/security/taint.js",
+    "server/chief/security/boundary.js",
+    "server/chief/memory/facts.js",
+    "server/chief/memory/graph.js",
     "api/chief/chat.js",
     "api/chief/approvals.js",
   ];
@@ -178,6 +184,8 @@ test("Phase 3 orchestration does not import a provider SDK", () => {
     const source = readFileSync(path.join(repoRoot, file), "utf8");
     assert.doesNotMatch(source, /@ai-sdk\//, `${file} imports a provider SDK`);
     assert.doesNotMatch(source, /server\/(brain|agents|memory)\//, `${file} imports Module 01`);
+    assert.doesNotMatch(source, /hermes|AIAgent|NousResearch/i, `${file} couples to Hermes`);
+    assert.doesNotMatch(source, /createXai|@ai-sdk\/xai/, `${file} couples to the Grok SDK`);
   }
 });
 

@@ -545,9 +545,15 @@ previous one is merged or explicitly waived. Verification per repo policy: `npm 
   on the resolved `LanguageModel` only. Tool calls are authorized here and executed only
   through the `ToolExecutor` boundary; the gate pipeline itself remains Phase 4, and the
   boundary fail-closes until those gates exist. No generic AI SDK tool `execute` callback.
-- **Phase 4 — Tools + memory.** ToolExecutor gate pipeline; first tool set (memory ops, KG ops,
-  scheduling ops — no code execution, §10 of audit); MCP client integration; FactStore + trust
-  tiers + extraction task; hybrid FTS+pgvector+RRF retrieval; KG store + consolidation job.
+- **Phase 4 — Tools + memory (gate pipeline and first tools).** `ToolExecutor` runs the
+  frozen gate order, fail-closed, and `gatesInstalled` is true only when every gate is
+  present. `ToolSpec` classifies read versus mutation for the existing `ApprovalCoordinator`.
+  Session taint is checkpoint state. Security denials write `chief_audit_log`. The first
+  tools are memory read/write, explicit KG lookup/link, schedule recording, and an MCP
+  invoke that the boundary guard blocks. No code-execution tool, no scheduler, no cron, and
+  no provider-architecture change. Hybrid FTS+pgvector retrieval, fact extraction, and KG
+  consolidation are not in this slice. Boundary mode is block-only until the Rust scanner
+  patterns are ported on purpose (ADR-0004).
 - **Phase 5 — Scheduler + operatives.** Task store + `api/cron/chief-dispatch` (additive
   `vercel.json` entry); operative tick agents (OpenJarvis execute_tick semantics); retries,
   failure handling, notifications. This phase is what makes the §5.5 loop run; it does

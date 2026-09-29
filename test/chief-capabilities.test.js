@@ -14,6 +14,7 @@ import {
   fnmatch,
   isCapability,
 } from "../server/chief/core/capabilities.js";
+import { CHIEF_TOOL_INVENTORY } from "../server/chief/tools/inventory.js";
 
 test("capability wire values match upstream", () => {
   assert.equal(Capability.FILE_READ, "file:read");
@@ -168,10 +169,16 @@ test("remote tool names resolve to tool:invoke, never a reviewed-safe floor", ()
 });
 
 test("inventory is the security floor for inventoried tools", () => {
-  // The CHIEF inventory starts empty (tools land in Phase 3); the frozen
-  // object shape is what later phases extend.
+  // The default table stays empty. Phase 4 passes CHIEF_TOOL_INVENTORY into
+  // the executor so a reviewed tool does not pick up the system:admin floor.
   assert.deepEqual(DEFAULT_TOOL_CAPABILITIES, {});
   assert.ok(Object.isFrozen(DEFAULT_TOOL_CAPABILITIES));
+  assert.deepEqual(canonicalToolCapabilities("memory_read", { inventory: CHIEF_TOOL_INVENTORY }), [
+    Capability.MEMORY_READ,
+  ]);
+  assert.deepEqual(canonicalToolCapabilities("memory_read"), [Capability.SYSTEM_ADMIN]);
+  assert.equal(Object.hasOwn(CHIEF_TOOL_INVENTORY, "shell_exec"), false);
+  assert.equal(Object.hasOwn(CHIEF_TOOL_INVENTORY, "code_interpreter"), false);
 });
 
 test("fnmatch matches Python fnmatch semantics for the policy's glob subset", () => {

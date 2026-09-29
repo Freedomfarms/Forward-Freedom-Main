@@ -21,7 +21,7 @@ import { CAPABILITY_RANK_KEY, createModelSpec } from "../server/chief/models/typ
 import { ApprovalCoordinator, ApprovalPolicy } from "../server/chief/runtime/approvals.js";
 import { MemoryCheckpointStore } from "../server/chief/runtime/checkpoint.js";
 import { TurnMachine, toolSpecsToAiTools } from "../server/chief/runtime/turn.js";
-import { ToolExecutor, TOOLS_UNAVAILABLE } from "../server/chief/tools/executor.js";
+import { lookupExecutor } from "./chief-tool-fixture.js";
 
 const silentLogger = { warn: () => {}, error: () => {}, log: () => {} };
 
@@ -137,11 +137,8 @@ test("tool calls go through ToolExecutor and never an AI SDK execute callback", 
   const result = await machine({
     engine,
     approvals: new ApprovalCoordinator(ApprovalPolicy.ALLOW),
-    toolExecutor: new ToolExecutor({
-      handler: async (call, context) => {
-        executed.push({ call, context });
-        return { output: "found" };
-      },
+    toolExecutor: lookupExecutor({
+      onExecute: (call, context) => executed.push({ call, context }),
     }),
   }).run({ userId: "user", submission: message("find a") });
   assert.equal(result.status, "completed");
@@ -163,7 +160,7 @@ test("the default executor fail-closes and a stream tool-result is refused", asy
     approvals: new ApprovalCoordinator(ApprovalPolicy.ALLOW),
   }).run({ userId: "user", submission: message("go") });
   assert.equal(closed.status, "completed");
-  assert.equal(JSON.stringify(closed.checkpoint.transcript).includes(TOOLS_UNAVAILABLE), true);
+  assert.equal(JSON.stringify(closed.checkpoint.transcript).includes("Unknown tool: lookup"), true);
 
   const store = new MemoryCheckpointStore();
   await assert.rejects(
@@ -182,11 +179,9 @@ test("ask policy suspends the whole batch and an approval resumes through ToolEx
     { parts: [{ type: "tool-call", toolCallId: "c1", toolName: "lookup", input: { q: "a" } }] },
     { parts: [{ type: "text-delta", text: "done" }] },
   ]);
-  const executor = new ToolExecutor({
-    handler: async (call) => {
-      executed.push(call.callId);
-      return { output: "ok" };
-    },
+  const executor = lookupExecutor({
+    onExecute: (call) => executed.push(call.callId),
+    output: "ok",
   });
   const first = await machine({ store, engine, toolExecutor: executor }).run({
     userId: "user",
@@ -220,11 +215,9 @@ test("approved_for_session survives onto the next invocation", async () => {
     { parts: [{ type: "tool-call", toolCallId: "c2", toolName: "lookup", input: { q: "a" } }] },
     { parts: [{ type: "text-delta", text: "second" }] },
   ]);
-  const toolExecutor = new ToolExecutor({
-    handler: async (call) => {
-      executed.push(call.callId);
-      return { output: "ok" };
-    },
+  const toolExecutor = lookupExecutor({
+    onExecute: (call) => executed.push(call.callId),
+    output: "ok",
   });
   const first = await machine({ store, engine, toolExecutor }).run({
     userId: "user",
@@ -265,22 +258,16 @@ test("a denial becomes a synthetic error and does not call the executor", async 
   const first = await machine({
     store,
     engine,
-    toolExecutor: new ToolExecutor({
-      handler: async (call) => {
-        executed.push(call.callId);
-        return { output: "ran" };
-      },
+    toolExecutor: lookupExecutor({
+      onExecute: (call) => executed.push(call.callId),
     }),
   }).run({ userId: "user", submission: message("find") });
 
   const second = await machine({
     store,
     engine,
-    toolExecutor: new ToolExecutor({
-      handler: async (call) => {
-        executed.push(call.callId);
-        return { output: "ran" };
-      },
+    toolExecutor: lookupExecutor({
+      onExecute: (call) => executed.push(call.callId),
     }),
   }).run({
     userId: "user",
@@ -535,11 +522,9 @@ test("streamText tool calls are not executed by the AI SDK", async () => {
   const result = await machine({
     engine,
     approvals: new ApprovalCoordinator(ApprovalPolicy.ALLOW),
-    toolExecutor: new ToolExecutor({
-      handler: async (call) => {
-        executed.push(call);
-        return { output: "found" };
-      },
+    toolExecutor: lookupExecutor({
+      requiresConfirmation: false,
+      onExecute: (call) => executed.push(call),
     }),
   }).run({
     userId: "user",
@@ -548,6 +533,7 @@ test("streamText tool calls are not executed by the AI SDK", async () => {
       {
         name: "lookup",
         description: "find",
+        requiresConfirmation: false,
         parameters: { type: "object", properties: { q: { type: "string" } } },
       },
     ],
