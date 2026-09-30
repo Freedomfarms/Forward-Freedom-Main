@@ -112,6 +112,66 @@ export function normalizeSchedule(params, now = new Date()) {
   return fields;
 }
 
+const UPDATE_FIELDS = Object.freeze([
+  "name",
+  "prompt",
+  "kind",
+  "cronExpr",
+  "intervalSeconds",
+  "runAt",
+  "timezone",
+]);
+
+function providedScheduleUpdates(params) {
+  const picked = {};
+  if (!params || typeof params !== "object") return picked;
+  for (const key of UPDATE_FIELDS) {
+    if (Object.prototype.hasOwnProperty.call(params, key) && params[key] != null) {
+      picked[key] = params[key];
+    }
+  }
+  return picked;
+}
+
+function definitionFromTask(task) {
+  return {
+    name: task.name,
+    kind: task.kind,
+    cronExpr: task.cronExpr,
+    intervalSeconds: task.intervalSeconds,
+    runAt: task.runAt,
+    prompt: task?.payload?.prompt,
+    timezone: task?.payload?.timezone,
+  };
+}
+
+function prepareScheduleUpdate(task, params, now) {
+  const patch = providedScheduleUpdates(params);
+  if (Object.keys(patch).length === 0) return { error: "no_updates" };
+  try {
+    return { fields: normalizeSchedule({ ...definitionFromTask(task), ...patch }, now) };
+  } catch (error) {
+    return { error: "invalid_schedule", message: error.message };
+  }
+}
+
+function updateBlocked(task, awaiting) {
+  if (!task) return { error: "not_found" };
+  if (task.status !== "ACTIVE" && task.status !== "PAUSED") return { error: "not_updatable" };
+  if (task.lockedAt || awaiting) return { error: "in_flight" };
+  return null;
+}
+
+function applyScheduleUpdate(task, fields) {
+  task.name = fields.name;
+  task.kind = fields.kind;
+  task.cronExpr = fields.cronExpr;
+  task.intervalSeconds = fields.intervalSeconds;
+  task.runAt = fields.runAt;
+  task.payload = fields.payload;
+  if (task.status === "ACTIVE") task.nextRunAt = fields.nextRunAt;
+}
+
 export class MemoryScheduleStore {
   constructor({ tasks, runs } = {}) {
     this.tasks = tasks ?? [];
@@ -186,6 +246,18 @@ export class MemoryScheduleStore {
     if (task.status !== "ACTIVE" && task.status !== "PAUSED") return { error: "not_cancellable" };
     task.status = "CANCELLED";
     task.nextRunAt = null;
+    return { task: publicScheduledTask(task) };
+  }
+
+  async update({ userId, taskId, params, now = new Date() } = {}) {
+    const id = String(taskId ?? "").trim();
+    const task = this._own(userId, id);
+    const awaiting = awaitingIds(this.runs, userId).has(id);
+    const blocked = updateBlocked(task, awaiting);
+    if (blocked) return blocked;
+    const prepared = prepareScheduleUpdate(task, params, now);
+    if (prepared.error) return prepared;
+    applyScheduleUpdate(task, prepared.fields);
     return { task: publicScheduledTask(task) };
   }
 }
@@ -302,6 +374,45 @@ export class PrismaScheduleStore {
       });
       if (count !== 1) return { error: "not_cancellable" };
       return { task: publicScheduledTask({ ...task, status: "CANCELLED", nextRunAt: null }) };
+    });
+  }
+
+  async update({ userId, taskId, params, now = new Date() } = {}) {
+    const id = String(taskId ?? "").trim();
+    return this._withUser(userId, async (tx) => {
+      const task = await tx.chiefScheduledTask.findFirst({ where: { id, userId } });
+      if (!task) return { error: "not_found" };
+      const waiting = await tx.chiefTaskRun.findMany({
+        where: { userId, scheduledTaskId: id, status: AWAITING_APPROVAL },
+        select: { id: true },
+        take: 1,
+      });
+      const blocked = updateBlocked(task, waiting.length > 0);
+      if (blocked) return blocked;
+      const prepared = prepareScheduleUpdate(task, params, now);
+      if (prepared.error) return prepared;
+      const data = {
+        name: prepared.fields.name,
+        kind: prepared.fields.kind,
+        cronExpr: prepared.fields.cronExpr,
+        intervalSeconds: prepared.fields.intervalSeconds,
+        runAt: prepared.fields.runAt,
+        payload: prepared.fields.payload,
+      };
+      if (task.status === "ACTIVE") data.nextRunAt = prepared.fields.nextRunAt;
+      const { count } = await tx.chiefScheduledTask.updateMany({
+        where: { id, userId, status: task.status, lockedAt: null },
+        data,
+      });
+      if (count !== 1) return { error: "in_flight" };
+      return {
+        task: publicScheduledTask({
+          ...task,
+          ...data,
+          status: task.status,
+          nextRunAt: task.status === "ACTIVE" ? data.nextRunAt : task.nextRunAt,
+        }),
+      };
     });
   }
 }

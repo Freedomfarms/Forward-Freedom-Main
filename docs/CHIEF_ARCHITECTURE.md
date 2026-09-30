@@ -627,6 +627,13 @@ previous one is merged or explicitly waived. Verification per repo policy: `npm 
   when the task is not the caller's. It does not decrypt `resultCiphertext`,
   does not return errors or session ids, and does not deliver or notify.
   `attention` stays `false`.
+- **Phase 14 — Schedule update (delivered slice, ADR-0014).** One confirming
+  tool, `schedule_update`, on the existing schedule store. It edits the
+  caller's task definition through `normalizeSchedule` and does not change
+  status, id, or `agentId`. An `ACTIVE` task gets a new `nextRunAt` from
+  `initialNextRun`. A `PAUSED` task keeps `nextRunAt` for `schedule_resume`.
+  A locked task, or one with an `AWAITING_APPROVAL` run, is not written.
+  The tool does not call the tick or start a turn. `attention` stays `false`.
 - **Phase 6b — Sidecar boundary.** `server/chief/sidecar/` provider registration + health;
   deep_research/managed-agent tool adapters; deployment recipe doc (Docker/Render/Fly) — all
   feature-flagged and optional.
