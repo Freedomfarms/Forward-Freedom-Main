@@ -36,6 +36,7 @@ import adminUsageHandler from "../api/admin/usage.js";
 import cronAgentDispatchHandler from "../api/cron/agent-dispatch.js";
 import chiefSessionsHandler from "../api/chief/sessions.js";
 import chiefHistoryHandler from "../api/chief/history.js";
+import chiefModelsHandler from "../api/chief/models.js";
 import chiefChatHandler from "../api/chief/chat.js";
 import chiefApprovalsHandler from "../api/chief/approvals.js";
 
@@ -141,6 +142,7 @@ app.get("/api/admin/usage", adminUsageHandler);
 // Express mirrors those handlers without changing them.
 app.get("/api/chief/sessions", chiefSessionsHandler);
 app.get("/api/chief/history", chiefHistoryHandler);
+app.get("/api/chief/models", chiefModelsHandler);
 app.post("/api/chief/chat", chiefChatHandler);
 app.route("/api/chief/approvals").get(chiefApprovalsHandler).post(chiefApprovalsHandler);
 // Cron dispatcher: GET with no JSON body; same CRON_SECRET check as Vercel.

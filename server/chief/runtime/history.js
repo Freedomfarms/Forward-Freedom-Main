@@ -46,5 +46,9 @@ export function projectInteractiveHistory(record) {
     }
     messages.push({ role, text });
   }
-  return { sessionId: record.id, messages };
+  const modelRoute =
+    typeof record.checkpoint.modelRoute === "string" && record.checkpoint.modelRoute
+      ? record.checkpoint.modelRoute
+      : null;
+  return { sessionId: record.id, modelRoute, messages };
 }

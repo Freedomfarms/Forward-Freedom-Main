@@ -1173,6 +1173,27 @@ textarea:focus-visible,
   letter-spacing: 0.4px;
 }
 
+.chief-model-select select {
+  min-height: 44px;
+  max-width: 220px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(0, 216, 255, 0.4);
+  background: rgba(3, 17, 32, 0.85);
+  color: #eaf3ff;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.chief-model-select select:disabled {
+  opacity: 0.5;
+}
+
+.chief-model-select select:focus-visible {
+  outline: 2px solid #8feaff;
+  outline-offset: 2px;
+}
+
 .chief-transcript-scroll {
   flex: 1;
   overflow: auto;

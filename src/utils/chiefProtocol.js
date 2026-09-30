@@ -2,7 +2,8 @@
 //
 // The chat route speaks the existing submission envelope:
 // `{ session_id?, submission: { id, op } }`.
-// A session is created when the first message is posted without session_id.
+// A session is created when the first message is posted without session_id,
+// or when set_model is posted for a draft so the choice sticks to one session.
 
 const FINANCE_TOOLS = new Set(["finance_summary", "workspace_plan_summary"]);
 
@@ -147,6 +148,12 @@ export function applyChiefEvent(state, event) {
       };
     case "turn_aborted":
       return { ...state, status: CHIEF_STATUS.READY, finished: true };
+    case "model_changed":
+      return {
+        ...state,
+        modelRoute:
+          typeof msg.route === "string" && msg.route ? msg.route : (state.modelRoute ?? null),
+      };
     default:
       return state;
   }
@@ -193,6 +200,13 @@ export function messageSubmission(text) {
   return {
     id: createSubmissionId(),
     op: { type: "message", message: { text } },
+  };
+}
+
+export function modelSubmission(route) {
+  return {
+    id: createSubmissionId(),
+    op: { type: "set_model", route },
   };
 }
 

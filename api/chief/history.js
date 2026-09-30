@@ -44,7 +44,11 @@ export async function handleChiefHistory(request, response, deps = {}) {
     response.status(404).json({ error: "session not found" });
     return;
   }
-  response.status(200).json({ sessionId: history.sessionId, messages: history.messages });
+  response.status(200).json({
+    sessionId: history.sessionId,
+    modelRoute: history.modelRoute,
+    messages: history.messages,
+  });
 }
 
 export default function handler(request, response) {

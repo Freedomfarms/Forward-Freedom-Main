@@ -39,9 +39,12 @@ decisions that keep the layer provider-agnostic.
    `env`, and only leave as the provider instance. Diagnostics (`health()`,
    `describeProviderCredentials`) carry the variable _name_, never the value. `CHIEF_`-prefixed
    variables take precedence over platform ones.
-3. **Grok-primary, not Grok-only.** Default `CHIEF_MODEL_PROVIDERS=xai`; Anthropic is
-   registered but opt-in so Module 01's platform key does not silently pull its vendor into
-   CHIEF. `CHIEF_DEFAULT_MODEL=grok-4.7`, `CHIEF_FALLBACK_MODEL=grok-4.6`.
+3. **Grok-primary when Grok is configured.** Default enabled providers are `xai`,
+   `anthropic`, and `openai`. Each one is instantiated only when its credential is
+   present, so Claude still runs when the xAI and OpenAI keys are absent. An explicit
+   `CHIEF_MODEL_PROVIDERS` list can narrow that set. `CHIEF_DEFAULT_MODEL=grok-4.7`,
+   `CHIEF_FALLBACK_MODEL=grok-4.6`. Unpinned turns still use the heuristic router.
+   An explicit session `modelRoute` skips it.
 4. **Router contract.** `engine.resolve(query, { urgency, model, routerPolicy })` returns
    `{ modelKey, spec, providerId, languageModel, routingContext, maxTokens, routed, policy }`.
    The orchestration layer depends on this object and the AI SDK `LanguageModel` interface

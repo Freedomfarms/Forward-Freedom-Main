@@ -311,7 +311,7 @@ plan is explicit:
 | ------------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------ |
 | `@ai-sdk/xai` (`^5.0.12`)                               | Apache-2.0 | **Installed (Phase 2)** — xAI Grok transport, `server/chief/models/providers.js`                 |
 | `ai`, `@ai-sdk/anthropic` (pre-existing platform deps)  | Apache-2.0 | **Used (Phase 2–3)** — provider registry, generateText, streamText; Anthropic transport (opt-in) |
-| `@ai-sdk/openai-compatible` or `@ai-sdk/openai`         | Apache-2.0 | Planned — OpenAI-compatible socket for the optional OpenJarvis sidecar (Phase 6b)                |
+| `@ai-sdk/openai` (`^4.0.83`)                            | Apache-2.0 | **Installed** — OpenAI GPT transport, `server/chief/models/providers.js`. Not Codex OAuth.       |
 | `@modelcontextprotocol/sdk`                             | MIT        | Planned — MCP tool client (Phase 4)                                                              |
 | `cron-parser` (`^5.10.1`, depends on `luxon`, MIT)      | MIT        | **Installed (Phase 5)** — cron evaluation, `server/chief/scheduler/schedule.js`                  |
 | `three`, `react-force-graph-3d`, `react-force-graph-2d` | MIT        | Planned — cortex-map runtime dependencies (Phase 7)                                              |
