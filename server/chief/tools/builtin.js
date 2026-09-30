@@ -240,6 +240,194 @@ function scheduleCreate(store) {
   });
 }
 
+function lifecycleOutput(result) {
+  if (result?.error === "not_found") return { output: "scheduled task not found", isError: true };
+  if (result?.error === "not_pausable") {
+    return { output: "scheduled task cannot be paused", isError: true };
+  }
+  if (result?.error === "not_resumable") {
+    return { output: "scheduled task cannot be resumed", isError: true };
+  }
+  if (result?.error === "not_cancellable") {
+    return { output: "scheduled task cannot be cancelled", isError: true };
+  }
+  if (result?.error === "invalid_schedule") {
+    return { output: result.message || "scheduled task cannot be resumed", isError: true };
+  }
+  return { output: JSON.stringify(result.task) };
+}
+
+function scheduleList(store) {
+  return new BaseTool({
+    isLocal: true,
+    spec: {
+      name: "schedule_list",
+      description:
+        "List this user's scheduled tasks: id, name, kind, status, next run, last run, and whether a run is waiting on approval. Does not return run results or operator state.",
+      category: "schedule",
+      requiresConfirmation: false,
+      requiredCapabilities: [Capability.SCHEDULE_CREATE],
+      parameters: { type: "object", properties: {} },
+    },
+    async execute(_params, context) {
+      const tasks = await store.list({ userId: context.userId });
+      return { output: JSON.stringify({ tasks }) };
+    },
+  });
+}
+
+function schedulePause(store) {
+  return new BaseTool({
+    isLocal: true,
+    spec: {
+      name: "schedule_pause",
+      description:
+        "Pause one of this user's active scheduled tasks so later ticks do not claim it. Does not stop a turn that is already running and does not start a new one.",
+      category: "schedule",
+      requiresConfirmation: true,
+      requiredCapabilities: [Capability.SCHEDULE_CREATE],
+      parameters: {
+        type: "object",
+        properties: { taskId: { type: "string" } },
+        required: ["taskId"],
+      },
+    },
+    async execute(params, context) {
+      const taskId = String(params.taskId ?? "").trim();
+      if (!taskId) return { output: "task id is required", isError: true };
+      return lifecycleOutput(await store.pause({ userId: context.userId, taskId }));
+    },
+  });
+}
+
+function scheduleResume(store) {
+  return new BaseTool({
+    isLocal: true,
+    spec: {
+      name: "schedule_resume",
+      description:
+        "Resume one of this user's paused scheduled tasks and set its next run. Does not run the task.",
+      category: "schedule",
+      requiresConfirmation: true,
+      requiredCapabilities: [Capability.SCHEDULE_CREATE],
+      parameters: {
+        type: "object",
+        properties: { taskId: { type: "string" } },
+        required: ["taskId"],
+      },
+    },
+    async execute(params, context) {
+      const taskId = String(params.taskId ?? "").trim();
+      if (!taskId) return { output: "task id is required", isError: true };
+      return lifecycleOutput(await store.resume({ userId: context.userId, taskId }));
+    },
+  });
+}
+
+function scheduleCancel(store) {
+  return new BaseTool({
+    isLocal: true,
+    spec: {
+      name: "schedule_cancel",
+      description:
+        "Cancel one of this user's scheduled tasks and clear its next run. The task and its runs are kept. A turn already running is not stopped.",
+      category: "schedule",
+      requiresConfirmation: true,
+      requiredCapabilities: [Capability.SCHEDULE_CREATE],
+      parameters: {
+        type: "object",
+        properties: { taskId: { type: "string" } },
+        required: ["taskId"],
+      },
+    },
+    async execute(params, context) {
+      const taskId = String(params.taskId ?? "").trim();
+      if (!taskId) return { output: "task id is required", isError: true };
+      return lifecycleOutput(await store.cancel({ userId: context.userId, taskId }));
+    },
+  });
+}
+
+function updateOutput(result) {
+  if (result?.error === "not_found") return { output: "scheduled task not found", isError: true };
+  if (result?.error === "not_updatable") {
+    return { output: "scheduled task cannot be updated", isError: true };
+  }
+  if (result?.error === "in_flight") {
+    return { output: "scheduled task cannot be updated while a run is in progress", isError: true };
+  }
+  if (result?.error === "no_updates")
+    return { output: "no schedule updates provided", isError: true };
+  if (result?.error === "invalid_schedule") {
+    return { output: result.message || "scheduled task cannot be updated", isError: true };
+  }
+  return { output: JSON.stringify(result.task) };
+}
+
+function scheduleUpdate(store) {
+  return new BaseTool({
+    isLocal: true,
+    spec: {
+      name: "schedule_update",
+      description:
+        "Update one of this user's active or paused scheduled tasks: name, prompt, or schedule. Does not run the task, change its status, or change a task that is locked or waiting on approval.",
+      category: "schedule",
+      requiresConfirmation: true,
+      requiredCapabilities: [Capability.SCHEDULE_CREATE],
+      parameters: {
+        type: "object",
+        properties: {
+          taskId: { type: "string" },
+          name: { type: "string" },
+          prompt: { type: "string" },
+          kind: { type: "string" },
+          cronExpr: { type: "string" },
+          intervalSeconds: { type: "number" },
+          runAt: { type: "string" },
+          timezone: { type: "string" },
+        },
+        required: ["taskId"],
+      },
+    },
+    async execute(params, context) {
+      const taskId = String(params?.taskId ?? "").trim();
+      if (!taskId) return { output: "task id is required", isError: true };
+      return updateOutput(
+        await store.update({
+          userId: context.userId,
+          taskId,
+          params,
+        })
+      );
+    },
+  });
+}
+
+function scheduleRuns(store) {
+  return new BaseTool({
+    isLocal: true,
+    spec: {
+      name: "schedule_runs",
+      description:
+        "List this user's scheduled runs: id, task, status, attempts, start, and completion. Does not return results, errors, prompts, or session ids. Does not run or change a task.",
+      category: "schedule",
+      requiresConfirmation: false,
+      requiredCapabilities: [Capability.SCHEDULE_CREATE],
+      parameters: {
+        type: "object",
+        properties: { taskId: { type: "string" } },
+      },
+    },
+    async execute(params, context) {
+      const taskId = String(params?.taskId ?? "").trim();
+      const result = await store.listRuns({ userId: context.userId, taskId: taskId || undefined });
+      if (result?.error === "not_found")
+        return { output: "scheduled task not found", isError: true };
+      return { output: JSON.stringify({ runs: result.runs }) };
+    },
+  });
+}
+
 function financeSummary(load = loadFinanceSummary) {
   return new BaseTool({
     isLocal: true,
@@ -390,6 +578,12 @@ export function createChiefTools({
     kgLink(graph),
     writeHandoff(),
     scheduleCreate(schedule),
+    scheduleList(schedule),
+    schedulePause(schedule),
+    scheduleResume(schedule),
+    scheduleCancel(schedule),
+    scheduleUpdate(schedule),
+    scheduleRuns(schedule),
     financeSummary(loadFinance),
     workspacePlanSummary(loadWorkspace),
     skillView(skills),

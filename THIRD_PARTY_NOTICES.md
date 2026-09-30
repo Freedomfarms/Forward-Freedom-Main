@@ -80,6 +80,19 @@ Conventions used in this repository:
 - Adapted modules in this repository (Phase 5 — scheduler tick):
   - `server/chief/scheduler/schedule.js` ← `src/openjarvis/scheduler/scheduler.py`
     (`_compute_next_run`, `_compute_next_cron` semantics; cron parsing is `cron-parser`)
+  - `server/chief/tools/schedule-store.js` lifecycle methods and
+    `schedule_list` / `schedule_pause` / `schedule_resume` / `schedule_cancel`
+    in `server/chief/tools/builtin.js` ← `src/openjarvis/scheduler/tools.py`
+    (`ListScheduledTasksTool`, `PauseScheduledTaskTool`, `ResumeScheduledTaskTool`,
+    `CancelScheduledTaskTool`) and `TaskScheduler.list_tasks` / `pause_task` /
+    `resume_task` / `cancel_task` in `src/openjarvis/scheduler/scheduler.py`
+    (Phase 12). The polling thread and per-task agent selection are not ported.
+  - `schedule_runs` in `server/chief/tools/builtin.js` and `listRuns` in
+    `server/chief/tools/schedule-store.js` ← `SchedulerStore.get_run_logs` in
+    `src/openjarvis/scheduler/store.py` (newest rows, limit 10) and the
+    scheduler tool shape in `src/openjarvis/scheduler/tools.py` (Phase 13).
+    `get_run_logs` also returns `result` and `error` text. Those fields are
+    not returned.
   - `server/chief/scheduler/operative.js` ← `src/openjarvis/agents/operative.py`
     (`operator:{id}:state` key, "## Previous State" recall, 1000-character auto-persist;
     the OperativeAgent loop is not ported)
@@ -148,6 +161,11 @@ Conventions used in this repository:
     missed-slot skipping)
   - `server/chief/scheduler/tick.js` ← `src/backend/bots.rs` (`run_routine_with_state`:
     one fresh session per run)
+  - Phase 12 ← `crates/mobius-gateway/src/host/routines.rs` `delete_routine`
+    (a lifecycle edit does not abort a run that is already running). CHIEF
+    keeps the task row. The routine runner is not ported again.
+  - Phase 13 does not port `routine_run_preview`. That call returns the
+    session history page. `schedule_runs` returns ledger columns only.
 - Adapted modules in this repository (Phase 11):
   - `server/chief/scheduler/resume.js` ← `crates/mobius-gateway/src/host/session/events.rs`
     (`observe_routine_event`: an `ExecApprovalRequest` does not finish the routine;
@@ -179,7 +197,7 @@ Conventions used in this repository:
 - Repository: https://github.com/NousResearch/hermes-agent
 - Commit audited: `8c30ef318d1ed6c88597239081f5749268efdca8`
 - License: MIT ("Copyright (c) 2025 Nous Research")
-- Use in this repository: **adapted semantics only** (Phase 5, Phase 6, Phase 8, and Phase 10).
+- Use in this repository: **adapted semantics only** (Phase 5, Phase 6, Phase 8, Phase 10, Phase 12, Phase 13, and Phase 14).
   No Hermes code, runtime, agent loop, delivery queue, or approval behavior is included.
   - Phase 6 identity slot ← `agent/system_prompt.py` `_identity_parts` and
     `agent/prompt_builder.py` `load_soul_md` (concept only: a user persona, else a
@@ -198,6 +216,19 @@ Conventions used in this repository:
     target, so a scheduled run stores `attention: false` and sends nothing.
     `cron/delivery_queue.py`, `cron/bot_chat_delivery.py`, and the platform
     senders are not ported.
+  - Phase 12 pause ← `cron/jobs.py` `pause_job` and `is_job_runnable` (a pause
+    affects later fires only; a paused task is not claimed). `resume_job`
+    catch-up, `trigger_job`, and the process-wide estop are not ported.
+  - Phase 13 lookup ← `cron/scheduler_delivery.py` `_normalize_deliver_value`
+    and `_resolve_delivery_targets` (a local deliver value has no targets, so
+    nothing is sent; the saved run can be looked up). `schedule_runs` is that
+    lookup. `_deliver_result`, `cron/delivery_queue.py`, bot-chat delivery,
+    and session seeding are not ported.
+  - Phase 14 update ← `tools/cronjob_tools.py` `_update_core_fields` (change
+    prompt and name without firing) and the schedule branch of
+    `_update_run_fields` (a paused job stays paused). `schedule_update` edits
+    the stored definition only. `deliver`, script, skills, `_action_run`, and
+    a full-row replace are not ported.
 - Obligations: retain the copyright and permission notice; the full license text is at
   `licenses/HERMES-AGENT-LICENSE-MIT.txt`.
 
