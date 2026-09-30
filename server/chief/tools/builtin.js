@@ -5,6 +5,9 @@
 
 import { Capability } from "../core/capabilities.js";
 import { ToolRegistry } from "../core/registry.js";
+import { loadFinanceSummary } from "../../finance/aggregates.js";
+import { loadWorkspacePlanSummary } from "../../finance/workspaceSlice.js";
+import { TaintLabel } from "../security/taint.js";
 import { MemoryFactStore, PrismaFactStore } from "../memory/facts.js";
 import { MemoryGraphStore, PrismaGraphStore } from "../memory/graph.js";
 import { fencesOutput, scanInjection } from "../security/injection.js";
@@ -236,6 +239,66 @@ function scheduleCreate(store) {
   });
 }
 
+function financeSummary(load = loadFinanceSummary) {
+  return new BaseTool({
+    isLocal: true,
+    spec: {
+      name: "finance_summary",
+      description:
+        "Read this user's server-computed spending aggregates, balances grouped by account type, and Plaid connection health. Does not return transactions, merchants, account names, or institution names.",
+      category: "finance",
+      requiresConfirmation: false,
+      requiredCapabilities: [Capability.FINANCE_READ],
+      parameters: { type: "object", properties: {} },
+    },
+    async execute(_params, context) {
+      try {
+        const summary = await load(context.userId);
+        return {
+          output: JSON.stringify(summary),
+          sessionTaint: [TaintLabel.USER_PRIVATE],
+        };
+      } catch {
+        return {
+          output: "finance summary is unavailable",
+          isError: true,
+          sessionTaint: [TaintLabel.USER_PRIVATE],
+        };
+      }
+    },
+  });
+}
+
+function workspacePlanSummary(load = loadWorkspacePlanSummary) {
+  return new BaseTool({
+    isLocal: true,
+    spec: {
+      name: "workspace_plan_summary",
+      description:
+        "Read this user's plan slice: budget and income labels, objective count, plan years, and stored metric fields already saved in the workspace. Does not return the workspace blob or dollar amounts for budget and income rows.",
+      category: "finance",
+      requiresConfirmation: false,
+      requiredCapabilities: [Capability.FINANCE_READ],
+      parameters: { type: "object", properties: {} },
+    },
+    async execute(_params, context) {
+      try {
+        const summary = await load(context.userId);
+        return {
+          output: JSON.stringify(summary),
+          sessionTaint: [TaintLabel.USER_PRIVATE],
+        };
+      } catch {
+        return {
+          output: "workspace plan summary is unavailable",
+          isError: true,
+          sessionTaint: [TaintLabel.USER_PRIVATE],
+        };
+      }
+    },
+  });
+}
+
 function mcpInvoke(client) {
   return new BaseTool({
     isLocal: false,
@@ -278,6 +341,8 @@ export function createChiefTools({
   graph = new MemoryGraphStore(),
   schedule = new MemoryScheduleStore(),
   mcpClient = null,
+  loadFinance = loadFinanceSummary,
+  loadWorkspace = loadWorkspacePlanSummary,
 } = {}) {
   const tools = [
     memoryRead(facts),
@@ -286,6 +351,8 @@ export function createChiefTools({
     kgLink(graph),
     writeHandoff(),
     scheduleCreate(schedule),
+    financeSummary(loadFinance),
+    workspacePlanSummary(loadWorkspace),
     mcpInvoke(mcpClient),
   ];
   for (const tool of tools) {
