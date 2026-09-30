@@ -571,6 +571,11 @@ previous one is merged or explicitly waived. Verification per repo policy: `npm 
   `ChiefModelEngine`. The OpenJarvis sidecar below moves back; it is optional and
   nothing later depends on it. The context engine is what memory, skills, and
   subagents attach to.
+- **Phase 7 — Governed finance reads (delivered slice, ADR-0007).** Two read-only
+  tools, `finance_summary` and `workspace_plan_summary`, both `finance:read`, no
+  confirmation, taint `user_private`. They call the shared aggregate and workspace
+  slice through `withUserContext`. The database is not a model-facing interface.
+  True Cash is not recomputed. Command Center remains a later phase.
 - **Phase 6b — Sidecar boundary.** `server/chief/sidecar/` provider registration + health;
   deep_research/managed-agent tool adapters; deployment recipe doc (Docker/Render/Fly) — all
   feature-flagged and optional.
