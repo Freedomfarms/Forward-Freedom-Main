@@ -12,6 +12,7 @@ export const LOGO_SRC =
 
 export const APP_TABS = {
   FREEDOM_OS: "Freedom OS",
+  CHIEF: "CHIEF",
   DASHBOARD: "Command Center",
   OPERATIONS_BOARD: "Operations Board",
   INCOME_HUB: "Income Hub",
@@ -33,6 +34,7 @@ export const APP_TAB_VALUES = Object.values(APP_TABS);
 
 export const navMain = [
   { icon: "◈", label: APP_TABS.FREEDOM_OS, active: true },
+  { icon: "✦", label: APP_TABS.CHIEF },
   { icon: "⌂", label: APP_TABS.DASHBOARD },
   { icon: "◉", label: APP_TABS.FORECAST_LAB },
   { icon: "▣", label: APP_TABS.OPERATIONS_BOARD },

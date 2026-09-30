@@ -116,6 +116,7 @@ import { FreedomOsDeck } from "./components/freedomOs/FreedomOsDeck.jsx";
 import { FreedomOsLanding } from "./components/FreedomOsLanding.jsx";
 import { FREEDOM_OS_MODULE_IDS } from "./components/freedomOs/freedomOsModules.js";
 import { AdminUsagePanel } from "./components/freedomOs/AdminUsagePanel.jsx";
+import { ChiefPage } from "./components/chief/ChiefPage.jsx";
 import { useViewportUIScale } from "./utils/useViewportUIScale.js";
 import { LegalModal } from "./components/LegalDocuments.jsx";
 
@@ -2607,7 +2608,9 @@ function ForwardFreedomDashboard({
               here instead of unmounting the whole app. key={activeTab} resets
               the boundary whenever the user switches views. */}
           <ViewErrorBoundary key={activeTab} viewName={activeTab}>
-          {activeTab === APP_TABS.FREEDOM_OS ? (
+          {activeTab === APP_TABS.CHIEF ? (
+            <ChiefPage user={freedomOsAuthUser} />
+          ) : activeTab === APP_TABS.FREEDOM_OS ? (
             // Authenticated sessions render the full-screen deck above; only
             // demo / signed-out sessions reach this in-shell card.
             <FreedomOsSignedOutCard />

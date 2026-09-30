@@ -103,6 +103,53 @@ test("a caller reads messages stored on their checkpoint", async () => {
   assert.equal(serialized.includes("user-a"), false);
 });
 
+test("an assistant tool-call part is not visible answer text", async () => {
+  const store = new MemoryCheckpointStore();
+  const created = await store.createSession({ userId: "user-a" });
+  await saveTranscript(store, "user-a", created.id, [
+    { role: "user", content: "Check the accounts" },
+    {
+      role: "assistant",
+      content: [
+        { type: "text", text: "The accounts look steady." },
+        {
+          type: "tool-call",
+          toolCallId: "c1",
+          toolName: "finance_summary",
+          input: { accountId: "secret-arg" },
+        },
+      ],
+    },
+    {
+      role: "assistant",
+      content: [
+        {
+          type: "tool-call",
+          toolCallId: "c2",
+          toolName: "lookup",
+          input: { q: "hidden-input" },
+        },
+      ],
+    },
+  ]);
+  const http = mockResponse();
+  await handleChiefHistory(request({ sessionId: created.id }), http.response, {
+    store,
+    authenticate: auth("user-a"),
+  });
+  assert.equal(http.state.statusCode, 200);
+  const assistants = http.state.body.messages.filter((message) => message.role === "assistant");
+  assert.deepEqual(
+    assistants.map((message) => message.text),
+    ["The accounts look steady.", ""]
+  );
+  const serialized = JSON.stringify(assistants);
+  assert.equal(serialized.includes("secret-arg"), false);
+  assert.equal(serialized.includes("hidden-input"), false);
+  assert.equal(serialized.includes("finance_summary"), false);
+  assert.equal(serialized.includes("lookup"), false);
+});
+
 test("history follows the checkpoint after it changes", async () => {
   const store = new MemoryCheckpointStore();
   const created = await store.createSession({ userId: "user-a" });
