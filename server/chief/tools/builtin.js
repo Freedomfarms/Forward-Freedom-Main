@@ -164,7 +164,7 @@ function scheduleCreate(store) {
     spec: {
       name: "schedule_create",
       description:
-        "Record a future task definition. Recording does not run the task and does not start a scheduler.",
+        "Schedule a future CHIEF turn. prompt is the instruction the scheduled turn receives; timezone is an IANA zone for cron schedules (default UTC). The task runs later as a schedule-caller turn under the same gates and approvals.",
       category: "schedule",
       requiresConfirmation: true,
       requiredCapabilities: [Capability.SCHEDULE_CREATE],
@@ -176,9 +176,11 @@ function scheduleCreate(store) {
           cronExpr: { type: "string" },
           intervalSeconds: { type: "number" },
           runAt: { type: "string" },
+          prompt: { type: "string" },
+          timezone: { type: "string" },
           payload: { type: "object" },
         },
-        required: ["name", "kind"],
+        required: ["name", "kind", "prompt"],
       },
     },
     async execute(params, context) {
@@ -193,6 +195,7 @@ function scheduleCreate(store) {
         output: JSON.stringify({
           id: task.id,
           status: task.status,
+          nextRunAt: task.nextRunAt ? new Date(task.nextRunAt).toISOString() : null,
           dispatched: false,
         }),
       };

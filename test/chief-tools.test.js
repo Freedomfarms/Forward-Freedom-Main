@@ -586,14 +586,20 @@ test("chief tools record memory, graph links, and schedules without dispatching"
     {
       callId: "s",
       name: "schedule_create",
-      arguments: { name: "check well", kind: "once", runAt: "2026-10-01T00:00:00.000Z" },
+      arguments: {
+        name: "check well",
+        kind: "once",
+        runAt: "2026-10-01T00:00:00.000Z",
+        prompt: "Check the well level",
+      },
     },
     context
   );
   const body = JSON.parse(task.output);
   assert.equal(body.dispatched, false);
   assert.equal(body.status, "ACTIVE");
-  assert.equal(schedule.tasks[0].nextRunAt, null);
+  assert.equal(body.nextRunAt, "2026-10-01T00:00:00.000Z");
+  assert.equal(schedule.tasks[0].payload.prompt, "Check the well level");
   assert.equal(typeof schedule.run, "undefined");
 
   const remote = await tooling.executor.execute(

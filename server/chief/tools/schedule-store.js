@@ -1,13 +1,17 @@
 // Records a scheduled task. This is not a scheduler: nothing here claims a
-// lock, computes a tick, or runs the task. Phase 5 owns dispatch.
+// lock or runs the task. It computes the first nextRunAt so the dispatch
+// tick (server/chief/scheduler/tick.js) can find the task.
 
 import { randomUUID } from "node:crypto";
 
 import { withUserContext } from "../../db/prisma.js";
+import { PROMPT_MAX_CHARS } from "../scheduler/operative.js";
+import { initialNextRun, isValidTimezone } from "../scheduler/schedule.js";
+import { fencesOutput, scanInjection } from "../security/injection.js";
 
 const KINDS = new Set(["ONCE", "INTERVAL", "CRON"]);
 
-export function normalizeSchedule(params) {
+export function normalizeSchedule(params, now = new Date()) {
   const kind = String(params?.kind ?? "")
     .trim()
     .toUpperCase();
@@ -23,14 +27,32 @@ export function normalizeSchedule(params) {
   if (kind === "CRON" && !String(params?.cronExpr ?? "").trim()) {
     throw new TypeError("cron schedules require cronExpr");
   }
-  return {
+  const basePayload =
+    params?.payload && typeof params.payload === "object" && !Array.isArray(params.payload)
+      ? params.payload
+      : {};
+  const prompt = String(params?.prompt ?? basePayload.prompt ?? "").trim();
+  if (!prompt) throw new TypeError("schedules require a prompt");
+  if (prompt.length > PROMPT_MAX_CHARS) {
+    throw new TypeError(`schedule prompt exceeds ${PROMPT_MAX_CHARS} characters`);
+  }
+  if (fencesOutput(scanInjection(prompt).threatLevel)) {
+    throw new TypeError("schedule prompt failed the injection scan");
+  }
+  const timezone = params?.timezone ?? basePayload.timezone;
+  if (timezone != null && !isValidTimezone(timezone)) {
+    throw new TypeError(`unknown timezone '${timezone}'`);
+  }
+  const fields = {
     name,
     kind,
     cronExpr: kind === "CRON" ? String(params.cronExpr).trim() : null,
     intervalSeconds: kind === "INTERVAL" ? Number(params.intervalSeconds) : null,
     runAt: kind === "ONCE" ? new Date(params.runAt) : null,
-    payload: params?.payload ?? null,
+    payload: { ...basePayload, prompt, ...(timezone != null ? { timezone } : {}) },
   };
+  fields.nextRunAt = initialNextRun(fields, now);
+  return fields;
 }
 
 export class MemoryScheduleStore {
@@ -44,8 +66,9 @@ export class MemoryScheduleStore {
       userId,
       ...fields,
       status: "ACTIVE",
-      nextRunAt: null,
+      nextRunAt: fields.nextRunAt ?? null,
       lastRunAt: null,
+      lockedAt: null,
     };
     this.tasks.push(task);
     return { ...task };
@@ -69,7 +92,7 @@ export class PrismaScheduleStore {
           runAt: fields.runAt,
           payload: fields.payload ?? undefined,
           status: "ACTIVE",
-          nextRunAt: null,
+          nextRunAt: fields.nextRunAt ?? null,
         },
       })
     );
