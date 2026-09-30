@@ -52,6 +52,12 @@ Conventions used in this repository:
     surface), `src/openjarvis/cli/ask.py` (router integration order),
     `src/openjarvis/agents/_stubs.py` (INFERENCE_START/END payloads). The engine zoo itself
     is not ported — the Vercel AI SDK is used directly (audit §2.3).
+- Adapted modules in this repository (Phase 6 — context engine):
+  - `server/chief/context/inject.js` ← `src/openjarvis/tools/storage/context.py`
+  - `server/chief/memory/rrf.js` ← `src/openjarvis/tools/storage/hybrid.py`
+    (`reciprocal_rank_fusion` only; `HybridMemory` is not ported)
+  - `server/chief/memory/extract.js` ← `src/openjarvis/memory/extractor.py`,
+    `src/openjarvis/memory/service.py` (`_process` and the scan gates)
 - Adapted modules in this repository (Phase 5 — scheduler tick):
   - `server/chief/scheduler/schedule.js` ← `src/openjarvis/scheduler/scheduler.py`
     (`_compute_next_run`, `_compute_next_cron` semantics; cron parsing is `cron-parser`)
@@ -110,6 +116,11 @@ Conventions used in this repository:
   `ApprovalRequirement` (`requires_approval` / `requiresConfirmation`) at commit `3e1aaf5`.
   `@modelcontextprotocol/sdk` is not installed: MCP invoke is a remote tool that block mode
   refuses before any network call.
+- Adapted modules in this repository (Phase 6):
+  - `server/chief/runtime/compaction.js` ← `src/middleware/compaction.rs`,
+    `src/middleware/compaction.toml`, `src/middleware/compaction/handoff.rs`
+    (summary cut, checkpoint prompt, handoff note cap and restore wording).
+    `new_context` and the tool-lockdown ladder are not ported.
 - Adapted modules in this repository (Phase 5):
   - `server/chief/scheduler/store.js` ← `src/backend/bots.rs` (claim under a lock with the
     schedule advanced in the same write; Running/Succeeded/Failed/Skipped run states;
@@ -144,8 +155,12 @@ Conventions used in this repository:
 - Repository: https://github.com/NousResearch/hermes-agent
 - Commit audited: `8c30ef318d1ed6c88597239081f5749268efdca8`
 - License: MIT ("Copyright (c) 2025 Nous Research")
-- Use in this repository: **adapted semantics only** (Phase 5). No Hermes code, runtime,
-  agent loop, or approval behavior is included.
+- Use in this repository: **adapted semantics only** (Phase 5 and Phase 6). No Hermes
+  code, runtime, agent loop, or approval behavior is included.
+  - Phase 6 identity slot ← `agent/system_prompt.py` `_identity_parts` and
+    `agent/prompt_builder.py` `load_soul_md` (concept only: a user persona, else a
+    default identity). CHIEF stores the persona in its fact store. `SOUL.md` is not
+    copied.
   - `server/chief/scheduler/retry.js` ← `cron/unreachable_retry.py` (retry only a
     transient network failure with zero model calls; 300/900/1800-second ladder; give up
     when the natural next occurrence comes first; recurring tasks only) and
@@ -206,7 +221,7 @@ plan is explicit:
 | ------------------------------------------------------- | ---------- | ----------------------------------------------------------------------------------- |
 | `@ai-sdk/xai` (`^5.0.12`)                               | Apache-2.0 | **Installed (Phase 2)** — xAI Grok transport, `server/chief/models/providers.js`    |
 | `ai`, `@ai-sdk/anthropic` (pre-existing platform deps)  | Apache-2.0 | **Used (Phase 2–3)** — provider registry, generateText, streamText; Anthropic transport (opt-in) |
-| `@ai-sdk/openai-compatible` or `@ai-sdk/openai`         | Apache-2.0 | Planned — OpenAI-compatible socket for the optional OpenJarvis sidecar (Phase 6)    |
+| `@ai-sdk/openai-compatible` or `@ai-sdk/openai`         | Apache-2.0 | Planned — OpenAI-compatible socket for the optional OpenJarvis sidecar (Phase 6b)   |
 | `@modelcontextprotocol/sdk`                             | MIT        | Planned — MCP tool client (Phase 4)                                                 |
 | `cron-parser` (`^5.10.1`, depends on `luxon`, MIT)      | MIT        | **Installed (Phase 5)** — cron evaluation, `server/chief/scheduler/schedule.js`     |
 | `three`, `react-force-graph-3d`, `react-force-graph-2d` | MIT        | Planned — cortex-map runtime dependencies (Phase 7)                                 |
