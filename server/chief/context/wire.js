@@ -11,6 +11,7 @@ export function createChiefTurnServices({
   engine,
   checkpointStore = null,
   capabilityPolicy = null,
+  eventBus = null,
   atTokens = CHIEF_COMPACTION_TOKENS,
   keepRecentTokens = CHIEF_KEEP_RECENT_TOKENS,
 } = {}) {
@@ -18,7 +19,12 @@ export function createChiefTurnServices({
     throw new TypeError("createChiefTurnServices requires facts and engine");
   }
   return {
-    contextAssembler: createContextAssembler({ facts, checkpointStore, capabilityPolicy }),
+    contextAssembler: createContextAssembler({
+      facts,
+      checkpointStore,
+      capabilityPolicy,
+      bus: eventBus,
+    }),
     compaction: { atTokens, keepRecentTokens },
     onTurnComplete: (exchange) => rememberExchange({ facts, engine, ...exchange }),
   };

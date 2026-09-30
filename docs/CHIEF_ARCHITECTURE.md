@@ -581,6 +581,12 @@ previous one is merged or explicitly waived. Verification per repo policy: `npm 
   `skill_view`. The document names existing ToolSpecs. It is not a ToolSpec,
   not a runner, and not a grant. `TurnMachine` and `ToolExecutor` stay the
   only execution path. Routines stay `ChiefScheduledTask`.
+- **Phase 9 — Turn traces (delivered slice, ADR-0009).** A collector
+  subscribes to the bus for a turn `TurnMachine` already ran and writes one
+  `ChiefTrace` plus allowlisted `ChiefTraceStep` rows through
+  `withUserContext`. It does not store the query, the answer, or tool
+  output, and it does not change routing. Learned routing, feedback, and
+  trace mining stay deferred.
 - **Phase 6b — Sidecar boundary.** `server/chief/sidecar/` provider registration + health;
   deep_research/managed-agent tool adapters; deployment recipe doc (Docker/Render/Fly) — all
   feature-flagged and optional.

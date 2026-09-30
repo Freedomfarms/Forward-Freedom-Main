@@ -66,6 +66,17 @@ Conventions used in this repository:
     `src/openjarvis/skills/security.py` (`validate_capabilities` as an offer
     filter only). `SkillExecutor`, `SkillTool` pipelines, and `SkillManager.execute`
     are not ported.
+- Adapted modules in this repository (Phase 9 — turn traces):
+  - `server/chief/traces/collector.js` ← `src/openjarvis/traces/collector.py`
+    (`TraceCollector` subscriptions, final `RESPOND` step, one save, then
+    `trace_complete`). The collector does not wrap `BaseAgent.run`.
+  - `server/chief/traces/store.js` ← `src/openjarvis/traces/store.py`
+    (`TraceStore.save` of a trace and ordered steps). Storage is `ChiefTrace`
+    / `ChiefTraceStep` through `withUserContext`, not SQLite or FTS.
+  - Step types ← `src/openjarvis/core/types.py` `StepType`. `ROUTE` is
+    recorded from `inference_start`; upstream's collector does not emit it.
+  - `src/openjarvis/learning/routing/learned_router.py` was inspected and is
+    not ported. `feedback` stays null, and the heuristic router is unchanged.
 - Adapted modules in this repository (Phase 5 — scheduler tick):
   - `server/chief/scheduler/schedule.js` ← `src/openjarvis/scheduler/scheduler.py`
     (`_compute_next_run`, `_compute_next_cron` semantics; cron parsing is `cron-parser`)

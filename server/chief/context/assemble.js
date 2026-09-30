@@ -85,6 +85,7 @@ export async function assembleSystemPrompt({
   skills = bundledSkills,
   availableTools = null,
   capabilityPolicy = null,
+  bus = null,
 }) {
   let rows;
   try {
@@ -106,6 +107,7 @@ export async function assembleSystemPrompt({
     config,
     facts: ranked,
     factPriority: "given",
+    bus,
   });
   return messages[0]?.content ?? base;
 }
@@ -133,6 +135,7 @@ export function createContextAssembler({
   config,
   skills = bundledSkills,
   capabilityPolicy = null,
+  bus = null,
 } = {}) {
   return async function contextAssembler({ userId, sessionId, transcript, availableTools = null }) {
     const notes = await loadHandoffNotes(checkpointStore, userId, sessionId);
@@ -145,6 +148,7 @@ export function createContextAssembler({
       skills,
       availableTools,
       capabilityPolicy,
+      bus,
     });
   };
 }
