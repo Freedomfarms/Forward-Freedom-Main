@@ -281,7 +281,10 @@ TRIGGERS / SCHEDULES / EVENTS          ChiefScheduledTask (once/interval/cron) c
                                        not necessarily a chat message)
         → DECISION                     ported agent loop (Orchestrator / Operative).
                                        "Nothing warrants attention" is a valid decision
-                                       and ends the tick without notifying
+                                       and ends the tick without notifying.
+                                       Phase 10 records that outcome as
+                                       attention: false on the existing
+                                       ChiefTaskRun result and sends nothing
         → CAPABILITY / POLICY CHECK    CapabilityPolicy (autonomy levels 0–4), the
                                        ToolExecutor gate order, ChiefBudget
         → APPROVAL IF REQUIRED         the same ApprovalPolicy / ReviewDecision /
@@ -587,6 +590,12 @@ previous one is merged or explicitly waived. Verification per repo policy: `npm 
   `withUserContext`. It does not store the query, the answer, or tool
   output, and it does not change routing. Learned routing, feedback, and
   trace mining stay deferred.
+- **Phase 10 — Quiet scheduled turn (delivered slice, ADR-0010).** A
+  scheduled run stores `attention: false` on the result object already
+  passed to `finish()`. The value does not read the answer or tool output.
+  A successful quiet run stays `SUCCEEDED`. No notification is sent, and
+  Module 01 `Notification` is not used. A later audit is required before
+  any run can raise attention and deliver it.
 - **Phase 6b — Sidecar boundary.** `server/chief/sidecar/` provider registration + health;
   deep_research/managed-agent tool adapters; deployment recipe doc (Docker/Render/Fly) — all
   feature-flagged and optional.

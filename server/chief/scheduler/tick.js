@@ -20,6 +20,7 @@ import {
   lastAssistantText,
   operatorStateKey,
   prepareScheduledMessage,
+  quietAttention,
   stateFromResponse,
 } from "./operative.js";
 import { planRetry } from "./retry.js";
@@ -317,7 +318,7 @@ async function runScheduledTask({
   await finish({
     status,
     error,
-    result: { ...stats, summary: summaryText.slice(0, 1000) },
+    result: { ...stats, summary: summaryText.slice(0, 1000), attention: quietAttention() },
   });
   await safeAudit(audit, {
     userId,
