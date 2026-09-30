@@ -186,6 +186,12 @@ Conventions used in this repository:
     (`observe_routine_event`: an `ExecApprovalRequest` does not finish the routine;
     `TurnComplete` / `TurnAborted` does). `resume_pending`, `resolve_tool_approval`,
     and the möbius runtime are not ported. CHIEF resumes the same TurnMachine session.
+- Adapted modules in this repository (Phase 17):
+  - `server/chief/runtime/history.js` and `api/chief/history.js` ←
+    `get_session_history` in `crates/mobius-gateway/src/server/dispatch.rs`
+    (one selected session, history page). CHIEF returns the caller-owned
+    interactive checkpoint transcript. The gateway, session runtime, and
+    `routine_run_preview` are not ported. A scheduled session is not this read.
 - Obligations: Apache-2.0 attribution — the full upstream license text is included
   verbatim at `licenses/MOBIUS-LICENSE-APACHE-2.0.txt` — **plus propagation of the
   upstream NOTICE** for derivative material, reproduced in full at
