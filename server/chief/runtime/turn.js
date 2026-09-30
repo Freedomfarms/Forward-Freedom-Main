@@ -34,8 +34,9 @@
 //   - A crash during streamText leaves the checkpoint at phase "model", so
 //     resume repeats the model step (at-least-once). The checkpoint is saved
 //     before the call and after it, not mid-token.
-//   - caller on the model call defaults to user_turn. A future scheduler tick
-//     passes kind "schedule" into the same machine; this file does not schedule.
+//   - caller on the model call defaults to user_turn. The scheduler tick
+//     (server/chief/scheduler/tick.js) passes kind "schedule" and trigger
+//     "schedule:<taskId>" into the same machine; this file does not schedule.
 
 import { randomUUID } from "node:crypto";
 
@@ -54,6 +55,8 @@ import {
   tokenUsageCheckedAdd,
 } from "../protocol/index.js";
 import { ApprovalCoordinator, ReviewDecisionType } from "./approvals.js";
+import { HANDOFF_STATE_KEY, compactTranscript } from "./compaction.js";
+import { lastTurnUserText } from "../context/assemble.js";
 import { ToolExecutor } from "../tools/executor.js";
 
 export function classifyToolCalls(calls, specs) {
@@ -87,6 +90,22 @@ const DECISION_ENUM = {
   [ReviewDecisionType.DENIED]: "DENIED",
   [ReviewDecisionType.ABORT]: "ABORTED",
 };
+
+function lastAssistantText(transcript) {
+  for (let index = transcript.length - 1; index >= 0; index -= 1) {
+    const message = transcript[index];
+    if (message?.role !== "assistant") continue;
+    if (typeof message.content === "string") return message.content;
+    if (Array.isArray(message.content)) {
+      const text = message.content
+        .filter((part) => part?.type === "text" && typeof part.text === "string")
+        .map((part) => part.text)
+        .join("\n");
+      if (text) return text;
+    }
+  }
+  return "";
+}
 
 function lastUserText(transcript) {
   for (let i = transcript.length - 1; i >= 0; i -= 1) {
@@ -123,6 +142,10 @@ export class TurnMachine {
     toolExecutor = new ToolExecutor(),
     maxModelSteps = MAX_MODEL_STEPS,
     callerKind = "user_turn",
+    callerTrigger = "turn",
+    contextAssembler = null,
+    compaction = null,
+    onTurnComplete = null,
   }) {
     if (!store || !engine) throw new TypeError("TurnMachine requires store and engine");
     this._store = store;
@@ -131,6 +154,10 @@ export class TurnMachine {
     this._toolExecutor = toolExecutor;
     this._maxModelSteps = maxModelSteps;
     this._callerKind = callerKind;
+    this._callerTrigger = callerTrigger;
+    this._contextAssembler = contextAssembler;
+    this._compaction = compaction;
+    this._onTurnComplete = onTurnComplete;
   }
 
   async run({ userId, sessionId = null, submission, signal, onEvent, toolSpecs = [] } = {}) {
@@ -286,6 +313,7 @@ export class TurnMachine {
         this._emit(eventMsg.turnComplete(execution.turnId));
         this._checkpoint.activeExecution = null;
         await this._persist({ transcriptDelta: [streamed.assistant] });
+        await this._rememberTurn();
         await this._drainOnePending();
         return;
       }
@@ -297,12 +325,75 @@ export class TurnMachine {
     await this._abort(execution.turnId, "max_model_steps");
   }
 
+  async _modelMessages() {
+    const transcript = this._checkpoint.transcript;
+    if (!this._contextAssembler) return transcript;
+    try {
+      const system = await this._contextAssembler({
+        userId: this._userId,
+        sessionId: this._sessionId,
+        transcript,
+        checkpoint: this._checkpoint,
+      });
+      if (!system) return transcript;
+      return [{ role: "system", content: system }, ...transcript];
+    } catch {
+      return transcript;
+    }
+  }
+
+  async _maybeCompact(execution) {
+    if (!this._compaction) return;
+    const result = await compactTranscript({
+      transcript: this._checkpoint.transcript,
+      engine: this._engine,
+      userId: this._userId,
+      caller: {
+        kind: this._callerKind,
+        id: execution.turnId,
+        trigger: `${this._callerTrigger}:compact`,
+      },
+      atTokens: this._compaction.atTokens,
+      keepRecentTokens: this._compaction.keepRecentTokens,
+      contextWindow: this._compaction.contextWindow,
+    });
+    if (!result) return;
+    this._checkpoint.transcript = result.transcript;
+    this._checkpoint.compactionCount += 1;
+    this._checkpoint.contextEpoch += 1;
+    this._emit(eventMsg.contextCompacted());
+    await this._persist();
+    if (typeof this._store.saveMiddlewareState === "function") {
+      await this._store.saveMiddlewareState(
+        this._userId,
+        this._sessionId,
+        HANDOFF_STATE_KEY,
+        result.summary
+      );
+    }
+  }
+
+  async _rememberTurn() {
+    if (!this._onTurnComplete) return;
+    try {
+      await this._onTurnComplete({
+        userId: this._userId,
+        sessionId: this._sessionId,
+        userText: lastTurnUserText(this._checkpoint.transcript),
+        assistantText: lastAssistantText(this._checkpoint.transcript),
+      });
+    } catch {
+      // Extraction is best-effort. A failure must not change the turn result.
+    }
+  }
+
   async _consumeModel(execution) {
+    await this._maybeCompact(execution);
     const tools = toolSpecsToAiTools(this._toolSpecs);
-    const opened = await this._engine.openStream(this._checkpoint.transcript, {
+    const opened = await this._engine.openStream(await this._modelMessages(), {
       model: this._checkpoint.modelRoute,
       query: lastUserText(this._checkpoint.transcript),
-      caller: { kind: this._callerKind, id: execution.turnId, trigger: "turn" },
+      caller: { kind: this._callerKind, id: execution.turnId, trigger: this._callerTrigger },
       userId: this._userId,
       tools,
       abortSignal: this._signal,
@@ -419,9 +510,11 @@ export class TurnMachine {
         sessionId: this._sessionId,
         turnId: execution.turnId,
         agentId: "chief",
-        caller: { kind: this._callerKind, id: execution.turnId, trigger: "turn" },
+        caller: { kind: this._callerKind, id: execution.turnId, trigger: this._callerTrigger },
         mutationApproved: grantedMutations.has(call.callId),
         sessionTaint: this._checkpoint.sessionTaint ?? [],
+        saveMiddlewareState: (middlewareId, state) =>
+          this._store.saveMiddlewareState(this._userId, this._sessionId, middlewareId, state),
       });
       if (Array.isArray(result.sessionTaint)) {
         this._checkpoint.sessionTaint = result.sessionTaint;

@@ -9,6 +9,8 @@ import { PrismaBudgetStore } from "../../server/chief/models/budget.js";
 import { createModelEngine } from "../../server/chief/models/engine.js";
 import { encodeSseEvent, eventMsg, makeEvent } from "../../server/chief/protocol/index.js";
 import { ApprovalCoordinator } from "../../server/chief/runtime/approvals.js";
+import { createChiefTurnServices } from "../../server/chief/context/wire.js";
+import { PrismaFactStore } from "../../server/chief/memory/facts.js";
 import { PrismaCheckpointStore } from "../../server/chief/runtime/checkpoint.js";
 import { TurnMachine } from "../../server/chief/runtime/turn.js";
 import { createChiefTooling } from "../../server/chief/tools/builtin.js";
@@ -53,19 +55,31 @@ export async function handleChiefChat(request, response, deps = {}) {
   const controller = new AbortController();
   request.on?.("close", () => controller.abort());
 
+  const store = deps.store ?? new PrismaCheckpointStore();
+  const engine = deps.engine ?? createModelEngine({ budget: new PrismaBudgetStore() });
   let toolExecutor = deps.toolExecutor ?? null;
   let toolSpecs = deps.toolSpecs ?? null;
+  let facts = deps.facts ?? null;
   if (!toolExecutor) {
-    const tooling = await createChiefTooling({ userId });
+    facts = facts ?? new PrismaFactStore();
+    const tooling = await createChiefTooling({ userId, stores: { facts } });
     toolExecutor = tooling.executor;
     toolSpecs = deps.toolSpecs ?? tooling.specs;
   }
+  const turnServices =
+    deps.turnServices ??
+    (facts && !deps.toolExecutor
+      ? createChiefTurnServices({ facts, engine, checkpointStore: store })
+      : {});
 
   const machine = new TurnMachine({
-    store: deps.store ?? new PrismaCheckpointStore(),
-    engine: deps.engine ?? createModelEngine({ budget: new PrismaBudgetStore() }),
+    store,
+    engine,
     approvals: new ApprovalCoordinator(),
     toolExecutor,
+    contextAssembler: turnServices.contextAssembler ?? null,
+    compaction: turnServices.compaction ?? null,
+    onTurnComplete: turnServices.onTurnComplete ?? null,
   });
 
   try {

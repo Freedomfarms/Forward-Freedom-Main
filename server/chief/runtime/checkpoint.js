@@ -28,6 +28,9 @@
 //     both resume the same in-flight tool batch.
 //   - Schema evolution is a version field plus Prisma migrations, not
 //     möbius's reject-on-mismatch (docs/CHIEF_ARCHITECTURE.md §7.2).
+//   - Per-session middleware state (chief_middleware_state) is keyed by
+//     middleware id and encrypted like the checkpoint. It is not part of the
+//     checkpoint journal and fork() does not copy it.
 
 import { randomUUID } from "node:crypto";
 
@@ -175,6 +178,22 @@ export class MemoryCheckpointStore {
       }
     }
     return pending;
+  }
+
+  async loadMiddlewareState(userId, sessionId, middlewareId) {
+    const record = this.sessions.get(sessionId);
+    if (!record || record.userId !== userId) return null;
+    const state = record.middlewareState?.[middlewareId];
+    return state === undefined ? null : clone(state);
+  }
+
+  async saveMiddlewareState(userId, sessionId, middlewareId, state) {
+    const record = this.sessions.get(sessionId);
+    if (!record || record.userId !== userId) {
+      throw new Error(`checkpoint session '${sessionId}' was not found`);
+    }
+    assertNoProviderPrivate(state, `middlewareState.${middlewareId}`);
+    record.middlewareState = { ...(record.middlewareState ?? {}), [middlewareId]: clone(state) };
   }
 }
 
@@ -361,6 +380,29 @@ export class PrismaCheckpointStore {
         }
       }
       return pending;
+    });
+  }
+
+  async loadMiddlewareState(userId, sessionId, middlewareId) {
+    return this._withUser(userId, async (tx) => {
+      const row = await tx.chiefMiddlewareState.findFirst({
+        where: { sessionId, middlewareId, userId },
+      });
+      return row ? this._decrypt(row.stateCiphertext) : null;
+    });
+  }
+
+  async saveMiddlewareState(userId, sessionId, middlewareId, state) {
+    assertNoProviderPrivate(state, `middlewareState.${middlewareId}`);
+    const stateCiphertext = this._encrypt(state);
+    await this._withUser(userId, async (tx) => {
+      const session = await tx.chiefSession.findFirst({ where: { id: sessionId, userId } });
+      if (!session) throw new Error(`checkpoint session '${sessionId}' was not found`);
+      await tx.chiefMiddlewareState.upsert({
+        where: { sessionId_middlewareId: { sessionId, middlewareId } },
+        create: { userId, sessionId, middlewareId, stateCiphertext },
+        update: { stateCiphertext },
+      });
     });
   }
 }

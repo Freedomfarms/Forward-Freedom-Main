@@ -7,7 +7,9 @@
 //   License text: licenses/OPENJARVIS-LICENSE-APACHE-2.0.txt
 //
 // Preserved upstream semantics:
-//   - the Capability label set, verbatim ("file:read" … "system:admin")
+//   - the Capability label set, verbatim ("file:read" … "system:admin"), plus
+//     the CHIEF-only extension "finance:read" (Phase 7). Financial reads must
+//     not reuse memory:read. OpenJarvis has no finance label.
 //   - CapabilityPolicy check order: explicit denials always win; grants are
 //     glob-matched on capability and optionally on resource; agents with no
 //     explicit policy fall back to `_default` wildcard grants; an anonymous
@@ -45,6 +47,9 @@ export const Capability = Object.freeze({
   TOOL_INVOKE: "tool:invoke",
   SCHEDULE_CREATE: "schedule:create",
   SYSTEM_ADMIN: "system:admin",
+  // CHIEF extension. Not an OpenJarvis label. Financial tools require this
+  // instead of memory:read.
+  FINANCE_READ: "finance:read",
 });
 
 const CAPABILITY_VALUES = new Set(Object.values(Capability));

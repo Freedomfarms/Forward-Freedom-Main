@@ -558,8 +558,25 @@ previous one is merged or explicitly waived. Verification per repo policy: `npm 
   `vercel.json` entry); operative tick agents (OpenJarvis execute_tick semantics); retries,
   failure handling, notifications. This phase is what makes the §5.5 loop run; it does
   not introduce a second scheduler. Notifications fire only when a tick decides something
-  warrants attention.
-- **Phase 6 — Sidecar boundary.** `server/chief/sidecar/` provider registration + health;
+  warrants attention. Delivered slice (ADR-0005): `server/chief/scheduler/` claims due
+  tasks by row compare-and-swap, runs each as one `TurnMachine` turn with caller kind
+  `schedule`, records `ChiefTaskRun` (including `AWAITING_APPROVAL` and `RETRYING`),
+  scans the stored prompt, seeds session taint, carries `operator:{id}:state` through
+  `chief_middleware_state`, and retries only spend-neutral network failures. Memory
+  extraction, KG consolidation, and notifications are not in this slice.
+- **Phase 6 — Context engine (delivered slice, ADR-0006).** Before the sidecar: every
+  turn gets a system prompt assembled from a Hermes-style identity slot, OpenJarvis
+  `inject_context` (trust-filtered, token-budgeted), RRF-ranked facts, and möbius
+  compaction/handoff notes. Extraction runs after a completed turn through
+  `ChiefModelEngine`. The OpenJarvis sidecar below moves back; it is optional and
+  nothing later depends on it. The context engine is what memory, skills, and
+  subagents attach to.
+- **Phase 7 — Governed finance reads (delivered slice, ADR-0007).** Two read-only
+  tools, `finance_summary` and `workspace_plan_summary`, both `finance:read`, no
+  confirmation, taint `user_private`. They call the shared aggregate and workspace
+  slice through `withUserContext`. The database is not a model-facing interface.
+  True Cash is not recomputed. Command Center remains a later phase.
+- **Phase 6b — Sidecar boundary.** `server/chief/sidecar/` provider registration + health;
   deep_research/managed-agent tool adapters; deployment recipe doc (Docker/Render/Fly) — all
   feature-flagged and optional.
 - **Phase 7 — Command Center (the spatial interface, §7.4).** 7a: vendor cortex-map (+ npm
