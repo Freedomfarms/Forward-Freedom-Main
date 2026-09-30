@@ -23,8 +23,9 @@
 //     walks facts newest-first. CHIEF's only store is encrypted facts, so the
 //     assembler ranks them with reciprocal rank fusion and passes that order.
 //     The default remains newest-first.
-//   - No event-bus publish. CHIEF's EventType.MEMORY_RETRIEVE has no consumer
-//     on this path; publishing it would be a new side channel.
+//   - memory_retrieve is published when context is injected. The trace
+//     collector records result counts from that event. It does not store
+//     the query string.
 
 import { EventType } from "../core/events.js";
 

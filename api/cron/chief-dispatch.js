@@ -18,6 +18,7 @@ import { PrismaFactStore } from "../../server/chief/memory/facts.js";
 import { PrismaCheckpointStore } from "../../server/chief/runtime/checkpoint.js";
 import { PrismaTaskStore } from "../../server/chief/scheduler/store.js";
 import { runChiefTick } from "../../server/chief/scheduler/tick.js";
+import { PrismaTraceStore } from "../../server/chief/traces/store.js";
 import { PrismaAuditLog } from "../../server/chief/security/audit.js";
 import { createChiefTooling } from "../../server/chief/tools/builtin.js";
 import { enforceRateLimit, generalApiRateLimit } from "../../server/http/rateLimit.js";
@@ -37,15 +38,18 @@ function defaultDeps() {
   return {
     taskStore: new PrismaTaskStore(),
     checkpointStore,
-    createEngine: () => createModelEngine({ budget }),
-    createTooling: ({ userId }) => createChiefTooling({ userId, audit, stores: { facts } }),
-    createTurnServices: ({ engine, policy }) =>
+    createEngine: ({ eventBus } = {}) => createModelEngine({ budget, eventBus }),
+    createTooling: ({ userId, eventBus }) =>
+      createChiefTooling({ userId, audit, stores: { facts }, bus: eventBus }),
+    createTurnServices: ({ engine, policy, eventBus }) =>
       createChiefTurnServices({
         facts,
         engine,
         checkpointStore,
         capabilityPolicy: policy ?? null,
+        eventBus,
       }),
+    traceStore: new PrismaTraceStore(),
     audit,
   };
 }

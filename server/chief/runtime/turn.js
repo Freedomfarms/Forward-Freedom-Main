@@ -57,6 +57,7 @@ import {
 import { ApprovalCoordinator, ReviewDecisionType } from "./approvals.js";
 import { HANDOFF_STATE_KEY, compactTranscript } from "./compaction.js";
 import { lastTurnUserText } from "../context/assemble.js";
+import { TraceCollector } from "../traces/collector.js";
 import { ToolExecutor } from "../tools/executor.js";
 
 export function classifyToolCalls(calls, specs) {
@@ -146,6 +147,8 @@ export class TurnMachine {
     contextAssembler = null,
     compaction = null,
     onTurnComplete = null,
+    traceStore = null,
+    eventBus = null,
   }) {
     if (!store || !engine) throw new TypeError("TurnMachine requires store and engine");
     this._store = store;
@@ -158,6 +161,8 @@ export class TurnMachine {
     this._contextAssembler = contextAssembler;
     this._compaction = compaction;
     this._onTurnComplete = onTurnComplete;
+    this._traceStore = traceStore;
+    this._eventBus = eventBus;
   }
 
   async run({ userId, sessionId = null, submission, signal, onEvent, toolSpecs = [] } = {}) {
@@ -182,29 +187,41 @@ export class TurnMachine {
     this._checkpoint = record.checkpoint;
     if (!Array.isArray(this._checkpoint.sessionTaint)) this._checkpoint.sessionTaint = [];
     this._approvals.restore(record.id, this._checkpoint.approvedForSession ?? []);
+    this._openCollector();
 
-    const op = parsed.op;
+    try {
+      return await this._dispatch(parsed.op);
+    } catch (error) {
+      await this._closeTrace(this._done("failure"));
+      throw error;
+    }
+  }
+
+  async _dispatch(op) {
     if (this._checkpoint.pendingApproval && op.type !== OpType.EXEC_APPROVAL) {
       if (op.type === OpType.MESSAGE) {
         this._checkpoint.pendingMessages.push({
           text: op.message.text,
-          submissionId: parsed.id,
+          submissionId: this._submissionId,
         });
         await this._persist();
       }
       if (op.type === OpType.INTERRUPT) {
         await this._abort(op.turn_id, "interrupted");
-        return this._done("aborted");
+        return this._closeTrace(this._done("aborted"));
       }
       this._emit(eventMsg.execApprovalRequest(this._checkpoint.pendingApproval));
       await this._persist();
-      return this._done("suspended");
+      return this._closeTrace(this._done("suspended"));
     }
 
     switch (op.type) {
       case OpType.MESSAGE:
         if (this._checkpoint.pendingMessages.length && !this._checkpoint.activeExecution) {
-          this._checkpoint.pendingMessages.push({ text: op.message.text, submissionId: parsed.id });
+          this._checkpoint.pendingMessages.push({
+            text: op.message.text,
+            submissionId: this._submissionId,
+          });
           await this._drainOnePending();
         } else {
           await this._beginTurn(op.message.text);
@@ -230,7 +247,36 @@ export class TurnMachine {
         this._emit(eventMsg.warning(`op '${op.type}' is not handled by the turn machine`));
         break;
     }
-    return this._done(this._status);
+    return this._closeTrace(this._done(this._status));
+  }
+
+  _openCollector() {
+    this._traceClosed = false;
+    if (!this._traceStore) {
+      this._collector = null;
+      return;
+    }
+    this._collector = new TraceCollector({
+      bus: this._eventBus,
+      store: this._traceStore,
+      userId: this._userId,
+      sessionId: this._sessionId,
+    });
+    this._collector.start();
+  }
+
+  async _closeTrace(result) {
+    if (this._traceClosed) return result;
+    this._traceClosed = true;
+    const collector = this._collector;
+    this._collector = null;
+    if (!collector) return result;
+    try {
+      await collector.finish({ outcome: result.status, sessionId: this._sessionId });
+    } catch {
+      // The collector already swallows store errors. A trace cannot change the turn.
+    }
+    return result;
   }
 
   _done(status) {
