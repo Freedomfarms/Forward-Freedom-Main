@@ -15,6 +15,23 @@ import { messageText } from "./compaction.js";
 
 const INTERACTIVE_ROLES = new Set(["user", "assistant", "tool"]);
 
+// Assistant checkpoints store tool-call parts beside the answer. Those parts
+// are execution detail. The visible answer is the text parts only.
+function assistantAnswerText(message) {
+  if (typeof message?.content === "string") return message.content;
+  if (!Array.isArray(message?.content)) return "";
+  return message.content
+    .filter((part) => part?.type !== "tool-call" && part?.type !== "tool-result")
+    .map((part) => (typeof part?.text === "string" ? part.text : ""))
+    .filter(Boolean)
+    .join("\n");
+}
+
+function visibleText(message) {
+  if (message?.role === "assistant") return assistantAnswerText(message);
+  return messageText(message);
+}
+
 export function projectInteractiveHistory(record) {
   if (!record?.id || !record.checkpoint) return { error: "not_found" };
   if (record.checkpoint.context?.origin === "schedule") return { error: "not_found" };
@@ -22,7 +39,7 @@ export function projectInteractiveHistory(record) {
   for (const message of record.checkpoint.transcript ?? []) {
     const role = message?.role;
     if (!INTERACTIVE_ROLES.has(role)) continue;
-    const text = messageText(message);
+    const text = visibleText(message);
     if (text && fencesOutput(scanInjection(text).threatLevel)) {
       messages.push({ role, text: null });
       continue;

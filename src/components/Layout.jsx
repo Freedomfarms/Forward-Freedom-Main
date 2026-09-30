@@ -16,10 +16,12 @@ export function AppSidebar({
   // Platform admin (from /api/me isAdmin) — gates the Admin Usage entry.
   isAdmin = false,
 }) {
-  // Freedom OS sits alone at the top; Module 02 (Freedom Financial) tabs group
-  // under that section label.
+  // Freedom OS, then CHIEF, then the Freedom Financial tabs.
   const freedomOsItems = navMain.filter((item) => item.label === APP_TABS.FREEDOM_OS);
-  const financeItems = navMain.filter((item) => item.label !== APP_TABS.FREEDOM_OS);
+  const chiefItems = navMain.filter((item) => item.label === APP_TABS.CHIEF);
+  const financeItems = navMain.filter(
+    (item) => item.label !== APP_TABS.FREEDOM_OS && item.label !== APP_TABS.CHIEF
+  );
 
   return (
     <aside className={`app-sidebar ${className}`.trim()} style={styles.sidebar}>
@@ -97,6 +99,15 @@ export function AppSidebar({
         Main
       </div>
       {freedomOsItems.map((item) => (
+        <SideItem
+          key={item.label}
+          item={item}
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          onNavigate={onNavigate}
+        />
+      ))}
+      {chiefItems.map((item) => (
         <SideItem
           key={item.label}
           item={item}
