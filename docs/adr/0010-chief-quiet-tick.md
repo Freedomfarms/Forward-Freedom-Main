@@ -35,8 +35,9 @@ explicit.
    `finish()`. `MemoryTaskStore` keeps that object on the run.
    `PrismaTaskStore` encrypts it into the existing `resultCiphertext`. There
    is no new column and no migration.
-3. A completed quiet run stays `SUCCEEDED`. Claim, retry, pause, and approval
-   suspension are unchanged.
+3. A completed quiet run stays `SUCCEEDED`. Claim, retry, and pause are unchanged.
+   Approval suspension stays non-terminal; the resume stores `attention: false`
+   when that run actually ends (ADR-0011).
 4. This phase sends nothing. There is no notifier, delivery queue, email,
    SMS, webhook, push, or second turn.
 5. A positive notification, `attention: true` with a sender, requires a later
@@ -46,7 +47,9 @@ explicit.
 
 - A prompt rejected before the turn still finishes with no result object, so
   it has no `attention` field. Only the finish path that already stored a
-  turn result records `attention`.
+  turn result records `attention`. A run parked at `AWAITING_APPROVAL` also
+  stores no result. The approval resume writes `attention: false` when the
+  same run ends (ADR-0011).
 - `TurnMachine`, `ToolExecutor`, skills, traces, routing, checkpoint `fork()`,
   and claim semantics are unchanged.
 - Tests live in `test/chief-quiet-tick.test.js`.

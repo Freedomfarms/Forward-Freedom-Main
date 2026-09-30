@@ -348,6 +348,8 @@ test("a mutation requested by a scheduled turn waits for approval and does not e
   });
   const report = await h.tick();
   assert.equal(report.runs[0].status, RunStatus.AWAITING_APPROVAL);
+  assert.equal(h.taskStore.runs[0].result, null);
+  assert.equal(h.taskStore.runs[0].completedAt, null);
   assert.equal(h.facts.rows.length, 0);
   const session = await h.checkpointStore.load("user-1", h.taskStore.runs[0].sessionId);
   assert.equal(session.checkpoint.pendingApproval.calls[0].name, "memory_write");

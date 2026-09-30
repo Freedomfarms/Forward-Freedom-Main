@@ -156,9 +156,14 @@ async function runScheduledTask({
     taskStore.finish(userId, {
       taskId: task.id,
       runId: run.id,
-      completeTask: task.kind === "ONCE" && fields.status !== RunStatus.RETRYING,
       now: clock(),
       ...fields,
+      // A suspended turn is not finished. A ONCE task stays ACTIVE until the
+      // approval resume reaches a terminal outcome (ADR-0011).
+      completeTask:
+        task.kind === "ONCE" &&
+        fields.status !== RunStatus.RETRYING &&
+        fields.status !== RunStatus.AWAITING_APPROVAL,
     });
 
   let previousState = null;
@@ -318,7 +323,12 @@ async function runScheduledTask({
   await finish({
     status,
     error,
-    result: { ...stats, summary: summaryText.slice(0, 1000), attention: quietAttention() },
+    // Suspension is not a successful result. The resume writes the result,
+    // including attention: false, when the same run actually ends.
+    result:
+      status === RunStatus.AWAITING_APPROVAL
+        ? null
+        : { ...stats, summary: summaryText.slice(0, 1000), attention: quietAttention() },
   });
   await safeAudit(audit, {
     userId,

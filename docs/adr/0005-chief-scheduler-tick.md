@@ -21,6 +21,7 @@
 4. Each run gets a new CHIEF session with context `{ origin: "schedule", scheduledTaskId,
 runId }`. The session has no sticky approvals, so any `requiresConfirmation` tool
    suspends the turn. The run is recorded `AWAITING_APPROVAL`; nothing is auto-approved.
+   That status is not terminal. Finishing the same run is ADR-0011.
 5. Model budget and the `CHIEF_MODELS_ENABLED` pause are enforced by `ChiefModelEngine`
    as for a user turn. When either aborts the turn, the run is `SKIPPED`.
 6. The stored prompt (`payload.prompt`) is injection-scanned at `schedule_create` and
@@ -41,9 +42,10 @@ runId }`. The session has no sticky approvals, so any `requiresConfirmation` too
 
 ## Consequences
 
-- Approving a suspended scheduled turn goes through `/api/chief/approvals`. That resume
-  runs as `user_turn` and does not update the `ChiefTaskRun`, which stays
-  `AWAITING_APPROVAL`.
+- A suspended scheduled turn stays on its session. The signed-in user submits the
+  decision through `/api/chief/approvals` or `/api/chief/chat`. The resume keeps
+  `callerKind: "schedule"` and trigger `schedule:<taskId>`, and finishes the same
+  `ChiefTaskRun` (ADR-0011). It does not run as `user_turn`.
 - The cron runs every 5 minutes, at most 3 tasks per tick, and each turn has 45 seconds.
 - A retried interval task re-anchors on the retry time.
 - Rate-limit buckets remain per process (ADR-0004).
