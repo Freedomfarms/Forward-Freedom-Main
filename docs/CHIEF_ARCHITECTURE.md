@@ -558,7 +558,12 @@ previous one is merged or explicitly waived. Verification per repo policy: `npm 
   `vercel.json` entry); operative tick agents (OpenJarvis execute_tick semantics); retries,
   failure handling, notifications. This phase is what makes the §5.5 loop run; it does
   not introduce a second scheduler. Notifications fire only when a tick decides something
-  warrants attention.
+  warrants attention. Delivered slice (ADR-0005): `server/chief/scheduler/` claims due
+  tasks by row compare-and-swap, runs each as one `TurnMachine` turn with caller kind
+  `schedule`, records `ChiefTaskRun` (including `AWAITING_APPROVAL` and `RETRYING`),
+  scans the stored prompt, seeds session taint, carries `operator:{id}:state` through
+  `chief_middleware_state`, and retries only spend-neutral network failures. Memory
+  extraction, KG consolidation, and notifications are not in this slice.
 - **Phase 6 — Sidecar boundary.** `server/chief/sidecar/` provider registration + health;
   deep_research/managed-agent tool adapters; deployment recipe doc (Docker/Render/Fly) — all
   feature-flagged and optional.

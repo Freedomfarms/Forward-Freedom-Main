@@ -52,6 +52,12 @@ Conventions used in this repository:
     surface), `src/openjarvis/cli/ask.py` (router integration order),
     `src/openjarvis/agents/_stubs.py` (INFERENCE_START/END payloads). The engine zoo itself
     is not ported — the Vercel AI SDK is used directly (audit §2.3).
+- Adapted modules in this repository (Phase 5 — scheduler tick):
+  - `server/chief/scheduler/schedule.js` ← `src/openjarvis/scheduler/scheduler.py`
+    (`_compute_next_run`, `_compute_next_cron` semantics; cron parsing is `cron-parser`)
+  - `server/chief/scheduler/operative.js` ← `src/openjarvis/agents/operative.py`
+    (`operator:{id}:state` key, "## Previous State" recall, 1000-character auto-persist;
+    the OperativeAgent loop is not ported)
 - Obligations: retain attribution and license notice for derivative material; the full
   upstream license text is included verbatim at
   `licenses/OPENJARVIS-LICENSE-APACHE-2.0.txt` (including its copyright line,
@@ -104,6 +110,14 @@ Conventions used in this repository:
   `ApprovalRequirement` (`requires_approval` / `requiresConfirmation`) at commit `3e1aaf5`.
   `@modelcontextprotocol/sdk` is not installed: MCP invoke is a remote tool that block mode
   refuses before any network call.
+- Adapted modules in this repository (Phase 5):
+  - `server/chief/scheduler/store.js` ← `src/backend/bots.rs` (claim under a lock with the
+    schedule advanced in the same write; Running/Succeeded/Failed/Skipped run states;
+    interrupted runs failed on the next pass). The lock is a row compare-and-swap.
+  - `server/chief/scheduler/schedule.js` ← `src/backend/bots.rs` (`advance_interval`
+    missed-slot skipping)
+  - `server/chief/scheduler/tick.js` ← `src/backend/bots.rs` (`run_routine_with_state`:
+    one fresh session per run)
 - Obligations: Apache-2.0 attribution — the full upstream license text is included
   verbatim at `licenses/MOBIUS-LICENSE-APACHE-2.0.txt` — **plus propagation of the
   upstream NOTICE** for derivative material, reproduced in full at
@@ -124,6 +138,20 @@ Conventions used in this repository:
   Nord palettes, HugeIcons, HighlightSwift, highlight.js, thinking-orbs — which CHIEF does
   not port; the complete NOTICE is nevertheless reproduced verbatim at
   `licenses/MOBIUS-NOTICE.txt`.)
+
+## Hermes Agent (NousResearch/hermes-agent)
+
+- Repository: https://github.com/NousResearch/hermes-agent
+- Commit audited: `8c30ef318d1ed6c88597239081f5749268efdca8`
+- License: MIT ("Copyright (c) 2025 Nous Research")
+- Use in this repository: **adapted semantics only** (Phase 5). No Hermes code, runtime,
+  agent loop, or approval behavior is included.
+  - `server/chief/scheduler/retry.js` ← `cron/unreachable_retry.py` (retry only a
+    transient network failure with zero model calls; 300/900/1800-second ladder; give up
+    when the natural next occurrence comes first; recurring tasks only) and
+    `cron/scheduler_preflight.py` (cause-chain walk for transient errors)
+- Obligations: retain the copyright and permission notice; the full license text is at
+  `licenses/HERMES-AGENT-LICENSE-MIT.txt`.
 
 ## cortex-map (StovBuilds/cortex-map)
 
@@ -180,5 +208,5 @@ plan is explicit:
 | `ai`, `@ai-sdk/anthropic` (pre-existing platform deps)  | Apache-2.0 | **Used (Phase 2–3)** — provider registry, generateText, streamText; Anthropic transport (opt-in) |
 | `@ai-sdk/openai-compatible` or `@ai-sdk/openai`         | Apache-2.0 | Planned — OpenAI-compatible socket for the optional OpenJarvis sidecar (Phase 6)    |
 | `@modelcontextprotocol/sdk`                             | MIT        | Planned — MCP tool client (Phase 4)                                                 |
-| `cron-parser`                                           | MIT        | Planned — schedule parsing (Phase 5)                                                |
+| `cron-parser` (`^5.10.1`, depends on `luxon`, MIT)      | MIT        | **Installed (Phase 5)** — cron evaluation, `server/chief/scheduler/schedule.js`     |
 | `three`, `react-force-graph-3d`, `react-force-graph-2d` | MIT        | Planned — cortex-map runtime dependencies (Phase 7)                                 |
