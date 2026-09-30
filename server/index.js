@@ -34,6 +34,10 @@ import notificationsHandler from "../api/notifications.js";
 import notificationByIdHandler from "../api/notifications/[id].js";
 import adminUsageHandler from "../api/admin/usage.js";
 import cronAgentDispatchHandler from "../api/cron/agent-dispatch.js";
+import chiefSessionsHandler from "../api/chief/sessions.js";
+import chiefHistoryHandler from "../api/chief/history.js";
+import chiefChatHandler from "../api/chief/chat.js";
+import chiefApprovalsHandler from "../api/chief/approvals.js";
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3001;
@@ -133,6 +137,12 @@ app.get(
 app.get("/api/notifications", notificationsHandler);
 app.patch("/api/notifications/:id", notificationByIdHandler);
 app.get("/api/admin/usage", adminUsageHandler);
+// CHIEF conversation lifecycle. Vercel serves api/chief/*.js directly; local
+// Express mirrors those handlers without changing them.
+app.get("/api/chief/sessions", chiefSessionsHandler);
+app.get("/api/chief/history", chiefHistoryHandler);
+app.post("/api/chief/chat", chiefChatHandler);
+app.route("/api/chief/approvals").get(chiefApprovalsHandler).post(chiefApprovalsHandler);
 // Cron dispatcher: GET with no JSON body; same CRON_SECRET check as Vercel.
 app.get("/api/cron/agent-dispatch", cronAgentDispatchHandler);
 
