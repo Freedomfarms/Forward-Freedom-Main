@@ -17,6 +17,8 @@
 // because this text is placed in the system message.
 
 import { fencesOutput, scanInjection } from "../security/injection.js";
+import { bundledSkills } from "../skills/catalog.js";
+import { renderSkillsIndex } from "../skills/index.js";
 import { ContextConfig, injectContext, trustedForRecall } from "./inject.js";
 import { rankFacts } from "../memory/rrf.js";
 import { HANDOFF_STATE_KEY, PROMPT_RESTORED, messageText } from "../runtime/compaction.js";
@@ -80,6 +82,10 @@ export async function assembleSystemPrompt({
   facts,
   notes = null,
   config = new ContextConfig(),
+  skills = bundledSkills,
+  availableTools = null,
+  capabilityPolicy = null,
+  bus = null,
 }) {
   let rows;
   try {
@@ -89,7 +95,10 @@ export async function assembleSystemPrompt({
   }
   const persona = selectPersona(rows);
   const identity = persona ? `# Identity\n${persona}` : DEFAULT_CHIEF_IDENTITY;
-  const base = [identity, governanceLine(), handoffSection(notes)].filter(Boolean).join("\n\n");
+  const skillsIndex = renderSkillsIndex(skills, { availableTools, capabilityPolicy });
+  const base = [identity, governanceLine(), skillsIndex, handoffSection(notes)]
+    .filter(Boolean)
+    .join("\n\n");
   const recallable = rows.filter(
     (fact) => fact.source !== IDENTITY_SOURCE && trustedForRecall(fact)
   );
@@ -98,6 +107,7 @@ export async function assembleSystemPrompt({
     config,
     facts: ranked,
     factPriority: "given",
+    bus,
   });
   return messages[0]?.content ?? base;
 }
@@ -119,8 +129,15 @@ export async function loadHandoffNotes(checkpointStore, userId, sessionId) {
   }
 }
 
-export function createContextAssembler({ facts, checkpointStore, config } = {}) {
-  return async function contextAssembler({ userId, sessionId, transcript }) {
+export function createContextAssembler({
+  facts,
+  checkpointStore,
+  config,
+  skills = bundledSkills,
+  capabilityPolicy = null,
+  bus = null,
+} = {}) {
+  return async function contextAssembler({ userId, sessionId, transcript, availableTools = null }) {
     const notes = await loadHandoffNotes(checkpointStore, userId, sessionId);
     return assembleSystemPrompt({
       userId,
@@ -128,6 +145,10 @@ export function createContextAssembler({ facts, checkpointStore, config } = {}) 
       facts,
       notes,
       config,
+      skills,
+      availableTools,
+      capabilityPolicy,
+      bus,
     });
   };
 }

@@ -23,6 +23,9 @@
 //   - The stored prompt is injection-scanned before it becomes a message. A
 //     fenced (HIGH/CRITICAL) prompt is refused. Fenced state is dropped.
 //   - The model cannot write the state key explicitly. Only auto-persist.
+//   - A scheduled run is quiet. Hermes cron/scheduler_delivery.py treats an
+//     empty deliver value as "local" (no push). CHIEF has no delivery target,
+//     so quietAttention() is always false and does not read the answer.
 
 import { fencesOutput, scanInjection } from "../security/injection.js";
 import { TaintLabel, autoDetectTaint, unionTaint } from "../security/taint.js";
@@ -53,6 +56,12 @@ export function lastAssistantText(transcript = []) {
     }
   }
   return "";
+}
+
+// No delivery target means no push. Arguments are ignored on purpose: model
+// prose, an address, and tool output cannot raise attention.
+export function quietAttention() {
+  return false;
 }
 
 export function stateFromResponse(text, { runId, at }) {

@@ -16,6 +16,7 @@ import { PrismaAuditLog } from "../security/audit.js";
 import { ToolExecutor } from "./executor.js";
 import { CHIEF_TOOL_INVENTORY } from "./inventory.js";
 import { HANDOFF_STATE_KEY, validateHandoffNotes } from "../runtime/compaction.js";
+import { bundledSkills, skillByName } from "../skills/catalog.js";
 import { MemoryScheduleStore, PrismaScheduleStore, normalizeSchedule } from "./schedule-store.js";
 import { BaseTool } from "./spec.js";
 
@@ -299,6 +300,43 @@ function workspacePlanSummary(load = loadWorkspacePlanSummary) {
   });
 }
 
+function skillView(skills = bundledSkills) {
+  return new BaseTool({
+    isLocal: true,
+    spec: {
+      name: "skill_view",
+      description:
+        "Load one bundled CHIEF procedure by name and return its text. Does not run tools, grant capabilities, or start another turn.",
+      category: "skill",
+      requiresConfirmation: false,
+      requiredCapabilities: [Capability.SKILL_READ],
+      parameters: {
+        type: "object",
+        properties: {
+          name: {
+            type: "string",
+            description: "Skill name from the skills index.",
+          },
+        },
+        required: ["name"],
+      },
+    },
+    async execute(params) {
+      const name = typeof params?.name === "string" ? params.name.trim() : "";
+      const skill = skillByName(name, skills);
+      if (!skill) {
+        const available = skills.map((entry) => entry.name).sort();
+        const listed = available.length ? available.join(", ") : "(none)";
+        return { output: `Skill '${name}' not found. Available: ${listed}`, isError: true };
+      }
+      if (fencesOutput(scanInjection(skill.markdownContent).threatLevel)) {
+        return { output: `Skill '${name}' failed the injection scan.`, isError: true };
+      }
+      return { output: skill.markdownContent };
+    },
+  });
+}
+
 function mcpInvoke(client) {
   return new BaseTool({
     isLocal: false,
@@ -343,6 +381,7 @@ export function createChiefTools({
   mcpClient = null,
   loadFinance = loadFinanceSummary,
   loadWorkspace = loadWorkspacePlanSummary,
+  skills = bundledSkills,
 } = {}) {
   const tools = [
     memoryRead(facts),
@@ -353,6 +392,7 @@ export function createChiefTools({
     scheduleCreate(schedule),
     financeSummary(loadFinance),
     workspacePlanSummary(loadWorkspace),
+    skillView(skills),
     mcpInvoke(mcpClient),
   ];
   for (const tool of tools) {
@@ -395,5 +435,5 @@ export async function createChiefTooling({
   if (!executor.gatesInstalled) {
     throw new Error("refusing to publish CHIEF tools without the gate pipeline");
   }
-  return { executor, tools, specs: tools.map((tool) => tool.spec) };
+  return { executor, tools, specs: tools.map((tool) => tool.spec), policy: resolved };
 }

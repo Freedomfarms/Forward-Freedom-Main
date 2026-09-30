@@ -58,6 +58,25 @@ Conventions used in this repository:
     (`reciprocal_rank_fusion` only; `HybridMemory` is not ported)
   - `server/chief/memory/extract.js` ← `src/openjarvis/memory/extractor.py`,
     `src/openjarvis/memory/service.py` (`_process` and the scan gates)
+- Adapted modules in this repository (Phase 8 — skill documents):
+  - `server/chief/skills/loader.js` ← `src/openjarvis/skills/types.py`
+    (`SkillManifest` name, description, required capabilities),
+    `src/openjarvis/skills/parser.py` (name and description limits),
+    `src/openjarvis/skills/loader.py` (`load_skill_markdown`),
+    `src/openjarvis/skills/security.py` (`validate_capabilities` as an offer
+    filter only). `SkillExecutor`, `SkillTool` pipelines, and `SkillManager.execute`
+    are not ported.
+- Adapted modules in this repository (Phase 9 — turn traces):
+  - `server/chief/traces/collector.js` ← `src/openjarvis/traces/collector.py`
+    (`TraceCollector` subscriptions, final `RESPOND` step, one save, then
+    `trace_complete`). The collector does not wrap `BaseAgent.run`.
+  - `server/chief/traces/store.js` ← `src/openjarvis/traces/store.py`
+    (`TraceStore.save` of a trace and ordered steps). Storage is `ChiefTrace`
+    / `ChiefTraceStep` through `withUserContext`, not SQLite or FTS.
+  - Step types ← `src/openjarvis/core/types.py` `StepType`. `ROUTE` is
+    recorded from `inference_start`; upstream's collector does not emit it.
+  - `src/openjarvis/learning/routing/learned_router.py` was inspected and is
+    not ported. `feedback` stays null, and the heuristic router is unchanged.
 - Adapted modules in this repository (Phase 5 — scheduler tick):
   - `server/chief/scheduler/schedule.js` ← `src/openjarvis/scheduler/scheduler.py`
     (`_compute_next_run`, `_compute_next_cron` semantics; cron parsing is `cron-parser`)
@@ -155,16 +174,25 @@ Conventions used in this repository:
 - Repository: https://github.com/NousResearch/hermes-agent
 - Commit audited: `8c30ef318d1ed6c88597239081f5749268efdca8`
 - License: MIT ("Copyright (c) 2025 Nous Research")
-- Use in this repository: **adapted semantics only** (Phase 5 and Phase 6). No Hermes
-  code, runtime, agent loop, or approval behavior is included.
+- Use in this repository: **adapted semantics only** (Phase 5, Phase 6, Phase 8, and Phase 10).
+  No Hermes code, runtime, agent loop, delivery queue, or approval behavior is included.
   - Phase 6 identity slot ← `agent/system_prompt.py` `_identity_parts` and
     `agent/prompt_builder.py` `load_soul_md` (concept only: a user persona, else a
     default identity). CHIEF stores the persona in its fact store. `SOUL.md` is not
     copied.
+  - Phase 8 skill index ← `agent/prompt_builder.py` `build_skills_system_prompt`,
+    `_skill_should_show`, and `_render_skills_index`. `server/chief/tools/builtin.js`
+    `skill_view` ← `tools/skills_tool.py` `skill_view` (return the document only).
+    Shell preprocessing, package installs, and `skill_manage` writes are not ported.
   - `server/chief/scheduler/retry.js` ← `cron/unreachable_retry.py` (retry only a
     transient network failure with zero model calls; 300/900/1800-second ladder; give up
     when the natural next occurrence comes first; recurring tasks only) and
     `cron/scheduler_preflight.py` (cause-chain walk for transient errors)
+  - Phase 10 quiet tick ← `cron/scheduler_delivery.py` `_normalize_deliver_value`
+    (an empty deliver value means `"local"`, no push). CHIEF has no delivery
+    target, so a scheduled run stores `attention: false` and sends nothing.
+    `cron/delivery_queue.py`, `cron/bot_chat_delivery.py`, and the platform
+    senders are not ported.
 - Obligations: retain the copyright and permission notice; the full license text is at
   `licenses/HERMES-AGENT-LICENSE-MIT.txt`.
 

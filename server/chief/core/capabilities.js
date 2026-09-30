@@ -8,8 +8,9 @@
 //
 // Preserved upstream semantics:
 //   - the Capability label set, verbatim ("file:read" … "system:admin"), plus
-//     the CHIEF-only extension "finance:read" (Phase 7). Financial reads must
-//     not reuse memory:read. OpenJarvis has no finance label.
+//     the CHIEF-only extensions "finance:read" (Phase 7) and "skill:read"
+//     (Phase 8). Financial reads must not reuse memory:read. Loading a
+//     procedure must not reuse memory:read either. OpenJarvis has neither label.
 //   - CapabilityPolicy check order: explicit denials always win; grants are
 //     glob-matched on capability and optionally on resource; agents with no
 //     explicit policy fall back to `_default` wildcard grants; an anonymous
@@ -50,6 +51,9 @@ export const Capability = Object.freeze({
   // CHIEF extension. Not an OpenJarvis label. Financial tools require this
   // instead of memory:read.
   FINANCE_READ: "finance:read",
+  // CHIEF extension. Not an OpenJarvis label. skill_view reads a bundled
+  // procedure. It does not grant the capabilities that procedure names.
+  SKILL_READ: "skill:read",
 });
 
 const CAPABILITY_VALUES = new Set(Object.values(Capability));
@@ -232,7 +236,10 @@ export class CapabilityPolicy {
 // tools are registered in Phase 3.
 export const DEFAULT_TOOL_CAPABILITIES = Object.freeze({});
 
-export function canonicalToolCapabilities(toolName, { remote = false, inventory = DEFAULT_TOOL_CAPABILITIES } = {}) {
+export function canonicalToolCapabilities(
+  toolName,
+  { remote = false, inventory = DEFAULT_TOOL_CAPABILITIES } = {}
+) {
   if (remote) {
     // Remote (e.g. MCP) tool names are remote-controlled: resolve provenance
     // before the name table so a server cannot impersonate a reviewed-safe

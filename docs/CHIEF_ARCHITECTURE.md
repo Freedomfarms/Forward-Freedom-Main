@@ -281,7 +281,10 @@ TRIGGERS / SCHEDULES / EVENTS          ChiefScheduledTask (once/interval/cron) c
                                        not necessarily a chat message)
         → DECISION                     ported agent loop (Orchestrator / Operative).
                                        "Nothing warrants attention" is a valid decision
-                                       and ends the tick without notifying
+                                       and ends the tick without notifying.
+                                       Phase 10 records that outcome as
+                                       attention: false on the existing
+                                       ChiefTaskRun result and sends nothing
         → CAPABILITY / POLICY CHECK    CapabilityPolicy (autonomy levels 0–4), the
                                        ToolExecutor gate order, ChiefBudget
         → APPROVAL IF REQUIRED         the same ApprovalPolicy / ReviewDecision /
@@ -576,6 +579,23 @@ previous one is merged or explicitly waived. Verification per repo policy: `npm 
   confirmation, taint `user_private`. They call the shared aggregate and workspace
   slice through `withUserContext`. The database is not a model-facing interface.
   True Cash is not recomputed. Command Center remains a later phase.
+- **Phase 8 — Governed skills (delivered slice, ADR-0008).** Bundled `SKILL.md`
+  procedures are indexed by `assembleSystemPrompt` and loaded by one tool,
+  `skill_view`. The document names existing ToolSpecs. It is not a ToolSpec,
+  not a runner, and not a grant. `TurnMachine` and `ToolExecutor` stay the
+  only execution path. Routines stay `ChiefScheduledTask`.
+- **Phase 9 — Turn traces (delivered slice, ADR-0009).** A collector
+  subscribes to the bus for a turn `TurnMachine` already ran and writes one
+  `ChiefTrace` plus allowlisted `ChiefTraceStep` rows through
+  `withUserContext`. It does not store the query, the answer, or tool
+  output, and it does not change routing. Learned routing, feedback, and
+  trace mining stay deferred.
+- **Phase 10 — Quiet scheduled turn (delivered slice, ADR-0010).** A
+  scheduled run stores `attention: false` on the result object already
+  passed to `finish()`. The value does not read the answer or tool output.
+  A successful quiet run stays `SUCCEEDED`. No notification is sent, and
+  Module 01 `Notification` is not used. A later audit is required before
+  any run can raise attention and deliver it.
 - **Phase 6b — Sidecar boundary.** `server/chief/sidecar/` provider registration + health;
   deep_research/managed-agent tool adapters; deployment recipe doc (Docker/Render/Fly) — all
   feature-flagged and optional.
@@ -586,7 +606,7 @@ previous one is merged or explicitly waived. Verification per repo policy: `npm 
   `onNodeSelect` contextual action panels with the 3D/2D action parity rule; glass HUD panels
   (status, approvals inbox, activity/trace feed, memory browser); CHIEF theme on the vendored
   theme contract; `lite`/reduced-motion 2D parity path verified.
-- **Phase 8 — Hardening + learning.** RLS review across `chief_*`; audit-log surfacing; budget
+- **Later — Hardening + learning.** RLS review across `chief_*`; audit-log surfacing; budget
   enforcement UX; LearnedRouterPolicy port once real traces exist; subagent coordination
   (checkpoint fork + peer messages) if approved; ADRs for any deviations discovered.
 

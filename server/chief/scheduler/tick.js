@@ -12,6 +12,7 @@
 // ToolExecutor. A scheduled turn has no sticky approvals: its session is new,
 // so any requiresConfirmation tool suspends the turn for the user.
 
+import { EventBus } from "../core/events.js";
 import { ApprovalCoordinator } from "../runtime/approvals.js";
 import { TurnMachine } from "../runtime/turn.js";
 import { EventMsgType } from "../protocol/index.js";
@@ -19,6 +20,7 @@ import {
   lastAssistantText,
   operatorStateKey,
   prepareScheduledMessage,
+  quietAttention,
   stateFromResponse,
 } from "./operative.js";
 import { planRetry } from "./retry.js";
@@ -52,6 +54,7 @@ export async function runChiefTick({
   createEngine,
   createTooling,
   createTurnServices = null,
+  traceStore = null,
   audit = null,
   clock = () => new Date(),
   limit = DEFAULT_TICK_LIMIT,
@@ -106,6 +109,7 @@ export async function runChiefTick({
         createEngine,
         createTooling,
         createTurnServices,
+        traceStore,
         audit,
         clock,
         staleBefore,
@@ -128,6 +132,7 @@ async function runScheduledTask({
   createEngine,
   createTooling,
   createTurnServices = null,
+  traceStore = null,
   audit,
   clock,
   staleBefore,
@@ -218,10 +223,17 @@ async function runScheduledTask({
   let tooling;
   let machine;
   try {
-    tooling = await createTooling({ userId });
-    const engine = createEngine();
+    const eventBus = new EventBus();
+    tooling = await createTooling({ userId, eventBus });
+    const engine = createEngine({ eventBus });
     const turnServices = createTurnServices
-      ? await createTurnServices({ userId, engine, checkpointStore })
+      ? await createTurnServices({
+          userId,
+          engine,
+          checkpointStore,
+          policy: tooling.policy ?? null,
+          eventBus,
+        })
       : {};
     machine = new TurnMachine({
       store: checkpointStore,
@@ -233,6 +245,8 @@ async function runScheduledTask({
       contextAssembler: turnServices.contextAssembler ?? null,
       compaction: turnServices.compaction ?? null,
       onTurnComplete: turnServices.onTurnComplete ?? null,
+      traceStore,
+      eventBus,
     });
     const session = await checkpointStore.createSession({
       userId,
@@ -304,7 +318,7 @@ async function runScheduledTask({
   await finish({
     status,
     error,
-    result: { ...stats, summary: summaryText.slice(0, 1000) },
+    result: { ...stats, summary: summaryText.slice(0, 1000), attention: quietAttention() },
   });
   await safeAudit(audit, {
     userId,

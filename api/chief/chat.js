@@ -5,6 +5,7 @@
 // ChiefModelEngine; tools go through ToolExecutor.
 
 import { authenticateRequest } from "../../server/auth/verifyAuth.js";
+import { EventBus } from "../../server/chief/core/events.js";
 import { PrismaBudgetStore } from "../../server/chief/models/budget.js";
 import { createModelEngine } from "../../server/chief/models/engine.js";
 import { encodeSseEvent, eventMsg, makeEvent } from "../../server/chief/protocol/index.js";
@@ -13,6 +14,7 @@ import { createChiefTurnServices } from "../../server/chief/context/wire.js";
 import { PrismaFactStore } from "../../server/chief/memory/facts.js";
 import { PrismaCheckpointStore } from "../../server/chief/runtime/checkpoint.js";
 import { TurnMachine } from "../../server/chief/runtime/turn.js";
+import { PrismaTraceStore } from "../../server/chief/traces/store.js";
 import { createChiefTooling } from "../../server/chief/tools/builtin.js";
 import { applySecurityHeaders } from "../../server/http/responseHelpers.js";
 import { enforceRateLimit, generalApiRateLimit } from "../../server/http/rateLimit.js";
@@ -56,20 +58,34 @@ export async function handleChiefChat(request, response, deps = {}) {
   request.on?.("close", () => controller.abort());
 
   const store = deps.store ?? new PrismaCheckpointStore();
-  const engine = deps.engine ?? createModelEngine({ budget: new PrismaBudgetStore() });
+  const eventBus = deps.eventBus ?? new EventBus();
+  const engine = deps.engine ?? createModelEngine({ budget: new PrismaBudgetStore(), eventBus });
+  const traceStore = Object.hasOwn(deps, "traceStore")
+    ? deps.traceStore
+    : deps.engine
+      ? null
+      : new PrismaTraceStore();
   let toolExecutor = deps.toolExecutor ?? null;
   let toolSpecs = deps.toolSpecs ?? null;
   let facts = deps.facts ?? null;
+  let capabilityPolicy = null;
   if (!toolExecutor) {
     facts = facts ?? new PrismaFactStore();
-    const tooling = await createChiefTooling({ userId, stores: { facts } });
+    const tooling = await createChiefTooling({ userId, stores: { facts }, bus: eventBus });
     toolExecutor = tooling.executor;
     toolSpecs = deps.toolSpecs ?? tooling.specs;
+    capabilityPolicy = tooling.policy;
   }
   const turnServices =
     deps.turnServices ??
     (facts && !deps.toolExecutor
-      ? createChiefTurnServices({ facts, engine, checkpointStore: store })
+      ? createChiefTurnServices({
+          facts,
+          engine,
+          checkpointStore: store,
+          capabilityPolicy,
+          eventBus,
+        })
       : {});
 
   const machine = new TurnMachine({
@@ -80,6 +96,8 @@ export async function handleChiefChat(request, response, deps = {}) {
     contextAssembler: turnServices.contextAssembler ?? null,
     compaction: turnServices.compaction ?? null,
     onTurnComplete: turnServices.onTurnComplete ?? null,
+    traceStore,
+    eventBus,
   });
 
   try {
