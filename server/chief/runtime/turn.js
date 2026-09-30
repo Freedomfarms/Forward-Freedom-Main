@@ -34,8 +34,9 @@
 //   - A crash during streamText leaves the checkpoint at phase "model", so
 //     resume repeats the model step (at-least-once). The checkpoint is saved
 //     before the call and after it, not mid-token.
-//   - caller on the model call defaults to user_turn. A future scheduler tick
-//     passes kind "schedule" into the same machine; this file does not schedule.
+//   - caller on the model call defaults to user_turn. The scheduler tick
+//     (server/chief/scheduler/tick.js) passes kind "schedule" and trigger
+//     "schedule:<taskId>" into the same machine; this file does not schedule.
 
 import { randomUUID } from "node:crypto";
 
@@ -123,6 +124,7 @@ export class TurnMachine {
     toolExecutor = new ToolExecutor(),
     maxModelSteps = MAX_MODEL_STEPS,
     callerKind = "user_turn",
+    callerTrigger = "turn",
   }) {
     if (!store || !engine) throw new TypeError("TurnMachine requires store and engine");
     this._store = store;
@@ -131,6 +133,7 @@ export class TurnMachine {
     this._toolExecutor = toolExecutor;
     this._maxModelSteps = maxModelSteps;
     this._callerKind = callerKind;
+    this._callerTrigger = callerTrigger;
   }
 
   async run({ userId, sessionId = null, submission, signal, onEvent, toolSpecs = [] } = {}) {
@@ -302,7 +305,7 @@ export class TurnMachine {
     const opened = await this._engine.openStream(this._checkpoint.transcript, {
       model: this._checkpoint.modelRoute,
       query: lastUserText(this._checkpoint.transcript),
-      caller: { kind: this._callerKind, id: execution.turnId, trigger: "turn" },
+      caller: { kind: this._callerKind, id: execution.turnId, trigger: this._callerTrigger },
       userId: this._userId,
       tools,
       abortSignal: this._signal,
@@ -419,7 +422,7 @@ export class TurnMachine {
         sessionId: this._sessionId,
         turnId: execution.turnId,
         agentId: "chief",
-        caller: { kind: this._callerKind, id: execution.turnId, trigger: "turn" },
+        caller: { kind: this._callerKind, id: execution.turnId, trigger: this._callerTrigger },
         mutationApproved: grantedMutations.has(call.callId),
         sessionTaint: this._checkpoint.sessionTaint ?? [],
       });
