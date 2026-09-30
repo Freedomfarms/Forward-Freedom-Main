@@ -12,6 +12,14 @@ import { decryptJson, encryptJson } from "../../security/envelope.js";
 
 export const MAX_FACTS_PER_USER = 500;
 
+const TRUST_TIERS = new Set(["AUTO", "TRUSTED", "UNTRUSTED"]);
+
+function assertTrustTier(trustTier) {
+  if (!TRUST_TIERS.has(trustTier)) {
+    throw new TypeError(`unknown fact trust tier '${trustTier}'`);
+  }
+}
+
 export function factDedupeKey(content) {
   const normalized = String(content ?? "")
     .trim()
@@ -42,6 +50,7 @@ export class MemoryFactStore {
       dedupeKey,
       trustTier,
       source: source ?? null,
+      createdAt: new Date(),
     };
     this.rows.push(row);
     return { ...row };
@@ -57,6 +66,14 @@ export class MemoryFactStore {
       )
       .slice(0, limit)
       .map((row) => ({ ...row }));
+  }
+
+  async setTrust({ userId, id, trustTier }) {
+    assertTrustTier(trustTier);
+    const row = this.rows.find((item) => item.id === id && item.userId === userId);
+    if (!row) return null;
+    row.trustTier = trustTier;
+    return { ...row };
   }
 }
 
@@ -107,7 +124,11 @@ export class PrismaFactStore {
       .trim()
       .toLowerCase();
     const rows = await this._withUser(userId, (tx) =>
-      tx.chiefFact.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 200 })
+      tx.chiefFact.findMany({
+        where: { userId },
+        orderBy: { createdAt: "desc" },
+        take: MAX_FACTS_PER_USER,
+      })
     );
     const facts = [];
     for (const row of rows) {
@@ -120,9 +141,20 @@ export class PrismaFactStore {
         dedupeKey: row.dedupeKey,
         trustTier: row.trustTier,
         source: row.source,
+        createdAt: row.createdAt,
       });
       if (facts.length >= limit) break;
     }
     return facts;
+  }
+
+  async setTrust({ userId, id, trustTier }) {
+    assertTrustTier(trustTier);
+    return this._withUser(userId, async (tx) => {
+      const existing = await tx.chiefFact.findFirst({ where: { id, userId } });
+      if (!existing) return null;
+      const updated = await tx.chiefFact.update({ where: { id }, data: { trustTier } });
+      return { id: updated.id, userId, trustTier: updated.trustTier };
+    });
   }
 }
