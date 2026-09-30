@@ -11,8 +11,10 @@
 import crypto from "node:crypto";
 
 import { readBearerToken } from "../../server/auth/verifyAuth.js";
+import { createChiefTurnServices } from "../../server/chief/context/wire.js";
 import { PrismaBudgetStore } from "../../server/chief/models/budget.js";
 import { createModelEngine } from "../../server/chief/models/engine.js";
+import { PrismaFactStore } from "../../server/chief/memory/facts.js";
 import { PrismaCheckpointStore } from "../../server/chief/runtime/checkpoint.js";
 import { PrismaTaskStore } from "../../server/chief/scheduler/store.js";
 import { runChiefTick } from "../../server/chief/scheduler/tick.js";
@@ -30,11 +32,14 @@ function secretMatches(provided, secret) {
 function defaultDeps() {
   const audit = new PrismaAuditLog();
   const budget = new PrismaBudgetStore();
+  const facts = new PrismaFactStore();
+  const checkpointStore = new PrismaCheckpointStore();
   return {
     taskStore: new PrismaTaskStore(),
-    checkpointStore: new PrismaCheckpointStore(),
+    checkpointStore,
     createEngine: () => createModelEngine({ budget }),
-    createTooling: ({ userId }) => createChiefTooling({ userId, audit }),
+    createTooling: ({ userId }) => createChiefTooling({ userId, audit, stores: { facts } }),
+    createTurnServices: ({ engine }) => createChiefTurnServices({ facts, engine, checkpointStore }),
     audit,
   };
 }

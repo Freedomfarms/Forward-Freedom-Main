@@ -51,6 +51,7 @@ export async function runChiefTick({
   checkpointStore,
   createEngine,
   createTooling,
+  createTurnServices = null,
   audit = null,
   clock = () => new Date(),
   limit = DEFAULT_TICK_LIMIT,
@@ -104,6 +105,7 @@ export async function runChiefTick({
         checkpointStore,
         createEngine,
         createTooling,
+        createTurnServices,
         audit,
         clock,
         staleBefore,
@@ -125,6 +127,7 @@ async function runScheduledTask({
   checkpointStore,
   createEngine,
   createTooling,
+  createTurnServices = null,
   audit,
   clock,
   staleBefore,
@@ -216,13 +219,20 @@ async function runScheduledTask({
   let machine;
   try {
     tooling = await createTooling({ userId });
+    const engine = createEngine();
+    const turnServices = createTurnServices
+      ? await createTurnServices({ userId, engine, checkpointStore })
+      : {};
     machine = new TurnMachine({
       store: checkpointStore,
-      engine: createEngine(),
+      engine,
       approvals: new ApprovalCoordinator(),
       toolExecutor: tooling.executor,
       callerKind: "schedule",
       callerTrigger: `schedule:${task.id}`,
+      contextAssembler: turnServices.contextAssembler ?? null,
+      compaction: turnServices.compaction ?? null,
+      onTurnComplete: turnServices.onTurnComplete ?? null,
     });
     const session = await checkpointStore.createSession({
       userId,
