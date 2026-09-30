@@ -13,6 +13,7 @@ export const CHIEF_STATUS = Object.freeze({
   RESPONDING: "Responding",
   TOOL: "CHIEF is using a tool",
   FINANCE: "Checking your financial data",
+  WEB_SEARCH: "CHIEF is searching the web...",
   APPROVAL: "Waiting for approval",
   ERROR: "Error",
 });
@@ -53,6 +54,7 @@ export function formatChiefTime(value, now = Date.now()) {
 }
 
 export function statusForToolName(name) {
+  if (name === "web_search") return CHIEF_STATUS.WEB_SEARCH;
   if (FINANCE_TOOLS.has(name)) return CHIEF_STATUS.FINANCE;
   return CHIEF_STATUS.TOOL;
 }

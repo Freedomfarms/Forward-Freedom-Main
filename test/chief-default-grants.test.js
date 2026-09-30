@@ -1,4 +1,5 @@
-// Phase 16 — zero grant rows install a five-label _default baseline.
+// Phase 16 — zero grant rows install a _default baseline.
+// web:search is included with the governed web search tool.
 // policyFromGrantRows stays a pure mapping. A thrown load stays deny-all.
 
 import test from "node:test";
@@ -24,6 +25,7 @@ const ALLOWED = [
   Capability.SCHEDULE_CREATE,
   Capability.FINANCE_READ,
   Capability.SKILL_READ,
+  Capability.WEB_SEARCH,
 ];
 
 const DENIED = [
@@ -59,7 +61,7 @@ function emptyLoader() {
   };
 }
 
-test("zero grant rows allow the five baseline capabilities for chief", async () => {
+test("zero grant rows allow the baseline capabilities for chief", async () => {
   const { withUser } = emptyLoader();
   const policy = await loadCapabilityPolicy("user", { withUser });
   assert.equal(policy._defaultDeny, true);
@@ -108,6 +110,7 @@ test("one explicit grant for another agent replaces the baseline", async () => {
   assert.equal(policy.check("chief", "memory:read"), false);
   assert.equal(policy.check("chief", "finance:read"), false);
   assert.equal(policy.check("chief", "skill:read"), false);
+  assert.equal(policy.check("chief", "web:search"), false);
 });
 
 test("one explicit chief grant does not receive the remaining baseline", async () => {
@@ -125,6 +128,7 @@ test("one explicit chief grant does not receive the remaining baseline", async (
   assert.equal(policy.check("chief", "schedule:create"), false);
   assert.equal(policy.check("chief", "finance:read"), false);
   assert.equal(policy.check("chief", "skill:read"), false);
+  assert.equal(policy.check("chief", "web:search"), false);
   assert.equal(policy._defaultDeny, true);
 });
 

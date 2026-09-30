@@ -662,6 +662,16 @@ previous one is merged or explicitly waived. Verification per repo policy: `npm 
   `POST /api/chief/chat` with no `session_id`. Opening one is still Phase 17
   history, and continuing it is still chat with that `session_id`. No second
   session store, transcript store, search index, or UI.
+- **Governed web search (delivered slice, ADR-0019).** One read-only tool,
+  `web_search`, inventoried as `web:search`. It is local, so the boundary
+  guard allows it, and it does not require confirmation. `ToolExecutor` is
+  the only caller. The tool calls Brave Search at a fixed host with
+  `CHIEF_BRAVE_SEARCH_API_KEY` or `BRAVE_SEARCH_API_KEY`. A missing key, or
+  an HTTP 401/403, returns "web search is currently unavailable" and does not
+  invent results. The CEO agent's Anthropic provider web search is not reused:
+  that tool runs inside a Claude call and never enters this executor. The
+  empty-grant baseline also grants `web:search`. `network:fetch` stays denied.
+  No browser, login, form, or scheduled news monitor.
 - **Phase 6b — Sidecar boundary.** `server/chief/sidecar/` provider registration + health;
   deep_research/managed-agent tool adapters; deployment recipe doc (Docker/Render/Fly) — all
   feature-flagged and optional.

@@ -110,6 +110,18 @@ test("tool status stays in natural language and drops arguments", () => {
   });
   assert.equal(other.status, CHIEF_STATUS.TOOL);
   assert.equal(JSON.stringify(other).includes("mcp_invoke"), false);
+
+  const searching = applyChiefEvent(initialTurnState("sess-1"), {
+    msg: {
+      type: "tool_call_begin",
+      name: "web_search",
+      arguments: { query: "XRP", apiKey: "should-not-stick" },
+    },
+  });
+  assert.equal(searching.status, CHIEF_STATUS.WEB_SEARCH);
+  assert.equal(searching.status, "CHIEF is searching the web...");
+  assert.equal(JSON.stringify(searching).includes("should-not-stick"), false);
+  assert.equal(JSON.stringify(searching).includes("web_search"), false);
 });
 
 test("approval events keep only the decision id", () => {
