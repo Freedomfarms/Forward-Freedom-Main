@@ -54,7 +54,8 @@ function run(fields = {}) {
     resultCiphertext: CIPHER_MARKER,
     result: { summary: SUMMARY_MARKER, attention: false },
     startedAt: fields.startedAt ?? new Date("2026-09-30T12:00:00.000Z"),
-    completedAt: fields.completedAt ?? new Date("2026-09-30T12:01:00.000Z"),
+    completedAt:
+      fields.completedAt === undefined ? new Date("2026-09-30T12:01:00.000Z") : fields.completedAt,
   };
 }
 
