@@ -403,6 +403,43 @@ function scheduleUpdate(store) {
   });
 }
 
+function outcomeOutput(result) {
+  if (result?.error === "not_found") return { output: "scheduled run not found", isError: true };
+  if (result?.withheld) {
+    return { output: "scheduled run outcome failed the injection scan", isError: true };
+  }
+  const outcome = result?.outcome ?? {};
+  const payload = { output: JSON.stringify(outcome) };
+  if (typeof outcome.summary === "string" && outcome.summary.length > 0) {
+    payload.sessionTaint = [TaintLabel.USER_PRIVATE];
+  }
+  return payload;
+}
+
+function scheduleOutcome(store) {
+  return new BaseTool({
+    isLocal: true,
+    spec: {
+      name: "schedule_outcome",
+      description:
+        "Read one of this user's scheduled runs: ledger times and status, the stored summary, and the stored error. Does not return the session, the prompt, tool output, or ciphertext. Does not run or change a task.",
+      category: "schedule",
+      requiresConfirmation: false,
+      requiredCapabilities: [Capability.SCHEDULE_CREATE],
+      parameters: {
+        type: "object",
+        properties: { runId: { type: "string" } },
+        required: ["runId"],
+      },
+    },
+    async execute(params, context) {
+      const runId = String(params?.runId ?? "").trim();
+      if (!runId) return { output: "run id is required", isError: true };
+      return outcomeOutput(await store.getOutcome({ userId: context.userId, runId }));
+    },
+  });
+}
+
 function scheduleRuns(store) {
   return new BaseTool({
     isLocal: true,
@@ -584,6 +621,7 @@ export function createChiefTools({
     scheduleCancel(schedule),
     scheduleUpdate(schedule),
     scheduleRuns(schedule),
+    scheduleOutcome(schedule),
     financeSummary(loadFinance),
     workspacePlanSummary(loadWorkspace),
     skillView(skills),

@@ -91,8 +91,13 @@ Conventions used in this repository:
     `server/chief/tools/schedule-store.js` ← `SchedulerStore.get_run_logs` in
     `src/openjarvis/scheduler/store.py` (newest rows, limit 10) and the
     scheduler tool shape in `src/openjarvis/scheduler/tools.py` (Phase 13).
-    `get_run_logs` also returns `result` and `error` text. Those fields are
-    not returned.
+    `get_run_logs` also returns `result` and `error` text. The list does not
+    return those fields.
+  - `schedule_outcome` in `server/chief/tools/builtin.js` and `getOutcome` in
+    `server/chief/tools/schedule-store.js` ← the `result` and `error` fields of
+    `SchedulerStore.get_run_logs` in `src/openjarvis/scheduler/store.py`
+    (Phase 15), for one caller-owned run. The decrypted object is not
+    returned. The polling thread is not ported.
   - `server/chief/scheduler/operative.js` ← `src/openjarvis/agents/operative.py`
     (`operator:{id}:state` key, "## Previous State" recall, 1000-character auto-persist;
     the OperativeAgent loop is not ported)
@@ -197,7 +202,7 @@ Conventions used in this repository:
 - Repository: https://github.com/NousResearch/hermes-agent
 - Commit audited: `8c30ef318d1ed6c88597239081f5749268efdca8`
 - License: MIT ("Copyright (c) 2025 Nous Research")
-- Use in this repository: **adapted semantics only** (Phase 5, Phase 6, Phase 8, Phase 10, Phase 12, Phase 13, and Phase 14).
+- Use in this repository: **adapted semantics only** (Phase 5, Phase 6, Phase 8, Phase 10, Phase 12, Phase 13, Phase 14, and Phase 15).
   No Hermes code, runtime, agent loop, delivery queue, or approval behavior is included.
   - Phase 6 identity slot ← `agent/system_prompt.py` `_identity_parts` and
     `agent/prompt_builder.py` `load_soul_md` (concept only: a user persona, else a
@@ -229,6 +234,11 @@ Conventions used in this repository:
     `_update_run_fields` (a paused job stays paused). `schedule_update` edits
     the stored definition only. `deliver`, script, skills, `_action_run`, and
     a full-row replace are not ported.
+  - Phase 15 outcome ← `hermes_cli/cron.py` `cron_runs` (the recorded error
+    line on an execution attempt). `schedule_outcome` returns `ChiefTaskRun.error`
+    when the injection scan allows it. Output files, `_latest_job_output_excerpt`,
+    `_action_run`, and the delivery queue are not ported. Local delivery
+    remains the quiet-tick rule: an empty deliver value has no targets.
 - Obligations: retain the copyright and permission notice; the full license text is at
   `licenses/HERMES-AGENT-LICENSE-MIT.txt`.
 
