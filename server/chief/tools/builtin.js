@@ -19,6 +19,7 @@ import { HANDOFF_STATE_KEY, validateHandoffNotes } from "../runtime/compaction.j
 import { bundledSkills, skillByName } from "../skills/catalog.js";
 import { MemoryScheduleStore, PrismaScheduleStore, normalizeSchedule } from "./schedule-store.js";
 import { BaseTool } from "./spec.js";
+import { createWebSearchClient, createWebSearchTool } from "./web-search.js";
 
 function memoryRead(store) {
   return new BaseTool({
@@ -607,6 +608,7 @@ export function createChiefTools({
   loadFinance = loadFinanceSummary,
   loadWorkspace = loadWorkspacePlanSummary,
   skills = bundledSkills,
+  search = null,
 } = {}) {
   const tools = [
     memoryRead(facts),
@@ -625,6 +627,7 @@ export function createChiefTools({
     financeSummary(loadFinance),
     workspacePlanSummary(loadWorkspace),
     skillView(skills),
+    createWebSearchTool(search ?? createWebSearchClient()),
     mcpInvoke(mcpClient),
   ];
   for (const tool of tools) {
@@ -642,6 +645,7 @@ export async function createChiefTooling({
   audit = new PrismaAuditLog(),
   bus = null,
   mcpClient = null,
+  search = null,
 } = {}) {
   let resolved = policy;
   if (!resolved) {
@@ -656,6 +660,7 @@ export async function createChiefTooling({
     graph: stores?.graph ?? new PrismaGraphStore(),
     schedule: stores?.schedule ?? new PrismaScheduleStore(),
     mcpClient,
+    search,
   });
   const executor = new ToolExecutor({
     tools,

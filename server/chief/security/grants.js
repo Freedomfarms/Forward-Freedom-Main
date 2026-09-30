@@ -4,9 +4,10 @@
 //
 // Zero rows are not an explicit policy. OpenJarvis setup_security grants a
 // narrow _default set when no policy file is configured, so default-deny
-// does not leave every tool unreachable. This loader grants only the five
-// capabilities the CHIEF inventory already uses. Any returned row replaces
-// that baseline. policyFromGrantRows stays a pure mapping of stored rows.
+// does not leave every tool unreachable. This loader grants only the
+// capabilities the CHIEF inventory already uses, including web:search.
+// network:fetch stays off the baseline. Any returned row replaces that
+// baseline. policyFromGrantRows stays a pure mapping of stored rows.
 
 import { withUserContext } from "../../db/prisma.js";
 import { Capability, CapabilityPolicy } from "../core/capabilities.js";
@@ -17,6 +18,7 @@ const BASELINE_CAPABILITIES = Object.freeze([
   Capability.SCHEDULE_CREATE,
   Capability.FINANCE_READ,
   Capability.SKILL_READ,
+  Capability.WEB_SEARCH,
 ]);
 
 function baselinePolicy() {
