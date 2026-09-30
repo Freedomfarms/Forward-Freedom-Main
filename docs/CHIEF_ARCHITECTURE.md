@@ -642,6 +642,12 @@ previous one is merged or explicitly waived. Verification per repo policy: `npm 
   return the session, the prompt, tool output, or ciphertext, and it does
   not run a task. `schedule_runs` stays metadata-only. `attention` stays
   `false`.
+- **Phase 16 — Default capability baseline (delivered slice, ADR-0016).**
+  `loadCapabilityPolicy` grants `_default` `memory:read`, `memory:write`,
+  `schedule:create`, `finance:read`, and `skill:read` when the caller has
+  zero `chief_capability_grant` rows. `defaultDeny` stays true. Any explicit
+  row replaces that baseline. A load failure stays deny-all. Confirmation,
+  the boundary guard, and the scheduler are unchanged.
 - **Phase 6b — Sidecar boundary.** `server/chief/sidecar/` provider registration + health;
   deep_research/managed-agent tool adapters; deployment recipe doc (Docker/Render/Fly) — all
   feature-flagged and optional.

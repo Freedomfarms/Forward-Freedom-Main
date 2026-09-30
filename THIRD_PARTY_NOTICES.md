@@ -101,6 +101,16 @@ Conventions used in this repository:
   - `server/chief/scheduler/operative.js` ← `src/openjarvis/agents/operative.py`
     (`operator:{id}:state` key, "## Previous State" recall, 1000-character auto-persist;
     the OperativeAgent loop is not ported)
+- Adapted modules in this repository (Phase 16):
+  - `server/chief/security/grants.js` `loadCapabilityPolicy` empty-row branch
+    ← `setup_security` in `src/openjarvis/security/__init__.py`. Upstream
+    grants `_default` `file:read`, `network:fetch`, `memory:read`, and
+    `memory:write` when capabilities are enabled and no policy file is set.
+    CHIEF adapts only that baseline-grant concept. The CHIEF set is
+    `memory:read`, `memory:write`, `schedule:create`, `finance:read`, and
+    `skill:read`. `file:read`, `network:fetch`, code execution, channel
+    send, `tool:invoke`, and `system:admin` are not granted.
+    `DEFAULT_TOOL_CAPABILITIES` is not copied.
 - Obligations: retain attribution and license notice for derivative material; the full
   upstream license text is included verbatim at
   `licenses/OPENJARVIS-LICENSE-APACHE-2.0.txt` (including its copyright line,

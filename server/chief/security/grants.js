@@ -1,9 +1,31 @@
 // Load chief_capability_grant rows into the existing CapabilityPolicy.
 // Enforcement stays fail-closed: defaultDeny, and a load failure must not
 // become an open policy.
+//
+// Zero rows are not an explicit policy. OpenJarvis setup_security grants a
+// narrow _default set when no policy file is configured, so default-deny
+// does not leave every tool unreachable. This loader grants only the five
+// capabilities the CHIEF inventory already uses. Any returned row replaces
+// that baseline. policyFromGrantRows stays a pure mapping of stored rows.
 
 import { withUserContext } from "../../db/prisma.js";
-import { CapabilityPolicy } from "../core/capabilities.js";
+import { Capability, CapabilityPolicy } from "../core/capabilities.js";
+
+const BASELINE_CAPABILITIES = Object.freeze([
+  Capability.MEMORY_READ,
+  Capability.MEMORY_WRITE,
+  Capability.SCHEDULE_CREATE,
+  Capability.FINANCE_READ,
+  Capability.SKILL_READ,
+]);
+
+function baselinePolicy() {
+  const policy = new CapabilityPolicy({ defaultDeny: true });
+  for (const capability of BASELINE_CAPABILITIES) {
+    policy.grant("_default", capability);
+  }
+  return policy;
+}
 
 export function policyFromGrantRows(rows, { defaultDeny = true } = {}) {
   const byAgent = new Map();
@@ -36,5 +58,6 @@ export async function loadCapabilityPolicy(userId, { withUser = withUserContext 
   const rows = await withUser(userId, (tx) =>
     tx.chiefCapabilityGrant.findMany({ where: { userId } })
   );
+  if (!rows || rows.length === 0) return baselinePolicy();
   return policyFromGrantRows(rows);
 }
