@@ -620,6 +620,13 @@ previous one is merged or explicitly waived. Verification per repo policy: `npm 
   task, do not start a turn, and do not abort one that is already running.
   Resume sets `nextRunAt` with `initialNextRun` and does not call the tick.
   `attention` stays `false`.
+- **Phase 13 — Schedule run ledger (delivered slice, ADR-0013).** One read-only
+  tool, `schedule_runs`, on the existing schedule store. It returns the
+  caller's runs (`id`, `scheduledTaskId`, `status`, `attempts`, `startedAt`,
+  `completedAt`), newest first, at most 10. An optional `taskId` is not found
+  when the task is not the caller's. It does not decrypt `resultCiphertext`,
+  does not return errors or session ids, and does not deliver or notify.
+  `attention` stays `false`.
 - **Phase 6b — Sidecar boundary.** `server/chief/sidecar/` provider registration + health;
   deep_research/managed-agent tool adapters; deployment recipe doc (Docker/Render/Fly) — all
   feature-flagged and optional.

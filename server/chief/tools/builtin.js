@@ -348,6 +348,31 @@ function scheduleCancel(store) {
   });
 }
 
+function scheduleRuns(store) {
+  return new BaseTool({
+    isLocal: true,
+    spec: {
+      name: "schedule_runs",
+      description:
+        "List this user's scheduled runs: id, task, status, attempts, start, and completion. Does not return results, errors, prompts, or session ids. Does not run or change a task.",
+      category: "schedule",
+      requiresConfirmation: false,
+      requiredCapabilities: [Capability.SCHEDULE_CREATE],
+      parameters: {
+        type: "object",
+        properties: { taskId: { type: "string" } },
+      },
+    },
+    async execute(params, context) {
+      const taskId = String(params?.taskId ?? "").trim();
+      const result = await store.listRuns({ userId: context.userId, taskId: taskId || undefined });
+      if (result?.error === "not_found")
+        return { output: "scheduled task not found", isError: true };
+      return { output: JSON.stringify({ runs: result.runs }) };
+    },
+  });
+}
+
 function financeSummary(load = loadFinanceSummary) {
   return new BaseTool({
     isLocal: true,
@@ -502,6 +527,7 @@ export function createChiefTools({
     schedulePause(schedule),
     scheduleResume(schedule),
     scheduleCancel(schedule),
+    scheduleRuns(schedule),
     financeSummary(loadFinance),
     workspacePlanSummary(loadWorkspace),
     skillView(skills),

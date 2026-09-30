@@ -20,6 +20,7 @@ export const CHIEF_TOOL_INVENTORY = Object.freeze({
   schedule_pause: Object.freeze([Capability.SCHEDULE_CREATE]),
   schedule_resume: Object.freeze([Capability.SCHEDULE_CREATE]),
   schedule_cancel: Object.freeze([Capability.SCHEDULE_CREATE]),
+  schedule_runs: Object.freeze([Capability.SCHEDULE_CREATE]),
   finance_summary: Object.freeze([Capability.FINANCE_READ]),
   workspace_plan_summary: Object.freeze([Capability.FINANCE_READ]),
   skill_view: Object.freeze([Capability.SKILL_READ]),

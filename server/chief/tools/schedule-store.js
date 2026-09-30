@@ -1,13 +1,17 @@
-// Records a scheduled task and its lifecycle. This is not a scheduler:
-// nothing here claims a lock, runs a turn, or aborts one. The dispatch tick
+// Records a scheduled task, its lifecycle, and a read of its run ledger.
+// This is not a scheduler: nothing here claims a lock, runs a turn, decrypts
+// a result, or aborts one. The dispatch tick
 // (server/chief/scheduler/tick.js) claims ACTIVE rows later.
 //
 // ADAPT of OpenJarvis (Stanford, Apache-2.0)
 //   Upstream: https://github.com/open-jarvis/OpenJarvis
-//   Source file: src/openjarvis/scheduler/tools.py and
+//   Source file: src/openjarvis/scheduler/tools.py,
 //     src/openjarvis/scheduler/scheduler.py (list_tasks, pause_task,
-//     resume_task, cancel_task)
+//     resume_task, cancel_task), and
+//     src/openjarvis/scheduler/store.py (get_run_logs: newest rows, capped)
 //   Commit: 5e5f5efde4bfcf8a60fe70d1cea12a0185f615ec
+//   get_run_logs also returns result and error text. Those fields are not
+//   copied. listRuns returns the six ledger columns only.
 
 import { randomUUID } from "node:crypto";
 
@@ -18,6 +22,7 @@ import { fencesOutput, scanInjection } from "../security/injection.js";
 
 const KINDS = new Set(["ONCE", "INTERVAL", "CRON"]);
 const AWAITING_APPROVAL = "AWAITING_APPROVAL";
+export const SCHEDULE_RUN_LIST_LIMIT = 10;
 
 function iso(value) {
   if (value == null) return null;
@@ -35,6 +40,22 @@ export function publicScheduledTask(task, awaitingApproval = false) {
     lastRunAt: iso(task.lastRunAt),
     awaitingApproval: Boolean(awaitingApproval),
   };
+}
+
+export function publicScheduledRun(run) {
+  return {
+    id: run.id,
+    scheduledTaskId: run.scheduledTaskId ?? null,
+    status: run.status,
+    attempts: run.attempts ?? 0,
+    startedAt: iso(run.startedAt),
+    completedAt: iso(run.completedAt),
+  };
+}
+
+function runStartedAt(run) {
+  const time = new Date(run?.startedAt).getTime();
+  return Number.isNaN(time) ? 0 : time;
 }
 
 function awaitingIds(runs, userId) {
@@ -123,6 +144,17 @@ export class MemoryScheduleStore {
       .map((task) => publicScheduledTask(task, waiting.has(task.id)));
   }
 
+  async listRuns({ userId, taskId } = {}) {
+    const filterId = String(taskId ?? "").trim();
+    if (filterId && !this._own(userId, filterId)) return { error: "not_found" };
+    const runs = this.runs
+      .filter((run) => run.userId === userId && (!filterId || run.scheduledTaskId === filterId))
+      .sort((a, b) => runStartedAt(b) - runStartedAt(a) || String(b.id).localeCompare(String(a.id)))
+      .slice(0, SCHEDULE_RUN_LIST_LIMIT)
+      .map((run) => publicScheduledRun(run));
+    return { runs };
+  }
+
   async pause({ userId, taskId }) {
     const task = this._own(userId, taskId);
     if (!task) return { error: "not_found" };
@@ -193,6 +225,33 @@ export class PrismaScheduleStore {
       });
       const ids = new Set(waiting.map((run) => run.scheduledTaskId));
       return tasks.map((task) => publicScheduledTask(task, ids.has(task.id)));
+    });
+  }
+
+  async listRuns({ userId, taskId } = {}) {
+    const filterId = String(taskId ?? "").trim();
+    return this._withUser(userId, async (tx) => {
+      if (filterId) {
+        const task = await tx.chiefScheduledTask.findFirst({
+          where: { id: filterId, userId },
+          select: { id: true },
+        });
+        if (!task) return { error: "not_found" };
+      }
+      const runs = await tx.chiefTaskRun.findMany({
+        where: { userId, ...(filterId ? { scheduledTaskId: filterId } : {}) },
+        orderBy: [{ startedAt: "desc" }, { id: "desc" }],
+        take: SCHEDULE_RUN_LIST_LIMIT,
+        select: {
+          id: true,
+          scheduledTaskId: true,
+          status: true,
+          attempts: true,
+          startedAt: true,
+          completedAt: true,
+        },
+      });
+      return { runs: runs.map((run) => publicScheduledRun(run)) };
     });
   }
 
