@@ -180,6 +180,8 @@ test("Phase 3 orchestration does not import a provider SDK", () => {
     "server/chief/memory/graph.js",
     "api/chief/chat.js",
     "api/chief/approvals.js",
+    "api/chief/history.js",
+    "server/chief/runtime/history.js",
     "server/chief/scheduler/resume.js",
   ];
   for (const file of files) {
