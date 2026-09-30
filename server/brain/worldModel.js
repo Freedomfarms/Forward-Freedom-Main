@@ -1,8 +1,14 @@
 import { withUserContext } from "../db/prisma.js";
-import { getSchemaCapabilities } from "../db/schemaCapabilities.js";
-import { decryptJson, decryptNumber } from "../security/envelope.js";
-import { computeFinanceAggregates } from "../agents/types/finance.js";
-import { sanitizeWorkspaceStateForPersistence } from "../../src/utils/workspacePersistence.js";
+import { decryptNumber } from "../security/envelope.js";
+import {
+  aggregationWindowStart,
+  computeFinanceAggregates,
+  FINANCE_ACCOUNT_SELECT,
+  FINANCE_PLAID_SELECT,
+  FINANCE_TRANSACTION_SELECT,
+  summarizePlaidConnectionHealth,
+} from "../finance/aggregates.js";
+import { loadWorkspacePlanSummary } from "../finance/workspaceSlice.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CEO world-model loaders — trusted, read-only application state.
@@ -15,7 +21,6 @@ import { sanitizeWorkspaceStateForPersistence } from "../../src/utils/workspaceP
 //   • Deep finance aggregates are cached (TTL); light health is always-on.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const AGGREGATION_MONTHS = 6;
 /** Deep aggregates TTL — refreshed periodically, not blindly every turn. */
 export const FINANCE_AGGREGATES_CACHE_TTL_MS = 10 * 60 * 1000;
 /** Cap category rows shown in the CEO prompt. */
@@ -52,37 +57,22 @@ export async function loadLightFinancialHealth(userId) {
       const [accounts, plaidItems] = await Promise.all([
         tx.account.findMany({
           where: { userId },
-          select: { type: true, balance: true, balanceCiphertext: true },
+          select: FINANCE_ACCOUNT_SELECT,
         }),
         tx.plaidItem.findMany({
           where: { userId },
-          select: {
-            status: true,
-            lastSyncAt: true,
-            lastSyncError: true,
-          },
+          select: FINANCE_PLAID_SELECT,
         }),
       ]);
 
       const balancesByType = summarizeBalancesByType(accounts);
-      const connected = plaidItems.filter((item) => item.status === "CONNECTED").length;
-      const attention = plaidItems.length - connected;
-      const lastSyncAt = plaidItems
-        .map((item) => item.lastSyncAt)
-        .filter(Boolean)
-        .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] || null;
 
       return {
         status: "available",
         accountCount: accounts.length,
         balancesByType,
-        plaid: {
-          itemCount: plaidItems.length,
-          connectedCount: connected,
-          requiresAttentionCount: attention,
-          lastSyncAt: lastSyncAt ? new Date(lastSyncAt).toISOString() : null,
-          // Never include institution names / item ids in CEO world model.
-        },
+        // Never include institution names / item ids in CEO world model.
+        plaid: summarizePlaidConnectionHealth(plaidItems),
       };
     });
   } catch (error) {
@@ -116,23 +106,15 @@ export async function loadFinanceAggregatesCached(userId, { now = new Date(), fo
   }
 
   try {
-    const windowStart = new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (AGGREGATION_MONTHS - 1), 1)
-    );
+    const windowStart = aggregationWindowStart(now);
     const { transactions, accounts } = await withUserContext(userId, async (tx) => {
       const transactionRows = await tx.transaction.findMany({
         where: { userId, postedAt: { gte: windowStart }, pending: false },
-        select: {
-          category: true,
-          categoryCiphertext: true,
-          amount: true,
-          amountCiphertext: true,
-          postedAt: true,
-        },
+        select: FINANCE_TRANSACTION_SELECT,
       });
       const accountRows = await tx.account.findMany({
         where: { userId },
-        select: { type: true, balance: true, balanceCiphertext: true },
+        select: FINANCE_ACCOUNT_SELECT,
       });
       return { transactions: transactionRows, accounts: accountRows };
     });
@@ -173,130 +155,11 @@ export async function loadFinanceAggregatesCached(userId, { now = new Date(), fo
 /**
  * Workspace snapshot slices — counts, labels, stored metric fields only.
  * Does not recompute True Cash / forecast / budget-vs-actual.
+ * The slice itself lives in server/finance/workspaceSlice.js so CHIEF can
+ * reuse it without importing this module.
  */
 export async function loadWorkspaceWorldSlice(userId) {
-  if (!userId) {
-    return { status: "unavailable_server_summary", reason: "missing_user" };
-  }
-
-  try {
-    const caps = await getSchemaCapabilities().catch(() => ({ encryptionColumns: true }));
-    const snapshot = await withUserContext(userId, async (tx) => {
-      if (caps.encryptionColumns !== false) {
-        return tx.workspaceSnapshot.findUnique({ where: { userId } });
-      }
-      return tx.workspaceSnapshot.findUnique({
-        where: { userId },
-        select: {
-          id: true,
-          userId: true,
-          state: true,
-          source: true,
-          lastClientUpdatedAt: true,
-          createdAt: true,
-          updatedAt: true,
-        },
-      });
-    });
-
-    if (!snapshot) {
-      return {
-        status: "available",
-        hasSnapshot: false,
-        updatedAt: null,
-        workspaceUserCount: 0,
-        budgetRowCount: 0,
-        budgetCategoryLabels: [],
-        incomeStreamCount: 0,
-        incomeStreamLabels: [],
-        objectiveCount: 0,
-        planYears: [],
-        storedMetricSnapshots: { status: "unavailable_server_summary", count: 0 },
-      };
-    }
-
-    let state = null;
-    try {
-      if (snapshot.stateCiphertext != null) {
-        state = decryptJson(snapshot.stateCiphertext);
-      } else {
-        state = snapshot.state ?? null;
-      }
-      state = sanitizeWorkspaceStateForPersistence(state);
-    } catch {
-      state = null;
-    }
-
-    if (!state || typeof state !== "object") {
-      return {
-        status: "available",
-        hasSnapshot: true,
-        updatedAt: snapshot.updatedAt ? new Date(snapshot.updatedAt).toISOString() : null,
-        parseError: true,
-        workspaceUserCount: 0,
-        budgetRowCount: 0,
-        budgetCategoryLabels: [],
-        incomeStreamCount: 0,
-        incomeStreamLabels: [],
-        objectiveCount: 0,
-        planYears: [],
-        storedMetricSnapshots: { status: "unavailable_server_summary", count: 0 },
-      };
-    }
-
-    const users = Array.isArray(state.users) ? state.users : [];
-    const activeUser =
-      users.find((u) => u?.id && u.id === state.activeUserId) || users[0] || null;
-
-    const budgetRows = Array.isArray(activeUser?.budgetRows) ? activeUser.budgetRows : [];
-    const incomeStreams = Array.isArray(activeUser?.incomeStreams)
-      ? activeUser.incomeStreams
-      : [];
-    const objectives = Array.isArray(activeUser?.objectives) ? activeUser.objectives : [];
-    const plansByYear =
-      activeUser?.plansByYear && typeof activeUser.plansByYear === "object"
-        ? activeUser.plansByYear
-        : {};
-    const metricSnapshots = Array.isArray(activeUser?.metricSnapshots)
-      ? activeUser.metricSnapshots
-      : [];
-
-    const latestMetric = metricSnapshots.length
-      ? metricSnapshots[metricSnapshots.length - 1]
-      : null;
-
-    return {
-      status: "available",
-      hasSnapshot: true,
-      updatedAt: snapshot.updatedAt ? new Date(snapshot.updatedAt).toISOString() : null,
-      source: snapshot.source || null,
-      workspaceUserCount: users.length,
-      activeUserPresent: Boolean(activeUser),
-      budgetRowCount: budgetRows.length,
-      budgetCategoryLabels: uniqueLabels(
-        budgetRows.map((row) => row?.name || row?.category || row?.label)
-      ),
-      incomeStreamCount: incomeStreams.length,
-      incomeStreamLabels: uniqueLabels(incomeStreams.map((row) => row?.name || row?.label)),
-      objectiveCount: objectives.length,
-      planYears: Object.keys(plansByYear)
-        .map(String)
-        .sort(),
-      storedMetricSnapshots: latestMetric
-        ? {
-            status: "available",
-            count: metricSnapshots.length,
-            latest: summarizeStoredMetricSnapshot(latestMetric),
-          }
-        : { status: "unavailable_server_summary", count: 0 },
-    };
-  } catch (error) {
-    console.warn("[ceo-world-model] workspace slice failed:", error?.message || error);
-    return {
-      status: "unavailable_server_summary",
-      reason: "load_failed",
-    };
-  }
+  return loadWorkspacePlanSummary(userId);
 }
 
 /**
@@ -376,48 +239,3 @@ function summarizeBalancesByType(accounts) {
     }));
 }
 
-function summarizeStoredMetricSnapshot(snapshot) {
-  if (!snapshot || typeof snapshot !== "object") {
-    return { status: "unavailable_server_summary" };
-  }
-  // Pass through only already-stored numeric/summary fields — do not recompute.
-  const allowedKeys = [
-    "trueCash",
-    "liquidCash",
-    "creditCardDebt",
-    "reserves",
-    "capturedAt",
-    "asOf",
-    "date",
-    "month",
-    "year",
-  ];
-  const out = {};
-  for (const key of allowedKeys) {
-    if (snapshot[key] == null) continue;
-    const value = snapshot[key];
-    if (typeof value === "number" || typeof value === "string" || typeof value === "boolean") {
-      out[key] = value;
-    }
-  }
-  return {
-    status: Object.keys(out).length ? "available" : "unavailable_server_summary",
-    fields: out,
-    fieldNames: Object.keys(out),
-  };
-}
-
-function uniqueLabels(values) {
-  const out = [];
-  const seen = new Set();
-  for (const value of values || []) {
-    const label = String(value || "").trim();
-    if (!label || label.length > 80) continue;
-    const key = label.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push(label);
-    if (out.length >= 40) break;
-  }
-  return out;
-}

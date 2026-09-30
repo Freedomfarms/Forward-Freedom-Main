@@ -1,5 +1,11 @@
 {
-  "crons": [{ "path": "/api/cron/agent-dispatch", "schedule": "*/15 * * * *" }],
+  "crons": [
+    { "path": "/api/cron/agent-dispatch", "schedule": "*/15 * * * *" },
+    { "path": "/api/cron/chief-dispatch", "schedule": "*/5 * * * *" }
+  ],
+  "functions": {
+    "api/cron/chief-dispatch.js": { "maxDuration": 60 }
+  },
   "rewrites": [
     {
       "source": "/api/agents/ceo/conversations/:conversationId/messages",

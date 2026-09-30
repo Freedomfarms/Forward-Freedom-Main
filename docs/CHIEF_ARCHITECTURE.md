@@ -281,11 +281,20 @@ TRIGGERS / SCHEDULES / EVENTS          ChiefScheduledTask (once/interval/cron) c
                                        not necessarily a chat message)
         → DECISION                     ported agent loop (Orchestrator / Operative).
                                        "Nothing warrants attention" is a valid decision
-                                       and ends the tick without notifying
+                                       and ends the tick without notifying.
+                                       Phase 10 records that outcome as
+                                       attention: false on the existing
+                                       ChiefTaskRun result and sends nothing
         → CAPABILITY / POLICY CHECK    CapabilityPolicy (autonomy levels 0–4), the
                                        ToolExecutor gate order, ChiefBudget
         → APPROVAL IF REQUIRED         the same ApprovalPolicy / ReviewDecision /
-                                       pending_approval suspension as an interactive turn
+                                       pending_approval suspension as an interactive turn.
+                                       A scheduled suspension stays on that session
+                                       (ADR-0011): the signed-in user decides, the
+                                       resume keeps caller kind schedule, and the
+                                       same ChiefTaskRun finishes. AWAITING_APPROVAL
+                                       is not terminal, and a ONCE task stays ACTIVE
+                                       until that resume ends the turn
         → ACTION / DELEGATION          authorized tools, or a subagent via checkpoint
                                        fork (later phase) — caller kind "delegation"
         → TRACE / EVENT                the same EventBus taxonomy and ChiefTrace rows.
@@ -529,20 +538,131 @@ previous one is merged or explicitly waived. Verification per repo policy: `npm 
   the corresponding OpenJarvis/möbius test intents.
 - **Phase 2 — Model layer.** AI SDK provider registry (xAI Grok primary, Anthropic, OpenAI(-
   compatible) — the latter is also the sidecar socket); HeuristicRouter + complexity scorer
-  ports; budget-cap checks (`ChiefBudget`). New env: `XAI_API_KEY` (+ optional sidecar vars).
-- **Phase 3 — Durable runtime (highest risk, most tests).** Checkpoint store with atomic
-  `saveWithEvents` + fork; turn phase machine with suspension/resume; approvals component;
-  `api/chief/chat` SSE + `api/chief/approvals`; resume-mid-turn and resume-pending-approval
-  integration tests (the möbius runtime-test scenarios re-expressed in Node's test runner).
-- **Phase 4 — Tools + memory.** ToolExecutor gate pipeline; first tool set (memory ops, KG ops,
-  scheduling ops — no code execution, §10 of audit); MCP client integration; FactStore + trust
-  tiers + extraction task; hybrid FTS+pgvector+RRF retrieval; KG store + consolidation job.
+  ports. New env: `XAI_API_KEY` (+ optional sidecar vars).
+  **Budget-cap checks (`ChiefBudget`) were specified in this phase and are not dropped.**
+  The approved Phase 2 scope stopped before any caller invoked a provider, so the check
+  had no call site yet. It is implemented in Phase 3, still inside the model layer (the
+  original architectural home — see the cost-runaway row in §10 and ADR-0003). It is not
+  relocated to Phase 8, and it is not implemented only inside the turn machine: a
+  turn-only check would let a later autonomous tick bypass it.
+- **Phase 3 — Durable runtime (highest risk, most tests).** `ChiefBudget` enforcement at
+  the model-layer seam, before `streamText` (carried from Phase 2; ADR-0003). Checkpoint
+  store with atomic `saveWithEvents` + fork; turn phase machine with suspension/resume;
+  approvals wired into that machine; `api/chief/chat` SSE + `api/chief/approvals`;
+  resume-mid-turn and resume-pending-approval integration tests (the möbius runtime-test
+  scenarios re-expressed in Node's test runner). The model step calls AI SDK `streamText`
+  on the resolved `LanguageModel` only. Tool calls are authorized here and executed only
+  through the `ToolExecutor` boundary; the gate pipeline itself remains Phase 4, and the
+  boundary fail-closes until those gates exist. No generic AI SDK tool `execute` callback.
+- **Phase 4 — Tools + memory (gate pipeline and first tools).** `ToolExecutor` runs the
+  frozen gate order, fail-closed, and `gatesInstalled` is true only when every gate is
+  present. `ToolSpec` classifies read versus mutation for the existing `ApprovalCoordinator`.
+  Session taint is checkpoint state. Security denials write `chief_audit_log`. The first
+  tools are memory read/write, explicit KG lookup/link, schedule recording, and an MCP
+  invoke that the boundary guard blocks. No code-execution tool, no scheduler, no cron, and
+  no provider-architecture change. Hybrid FTS+pgvector retrieval, fact extraction, and KG
+  consolidation are not in this slice. Boundary mode is block-only until the Rust scanner
+  patterns are ported on purpose (ADR-0004).
 - **Phase 5 — Scheduler + operatives.** Task store + `api/cron/chief-dispatch` (additive
   `vercel.json` entry); operative tick agents (OpenJarvis execute_tick semantics); retries,
   failure handling, notifications. This phase is what makes the §5.5 loop run; it does
   not introduce a second scheduler. Notifications fire only when a tick decides something
-  warrants attention.
-- **Phase 6 — Sidecar boundary.** `server/chief/sidecar/` provider registration + health;
+  warrants attention. Delivered slice (ADR-0005): `server/chief/scheduler/` claims due
+  tasks by row compare-and-swap, runs each as one `TurnMachine` turn with caller kind
+  `schedule`, records `ChiefTaskRun` (including `AWAITING_APPROVAL` and `RETRYING`),
+  scans the stored prompt, seeds session taint, carries `operator:{id}:state` through
+  `chief_middleware_state`, and retries only spend-neutral network failures. Memory
+  extraction, KG consolidation, and notifications are not in this slice.
+- **Phase 6 — Context engine (delivered slice, ADR-0006).** Before the sidecar: every
+  turn gets a system prompt assembled from a Hermes-style identity slot, OpenJarvis
+  `inject_context` (trust-filtered, token-budgeted), RRF-ranked facts, and möbius
+  compaction/handoff notes. Extraction runs after a completed turn through
+  `ChiefModelEngine`. The OpenJarvis sidecar below moves back; it is optional and
+  nothing later depends on it. The context engine is what memory, skills, and
+  subagents attach to.
+- **Phase 7 — Governed finance reads (delivered slice, ADR-0007).** Two read-only
+  tools, `finance_summary` and `workspace_plan_summary`, both `finance:read`, no
+  confirmation, taint `user_private`. They call the shared aggregate and workspace
+  slice through `withUserContext`. The database is not a model-facing interface.
+  True Cash is not recomputed. Command Center remains a later phase.
+- **Phase 8 — Governed skills (delivered slice, ADR-0008).** Bundled `SKILL.md`
+  procedures are indexed by `assembleSystemPrompt` and loaded by one tool,
+  `skill_view`. The document names existing ToolSpecs. It is not a ToolSpec,
+  not a runner, and not a grant. `TurnMachine` and `ToolExecutor` stay the
+  only execution path. Routines stay `ChiefScheduledTask`.
+- **Phase 9 — Turn traces (delivered slice, ADR-0009).** A collector
+  subscribes to the bus for a turn `TurnMachine` already ran and writes one
+  `ChiefTrace` plus allowlisted `ChiefTraceStep` rows through
+  `withUserContext`. It does not store the query, the answer, or tool
+  output, and it does not change routing. Learned routing, feedback, and
+  trace mining stay deferred.
+- **Phase 10 — Quiet scheduled turn (delivered slice, ADR-0010).** A
+  scheduled run stores `attention: false` on the result object already
+  passed to `finish()`. The value does not read the answer or tool output.
+  A successful quiet run stays `SUCCEEDED`. No notification is sent, and
+  Module 01 `Notification` is not used. A later audit is required before
+  any run can raise attention and deliver it.
+- **Phase 11 — Scheduled approval resume (delivered slice, ADR-0011).** A
+  scheduled turn that suspended on a confirming tool stays
+  `AWAITING_APPROVAL`, and a ONCE task stays `ACTIVE`. The signed-in user
+  submits the decision through `/api/chief/approvals` or chat. That request
+  resumes the same TurnMachine session with `callerKind: "schedule"` and
+  trigger `schedule:<taskId>`, through the same `createChiefTooling` inventory
+  and the same ToolExecutor gates. The same `ChiefTaskRun` then reaches
+  `SUCCEEDED`, `FAILED`, `SKIPPED`, or `AWAITING_APPROVAL` again. The cron
+  tick does not resume it, does not approve it, and does not move
+  `nextRunAt`. `attention` stays `false`. No new scheduler, runtime, or
+  approval store.
+- **Phase 12 — Schedule lifecycle (delivered slice, ADR-0012).** Four tools
+  on the existing schedule store: `schedule_list` (read), and confirming
+  `schedule_pause`, `schedule_resume`, and `schedule_cancel`. They use
+  `schedule:create` and `withUserContext`. Pause and cancel do not claim a
+  task, do not start a turn, and do not abort one that is already running.
+  Resume sets `nextRunAt` with `initialNextRun` and does not call the tick.
+  `attention` stays `false`.
+- **Phase 13 — Schedule run ledger (delivered slice, ADR-0013).** One read-only
+  tool, `schedule_runs`, on the existing schedule store. It returns the
+  caller's runs (`id`, `scheduledTaskId`, `status`, `attempts`, `startedAt`,
+  `completedAt`), newest first, at most 10. An optional `taskId` is not found
+  when the task is not the caller's. It does not decrypt `resultCiphertext`,
+  does not return errors or session ids, and does not deliver or notify.
+  `attention` stays `false`.
+- **Phase 14 — Schedule update (delivered slice, ADR-0014).** One confirming
+  tool, `schedule_update`, on the existing schedule store. It edits the
+  caller's task definition through `normalizeSchedule` and does not change
+  status, id, or `agentId`. An `ACTIVE` task gets a new `nextRunAt` from
+  `initialNextRun`. A `PAUSED` task keeps `nextRunAt` for `schedule_resume`.
+  A locked task, or one with an `AWAITING_APPROVAL` run, is not written.
+  The tool does not call the tick or start a turn. `attention` stays `false`.
+- **Phase 15 — Schedule outcome (delivered slice, ADR-0015).** One read-only
+  tool, `schedule_outcome`, on the existing schedule store. It returns one
+  caller-owned run: the six ledger fields, `result.summary` (1,000 characters,
+  injection-scanned), and the stored error when that scan allows it. Open
+  runs return `summary: null`. A fenced summary is withheld. It does not
+  return the session, the prompt, tool output, or ciphertext, and it does
+  not run a task. `schedule_runs` stays metadata-only. `attention` stays
+  `false`.
+- **Phase 16 — Default capability baseline (delivered slice, ADR-0016).**
+  `loadCapabilityPolicy` grants `_default` `memory:read`, `memory:write`,
+  `schedule:create`, `finance:read`, and `skill:read` when the caller has
+  zero `chief_capability_grant` rows. `defaultDeny` stays true. Any explicit
+  row replaces that baseline. A load failure stays deny-all. Confirmation,
+  the boundary guard, and the scheduler are unchanged.
+- **Phase 17 — Session history (delivered slice, ADR-0017).** `GET /api/chief/history`
+  returns one caller-owned interactive transcript from the existing checkpoint.
+  Messages are `role` and scanned `text`. A fenced message withholds its text.
+  Another user's session and a scheduled session (`origin: schedule`) are
+  `session not found`. The read does not write, list sessions, or open a
+  scheduled run.
+- **Conversation lifecycle — session discovery (delivered slice, ADR-0018).**
+  `GET /api/chief/sessions` lists the caller's interactive `ChiefSession` rows:
+  `sessionId`, existing `title` (null when unset), `createdAt`, and `updatedAt`,
+  newest activity first. `context.origin === "schedule"` is excluded without
+  decrypting the checkpoint. A new conversation is still
+  `POST /api/chief/chat` with no `session_id`. Opening one is still Phase 17
+  history, and continuing it is still chat with that `session_id`. No second
+  session store, transcript store, search index, or UI.
+- **Phase 6b — Sidecar boundary.** `server/chief/sidecar/` provider registration + health;
   deep_research/managed-agent tool adapters; deployment recipe doc (Docker/Render/Fly) — all
   feature-flagged and optional.
 - **Phase 7 — Command Center (the spatial interface, §7.4).** 7a: vendor cortex-map (+ npm
@@ -552,7 +672,7 @@ previous one is merged or explicitly waived. Verification per repo policy: `npm 
   `onNodeSelect` contextual action panels with the 3D/2D action parity rule; glass HUD panels
   (status, approvals inbox, activity/trace feed, memory browser); CHIEF theme on the vendored
   theme contract; `lite`/reduced-motion 2D parity path verified.
-- **Phase 8 — Hardening + learning.** RLS review across `chief_*`; audit-log surfacing; budget
+- **Later — Hardening + learning.** RLS review across `chief_*`; audit-log surfacing; budget
   enforcement UX; LearnedRouterPolicy port once real traces exist; subagent coordination
   (checkpoint fork + peer messages) if approved; ADRs for any deviations discovered.
 
@@ -560,20 +680,20 @@ previous one is merged or explicitly waived. Verification per repo policy: `npm 
 
 ## 10. Major technical risks and mitigations
 
-| Risk                                                                                               | Mitigation                                                                                                                                                                                                                                                                                          |
-| -------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Turn durability across serverless invocation limits** (function dies mid-model-call or mid-tool) | The ported möbius design is the mitigation: checkpoint before/after every phase; journal batches atomically; resume rules re-emit pending approvals and continue active executions; tools are journaled so replays are idempotent                                                                   |
-| **Long agent turns vs Vercel max duration**                                                        | Bounded steps per invocation; continuation via client-driven follow-up or cron-driven resume of `active_execution`; partial results streamed as they occur                                                                                                                                          |
-| **Port-fidelity drift** (subtle semantic changes from the Rust/Python originals)                   | Provenance headers naming the source file/commit on every ported module; test intents translated from the originals' suites (möbius runtime tests, OpenJarvis executor/memory tests); deviations only with a documented reason (§7.2)                                                               |
-| **pgvector unavailable at migration time**                                                         | Extension creation isolated in its own migration; retrieval degrades to FTS+RRF-of-one until enabled; no schema depends on vector ops except the embedding column                                                                                                                                   |
-| **cortex-map immaturity (v0.1.0, no tests)**                                                       | Leaf UI dependency (cannot touch data/agents); vendored commit pinned; `lite`/2D fallback wired; upstream tracked via `VENDORED.md`                                                                                                                                                                 |
-| **3D interface hurts usability or performance** (density, motion, mobile, WebGL limits)            | Action parity rule (§7.4): every 3D action has a 2D path; built-in `lite`/`reduceMotion` 2D renderer with identical data; projector node budget within the renderer's verified ~2k-node comfort band (older leaves collapse into hubs); restrained theme defaults — readability wins every conflict |
-| **Sidecar operational burden / single-user state model**                                           | Optional + feature-flagged; CHIEF fully functional without it; sidecar output passes the memory trust-tier gate; per-deployment provisioning documented, never assumed                                                                                                                              |
-| **Prompt injection / memory poisoning**                                                            | Ported OpenJarvis defenses: injection scan before extraction; trust tiers with no silent promotion; ToolExecutor output taint detection; approval gates fail closed (denied ⇒ synthetic error result, never silent skip)                                                                            |
-| **Cost runaway from autonomous/background execution**                                              | `ChiefBudget` caps (per-run/per-period) enforced in the model layer before autonomy levels 3–4 are ever enabled; `CHIEF_MODELS_ENABLED=false` pauses every caller at `resolve`/`generate` (§5.5); cheap-model tiering via the router's existing urgency rule                                        |
-| **Cross-module contamination** (accidental coupling to Module 01/02)                               | ESLint import-boundary rules from Phase 0; `chief_*` table namespace with only-`User` FKs; additive-only touches to shared files; PR review checklist item                                                                                                                                          |
-| **Schema evolution of checkpoints**                                                                | Version column on checkpoint JSON + Prisma migrations (documented deviation from möbius reject-on-mismatch, §7.2)                                                                                                                                                                                   |
-| **Licensing hygiene**                                                                              | Phase 0 delivers `THIRD_PARTY_NOTICES.md` before any ported/vendored code lands; Apache-2.0 attribution headers on ported modules; möbius NOTICE propagated; nothing copied from the unlicensed jarvis-architecture repo                                                                            |
+| Risk                                                                                               | Mitigation                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Turn durability across serverless invocation limits** (function dies mid-model-call or mid-tool) | The ported möbius design is the mitigation: checkpoint before/after every phase; journal batches atomically; resume rules re-emit pending approvals and continue active executions; tools are journaled so replays are idempotent                                                                                                                                                                                                                                  |
+| **Long agent turns vs Vercel max duration**                                                        | Bounded steps per invocation; continuation via client-driven follow-up or cron-driven resume of `active_execution`; partial results streamed as they occur                                                                                                                                                                                                                                                                                                         |
+| **Port-fidelity drift** (subtle semantic changes from the Rust/Python originals)                   | Provenance headers naming the source file/commit on every ported module; test intents translated from the originals' suites (möbius runtime tests, OpenJarvis executor/memory tests); deviations only with a documented reason (§7.2)                                                                                                                                                                                                                              |
+| **pgvector unavailable at migration time**                                                         | Extension creation isolated in its own migration; retrieval degrades to FTS+RRF-of-one until enabled; no schema depends on vector ops except the embedding column                                                                                                                                                                                                                                                                                                  |
+| **cortex-map immaturity (v0.1.0, no tests)**                                                       | Leaf UI dependency (cannot touch data/agents); vendored commit pinned; `lite`/2D fallback wired; upstream tracked via `VENDORED.md`                                                                                                                                                                                                                                                                                                                                |
+| **3D interface hurts usability or performance** (density, motion, mobile, WebGL limits)            | Action parity rule (§7.4): every 3D action has a 2D path; built-in `lite`/`reduceMotion` 2D renderer with identical data; projector node budget within the renderer's verified ~2k-node comfort band (older leaves collapse into hubs); restrained theme defaults — readability wins every conflict                                                                                                                                                                |
+| **Sidecar operational burden / single-user state model**                                           | Optional + feature-flagged; CHIEF fully functional without it; sidecar output passes the memory trust-tier gate; per-deployment provisioning documented, never assumed                                                                                                                                                                                                                                                                                             |
+| **Prompt injection / memory poisoning**                                                            | Ported OpenJarvis defenses: injection scan before extraction; trust tiers with no silent promotion; ToolExecutor output taint detection; approval gates fail closed (denied ⇒ synthetic error result, never silent skip)                                                                                                                                                                                                                                           |
+| **Cost runaway from autonomous/background execution**                                              | `ChiefBudget` caps (per-run/per-period) enforced in the model layer before `streamText` / `generateText` (Phase 3, carried from the Phase 2 ledger — ADR-0003), so a later autonomous tick cannot bypass the turn machine; `CHIEF_MODELS_ENABLED=false` pauses every caller (§5.5); cheap-model tiering via the router's existing urgency rule. A missing `chief_budget` row means no cap is configured. Autonomy levels 3–4 stay off until they share this check. |
+| **Cross-module contamination** (accidental coupling to Module 01/02)                               | ESLint import-boundary rules from Phase 0; `chief_*` table namespace with only-`User` FKs; additive-only touches to shared files; PR review checklist item                                                                                                                                                                                                                                                                                                         |
+| **Schema evolution of checkpoints**                                                                | Version column on checkpoint JSON + Prisma migrations (documented deviation from möbius reject-on-mismatch, §7.2)                                                                                                                                                                                                                                                                                                                                                  |
+| **Licensing hygiene**                                                                              | Phase 0 delivers `THIRD_PARTY_NOTICES.md` before any ported/vendored code lands; Apache-2.0 attribution headers on ported modules; möbius NOTICE propagated; nothing copied from the unlicensed jarvis-architecture repo                                                                                                                                                                                                                                           |
 
 ---
 

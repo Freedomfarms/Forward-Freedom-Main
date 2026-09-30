@@ -44,13 +44,14 @@
 //   - resolve() reports `maxTokens` re-adjusted for the *selected* model in
 //     addition to the upstream context (which adjusts for the preferred
 //     model only); the RoutingContext itself is left as upstream computes it.
-//   - `languageModelMiddleware` is passed through to the AI SDK registry: the
-//     seam where ChiefBudget enforcement attaches in a later phase without
-//     touching callers. Every caller — interactive turns and the future
-//     autonomous loop (docs/CHIEF_ARCHITECTURE.md §5.5) — must obtain models
-//     through this engine so that middleware cannot be bypassed.
-//   - stream() is intentionally absent: the Phase 3 turn machine drives AI
-//     SDK streamText on the resolved `languageModel` directly.
+//   - `languageModelMiddleware` is passed through to the AI SDK registry.
+//     ChiefBudget (Phase 3, ADR-0003) runs in this engine, on generate and
+//     openStream, before the provider call. Every caller — interactive turns
+//     and the future autonomous loop (docs/CHIEF_ARCHITECTURE.md §5.5) — must
+//     obtain models through this engine so the cap cannot be bypassed.
+//   - openStream() is the streaming step: AI SDK streamText on the resolved
+//     LanguageModel. Tools may be declared; an execute callback is refused.
+//     Orchestration does not import a provider SDK.
 //   - Caller-agnostic contract (§5.5). resolve()/generate() do not require a
 //     user chat turn: `query` is whatever text the caller is routing on (a
 //     user message, an operative instruction, an event summary). An optional
@@ -62,7 +63,7 @@
 //   - CHIEF_MODELS_ENABLED=false makes resolve/generate/languageModel throw
 //     ModelLayerPausedError. One pause covers prompted and autonomous use.
 
-import { createProviderRegistry, generateText } from "ai";
+import { createProviderRegistry, generateText, streamText } from "ai";
 
 import { EventType } from "../core/events.js";
 import { ModelRegistry, RouterPolicyRegistry } from "../core/registry.js";
@@ -71,6 +72,7 @@ import { adjustTokensForModel, TOKEN_TIERS } from "./complexity.js";
 import { loadModelConfig, ROUTER_POLICY_NONE } from "./config.js";
 import { ensureBuiltinProvidersRegistered, instantiateProviders } from "./providers.js";
 import { buildRoutingContext, ensureHeuristicRegistered } from "./router.js";
+import { BudgetExceededError, estimateCallUsd, estimateTokensFromMessages } from "./budget.js";
 
 export const ENGINE_ID = "chief-ai-sdk";
 const MODEL_ID_SEPARATOR = ":";
@@ -173,6 +175,7 @@ export class ChiefModelEngine {
     eventBus = null,
     logger = console,
     languageModelMiddleware = undefined,
+    budget = null,
   }) {
     if (!config) throw new TypeError("ChiefModelEngine requires a config (loadModelConfig)");
     if (!(providers instanceof Map)) {
@@ -187,6 +190,7 @@ export class ChiefModelEngine {
     this._bus = eventBus;
     this._logger = logger;
     this._warnedPolicies = new Set();
+    this._budget = budget;
     this._registry = createProviderRegistry(
       Object.fromEntries([...providers].map(([id, entry]) => [id, entry.instance])),
       {
@@ -365,11 +369,13 @@ export class ChiefModelEngine {
       abortSignal = undefined,
       providerOptions = undefined,
       caller = null,
+      userId = null,
     } = {}
   ) {
     if (!Array.isArray(messages) || messages.length === 0) {
       throw new TypeError("generate() requires a nonempty messages array");
     }
+    assertToolsNotExecutable(tools);
     const resolution = this.resolve(query ?? lastUserText(messages), {
       urgency,
       model,
@@ -377,6 +383,7 @@ export class ChiefModelEngine {
       caller,
     });
     const maxOutputTokens = maxTokens ?? Math.max(this._config.maxTokens, resolution.maxTokens);
+    await this._beforeCall(resolution, { userId, maxOutputTokens, messages });
 
     this._bus?.publish(
       EventType.INFERENCE_START,
@@ -409,7 +416,6 @@ export class ChiefModelEngine {
       modelKey: resolution.modelKey,
       providerId: resolution.providerId,
     });
-
     this._bus?.publish(
       EventType.INFERENCE_END,
       withCaller(
@@ -423,8 +429,146 @@ export class ChiefModelEngine {
         resolution.caller
       )
     );
+    await this._afterCall(resolution, normalized.usage, userId);
 
     return normalized;
+  }
+
+  // Streaming model step for the turn machine. Tools may be declared so the
+  // provider can request them; an `execute` callback is refused. Execution
+  // belongs to ToolExecutor (server/chief/tools/executor.js), not the AI SDK.
+  async openStream(
+    messages,
+    {
+      model = null,
+      query = undefined,
+      urgency = 0.5,
+      routerPolicy = undefined,
+      caller = null,
+      userId = null,
+      temperature = this._config.temperature,
+      maxTokens = undefined,
+      tools = undefined,
+      abortSignal = undefined,
+    } = {}
+  ) {
+    if (!Array.isArray(messages) || messages.length === 0) {
+      throw new TypeError("openStream() requires a nonempty messages array");
+    }
+    assertToolsNotExecutable(tools);
+    const resolution = this.resolve(query ?? lastUserText(messages), {
+      urgency,
+      model,
+      routerPolicy,
+      caller,
+    });
+    const maxOutputTokens = maxTokens ?? Math.max(this._config.maxTokens, resolution.maxTokens);
+    await this._beforeCall(resolution, { userId, maxOutputTokens, messages });
+    this._bus?.publish(
+      EventType.INFERENCE_START,
+      withCaller(
+        {
+          model: resolution.modelKey,
+          engine: this.engineId,
+          provider: resolution.providerId,
+          routed: resolution.routed,
+        },
+        resolution.caller
+      )
+    );
+    const result = streamText({
+      model: resolution.languageModel,
+      messages,
+      allowSystemInMessages: true,
+      temperature,
+      maxOutputTokens,
+      ...(tools ? { tools } : {}),
+      ...(abortSignal ? { abortSignal } : {}),
+    });
+    return {
+      resolution,
+      fullStream: result.fullStream,
+      finalize: async () => {
+        const [text, finishReason, usage, toolCalls] = await Promise.all([
+          result.text,
+          result.finishReason,
+          result.usage,
+          result.toolCalls,
+        ]);
+        const normalized = normalizeGenerateResult(
+          { text, finishReason, usage, toolCalls },
+          { modelKey: resolution.modelKey, providerId: resolution.providerId }
+        );
+        this._bus?.publish(
+          EventType.INFERENCE_END,
+          withCaller(
+            {
+              model: normalized.model,
+              usage: normalized.usage,
+              content: normalized.content,
+              tool_calls: normalized.tool_calls,
+              finish_reason: normalized.finish_reason,
+            },
+            resolution.caller
+          )
+        );
+        await this._afterCall(resolution, normalized.usage, userId);
+        return normalized;
+      },
+    };
+  }
+
+  async _beforeCall(resolution, { userId, maxOutputTokens, messages }) {
+    if (!this._budget || !userId) return;
+    const estimateUsd = estimateCallUsd(resolution.spec, {
+      inputTokens: estimateTokensFromMessages(messages),
+      outputTokens: maxOutputTokens,
+    });
+    try {
+      await this._budget.assertCanSpend(userId, estimateUsd);
+    } catch (error) {
+      this._noteBudgetExceeded(resolution, error);
+      throw error;
+    }
+  }
+
+  async _afterCall(resolution, usage, userId) {
+    if (!this._budget || !userId) return;
+    const amountUsd = estimateCallUsd(resolution.spec, {
+      inputTokens: usage?.prompt_tokens ?? 0,
+      outputTokens: usage?.completion_tokens ?? 0,
+    });
+    try {
+      await this._budget.recordSpend(userId, amountUsd);
+    } catch (error) {
+      this._noteBudgetExceeded(resolution, error);
+      throw error;
+    }
+  }
+
+  _noteBudgetExceeded(resolution, error) {
+    if (!(error instanceof BudgetExceededError)) return;
+    this._bus?.publish(EventType.AGENT_BUDGET_EXCEEDED, {
+      model: resolution.modelKey,
+      engine: this.engineId,
+      scope: error.scope,
+      period_type: error.periodType,
+      cap_usd: error.capUsd,
+      spent_usd: error.spentUsd,
+      estimate_usd: error.estimateUsd,
+      caller: resolution.caller,
+    });
+  }
+}
+
+function assertToolsNotExecutable(tools) {
+  if (!tools) return;
+  for (const [name, definition] of Object.entries(tools)) {
+    if (typeof definition?.execute === "function") {
+      throw new Error(
+        `tool '${name}' must not execute inside the model call; ToolExecutor is the only execution path`
+      );
+    }
   }
 }
 
@@ -438,6 +582,7 @@ export function createModelEngine({
   fetch = undefined,
   languageModelMiddleware = undefined,
   config = undefined,
+  budget = null,
 } = {}) {
   ensureBuiltinProvidersRegistered();
   registerBuiltinModels();
@@ -455,5 +600,6 @@ export function createModelEngine({
     eventBus,
     logger,
     languageModelMiddleware,
+    budget,
   });
 }

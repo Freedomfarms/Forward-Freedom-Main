@@ -52,6 +52,65 @@ Conventions used in this repository:
     surface), `src/openjarvis/cli/ask.py` (router integration order),
     `src/openjarvis/agents/_stubs.py` (INFERENCE_START/END payloads). The engine zoo itself
     is not ported — the Vercel AI SDK is used directly (audit §2.3).
+- Adapted modules in this repository (Phase 6 — context engine):
+  - `server/chief/context/inject.js` ← `src/openjarvis/tools/storage/context.py`
+  - `server/chief/memory/rrf.js` ← `src/openjarvis/tools/storage/hybrid.py`
+    (`reciprocal_rank_fusion` only; `HybridMemory` is not ported)
+  - `server/chief/memory/extract.js` ← `src/openjarvis/memory/extractor.py`,
+    `src/openjarvis/memory/service.py` (`_process` and the scan gates)
+- Adapted modules in this repository (Phase 8 — skill documents):
+  - `server/chief/skills/loader.js` ← `src/openjarvis/skills/types.py`
+    (`SkillManifest` name, description, required capabilities),
+    `src/openjarvis/skills/parser.py` (name and description limits),
+    `src/openjarvis/skills/loader.py` (`load_skill_markdown`),
+    `src/openjarvis/skills/security.py` (`validate_capabilities` as an offer
+    filter only). `SkillExecutor`, `SkillTool` pipelines, and `SkillManager.execute`
+    are not ported.
+- Adapted modules in this repository (Phase 9 — turn traces):
+  - `server/chief/traces/collector.js` ← `src/openjarvis/traces/collector.py`
+    (`TraceCollector` subscriptions, final `RESPOND` step, one save, then
+    `trace_complete`). The collector does not wrap `BaseAgent.run`.
+  - `server/chief/traces/store.js` ← `src/openjarvis/traces/store.py`
+    (`TraceStore.save` of a trace and ordered steps). Storage is `ChiefTrace`
+    / `ChiefTraceStep` through `withUserContext`, not SQLite or FTS.
+  - Step types ← `src/openjarvis/core/types.py` `StepType`. `ROUTE` is
+    recorded from `inference_start`; upstream's collector does not emit it.
+  - `src/openjarvis/learning/routing/learned_router.py` was inspected and is
+    not ported. `feedback` stays null, and the heuristic router is unchanged.
+- Adapted modules in this repository (Phase 5 — scheduler tick):
+  - `server/chief/scheduler/schedule.js` ← `src/openjarvis/scheduler/scheduler.py`
+    (`_compute_next_run`, `_compute_next_cron` semantics; cron parsing is `cron-parser`)
+  - `server/chief/tools/schedule-store.js` lifecycle methods and
+    `schedule_list` / `schedule_pause` / `schedule_resume` / `schedule_cancel`
+    in `server/chief/tools/builtin.js` ← `src/openjarvis/scheduler/tools.py`
+    (`ListScheduledTasksTool`, `PauseScheduledTaskTool`, `ResumeScheduledTaskTool`,
+    `CancelScheduledTaskTool`) and `TaskScheduler.list_tasks` / `pause_task` /
+    `resume_task` / `cancel_task` in `src/openjarvis/scheduler/scheduler.py`
+    (Phase 12). The polling thread and per-task agent selection are not ported.
+  - `schedule_runs` in `server/chief/tools/builtin.js` and `listRuns` in
+    `server/chief/tools/schedule-store.js` ← `SchedulerStore.get_run_logs` in
+    `src/openjarvis/scheduler/store.py` (newest rows, limit 10) and the
+    scheduler tool shape in `src/openjarvis/scheduler/tools.py` (Phase 13).
+    `get_run_logs` also returns `result` and `error` text. The list does not
+    return those fields.
+  - `schedule_outcome` in `server/chief/tools/builtin.js` and `getOutcome` in
+    `server/chief/tools/schedule-store.js` ← the `result` and `error` fields of
+    `SchedulerStore.get_run_logs` in `src/openjarvis/scheduler/store.py`
+    (Phase 15), for one caller-owned run. The decrypted object is not
+    returned. The polling thread is not ported.
+  - `server/chief/scheduler/operative.js` ← `src/openjarvis/agents/operative.py`
+    (`operator:{id}:state` key, "## Previous State" recall, 1000-character auto-persist;
+    the OperativeAgent loop is not ported)
+- Adapted modules in this repository (Phase 16):
+  - `server/chief/security/grants.js` `loadCapabilityPolicy` empty-row branch
+    ← `setup_security` in `src/openjarvis/security/__init__.py`. Upstream
+    grants `_default` `file:read`, `network:fetch`, `memory:read`, and
+    `memory:write` when capabilities are enabled and no policy file is set.
+    CHIEF adapts only that baseline-grant concept. The CHIEF set is
+    `memory:read`, `memory:write`, `schedule:create`, `finance:read`, and
+    `skill:read`. `file:read`, `network:fetch`, code execution, channel
+    send, `tool:invoke`, and `system:admin` are not granted.
+    `DEFAULT_TOOL_CAPABILITIES` is not copied.
 - Obligations: retain attribution and license notice for derivative material; the full
   upstream license text is included verbatim at
   `licenses/OPENJARVIS-LICENSE-APACHE-2.0.txt` (including its copyright line,
@@ -79,6 +138,60 @@ Conventions used in this repository:
     `chief_event_journal`, `chief_middleware_state`, `chief_approval` Prisma models ←
     möbius checkpoint/approval schemas
     (`prisma/migrations/20260929120000_chief_foundation/`)
+- Ported modules in this repository (Phase 3):
+  - `server/chief/runtime/turn.js` ← `src/agent/turn.rs`, `src/agent/turn/model.rs`,
+    `src/agent/mod.rs`
+  - `server/chief/runtime/checkpoint.js` ← `src/backend/checkpoint/sqlite.rs`
+  - `server/chief/runtime/approvals.js` `restore` / `exportKeys` persist the Phase 1
+    sticky-key set on the checkpoint
+- `server/chief/models/budget.js` is not a port. The cap idea is reference-only (see
+  jarvis-architecture below). The check is CHIEF's own and lives in the model layer
+  (ADR-0003).
+- Ported modules in this repository (Phase 4), from commit `5e5f5ef`:
+  - `server/chief/tools/spec.js` ← `src/openjarvis/tools/_stubs.py` (`ToolSpec`, `BaseTool`)
+  - `server/chief/tools/executor.js` ← `src/openjarvis/tools/_stubs.py` (`ToolExecutor.execute`)
+  - `server/chief/security/taint.js` ← `src/openjarvis/security/taint.py`
+  - `server/chief/security/rate-limit.js` ← `src/openjarvis/security/rate_limiter.py`
+    (`TokenBucket.consume`) and `rust/crates/openjarvis-security/src/rate_limiter.rs` (`check`)
+  - `server/chief/security/injection.js` ← `src/openjarvis/security/injection_scanner.py`
+    (`_INJECTION_PATTERNS`, `_scan_python`)
+  - `server/chief/security/boundary.js` ← `src/openjarvis/security/boundary.py`
+    (`check_outbound` shape only; scanners are not ported, so block mode refuses non-local
+    tools instead of running an empty scanner)
+- The Rust tool executor is not ported. OpenJarvis `DEFAULT_TOOL_CAPABILITIES` is not copied.
+  `ApprovalStore` is not a second approval path. Read-versus-mutation uses möbius
+  `ApprovalRequirement` (`requires_approval` / `requiresConfirmation`) at commit `3e1aaf5`.
+  `@modelcontextprotocol/sdk` is not installed: MCP invoke is a remote tool that block mode
+  refuses before any network call.
+- Adapted modules in this repository (Phase 6):
+  - `server/chief/runtime/compaction.js` ← `src/middleware/compaction.rs`,
+    `src/middleware/compaction.toml`, `src/middleware/compaction/handoff.rs`
+    (summary cut, checkpoint prompt, handoff note cap and restore wording).
+    `new_context` and the tool-lockdown ladder are not ported.
+- Adapted modules in this repository (Phase 5):
+  - `server/chief/scheduler/store.js` ← `src/backend/bots.rs` (claim under a lock with the
+    schedule advanced in the same write; Running/Succeeded/Failed/Skipped run states;
+    interrupted runs failed on the next pass). The lock is a row compare-and-swap.
+  - `server/chief/scheduler/schedule.js` ← `src/backend/bots.rs` (`advance_interval`
+    missed-slot skipping)
+  - `server/chief/scheduler/tick.js` ← `src/backend/bots.rs` (`run_routine_with_state`:
+    one fresh session per run)
+  - Phase 12 ← `crates/mobius-gateway/src/host/routines.rs` `delete_routine`
+    (a lifecycle edit does not abort a run that is already running). CHIEF
+    keeps the task row. The routine runner is not ported again.
+  - Phase 13 does not port `routine_run_preview`. That call returns the
+    session history page. `schedule_runs` returns ledger columns only.
+- Adapted modules in this repository (Phase 11):
+  - `server/chief/scheduler/resume.js` ← `crates/mobius-gateway/src/host/session/events.rs`
+    (`observe_routine_event`: an `ExecApprovalRequest` does not finish the routine;
+    `TurnComplete` / `TurnAborted` does). `resume_pending`, `resolve_tool_approval`,
+    and the möbius runtime are not ported. CHIEF resumes the same TurnMachine session.
+- Adapted modules in this repository (Phase 17):
+  - `server/chief/runtime/history.js` and `api/chief/history.js` ←
+    `get_session_history` in `crates/mobius-gateway/src/server/dispatch.rs`
+    (one selected session, history page). CHIEF returns the caller-owned
+    interactive checkpoint transcript. The gateway, session runtime, and
+    `routine_run_preview` are not ported. A scheduled session is not this read.
 - Obligations: Apache-2.0 attribution — the full upstream license text is included
   verbatim at `licenses/MOBIUS-LICENSE-APACHE-2.0.txt` — **plus propagation of the
   upstream NOTICE** for derivative material, reproduced in full at
@@ -99,6 +212,51 @@ Conventions used in this repository:
   Nord palettes, HugeIcons, HighlightSwift, highlight.js, thinking-orbs — which CHIEF does
   not port; the complete NOTICE is nevertheless reproduced verbatim at
   `licenses/MOBIUS-NOTICE.txt`.)
+
+## Hermes Agent (NousResearch/hermes-agent)
+
+- Repository: https://github.com/NousResearch/hermes-agent
+- Commit audited: `8c30ef318d1ed6c88597239081f5749268efdca8`
+- License: MIT ("Copyright (c) 2025 Nous Research")
+- Use in this repository: **adapted semantics only** (Phase 5, Phase 6, Phase 8, Phase 10, Phase 12, Phase 13, Phase 14, and Phase 15).
+  No Hermes code, runtime, agent loop, delivery queue, or approval behavior is included.
+  - Phase 6 identity slot ← `agent/system_prompt.py` `_identity_parts` and
+    `agent/prompt_builder.py` `load_soul_md` (concept only: a user persona, else a
+    default identity). CHIEF stores the persona in its fact store. `SOUL.md` is not
+    copied.
+  - Phase 8 skill index ← `agent/prompt_builder.py` `build_skills_system_prompt`,
+    `_skill_should_show`, and `_render_skills_index`. `server/chief/tools/builtin.js`
+    `skill_view` ← `tools/skills_tool.py` `skill_view` (return the document only).
+    Shell preprocessing, package installs, and `skill_manage` writes are not ported.
+  - `server/chief/scheduler/retry.js` ← `cron/unreachable_retry.py` (retry only a
+    transient network failure with zero model calls; 300/900/1800-second ladder; give up
+    when the natural next occurrence comes first; recurring tasks only) and
+    `cron/scheduler_preflight.py` (cause-chain walk for transient errors)
+  - Phase 10 quiet tick ← `cron/scheduler_delivery.py` `_normalize_deliver_value`
+    (an empty deliver value means `"local"`, no push). CHIEF has no delivery
+    target, so a scheduled run stores `attention: false` and sends nothing.
+    `cron/delivery_queue.py`, `cron/bot_chat_delivery.py`, and the platform
+    senders are not ported.
+  - Phase 12 pause ← `cron/jobs.py` `pause_job` and `is_job_runnable` (a pause
+    affects later fires only; a paused task is not claimed). `resume_job`
+    catch-up, `trigger_job`, and the process-wide estop are not ported.
+  - Phase 13 lookup ← `cron/scheduler_delivery.py` `_normalize_deliver_value`
+    and `_resolve_delivery_targets` (a local deliver value has no targets, so
+    nothing is sent; the saved run can be looked up). `schedule_runs` is that
+    lookup. `_deliver_result`, `cron/delivery_queue.py`, bot-chat delivery,
+    and session seeding are not ported.
+  - Phase 14 update ← `tools/cronjob_tools.py` `_update_core_fields` (change
+    prompt and name without firing) and the schedule branch of
+    `_update_run_fields` (a paused job stays paused). `schedule_update` edits
+    the stored definition only. `deliver`, script, skills, `_action_run`, and
+    a full-row replace are not ported.
+  - Phase 15 outcome ← `hermes_cli/cron.py` `cron_runs` (the recorded error
+    line on an execution attempt). `schedule_outcome` returns `ChiefTaskRun.error`
+    when the injection scan allows it. Output files, `_latest_job_output_excerpt`,
+    `_action_run`, and the delivery queue are not ported. Local delivery
+    remains the quiet-tick rule: an empty deliver value has no targets.
+- Obligations: retain the copyright and permission notice; the full license text is at
+  `licenses/HERMES-AGENT-LICENSE-MIT.txt`.
 
 ## cortex-map (StovBuilds/cortex-map)
 
@@ -149,11 +307,11 @@ Conventions used in this repository:
 Installed through npm with licenses shipped in `node_modules`; listed here so the reuse
 plan is explicit:
 
-| Package                                                 | License    | Status / use                                                                        |
-| ------------------------------------------------------- | ---------- | ----------------------------------------------------------------------------------- |
-| `@ai-sdk/xai` (`^5.0.12`)                               | Apache-2.0 | **Installed (Phase 2)** — xAI Grok transport, `server/chief/models/providers.js`    |
-| `ai`, `@ai-sdk/anthropic` (pre-existing platform deps)  | Apache-2.0 | **Used (Phase 2)** — provider registry / generateText; Anthropic transport (opt-in) |
-| `@ai-sdk/openai-compatible` or `@ai-sdk/openai`         | Apache-2.0 | Planned — OpenAI-compatible socket for the optional OpenJarvis sidecar (Phase 6)    |
-| `@modelcontextprotocol/sdk`                             | MIT        | Planned — MCP tool client (Phase 4)                                                 |
-| `cron-parser`                                           | MIT        | Planned — schedule parsing (Phase 5)                                                |
-| `three`, `react-force-graph-3d`, `react-force-graph-2d` | MIT        | Planned — cortex-map runtime dependencies (Phase 7)                                 |
+| Package                                                 | License    | Status / use                                                                                     |
+| ------------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------ |
+| `@ai-sdk/xai` (`^5.0.12`)                               | Apache-2.0 | **Installed (Phase 2)** — xAI Grok transport, `server/chief/models/providers.js`                 |
+| `ai`, `@ai-sdk/anthropic` (pre-existing platform deps)  | Apache-2.0 | **Used (Phase 2–3)** — provider registry, generateText, streamText; Anthropic transport (opt-in) |
+| `@ai-sdk/openai-compatible` or `@ai-sdk/openai`         | Apache-2.0 | Planned — OpenAI-compatible socket for the optional OpenJarvis sidecar (Phase 6b)                |
+| `@modelcontextprotocol/sdk`                             | MIT        | Planned — MCP tool client (Phase 4)                                                              |
+| `cron-parser` (`^5.10.1`, depends on `luxon`, MIT)      | MIT        | **Installed (Phase 5)** — cron evaluation, `server/chief/scheduler/schedule.js`                  |
+| `three`, `react-force-graph-3d`, `react-force-graph-2d` | MIT        | Planned — cortex-map runtime dependencies (Phase 7)                                              |

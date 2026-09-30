@@ -53,9 +53,7 @@ test("network access and sandbox mode per policy", () => {
 test("full_access authorizes mutations without review", () => {
   const approval = new ApprovalCoordinator(ApprovalPolicy.FULL_ACCESS);
   approval.sessionStart("session");
-  const calls = [
-    { callId: "write", name: "write_file", arguments: { path: "a" } },
-  ];
+  const calls = [{ callId: "write", name: "write_file", arguments: { path: "a" } }];
   const authorization = approval.authorize("session", calls, ["write"]);
   assert.equal(authorization.type, "execute");
   const permissions = authorization.permissions.forCall("write");
@@ -68,9 +66,7 @@ test("full_access authorizes mutations without review", () => {
 test("ask policy requests approval and resolve grants only the reviewed call", () => {
   const approval = new ApprovalCoordinator(ApprovalPolicy.ASK);
   approval.sessionStart("session");
-  const calls = [
-    { callId: "write", name: "write_file", arguments: { path: "a" } },
-  ];
+  const calls = [{ callId: "write", name: "write_file", arguments: { path: "a" } }];
 
   const authorization = approval.authorize("session", calls, ["write"]);
   assert.equal(authorization.type, "approval");
@@ -84,7 +80,7 @@ test("ask policy requests approval and resolve grants only the reviewed call", (
     calls,
     authorization.request.callIds,
     { type: ReviewDecisionType.APPROVED },
-    authorization.permissions,
+    authorization.permissions
   );
   assert.equal(permissions.forCall("write").mutation, true);
 });
@@ -103,7 +99,7 @@ test("denied and abort decisions grant nothing", () => {
       calls,
       authorization.request.callIds,
       decision,
-      authorization.permissions,
+      authorization.permissions
     );
     assert.equal(permissions.forCall("write").mutation, false);
   }
@@ -121,7 +117,7 @@ test("approved_for_session sticks: the same call executes without review next ti
     calls,
     first.request.callIds,
     { type: ReviewDecisionType.APPROVED_FOR_SESSION },
-    first.permissions,
+    first.permissions
   );
 
   // Same session + tool + arguments → sticky approval applies.
@@ -152,21 +148,19 @@ test("sticky approvals are capped: the set clears at MAX_SESSION_APPROVALS", () 
       calls,
       authorization.request.callIds,
       { type: ReviewDecisionType.APPROVED_FOR_SESSION },
-      authorization.permissions,
+      authorization.permissions
     );
   }
   // The 65th sticky approval clears the set first (upstream behavior), so the
   // very first approved call requires review again afterwards.
   const overflowCalls = callFor(MAX_SESSION_APPROVALS);
-  const overflowAuth = approval.authorize("session", overflowCalls, [
-    `c${MAX_SESSION_APPROVALS}`,
-  ]);
+  const overflowAuth = approval.authorize("session", overflowCalls, [`c${MAX_SESSION_APPROVALS}`]);
   approval.resolve(
     "session",
     overflowCalls,
     overflowAuth.request.callIds,
     { type: ReviewDecisionType.APPROVED_FOR_SESSION },
-    overflowAuth.permissions,
+    overflowAuth.permissions
   );
   const replay = approval.authorize("session", callFor(0), ["c0"]);
   assert.equal(replay.type, "approval");
@@ -178,7 +172,7 @@ test("unknown mutation or approval call ids are errors", () => {
   const calls = [{ callId: "known", name: "tool", arguments: {} }];
   assert.throws(
     () => approval.authorize("session", calls, ["missing"]),
-    /unknown mutation call `missing`/,
+    /unknown mutation call `missing`/
   );
   const authorization = approval.authorize("session", calls, ["known"]);
   assert.throws(
@@ -188,24 +182,40 @@ test("unknown mutation or approval call ids are errors", () => {
         calls,
         ["missing"],
         { type: ReviewDecisionType.APPROVED },
-        authorization.permissions,
+        authorization.permissions
       ),
-    /approval references unknown call `missing`/,
+    /approval references unknown call `missing`/
   );
 });
 
 test("authorizing an uninitialized or ended session is an error", () => {
   const approval = new ApprovalCoordinator(ApprovalPolicy.ASK);
-  assert.throws(
-    () => approval.authorize("nope", [], []),
-    /approval state is not initialized/,
-  );
+  assert.throws(() => approval.authorize("nope", [], []), /approval state is not initialized/);
   approval.sessionStart("session");
   approval.sessionEnd("session");
-  assert.throws(
-    () => approval.authorize("session", [], []),
-    /approval state is not initialized/,
+  assert.throws(() => approval.authorize("session", [], []), /approval state is not initialized/);
+});
+
+test("restore and exportKeys round-trip sticky approvals across instances", () => {
+  const first = new ApprovalCoordinator(ApprovalPolicy.ASK);
+  first.sessionStart("session");
+  const calls = [{ callId: "write", name: "write_file", arguments: { path: "a" } }];
+  const authorization = first.authorize("session", calls, ["write"]);
+  first.resolve(
+    "session",
+    calls,
+    authorization.request.callIds,
+    { type: ReviewDecisionType.APPROVED_FOR_SESSION },
+    authorization.permissions
   );
+  const keys = first.exportKeys("session");
+  assert.equal(keys.length, 1);
+
+  const second = new ApprovalCoordinator(ApprovalPolicy.ASK);
+  second.restore("session", keys);
+  const replay = second.authorize("session", calls, ["write"]);
+  assert.equal(replay.type, "execute");
+  assert.deepEqual(second.exportKeys("session"), keys);
 });
 
 test("callKey is SHA-256 over the JSON tuple (session, name, arguments)", () => {
@@ -233,8 +243,7 @@ test("ReviewDecision wire shape matches upstream serde encoding", () => {
   assert.throws(() => parseReviewDecision({ denied: {} }), /unknown review decision/);
 
   assert.equal(encodeReviewDecision({ type: ReviewDecisionType.APPROVED }), "approved");
-  assert.deepEqual(
-    encodeReviewDecision({ type: ReviewDecisionType.DENIED, rejection: "no" }),
-    { denied: { rejection: "no" } },
-  );
+  assert.deepEqual(encodeReviewDecision({ type: ReviewDecisionType.DENIED, rejection: "no" }), {
+    denied: { rejection: "no" },
+  });
 });

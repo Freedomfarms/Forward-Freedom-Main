@@ -698,6 +698,8 @@ enum ChiefTaskRunStatus {
   SUCCEEDED
   FAILED
   SKIPPED
+  AWAITING_APPROVAL
+  RETRYING
 }
 
 // OpenJarvis Trace step taxonomy.
@@ -1037,6 +1039,7 @@ model ChiefTaskRun {
   scheduledTaskId  String?
   status           ChiefTaskRunStatus  @default(RUNNING)
   attempts         Int                 @default(0)
+  sessionId        String?
   error            String?
   resultCiphertext String?
   startedAt        DateTime            @default(now())
@@ -1046,6 +1049,7 @@ model ChiefTaskRun {
 
   @@index([scheduledTaskId, startedAt])
   @@index([userId, startedAt])
+  @@index([status, startedAt])
   @@map("chief_task_run")
 }
 

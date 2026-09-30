@@ -7,7 +7,10 @@
 //   License text: licenses/OPENJARVIS-LICENSE-APACHE-2.0.txt
 //
 // Preserved upstream semantics:
-//   - the Capability label set, verbatim ("file:read" … "system:admin")
+//   - the Capability label set, verbatim ("file:read" … "system:admin"), plus
+//     the CHIEF-only extensions "finance:read" (Phase 7) and "skill:read"
+//     (Phase 8). Financial reads must not reuse memory:read. Loading a
+//     procedure must not reuse memory:read either. OpenJarvis has neither label.
 //   - CapabilityPolicy check order: explicit denials always win; grants are
 //     glob-matched on capability and optionally on resource; agents with no
 //     explicit policy fall back to `_default` wildcard grants; an anonymous
@@ -29,9 +32,10 @@
 //   - loadPolicyDocument/savePolicyDocument operate on parsed objects instead
 //     of file paths: in this deployment policies live in Postgres
 //     (chief_capability_grant), not on disk. Validation rules are unchanged.
-//   - DEFAULT_TOOL_CAPABILITIES starts as CHIEF's inventory (empty until
-//     Phase 3 registers tools); the fail-closed rule is what is ported, not
-//     OpenJarvis's list of its own in-tree tools.
+//   - DEFAULT_TOOL_CAPABILITIES stays empty. The live CHIEF inventory is
+//     passed in by ToolExecutor (server/chief/tools/inventory.js). An omitted
+//     inventory still fails closed as system:admin. OpenJarvis's own tool
+//     list is not copied.
 
 export const Capability = Object.freeze({
   FILE_READ: "file:read",
@@ -44,6 +48,12 @@ export const Capability = Object.freeze({
   TOOL_INVOKE: "tool:invoke",
   SCHEDULE_CREATE: "schedule:create",
   SYSTEM_ADMIN: "system:admin",
+  // CHIEF extension. Not an OpenJarvis label. Financial tools require this
+  // instead of memory:read.
+  FINANCE_READ: "finance:read",
+  // CHIEF extension. Not an OpenJarvis label. skill_view reads a bundled
+  // procedure. It does not grant the capabilities that procedure names.
+  SKILL_READ: "skill:read",
 });
 
 const CAPABILITY_VALUES = new Set(Object.values(Capability));
@@ -226,15 +236,19 @@ export class CapabilityPolicy {
 // tools are registered in Phase 3.
 export const DEFAULT_TOOL_CAPABILITIES = Object.freeze({});
 
-export function canonicalToolCapabilities(toolName, { remote = false } = {}) {
+export function canonicalToolCapabilities(
+  toolName,
+  { remote = false, inventory = DEFAULT_TOOL_CAPABILITIES } = {}
+) {
   if (remote) {
     // Remote (e.g. MCP) tool names are remote-controlled: resolve provenance
     // before the name table so a server cannot impersonate a reviewed-safe
     // local tool.
     return [Capability.TOOL_INVOKE];
   }
-  if (Object.prototype.hasOwnProperty.call(DEFAULT_TOOL_CAPABILITIES, toolName)) {
-    return [...DEFAULT_TOOL_CAPABILITIES[toolName]];
+  const floor = inventory ?? DEFAULT_TOOL_CAPABILITIES;
+  if (Object.prototype.hasOwnProperty.call(floor, toolName)) {
+    return [...floor[toolName]];
   }
   // An in-tree tool registered without being inventoried fails closed as
   // system:admin instead of silently becoming unrestricted.
