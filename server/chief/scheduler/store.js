@@ -35,12 +35,9 @@ export const RunStatus = Object.freeze({
   RETRYING: "RETRYING",
 });
 
-const TERMINAL = new Set([
-  RunStatus.SUCCEEDED,
-  RunStatus.FAILED,
-  RunStatus.SKIPPED,
-  RunStatus.AWAITING_APPROVAL,
-]);
+// AWAITING_APPROVAL is not terminal. The run stays open until the same
+// session completes, skips, or fails (ADR-0011).
+const TERMINAL = new Set([RunStatus.SUCCEEDED, RunStatus.FAILED, RunStatus.SKIPPED]);
 
 function lockIsFree(task, staleBefore) {
   return !task.lockedAt || new Date(task.lockedAt).getTime() < staleBefore.getTime();
@@ -55,12 +52,12 @@ function isDue(task, now, staleBefore) {
   );
 }
 
-function finishedTaskData({ status, retryAt, completeTask, now }) {
+function finishedTaskData({ status, retryAt, completeTask, now, preserveNextRunAt = false }) {
   const data = { lockedAt: null, lastRunAt: now };
-  if (status === RunStatus.RETRYING && retryAt) data.nextRunAt = retryAt;
+  if (!preserveNextRunAt && status === RunStatus.RETRYING && retryAt) data.nextRunAt = retryAt;
   if (completeTask) {
     data.status = "COMPLETED";
-    data.nextRunAt = null;
+    if (!preserveNextRunAt) data.nextRunAt = null;
   }
   return data;
 }
@@ -166,6 +163,20 @@ export class MemoryTaskStore {
     if (run) run.sessionId = sessionId;
   }
 
+  async findAwaitingBySession(userId, sessionId) {
+    if (!userId || !sessionId) return null;
+    const run = this.runs.find(
+      (row) =>
+        row.userId === userId &&
+        row.sessionId === sessionId &&
+        row.status === RunStatus.AWAITING_APPROVAL
+    );
+    if (!run?.scheduledTaskId) return null;
+    const task = this._task(userId, run.scheduledTaskId);
+    if (!task) return null;
+    return { run: { ...run }, task: { ...task } };
+  }
+
   async finish(
     userId,
     {
@@ -177,9 +188,12 @@ export class MemoryTaskStore {
       retryAt = null,
       completeTask = false,
       now,
+      onlyFrom = null,
+      preserveNextRunAt = false,
     }
   ) {
     const run = this.runs.find((row) => row.id === runId && row.userId === userId);
+    if (onlyFrom && (!run || run.status !== onlyFrom)) return { updated: false };
     if (run) {
       Object.assign(run, {
         status,
@@ -189,7 +203,13 @@ export class MemoryTaskStore {
       });
     }
     const task = this._task(userId, taskId);
-    if (task) Object.assign(task, finishedTaskData({ status, retryAt, completeTask, now }));
+    if (task) {
+      Object.assign(
+        task,
+        finishedTaskData({ status, retryAt, completeTask, now, preserveNextRunAt })
+      );
+    }
+    return { updated: true };
   }
 
   async pause(userId, taskId) {
@@ -363,6 +383,21 @@ export class PrismaTaskStore {
     );
   }
 
+  async findAwaitingBySession(userId, sessionId) {
+    if (!userId || !sessionId) return null;
+    return this._withUser(userId, async (tx) => {
+      const run = await tx.chiefTaskRun.findFirst({
+        where: { userId, sessionId, status: RunStatus.AWAITING_APPROVAL },
+      });
+      if (!run?.scheduledTaskId) return null;
+      const task = await tx.chiefScheduledTask.findFirst({
+        where: { id: run.scheduledTaskId, userId },
+      });
+      if (!task) return null;
+      return { run, task };
+    });
+  }
+
   async finish(
     userId,
     {
@@ -374,22 +409,31 @@ export class PrismaTaskStore {
       retryAt = null,
       completeTask = false,
       now,
+      onlyFrom = null,
+      preserveNextRunAt = false,
     }
   ) {
-    await this._withUser(userId, async (tx) => {
-      await tx.chiefTaskRun.update({
-        where: { id: runId },
-        data: {
-          status,
-          error,
-          resultCiphertext: result == null ? null : this._encrypt(result),
-          completedAt: TERMINAL.has(status) ? now : null,
-        },
-      });
+    return this._withUser(userId, async (tx) => {
+      const data = {
+        status,
+        error,
+        resultCiphertext: result == null ? null : this._encrypt(result),
+        completedAt: TERMINAL.has(status) ? now : null,
+      };
+      if (onlyFrom) {
+        const { count } = await tx.chiefTaskRun.updateMany({
+          where: { id: runId, userId, status: onlyFrom },
+          data,
+        });
+        if (count !== 1) return { updated: false };
+      } else {
+        await tx.chiefTaskRun.update({ where: { id: runId }, data });
+      }
       await tx.chiefScheduledTask.updateMany({
         where: { id: taskId, userId },
-        data: finishedTaskData({ status, retryAt, completeTask, now }),
+        data: finishedTaskData({ status, retryAt, completeTask, now, preserveNextRunAt }),
       });
+      return { updated: true };
     });
   }
 

@@ -148,6 +148,11 @@ Conventions used in this repository:
     missed-slot skipping)
   - `server/chief/scheduler/tick.js` ← `src/backend/bots.rs` (`run_routine_with_state`:
     one fresh session per run)
+- Adapted modules in this repository (Phase 11):
+  - `server/chief/scheduler/resume.js` ← `crates/mobius-gateway/src/host/session/events.rs`
+    (`observe_routine_event`: an `ExecApprovalRequest` does not finish the routine;
+    `TurnComplete` / `TurnAborted` does). `resume_pending`, `resolve_tool_approval`,
+    and the möbius runtime are not ported. CHIEF resumes the same TurnMachine session.
 - Obligations: Apache-2.0 attribution — the full upstream license text is included
   verbatim at `licenses/MOBIUS-LICENSE-APACHE-2.0.txt` — **plus propagation of the
   upstream NOTICE** for derivative material, reproduced in full at
@@ -245,11 +250,11 @@ Conventions used in this repository:
 Installed through npm with licenses shipped in `node_modules`; listed here so the reuse
 plan is explicit:
 
-| Package                                                 | License    | Status / use                                                                        |
-| ------------------------------------------------------- | ---------- | ----------------------------------------------------------------------------------- |
-| `@ai-sdk/xai` (`^5.0.12`)                               | Apache-2.0 | **Installed (Phase 2)** — xAI Grok transport, `server/chief/models/providers.js`    |
+| Package                                                 | License    | Status / use                                                                                     |
+| ------------------------------------------------------- | ---------- | ------------------------------------------------------------------------------------------------ |
+| `@ai-sdk/xai` (`^5.0.12`)                               | Apache-2.0 | **Installed (Phase 2)** — xAI Grok transport, `server/chief/models/providers.js`                 |
 | `ai`, `@ai-sdk/anthropic` (pre-existing platform deps)  | Apache-2.0 | **Used (Phase 2–3)** — provider registry, generateText, streamText; Anthropic transport (opt-in) |
-| `@ai-sdk/openai-compatible` or `@ai-sdk/openai`         | Apache-2.0 | Planned — OpenAI-compatible socket for the optional OpenJarvis sidecar (Phase 6b)   |
-| `@modelcontextprotocol/sdk`                             | MIT        | Planned — MCP tool client (Phase 4)                                                 |
-| `cron-parser` (`^5.10.1`, depends on `luxon`, MIT)      | MIT        | **Installed (Phase 5)** — cron evaluation, `server/chief/scheduler/schedule.js`     |
-| `three`, `react-force-graph-3d`, `react-force-graph-2d` | MIT        | Planned — cortex-map runtime dependencies (Phase 7)                                 |
+| `@ai-sdk/openai-compatible` or `@ai-sdk/openai`         | Apache-2.0 | Planned — OpenAI-compatible socket for the optional OpenJarvis sidecar (Phase 6b)                |
+| `@modelcontextprotocol/sdk`                             | MIT        | Planned — MCP tool client (Phase 4)                                                              |
+| `cron-parser` (`^5.10.1`, depends on `luxon`, MIT)      | MIT        | **Installed (Phase 5)** — cron evaluation, `server/chief/scheduler/schedule.js`                  |
+| `three`, `react-force-graph-3d`, `react-force-graph-2d` | MIT        | Planned — cortex-map runtime dependencies (Phase 7)                                              |

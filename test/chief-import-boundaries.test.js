@@ -179,6 +179,7 @@ test("Phase 3 orchestration does not import a provider SDK", () => {
     "server/chief/memory/graph.js",
     "api/chief/chat.js",
     "api/chief/approvals.js",
+    "server/chief/scheduler/resume.js",
   ];
   for (const file of files) {
     const source = readFileSync(path.join(repoRoot, file), "utf8");
