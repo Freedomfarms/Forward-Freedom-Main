@@ -12,6 +12,7 @@ import { closedPolicy, loadCapabilityPolicy } from "../security/grants.js";
 import { PrismaAuditLog } from "../security/audit.js";
 import { ToolExecutor } from "./executor.js";
 import { CHIEF_TOOL_INVENTORY } from "./inventory.js";
+import { HANDOFF_STATE_KEY, validateHandoffNotes } from "../runtime/compaction.js";
 import { MemoryScheduleStore, PrismaScheduleStore, normalizeSchedule } from "./schedule-store.js";
 import { BaseTool } from "./spec.js";
 
@@ -158,6 +159,38 @@ function kgLink(store) {
   });
 }
 
+function writeHandoff() {
+  return new BaseTool({
+    isLocal: true,
+    spec: {
+      name: "write_handoff",
+      description:
+        "Replace this chat's working checkpoint: goal, constraints, progress, decisions, unresolved work, next steps, and exact history references. Never include private reasoning or credentials.",
+      category: "memory",
+      requiresConfirmation: true,
+      requiredCapabilities: [Capability.MEMORY_WRITE],
+      parameters: {
+        type: "object",
+        properties: { notes: { type: "string" } },
+        required: ["notes"],
+      },
+    },
+    async execute(params, context) {
+      const notes = String(params.notes ?? "");
+      const invalid = validateHandoffNotes(notes);
+      if (invalid) return { output: invalid, isError: true };
+      if (fencesOutput(scanInjection(notes).threatLevel)) {
+        return { output: "handoff notes failed the injection scan", isError: true };
+      }
+      if (typeof context.saveMiddlewareState !== "function") {
+        return { output: "handoff store is not available", isError: true };
+      }
+      await context.saveMiddlewareState(HANDOFF_STATE_KEY, notes.trim());
+      return { output: "Working checkpoint saved." };
+    },
+  });
+}
+
 function scheduleCreate(store) {
   return new BaseTool({
     isLocal: true,
@@ -251,6 +284,7 @@ export function createChiefTools({
     memoryWrite(facts),
     kgLookup(graph),
     kgLink(graph),
+    writeHandoff(),
     scheduleCreate(schedule),
     mcpInvoke(mcpClient),
   ];
