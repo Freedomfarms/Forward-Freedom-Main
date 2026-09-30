@@ -576,6 +576,11 @@ previous one is merged or explicitly waived. Verification per repo policy: `npm 
   confirmation, taint `user_private`. They call the shared aggregate and workspace
   slice through `withUserContext`. The database is not a model-facing interface.
   True Cash is not recomputed. Command Center remains a later phase.
+- **Phase 8 — Governed skills (delivered slice, ADR-0008).** Bundled `SKILL.md`
+  procedures are indexed by `assembleSystemPrompt` and loaded by one tool,
+  `skill_view`. The document names existing ToolSpecs. It is not a ToolSpec,
+  not a runner, and not a grant. `TurnMachine` and `ToolExecutor` stay the
+  only execution path. Routines stay `ChiefScheduledTask`.
 - **Phase 6b — Sidecar boundary.** `server/chief/sidecar/` provider registration + health;
   deep_research/managed-agent tool adapters; deployment recipe doc (Docker/Render/Fly) — all
   feature-flagged and optional.
@@ -586,7 +591,7 @@ previous one is merged or explicitly waived. Verification per repo policy: `npm 
   `onNodeSelect` contextual action panels with the 3D/2D action parity rule; glass HUD panels
   (status, approvals inbox, activity/trace feed, memory browser); CHIEF theme on the vendored
   theme contract; `lite`/reduced-motion 2D parity path verified.
-- **Phase 8 — Hardening + learning.** RLS review across `chief_*`; audit-log surfacing; budget
+- **Later — Hardening + learning.** RLS review across `chief_*`; audit-log surfacing; budget
   enforcement UX; LearnedRouterPolicy port once real traces exist; subagent coordination
   (checkpoint fork + peer messages) if approved; ADRs for any deviations discovered.
 

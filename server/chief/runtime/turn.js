@@ -334,6 +334,7 @@ export class TurnMachine {
         sessionId: this._sessionId,
         transcript,
         checkpoint: this._checkpoint,
+        availableTools: this._toolSpecs.map((spec) => spec.name),
       });
       if (!system) return transcript;
       return [{ role: "system", content: system }, ...transcript];

@@ -10,8 +10,10 @@
    Phase 4 does not add a provider, and it does not import `@ai-sdk/xai` outside
    `server/chief/models/providers.js`.
 2. Hermes is not integrated. `AIAgent.run_conversation` is not placed above the turn.
-   A later Hermes model would be another `languageModel()` descriptor. A later skill
-   would be a `ToolSpec` executed only by `ToolExecutor`.
+   A later Hermes model would be another `languageModel()` descriptor. The sentence
+   that a later skill would itself be a ToolSpec is superseded by ADR-0008: a skill
+   is a scanned procedure document. `skill_view` is the only new ToolSpec, and it
+   returns that document. It does not execute the procedure.
 3. `ToolExecutor` is the only execution path. Gates are mandatory and fail-closed.
    Upstream skips a missing limiter, guard, or policy; CHIEF refuses the call.
 4. Confirmation reads the grant `ApprovalCoordinator` already recorded. There is no

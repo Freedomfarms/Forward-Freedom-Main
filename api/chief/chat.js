@@ -60,16 +60,18 @@ export async function handleChiefChat(request, response, deps = {}) {
   let toolExecutor = deps.toolExecutor ?? null;
   let toolSpecs = deps.toolSpecs ?? null;
   let facts = deps.facts ?? null;
+  let capabilityPolicy = null;
   if (!toolExecutor) {
     facts = facts ?? new PrismaFactStore();
     const tooling = await createChiefTooling({ userId, stores: { facts } });
     toolExecutor = tooling.executor;
     toolSpecs = deps.toolSpecs ?? tooling.specs;
+    capabilityPolicy = tooling.policy;
   }
   const turnServices =
     deps.turnServices ??
     (facts && !deps.toolExecutor
-      ? createChiefTurnServices({ facts, engine, checkpointStore: store })
+      ? createChiefTurnServices({ facts, engine, checkpointStore: store, capabilityPolicy })
       : {});
 
   const machine = new TurnMachine({

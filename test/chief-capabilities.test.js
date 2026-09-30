@@ -16,12 +16,13 @@ import {
 } from "../server/chief/core/capabilities.js";
 import { CHIEF_TOOL_INVENTORY } from "../server/chief/tools/inventory.js";
 
-test("capability wire values match upstream, plus finance:read", () => {
+test("capability wire values match upstream, plus finance:read and skill:read", () => {
   assert.equal(Capability.FILE_READ, "file:read");
   assert.equal(Capability.NETWORK_FETCH, "network:fetch");
   assert.equal(Capability.CODE_EXECUTE, "code:execute");
   assert.equal(Capability.SYSTEM_ADMIN, "system:admin");
   assert.equal(Capability.FINANCE_READ, "finance:read");
+  assert.equal(Capability.SKILL_READ, "skill:read");
   const upstream = new Set([
     "file:read",
     "file:write",
@@ -37,9 +38,11 @@ test("capability wire values match upstream, plus finance:read", () => {
   const values = new Set(Object.values(Capability));
   for (const label of upstream) assert.equal(values.has(label), true);
   assert.equal(values.has("finance:read"), true);
-  assert.equal(values.size, upstream.size + 1);
+  assert.equal(values.has("skill:read"), true);
+  assert.equal(values.size, upstream.size + 2);
   assert.equal(isCapability("file:read"), true);
   assert.equal(isCapability("finance:read"), true);
+  assert.equal(isCapability("skill:read"), true);
   assert.equal(isCapability("file:destroy"), false);
 });
 
@@ -155,15 +158,13 @@ test("invalid policy documents are rejected before any grant applies", () => {
     assert.throws(
       () => new CapabilityPolicy({ policyDocument: document }),
       Error,
-      `expected rejection for ${JSON.stringify(document)}`,
+      `expected rejection for ${JSON.stringify(document)}`
     );
   }
 });
 
 test("uninventoried in-tree tool fails closed as system:admin", () => {
-  assert.deepEqual(canonicalToolCapabilities("future_builtin"), [
-    Capability.SYSTEM_ADMIN,
-  ]);
+  assert.deepEqual(canonicalToolCapabilities("future_builtin"), [Capability.SYSTEM_ADMIN]);
 });
 
 test("remote tool names resolve to tool:invoke, never a reviewed-safe floor", () => {
@@ -181,13 +182,17 @@ test("inventory is the security floor for inventoried tools", () => {
   assert.deepEqual(canonicalToolCapabilities("memory_read", { inventory: CHIEF_TOOL_INVENTORY }), [
     Capability.MEMORY_READ,
   ]);
-  assert.deepEqual(canonicalToolCapabilities("finance_summary", { inventory: CHIEF_TOOL_INVENTORY }), [
-    Capability.FINANCE_READ,
-  ]);
+  assert.deepEqual(
+    canonicalToolCapabilities("finance_summary", { inventory: CHIEF_TOOL_INVENTORY }),
+    [Capability.FINANCE_READ]
+  );
   assert.deepEqual(
     canonicalToolCapabilities("workspace_plan_summary", { inventory: CHIEF_TOOL_INVENTORY }),
     [Capability.FINANCE_READ]
   );
+  assert.deepEqual(canonicalToolCapabilities("skill_view", { inventory: CHIEF_TOOL_INVENTORY }), [
+    Capability.SKILL_READ,
+  ]);
   assert.deepEqual(canonicalToolCapabilities("memory_read"), [Capability.SYSTEM_ADMIN]);
   assert.deepEqual(canonicalToolCapabilities("getUserData"), [Capability.SYSTEM_ADMIN]);
   assert.equal(Object.hasOwn(CHIEF_TOOL_INVENTORY, "shell_exec"), false);

@@ -221,7 +221,12 @@ async function runScheduledTask({
     tooling = await createTooling({ userId });
     const engine = createEngine();
     const turnServices = createTurnServices
-      ? await createTurnServices({ userId, engine, checkpointStore })
+      ? await createTurnServices({
+          userId,
+          engine,
+          checkpointStore,
+          policy: tooling.policy ?? null,
+        })
       : {};
     machine = new TurnMachine({
       store: checkpointStore,

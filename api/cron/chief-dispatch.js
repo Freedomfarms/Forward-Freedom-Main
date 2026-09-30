@@ -39,7 +39,13 @@ function defaultDeps() {
     checkpointStore,
     createEngine: () => createModelEngine({ budget }),
     createTooling: ({ userId }) => createChiefTooling({ userId, audit, stores: { facts } }),
-    createTurnServices: ({ engine }) => createChiefTurnServices({ facts, engine, checkpointStore }),
+    createTurnServices: ({ engine, policy }) =>
+      createChiefTurnServices({
+        facts,
+        engine,
+        checkpointStore,
+        capabilityPolicy: policy ?? null,
+      }),
     audit,
   };
 }
