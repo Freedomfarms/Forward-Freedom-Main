@@ -654,6 +654,14 @@ previous one is merged or explicitly waived. Verification per repo policy: `npm 
   Another user's session and a scheduled session (`origin: schedule`) are
   `session not found`. The read does not write, list sessions, or open a
   scheduled run.
+- **Conversation lifecycle — session discovery (delivered slice, ADR-0018).**
+  `GET /api/chief/sessions` lists the caller's interactive `ChiefSession` rows:
+  `sessionId`, existing `title` (null when unset), `createdAt`, and `updatedAt`,
+  newest activity first. `context.origin === "schedule"` is excluded without
+  decrypting the checkpoint. A new conversation is still
+  `POST /api/chief/chat` with no `session_id`. Opening one is still Phase 17
+  history, and continuing it is still chat with that `session_id`. No second
+  session store, transcript store, search index, or UI.
 - **Phase 6b — Sidecar boundary.** `server/chief/sidecar/` provider registration + health;
   deep_research/managed-agent tool adapters; deployment recipe doc (Docker/Render/Fly) — all
   feature-flagged and optional.

@@ -96,12 +96,16 @@ export class MemoryCheckpointStore {
     if (!userId) throw new Error("createSession requires userId");
     const checkpoint = emptyCheckpoint();
     checkpoint.context = context ?? {};
+    const now = new Date();
     const record = {
       id: sessionId,
       userId,
+      title: null,
       status: "ACTIVE",
       forkedFromSessionId: null,
       lastSequence: 0,
+      createdAt: now,
+      updatedAt: now,
       checkpoint,
       journal: [],
     };
@@ -133,6 +137,7 @@ export class MemoryCheckpointStore {
       ...current,
       lastSequence: sequence,
       status: checkpoint.pendingApproval ? "PENDING_APPROVAL" : "ACTIVE",
+      updatedAt: new Date(),
       checkpoint: clone(checkpoint),
       journal: [
         ...current.journal,
@@ -154,17 +159,37 @@ export class MemoryCheckpointStore {
     checkpoint.activeExecution = null;
     checkpoint.pendingApproval = null;
     checkpoint.pendingMessages = [];
+    const now = new Date();
     const child = {
       id: randomUUID(),
       userId,
+      title: null,
       status: "ACTIVE",
       forkedFromSessionId: parent.id,
       lastSequence: 1,
+      createdAt: now,
+      updatedAt: now,
       checkpoint,
       journal: [{ sequence: 1, events: [], transcriptDelta: clone(checkpoint.transcript) }],
     };
     this.sessions.set(child.id, child);
     return clone(child);
+  }
+
+  async listOwnedSessions(userId) {
+    if (!userId) return [];
+    const rows = [];
+    for (const record of this.sessions.values()) {
+      if (record.userId !== userId) continue;
+      rows.push({
+        id: record.id,
+        title: record.title ?? null,
+        createdAt: record.createdAt,
+        updatedAt: record.updatedAt,
+        context: clone(record.checkpoint?.context ?? {}),
+      });
+    }
+    return rows;
   }
 
   async listPending(userId) {
@@ -361,6 +386,29 @@ export class PrismaCheckpointStore {
       transcriptDelta: checkpoint.transcript,
     });
     return { ...saved, forkedFromSessionId: parent.id };
+  }
+
+  async listOwnedSessions(userId) {
+    if (!userId) return [];
+    return this._withUser(userId, async (tx) => {
+      const sessions = await tx.chiefSession.findMany({
+        where: { userId },
+        select: {
+          id: true,
+          title: true,
+          createdAt: true,
+          updatedAt: true,
+          contextJson: true,
+        },
+      });
+      return sessions.map((session) => ({
+        id: session.id,
+        title: session.title ?? null,
+        createdAt: session.createdAt,
+        updatedAt: session.updatedAt,
+        context: session.contextJson ?? {},
+      }));
+    });
   }
 
   async listPending(userId) {
