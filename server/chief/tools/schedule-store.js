@@ -1,28 +1,33 @@
-// Records a scheduled task, its lifecycle, and a read of its run ledger.
-// This is not a scheduler: nothing here claims a lock, runs a turn, decrypts
-// a result, or aborts one. The dispatch tick
+// Records a scheduled task, its lifecycle, a read of its run ledger, and a
+// read of one run's stored outcome. This is not a scheduler: nothing here
+// claims a lock, runs a turn, or aborts one. The dispatch tick
 // (server/chief/scheduler/tick.js) claims ACTIVE rows later.
+// listRuns does not decrypt a result. getOutcome decrypts only to read
+// result.summary.
 //
 // ADAPT of OpenJarvis (Stanford, Apache-2.0)
 //   Upstream: https://github.com/open-jarvis/OpenJarvis
 //   Source file: src/openjarvis/scheduler/tools.py,
 //     src/openjarvis/scheduler/scheduler.py (list_tasks, pause_task,
 //     resume_task, cancel_task), and
-//     src/openjarvis/scheduler/store.py (get_run_logs: newest rows, capped)
+//     src/openjarvis/scheduler/store.py (get_run_logs)
 //   Commit: 5e5f5efde4bfcf8a60fe70d1cea12a0185f615ec
-//   get_run_logs also returns result and error text. Those fields are not
-//   copied. listRuns returns the six ledger columns only.
+//   get_run_logs returns result and error text. listRuns does not.
+//   getOutcome returns one row's summary and error after the injection scan.
 
 import { randomUUID } from "node:crypto";
 
 import { withUserContext } from "../../db/prisma.js";
+import { decryptJson } from "../../security/envelope.js";
 import { PROMPT_MAX_CHARS } from "../scheduler/operative.js";
 import { initialNextRun, isValidTimezone } from "../scheduler/schedule.js";
 import { fencesOutput, scanInjection } from "../security/injection.js";
 
 const KINDS = new Set(["ONCE", "INTERVAL", "CRON"]);
 const AWAITING_APPROVAL = "AWAITING_APPROVAL";
+const NO_SUMMARY_STATUSES = new Set(["AWAITING_APPROVAL", "RUNNING", "RETRYING"]);
 export const SCHEDULE_RUN_LIST_LIMIT = 10;
+export const SCHEDULE_SUMMARY_MAX_CHARS = 1000;
 
 function iso(value) {
   if (value == null) return null;
@@ -50,6 +55,39 @@ export function publicScheduledRun(run) {
     attempts: run.attempts ?? 0,
     startedAt: iso(run.startedAt),
     completedAt: iso(run.completedAt),
+  };
+}
+
+function scannedOrWithheld(text) {
+  const scan = scanInjection(text);
+  if (fencesOutput(scan.threatLevel)) return { withheld: true, text: null };
+  return { withheld: false, text };
+}
+
+// Projects one stored run. `result` is the decrypted object, or null.
+// Open runs do not read it. A fenced summary is not copied onto the return.
+export function projectScheduledOutcome(run, result) {
+  const ledger = publicScheduledRun(run);
+  let summary = null;
+  let withheld = false;
+  if (!NO_SUMMARY_STATUSES.has(run.status)) {
+    const stored = typeof result?.summary === "string" ? result.summary : "";
+    const capped = stored.slice(0, SCHEDULE_SUMMARY_MAX_CHARS);
+    if (capped) {
+      const scanned = scannedOrWithheld(capped);
+      withheld = scanned.withheld;
+      summary = scanned.text;
+    }
+  }
+  const storedError = typeof run.error === "string" ? run.error : "";
+  const error = storedError ? scannedOrWithheld(storedError).text : null;
+  return {
+    withheld,
+    outcome: {
+      ...ledger,
+      summary,
+      error,
+    },
   };
 }
 
@@ -260,11 +298,28 @@ export class MemoryScheduleStore {
     applyScheduleUpdate(task, prepared.fields);
     return { task: publicScheduledTask(task) };
   }
+
+  async getOutcome({ userId, runId } = {}) {
+    const id = String(runId ?? "").trim();
+    if (!userId || !id) return { error: "not_found" };
+    const run = this.runs.find((row) => row.id === id && row.userId === userId);
+    if (!run) return { error: "not_found" };
+    if (run.scheduledTaskId) {
+      const task = this._own(userId, run.scheduledTaskId);
+      if (!task) return { error: "not_found" };
+    }
+    const result =
+      run.result && typeof run.result === "object" && !Array.isArray(run.result)
+        ? run.result
+        : null;
+    return projectScheduledOutcome(run, result);
+  }
 }
 
 export class PrismaScheduleStore {
-  constructor({ withUser = withUserContext } = {}) {
+  constructor({ withUser = withUserContext, decrypt = decryptJson } = {}) {
     this._withUser = withUser;
+    this._decrypt = decrypt;
   }
 
   async create({ userId, ...fields }) {
@@ -413,6 +468,32 @@ export class PrismaScheduleStore {
           nextRunAt: task.status === "ACTIVE" ? data.nextRunAt : task.nextRunAt,
         }),
       };
+    });
+  }
+
+  async getOutcome({ userId, runId } = {}) {
+    const id = String(runId ?? "").trim();
+    if (!id) return { error: "not_found" };
+    return this._withUser(userId, async (tx) => {
+      const run = await tx.chiefTaskRun.findFirst({ where: { id, userId } });
+      if (!run) return { error: "not_found" };
+      if (run.scheduledTaskId) {
+        const task = await tx.chiefScheduledTask.findFirst({
+          where: { id: run.scheduledTaskId, userId },
+          select: { id: true },
+        });
+        if (!task) return { error: "not_found" };
+      }
+      let result = null;
+      if (run.resultCiphertext) {
+        try {
+          const decoded = this._decrypt(run.resultCiphertext);
+          if (decoded && typeof decoded === "object" && !Array.isArray(decoded)) result = decoded;
+        } catch {
+          result = null;
+        }
+      }
+      return projectScheduledOutcome(run, result);
     });
   }
 }

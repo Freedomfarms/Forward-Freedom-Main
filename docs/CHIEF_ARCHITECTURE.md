@@ -634,6 +634,26 @@ previous one is merged or explicitly waived. Verification per repo policy: `npm 
   `initialNextRun`. A `PAUSED` task keeps `nextRunAt` for `schedule_resume`.
   A locked task, or one with an `AWAITING_APPROVAL` run, is not written.
   The tool does not call the tick or start a turn. `attention` stays `false`.
+- **Phase 15 — Schedule outcome (delivered slice, ADR-0015).** One read-only
+  tool, `schedule_outcome`, on the existing schedule store. It returns one
+  caller-owned run: the six ledger fields, `result.summary` (1,000 characters,
+  injection-scanned), and the stored error when that scan allows it. Open
+  runs return `summary: null`. A fenced summary is withheld. It does not
+  return the session, the prompt, tool output, or ciphertext, and it does
+  not run a task. `schedule_runs` stays metadata-only. `attention` stays
+  `false`.
+- **Phase 16 — Default capability baseline (delivered slice, ADR-0016).**
+  `loadCapabilityPolicy` grants `_default` `memory:read`, `memory:write`,
+  `schedule:create`, `finance:read`, and `skill:read` when the caller has
+  zero `chief_capability_grant` rows. `defaultDeny` stays true. Any explicit
+  row replaces that baseline. A load failure stays deny-all. Confirmation,
+  the boundary guard, and the scheduler are unchanged.
+- **Phase 17 — Session history (delivered slice, ADR-0017).** `GET /api/chief/history`
+  returns one caller-owned interactive transcript from the existing checkpoint.
+  Messages are `role` and scanned `text`. A fenced message withholds its text.
+  Another user's session and a scheduled session (`origin: schedule`) are
+  `session not found`. The read does not write, list sessions, or open a
+  scheduled run.
 - **Phase 6b — Sidecar boundary.** `server/chief/sidecar/` provider registration + health;
   deep_research/managed-agent tool adapters; deployment recipe doc (Docker/Render/Fly) — all
   feature-flagged and optional.
