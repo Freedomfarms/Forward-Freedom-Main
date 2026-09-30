@@ -97,8 +97,19 @@ export class MemoryTaskStore {
   }
 
   async listUnscheduled(limit = 20) {
+    const waiting = new Set(
+      this.runs
+        .filter((run) => run.status === RunStatus.AWAITING_APPROVAL && run.scheduledTaskId)
+        .map((run) => run.scheduledTaskId)
+    );
     return this.tasks
-      .filter((task) => task.status === "ACTIVE" && task.nextRunAt == null && !task.lockedAt)
+      .filter(
+        (task) =>
+          task.status === "ACTIVE" &&
+          task.nextRunAt == null &&
+          !task.lockedAt &&
+          !waiting.has(task.id)
+      )
       .slice(0, limit)
       .map((task) => ({ id: task.id, userId: task.userId }));
   }
@@ -126,6 +137,13 @@ export class MemoryTaskStore {
   async claim(userId, taskId, now, staleBefore) {
     const task = this._task(userId, taskId);
     if (!task || !isDue(task, now, staleBefore)) return null;
+    if (
+      this.runs.some(
+        (run) => run.scheduledTaskId === task.id && run.status === RunStatus.AWAITING_APPROVAL
+      )
+    ) {
+      return null;
+    }
     let advanced;
     try {
       advanced = advanceAtClaim(task, now);
@@ -289,7 +307,12 @@ export class PrismaTaskStore {
   // inside withUserContext.
   async listUnscheduled(limit = 20) {
     return this._serviceClient().chiefScheduledTask.findMany({
-      where: { status: "ACTIVE", nextRunAt: null, lockedAt: null },
+      where: {
+        status: "ACTIVE",
+        nextRunAt: null,
+        lockedAt: null,
+        runs: { none: { status: RunStatus.AWAITING_APPROVAL } },
+      },
       select: { id: true, userId: true },
       orderBy: { createdAt: "asc" },
       take: limit,
@@ -335,6 +358,10 @@ export class PrismaTaskStore {
     return this._withUser(userId, async (tx) => {
       const task = await tx.chiefScheduledTask.findFirst({ where: { id: taskId, userId } });
       if (!task || !isDue(task, now, staleBefore)) return null;
+      const awaiting = await tx.chiefTaskRun.findFirst({
+        where: { scheduledTaskId: taskId, userId, status: RunStatus.AWAITING_APPROVAL },
+      });
+      if (awaiting) return null;
       let advanced;
       try {
         advanced = advanceAtClaim(task, now);

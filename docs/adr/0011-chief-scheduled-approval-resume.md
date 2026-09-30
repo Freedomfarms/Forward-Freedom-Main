@@ -38,7 +38,9 @@ suspension. The scheduled run could not finish on the session that started it.
    converted into a `user_turn`.
 2. `AWAITING_APPROVAL` is not a terminal outcome. The cron tick does not claim
    or resume that run, and it does not move `nextRunAt` while the run is
-   waiting. The initial suspension stores no successful result.
+   waiting. A ONCE task whose `nextRunAt` was cleared at claim time is not
+   treated as unscheduled while that run is still waiting. The initial
+   suspension stores no successful result.
 3. A ONCE task stays `ACTIVE` while the run is `AWAITING_APPROVAL`. It becomes
    `COMPLETED` only when the resume reaches `SUCCEEDED`, `FAILED`, or
    `SKIPPED`.

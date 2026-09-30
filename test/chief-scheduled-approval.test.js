@@ -247,6 +247,8 @@ test("an approved memory_write runs once on the same schedule session and comple
       );
       assert.ok(tooling.specs.some((spec) => spec.name === "finance_summary"));
       assert.ok(tooling.specs.some((spec) => spec.name === "skill_view"));
+      assert.deepEqual(CHIEF_TOOL_INVENTORY.memory_write, [Capability.MEMORY_WRITE]);
+      assert.deepEqual(CHIEF_TOOL_INVENTORY.finance_summary, [Capability.FINANCE_READ]);
       sawInventory = true;
       return tooling;
     },
@@ -321,7 +323,7 @@ test("abort and a thrown resume fail the run; budget and pause skip it", async (
   assert.equal(thrownHttp.state.statusCode, 400);
   assert.equal(thrown.h.taskStore.runs[0].status, RunStatus.FAILED);
   assert.match(thrown.h.taskStore.runs[0].error, /provider down/);
-  assert.equal(toolFacts(thrown.h.facts).length, 0);
+  assert.equal(toolFacts(thrown.h.facts).length, 1);
   assert.equal(thrown.h.taskStore.tasks[0].status, "COMPLETED");
 
   for (const error of [
