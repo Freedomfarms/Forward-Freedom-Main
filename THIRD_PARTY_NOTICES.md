@@ -174,8 +174,8 @@ Conventions used in this repository:
 - Repository: https://github.com/NousResearch/hermes-agent
 - Commit audited: `8c30ef318d1ed6c88597239081f5749268efdca8`
 - License: MIT ("Copyright (c) 2025 Nous Research")
-- Use in this repository: **adapted semantics only** (Phase 5, Phase 6, and Phase 8). No Hermes
-  code, runtime, agent loop, or approval behavior is included.
+- Use in this repository: **adapted semantics only** (Phase 5, Phase 6, Phase 8, and Phase 10).
+  No Hermes code, runtime, agent loop, delivery queue, or approval behavior is included.
   - Phase 6 identity slot ← `agent/system_prompt.py` `_identity_parts` and
     `agent/prompt_builder.py` `load_soul_md` (concept only: a user persona, else a
     default identity). CHIEF stores the persona in its fact store. `SOUL.md` is not
@@ -188,6 +188,11 @@ Conventions used in this repository:
     transient network failure with zero model calls; 300/900/1800-second ladder; give up
     when the natural next occurrence comes first; recurring tasks only) and
     `cron/scheduler_preflight.py` (cause-chain walk for transient errors)
+  - Phase 10 quiet tick ← `cron/scheduler_delivery.py` `_normalize_deliver_value`
+    (an empty deliver value means `"local"`, no push). CHIEF has no delivery
+    target, so a scheduled run stores `attention: false` and sends nothing.
+    `cron/delivery_queue.py`, `cron/bot_chat_delivery.py`, and the platform
+    senders are not ported.
 - Obligations: retain the copyright and permission notice; the full license text is at
   `licenses/HERMES-AGENT-LICENSE-MIT.txt`.
 
