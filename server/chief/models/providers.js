@@ -35,11 +35,13 @@
 
 import { createXai } from "@ai-sdk/xai";
 import { createAnthropic } from "@ai-sdk/anthropic";
+import { createOpenAI } from "@ai-sdk/openai";
 
 import { ProviderRegistry } from "../core/registry.js";
 
 export const XAI_PROVIDER_ID = "xai";
 export const ANTHROPIC_PROVIDER_ID = "anthropic";
+export const OPENAI_PROVIDER_ID = "openai";
 
 export const xaiProviderDescriptor = Object.freeze({
   id: XAI_PROVIDER_ID,
@@ -67,9 +69,25 @@ export const anthropicProviderDescriptor = Object.freeze({
   },
 });
 
+export const openaiProviderDescriptor = Object.freeze({
+  id: OPENAI_PROVIDER_ID,
+  displayName: "OpenAI (GPT)",
+  packageName: "@ai-sdk/openai",
+  credentialEnv: Object.freeze(["CHIEF_OPENAI_API_KEY", "OPENAI_API_KEY"]),
+  baseUrlEnv: "CHIEF_OPENAI_BASE_URL",
+  create({ apiKey, baseURL, fetch }) {
+    return createOpenAI({
+      apiKey,
+      ...(baseURL ? { baseURL } : {}),
+      ...(fetch ? { fetch } : {}),
+    });
+  },
+});
+
 export const BUILTIN_PROVIDERS = Object.freeze([
   xaiProviderDescriptor,
   anthropicProviderDescriptor,
+  openaiProviderDescriptor,
 ]);
 
 export function validateProviderDescriptor(descriptor) {

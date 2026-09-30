@@ -15,6 +15,7 @@ import {
   formatChiefTime,
   initialTurnState,
   messageSubmission,
+  modelSubmission,
   publicTranscriptMessages,
 } from "../src/utils/chiefProtocol.js";
 
@@ -163,6 +164,13 @@ test("chat and approval submissions match the existing ops", () => {
   assert.equal(denied.op.id, "ap-1");
   assert.deepEqual(denied.op.decision, { denied: { rejection: "Not approved." } });
   assert.equal(approvalSubmission("ap-1", "approve").op.decision, "approved");
+});
+
+test("set_model submissions name a route and do not carry a message", () => {
+  const submission = modelSubmission("claude-sonnet-4-6");
+  assert.equal(submission.op.type, "set_model");
+  assert.equal(submission.op.route, "claude-sonnet-4-6");
+  assert.equal(submission.op.message, undefined);
 });
 
 test("SSE frames can split across chunks", () => {

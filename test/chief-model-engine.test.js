@@ -128,9 +128,9 @@ function acmeEngine(env = ACME_ENV, options = {}) {
 
 // --- configuration boundary ---------------------------------------------------
 
-test("loadModelConfig defaults: Grok-only, heuristic routing, upstream generation defaults", () => {
+test("loadModelConfig defaults: three families, heuristic routing, upstream generation defaults", () => {
   const config = loadModelConfig({});
-  assert.deepEqual([...config.enabledProviders], ["xai"]);
+  assert.deepEqual([...config.enabledProviders], ["xai", "anthropic", "openai"]);
   assert.equal(config.defaultModel, DEFAULT_MODEL);
   assert.equal(config.fallbackModel, DEFAULT_FALLBACK_MODEL);
   assert.equal(config.routerPolicy, "heuristic");
@@ -175,9 +175,14 @@ test("createModelEngine with only XAI_API_KEY exposes the Grok catalog and no se
   const engine = createModelEngine({ env: { XAI_API_KEY: SECRET }, logger: silentLogger });
   const health = engine.health();
   assert.equal(health.engine, "chief-ai-sdk");
-  assert.deepEqual(health.providers, [
-    { id: "xai", displayName: "xAI (Grok)", configured: true, credentialSource: "XAI_API_KEY" },
-  ]);
+  assert.deepEqual(
+    health.providers.filter((provider) => provider.configured),
+    [{ id: "xai", displayName: "xAI (Grok)", configured: true, credentialSource: "XAI_API_KEY" }]
+  );
+  assert.ok(
+    health.providers.some((provider) => provider.id === "anthropic" && !provider.configured)
+  );
+  assert.ok(health.providers.some((provider) => provider.id === "openai" && !provider.configured));
   assert.deepEqual(health.models, [
     "grok-4.7",
     "grok-4.6",
@@ -218,10 +223,10 @@ test("Grok routing: trivial → cheapest Grok, reasoning/code/math → Grok 4.7,
   assert.equal(engine.resolve("", { routerPolicy: "none" }).modelKey, "grok-4.7");
 });
 
-test("Anthropic is opt-in: the platform key alone does not enable it", () => {
+test("an explicit provider list still excludes families that were not named", () => {
   resetRegistries();
   const grokOnly = createModelEngine({
-    env: { XAI_API_KEY: SECRET, ANTHROPIC_API_KEY: "a" },
+    env: { XAI_API_KEY: SECRET, ANTHROPIC_API_KEY: "a", CHIEF_MODEL_PROVIDERS: "xai" },
     logger: silentLogger,
   });
   assert.ok(!grokOnly.availableModelKeys().some((key) => key.startsWith("claude")));

@@ -9,8 +9,10 @@ import { ProviderRegistry } from "../server/chief/core/registry.js";
 import {
   ANTHROPIC_PROVIDER_ID,
   BUILTIN_PROVIDERS,
+  OPENAI_PROVIDER_ID,
   XAI_PROVIDER_ID,
   anthropicProviderDescriptor,
+  openaiProviderDescriptor,
   describeProviderCredentials,
   ensureBuiltinProvidersRegistered,
   instantiateProviders,
@@ -27,7 +29,7 @@ test("built-in providers register idempotently under their ids", () => {
   ensureBuiltinProvidersRegistered();
   assert.deepEqual(
     new Set(ProviderRegistry.keys()),
-    new Set([XAI_PROVIDER_ID, ANTHROPIC_PROVIDER_ID])
+    new Set([XAI_PROVIDER_ID, ANTHROPIC_PROVIDER_ID, OPENAI_PROVIDER_ID])
   );
   assert.equal(ProviderRegistry.get(XAI_PROVIDER_ID), xaiProviderDescriptor);
   assert.equal(BUILTIN_PROVIDERS[0].id, XAI_PROVIDER_ID);
@@ -106,6 +108,22 @@ test("no provider secret is read from process.env implicitly", () => {
     if (previous === undefined) delete process.env.XAI_API_KEY;
     else process.env.XAI_API_KEY = previous;
   }
+});
+
+test("instantiateProviders builds the OpenAI transport from CHIEF_OPENAI_API_KEY", () => {
+  ProviderRegistry.clear();
+  ensureBuiltinProvidersRegistered();
+  const { active, skipped } = instantiateProviders({
+    env: { CHIEF_OPENAI_API_KEY: "openai-secret", OPENAI_API_KEY: "platform-openai" },
+    enabledIds: ["openai"],
+  });
+  assert.deepEqual(skipped, []);
+  assert.equal(active.get("openai").credentialSource, "CHIEF_OPENAI_API_KEY");
+  const gpt = active.get("openai").instance.languageModel("gpt-4.1");
+  assert.equal(gpt.modelId, "gpt-4.1");
+  assert.match(gpt.provider, /^openai/);
+  assert.equal(typeof gpt.doStream, "function");
+  assert.equal(openaiProviderDescriptor.credentialEnv[0], "CHIEF_OPENAI_API_KEY");
 });
 
 test("instantiateProviders builds real AI SDK providers for xAI and Anthropic", () => {

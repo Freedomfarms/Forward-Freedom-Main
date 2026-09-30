@@ -4,15 +4,18 @@ import {
   applyChiefEvent,
   decideChiefApproval,
   fetchChiefHistory,
+  fetchChiefModels,
   fetchChiefPendingApproval,
   fetchChiefSessions,
   initialTurnState,
   publicTranscriptMessages,
+  selectChiefModel,
   streamChiefChat,
 } from "../../utils/chiefApi.js";
 import { ChiefApprovalCard } from "./ChiefApprovalCard.jsx";
 import { ChiefComposer } from "./ChiefComposer.jsx";
 import { ChiefConversationList } from "./ChiefConversationList.jsx";
+import { ChiefModelSelect } from "./ChiefModelSelect.jsx";
 import { ChiefStatus } from "./ChiefStatus.jsx";
 import { ChiefTranscript } from "./ChiefTranscript.jsx";
 
@@ -56,6 +59,8 @@ export function ChiefPage({ user }) {
   const [approval, setApproval] = useState(null);
   const [busy, setBusy] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [models, setModels] = useState([]);
+  const [modelRoute, setModelRoute] = useState(null);
   const abortRef = useRef(null);
   const busyRef = useRef(false);
   const generation = useRef(0);
@@ -95,6 +100,7 @@ export function ChiefPage({ user }) {
         const payload = await fetchChiefHistory(user, sessionId);
         if (token !== generation.current) return;
         setMessages(Array.isArray(payload?.messages) ? payload.messages : []);
+        setModelRoute(typeof payload?.modelRoute === "string" ? payload.modelRoute : null);
         const pending = await fetchChiefPendingApproval(user, sessionId).catch(() => null);
         if (token !== generation.current) return;
         setApproval(pending);
@@ -105,6 +111,7 @@ export function ChiefPage({ user }) {
         if (error?.status === 404) {
           setNotFound(true);
           setMessages([]);
+          setModelRoute(null);
           setApproval(null);
           writeStoredSessionId(null);
         } else {
@@ -116,6 +123,21 @@ export function ChiefPage({ user }) {
     },
     [user]
   );
+
+  useEffect(() => {
+    if (!user) return undefined;
+    let cancelled = false;
+    fetchChiefModels(user)
+      .then((payload) => {
+        if (!cancelled) setModels(Array.isArray(payload?.models) ? payload.models : []);
+      })
+      .catch(() => {
+        if (!cancelled) setModels([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   useEffect(() => {
     if (!user) return undefined;
@@ -178,6 +200,7 @@ export function ChiefPage({ user }) {
     setDraft("");
     setBusyState(false);
     setMessages([]);
+    setModelRoute(null);
     loadHistory(sessionId, token);
   }
 
@@ -187,6 +210,7 @@ export function ChiefPage({ user }) {
     setActiveSessionId(null);
     writeStoredSessionId(null);
     setMessages([]);
+    setModelRoute(null);
     setStreamText("");
     setApproval(null);
     setTurnError("");
@@ -338,6 +362,34 @@ export function ChiefPage({ user }) {
     }
   }
 
+  async function chooseModel(route) {
+    if (!route || !user || busyRef.current) return;
+    setBusyState(true);
+    setTurnError("");
+    try {
+      const result = await selectChiefModel({
+        user,
+        sessionId: activeSessionIdRef.current,
+        route,
+      });
+      if (result.sessionId && result.sessionId !== activeSessionIdRef.current) {
+        activeSessionIdRef.current = result.sessionId;
+        setActiveSessionId(result.sessionId);
+        writeStoredSessionId(result.sessionId);
+      }
+      setModelRoute(result.route);
+      try {
+        await refreshSessions();
+      } catch (error) {
+        setSessionsError(errorText(error));
+      }
+    } catch (error) {
+      setTurnError(errorText(error));
+    } finally {
+      setBusyState(false);
+    }
+  }
+
   function retryTranscript() {
     if (activeSessionId) {
       setTurnError("");
@@ -407,6 +459,12 @@ export function ChiefPage({ user }) {
               Conversations
             </button>
             <div className="chief-title">CHIEF</div>
+            <ChiefModelSelect
+              models={models}
+              value={modelRoute}
+              disabled={busy || historyLoading || notFound || Boolean(approval)}
+              onChange={chooseModel}
+            />
           </div>
           <ChiefStatus status={status} />
         </header>

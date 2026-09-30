@@ -33,16 +33,20 @@ export {
 } from "./router.js";
 export {
   BUILTIN_MODELS,
+  MODEL_GROUP_LABELS,
   registerBuiltinModels,
   mergeDiscoveredModels,
   registeredModelsForProvider,
+  projectConfiguredModels,
 } from "./catalog.js";
 export {
   XAI_PROVIDER_ID,
   ANTHROPIC_PROVIDER_ID,
+  OPENAI_PROVIDER_ID,
   BUILTIN_PROVIDERS,
   xaiProviderDescriptor,
   anthropicProviderDescriptor,
+  openaiProviderDescriptor,
   validateProviderDescriptor,
   ensureBuiltinProvidersRegistered,
   resolveProviderCredentials,

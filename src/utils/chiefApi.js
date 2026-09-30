@@ -7,6 +7,7 @@ import {
   chiefUserMessage,
   consumeSseBuffer,
   messageSubmission,
+  modelSubmission,
 } from "./chiefProtocol.js";
 
 export {
@@ -18,6 +19,7 @@ export {
   formatChiefTime,
   initialTurnState,
   messageSubmission,
+  modelSubmission,
   publicTranscriptMessages,
 } from "./chiefProtocol.js";
 
@@ -56,6 +58,10 @@ async function chiefJson(path, { user, method = "GET", body } = {}) {
 
 export function fetchChiefSessions(user) {
   return chiefJson("/api/chief/sessions", { user });
+}
+
+export function fetchChiefModels(user) {
+  return chiefJson("/api/chief/models", { user });
 }
 
 export function fetchChiefHistory(user, sessionId) {
@@ -104,6 +110,44 @@ export async function streamChiefChat({ user, sessionId = null, text, onEvent, s
   }
   const tail = consumeSseBuffer(buffer, decoder.decode());
   for (const event of tail.events) onEvent(event);
+}
+
+export async function selectChiefModel({ user, sessionId = null, route }) {
+  const body = { submission: modelSubmission(route) };
+  if (sessionId) body.session_id = sessionId;
+  const response = await fetch("/api/chief/chat", {
+    method: "POST",
+    headers: await buildAuthenticatedHeaders(
+      {
+        "Content-Type": "application/json",
+        Accept: "text/event-stream",
+      },
+      { user }
+    ),
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) throw await readChiefError(response);
+  const consumed = consumeSseBuffer("", await response.text());
+  let nextSessionId = sessionId;
+  let selected = null;
+  let error = "";
+  for (const event of consumed.events) {
+    const msg = event?.msg;
+    if (!msg) continue;
+    if (msg.type === "model_changed" && typeof msg.route === "string") selected = msg.route;
+    if (msg.type === "session_configured" && typeof msg.session_id === "string" && msg.session_id) {
+      nextSessionId = msg.session_id;
+    }
+    if (
+      (msg.type === "error" || msg.type === "submission_rejected") &&
+      typeof msg.message === "string"
+    ) {
+      error = chiefUserMessage(msg.message);
+    }
+  }
+  if (error) throw new ApiRequestError(error);
+  if (!selected) throw new ApiRequestError("CHIEF could not complete that request.");
+  return { sessionId: nextSessionId, route: selected };
 }
 
 export function decideChiefApproval({ user, sessionId, approvalId, decision }) {

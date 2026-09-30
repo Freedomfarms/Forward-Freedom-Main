@@ -19,10 +19,9 @@
 // Documented adaptations (CHIEF-specific reasons):
 //   - Upstream's ~60 local-model entries (Ollama/vLLM/MLX/Apple FM) are not
 //     carried: no local inference exists in this serverless deployment.
-//     Upstream's OpenAI/Google/DeepSeek/MiniMax entries are not carried
-//     because no such provider adapter is registered yet (docs/
-//     CHIEF_ARCHITECTURE.md §9 Phase 6 adds the OpenAI-compatible socket);
-//     adding a provider means adding its entries here, nothing else.
+//     Google/DeepSeek/MiniMax entries are not carried because no such
+//     provider adapter is registered. OpenAI rows are CHIEF catalog data for
+//     the API-key provider only. Codex OAuth is not a provider here.
 //   - xAI Grok entries are new catalog DATA (upstream has none). Context
 //     windows and pricing were taken from https://docs.x.ai/developers/models
 //     on 2026-09-29 (long-context tiers ≥200k prompt tokens double the rate
@@ -39,6 +38,15 @@ import { CAPABILITY_RANK_KEY, createModelSpec, REASONING_KEY } from "./types.js"
 
 const XAI_DOCS_URL = "https://docs.x.ai/developers/models";
 const ANTHROPIC_DOCS_URL = "https://docs.anthropic.com/en/docs/about-claude/models";
+const OPENAI_DOCS_URL = "https://platform.openai.com/docs/models";
+
+export const MODEL_GROUP_LABELS = Object.freeze({
+  anthropic: "Claude",
+  openai: "GPT",
+  xai: "Grok",
+});
+
+const MODEL_GROUP_ORDER = Object.freeze(["Claude", "GPT", "Grok"]);
 
 function cloudSpec({
   modelId,
@@ -160,6 +168,39 @@ export const BUILTIN_MODELS = Object.freeze([
     pricingOutput: 5.0,
     rank: 10,
   }),
+  // -----------------------------------------------------------------------
+  // Cloud models — OpenAI (API key). Not Codex OAuth.
+  // -----------------------------------------------------------------------
+  cloudSpec({
+    modelId: "gpt-4.1",
+    name: "GPT-4.1",
+    contextLength: 1047576,
+    provider: "openai",
+    url: OPENAI_DOCS_URL,
+    pricingInput: 2.0,
+    pricingOutput: 8.0,
+    rank: 40,
+  }),
+  cloudSpec({
+    modelId: "gpt-4.1-mini",
+    name: "GPT-4.1 mini",
+    contextLength: 1047576,
+    provider: "openai",
+    url: OPENAI_DOCS_URL,
+    pricingInput: 0.4,
+    pricingOutput: 1.6,
+    rank: 20,
+  }),
+  cloudSpec({
+    modelId: "gpt-4o",
+    name: "GPT-4o",
+    contextLength: 128000,
+    provider: "openai",
+    url: OPENAI_DOCS_URL,
+    pricingInput: 2.5,
+    pricingOutput: 10.0,
+    rank: 30,
+  }),
 ]);
 
 export function registerBuiltinModels() {
@@ -192,4 +233,30 @@ export function registeredModelsForProvider(providerId) {
   return ModelRegistry.items()
     .filter(([, spec]) => spec?.provider === providerId)
     .map(([key]) => key);
+}
+
+// User-facing catalog. Credential names and prices stay on the server.
+export function projectConfiguredModels(entries) {
+  const models = [];
+  for (const entry of entries ?? []) {
+    const id = entry?.key;
+    const provider = entry?.spec?.provider;
+    if (typeof id !== "string" || !id || typeof provider !== "string" || !provider) continue;
+    const name = typeof entry.spec.name === "string" && entry.spec.name ? entry.spec.name : id;
+    models.push({
+      id,
+      name,
+      provider,
+      group: MODEL_GROUP_LABELS[provider] ?? provider,
+    });
+  }
+  models.sort((left, right) => {
+    const leftGroup = MODEL_GROUP_ORDER.indexOf(left.group);
+    const rightGroup = MODEL_GROUP_ORDER.indexOf(right.group);
+    const leftOrder = leftGroup === -1 ? MODEL_GROUP_ORDER.length : leftGroup;
+    const rightOrder = rightGroup === -1 ? MODEL_GROUP_ORDER.length : rightGroup;
+    if (leftOrder !== rightOrder) return leftOrder - rightOrder;
+    return 0;
+  });
+  return models;
 }

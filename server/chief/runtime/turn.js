@@ -177,7 +177,13 @@ export class TurnMachine {
     this._status = "completed";
 
     let record = sessionId ? await this._store.load(userId, sessionId) : null;
-    if (!record) {
+    if (!record && parsed.op.type === OpType.SET_MODEL) {
+      if (!this._modelAvailable(parsed.op.route)) {
+        this._emit(eventMsg.submissionRejected("That model is not available."));
+        return this._closeTrace(this._done("rejected"));
+      }
+      record = await this._store.createSession({ userId, sessionId: sessionId ?? undefined });
+    } else if (!record) {
       if (parsed.op.type !== OpType.MESSAGE) {
         throw new Error("session not found");
       }
@@ -239,6 +245,11 @@ export class TurnMachine {
         await this._abort(op.turn_id, "interrupted");
         break;
       case OpType.SET_MODEL:
+        if (!this._modelAvailable(op.route)) {
+          this._emit(eventMsg.submissionRejected("That model is not available."));
+          this._status = "rejected";
+          break;
+        }
         this._checkpoint.modelRoute = op.route;
         this._emit({ type: EventMsgType.MODEL_CHANGED, route: op.route });
         await this._persist();
@@ -281,6 +292,12 @@ export class TurnMachine {
 
   _done(status) {
     return { sessionId: this._sessionId, status, checkpoint: this._checkpoint };
+  }
+
+  _modelAvailable(route) {
+    if (typeof route !== "string" || !route) return false;
+    if (typeof this._engine.availableModelKeys !== "function") return false;
+    return this._engine.availableModelKeys().includes(route);
   }
 
   _emit(msg) {

@@ -18,9 +18,10 @@
 //     (all CHIEF_-prefixed) with the same defaults. The `env` object is
 //     injected so tests never touch process.env.
 //   - enabledProviders (CHIEF_MODEL_PROVIDERS) is new: upstream enables every
-//     cloud vendor whose key exists. CHIEF is Grok-primary by policy, so only
-//     "xai" is enabled unless an operator opts more in — the Anthropic
-//     platform key must not silently pull Module 01's vendor into CHIEF.
+//     cloud vendor whose key exists. CHIEF enables xAI, Anthropic, and OpenAI
+//     unless an operator narrows the list. A provider still loads only when
+//     its own key is present, so a missing xAI or OpenAI key does not disable
+//     Claude.
 //   - modelAllowlist (CHIEF_MODEL_ALLOWLIST) generalizes the CLI's candidate
 //     list (cli/ask.py builds candidates from the configured presets).
 //   - routerPolicy "none" disables routing (always default model); upstream
@@ -33,7 +34,7 @@
 //     caller — a user turn and a future scheduled tick alike — so autonomous
 //     runs cannot keep reasoning after the layer is paused.
 
-export const DEFAULT_ENABLED_PROVIDERS = Object.freeze(["xai"]);
+export const DEFAULT_ENABLED_PROVIDERS = Object.freeze(["xai", "anthropic", "openai"]);
 export const DEFAULT_MODEL = "grok-4.7";
 export const DEFAULT_FALLBACK_MODEL = "grok-4.6";
 export const DEFAULT_ROUTER_POLICY = "heuristic";
