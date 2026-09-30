@@ -7,6 +7,8 @@ import { authenticateRequest } from "../../server/auth/verifyAuth.js";
 import { PrismaBudgetStore } from "../../server/chief/models/budget.js";
 import { createModelEngine } from "../../server/chief/models/engine.js";
 import { ApprovalCoordinator } from "../../server/chief/runtime/approvals.js";
+import { createChiefTurnServices } from "../../server/chief/context/wire.js";
+import { PrismaFactStore } from "../../server/chief/memory/facts.js";
 import { PrismaCheckpointStore } from "../../server/chief/runtime/checkpoint.js";
 import { TurnMachine } from "../../server/chief/runtime/turn.js";
 import { ToolExecutor } from "../../server/chief/tools/executor.js";
@@ -14,11 +16,22 @@ import { applySecurityHeaders } from "../../server/http/responseHelpers.js";
 import { enforceRateLimit, generalApiRateLimit } from "../../server/http/rateLimit.js";
 
 function machineFrom(deps) {
+  const store = deps.store ?? new PrismaCheckpointStore();
+  const engine = deps.engine ?? createModelEngine({ budget: new PrismaBudgetStore() });
+  const facts = deps.facts ?? (deps.toolExecutor ? null : new PrismaFactStore());
+  const turnServices =
+    deps.turnServices ??
+    (facts && !deps.toolExecutor
+      ? createChiefTurnServices({ facts, engine, checkpointStore: store })
+      : {});
   return new TurnMachine({
-    store: deps.store ?? new PrismaCheckpointStore(),
-    engine: deps.engine ?? createModelEngine({ budget: new PrismaBudgetStore() }),
+    store,
+    engine,
     approvals: new ApprovalCoordinator(),
     toolExecutor: deps.toolExecutor ?? new ToolExecutor(),
+    contextAssembler: turnServices.contextAssembler ?? null,
+    compaction: turnServices.compaction ?? null,
+    onTurnComplete: turnServices.onTurnComplete ?? null,
   });
 }
 

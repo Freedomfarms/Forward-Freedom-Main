@@ -5,6 +5,9 @@
 
 import { Capability } from "../core/capabilities.js";
 import { ToolRegistry } from "../core/registry.js";
+import { loadFinanceSummary } from "../../finance/aggregates.js";
+import { loadWorkspacePlanSummary } from "../../finance/workspaceSlice.js";
+import { TaintLabel } from "../security/taint.js";
 import { MemoryFactStore, PrismaFactStore } from "../memory/facts.js";
 import { MemoryGraphStore, PrismaGraphStore } from "../memory/graph.js";
 import { fencesOutput, scanInjection } from "../security/injection.js";
@@ -12,6 +15,7 @@ import { closedPolicy, loadCapabilityPolicy } from "../security/grants.js";
 import { PrismaAuditLog } from "../security/audit.js";
 import { ToolExecutor } from "./executor.js";
 import { CHIEF_TOOL_INVENTORY } from "./inventory.js";
+import { HANDOFF_STATE_KEY, validateHandoffNotes } from "../runtime/compaction.js";
 import { MemoryScheduleStore, PrismaScheduleStore, normalizeSchedule } from "./schedule-store.js";
 import { BaseTool } from "./spec.js";
 
@@ -158,6 +162,38 @@ function kgLink(store) {
   });
 }
 
+function writeHandoff() {
+  return new BaseTool({
+    isLocal: true,
+    spec: {
+      name: "write_handoff",
+      description:
+        "Replace this chat's working checkpoint: goal, constraints, progress, decisions, unresolved work, next steps, and exact history references. Never include private reasoning or credentials.",
+      category: "memory",
+      requiresConfirmation: true,
+      requiredCapabilities: [Capability.MEMORY_WRITE],
+      parameters: {
+        type: "object",
+        properties: { notes: { type: "string" } },
+        required: ["notes"],
+      },
+    },
+    async execute(params, context) {
+      const notes = String(params.notes ?? "");
+      const invalid = validateHandoffNotes(notes);
+      if (invalid) return { output: invalid, isError: true };
+      if (fencesOutput(scanInjection(notes).threatLevel)) {
+        return { output: "handoff notes failed the injection scan", isError: true };
+      }
+      if (typeof context.saveMiddlewareState !== "function") {
+        return { output: "handoff store is not available", isError: true };
+      }
+      await context.saveMiddlewareState(HANDOFF_STATE_KEY, notes.trim());
+      return { output: "Working checkpoint saved." };
+    },
+  });
+}
+
 function scheduleCreate(store) {
   return new BaseTool({
     isLocal: true,
@@ -199,6 +235,66 @@ function scheduleCreate(store) {
           dispatched: false,
         }),
       };
+    },
+  });
+}
+
+function financeSummary(load = loadFinanceSummary) {
+  return new BaseTool({
+    isLocal: true,
+    spec: {
+      name: "finance_summary",
+      description:
+        "Read this user's server-computed spending aggregates, balances grouped by account type, and Plaid connection health. Does not return transactions, merchants, account names, or institution names.",
+      category: "finance",
+      requiresConfirmation: false,
+      requiredCapabilities: [Capability.FINANCE_READ],
+      parameters: { type: "object", properties: {} },
+    },
+    async execute(_params, context) {
+      try {
+        const summary = await load(context.userId);
+        return {
+          output: JSON.stringify(summary),
+          sessionTaint: [TaintLabel.USER_PRIVATE],
+        };
+      } catch {
+        return {
+          output: "finance summary is unavailable",
+          isError: true,
+          sessionTaint: [TaintLabel.USER_PRIVATE],
+        };
+      }
+    },
+  });
+}
+
+function workspacePlanSummary(load = loadWorkspacePlanSummary) {
+  return new BaseTool({
+    isLocal: true,
+    spec: {
+      name: "workspace_plan_summary",
+      description:
+        "Read this user's plan slice: budget and income labels, objective count, plan years, and stored metric fields already saved in the workspace. Does not return the workspace blob or dollar amounts for budget and income rows.",
+      category: "finance",
+      requiresConfirmation: false,
+      requiredCapabilities: [Capability.FINANCE_READ],
+      parameters: { type: "object", properties: {} },
+    },
+    async execute(_params, context) {
+      try {
+        const summary = await load(context.userId);
+        return {
+          output: JSON.stringify(summary),
+          sessionTaint: [TaintLabel.USER_PRIVATE],
+        };
+      } catch {
+        return {
+          output: "workspace plan summary is unavailable",
+          isError: true,
+          sessionTaint: [TaintLabel.USER_PRIVATE],
+        };
+      }
     },
   });
 }
@@ -245,13 +341,18 @@ export function createChiefTools({
   graph = new MemoryGraphStore(),
   schedule = new MemoryScheduleStore(),
   mcpClient = null,
+  loadFinance = loadFinanceSummary,
+  loadWorkspace = loadWorkspacePlanSummary,
 } = {}) {
   const tools = [
     memoryRead(facts),
     memoryWrite(facts),
     kgLookup(graph),
     kgLink(graph),
+    writeHandoff(),
     scheduleCreate(schedule),
+    financeSummary(loadFinance),
+    workspacePlanSummary(loadWorkspace),
     mcpInvoke(mcpClient),
   ];
   for (const tool of tools) {

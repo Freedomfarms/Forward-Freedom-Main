@@ -12,9 +12,12 @@ import { Capability } from "../core/capabilities.js";
 export const CHIEF_TOOL_INVENTORY = Object.freeze({
   memory_read: Object.freeze([Capability.MEMORY_READ]),
   memory_write: Object.freeze([Capability.MEMORY_WRITE]),
+  write_handoff: Object.freeze([Capability.MEMORY_WRITE]),
   kg_lookup: Object.freeze([Capability.MEMORY_READ]),
   kg_link: Object.freeze([Capability.MEMORY_WRITE]),
   schedule_create: Object.freeze([Capability.SCHEDULE_CREATE]),
+  finance_summary: Object.freeze([Capability.FINANCE_READ]),
+  workspace_plan_summary: Object.freeze([Capability.FINANCE_READ]),
 });
 
 export const FORBIDDEN_TOOL_NAMES = Object.freeze([
