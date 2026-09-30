@@ -613,6 +613,13 @@ previous one is merged or explicitly waived. Verification per repo policy: `npm 
   tick does not resume it, does not approve it, and does not move
   `nextRunAt`. `attention` stays `false`. No new scheduler, runtime, or
   approval store.
+- **Phase 12 — Schedule lifecycle (delivered slice, ADR-0012).** Four tools
+  on the existing schedule store: `schedule_list` (read), and confirming
+  `schedule_pause`, `schedule_resume`, and `schedule_cancel`. They use
+  `schedule:create` and `withUserContext`. Pause and cancel do not claim a
+  task, do not start a turn, and do not abort one that is already running.
+  Resume sets `nextRunAt` with `initialNextRun` and does not call the tick.
+  `attention` stays `false`.
 - **Phase 6b — Sidecar boundary.** `server/chief/sidecar/` provider registration + health;
   deep_research/managed-agent tool adapters; deployment recipe doc (Docker/Render/Fly) — all
   feature-flagged and optional.
