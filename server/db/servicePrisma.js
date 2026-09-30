@@ -19,7 +19,9 @@ const { PrismaClient } = prismaClientPackage;
 //       sends no user token, so the owner is unknown until this lookup;
 //   (b) the cron dispatcher enumerating due agents across users
 //       (api/cron/agent-dispatch.js);
-//   (c) admin usage/cost reporting (api/admin/usage.js).
+//   (c) admin usage/cost reporting (api/admin/usage.js);
+//   (d) the CHIEF scheduler tick enumerating due tasks and interrupted runs
+//       across users (server/chief/scheduler/store.js).
 //
 // Every call site must carry a comment justifying the bypass, and must switch
 // into withUserContext(resolvedUserId, ...) the moment a user is known.
