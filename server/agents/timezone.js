@@ -1,25 +1,26 @@
 import { AgentError } from "./errors.js";
 import { WEEKDAY_NAMES, schedulePresetToCron } from "./schedule.js";
+import {
+  DEFAULT_USER_TIMEZONE,
+  isMissingTimezoneColumnError,
+  isValidIanaTimeZone,
+  normalizeIanaTimeZone as normalizePlatformTimeZone,
+  resolveUserTimeZone,
+} from "../platform/timezone.js";
+
+export {
+  DEFAULT_USER_TIMEZONE,
+  isMissingTimezoneColumnError,
+  isValidIanaTimeZone,
+  resolveUserTimeZone,
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
-// User-local timezone helpers. Schedules are stored as UTC cron internally, but
-// users always speak local wall-clock time ("7 AM where I am").
-//
-// Platform default when unset: Eastern Time (America/New_York). Prefer the
-// user's saved / browser-detected IANA zone when present.
+// Agent-schedule timezone helpers. Profile validation lives in
+// server/platform/timezone.js so /api/me does not import this module.
+// Schedules are stored as UTC cron internally, but users speak local wall-clock
+// time ("7 AM where I am").
 // ─────────────────────────────────────────────────────────────────────────────
-
-/** Default IANA timezone when the user has not set one (Eastern Time). */
-export const DEFAULT_USER_TIMEZONE = "America/New_York";
-
-/** True when Prisma/Postgres reports User.timezone is not migrated yet. */
-export function isMissingTimezoneColumnError(error) {
-  const message = String(error?.message || "");
-  return (
-    (error?.code === "P2022" || /does not exist|Unknown column|column .* missing/i.test(message)) &&
-    /timezone/i.test(message)
-  );
-}
 
 /** True when AgentRun lineage columns (trigger / conversation / parent) are missing. */
 export function isMissingAgentRunLineageColumnError(error) {
@@ -40,45 +41,16 @@ const WEEKDAY_SHORT_TO_NAME = Object.freeze({
   Sat: "saturday",
 });
 
-export function isValidIanaTimeZone(value) {
-  if (typeof value !== "string") return false;
-  const tz = value.trim();
-  if (!tz || tz.length > 64) return false;
-  try {
-    Intl.DateTimeFormat("en-US", { timeZone: tz }).format(new Date());
-    return true;
-  } catch {
-    return false;
-  }
-}
-
+/** Agent-platform wrapper: invalid zones stay AgentError for CEO tool handling. */
 export function normalizeIanaTimeZone(value) {
-  if (value == null) return null;
-  if (typeof value !== "string") {
-    throw new AgentError("timezone must be a string.", "INVALID_TIMEZONE", 400);
+  try {
+    return normalizePlatformTimeZone(value);
+  } catch (error) {
+    if (error?.code === "INVALID_TIMEZONE") {
+      throw new AgentError(error.message, error.code, error.status || 400);
+    }
+    throw error;
   }
-  const tz = value.trim();
-  if (!tz) return null;
-  if (!isValidIanaTimeZone(tz)) {
-    throw new AgentError(
-      "timezone must be a valid IANA timezone (e.g. America/New_York).",
-      "INVALID_TIMEZONE",
-      400
-    );
-  }
-  return tz;
-}
-
-/**
- * Resolve the effective timezone for schedules/display.
- * Prefer a valid user/browser value; otherwise America/New_York (Eastern).
- */
-export function resolveUserTimeZone(value) {
-  if (typeof value === "string") {
-    const tz = value.trim();
-    if (tz && isValidIanaTimeZone(tz)) return tz;
-  }
-  return DEFAULT_USER_TIMEZONE;
 }
 
 /** Offset of `timeZone` at `date`: wallClockAsUtcMs - instantMs. */

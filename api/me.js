@@ -9,11 +9,10 @@ import { respondInternalError } from "../server/http/errorHelpers.js";
 import { enforceRateLimit, generalApiRateLimit } from "../server/http/rateLimit.js";
 import { readJsonBody } from "../server/http/requestHelpers.js";
 import { applySecurityHeaders } from "../server/http/responseHelpers.js";
-import { AgentError } from "../server/agents/errors.js";
 import {
   isMissingTimezoneColumnError,
   normalizeIanaTimeZone,
-} from "../server/agents/timezone.js";
+} from "../server/platform/timezone.js";
 
 const LEGAL_CONSENT_VERSION_MAX_LENGTH = 64;
 const LEGAL_CONSENT_METHOD_MAX_LENGTH = 32;
@@ -251,10 +250,17 @@ async function recordLegalConsent(decodedToken, consent) {
   }
 }
 
+function timezoneHttpError(message, code, status) {
+  const error = new Error(message);
+  error.status = status;
+  error.code = code;
+  return error;
+}
+
 async function updateUserTimezone(decodedToken, timezone) {
   const normalized = normalizeIanaTimeZone(timezone);
   if (!normalized) {
-    throw new AgentError(
+    throw timezoneHttpError(
       "timezone must be a valid IANA timezone (e.g. America/New_York).",
       "INVALID_TIMEZONE",
       400
@@ -275,7 +281,7 @@ async function updateUserTimezone(decodedToken, timezone) {
     return record;
   } catch (error) {
     if (isMissingTimezoneColumnError(error)) {
-      throw new AgentError(
+      throw timezoneHttpError(
         "Timezone support is not available on this database yet.",
         "TIMEZONE_SCHEMA_MISSING",
         503
@@ -372,16 +378,12 @@ export default async function handler(request, response) {
       });
     }
 
-    if (error instanceof AgentError) {
-      return response.status(error.status || 400).json({
+    if (error?.status === 400 || error?.status === 503) {
+      return response.status(error.status).json({
         error: true,
-        code: error.code,
+        ...(error.code ? { code: error.code } : {}),
         message: error.message,
       });
-    }
-
-    if (error?.status === 400) {
-      return response.status(400).json({ error: true, message: error.message });
     }
 
     return respondInternalError(
