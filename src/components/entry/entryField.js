@@ -1,4 +1,4 @@
-// One energy mass for the Mad Futurics gateway.
+// One energy mass for the Freedom OS gateway.
 // Particles share streams: a bottom reservoir, a single rising ribbon,
 // a collapse onto the Freedom Diamond, then late side currents.
 // Motion is pure so it can be stepped without a canvas.

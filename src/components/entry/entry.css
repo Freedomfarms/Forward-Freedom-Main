@@ -83,15 +83,6 @@
     0 0 42px rgba(61, 124, 255, calc(var(--mf-reveal) * 0.65));
 }
 
-.mf-os-line {
-  margin: 14px 0 0;
-  color: rgba(231, 242, 255, 0.62);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.28em;
-  text-transform: uppercase;
-}
-
 .mf-core {
   position: absolute;
   z-index: 1;

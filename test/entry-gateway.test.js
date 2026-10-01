@@ -166,7 +166,9 @@ test("the ribbon forms the diamond before energy covers the screen", () => {
 });
 
 test("the gateway keeps authentication behavior and one canvas loop", () => {
-  assert.match(gatewaySource, /MAD FUTURICS/);
+  assert.match(gatewaySource, /FREEDOM OS/);
+  assert.doesNotMatch(gatewaySource, /MAD FUTURICS/);
+  assert.doesNotMatch(gatewaySource, /Mad Futurics/);
   assert.match(gatewaySource, /ENTER THE SYSTEM/);
   assert.match(gatewaySource, /Freedom Diamond/);
   assert.match(authSource, /IDENTIFY YOURSELF/);

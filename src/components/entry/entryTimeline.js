@@ -1,4 +1,4 @@
-// Pure clock for the Mad Futurics gateway. First visit plays the 5 second
+// Pure clock for the Freedom OS gateway. First visit plays the 5 second
 // construction. Login, signup, and return visits compress it. Reduced motion
 // settles immediately.
 

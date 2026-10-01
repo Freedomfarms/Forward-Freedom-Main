@@ -123,8 +123,7 @@ export function MadFuturicsGateway({
       <EntryField sceneRef={sceneRef} />
       <div className="mf-stage">
         <header className="mf-brand">
-          <h1 className="mf-wordmark">MAD FUTURICS</h1>
-          {boot ? <p className="mf-os-line">Freedom OS</p> : null}
+          <h1 className="mf-wordmark">FREEDOM OS</h1>
         </header>
         <button
           type="button"
@@ -171,7 +170,7 @@ export function MadFuturicsGateway({
           <div />
         ) : (
           <footer className="mf-footer">
-            <div>Mad Futurics</div>
+            <div>Freedom OS</div>
             <div className="mf-footer-links">
               {typeof onExploreFinance === "function" ? (
                 <button type="button" className="mf-quiet" onClick={onExploreFinance}>
