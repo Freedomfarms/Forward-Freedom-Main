@@ -1,9 +1,6 @@
 const ROWS = [
   ["money", "Money", "CHIEF can view Freedom Financial when this is on."],
   ["web", "Web", "CHIEF can search the public web when this is on."],
-  ["read", "Read", "CHIEF can list and open your conversations when this is on."],
-  ["organize", "Organize", "CHIEF can rename and archive conversations when this is on."],
-  ["delete", "Delete", "CHIEF can delete a conversation after you confirm, when this is on."],
 ];
 
 export function ChiefAccessSheet({ open = false, access, onClose }) {
@@ -15,8 +12,9 @@ export function ChiefAccessSheet({ open = false, access, onClose }) {
     >
       <div className="chief-sheet-title">What CHIEF can see</div>
       <p className="chief-sheet-copy">
-        This is the access CHIEF has right now. It does not grant anything. Your conversation list
-        on this screen is separate from Read.
+        Money and Web are the access switches. Your CHIEF conversations already belong to the
+        signed-in user. Rename, archive, and delete them from Your conversations. There is no
+        separate Read, Organize, or Delete grant.
       </p>
       <div className="chief-access-rows">
         {ROWS.map(([key, label, copy]) => (

@@ -3,13 +3,16 @@ import {
   CHIEF_STATUS,
   applyChiefEvent,
   decideChiefApproval,
+  deleteChiefSession,
   fetchChiefHistory,
   fetchChiefModels,
   fetchChiefPendingApproval,
   fetchChiefRoomAccess,
   fetchChiefSessions,
   initialTurnState,
+  renameChiefSession,
   selectChiefModel,
+  setChiefSessionArchived,
   streamChiefChat,
 } from "../../utils/chiefApi.js";
 import {
@@ -61,6 +64,7 @@ export function ChiefPage({
   onSignOut,
 }) {
   const [sessions, setSessions] = useState([]);
+  const [archivedSessions, setArchivedSessions] = useState([]);
   const [sessionsResolved, setSessionsResolved] = useState(false);
   const [sessionsError, setSessionsError] = useState("");
   const [activeSessionId, setActiveSessionId] = useState(null);
@@ -94,6 +98,7 @@ export function ChiefPage({
   }, [activeSessionId]);
 
   const turnView = useMemo(() => currentTurn(messages, streamText), [messages, streamText]);
+  const activeArchived = archivedSessions.some((session) => session.sessionId === activeSessionId);
 
   function setBusyState(value) {
     busyRef.current = value;
@@ -106,8 +111,12 @@ export function ChiefPage({
   }
 
   const refreshSessions = useCallback(async () => {
-    const payload = await fetchChiefSessions(user);
-    setSessions(Array.isArray(payload?.sessions) ? payload.sessions : []);
+    const [active, archived] = await Promise.all([
+      fetchChiefSessions(user),
+      fetchChiefSessions(user, { archived: true }),
+    ]);
+    setSessions(Array.isArray(active?.sessions) ? active.sessions : []);
+    setArchivedSessions(Array.isArray(archived?.sessions) ? archived.sessions : []);
     setSessionsError("");
   }, [user]);
 
@@ -169,10 +178,11 @@ export function ChiefPage({
     if (!user) return undefined;
     let cancelled = false;
     const token = generation.current;
-    fetchChiefSessions(user)
-      .then((payload) => {
+    Promise.all([fetchChiefSessions(user), fetchChiefSessions(user, { archived: true })])
+      .then(([active, archived]) => {
         if (cancelled) return null;
-        setSessions(Array.isArray(payload?.sessions) ? payload.sessions : []);
+        setSessions(Array.isArray(active?.sessions) ? active.sessions : []);
+        setArchivedSessions(Array.isArray(archived?.sessions) ? archived.sessions : []);
         setSessionsError("");
         setSessionsResolved(true);
         const stored = readStoredSessionId();
@@ -285,6 +295,31 @@ export function ChiefPage({
     setDrawerOpen(false);
   }
 
+  async function renameConversation(sessionId, title) {
+    const payload = await renameChiefSession(user, sessionId, title);
+    const nextTitle = payload?.session?.title ?? title.trim();
+    const apply = (rows) =>
+      rows.map((row) => (row.sessionId === sessionId ? { ...row, title: nextTitle } : row));
+    setSessions(apply);
+    setArchivedSessions(apply);
+  }
+
+  async function archiveConversation(sessionId) {
+    await setChiefSessionArchived(user, sessionId, true);
+    await refreshSessions();
+  }
+
+  async function restoreConversation(sessionId) {
+    await setChiefSessionArchived(user, sessionId, false);
+    await refreshSessions();
+  }
+
+  async function deleteConversation(sessionId) {
+    await deleteChiefSession(user, sessionId);
+    if (activeSessionIdRef.current === sessionId) startNewConversation();
+    await refreshSessions();
+  }
+
   function backToConversations() {
     setNotFound(false);
     setActiveSessionId(null);
@@ -303,6 +338,10 @@ export function ChiefPage({
   ) {
     const trimmed = typeof text === "string" ? text.trim() : "";
     if (!trimmed || !user || busyRef.current) return;
+    if (archivedSessions.some((session) => session.sessionId === sessionId)) {
+      setTurnError("This conversation is archived. Restore it before sending.");
+      return;
+    }
     lastTextRef.current = trimmed;
     stopActiveTurn();
     const controller = new AbortController();
@@ -602,7 +641,7 @@ export function ChiefPage({
       </div>
       {user ? (
         <div className="chief-room-bottom">
-          {approval ? (
+          {approval && !activeArchived ? (
             <ChiefApprovalCard
               disabled={busy}
               onApprove={() => resolveApproval("approve")}
@@ -614,17 +653,36 @@ export function ChiefPage({
                 type="button"
                 className="chief-text-button"
                 aria-expanded={drawerOpen}
+                aria-label="Your CHIEF conversations"
                 onClick={openConversations}
               >
-                Conversations
+                Your conversations
               </button>
-              <ChiefComposer
-                value={draft}
-                onChange={setDraft}
-                onSubmit={() => sendMessage(draft)}
-                disabled={busy || historyLoading || notFound}
-                inputRef={composerRef}
-              />
+              {activeArchived ? (
+                <div className="chief-archived-note">
+                  <p>This conversation is archived. Restore it to continue.</p>
+                  <button
+                    type="button"
+                    className="chief-action"
+                    disabled={busy}
+                    onClick={() => {
+                      restoreConversation(activeSessionId).catch((error) =>
+                        setTurnError(errorText(error))
+                      );
+                    }}
+                  >
+                    Restore
+                  </button>
+                </div>
+              ) : (
+                <ChiefComposer
+                  value={draft}
+                  onChange={setDraft}
+                  onSubmit={() => sendMessage(draft)}
+                  disabled={busy || historyLoading || notFound}
+                  inputRef={composerRef}
+                />
+              )}
             </div>
           )}
         </div>
@@ -633,12 +691,17 @@ export function ChiefPage({
         <aside className="chief-sheet is-open" aria-label="Conversations">
           <ChiefConversationList
             sessions={sessions}
+            archivedSessions={archivedSessions}
             activeSessionId={activeSessionId}
             isLoading={!sessionsResolved}
             error={sessionsError}
             disabled={busy}
             onNewConversation={startNewConversation}
             onSelect={selectSession}
+            onRename={renameConversation}
+            onArchive={archiveConversation}
+            onRestore={restoreConversation}
+            onDelete={deleteConversation}
             onRetry={() => {
               setSessionsResolved(false);
               setSessionsError("");

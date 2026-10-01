@@ -9,7 +9,7 @@ import {
   messageSubmission,
   modelSubmission,
 } from "./chiefProtocol.js";
-import { accessWord, conversationAccessWords, emptyRoomAccess } from "./chiefRoom.js";
+import { accessWord, emptyRoomAccess } from "./chiefRoom.js";
 
 export {
   CHIEF_STATUS,
@@ -57,8 +57,33 @@ async function chiefJson(path, { user, method = "GET", body } = {}) {
   return response.json();
 }
 
-export function fetchChiefSessions(user) {
-  return chiefJson("/api/chief/sessions", { user });
+export function fetchChiefSessions(user, { archived = false } = {}) {
+  const query = archived ? "?archived=1" : "";
+  return chiefJson(`/api/chief/sessions${query}`, { user });
+}
+
+export function renameChiefSession(user, sessionId, title) {
+  return chiefJson("/api/chief/sessions", {
+    user,
+    method: "PATCH",
+    body: { session_id: sessionId, title },
+  });
+}
+
+export function setChiefSessionArchived(user, sessionId, archived) {
+  return chiefJson("/api/chief/sessions", {
+    user,
+    method: "PATCH",
+    body: { session_id: sessionId, archived },
+  });
+}
+
+export function deleteChiefSession(user, sessionId) {
+  return chiefJson("/api/chief/sessions", {
+    user,
+    method: "DELETE",
+    body: { session_id: sessionId, confirm: true },
+  });
 }
 
 export function fetchChiefModels(user) {
@@ -74,19 +99,6 @@ export async function fetchChiefRoomAccess(user) {
   } catch {
     next.money = "unavailable";
     next.web = "unavailable";
-  }
-  try {
-    const response = await fetch("/api/chief/conversation-access", {
-      headers: await buildAuthenticatedHeaders({}, { user }),
-    });
-    if (!response.ok) return next;
-    const payload = await response.json().catch(() => null);
-    const words = conversationAccessWords(payload);
-    next.read = words.read;
-    next.organize = words.organize;
-    next.delete = words.delete;
-  } catch {
-    // Conversation permissions stay unavailable when that route is absent.
   }
   return next;
 }

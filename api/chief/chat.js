@@ -19,6 +19,7 @@ import { createChiefTurnServices } from "../../server/chief/context/wire.js";
 import { PrismaModuleAccess } from "../../server/chief/security/module-access.js";
 import { PrismaFactStore } from "../../server/chief/memory/facts.js";
 import { PrismaCheckpointStore } from "../../server/chief/runtime/checkpoint.js";
+import { titleFromTranscript } from "../../server/chief/runtime/conversationTitle.js";
 import { TurnMachine } from "../../server/chief/runtime/turn.js";
 import { PrismaTraceStore } from "../../server/chief/traces/store.js";
 import { createChiefTooling } from "../../server/chief/tools/builtin.js";
@@ -63,13 +64,23 @@ export async function handleChiefChat(request, response, deps = {}) {
     return;
   }
 
+  const store = deps.store ?? new PrismaCheckpointStore();
+  if (typeof body.session_id === "string" && body.session_id) {
+    const existing = await store.load(userId, body.session_id);
+    if (existing?.archivedAt) {
+      response.status(409).json({
+        error: "This conversation is archived. Restore it before sending.",
+      });
+      return;
+    }
+  }
+
   response.status(200);
   response.setHeader("Content-Type", "text/event-stream; charset=utf-8");
   response.setHeader("Cache-Control", "no-cache, no-transform");
   const controller = new AbortController();
   request.on?.("close", () => controller.abort());
 
-  const store = deps.store ?? new PrismaCheckpointStore();
   const eventBus = deps.eventBus ?? new EventBus();
   const engine = deps.engine ?? createModelEngine({ budget: new PrismaBudgetStore(), eventBus });
   const traceStore = Object.hasOwn(deps, "traceStore")
@@ -164,6 +175,13 @@ export async function handleChiefChat(request, response, deps = {}) {
       // The run stays AWAITING_APPROVAL when the finish write fails.
     }
   }
+  if (!turnError && result?.status === "completed") {
+    try {
+      await titleCompletedSession(store, userId, result);
+    } catch (error) {
+      console.error("[chief/chat] title", error?.name || "Error");
+    }
+  }
   if (turnError) {
     response.write(
       encodeSseEvent(
@@ -189,6 +207,14 @@ export async function handleChiefChat(request, response, deps = {}) {
     );
   }
   response.end();
+}
+
+async function titleCompletedSession(store, userId, result) {
+  if (typeof store.setTitleIfEmpty !== "function") return;
+  if (result.checkpoint?.context?.origin === "schedule") return;
+  const title = titleFromTranscript(result.checkpoint?.transcript);
+  if (!title) return;
+  await store.setTitleIfEmpty(userId, result.sessionId, title);
 }
 
 export default function handler(request, response) {

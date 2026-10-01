@@ -102,6 +102,7 @@ export class MemoryCheckpointStore {
       userId,
       title: null,
       status: "ACTIVE",
+      archivedAt: null,
       forkedFromSessionId: null,
       lastSequence: 0,
       createdAt: now,
@@ -165,6 +166,7 @@ export class MemoryCheckpointStore {
       userId,
       title: null,
       status: "ACTIVE",
+      archivedAt: null,
       forkedFromSessionId: parent.id,
       lastSequence: 1,
       createdAt: now,
@@ -186,6 +188,7 @@ export class MemoryCheckpointStore {
         title: record.title ?? null,
         createdAt: record.createdAt,
         updatedAt: record.updatedAt,
+        archivedAt: record.archivedAt ?? null,
         context: clone(record.checkpoint?.context ?? {}),
       });
     }
@@ -219,6 +222,49 @@ export class MemoryCheckpointStore {
     }
     assertNoProviderPrivate(state, `middlewareState.${middlewareId}`);
     record.middlewareState = { ...(record.middlewareState ?? {}), [middlewareId]: clone(state) };
+  }
+
+  _ownedInteractive(userId, sessionId) {
+    const record = this.sessions.get(sessionId);
+    if (!record || record.userId !== userId) return null;
+    if (record.checkpoint?.context?.origin === "schedule") return null;
+    return record;
+  }
+
+  async setTitleIfEmpty(userId, sessionId, title) {
+    const record = this.sessions.get(sessionId);
+    if (!record || record.userId !== userId || !title) return false;
+    if (record.checkpoint?.context?.origin === "schedule") return false;
+    if (record.archivedAt) return false;
+    if (typeof record.title === "string" && record.title.trim()) return false;
+    record.title = title;
+    return true;
+  }
+
+  async renameSession(userId, sessionId, title) {
+    const record = this._ownedInteractive(userId, sessionId);
+    if (!record) return null;
+    record.title = title;
+    record.updatedAt = new Date();
+    return clone(record);
+  }
+
+  async setArchived(userId, sessionId, archived) {
+    const record = this._ownedInteractive(userId, sessionId);
+    if (!record) return null;
+    record.archivedAt = archived ? (record.archivedAt ?? new Date()) : null;
+    record.updatedAt = new Date();
+    return clone(record);
+  }
+
+  async deleteOwnedSession(userId, sessionId) {
+    const record = this._ownedInteractive(userId, sessionId);
+    if (!record) return false;
+    this.sessions.delete(sessionId);
+    if (Array.isArray(this.approvals)) {
+      this.approvals = this.approvals.filter((approval) => approval.sessionId !== sessionId);
+    }
+    return true;
   }
 }
 
@@ -265,7 +311,9 @@ export class PrismaCheckpointStore {
       return {
         id: session.id,
         userId: session.userId,
+        title: session.title ?? null,
         status: session.status,
+        archivedAt: session.archivedAt ?? null,
         forkedFromSessionId: session.forkedFromSessionId ?? null,
         lastSequence: session.lastSequence,
         checkpoint,
@@ -398,6 +446,7 @@ export class PrismaCheckpointStore {
           title: true,
           createdAt: true,
           updatedAt: true,
+          archivedAt: true,
           contextJson: true,
         },
       });
@@ -406,6 +455,7 @@ export class PrismaCheckpointStore {
         title: session.title ?? null,
         createdAt: session.createdAt,
         updatedAt: session.updatedAt,
+        archivedAt: session.archivedAt ?? null,
         context: session.contextJson ?? {},
       }));
     });
@@ -451,6 +501,58 @@ export class PrismaCheckpointStore {
         create: { userId, sessionId, middlewareId, stateCiphertext },
         update: { stateCiphertext },
       });
+    });
+  }
+
+  async setTitleIfEmpty(userId, sessionId, title) {
+    if (!userId || !sessionId || !title) return false;
+    return this._withUser(userId, async (tx) => {
+      const session = await tx.chiefSession.findFirst({
+        where: { id: sessionId, userId },
+        select: { id: true, title: true, archivedAt: true, contextJson: true },
+      });
+      if (!session || session.title || session.archivedAt) return false;
+      if (session.contextJson?.origin === "schedule") return false;
+      const updated = await tx.chiefSession.updateMany({
+        where: { id: sessionId, userId, title: null },
+        data: { title },
+      });
+      return updated.count === 1;
+    });
+  }
+
+  async renameSession(userId, sessionId, title) {
+    return this._withUser(userId, async (tx) => {
+      const session = await tx.chiefSession.findFirst({ where: { id: sessionId, userId } });
+      if (!session || session.contextJson?.origin === "schedule") return null;
+      return tx.chiefSession.update({
+        where: { id: session.id },
+        data: { title },
+      });
+    });
+  }
+
+  async setArchived(userId, sessionId, archived) {
+    return this._withUser(userId, async (tx) => {
+      const session = await tx.chiefSession.findFirst({ where: { id: sessionId, userId } });
+      if (!session || session.contextJson?.origin === "schedule") return null;
+      return tx.chiefSession.update({
+        where: { id: session.id },
+        data: { archivedAt: archived ? (session.archivedAt ?? new Date()) : null },
+      });
+    });
+  }
+
+  async deleteOwnedSession(userId, sessionId) {
+    return this._withUser(userId, async (tx) => {
+      const session = await tx.chiefSession.findFirst({
+        where: { id: sessionId, userId },
+        select: { id: true, contextJson: true },
+      });
+      if (!session || session.contextJson?.origin === "schedule") return false;
+      await tx.chiefApproval.deleteMany({ where: { userId, sessionId } });
+      await tx.chiefSession.delete({ where: { id: session.id } });
+      return true;
     });
   }
 }
