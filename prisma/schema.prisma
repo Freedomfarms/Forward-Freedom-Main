@@ -25,61 +25,6 @@ enum TransactionSource {
   SYSTEM
 }
 
-// ── Freedom OS agent platform ────────────────────────────────────────────────
-
-enum CeoPersonalityPreset {
-  DIRECT_EFFICIENT
-  WARM_ENCOURAGING
-  FORMAL
-}
-
-// Trust is staged: all four levels exist in the schema now, but the runtime
-// only honors READ_ONLY and DRAFT_ONLY in this phase. ACTION_REQUIRED_APPROVAL
-// and AUTONOMOUS are schema-ready only and unlock in later phases.
-enum AgentPermissionLevel {
-  READ_ONLY
-  DRAFT_ONLY
-  ACTION_REQUIRED_APPROVAL
-  AUTONOMOUS
-}
-
-enum AgentStatus {
-  ACTIVE
-  PAUSED
-}
-
-enum AgentRunStatus {
-  RUNNING
-  SUCCEEDED
-  FAILED
-  SKIPPED
-}
-
-enum AgentChatRole {
-  USER
-  AGENT
-}
-
-enum NotificationChannel {
-  IN_APP
-  EMAIL
-}
-
-enum BrainJobStatus {
-  PENDING
-  RUNNING
-  COMPLETED
-  FAILED
-}
-
-// Durable CEO Plan status — executive memory, not conversation workflow.
-enum PlanStatus {
-  ACTIVE
-  WAITING
-  COMPLETED
-  ABANDONED
-}
-
 model User {
   id                  String               @id
   email               String?              @unique
@@ -106,8 +51,8 @@ model User {
   legalConsentVersion String?
   legalConsentEvents  LegalConsentEvent[]
   // IANA timezone for schedules / display (e.g. "America/New_York"). Null until
-  // the client detects it or the user sets it in Settings / CEO chat. When null,
-  // runtime resolves to America/New_York (Eastern) — never UTC.
+  // the client detects it or the user sets it in Settings. When null, runtime
+  // resolves to America/New_York (Eastern) — never UTC.
   timezone            String?
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
@@ -121,15 +66,6 @@ model User {
   merchantRules       MerchantCategoryRule[]
   metricSnapshots     MetricSnapshot[]
   workspaceSnapshot   WorkspaceSnapshot?
-  ceoAgentConfig      CeoAgentConfig?
-  agentConfigs        AgentConfig[]
-  agentRuns           AgentRun[]
-  agentConversations  AgentConversation[]
-  agentChatMessages   AgentChatMessage[]
-  ceoDocuments        CeoDocument[]
-  notifications       Notification[]
-  brainJobs           BrainJob[]
-  plans               Plan[]
   // Module 03 (CHIEF) back-relations. CHIEF tables reference ONLY User among
   // non-CHIEF tables (docs/CHIEF_ARCHITECTURE.md §5.4) — additive-only edit.
   chiefSessions           ChiefSession[]
@@ -376,269 +312,6 @@ model WorkspaceSnapshot {
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
   user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
-
-// The per-user orchestrator (the CEO Agent itself, not a sub-agent) — exactly
-// one per user. Personality is preset-driven by design: no free-text system
-// prompts, and avatarKey identifies a preset avatar (not a URL, no AI
-// generation).
-model CeoAgentConfig {
-  id                   String               @id @default(cuid())
-  userId               String               @unique
-  name                 String               @default("CEO Agent")
-  personalityPreset    CeoPersonalityPreset @default(DIRECT_EFFICIENT)
-  // User-selected Anthropic tier for CEO chat / digest / narrative profile.
-  model                String               @default("claude-sonnet-4-5")
-  // Default model applied when creating new sub-agents (independent of CEO model).
-  defaultSubAgentModel String               @default("claude-sonnet-4-5")
-  avatarKey            String?
-  // The encrypted "living profile": long-term shared memory that all agents
-  // read and feed. Decrypted JSON shape — categories financialGoals,
-  // knownAccountsRelationships, statedPreferences, recurringConcerns,
-  // lifeContext; each entry { id, text, source, addedAt, updatedAt } where
-  // source is onboarding | user_edit | an agent type; plus a tombstones array
-  // of removed-entry ids so automatic merging never re-adds what the user
-  // deleted.
-  profileCiphertext    String?
-  profileUpdatedAt     DateTime?
-  // Cached CEO digest (encrypted) so opening the dashboard doesn't require a
-  // fresh LLM call.
-  lastDigestCiphertext String?
-  lastDigestAt         DateTime?
-  // Encrypted narrative summary produced after onboarding (and refreshable).
-  onboardingSummaryCiphertext String?
-  onboardingSummaryAt  DateTime?
-  // Long-form newsletter-style profile (encrypted), generated on demand from
-  // living profile facts + CEO chat history + created agents. Separate from
-  // the short onboarding summary shown above Reference documents.
-  narrativeProfileCiphertext String?
-  narrativeProfileAt   DateTime?
-  onboardingCompletedAt DateTime?
-  createdAt            DateTime             @default(now())
-  updatedAt            DateTime             @updatedAt
-  user                 User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
-  agentConfigs         AgentConfig[]
-  agentConversations   AgentConversation[]
-  agentChatMessages    AgentChatMessage[]
-  ceoDocuments         CeoDocument[]
-}
-
-// User-uploaded reference documents the CEO Agent can read (encrypted text
-// content only — no binary blobs). Sourced during onboarding or from the
-// profile page; injected into CEO chat context.
-model CeoDocument {
-  id                String         @id @default(cuid())
-  userId            String
-  ceoAgentConfigId  String
-  filename          String
-  mimeType          String
-  sizeBytes         Int
-  contentCiphertext String
-  createdAt         DateTime       @default(now())
-  user              User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  ceoAgentConfig    CeoAgentConfig @relation(fields: [ceoAgentConfigId], references: [id], onDelete: Cascade)
-
-  @@index([userId, createdAt])
-  @@index([ceoAgentConfigId, createdAt])
-}
-
-// A sub-agent owned by a user and coordinated by their CEO Agent. Any number
-// per user (Finance first; Research/Reminders soon; Email schema-ready only).
-model AgentConfig {
-  id               String               @id @default(cuid())
-  userId           String
-  ceoAgentConfigId String
-  // Open/extensible on purpose — NOT an enum, so future agent types don't
-  // require migrations. Known values now: finance, research, reminders, email.
-  agentType        String
-  name             String
-  // Preset-guided instructions set by the agent creation flow.
-  instructions     String?
-  // One specific, measurable sentence describing success for this agent.
-  definitionOfDone String?
-  // Conversational intake identity notes (plain fields — not a soul-file system).
-  personalityNotes String?
-  // Explicit "will never" boundaries, plain text (newline-separated list is fine).
-  boundaries       String?
-  // What the agent reverse-engineered from history / examples, if anything.
-  workingFromNotes String?
-  permissionLevel  AgentPermissionLevel @default(READ_ONLY)
-  // Per-agent LLM tier; a single tier is used at launch, but the field exists
-  // so model tiering isn't a retrofit.
-  model            String               @default("claude-sonnet-4-5")
-  // Allowlist of data/APIs this agent may touch.
-  toolAccess       Json?
-  // Cron-style expression; null = on-demand only.
-  schedule         String?
-  status           AgentStatus          @default(ACTIVE)
-  createdAt        DateTime             @default(now())
-  updatedAt        DateTime             @updatedAt
-  user             User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
-  ceoAgentConfig   CeoAgentConfig       @relation(fields: [ceoAgentConfigId], references: [id], onDelete: Cascade)
-  agentRuns        AgentRun[]
-  agentConversations AgentConversation[]
-  agentChatMessages AgentChatMessage[]
-  notifications    Notification[]
-
-  @@index([userId])
-  @@index([userId, agentType])
-}
-
-// Audit log of every agent run: what was touched, what was produced, when,
-// status, and cost. agentConfigId is deliberately nullable (SetNull) so the
-// audit trail survives agent deletion; agentType is a denormalized copy for
-// the same reason.
-model AgentRun {
-  id               String         @id @default(cuid())
-  userId           String
-  agentConfigId    String?
-  agentType        String
-  // Short human-readable plaintext the CEO digest consumes cheaply. Not raw
-  // logs — must never contain merchant names or account identifiers.
-  summary          String?
-  // Description of what data the run read.
-  dataAccessed     Json?
-  // Full run output, encrypted at rest.
-  outputCiphertext String?
-  status           AgentRunStatus @default(RUNNING)
-  error            String?
-  // How the run was started: "manual" | "cron" | "ceo_delegate" | "chat".
-  // Nullable for rows created before lineage columns existed.
-  trigger          String?
-  // Conversation that asked for this work (CEO or specialist thread).
-  triggeredByConversationId String?
-  // Optional parent run when this execution was chained from another run.
-  parentRunId      String?
-  // Usage accounting for per-user usage reporting in the admin panel.
-  model            String?
-  tokensInput      Int?
-  tokensOutput     Int?
-  estimatedCostUsd Decimal?       @db.Decimal(10, 6)
-  startedAt        DateTime       @default(now())
-  completedAt      DateTime?
-  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  agentConfig      AgentConfig?   @relation(fields: [agentConfigId], references: [id], onDelete: SetNull)
-  triggeredByConversation AgentConversation? @relation("RunTriggeredByConversation", fields: [triggeredByConversationId], references: [id], onDelete: SetNull)
-  parentRun        AgentRun?      @relation("AgentRunLineage", fields: [parentRunId], references: [id], onDelete: SetNull)
-  childRuns        AgentRun[]     @relation("AgentRunLineage")
-  chatMessages     AgentChatMessage[]
-
-  @@index([userId, startedAt])
-  @@index([agentConfigId, startedAt])
-  @@index([userId, agentType, startedAt])
-  @@index([triggeredByConversationId, startedAt])
-  @@index([parentRunId])
-}
-
-// Multi-conversation parent for CEO and sub-agent chats. Invariant: exactly
-// one of agentConfigId / ceoAgentConfigId is set — same XOR as AgentChatMessage,
-// enforced in application code and by a Postgres CHECK constraint.
-// isSystem=true pins flows that must not appear in the normal conversation
-// list (e.g. "+ New Agent" creation); Phase 3+ APIs exclude these by default.
-model AgentConversation {
-  id               String         @id @default(cuid())
-  userId           String
-  agentConfigId    String?
-  ceoAgentConfigId String?
-  // Plaintext list title for v1 (snippet / async rename in later phases).
-  title            String?
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
-  archivedAt       DateTime?
-  isSystem         Boolean        @default(false)
-  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  agentConfig      AgentConfig?   @relation(fields: [agentConfigId], references: [id], onDelete: Cascade)
-  ceoAgentConfig   CeoAgentConfig? @relation(fields: [ceoAgentConfigId], references: [id], onDelete: Cascade)
-  messages         AgentChatMessage[]
-  triggeredRuns    AgentRun[]     @relation("RunTriggeredByConversation")
-
-  @@index([userId, agentConfigId, updatedAt])
-  @@index([userId, ceoAgentConfigId, updatedAt])
-  @@index([userId, updatedAt])
-}
-
-// One table serves both CEO chat and every sub-agent chat. Invariant: exactly
-// one of agentConfigId / ceoAgentConfigId is set — enforced in application
-// code and by a Postgres CHECK constraint in the migration SQL:
-//   (("agentConfigId" IS NULL) <> ("ceoAgentConfigId" IS NULL))
-// conversationId scopes messages to one AgentConversation thread; agent XOR
-// columns stay denormalized for target checks and legacy lookbacks.
-model AgentChatMessage {
-  id                String          @id @default(cuid())
-  userId            String
-  conversationId    String
-  agentConfigId     String?
-  ceoAgentConfigId  String?
-  role              AgentChatRole
-  // Chat content is sensitive and encrypted at rest.
-  contentCiphertext String
-  // Links a message to the specific run it asks about ("why did you flag
-  // this?"). SetNull so chat history survives run pruning.
-  relatedRunId      String?
-  createdAt         DateTime        @default(now())
-  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  conversation      AgentConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  agentConfig       AgentConfig?    @relation(fields: [agentConfigId], references: [id], onDelete: Cascade)
-  ceoAgentConfig    CeoAgentConfig? @relation(fields: [ceoAgentConfigId], references: [id], onDelete: Cascade)
-  relatedRun        AgentRun?       @relation(fields: [relatedRunId], references: [id], onDelete: SetNull)
-
-  @@index([conversationId, createdAt])
-  @@index([agentConfigId, createdAt])
-  @@index([ceoAgentConfigId, createdAt])
-  @@index([userId, createdAt])
-}
-
-// Durable CEO Plan — executive intent/memory across conversations.
-// Encrypted body holds objective, situation, decisions, open items, actions.
-// Plans never grant tool permissions or execution authority (see server/brain/plans.js).
-model Plan {
-  id                   String     @id @default(cuid())
-  userId               String
-  // Short plaintext label for lists (same treatment as conversation titles).
-  title                String
-  status               PlanStatus @default(ACTIVE)
-  // Encrypted structured body (PlanBodyV1) — never log decrypted contents.
-  contentCiphertext    String
-  // Scope key for independent concurrent plans. Null/default = primary mission.
-  // At most one ACTIVE plan per (userId, missionScope) — enforced in app code.
-  missionScope         String?
-  // Advisory planning horizon: "weeks" | "months" | "quarters".
-  horizon              String?
-  sourceConversationId String?
-  lastReviewedAt       DateTime?
-  createdAt            DateTime   @default(now())
-  updatedAt            DateTime   @updatedAt
-  user                 User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId, status, updatedAt])
-  @@index([userId, missionScope, status])
-}
-
-// Freedom Brain background work queue. The chat critical path only ever
-// ENQUEUES rows here (memory extraction after a Brain reply, etc.); workers
-// process them best-effort right after the response and the 15-minute cron
-// sweeps anything left PENDING (serverless functions cannot guarantee
-// post-response work). payload holds row IDs only — never plaintext content.
-model BrainJob {
-  id          String         @id @default(cuid())
-  userId      String
-  // Job kind: "memory_extraction" now; briefings/titles later.
-  kind        String
-  // Minimized reference payload (conversationId, messageId, …) — IDs only.
-  payload     Json?
-  status      BrainJobStatus @default(PENDING)
-  attempts    Int            @default(0)
-  runAfter    DateTime       @default(now())
-  // Claim marker so the post-response worker and the cron sweep never
-  // double-process the same job.
-  lockedAt    DateTime?
-  lastError   String?
-  createdAt   DateTime       @default(now())
-  completedAt DateTime?
-  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([status, runAfter])
-  @@index([userId, kind, createdAt])
 }
 
 // ── Freedom OS Module 03: CHIEF ──────────────────────────────────────────────
@@ -1015,7 +688,7 @@ model ChiefKnowledgeRelation {
 
 // Background schedule definitions (OpenJarvis scheduler: once/interval/cron).
 // lockedAt is the claim marker so concurrent cron invocations never
-// double-process a task (same pattern as BrainJob).
+// double-process a task.
 model ChiefScheduledTask {
   id              String                   @id @default(cuid())
   userId          String
@@ -1152,19 +825,3 @@ model ChiefBudget {
   @@map("chief_budget")
 }
 
-// Self-notification only: agents may notify the user (in-app or via the
-// user's own verified email), never any third party.
-model Notification {
-  id            String              @id @default(cuid())
-  userId        String
-  agentConfigId String?
-  title         String
-  body          String
-  channel       NotificationChannel @default(IN_APP)
-  readAt        DateTime?
-  createdAt     DateTime            @default(now())
-  user          User                @relation(fields: [userId], references: [id], onDelete: Cascade)
-  agentConfig   AgentConfig?        @relation(fields: [agentConfigId], references: [id], onDelete: SetNull)
-
-  @@index([userId, createdAt])
-}

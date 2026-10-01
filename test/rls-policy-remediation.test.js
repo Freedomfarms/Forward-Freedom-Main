@@ -47,6 +47,21 @@ function userScopedModels(schema) {
 
 const expectedTables = Object.keys(expectedPolicyColumns).sort();
 
+// Module 01 tables were dropped after the code removal. The remediation SQL
+// and the later migrations that created them stay in history, so those
+// assertions still name the retired models. The live schema must not.
+const retiredModule01Models = [
+  "CeoAgentConfig",
+  "AgentConfig",
+  "AgentRun",
+  "AgentChatMessage",
+  "Notification",
+  "CeoDocument",
+  "AgentConversation",
+  "BrainJob",
+  "Plan",
+];
+
 // User-scoped models added AFTER the remediation migration shipped. Each one
 // must enable+force RLS in its own migration instead (asserted below).
 const chiefFoundationMigration = "20260929120000_chief_foundation";
@@ -88,12 +103,20 @@ function physicalTableName(model) {
   return body?.match(/@@map\("([^"]+)"\)/)?.[1] ?? model;
 }
 
-test("remediation inventory is exactly every user-scoped model", () => {
+test("remediation inventory matches live user-scoped models after Module 01 retirement", () => {
   assert.equal(expectedTables.length, 17);
-  assert.deepEqual(
-    [...expectedTables, ...Object.keys(laterRlsModels)].sort(),
-    userScopedModels(prismaSchema)
-  );
+  const retired = new Set(retiredModule01Models);
+  const liveExpected = [...expectedTables, ...Object.keys(laterRlsModels)]
+    .filter((model) => !retired.has(model))
+    .sort();
+  assert.deepEqual(liveExpected, userScopedModels(prismaSchema));
+  for (const model of retiredModule01Models) {
+    assert.doesNotMatch(
+      prismaSchema,
+      new RegExp(`^model\\s+${model}\\s+\\{`, "m"),
+      `${model} must stay out of the live schema`
+    );
+  }
 });
 
 test("models added after the remediation enable and force RLS in their own migration", () => {
