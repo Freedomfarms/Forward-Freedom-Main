@@ -35,6 +35,7 @@ import notificationByIdHandler from "../api/notifications/[id].js";
 import adminUsageHandler from "../api/admin/usage.js";
 import cronAgentDispatchHandler from "../api/cron/agent-dispatch.js";
 import chiefSessionsHandler from "../api/chief/sessions.js";
+import chiefSessionSearchHandler from "../api/chief/session-search.js";
 import chiefHistoryHandler from "../api/chief/history.js";
 import chiefModelsHandler from "../api/chief/models.js";
 import chiefChatHandler from "../api/chief/chat.js";
@@ -147,6 +148,7 @@ app
   .get(chiefSessionsHandler)
   .patch(chiefSessionsHandler)
   .delete(chiefSessionsHandler);
+app.get("/api/chief/session-search", chiefSessionSearchHandler);
 app.get("/api/chief/history", chiefHistoryHandler);
 app.get("/api/chief/models", chiefModelsHandler);
 app.post("/api/chief/chat", chiefChatHandler);

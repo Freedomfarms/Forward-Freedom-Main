@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { conversationLabel, formatChiefTime } from "../../utils/chiefApi.js";
+import { partitionSidebarConversations } from "../../utils/chiefSidebar.js";
 
 function ConversationRow({
   session,
@@ -39,8 +40,16 @@ function ConversationRow({
         disabled={disabled || busy}
         aria-current={active ? "true" : undefined}
       >
-        <span className="chief-convo-title">{conversationLabel(session)}</span>
-        <span className="chief-convo-time">{formatChiefTime(session.updatedAt)}</span>
+        <span className="chief-convo-heading">
+          <span className="chief-convo-title">{conversationLabel(session)}</span>
+          <span className="chief-convo-meta">
+            <span className="chief-convo-time">{formatChiefTime(session.updatedAt)}</span>
+            {archived ? <span className="chief-convo-flag">Archived</span> : null}
+          </span>
+        </span>
+        {typeof session.snippet === "string" && session.snippet ? (
+          <span className="chief-convo-snippet">{session.snippet}</span>
+        ) : null}
       </button>
       {renaming ? (
         <form
@@ -150,72 +159,107 @@ export function ChiefConversationList({
   isLoading = false,
   error = "",
   disabled = false,
+  query = "",
+  onQueryChange,
+  searchResults = [],
+  searchLoading = false,
+  searchError = "",
   onNewConversation,
   onSelect,
   onRetry,
+  onSearchRetry,
   onRename,
   onArchive,
   onRestore,
   onDelete,
 }) {
+  const view = partitionSidebarConversations({
+    sessions,
+    archivedSessions,
+    query,
+    searchResults,
+  });
+  const listLoading = view.searching ? searchLoading : isLoading;
+  const listError = view.searching ? searchError : error;
+  const retry = view.searching ? onSearchRetry : onRetry;
+
   return (
     <div className="chief-convo-list">
-      <div className="chief-sheet-title">Your conversations</div>
-      <p className="chief-sheet-copy">CHIEF conversations for this signed-in account.</p>
+      <h2 className="chief-sr">Conversations</h2>
+      <label className="chief-nav-search">
+        <span className="chief-sr">Search conversations</span>
+        <input
+          type="search"
+          value={query}
+          maxLength={200}
+          placeholder="Search conversations..."
+          aria-label="Search conversations"
+          onChange={(event) => onQueryChange?.(event.target.value)}
+        />
+      </label>
+      <div className="chief-convo-scroll">
+        {listLoading ? (
+          <div className="chief-sheet-copy">
+            {view.searching ? "Searching..." : "Loading conversations..."}
+          </div>
+        ) : null}
+        {listError ? (
+          <div className="chief-convo-error-block">
+            <div className="chief-convo-error">{listError}</div>
+            <button type="button" className="chief-action chief-action--quiet" onClick={retry}>
+              Retry
+            </button>
+          </div>
+        ) : null}
+        {!listLoading && !listError && view.emptyLabel ? (
+          <div className="chief-sheet-copy">{view.emptyLabel}</div>
+        ) : null}
+        {view.recent.length > 0 ? (
+          <div className="chief-convo-group">
+            <div className="chief-sheet-title">Recent</div>
+            {view.recent.map((session) => (
+              <ConversationRow
+                key={session.sessionId}
+                session={session}
+                active={session.sessionId === activeSessionId}
+                disabled={disabled}
+                onSelect={onSelect}
+                onRename={onRename}
+                onArchive={onArchive}
+                onRestore={onRestore}
+                onDelete={onDelete}
+              />
+            ))}
+          </div>
+        ) : null}
+        {view.archived.length > 0 ? (
+          <div className="chief-convo-group">
+            <div className="chief-sheet-title">Archived</div>
+            {view.archived.map((session) => (
+              <ConversationRow
+                key={session.sessionId}
+                session={session}
+                archived
+                active={session.sessionId === activeSessionId}
+                disabled={disabled}
+                onSelect={onSelect}
+                onRename={onRename}
+                onArchive={onArchive}
+                onRestore={onRestore}
+                onDelete={onDelete}
+              />
+            ))}
+          </div>
+        ) : null}
+      </div>
       <button
         type="button"
-        className="chief-action"
+        className="chief-action chief-nav-new"
         onClick={onNewConversation}
         disabled={disabled}
       >
-        New conversation
+        + New Conversation
       </button>
-      {isLoading ? <div className="chief-sheet-copy">Loading conversations...</div> : null}
-      {error ? (
-        <div className="chief-convo-error-block">
-          <div className="chief-convo-error">{error}</div>
-          <button type="button" className="chief-action chief-action--quiet" onClick={onRetry}>
-            Retry
-          </button>
-        </div>
-      ) : null}
-      {!isLoading && !error && sessions.length === 0 ? (
-        <div className="chief-sheet-copy">No conversations yet.</div>
-      ) : null}
-      <div className="chief-convo-group">
-        {sessions.map((session) => (
-          <ConversationRow
-            key={session.sessionId}
-            session={session}
-            active={session.sessionId === activeSessionId}
-            disabled={disabled}
-            onSelect={onSelect}
-            onRename={onRename}
-            onArchive={onArchive}
-            onRestore={onRestore}
-            onDelete={onDelete}
-          />
-        ))}
-      </div>
-      {archivedSessions.length > 0 ? (
-        <div className="chief-convo-group">
-          <div className="chief-sheet-title">Archived</div>
-          {archivedSessions.map((session) => (
-            <ConversationRow
-              key={session.sessionId}
-              session={session}
-              archived
-              active={session.sessionId === activeSessionId}
-              disabled={disabled}
-              onSelect={onSelect}
-              onRename={onRename}
-              onArchive={onArchive}
-              onRestore={onRestore}
-              onDelete={onDelete}
-            />
-          ))}
-        </div>
-      ) : null}
     </div>
   );
 }
