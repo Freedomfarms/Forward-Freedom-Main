@@ -1,6 +1,10 @@
 import { useState } from "react";
 import { useAuth } from "../context/AuthContext.jsx";
-import { markPendingLegalConsent } from "../utils/legalConsent.js";
+import {
+  bindPendingLegalConsentEmail,
+  clearPendingLegalConsent,
+  markPendingLegalConsent,
+} from "../utils/legalConsent.js";
 import { LegalModal } from "./LegalDocuments.jsx";
 
 function buildButtonStyle({ primary = false, danger = false } = {}) {
@@ -42,7 +46,12 @@ function buildInputStyle() {
   };
 }
 
-export function AuthScreen({ initialMode = "login", initialForm = null, onBackHome = null }) {
+export function AuthScreen({
+  initialMode = "login",
+  initialForm = null,
+  onBackHome = null,
+  onModeChange = null,
+}) {
   const {
     error,
     notice,
@@ -94,7 +103,9 @@ export function AuthScreen({ initialMode = "login", initialForm = null, onBackHo
     }
 
     // Stage the acceptance so it is recorded server-side once the session exists.
-    markPendingLegalConsent(mode === "register" ? "email-signup" : "email-login");
+    markPendingLegalConsent(mode === "register" ? "email-signup" : "email-login", {
+      email: form.email.trim(),
+    });
 
     try {
       if (mode === "register") {
@@ -140,7 +151,14 @@ export function AuthScreen({ initialMode = "login", initialForm = null, onBackHo
 
     clearError();
     setFormError("");
-    void signInWithGoogle().catch(() => {});
+    void signInWithGoogle()
+      .then((credential) => {
+        const email = credential?.user?.email;
+        if (email) bindPendingLegalConsentEmail(email);
+      })
+      .catch(() => {
+        clearPendingLegalConsent();
+      });
   };
 
   return (
@@ -273,6 +291,7 @@ export function AuthScreen({ initialMode = "login", initialForm = null, onBackHo
                   setFormError("");
                   clearError();
                   clearNotice();
+                  if (typeof onModeChange === "function") onModeChange(value);
                 }}
                 style={{
                   flex: 1,

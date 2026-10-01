@@ -24,6 +24,11 @@ import {
   moneyWebLine,
 } from "../../utils/chiefRoom.js";
 import { readSidebarCollapsed, writeSidebarCollapsed } from "../../utils/chiefSidebar.js";
+import {
+  discardLegacyChiefActiveSessionKey,
+  readChiefActiveSessionId,
+  writeChiefActiveSessionId,
+} from "../../utils/chiefActiveSession.js";
 import { ChiefAccessSheet } from "./ChiefAccessSheet.jsx";
 import { ChiefApprovalCard } from "./ChiefApprovalCard.jsx";
 import { ChiefComposer } from "./ChiefComposer.jsx";
@@ -33,7 +38,6 @@ import { ChiefModelSelect } from "./ChiefModelSelect.jsx";
 import { ChiefStatus } from "./ChiefStatus.jsx";
 import { ChiefEarlierTurns, ChiefTranscript } from "./ChiefTranscript.jsx";
 
-const ACTIVE_SESSION_KEY = "chief.activeSessionId";
 const NARROW_NAV_QUERY = "(max-width: 1023px)";
 
 function readNarrowNav() {
@@ -49,24 +53,6 @@ function sidebarStorage() {
   }
 }
 
-function readStoredSessionId() {
-  try {
-    const value = sessionStorage.getItem(ACTIVE_SESSION_KEY);
-    return typeof value === "string" && value ? value : null;
-  } catch {
-    return null;
-  }
-}
-
-function writeStoredSessionId(sessionId) {
-  try {
-    if (sessionId) sessionStorage.setItem(ACTIVE_SESSION_KEY, sessionId);
-    else sessionStorage.removeItem(ACTIVE_SESSION_KEY);
-  } catch {
-    // Private browsing can reject storage. The open tab still works.
-  }
-}
-
 function errorText(error) {
   return error?.message || "CHIEF could not complete that request.";
 }
@@ -79,6 +65,7 @@ export function ChiefPage({
   onOpenModules,
   onSignOut,
 }) {
+  const sessionUid = typeof user?.uid === "string" ? user.uid : "";
   const [sessions, setSessions] = useState([]);
   const [archivedSessions, setArchivedSessions] = useState([]);
   const [sessionsResolved, setSessionsResolved] = useState(false);
@@ -118,6 +105,19 @@ export function ChiefPage({
   const lastTextRef = useRef("");
   const answerRef = useRef(null);
   const composerRef = useRef(null);
+
+  const readStoredSessionId = useCallback(() => {
+    discardLegacyChiefActiveSessionKey();
+    return readChiefActiveSessionId(sessionUid);
+  }, [sessionUid]);
+
+  const writeStoredSessionId = useCallback(
+    (sessionId) => {
+      discardLegacyChiefActiveSessionKey();
+      writeChiefActiveSessionId(sessionUid, sessionId);
+    },
+    [sessionUid]
+  );
 
   useEffect(() => {
     activeSessionIdRef.current = activeSessionId;
@@ -182,7 +182,7 @@ export function ChiefPage({
         if (token === generation.current) setHistoryLoading(false);
       }
     },
-    [user]
+    [user, writeStoredSessionId]
   );
 
   useEffect(() => {
@@ -226,7 +226,7 @@ export function ChiefPage({
     return () => {
       cancelled = true;
     };
-  }, [user, loadHistory]);
+  }, [user, loadHistory, readStoredSessionId]);
 
   useEffect(() => {
     const active = abortRef;
