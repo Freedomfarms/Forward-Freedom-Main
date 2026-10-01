@@ -20,6 +20,7 @@ import { PrismaModuleAccess } from "../../server/chief/security/module-access.js
 import { PrismaFactStore } from "../../server/chief/memory/facts.js";
 import { PrismaCheckpointStore } from "../../server/chief/runtime/checkpoint.js";
 import { titleFromTranscript } from "../../server/chief/runtime/conversationTitle.js";
+import { CONVERSATION_RECALL_TOOLS } from "../../server/chief/runtime/recall.js";
 import { TurnMachine } from "../../server/chief/runtime/turn.js";
 import { PrismaTraceStore } from "../../server/chief/traces/store.js";
 import { createChiefTooling } from "../../server/chief/tools/builtin.js";
@@ -96,7 +97,11 @@ export async function handleChiefChat(request, response, deps = {}) {
     facts = facts ?? deps.stores?.facts ?? new PrismaFactStore();
     const tooling = await createChiefTooling({
       userId,
-      stores: deps.stores ?? { facts },
+      stores: {
+        ...(deps.stores ?? {}),
+        facts,
+        checkpoints: deps.stores?.checkpoints ?? store,
+      },
       policy: deps.policy,
       audit: deps.audit,
       bus: eventBus,
@@ -127,6 +132,10 @@ export async function handleChiefChat(request, response, deps = {}) {
           moduleAccess: deps.moduleAccess ?? new PrismaModuleAccess(),
         })
       : {});
+
+  if (caller.callerKind === "schedule" && Array.isArray(toolSpecs)) {
+    toolSpecs = toolSpecs.filter((spec) => !CONVERSATION_RECALL_TOOLS.includes(spec.name));
+  }
 
   const machine = new TurnMachine({
     store,
@@ -210,11 +219,14 @@ export async function handleChiefChat(request, response, deps = {}) {
 }
 
 async function titleCompletedSession(store, userId, result) {
-  if (typeof store.setTitleIfEmpty !== "function") return;
   if (result.checkpoint?.context?.origin === "schedule") return;
-  const title = titleFromTranscript(result.checkpoint?.transcript);
-  if (!title) return;
-  await store.setTitleIfEmpty(userId, result.sessionId, title);
+  if (typeof store.setTitleIfEmpty === "function") {
+    const title = titleFromTranscript(result.checkpoint?.transcript);
+    if (title) await store.setTitleIfEmpty(userId, result.sessionId, title);
+  }
+  if (typeof store.setRecallDocument === "function") {
+    await store.setRecallDocument(userId, result.sessionId, result.checkpoint?.transcript);
+  }
 }
 
 export default function handler(request, response) {

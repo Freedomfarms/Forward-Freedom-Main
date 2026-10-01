@@ -10,6 +10,7 @@ import {
   modelSubmission,
 } from "./chiefProtocol.js";
 import { accessWord, emptyRoomAccess } from "./chiefRoom.js";
+import { sidebarSearchPath } from "./chiefSidebar.js";
 
 export {
   CHIEF_STATUS,
@@ -60,6 +61,10 @@ async function chiefJson(path, { user, method = "GET", body } = {}) {
 export function fetchChiefSessions(user, { archived = false } = {}) {
   const query = archived ? "?archived=1" : "";
   return chiefJson(`/api/chief/sessions${query}`, { user });
+}
+
+export function fetchChiefSessionSearch(user, query) {
+  return chiefJson(sidebarSearchPath(query), { user });
 }
 
 export function renameChiefSession(user, sessionId, title) {

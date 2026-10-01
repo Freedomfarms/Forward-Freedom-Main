@@ -27,6 +27,7 @@ const ALLOWED = [
   Capability.SKILL_READ,
   Capability.WEB_SEARCH,
   Capability.MODULE_ACCESS,
+  Capability.CONVERSATION_READ,
 ];
 
 const DENIED = [
@@ -113,6 +114,7 @@ test("one explicit grant for another agent replaces the baseline", async () => {
   assert.equal(policy.check("chief", "skill:read"), false);
   assert.equal(policy.check("chief", "web:search"), false);
   assert.equal(policy.check("chief", "module:access"), false);
+  assert.equal(policy.check("chief", "conversation:read"), false);
 });
 
 test("one explicit chief grant does not receive the remaining baseline", async () => {
@@ -132,6 +134,7 @@ test("one explicit chief grant does not receive the remaining baseline", async (
   assert.equal(policy.check("chief", "skill:read"), false);
   assert.equal(policy.check("chief", "web:search"), false);
   assert.equal(policy.check("chief", "module:access"), false);
+  assert.equal(policy.check("chief", "conversation:read"), false);
   assert.equal(policy._defaultDeny, true);
 });
 

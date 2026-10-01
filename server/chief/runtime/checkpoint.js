@@ -34,8 +34,19 @@
 
 import { randomUUID } from "node:crypto";
 
-import { withUserContext } from "../../db/prisma.js";
+import { Prisma, withUserContext } from "../../db/prisma.js";
 import { decryptJson, encryptJson } from "../../security/envelope.js";
+import {
+  buildRecallDocument,
+  catchUpRecallDocuments,
+  parseSearchOptions,
+  rankRecallRows,
+  recallSnippet,
+  RECALL_LEXICAL_WEIGHT,
+  RECALL_RECENCY_HALF_LIFE_MS,
+  RECALL_RECENCY_MAX,
+  RECALL_TITLE_BOOST,
+} from "./recall.js";
 import { emptyTokenUsage } from "../protocol/index.js";
 
 export const CHECKPOINT_VERSION = 1;
@@ -103,6 +114,7 @@ export class MemoryCheckpointStore {
       title: null,
       status: "ACTIVE",
       archivedAt: null,
+      recallDocument: null,
       forkedFromSessionId: null,
       lastSequence: 0,
       createdAt: now,
@@ -167,6 +179,7 @@ export class MemoryCheckpointStore {
       title: null,
       status: "ACTIVE",
       archivedAt: null,
+      recallDocument: null,
       forkedFromSessionId: parent.id,
       lastSequence: 1,
       createdAt: now,
@@ -265,6 +278,56 @@ export class MemoryCheckpointStore {
       this.approvals = this.approvals.filter((approval) => approval.sessionId !== sessionId);
     }
     return true;
+  }
+
+  async listStaleRecallSessionIds(userId, limit) {
+    if (!userId) return [];
+    return [...this.sessions.values()]
+      .filter(
+        (record) =>
+          record.userId === userId &&
+          record.recallDocument == null &&
+          record.checkpoint?.context?.origin !== "schedule"
+      )
+      .sort((left, right) => {
+        const time = new Date(right.updatedAt) - new Date(left.updatedAt);
+        if (time) return time;
+        if (left.id === right.id) return 0;
+        return left.id < right.id ? -1 : 1;
+      })
+      .slice(0, limit)
+      .map((record) => record.id);
+  }
+
+  async setRecallDocument(userId, sessionId, transcript) {
+    const record = this.sessions.get(sessionId);
+    if (!record || record.userId !== userId) return false;
+    if (record.checkpoint?.context?.origin === "schedule") return false;
+    record.recallDocument = buildRecallDocument({
+      title: record.title,
+      transcript: transcript ?? record.checkpoint?.transcript,
+    });
+    return true;
+  }
+
+  async searchConversations(userId, options = {}) {
+    const parsed = parseSearchOptions(options);
+    if (parsed.error) return { error: parsed.error };
+    await catchUpRecallDocuments(this, userId);
+    const rows = [];
+    for (const record of this.sessions.values()) {
+      if (record.userId !== userId) continue;
+      rows.push({
+        id: record.id,
+        title: record.title ?? null,
+        createdAt: record.createdAt,
+        updatedAt: record.updatedAt,
+        archivedAt: record.archivedAt ?? null,
+        origin: record.checkpoint?.context?.origin ?? null,
+        recallDocument: record.recallDocument ?? "",
+      });
+    }
+    return { conversations: rankRecallRows(rows, parsed, options.now ?? new Date()) };
   }
 }
 
@@ -555,4 +618,107 @@ export class PrismaCheckpointStore {
       return true;
     });
   }
+
+  async listStaleRecallSessionIds(userId, limit) {
+    if (!userId) return [];
+    const take = Math.max(0, Math.floor(limit));
+    return this._withUser(userId, async (tx) => {
+      const rows = await tx.$queryRaw`
+        SELECT "id"
+        FROM "chief_session"
+        WHERE "userId" = ${userId}
+          AND "recallDocument" IS NULL
+          AND COALESCE("contextJson"->>'origin', '') <> 'schedule'
+        ORDER BY "updatedAt" DESC, "id" ASC
+        LIMIT ${take}
+      `;
+      return rows.map((row) => row.id);
+    });
+  }
+
+  async setRecallDocument(userId, sessionId, transcript) {
+    if (!userId || !sessionId) return false;
+    return this._withUser(userId, async (tx) => {
+      const session = await tx.chiefSession.findFirst({
+        where: { id: sessionId, userId },
+        select: { id: true, title: true, updatedAt: true, contextJson: true },
+      });
+      if (!session || session.contextJson?.origin === "schedule") return false;
+      const recallDocument = buildRecallDocument({ title: session.title, transcript });
+      await tx.chiefSession.update({
+        where: { id: session.id },
+        data: { recallDocument, updatedAt: session.updatedAt },
+      });
+      return true;
+    });
+  }
+
+  async searchConversations(userId, options = {}) {
+    const parsed = parseSearchOptions(options);
+    if (parsed.error) return { error: parsed.error };
+    await catchUpRecallDocuments(this, userId);
+    return this._withUser(userId, (tx) => queryRecallDocuments(tx, userId, parsed));
+  }
+}
+
+function isoRecallTimestamp(value) {
+  if (value == null) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+async function queryRecallDocuments(tx, userId, parsed) {
+  const halfLifeSeconds = RECALL_RECENCY_HALF_LIFE_MS / 1000;
+  const conditions = [
+    Prisma.sql`"userId" = ${userId}`,
+    Prisma.sql`COALESCE("contextJson"->>'origin', '') <> 'schedule'`,
+    Prisma.sql`to_tsvector('simple', coalesce("recallDocument", '')) @@ plainto_tsquery('simple', ${parsed.query})`,
+  ];
+  if (parsed.excludeSessionId) {
+    conditions.push(Prisma.sql`"id" <> ${parsed.excludeSessionId}`);
+  }
+  if (!parsed.includeArchived) conditions.push(Prisma.sql`"archivedAt" IS NULL`);
+  if (parsed.after) conditions.push(Prisma.sql`"updatedAt" >= ${parsed.after}`);
+  if (parsed.before) conditions.push(Prisma.sql`"updatedAt" <= ${parsed.before}`);
+  const rows = await tx.$queryRaw`
+    SELECT
+      "id",
+      "title",
+      "createdAt",
+      "updatedAt",
+      "archivedAt",
+      "recallDocument"
+    FROM "chief_session"
+    WHERE ${Prisma.join(conditions, " AND ")}
+    ORDER BY (
+      ts_rank(
+        to_tsvector('simple', coalesce("recallDocument", '')),
+        plainto_tsquery('simple', ${parsed.query})
+      ) * ${RECALL_LEXICAL_WEIGHT}
+      + CASE
+          WHEN to_tsvector('simple', coalesce("title", '')) @@ plainto_tsquery('simple', ${parsed.query})
+          THEN ${RECALL_TITLE_BOOST}
+          ELSE 0
+        END
+      + CASE
+          WHEN ${parsed.useRecency}
+          THEN ${RECALL_RECENCY_MAX} * exp(
+            -ln(2) * EXTRACT(EPOCH FROM (NOW() - "updatedAt")) / ${halfLifeSeconds}
+          )
+          ELSE 0
+        END
+    ) DESC, "updatedAt" DESC, "id" ASC
+    LIMIT ${parsed.limit}
+    OFFSET ${parsed.offset}
+  `;
+  return {
+    conversations: rows.map((row) => ({
+      sessionId: row.id,
+      title: typeof row.title === "string" && row.title.trim() ? row.title.trim() : null,
+      createdAt: isoRecallTimestamp(row.createdAt),
+      updatedAt: isoRecallTimestamp(row.updatedAt),
+      archived: Boolean(row.archivedAt),
+      snippet: recallSnippet(row.recallDocument, parsed.query),
+    })),
+  };
 }

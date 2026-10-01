@@ -276,7 +276,9 @@ async function runScheduledTask({
         op: { type: "message", message: { text: prepared.text } },
       },
       signal: AbortSignal.timeout(turnTimeoutMs),
-      toolSpecs: tooling.specs ?? [],
+      toolSpecs: (tooling.specs ?? []).filter(
+        (spec) => spec.name !== "conversation_search" && spec.name !== "conversation_retrieve"
+      ),
       onEvent(event) {
         if (event?.msg?.type === EventMsgType.TURN_ABORTED) abortReason = event.msg.reason ?? null;
       },
