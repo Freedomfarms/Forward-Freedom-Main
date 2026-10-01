@@ -8,6 +8,7 @@ import {
   fetchChiefModels,
   fetchChiefPendingApproval,
   fetchChiefRoomAccess,
+  fetchChiefSessionSearch,
   fetchChiefSessions,
   initialTurnState,
   renameChiefSession,
@@ -22,6 +23,7 @@ import {
   modelLabel,
   moneyWebLine,
 } from "../../utils/chiefRoom.js";
+import { readSidebarCollapsed, writeSidebarCollapsed } from "../../utils/chiefSidebar.js";
 import { ChiefAccessSheet } from "./ChiefAccessSheet.jsx";
 import { ChiefApprovalCard } from "./ChiefApprovalCard.jsx";
 import { ChiefComposer } from "./ChiefComposer.jsx";
@@ -32,6 +34,20 @@ import { ChiefStatus } from "./ChiefStatus.jsx";
 import { ChiefEarlierTurns, ChiefTranscript } from "./ChiefTranscript.jsx";
 
 const ACTIVE_SESSION_KEY = "chief.activeSessionId";
+const NARROW_NAV_QUERY = "(max-width: 1023px)";
+
+function readNarrowNav() {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
+  return window.matchMedia(NARROW_NAV_QUERY).matches;
+}
+
+function sidebarStorage() {
+  try {
+    return globalThis.localStorage ?? null;
+  } catch {
+    return null;
+  }
+}
 
 function readStoredSessionId() {
   try {
@@ -79,6 +95,16 @@ export function ChiefPage({
   const [approval, setApproval] = useState(null);
   const [busy, setBusy] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [navCollapsed, setNavCollapsed] = useState(() => readSidebarCollapsed(sidebarStorage()));
+  const [narrowNav, setNarrowNav] = useState(readNarrowNav);
+  const [navQuery, setNavQuery] = useState("");
+  const [searchState, setSearchState] = useState({
+    query: "",
+    hits: [],
+    loading: false,
+    error: "",
+  });
+  const [searchAttempt, setSearchAttempt] = useState(0);
   const [placesOpen, setPlacesOpen] = useState(false);
   const [accessOpen, setAccessOpen] = useState(false);
   const [access, setAccess] = useState(emptyRoomAccess);
@@ -249,6 +275,51 @@ export function ChiefPage({
   }, []);
 
   useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return undefined;
+    const media = window.matchMedia(NARROW_NAV_QUERY);
+    function apply() {
+      const next = media.matches;
+      setNarrowNav(next);
+      if (!next) setDrawerOpen(false);
+    }
+    apply();
+    media.addEventListener("change", apply);
+    return () => media.removeEventListener("change", apply);
+  }, []);
+
+  useEffect(() => {
+    const query = navQuery.trim();
+    if (!user || !query) return undefined;
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      setSearchState((current) => ({ ...current, query, loading: true, error: "" }));
+      fetchChiefSessionSearch(user, query)
+        .then((payload) => {
+          if (cancelled) return;
+          setSearchState({
+            query,
+            hits: Array.isArray(payload?.conversations) ? payload.conversations : [],
+            loading: false,
+            error: "",
+          });
+        })
+        .catch((error) => {
+          if (cancelled) return;
+          setSearchState({
+            query,
+            hits: [],
+            loading: false,
+            error: error?.status === 400 ? "" : errorText(error),
+          });
+        });
+    }, 180);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [navQuery, searchAttempt, user]);
+
+  useEffect(() => {
     if (!drawerOpen && !placesOpen && !accessOpen) return undefined;
     function onKeyDown(event) {
       if (event.key !== "Escape") return;
@@ -292,7 +363,11 @@ export function ChiefPage({
     setStatus(CHIEF_STATUS.READY);
     setBusyState(false);
     setDraft("");
-    setDrawerOpen(false);
+    if (window.matchMedia(NARROW_NAV_QUERY).matches) setDrawerOpen(false);
+  }
+
+  function refreshSearch() {
+    setSearchAttempt((value) => value + 1);
   }
 
   async function renameConversation(sessionId, title) {
@@ -302,22 +377,31 @@ export function ChiefPage({
       rows.map((row) => (row.sessionId === sessionId ? { ...row, title: nextTitle } : row));
     setSessions(apply);
     setArchivedSessions(apply);
+    setSearchState((current) => ({
+      ...current,
+      hits: current.hits.map((row) =>
+        row.sessionId === sessionId ? { ...row, title: nextTitle } : row
+      ),
+    }));
   }
 
   async function archiveConversation(sessionId) {
     await setChiefSessionArchived(user, sessionId, true);
     await refreshSessions();
+    refreshSearch();
   }
 
   async function restoreConversation(sessionId) {
     await setChiefSessionArchived(user, sessionId, false);
     await refreshSessions();
+    refreshSearch();
   }
 
   async function deleteConversation(sessionId) {
     await deleteChiefSession(user, sessionId);
     if (activeSessionIdRef.current === sessionId) startNewConversation();
     await refreshSessions();
+    refreshSearch();
   }
 
   function backToConversations() {
@@ -509,16 +593,39 @@ export function ChiefPage({
   const stateDetail = transcriptError || "";
   const canLeave = Boolean(onOpenFinancial || onOpenCeoAgents || onOpenModules);
   const sheetOpen = drawerOpen || placesOpen || accessOpen;
+  const desktopNav = Boolean(user) && !narrowNav;
+  const navExpanded = narrowNav ? drawerOpen : !navCollapsed;
+  const navQueryTrimmed = navQuery.trim();
+  const searchMatches = Boolean(navQueryTrimmed) && searchState.query === navQueryTrimmed;
+  const searchResults = searchMatches ? searchState.hits : [];
+  const searchLoading = Boolean(navQueryTrimmed) && (!searchMatches || searchState.loading);
+  const searchError = searchMatches ? searchState.error : "";
+  const roomClass = [
+    "chief-room",
+    embedded ? "chief-room--embedded" : "",
+    desktopNav ? "has-nav" : "",
+    desktopNav && navCollapsed ? "is-nav-collapsed" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   useEffect(() => {
     if (!showEmpty || busy || approval || sheetOpen) return;
     composerRef.current?.focus();
   }, [showEmpty, busy, approval, sheetOpen]);
 
-  function openConversations() {
-    setPlacesOpen(false);
-    setAccessOpen(false);
-    setDrawerOpen(true);
+  function toggleNavigation() {
+    if (narrowNav) {
+      setPlacesOpen(false);
+      setAccessOpen(false);
+      setDrawerOpen((open) => !open);
+      return;
+    }
+    setNavCollapsed((collapsed) => {
+      const next = !collapsed;
+      writeSidebarCollapsed(sidebarStorage(), next);
+      return next;
+    });
   }
 
   function openPlaces() {
@@ -539,25 +646,85 @@ export function ChiefPage({
     setAccessOpen(false);
   }
 
+  const conversationList = (
+    <ChiefConversationList
+      sessions={sessions}
+      archivedSessions={archivedSessions}
+      activeSessionId={activeSessionId}
+      isLoading={!sessionsResolved}
+      error={sessionsError}
+      disabled={busy}
+      query={navQuery}
+      onQueryChange={setNavQuery}
+      searchResults={searchResults}
+      searchLoading={searchLoading}
+      searchError={searchError}
+      onNewConversation={startNewConversation}
+      onSelect={selectSession}
+      onRename={renameConversation}
+      onArchive={archiveConversation}
+      onRestore={restoreConversation}
+      onDelete={deleteConversation}
+      onSearchRetry={refreshSearch}
+      onRetry={() => {
+        setSessionsResolved(false);
+        setSessionsError("");
+        refreshSessions()
+          .catch((error) => setSessionsError(errorText(error)))
+          .finally(() => setSessionsResolved(true));
+      }}
+    />
+  );
+
+  function navToggle(className) {
+    return (
+      <button
+        type="button"
+        className={className}
+        aria-expanded={navExpanded}
+        aria-controls="chief-conversation-nav"
+        aria-label={navExpanded ? "Hide conversations" : "Show conversations"}
+        onClick={toggleNavigation}
+      >
+        <span aria-hidden="true">☰</span>
+      </button>
+    );
+  }
+
   return (
-    <section
-      className={embedded ? "chief-room chief-room--embedded" : "chief-room"}
-      aria-label="CHIEF"
-    >
+    <section className={roomClass} aria-label="CHIEF">
+      {desktopNav ? (
+        <aside
+          id="chief-conversation-nav"
+          className={navCollapsed ? "chief-nav is-collapsed" : "chief-nav"}
+          aria-label="Conversations"
+        >
+          {navToggle("chief-nav-toggle")}
+          {navCollapsed ? null : (
+            <>
+              {conversationList}
+              <ChiefEarlierTurns earlier={turnView.earlier} />
+            </>
+          )}
+        </aside>
+      ) : null}
       {sheetOpen ? <div className="chief-sheet-backdrop is-open" onClick={closeSheets} /> : null}
       <div className="chief-room-top">
-        {canLeave ? (
-          <button
-            type="button"
-            className="chief-places-button"
-            aria-expanded={placesOpen}
-            onClick={openPlaces}
-          >
-            CHIEF
-          </button>
-        ) : (
-          <div className="chief-place chief-place--here">CHIEF</div>
-        )}
+        <div className="chief-room-brand">
+          {user && narrowNav ? navToggle("chief-nav-toggle") : null}
+          {canLeave ? (
+            <button
+              type="button"
+              className="chief-places-button"
+              aria-expanded={placesOpen}
+              onClick={openPlaces}
+            >
+              CHIEF
+            </button>
+          ) : (
+            <div className="chief-place chief-place--here">CHIEF</div>
+          )}
+        </div>
         {canLeave ? (
           <nav className="chief-places" aria-label="Places">
             <button
@@ -649,15 +816,6 @@ export function ChiefPage({
             />
           ) : (
             <div className="chief-composer-row">
-              <button
-                type="button"
-                className="chief-text-button"
-                aria-expanded={drawerOpen}
-                aria-label="Your CHIEF conversations"
-                onClick={openConversations}
-              >
-                Your conversations
-              </button>
               {activeArchived ? (
                 <div className="chief-archived-note">
                   <p>This conversation is archived. Restore it to continue.</p>
@@ -687,29 +845,13 @@ export function ChiefPage({
           )}
         </div>
       ) : null}
-      {drawerOpen ? (
-        <aside className="chief-sheet is-open" aria-label="Conversations">
-          <ChiefConversationList
-            sessions={sessions}
-            archivedSessions={archivedSessions}
-            activeSessionId={activeSessionId}
-            isLoading={!sessionsResolved}
-            error={sessionsError}
-            disabled={busy}
-            onNewConversation={startNewConversation}
-            onSelect={selectSession}
-            onRename={renameConversation}
-            onArchive={archiveConversation}
-            onRestore={restoreConversation}
-            onDelete={deleteConversation}
-            onRetry={() => {
-              setSessionsResolved(false);
-              setSessionsError("");
-              refreshSessions()
-                .catch((error) => setSessionsError(errorText(error)))
-                .finally(() => setSessionsResolved(true));
-            }}
-          />
+      {narrowNav && drawerOpen ? (
+        <aside
+          id="chief-conversation-nav"
+          className="chief-sheet is-open"
+          aria-label="Conversations"
+        >
+          {conversationList}
           <ChiefEarlierTurns earlier={turnView.earlier} />
           <button type="button" className="chief-action chief-action--quiet" onClick={closeSheets}>
             Close
