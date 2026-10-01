@@ -61,7 +61,6 @@ export function ChiefPage({
   user,
   embedded = false,
   onOpenFinancial,
-  onOpenCeoAgents,
   onOpenModules,
   onSignOut,
 }) {
@@ -591,7 +590,7 @@ export function ChiefPage({
     Boolean(user) && !historyLoading && !notFound && !turnView.userLine && !turnView.answer;
   const transcriptError = historyError || turnError;
   const stateDetail = transcriptError || "";
-  const canLeave = Boolean(onOpenFinancial || onOpenCeoAgents || onOpenModules);
+  const canLeave = Boolean(onOpenFinancial || onOpenModules);
   const sheetOpen = drawerOpen || placesOpen || accessOpen;
   const desktopNav = Boolean(user) && !narrowNav;
   const navExpanded = narrowNav ? drawerOpen : !navCollapsed;
@@ -740,11 +739,6 @@ export function ChiefPage({
                 Freedom Financial
               </button>
             ) : null}
-            {onOpenCeoAgents ? (
-              <button type="button" className="chief-place" onClick={onOpenCeoAgents}>
-                CEO Agents
-              </button>
-            ) : null}
             {onOpenModules ? (
               <button type="button" className="chief-place" onClick={onOpenModules}>
                 Modules
@@ -867,11 +861,6 @@ export function ChiefPage({
             {onOpenFinancial ? (
               <button type="button" className="chief-place" onClick={onOpenFinancial}>
                 Freedom Financial
-              </button>
-            ) : null}
-            {onOpenCeoAgents ? (
-              <button type="button" className="chief-place" onClick={onOpenCeoAgents}>
-                CEO Agents
               </button>
             ) : null}
             {onOpenModules ? (

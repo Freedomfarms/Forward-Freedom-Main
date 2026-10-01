@@ -224,7 +224,7 @@ test("the room source keeps conversation plain and navigation literal", () => {
   assert.equal(transcript.includes("borderRadius"), false);
   assert.equal(transcript.includes("bubble"), false);
   assert.match(page, /Freedom Financial/);
-  assert.match(page, /CEO Agents/);
+  assert.doesNotMatch(page, /CEO Agents/);
   assert.match(page, /Modules/);
   assert.match(composer, /Ask CHIEF/);
   assert.match(approval, /Allow/);

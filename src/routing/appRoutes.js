@@ -49,7 +49,6 @@ export function resolveAppRoute(pathname, { authenticated = false } = {}) {
   if (path === "/demo") return destination("demo", path);
   if (path === "/os") return destination("os-shell", path);
   if (path === "/os/chief") return destination("os-chief", path);
-  if (path === "/os/agents") return destination("os-agents", path);
   if (path === "/os/finance") return destination("os-finance", path);
   if (path.startsWith("/os/")) return destination("redirect", path, "/os");
   return destination("redirect", path, "/os");
@@ -62,7 +61,6 @@ export function authRestoreHold({ configured = false, ready = false } = {}) {
 export function osSurfaceForKind(kind) {
   if (kind === "os-shell") return "shell";
   if (kind === "os-chief") return "chief";
-  if (kind === "os-agents") return "agents";
   if (kind === "os-finance") return "finance";
   return null;
 }

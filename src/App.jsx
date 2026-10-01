@@ -1054,7 +1054,6 @@ function PublicRouteScreen({ screen, demoSessionKey }) {
     <PublicFreedomOsHome
       onSignIn={() => navigateApp("/login")}
       onCreateAccount={() => navigateApp("/signup")}
-      onExploreCeoAgents={() => navigateApp("/login")}
       onExploreFreedomFinancial={() => navigateApp("/finance")}
     />
   );

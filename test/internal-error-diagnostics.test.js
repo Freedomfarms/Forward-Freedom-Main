@@ -59,12 +59,12 @@ test("respondInternalError does not label LLM failures as role freedom_app", () 
   const response = mockRes();
   respondInternalError(
     response,
-    "api/agents/ceo/chat",
+    "api/chief/chat",
     new Error("Grammar compilation timed out."),
-    "Unable to process the CEO Agent chat message."
+    "Unable to complete the CHIEF request."
   );
 
   assert.equal(response.statusCode, 500);
-  assert.equal(response.body.message, "Unable to process the CEO Agent chat message.");
+  assert.equal(response.body.message, "Unable to complete the CHIEF request.");
   assert.equal(response.body.message.includes("freedom_app"), false);
 });
