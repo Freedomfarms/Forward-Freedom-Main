@@ -32,9 +32,9 @@ const LEGACY_USER_SELECT = {
   updatedAt: true,
 };
 
-// Consent-era columns without User.timezone — used when the CEO-as-OS timezone
-// migration has not landed yet. Prisma RETURNING timezone would P2022 and take
-// down /api/me, which then prevents User row creation and cascades into CEO 500s.
+// Consent-era columns without User.timezone — used when the timezone column
+// migration has not landed yet. Prisma RETURNING timezone would P2022 and
+// take down /api/me, which then prevents User row creation.
 const USER_SELECT_WITHOUT_TIMEZONE = {
   ...LEGACY_USER_SELECT,
   isAdmin: true,

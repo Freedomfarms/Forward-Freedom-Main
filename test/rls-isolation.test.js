@@ -418,8 +418,8 @@ test("FORCE applies the policies to the table owner (non-superuser)", { skip }, 
 test("the BYPASSRLS service role still sees every user's rows", { skip }, () => {
   requireSetup();
 
-  // This is the role behind server/db/servicePrisma.js — webhook/cron/admin
-  // only. It must see across users; everything else must not.
+  // This is the role behind server/db/servicePrisma.js — Plaid webhook and
+  // the CHIEF scheduler only. It must see across users; everything else must not.
   assert.equal(countAs("freedom_service", "User"), 2);
   assert.equal(countAs("freedom_service", "Transaction"), 2);
 });
