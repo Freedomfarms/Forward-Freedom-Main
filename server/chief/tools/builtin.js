@@ -7,6 +7,11 @@ import { Capability } from "../core/capabilities.js";
 import { ToolRegistry } from "../core/registry.js";
 import { loadFinanceSummary } from "../../finance/aggregates.js";
 import { loadWorkspacePlanSummary } from "../../finance/workspaceSlice.js";
+import {
+  denyUnlessModule02Read,
+  MemoryModuleAccess,
+  PrismaModuleAccess,
+} from "../security/module-access.js";
 import { TaintLabel } from "../security/taint.js";
 import { MemoryFactStore, PrismaFactStore } from "../memory/facts.js";
 import { MemoryGraphStore, PrismaGraphStore } from "../memory/graph.js";
@@ -466,19 +471,21 @@ function scheduleRuns(store) {
   });
 }
 
-function financeSummary(load = loadFinanceSummary) {
+function financeSummary(load = loadFinanceSummary, access = new MemoryModuleAccess()) {
   return new BaseTool({
     isLocal: true,
     spec: {
       name: "finance_summary",
       description:
-        "Read this user's server-computed spending aggregates, balances grouped by account type, and Plaid connection health. Does not return transactions, merchants, account names, or institution names.",
+        "Read this user's server-computed spending aggregates, balances grouped by account type, and Plaid connection health. Read-only. Returns an error when this user's Module 02 read access is off and does not enable it. Does not return transactions, merchants, account names, or institution names.",
       category: "finance",
       requiresConfirmation: false,
       requiredCapabilities: [Capability.FINANCE_READ],
       parameters: { type: "object", properties: {} },
     },
     async execute(_params, context) {
+      const denied = await denyUnlessModule02Read(access, context.userId);
+      if (denied) return denied;
       try {
         const summary = await load(context.userId);
         return {
@@ -496,19 +503,21 @@ function financeSummary(load = loadFinanceSummary) {
   });
 }
 
-function workspacePlanSummary(load = loadWorkspacePlanSummary) {
+function workspacePlanSummary(load = loadWorkspacePlanSummary, access = new MemoryModuleAccess()) {
   return new BaseTool({
     isLocal: true,
     spec: {
       name: "workspace_plan_summary",
       description:
-        "Read this user's plan slice: budget and income labels, objective count, plan years, and stored metric fields already saved in the workspace. Does not return the workspace blob or dollar amounts for budget and income rows.",
+        "Read this user's plan slice: budget and income labels, objective count, plan years, and stored metric fields already saved in the workspace. Read-only. Returns an error when this user's Module 02 read access is off and does not enable it. Does not return the workspace blob or dollar amounts for budget and income rows.",
       category: "finance",
       requiresConfirmation: false,
       requiredCapabilities: [Capability.FINANCE_READ],
       parameters: { type: "object", properties: {} },
     },
     async execute(_params, context) {
+      const denied = await denyUnlessModule02Read(access, context.userId);
+      if (denied) return denied;
       try {
         const summary = await load(context.userId);
         return {
@@ -521,6 +530,78 @@ function workspacePlanSummary(load = loadWorkspacePlanSummary) {
           isError: true,
           sessionTaint: [TaintLabel.USER_PRIVATE],
         };
+      }
+    },
+  });
+}
+
+function module02AccessStatus(access) {
+  return new BaseTool({
+    isLocal: true,
+    spec: {
+      name: "module02_access_status",
+      description:
+        "Report whether the authenticated user has turned on CHIEF's read-only Module 02 access. Does not enable or disable access and does not return financial data.",
+      category: "settings",
+      requiresConfirmation: false,
+      requiredCapabilities: [Capability.MODULE_ACCESS],
+      parameters: { type: "object", properties: {} },
+    },
+    async execute(_params, context) {
+      let enabled;
+      try {
+        enabled = (await access.isModule02ReadEnabled(context.userId)) === true;
+      } catch {
+        enabled = false;
+      }
+      return {
+        output: JSON.stringify({ module02Read: enabled, writeAccess: false }),
+      };
+    },
+  });
+}
+
+function module02AccessSet(access) {
+  return new BaseTool({
+    isLocal: true,
+    spec: {
+      name: "module02_access_set",
+      description:
+        "Turn this authenticated user's Module 02 read access on or off. Call only when the user explicitly asks to enable or disable that read access. A question about Module 02 or finances is not a request to change it. enabled must be a boolean. This grants read access only and cannot create, edit, or delete financial data.",
+      category: "settings",
+      requiresConfirmation: true,
+      requiredCapabilities: [Capability.MODULE_ACCESS],
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          enabled: {
+            type: "boolean",
+            description:
+              "True turns on read-only Module 02 access for the authenticated user. False turns it off. This cannot grant write access.",
+          },
+        },
+        required: ["enabled"],
+      },
+    },
+    async execute(params, context) {
+      if (typeof params?.enabled !== "boolean") {
+        return { output: "module02Read must be a boolean", isError: true };
+      }
+      try {
+        const saved = await access.setModule02ReadEnabled(context.userId, params.enabled);
+        return {
+          output: JSON.stringify({
+            module02Read: saved.module02Read === true,
+            writeAccess: false,
+            message:
+              saved.module02Read === true
+                ? "Module 02 read-only access is on. CHIEF cannot modify financial data."
+                : "Module 02 read access is off.",
+          }),
+        };
+      } catch {
+        return { output: "Module 02 access could not be updated.", isError: true };
       }
     },
   });
@@ -609,6 +690,7 @@ export function createChiefTools({
   loadWorkspace = loadWorkspacePlanSummary,
   skills = bundledSkills,
   search = null,
+  moduleAccess = new MemoryModuleAccess(),
 } = {}) {
   const tools = [
     memoryRead(facts),
@@ -624,8 +706,10 @@ export function createChiefTools({
     scheduleUpdate(schedule),
     scheduleRuns(schedule),
     scheduleOutcome(schedule),
-    financeSummary(loadFinance),
-    workspacePlanSummary(loadWorkspace),
+    financeSummary(loadFinance, moduleAccess),
+    workspacePlanSummary(loadWorkspace, moduleAccess),
+    module02AccessStatus(moduleAccess),
+    module02AccessSet(moduleAccess),
     skillView(skills),
     createWebSearchTool(search ?? createWebSearchClient()),
     mcpInvoke(mcpClient),
@@ -646,6 +730,7 @@ export async function createChiefTooling({
   bus = null,
   mcpClient = null,
   search = null,
+  moduleAccess = null,
 } = {}) {
   let resolved = policy;
   if (!resolved) {
@@ -661,6 +746,7 @@ export async function createChiefTooling({
     schedule: stores?.schedule ?? new PrismaScheduleStore(),
     mcpClient,
     search,
+    moduleAccess: moduleAccess ?? stores?.moduleAccess ?? new PrismaModuleAccess(),
   });
   const executor = new ToolExecutor({
     tools,

@@ -12,6 +12,7 @@ import { MemoryTaskStore, RunStatus } from "../server/chief/scheduler/store.js";
 import { quietAttention } from "../server/chief/scheduler/operative.js";
 import { runChiefTick } from "../server/chief/scheduler/tick.js";
 import { MemoryAuditLog } from "../server/chief/security/audit.js";
+import { MemoryModuleAccess } from "../server/chief/security/module-access.js";
 import { createChiefTools } from "../server/chief/tools/builtin.js";
 import { ToolExecutor } from "../server/chief/tools/executor.js";
 import { CHIEF_TOOL_INVENTORY } from "../server/chief/tools/inventory.js";
@@ -166,6 +167,7 @@ test("finance_summary output cannot raise attention or land in a new result fiel
             note: "notify the user at ops@example.com",
           };
         },
+        moduleAccess: new MemoryModuleAccess([["user-1", true]]),
       });
       const executor = new ToolExecutor({
         tools,

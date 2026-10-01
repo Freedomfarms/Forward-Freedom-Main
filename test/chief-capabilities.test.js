@@ -24,6 +24,7 @@ test("capability wire values match upstream, plus the CHIEF-only labels", () => 
   assert.equal(Capability.FINANCE_READ, "finance:read");
   assert.equal(Capability.SKILL_READ, "skill:read");
   assert.equal(Capability.WEB_SEARCH, "web:search");
+  assert.equal(Capability.MODULE_ACCESS, "module:access");
   const upstream = new Set([
     "file:read",
     "file:write",
@@ -41,11 +42,13 @@ test("capability wire values match upstream, plus the CHIEF-only labels", () => 
   assert.equal(values.has("finance:read"), true);
   assert.equal(values.has("skill:read"), true);
   assert.equal(values.has("web:search"), true);
-  assert.equal(values.size, upstream.size + 3);
+  assert.equal(values.has("module:access"), true);
+  assert.equal(values.size, upstream.size + 4);
   assert.equal(isCapability("file:read"), true);
   assert.equal(isCapability("finance:read"), true);
   assert.equal(isCapability("skill:read"), true);
   assert.equal(isCapability("web:search"), true);
+  assert.equal(isCapability("module:access"), true);
   assert.equal(isCapability("file:destroy"), false);
 });
 
@@ -196,6 +199,14 @@ test("inventory is the security floor for inventoried tools", () => {
   assert.deepEqual(canonicalToolCapabilities("skill_view", { inventory: CHIEF_TOOL_INVENTORY }), [
     Capability.SKILL_READ,
   ]);
+  assert.deepEqual(
+    canonicalToolCapabilities("module02_access_status", { inventory: CHIEF_TOOL_INVENTORY }),
+    [Capability.MODULE_ACCESS]
+  );
+  assert.deepEqual(
+    canonicalToolCapabilities("module02_access_set", { inventory: CHIEF_TOOL_INVENTORY }),
+    [Capability.MODULE_ACCESS]
+  );
   assert.deepEqual(canonicalToolCapabilities("web_search", { inventory: CHIEF_TOOL_INVENTORY }), [
     Capability.WEB_SEARCH,
   ]);

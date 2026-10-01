@@ -15,6 +15,7 @@ import {
 import { MemoryCheckpointStore } from "../server/chief/runtime/checkpoint.js";
 import { TurnMachine } from "../server/chief/runtime/turn.js";
 import { MemoryAuditLog } from "../server/chief/security/audit.js";
+import { MemoryModuleAccess } from "../server/chief/security/module-access.js";
 import { autoDetectTaint, TaintLabel } from "../server/chief/security/taint.js";
 import { createChiefTools } from "../server/chief/tools/builtin.js";
 import { ToolExecutor } from "../server/chief/tools/executor.js";
@@ -341,6 +342,7 @@ function financeTools(seen) {
   return createChiefTools({
     loadFinance: (userId) => loadFinanceSummary(userId, { now: NOW, withUser: db.withUser }),
     loadWorkspace: async () => ({ status: "available", hasSnapshot: false }),
+    moduleAccess: new MemoryModuleAccess([[USER_A, true]]),
   });
 }
 
@@ -557,6 +559,7 @@ test("workspace_plan_summary requires finance:read and a scheduled caller can us
   const tools = createChiefTools({
     loadWorkspace: (userId) =>
       loadWorkspacePlanSummary(userId, { withUser: db.withUser, getCapabilities: db.getCapabilities }),
+    moduleAccess: new MemoryModuleAccess([[USER_A, true]]),
   });
   const spec = tools.find((tool) => tool.spec.name === "workspace_plan_summary").spec;
   assert.equal(spec.requiresConfirmation, false);

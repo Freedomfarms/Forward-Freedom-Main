@@ -672,6 +672,12 @@ previous one is merged or explicitly waived. Verification per repo policy: `npm 
   that tool runs inside a Claude call and never enters this executor. The
   empty-grant baseline also grants `web:search`. `network:fetch` stays denied.
   No browser, login, form, or scheduled news monitor.
+- **Module 02 read access (delivered slice, ADR-0020).** `finance_summary` and
+  `workspace_plan_summary` stay the only Module 02 reads. Each user's
+  `chief_module_access.module02Read` flag defaults to off, including when no
+  row exists. The sidebar control and `module02_access_set` write that same
+  row. The set tool requires confirmation and cannot grant a write. There is
+  no Module 02 mutation tool.
 - **Phase 6b — Sidecar boundary.** `server/chief/sidecar/` provider registration + health;
   deep_research/managed-agent tool adapters; deployment recipe doc (Docker/Render/Fly) — all
   feature-flagged and optional.

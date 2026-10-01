@@ -9,11 +9,14 @@
 // Preserved upstream semantics:
 //   - the Capability label set, verbatim ("file:read" … "system:admin"), plus
 //     the CHIEF-only extensions "finance:read" (Phase 7), "skill:read"
-//     (Phase 8), and "web:search" (governed public web search). Financial
+//     (Phase 8), "web:search" (governed public web search), and
+//     "module:access" (the per-user Module 02 read switch). Financial
 //     reads must not reuse memory:read. Loading a procedure must not reuse
 //     memory:read either. Public web search must not reuse network:fetch:
 //     that label is general outbound network access, and it stays off the
-//     default baseline. OpenJarvis has none of these three labels.
+//     default baseline. module:access lets the user inspect or request the
+//     Module 02 read switch. It does not grant the financial data itself.
+//     OpenJarvis has none of these four labels.
 //   - CapabilityPolicy check order: explicit denials always win; grants are
 //     glob-matched on capability and optionally on resource; agents with no
 //     explicit policy fall back to `_default` wildcard grants; an anonymous
@@ -61,6 +64,10 @@ export const Capability = Object.freeze({
   // web through one fixed search provider. It is not network:fetch and it
   // does not authorize arbitrary HTTP, browsing, or mutation.
   WEB_SEARCH: "web:search",
+  // CHIEF extension. Not an OpenJarvis label. Lets the authenticated user
+  // inspect or request the Module 02 read switch. It does not reveal
+  // financial data and it cannot grant a write.
+  MODULE_ACCESS: "module:access",
 });
 
 const CAPABILITY_VALUES = new Set(Object.values(Capability));
