@@ -28,7 +28,10 @@ export async function handleChiefSessions(request, response, deps = {}) {
   }
 
   const store = deps.store ?? new PrismaCheckpointStore();
-  const sessions = projectInteractiveSessions(await store.listOwnedSessions(userId));
+  const archivedOnly = request.query?.archived === "1" || request.query?.archived === "true";
+  const sessions = projectInteractiveSessions(await store.listOwnedSessions(userId), {
+    archivedOnly,
+  });
   response.status(200).json({ sessions });
 }
 

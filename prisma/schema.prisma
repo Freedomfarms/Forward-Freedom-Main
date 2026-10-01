@@ -152,6 +152,7 @@ model User {
   chiefAuditLogs          ChiefAuditLog[]
   chiefBudgets            ChiefBudget[]
   chiefModuleAccess       ChiefModuleAccess?
+  chiefConversationAccess ChiefConversationAccess?
 }
 
 model PlaidItem {
@@ -1078,6 +1079,20 @@ model ChiefApproval {
   @@index([userId, createdAt])
   @@index([sessionId, stickyKey])
   @@map("chief_approval")
+}
+
+// Per-user CHIEF conversation permissions. Absence of a row is off for all
+// three. Read does not imply organize, and organize does not imply delete.
+// This is not a capability-grant row and it is not Module 02 access.
+model ChiefConversationAccess {
+  userId               String   @id
+  conversationRead     Boolean  @default(false)
+  conversationOrganize Boolean  @default(false)
+  conversationDelete   Boolean  @default(false)
+  updatedAt            DateTime @updatedAt
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("chief_conversation_access")
 }
 
 // Per-user CHIEF permission for Module 02 reads. Absence of a row is OFF.

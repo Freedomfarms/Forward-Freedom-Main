@@ -37,6 +37,23 @@ import { randomUUID } from "node:crypto";
 import { withUserContext } from "../../db/prisma.js";
 import { decryptJson, encryptJson } from "../../security/envelope.js";
 import { emptyTokenUsage } from "../protocol/index.js";
+import { isScheduledSession } from "./sessions.js";
+
+export const CONVERSATION_TITLE_MAX = 120;
+
+export function normalizeConversationTitle(value) {
+  if (typeof value !== "string") return { error: "invalid_title" };
+  const title = value.trim();
+  if (!title || title.length > CONVERSATION_TITLE_MAX || /[\r\n]/.test(title)) {
+    return { error: "invalid_title" };
+  }
+  return { title };
+}
+
+function nextSessionStatus(currentStatus, checkpoint) {
+  if (currentStatus === "ARCHIVED") return "ARCHIVED";
+  return checkpoint?.pendingApproval ? "PENDING_APPROVAL" : "ACTIVE";
+}
 
 export const CHECKPOINT_VERSION = 1;
 
@@ -136,7 +153,7 @@ export class MemoryCheckpointStore {
     const next = {
       ...current,
       lastSequence: sequence,
-      status: checkpoint.pendingApproval ? "PENDING_APPROVAL" : "ACTIVE",
+      status: nextSessionStatus(current.status, checkpoint),
       updatedAt: new Date(),
       checkpoint: clone(checkpoint),
       journal: [
@@ -176,6 +193,47 @@ export class MemoryCheckpointStore {
     return clone(child);
   }
 
+  async renameSession(userId, sessionId, title) {
+    const normalized = normalizeConversationTitle(title);
+    if (normalized.error) return normalized;
+    const record = this.sessions.get(sessionId);
+    if (!record || record.userId !== userId || isScheduledSession(record)) return { error: "not_found" };
+    record.title = normalized.title;
+    record.updatedAt = new Date();
+    return { ok: true, sessionId, title: record.title };
+  }
+
+  async archiveSession(userId, sessionId) {
+    const record = this.sessions.get(sessionId);
+    if (!record || record.userId !== userId || isScheduledSession(record)) return { error: "not_found" };
+    if (record.status === "PENDING_APPROVAL" || record.checkpoint?.pendingApproval) {
+      return { error: "pending_approval" };
+    }
+    if (record.status === "ARCHIVED") return { ok: true, sessionId, status: "ARCHIVED", unchanged: true };
+    record.status = "ARCHIVED";
+    record.updatedAt = new Date();
+    return { ok: true, sessionId, status: "ARCHIVED" };
+  }
+
+  async restoreSession(userId, sessionId) {
+    const record = this.sessions.get(sessionId);
+    if (!record || record.userId !== userId || isScheduledSession(record)) return { error: "not_found" };
+    if (record.status !== "ARCHIVED") return { error: "not_archived" };
+    record.status = "ACTIVE";
+    record.updatedAt = new Date();
+    return { ok: true, sessionId, status: "ACTIVE" };
+  }
+
+  async deleteSession(userId, sessionId) {
+    const record = this.sessions.get(sessionId);
+    if (!record || record.userId !== userId || isScheduledSession(record)) return { error: "not_found" };
+    this.sessions.delete(sessionId);
+    for (const child of this.sessions.values()) {
+      if (child.forkedFromSessionId === sessionId) child.forkedFromSessionId = null;
+    }
+    return { ok: true, sessionId, deleted: true };
+  }
+
   async listOwnedSessions(userId) {
     if (!userId) return [];
     const rows = [];
@@ -184,6 +242,7 @@ export class MemoryCheckpointStore {
       rows.push({
         id: record.id,
         title: record.title ?? null,
+        status: record.status ?? "ACTIVE",
         createdAt: record.createdAt,
         updatedAt: record.updatedAt,
         context: clone(record.checkpoint?.context ?? {}),
@@ -265,7 +324,10 @@ export class PrismaCheckpointStore {
       return {
         id: session.id,
         userId: session.userId,
+        title: session.title ?? null,
         status: session.status,
+        createdAt: session.createdAt,
+        updatedAt: session.updatedAt,
         forkedFromSessionId: session.forkedFromSessionId ?? null,
         lastSequence: session.lastSequence,
         checkpoint,
@@ -286,7 +348,7 @@ export class PrismaCheckpointStore {
       const session = await tx.chiefSession.findFirst({ where: { id: sessionId, userId } });
       if (!session) throw new Error(`checkpoint session '${sessionId}' was not found`);
       const sequence = session.lastSequence + 1;
-      const status = checkpoint.pendingApproval ? "PENDING_APPROVAL" : "ACTIVE";
+      const status = nextSessionStatus(session.status, checkpoint);
       await tx.chiefSession.update({
         where: { id: sessionId },
         data: {
@@ -388,6 +450,77 @@ export class PrismaCheckpointStore {
     return { ...saved, forkedFromSessionId: parent.id };
   }
 
+  async renameSession(userId, sessionId, title) {
+    const normalized = normalizeConversationTitle(title);
+    if (normalized.error) return normalized;
+    return this._withUser(userId, async (tx) => {
+      const session = await tx.chiefSession.findFirst({
+        where: { id: sessionId, userId },
+        select: { id: true, contextJson: true },
+      });
+      if (!session || isScheduledSession({ context: session.contextJson })) return { error: "not_found" };
+      await tx.chiefSession.update({
+        where: { id: sessionId },
+        data: { title: normalized.title },
+      });
+      return { ok: true, sessionId, title: normalized.title };
+    });
+  }
+
+  async archiveSession(userId, sessionId) {
+    return this._withUser(userId, async (tx) => {
+      const session = await tx.chiefSession.findFirst({
+        where: { id: sessionId, userId },
+        select: { id: true, status: true, contextJson: true },
+      });
+      if (!session || isScheduledSession({ context: session.contextJson })) return { error: "not_found" };
+      if (session.status === "PENDING_APPROVAL") return { error: "pending_approval" };
+      const latest = await tx.chiefExecutionJournal.findFirst({
+        where: { sessionId, userId },
+        orderBy: { sequence: "desc" },
+        select: { stateCiphertext: true },
+      });
+      if (latest?.stateCiphertext) {
+        const checkpoint = this._decrypt(latest.stateCiphertext);
+        if (checkpoint?.pendingApproval) return { error: "pending_approval" };
+      }
+      if (session.status === "ARCHIVED") return { ok: true, sessionId, status: "ARCHIVED", unchanged: true };
+      await tx.chiefSession.update({
+        where: { id: sessionId },
+        data: { status: "ARCHIVED" },
+      });
+      return { ok: true, sessionId, status: "ARCHIVED" };
+    });
+  }
+
+  async restoreSession(userId, sessionId) {
+    return this._withUser(userId, async (tx) => {
+      const session = await tx.chiefSession.findFirst({
+        where: { id: sessionId, userId },
+        select: { id: true, status: true, contextJson: true },
+      });
+      if (!session || isScheduledSession({ context: session.contextJson })) return { error: "not_found" };
+      if (session.status !== "ARCHIVED") return { error: "not_archived" };
+      await tx.chiefSession.update({
+        where: { id: sessionId },
+        data: { status: "ACTIVE" },
+      });
+      return { ok: true, sessionId, status: "ACTIVE" };
+    });
+  }
+
+  async deleteSession(userId, sessionId) {
+    return this._withUser(userId, async (tx) => {
+      const session = await tx.chiefSession.findFirst({
+        where: { id: sessionId, userId },
+        select: { id: true, contextJson: true },
+      });
+      if (!session || isScheduledSession({ context: session.contextJson })) return { error: "not_found" };
+      await tx.chiefSession.delete({ where: { id: sessionId } });
+      return { ok: true, sessionId, deleted: true };
+    });
+  }
+
   async listOwnedSessions(userId) {
     if (!userId) return [];
     return this._withUser(userId, async (tx) => {
@@ -396,6 +529,7 @@ export class PrismaCheckpointStore {
         select: {
           id: true,
           title: true,
+          status: true,
           createdAt: true,
           updatedAt: true,
           contextJson: true,
@@ -404,6 +538,7 @@ export class PrismaCheckpointStore {
       return sessions.map((session) => ({
         id: session.id,
         title: session.title ?? null,
+        status: session.status ?? "ACTIVE",
         createdAt: session.createdAt,
         updatedAt: session.updatedAt,
         context: session.contextJson ?? {},

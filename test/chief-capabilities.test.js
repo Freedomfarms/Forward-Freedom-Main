@@ -25,6 +25,9 @@ test("capability wire values match upstream, plus the CHIEF-only labels", () => 
   assert.equal(Capability.SKILL_READ, "skill:read");
   assert.equal(Capability.WEB_SEARCH, "web:search");
   assert.equal(Capability.MODULE_ACCESS, "module:access");
+  assert.equal(Capability.CONVERSATION_READ, "conversation:read");
+  assert.equal(Capability.CONVERSATION_ORGANIZE, "conversation:organize");
+  assert.equal(Capability.CONVERSATION_DELETE, "conversation:delete");
   const upstream = new Set([
     "file:read",
     "file:write",
@@ -43,12 +46,18 @@ test("capability wire values match upstream, plus the CHIEF-only labels", () => 
   assert.equal(values.has("skill:read"), true);
   assert.equal(values.has("web:search"), true);
   assert.equal(values.has("module:access"), true);
-  assert.equal(values.size, upstream.size + 4);
+  assert.equal(values.has("conversation:read"), true);
+  assert.equal(values.has("conversation:organize"), true);
+  assert.equal(values.has("conversation:delete"), true);
+  assert.equal(values.size, upstream.size + 7);
   assert.equal(isCapability("file:read"), true);
   assert.equal(isCapability("finance:read"), true);
   assert.equal(isCapability("skill:read"), true);
   assert.equal(isCapability("web:search"), true);
   assert.equal(isCapability("module:access"), true);
+  assert.equal(isCapability("conversation:read"), true);
+  assert.equal(isCapability("conversation:organize"), true);
+  assert.equal(isCapability("conversation:delete"), true);
   assert.equal(isCapability("file:destroy"), false);
 });
 
@@ -210,6 +219,13 @@ test("inventory is the security floor for inventoried tools", () => {
   assert.deepEqual(canonicalToolCapabilities("web_search", { inventory: CHIEF_TOOL_INVENTORY }), [
     Capability.WEB_SEARCH,
   ]);
+  assert.deepEqual(canonicalToolCapabilities("conversation_list", { inventory: CHIEF_TOOL_INVENTORY }), [
+    Capability.CONVERSATION_READ,
+  ]);
+  assert.deepEqual(
+    canonicalToolCapabilities("conversation_delete", { inventory: CHIEF_TOOL_INVENTORY }),
+    [Capability.CONVERSATION_DELETE]
+  );
   assert.deepEqual(canonicalToolCapabilities("memory_read"), [Capability.SYSTEM_ADMIN]);
   assert.deepEqual(canonicalToolCapabilities("getUserData"), [Capability.SYSTEM_ADMIN]);
   assert.equal(Object.hasOwn(CHIEF_TOOL_INVENTORY, "shell_exec"), false);

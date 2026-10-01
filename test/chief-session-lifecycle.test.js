@@ -454,7 +454,7 @@ test("discovery does not add a second transcript store or a search index", () =>
   assert.equal(route.includes("listOwnedSessions"), true);
   assert.equal(route.includes("projectInteractiveHistory"), false);
   assert.match(chat, /sessionId: body\.session_id \?\? null/);
-  assert.equal(schema.includes("model ChiefConversation"), false);
+  assert.equal(/model ChiefConversation\s*\{/.test(schema), false);
   assert.equal(schema.match(/model ChiefSession/g).length, 1);
   assert.equal(turn.includes("projectInteractiveSessions"), false);
   assert.equal(turn.includes("listOwnedSessions"), false);

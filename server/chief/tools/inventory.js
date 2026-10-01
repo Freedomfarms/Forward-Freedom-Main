@@ -29,6 +29,13 @@ export const CHIEF_TOOL_INVENTORY = Object.freeze({
   module02_access_set: Object.freeze([Capability.MODULE_ACCESS]),
   skill_view: Object.freeze([Capability.SKILL_READ]),
   web_search: Object.freeze([Capability.WEB_SEARCH]),
+  conversation_list: Object.freeze([Capability.CONVERSATION_READ]),
+  conversation_read: Object.freeze([Capability.CONVERSATION_READ]),
+  conversation_search: Object.freeze([Capability.CONVERSATION_READ]),
+  conversation_rename: Object.freeze([Capability.CONVERSATION_ORGANIZE]),
+  conversation_archive: Object.freeze([Capability.CONVERSATION_ORGANIZE]),
+  conversation_restore: Object.freeze([Capability.CONVERSATION_ORGANIZE]),
+  conversation_delete: Object.freeze([Capability.CONVERSATION_DELETE]),
 });
 
 export const FORBIDDEN_TOOL_NAMES = Object.freeze([

@@ -101,6 +101,7 @@ export async function assembleSystemPrompt({
     governanceLine(),
     webSearchGuidance(availableTools),
     module02AccessGuidance(availableTools),
+    conversationGuidance(availableTools),
     skillsIndex,
     handoffSection(notes),
   ]
@@ -139,6 +140,21 @@ export function module02AccessGuidance(availableTools) {
     "A question about access, finances, or Module 02 is not a request to enable it. " +
     "module02_access_set grants read access only. There is no tool that creates, edits, or deletes Module 02 data. " +
     "If the user asks to change a budget, transaction, account, category, or other financial record, say Module 02 write access is not currently available."
+  );
+}
+
+export function conversationGuidance(availableTools) {
+  if (availableTools == null) return "";
+  const tools = availableTools instanceof Set ? availableTools : new Set(availableTools);
+  if (!tools.has("conversation_list") && !tools.has("conversation_delete")) return "";
+  return (
+    "Conversation Read, Conversation Organize, and Conversation Delete are separate permissions and each is off until the user turns that one on. " +
+    "conversation_list, conversation_read, and conversation_search work only when Conversation Read is on. They do not enable access and they do not change a conversation. " +
+    "A question about conversations is not a request to rename, archive, restore, or delete. " +
+    "conversation_rename, conversation_archive, and conversation_restore require Conversation Organize and confirmation. " +
+    "conversation_delete requires Conversation Delete and explicit confirmation. Organize does not allow delete. Delete is permanent. " +
+    "There is no tool for pinning, folders, projects, Module 01 chats, or a ChatGPT account. " +
+    "If a conversation tool says access is disabled, say so and do not invent transcripts."
   );
 }
 

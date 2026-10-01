@@ -16,6 +16,9 @@ export const CHIEF_STATUS = Object.freeze({
   WEB_SEARCH: "CHIEF is searching the web...",
   MODULE_ACCESS: "Checking Module 02 access",
   MODULE_ACCESS_SET: "Updating Module 02 access",
+  CONVERSATION_READ: "Reading conversations",
+  CONVERSATION_ORGANIZE: "Updating a conversation",
+  CONVERSATION_DELETE: "Deleting a conversation",
   APPROVAL: "Waiting for approval",
   ERROR: "Error",
 });
@@ -59,6 +62,17 @@ export function statusForToolName(name) {
   if (name === "web_search") return CHIEF_STATUS.WEB_SEARCH;
   if (name === "module02_access_set") return CHIEF_STATUS.MODULE_ACCESS_SET;
   if (name === "module02_access_status") return CHIEF_STATUS.MODULE_ACCESS;
+  if (name === "conversation_delete") return CHIEF_STATUS.CONVERSATION_DELETE;
+  if (
+    name === "conversation_rename" ||
+    name === "conversation_archive" ||
+    name === "conversation_restore"
+  ) {
+    return CHIEF_STATUS.CONVERSATION_ORGANIZE;
+  }
+  if (name === "conversation_list" || name === "conversation_read" || name === "conversation_search") {
+    return CHIEF_STATUS.CONVERSATION_READ;
+  }
   if (FINANCE_TOOLS.has(name)) return CHIEF_STATUS.FINANCE;
   return CHIEF_STATUS.TOOL;
 }
