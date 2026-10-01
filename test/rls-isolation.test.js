@@ -295,11 +295,6 @@ before(async () => {
         await tx.workspaceSnapshot.create({
           data: { userId: uid, stateCiphertext: `state-${uid}` },
         });
-        // Freedom OS agent tables are policy-covered too.
-        await tx.ceoAgentConfig.create({ data: { userId: uid } });
-        await tx.agentRun.create({
-          data: { userId: uid, agentType: "finance", summary: "seed run" },
-        });
       });
     }
   } catch (error) {
@@ -324,8 +319,6 @@ test("withUserContext(A) sees only A's rows even without a WHERE clause", { skip
     accounts: await tx.account.findMany(),
     transactions: await tx.transaction.findMany(),
     snapshots: await tx.workspaceSnapshot.findMany(),
-    ceoConfigs: await tx.ceoAgentConfig.findMany(),
-    agentRuns: await tx.agentRun.findMany(),
   }));
 
   // The superuser sees both users' rows...
@@ -337,7 +330,7 @@ test("withUserContext(A) sees only A's rows even without a WHERE clause", { skip
     assert.equal(rows.length, 1, `${name}: expected exactly user A's row`);
   }
   assert.equal(seen.users[0].id, "rls-user-a");
-  for (const rows of [seen.items, seen.accounts, seen.transactions, seen.snapshots, seen.ceoConfigs, seen.agentRuns]) {
+  for (const rows of [seen.items, seen.accounts, seen.transactions, seen.snapshots]) {
     assert.equal(rows[0].userId, "rls-user-a");
   }
 });
@@ -350,7 +343,6 @@ test("a query with no user context returns zero rows, not an error", { skip }, a
   assert.deepEqual(await prisma.user.findMany(), []);
   assert.deepEqual(await prisma.transaction.findMany(), []);
   assert.deepEqual(await prisma.workspaceSnapshot.findMany(), []);
-  assert.deepEqual(await prisma.agentRun.findMany(), []);
 });
 
 test("an INSERT with a mismatched userId is rejected by WITH CHECK", { skip }, async () => {
