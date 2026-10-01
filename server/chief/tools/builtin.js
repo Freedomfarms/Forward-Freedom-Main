@@ -6,6 +6,7 @@
 import { Capability } from "../core/capabilities.js";
 import { ToolRegistry } from "../core/registry.js";
 import { loadFinanceSummary } from "../../finance/aggregates.js";
+import { loadFreedomFinancialPosition } from "../../finance/dashboardPosition.js";
 import { loadWorkspacePlanSummary } from "../../finance/workspaceSlice.js";
 import {
   denyUnlessModule02Read,
@@ -471,13 +472,17 @@ function scheduleRuns(store) {
   });
 }
 
-function financeSummary(load = loadFinanceSummary, access = new MemoryModuleAccess()) {
+function financeSummary(
+  load = loadFinanceSummary,
+  access = new MemoryModuleAccess(),
+  loadPosition = null
+) {
   return new BaseTool({
     isLocal: true,
     spec: {
       name: "finance_summary",
       description:
-        "Read this user's server-computed spending aggregates, balances grouped by account type, and Plaid connection health. Read-only. Returns an error when this user's Module 02 read access is off and does not enable it. Does not return transactions, merchants, account names, or institution names.",
+        "Read this user's Freedom Financial dashboard and six-month spending aggregates. Read-only. When Module 02 read access is on, the dashboard field includes spendable trueCash, liquid cash, credit card debt, reserves, gross True Cash, net worth, asset allocation, current-month budget and category spend, and the yearly outlook. Returns an error when this user's Module 02 read access is off and does not enable it. Does not return transactions, merchants, account names, institution names, or credentials. Cannot create or change financial data.",
       category: "finance",
       requiresConfirmation: false,
       requiredCapabilities: [Capability.FINANCE_READ],
@@ -488,8 +493,20 @@ function financeSummary(load = loadFinanceSummary, access = new MemoryModuleAcce
       if (denied) return denied;
       try {
         const summary = await load(context.userId);
+        if (!loadPosition) {
+          return {
+            output: JSON.stringify(summary),
+            sessionTaint: [TaintLabel.USER_PRIVATE],
+          };
+        }
+        let dashboard;
+        try {
+          dashboard = await loadPosition(context.userId);
+        } catch {
+          dashboard = { status: "unavailable", reason: "load_failed", writeAccess: false };
+        }
         return {
-          output: JSON.stringify(summary),
+          output: JSON.stringify({ ...summary, dashboard, writeAccess: false }),
           sessionTaint: [TaintLabel.USER_PRIVATE],
         };
       } catch {
@@ -509,7 +526,7 @@ function workspacePlanSummary(load = loadWorkspacePlanSummary, access = new Memo
     spec: {
       name: "workspace_plan_summary",
       description:
-        "Read this user's plan slice: budget and income labels, objective count, plan years, and stored metric fields already saved in the workspace. Read-only. Returns an error when this user's Module 02 read access is off and does not enable it. Does not return the workspace blob or dollar amounts for budget and income rows.",
+        "Read this user's plan slice: budget and income labels, objective count, plan years, and stored metric fields already saved in the workspace. Read-only. Returns an error when this user's Module 02 read access is off and does not enable it. Does not return the workspace blob. Dashboard dollar amounts are in finance_summary, not here.",
       category: "finance",
       requiresConfirmation: false,
       requiredCapabilities: [Capability.FINANCE_READ],
@@ -688,6 +705,7 @@ export function createChiefTools({
   mcpClient = null,
   loadFinance = loadFinanceSummary,
   loadWorkspace = loadWorkspacePlanSummary,
+  loadPosition = null,
   skills = bundledSkills,
   search = null,
   moduleAccess = new MemoryModuleAccess(),
@@ -706,7 +724,7 @@ export function createChiefTools({
     scheduleUpdate(schedule),
     scheduleRuns(schedule),
     scheduleOutcome(schedule),
-    financeSummary(loadFinance, moduleAccess),
+    financeSummary(loadFinance, moduleAccess, loadPosition),
     workspacePlanSummary(loadWorkspace, moduleAccess),
     module02AccessStatus(moduleAccess),
     module02AccessSet(moduleAccess),
@@ -746,6 +764,7 @@ export async function createChiefTooling({
     schedule: stores?.schedule ?? new PrismaScheduleStore(),
     mcpClient,
     search,
+    loadPosition: loadFreedomFinancialPosition,
     moduleAccess: moduleAccess ?? stores?.moduleAccess ?? new PrismaModuleAccess(),
   });
   const executor = new ToolExecutor({

@@ -86,6 +86,7 @@ export async function assembleSystemPrompt({
   availableTools = null,
   capabilityPolicy = null,
   bus = null,
+  module02Read = false,
 }) {
   let rows;
   try {
@@ -100,7 +101,7 @@ export async function assembleSystemPrompt({
     identity,
     governanceLine(),
     webSearchGuidance(availableTools),
-    module02AccessGuidance(availableTools),
+    module02AccessGuidance(availableTools, { module02Read }),
     skillsIndex,
     handoffSection(notes),
   ]
@@ -126,19 +127,32 @@ function governanceLine() {
   );
 }
 
-export function module02AccessGuidance(availableTools) {
+const MODULE02_WRITE_GUIDANCE =
+  "Use module02_access_status to answer whether access is on. " +
+  "Call module02_access_set only when the user explicitly asks to turn Module 02 read access on or off. " +
+  "A question about access, finances, or Module 02 is not a request to enable it. " +
+  "module02_access_set grants read access only. There is no tool that creates, edits, or deletes Module 02 data. " +
+  "If the user asks to change a budget, transaction, account, category, or other financial record, say Module 02 write access is not currently available.";
+
+export function module02AccessGuidance(availableTools, { module02Read = false } = {}) {
   if (availableTools == null) return "";
   const tools = availableTools instanceof Set ? availableTools : new Set(availableTools);
   if (!tools.has("finance_summary") && !tools.has("module02_access_set")) return "";
+  if (module02Read === true) {
+    return (
+      "Module 02 read access is on for this user. " +
+      "Call finance_summary before answering questions about this user's financial position, True Cash, liquid cash, credit card debt, net worth, asset allocation, budget, category spending, current month, or yearly outlook. " +
+      "Use only the figures finance_summary returns. trueCash is spendable cash after reserves. allocation True Cash is liquid cash minus credit card debt, which is the dashboard allocation slice. netWorth is the real sum and is not floored. " +
+      "workspace_plan_summary is a read-only label and count slice. " +
+      "If a finance tool says Module 02 read access is currently disabled, tell the user and do not invent balances, transactions, budgets, or other financial figures. " +
+      MODULE02_WRITE_GUIDANCE
+    );
+  }
   return (
     "Module 02 read access is off for this user until they explicitly turn it on. " +
     "finance_summary and workspace_plan_summary are read-only views of that user's Module 02 data. " +
     "If either tool says Module 02 read access is currently disabled, tell the user and do not invent balances, transactions, budgets, or other financial figures. " +
-    "Use module02_access_status to answer whether access is on. " +
-    "Call module02_access_set only when the user explicitly asks to turn Module 02 read access on or off. " +
-    "A question about access, finances, or Module 02 is not a request to enable it. " +
-    "module02_access_set grants read access only. There is no tool that creates, edits, or deletes Module 02 data. " +
-    "If the user asks to change a budget, transaction, account, category, or other financial record, say Module 02 write access is not currently available."
+    MODULE02_WRITE_GUIDANCE
   );
 }
 
@@ -171,9 +185,18 @@ export function createContextAssembler({
   skills = bundledSkills,
   capabilityPolicy = null,
   bus = null,
+  moduleAccess = null,
 } = {}) {
   return async function contextAssembler({ userId, sessionId, transcript, availableTools = null }) {
     const notes = await loadHandoffNotes(checkpointStore, userId, sessionId);
+    let module02Read = false;
+    if (moduleAccess?.isModule02ReadEnabled) {
+      try {
+        module02Read = (await moduleAccess.isModule02ReadEnabled(userId)) === true;
+      } catch {
+        module02Read = false;
+      }
+    }
     return assembleSystemPrompt({
       userId,
       query: lastTurnUserText(transcript),
@@ -184,6 +207,7 @@ export function createContextAssembler({
       availableTools,
       capabilityPolicy,
       bus,
+      module02Read,
     });
   };
 }

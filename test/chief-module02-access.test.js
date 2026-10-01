@@ -121,7 +121,9 @@ function world({ enabled = [] } = {}) {
           ok: true,
           provider: "brave",
           query: "markets",
-          results: [{ title: "Public markets", url: "https://example.com/markets", snippet: "open" }],
+          results: [
+            { title: "Public markets", url: "https://example.com/markets", snippet: "open" },
+          ],
         };
       },
     },
@@ -136,11 +138,25 @@ function world({ enabled = [] } = {}) {
   return { loads, access, tools, executor, specs: tools.map((tool) => tool.spec) };
 }
 
-function contextAssembler({ availableTools }) {
-  return assembleSystemPrompt({
-    availableTools,
-    facts: { async read() { return []; } },
-  });
+function contextAssemblerFor(access) {
+  return async function contextAssembler({ userId, availableTools }) {
+    let module02Read = false;
+    try {
+      if (userId) module02Read = (await access.isModule02ReadEnabled(userId)) === true;
+    } catch {
+      module02Read = false;
+    }
+    return assembleSystemPrompt({
+      userId,
+      availableTools,
+      facts: {
+        async read() {
+          return [];
+        },
+      },
+      module02Read,
+    });
+  };
 }
 
 function machine(ctx, steps) {
@@ -149,7 +165,7 @@ function machine(ctx, steps) {
     store: ctx.store,
     engine,
     toolExecutor: ctx.executor,
-    contextAssembler,
+    contextAssembler: contextAssemblerFor(ctx.access),
   });
   turn.engine = engine;
   return turn;
@@ -222,11 +238,10 @@ test("Module 02 access defaults off and the UI writes the same row CHIEF reads",
   assert.equal(await access.isModule02ReadEnabled(USER_A), false);
 
   const ambiguous = mockResponse();
-  await handleChiefModuleAccess(
-    apiRequest("POST", { module02Read: "true" }),
-    ambiguous.response,
-    { store: access, authenticate: async () => ({ uid: USER_A }) }
-  );
+  await handleChiefModuleAccess(apiRequest("POST", { module02Read: "true" }), ambiguous.response, {
+    store: access,
+    authenticate: async () => ({ uid: USER_A }),
+  });
   assert.equal(ambiguous.state.statusCode, 400);
   assert.equal(await access.isModule02ReadEnabled(USER_A), false);
 
@@ -298,7 +313,10 @@ test("finance tools stay read-only and refuse Module 02 data while access is off
   }
   for (const name of WRITE_NAMES) {
     assert.equal(CHIEF_TOOL_INVENTORY[name], undefined);
-    assert.equal(ctx.specs.some((spec) => spec.name === name), false);
+    assert.equal(
+      ctx.specs.some((spec) => spec.name === name),
+      false
+    );
   }
   assert.equal(
     ctx.specs.find((spec) => spec.name === "module02_access_set").requiresConfirmation,
@@ -392,7 +410,10 @@ test("the acceptance conversation enables, reads, refuses a write, and disables"
   assert.deepEqual(ctx.loads, []);
   assert.match(JSON.stringify(position.checkpoint.transcript), /currently disabled/);
   assert.match(askOff.engine.seen[0].system, /is not a request to enable/);
-  assert.equal(position.checkpoint.transcript.some((item) => JSON.stringify(item).includes(ONLY_A)), false);
+  assert.equal(
+    position.checkpoint.transcript.some((item) => JSON.stringify(item).includes(ONLY_A)),
+    false
+  );
 
   const enableEngine = scripted([
     {
@@ -411,7 +432,7 @@ test("the acceptance conversation enables, reads, refuses a write, and disables"
     store: ctx.store,
     engine: enableEngine,
     toolExecutor: ctx.executor,
-    contextAssembler,
+    contextAssembler: contextAssemblerFor(ctx.access),
   });
   const requested = await enableMachine.run({
     userId: USER_A,
@@ -431,12 +452,20 @@ test("the acceptance conversation enables, reads, refuses a write, and disables"
   assert.equal(await ctx.access.isModule02ReadEnabled(USER_B), false);
   assert.match(enabled.checkpoint.transcript.at(-1).content, /read-only access is on/);
 
-  const read = await machine(ctx, [
+  const readMachine = machine(ctx, [
     {
-      parts: [{ type: "tool-call", toolCallId: "f2", toolName: "finance_summary", input: { userId: USER_B } }],
+      parts: [
+        {
+          type: "tool-call",
+          toolCallId: "f2",
+          toolName: "finance_summary",
+          input: { userId: USER_B },
+        },
+      ],
     },
     { text: `Your cash position is ${ONLY_A}.` },
-  ]).run({
+  ]);
+  const read = await readMachine.run({
     userId: USER_A,
     submission: message("What's my financial position?", "q3"),
     toolSpecs: specs,
@@ -445,6 +474,9 @@ test("the acceptance conversation enables, reads, refuses a write, and disables"
   assert.deepEqual(ctx.loads, [USER_A]);
   assert.match(read.checkpoint.transcript.at(-1).content, new RegExp(ONLY_A));
   assert.equal(JSON.stringify(read.checkpoint.transcript).includes(ONLY_B), false);
+  assert.match(readMachine.engine.seen[0].system, /read access is on/);
+  assert.match(readMachine.engine.seen[0].system, /write access is not currently available/);
+  assert.match(readMachine.engine.seen[0].system, /is not a request to enable/);
 
   const write = await machine(ctx, [
     { text: "Module 02 write access is not currently available." },
@@ -454,7 +486,10 @@ test("the acceptance conversation enables, reads, refuses a write, and disables"
     toolSpecs: specs,
   });
   assert.equal(write.status, "completed");
-  assert.match(write.checkpoint.transcript.at(-1).content, /write access is not currently available/);
+  assert.match(
+    write.checkpoint.transcript.at(-1).content,
+    /write access is not currently available/
+  );
   assert.deepEqual(ctx.loads, [USER_A]);
 
   const disableEngine = scripted([
@@ -474,7 +509,7 @@ test("the acceptance conversation enables, reads, refuses a write, and disables"
     store: ctx.store,
     engine: disableEngine,
     toolExecutor: ctx.executor,
-    contextAssembler,
+    contextAssembler: contextAssemblerFor(ctx.access),
   });
   const disableRequest = await disableMachine.run({
     userId: USER_A,
@@ -513,7 +548,9 @@ test("a question about Module 02 does not enable access", async () => {
   ctx.store = new MemoryCheckpointStore();
   const askedMachine = machine(ctx, [
     {
-      parts: [{ type: "tool-call", toolCallId: "st", toolName: "module02_access_status", input: {} }],
+      parts: [
+        { type: "tool-call", toolCallId: "st", toolName: "module02_access_status", input: {} },
+      ],
     },
     { text: "Module 02 read access is off." },
   ]);
@@ -534,7 +571,27 @@ test("a question about Module 02 does not enable access", async () => {
   assert.equal(about.status, "completed");
   assert.equal(await ctx.access.isModule02ReadEnabled(USER_A), false);
   assert.equal(module02AccessGuidance(null), "");
-  assert.match(module02AccessGuidance(["finance_summary"]), /write access is not currently available/);
+  assert.match(module02AccessGuidance(["finance_summary"]), /read access is off/);
+  assert.match(
+    module02AccessGuidance(["finance_summary"]),
+    /write access is not currently available/
+  );
+  assert.match(
+    module02AccessGuidance(["finance_summary"], { module02Read: false }),
+    /read access is off/
+  );
+  assert.match(
+    module02AccessGuidance(["finance_summary"], { module02Read: true }),
+    /read access is on/
+  );
+  assert.match(
+    module02AccessGuidance(["finance_summary"], { module02Read: true }),
+    /write access is not currently available/
+  );
+  assert.doesNotMatch(
+    module02AccessGuidance(["finance_summary"], { module02Read: true }),
+    /read access is off/
+  );
 });
 
 test("Claude, GPT, and Grok share the user flag and web search stays separate", async () => {
@@ -579,7 +636,9 @@ test("Claude, GPT, and Grok share the user flag and web search stays separate", 
   for (const model of ["claude", "gpt", "grok"]) {
     const deniedMachine = machine(ctx, [
       {
-        parts: [{ type: "tool-call", toolCallId: `${model}-off`, toolName: "finance_summary", input: {} }],
+        parts: [
+          { type: "tool-call", toolCallId: `${model}-off`, toolName: "finance_summary", input: {} },
+        ],
       },
       { text: "Module 02 read access is currently disabled." },
     ]);
@@ -623,7 +682,16 @@ test("user B cannot read user A's Module 02 data through a conversation", async 
     toolSpecs: ctx.specs,
   });
   const b = await machine(ctx, [
-    { parts: [{ type: "tool-call", toolCallId: "b", toolName: "finance_summary", input: { userId: USER_A } }] },
+    {
+      parts: [
+        {
+          type: "tool-call",
+          toolCallId: "b",
+          toolName: "finance_summary",
+          input: { userId: USER_A },
+        },
+      ],
+    },
     { text: ONLY_B },
   ]).run({
     userId: USER_B,
@@ -676,7 +744,10 @@ test("the database store is per user and fails closed when the table is missing"
 });
 
 test("existing Module 02 reads and web search are not replaced", () => {
-  const aggregates = readFileSync(new URL("../server/finance/aggregates.js", import.meta.url), "utf8");
+  const aggregates = readFileSync(
+    new URL("../server/finance/aggregates.js", import.meta.url),
+    "utf8"
+  );
   const workspace = readFileSync(new URL("../api/workspace.js", import.meta.url), "utf8");
   const web = readFileSync(new URL("../server/chief/tools/web-search.js", import.meta.url), "utf8");
   assert.doesNotMatch(aggregates, /module02Read|chief_module_access/);

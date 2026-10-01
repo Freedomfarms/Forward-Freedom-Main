@@ -81,8 +81,7 @@ export function sliceSanitizedWorkspace(state, snapshot) {
   }
 
   const users = Array.isArray(state.users) ? state.users : [];
-  const activeUser =
-    users.find((u) => u?.id && u.id === state.activeUserId) || users[0] || null;
+  const activeUser = users.find((u) => u?.id && u.id === state.activeUserId) || users[0] || null;
 
   const budgetRows = Array.isArray(activeUser?.budgetRows) ? activeUser.budgetRows : [];
   const incomeStreams = Array.isArray(activeUser?.incomeStreams) ? activeUser.incomeStreams : [];
@@ -110,9 +109,7 @@ export function sliceSanitizedWorkspace(state, snapshot) {
     incomeStreamCount: incomeStreams.length,
     incomeStreamLabels: uniqueLabels(incomeStreams.map((row) => row?.name || row?.label)),
     objectiveCount: objectives.length,
-    planYears: Object.keys(plansByYear)
-      .map(String)
-      .sort(),
+    planYears: Object.keys(plansByYear).map(String).sort(),
     storedMetricSnapshots: latestMetric
       ? {
           status: "available",
@@ -124,10 +121,10 @@ export function sliceSanitizedWorkspace(state, snapshot) {
 }
 
 /**
- * User-scoped read of WorkspaceSnapshot. Returns the existing world-model slice.
- * The decrypted blob is sanitized, then reduced. It is not returned.
+ * User-scoped decrypt of WorkspaceSnapshot. The sanitized state is returned to
+ * server callers. It is not a tool payload.
  */
-export async function loadWorkspacePlanSummary(
+export async function loadSanitizedWorkspaceState(
   userId,
   {
     withUser = withUserContext,
@@ -137,52 +134,69 @@ export async function loadWorkspacePlanSummary(
   } = {}
 ) {
   if (!userId) {
+    return { state: null, snapshot: null, reason: "missing_user" };
+  }
+
+  const caps = await getCapabilities().catch(() => ({ encryptionColumns: true }));
+  const snapshot = await withUser(userId, async (tx) => {
+    if (caps.encryptionColumns !== false) {
+      return tx.workspaceSnapshot.findUnique({ where: { userId } });
+    }
+    return tx.workspaceSnapshot.findUnique({
+      where: { userId },
+      select: {
+        id: true,
+        userId: true,
+        state: true,
+        source: true,
+        lastClientUpdatedAt: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+  });
+
+  if (!snapshot) return { state: null, snapshot: null };
+
+  let state;
+  try {
+    const decoded =
+      snapshot.stateCiphertext != null
+        ? decryptState(snapshot.stateCiphertext)
+        : (snapshot.state ?? null);
+    state = sanitize(decoded);
+  } catch {
+    state = null;
+  }
+
+  if (!state || typeof state !== "object") {
+    return { state: null, snapshot, parseError: true };
+  }
+  return { state, snapshot, parseError: false };
+}
+
+/**
+ * User-scoped read of WorkspaceSnapshot. Returns the existing world-model slice.
+ * The decrypted blob is sanitized, then reduced. It is not returned.
+ */
+export async function loadWorkspacePlanSummary(userId, options = {}) {
+  if (!userId) {
     return { status: "unavailable_server_summary", reason: "missing_user" };
   }
 
   try {
-    const caps = await getCapabilities().catch(() => ({ encryptionColumns: true }));
-    const snapshot = await withUser(userId, async (tx) => {
-      if (caps.encryptionColumns !== false) {
-        return tx.workspaceSnapshot.findUnique({ where: { userId } });
-      }
-      return tx.workspaceSnapshot.findUnique({
-        where: { userId },
-        select: {
-          id: true,
-          userId: true,
-          state: true,
-          source: true,
-          lastClientUpdatedAt: true,
-          createdAt: true,
-          updatedAt: true,
-        },
-      });
-    });
-
-    if (!snapshot) return emptySlice({ hasSnapshot: false });
-
-    let state = null;
-    try {
-      if (snapshot.stateCiphertext != null) {
-        state = decryptState(snapshot.stateCiphertext);
-      } else {
-        state = snapshot.state ?? null;
-      }
-      state = sanitize(state);
-    } catch {
-      state = null;
-    }
-
-    if (!state || typeof state !== "object") {
+    const loaded = await loadSanitizedWorkspaceState(userId, options);
+    if (!loaded.snapshot) return emptySlice({ hasSnapshot: false });
+    if (!loaded.state) {
       return emptySlice({
         hasSnapshot: true,
-        updatedAt: snapshot.updatedAt ? new Date(snapshot.updatedAt).toISOString() : null,
+        updatedAt: loaded.snapshot.updatedAt
+          ? new Date(loaded.snapshot.updatedAt).toISOString()
+          : null,
         parseError: true,
       });
     }
-
-    return sliceSanitizedWorkspace(state, snapshot);
+    return sliceSanitizedWorkspace(loaded.state, loaded.snapshot);
   } catch (error) {
     console.warn("[workspace-slice] workspace slice failed:", error?.message || error);
     return {

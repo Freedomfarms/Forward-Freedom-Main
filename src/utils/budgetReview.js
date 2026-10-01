@@ -1,8 +1,4 @@
-import {
-  budgetMonthNames,
-  budgetMonths,
-  isUncategorizedCategoryName,
-} from "../data/constants.jsx";
+import { budgetMonthNames, budgetMonths, isUncategorizedCategoryName } from "./budgetModel.js";
 import { getCurrentBudgetPeriod } from "./date.js";
 import { parseMoney } from "./format.js";
 import { fromCents, subtractMoney, sumMoney, toCents } from "./money.js";

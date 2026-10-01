@@ -10,6 +10,7 @@ import { createModelEngine } from "../../server/chief/models/engine.js";
 import { EventMsgType } from "../../server/chief/protocol/index.js";
 import { ApprovalCoordinator } from "../../server/chief/runtime/approvals.js";
 import { createChiefTurnServices } from "../../server/chief/context/wire.js";
+import { PrismaModuleAccess } from "../../server/chief/security/module-access.js";
 import { PrismaFactStore } from "../../server/chief/memory/facts.js";
 import { PrismaCheckpointStore } from "../../server/chief/runtime/checkpoint.js";
 import { TurnMachine } from "../../server/chief/runtime/turn.js";
@@ -125,6 +126,7 @@ export async function handleChiefApprovals(request, response, deps = {}) {
           checkpointStore: store,
           capabilityPolicy: built.policy,
           eventBus,
+          moduleAccess: deps.moduleAccess ?? new PrismaModuleAccess(),
         })
       : {});
   const machine = new TurnMachine({

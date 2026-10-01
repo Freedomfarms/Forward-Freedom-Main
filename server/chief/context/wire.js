@@ -12,6 +12,7 @@ export function createChiefTurnServices({
   checkpointStore = null,
   capabilityPolicy = null,
   eventBus = null,
+  moduleAccess = null,
   atTokens = CHIEF_COMPACTION_TOKENS,
   keepRecentTokens = CHIEF_KEEP_RECENT_TOKENS,
 } = {}) {
@@ -24,6 +25,7 @@ export function createChiefTurnServices({
       checkpointStore,
       capabilityPolicy,
       bus: eventBus,
+      moduleAccess,
     }),
     compaction: { atTokens, keepRecentTokens },
     onTurnComplete: (exchange) => rememberExchange({ facts, engine, ...exchange }),
