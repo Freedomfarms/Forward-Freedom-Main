@@ -14,6 +14,7 @@ import {
 import {
   createCurrent,
   fieldBudget,
+  populationOnScreen,
   stepCurrent,
   visiblePopulation,
 } from "../src/components/entry/entryField.js";
@@ -105,6 +106,29 @@ test("the field ignites small, then fills, and the current moves upward", () => 
   const particles = createCurrent(40, 3);
   const before = particles.map((particle) => particle.y);
   stepCurrent(particles, 0.5, { energy: 1, assemble: 0, wordmark: 0 });
+  const risen = particles.filter((particle, index) => particle.y > before[index]).length;
+  assert.ok(risen > 30);
+});
+
+test("expansion fills the viewport and still climbs", () => {
+  const early = entryPresentation({ elapsedMs: 200 });
+  const expansion = entryPresentation({ elapsedMs: 2500 });
+  assert.equal(expansion.phase, "expansion");
+  assert.ok(expansion.energy > early.energy);
+  assert.ok(expansion.curl > early.curl);
+  assert.ok(expansion.bottomGlow > early.bottomGlow);
+  const opening = populationOnScreen(700, entryPresentation({ elapsedMs: 400 }));
+  const filled = populationOnScreen(700, entryPresentation({ elapsedMs: 2900 }));
+  assert.equal(opening, 40);
+  assert.ok(filled > 600);
+  const particles = createCurrent(40, 5);
+  const before = particles.map((particle) => particle.y);
+  stepCurrent(particles, 0.5, {
+    energy: expansion.energy,
+    assemble: 0,
+    wordmark: 0,
+    curl: expansion.curl,
+  });
   const risen = particles.filter((particle, index) => particle.y > before[index]).length;
   assert.ok(risen > 30);
 });

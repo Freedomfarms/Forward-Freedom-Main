@@ -78,7 +78,9 @@
   opacity: var(--mf-reveal);
   transform: translateX(calc((1 - var(--mf-reveal)) * 16px));
   color: var(--mf-ice);
-  text-shadow: 0 0 28px rgba(61, 124, 255, calc(var(--mf-reveal) * 0.38));
+  text-shadow:
+    0 0 12px rgba(231, 242, 255, calc(var(--mf-reveal) * 0.45)),
+    0 0 42px rgba(61, 124, 255, calc(var(--mf-reveal) * 0.65));
 }
 
 .mf-os-line {

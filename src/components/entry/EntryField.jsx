@@ -10,8 +10,8 @@ import {
   createCurrent,
   diamondBudget,
   fieldBudget,
+  populationOnScreen,
   stepCurrent,
-  visiblePopulation,
 } from "./entryField.js";
 
 function withAlpha(hex, alpha) {
@@ -86,58 +86,79 @@ export function EntryField({ sceneRef }) {
       const context = canvas.getContext("2d");
       const { width, height, ratio } = size;
       context.clearRect(0, 0, width, height);
+      context.globalCompositeOperation = "source-over";
 
-      const anchor = size.cssHeight < 760 ? 0.36 : 0.44;
+      const anchor = size.cssHeight < 760 ? 0.34 : 0.46;
       const originX = width / 2;
       const originY = height * anchor;
-      const energy = Number(view.energy) || 0;
+      const energy = Math.min(1, (Number(view.energy) || 0) + (view.surge ? 0.18 : 0));
       const bottomGlow = Number(view.bottomGlow) || 0;
+      const assemble = Number(view.assemble) || 0;
 
-      if (bottomGlow > 0.02) {
-        const glow = context.createLinearGradient(0, height, 0, height * 0.62);
-        glow.addColorStop(0, `rgba(185, 215, 255, ${0.2 * bottomGlow})`);
-        glow.addColorStop(0.45, `rgba(61, 124, 255, ${0.05 * bottomGlow})`);
+      if (bottomGlow > 0.01) {
+        const climb = Math.min(0.92, 0.16 + bottomGlow * 0.7 + energy * 0.18);
+        const glow = context.createLinearGradient(0, height, 0, height * (1 - climb));
+        glow.addColorStop(0, `rgba(232, 242, 255, ${0.62 * bottomGlow})`);
+        glow.addColorStop(0.16, `rgba(61, 124, 255, ${0.46 * bottomGlow})`);
+        glow.addColorStop(0.48, `rgba(106, 92, 255, ${0.16 * bottomGlow})`);
         glow.addColorStop(1, "rgba(2, 3, 8, 0)");
         context.fillStyle = glow;
         context.fillRect(0, 0, width, height);
       }
 
-      const assemble = Number(view.assemble) || 0;
-      if (energy > 0.25 || assemble > 0.2) {
-        const pool = Math.min(width, height) * 0.42;
+      if (energy > 0.2 || assemble > 0.05) {
+        const pool = Math.max(width, height) * (0.16 + energy * 0.62);
         const gradient = context.createRadialGradient(originX, originY, 0, originX, originY, pool);
-        const poolAlpha = 0.05 + assemble * 0.07 + (view.surge ? 0.04 : 0);
-        gradient.addColorStop(0, `rgba(106, 92, 255, ${poolAlpha})`);
-        gradient.addColorStop(0.42, `rgba(61, 124, 255, ${poolAlpha * 0.55})`);
+        const poolAlpha = 0.05 + energy * 0.2 + assemble * 0.12 + (view.surge ? 0.06 : 0);
+        gradient.addColorStop(0, `rgba(231, 242, 255, ${poolAlpha * 0.45})`);
+        gradient.addColorStop(0.16, `rgba(61, 124, 255, ${poolAlpha})`);
+        gradient.addColorStop(0.46, `rgba(106, 92, 255, ${poolAlpha * 0.42})`);
         gradient.addColorStop(1, "rgba(2, 3, 8, 0)");
         context.fillStyle = gradient;
         context.fillRect(0, 0, width, height);
       }
 
-      const shown = visiblePopulation(particles.length, view.population || "rest");
-      context.lineWidth = Math.max(1, ratio);
+      const shown = populationOnScreen(particles.length, view);
+      context.globalCompositeOperation = "lighter";
+      context.lineCap = "round";
       for (let index = 0; index < shown; index += 1) {
         const particle = particles[index];
-        const depthFade = 0.16 + particle.depth * 0.7;
-        const alpha = depthFade * (0.35 + energy * 0.65);
-        const x = (particle.x * 0.5 + 0.5) * width;
+        const depth = particle.depth;
+        const perspective = 0.42 + depth * 0.58;
+        const x = width * 0.5 + particle.x * width * 0.52 * perspective;
         const y = (1 - particle.y) * height;
-        const streak = (4 + particle.speed * 18) * (0.45 + particle.depth) * ratio;
-        context.strokeStyle = `rgba(185, 215, 255, ${alpha})`;
+        const alpha = Math.min(1, (0.22 + depth * 0.78) * (0.28 + energy * 1.05));
+        const streak = (10 + particle.speed * 54) * (0.4 + depth) * ratio * (0.4 + energy * 1.35);
+        const ink =
+          depth > 0.74 ? "231, 242, 255" : depth > 0.38 ? "185, 215, 255" : "96, 132, 214";
+        context.lineWidth = (0.8 + depth * 2.6) * ratio;
+        context.strokeStyle = `rgba(${ink}, ${alpha})`;
         context.beginPath();
         context.moveTo(x, y);
-        context.lineTo(x + particle.arc * 6 * ratio, y + streak);
+        context.lineTo(
+          x - Math.sin(particle.phase + particle.y * 3) * particle.arc * 14 * ratio,
+          y + streak
+        );
         context.stroke();
+        if (depth > 0.45) {
+          context.fillStyle = `rgba(231, 242, 255, ${alpha * 0.8})`;
+          context.beginPath();
+          context.arc(x, y, (0.55 + depth * 1.15) * ratio, 0, Math.PI * 2);
+          context.fill();
+        }
         const partner = particle.link;
         if (partner >= 0 && partner < shown) {
           const other = particles[partner];
           const dx = particle.x - other.x;
           const dy = particle.y - other.y;
-          if (dx * dx + dy * dy < 0.05) {
-            context.strokeStyle = `rgba(122, 162, 255, ${alpha * 0.35})`;
+          if (dx * dx + dy * dy < 0.045) {
+            const ox = width * 0.5 + other.x * width * 0.52 * (0.42 + other.depth * 0.58);
+            const oy = (1 - other.y) * height;
+            context.strokeStyle = `rgba(122, 162, 255, ${alpha * 0.45})`;
+            context.lineWidth = Math.max(0.6, ratio * 0.7);
             context.beginPath();
             context.moveTo(x, y);
-            context.lineTo((other.x * 0.5 + 0.5) * width, (1 - other.y) * height);
+            context.lineTo(ox, oy);
             context.stroke();
           }
         }
@@ -148,28 +169,49 @@ export function EntryField({ sceneRef }) {
       const drift = view.drift && !reduced ? Math.sin(time * 0.38) * 0.055 : 0;
       const hover = view.hover ? 0.028 : 0;
       const rotation = drift + hover;
-      const surge = view.surge && !reduced ? 1 + Math.sin(time * 1.6) * 0.03 : 1;
+      const surge = view.surge && !reduced ? 1 + Math.sin(time * 1.6) * 0.045 : 1;
       const scale =
         Math.min(width, height) *
-        (mobile ? 0.2 : 0.22) *
+        (mobile ? 0.24 : 0.28) *
         surge *
-        (1 + Math.max(0, view.pulse || 0) * 0.06);
+        (1 + Math.max(0, view.pulse || 0) * 0.08);
+      const corners = [];
 
       for (const point of points) {
         const posed = formationFrame(point, motion, time);
         if (posed.alpha < 0.02) continue;
         const turned = rotateView(posed.x, posed.y, rotation);
+        const sx = originX + turned.x * scale;
+        const sy = originY + turned.y * scale;
+        if (point.corner) corners.push({ id: point.corner, sx, sy, alpha: posed.alpha });
+        const radius = Math.max(0.8, posed.size) * ratio * (point.corner ? 1.7 : 1);
         context.fillStyle = withAlpha(diamondInk(point, posed), Math.min(1, posed.alpha));
         context.beginPath();
-        context.arc(
-          originX + turned.x * scale,
-          originY + turned.y * scale,
-          Math.max(0.7, posed.size) * ratio * (point.corner ? 1.35 : 1),
-          0,
-          Math.PI * 2
-        );
+        context.arc(sx, sy, radius, 0, Math.PI * 2);
         context.fill();
+        if (point.corner && posed.alpha > 0.45) {
+          context.fillStyle = withAlpha("#e7f2ff", posed.alpha * 0.35);
+          context.beginPath();
+          context.arc(sx, sy, radius * 2.4, 0, Math.PI * 2);
+          context.fill();
+        }
       }
+
+      if (corners.length === 4 && assemble > 0.2) {
+        const order = ["n", "e", "s", "w"];
+        context.strokeStyle = `rgba(185, 215, 255, ${0.12 + assemble * 0.7})`;
+        context.lineWidth = (1.1 + assemble) * ratio;
+        context.beginPath();
+        order.forEach((id, index) => {
+          const corner = corners.find((item) => item.id === id);
+          if (!corner) return;
+          if (index === 0) context.moveTo(corner.sx, corner.sy);
+          else context.lineTo(corner.sx, corner.sy);
+        });
+        context.closePath();
+        context.stroke();
+      }
+      context.globalCompositeOperation = "source-over";
 
       if (!reduced) frame = requestAnimationFrame(paint);
     }

@@ -62,8 +62,9 @@ export function entryPresentation({
       assemble: 1,
       wordmark: t,
       command: t,
-      energy: 0.16,
-      bottomGlow: 0.22,
+      energy: 0.42,
+      curl: 0,
+      bottomGlow: 0.28,
       drift: false,
       interactive: t >= 1,
       population: "reduced",
@@ -77,18 +78,32 @@ export function entryPresentation({
   const wordmark = phase === "reveal" ? easeOut(local) : phase === "rest" ? 1 : 0;
   const command =
     phase === "rest" ? 1 : phase === "reveal" ? Math.max(0, (local - 0.55) / 0.45) : 0;
-  let energy = 0.7;
-  if (phase === "void") energy = 0.2 + local * 0.28;
-  else if (phase === "current") energy = 0.48 + local * 0.24;
-  else if (phase === "expansion") energy = 0.74 + local * 0.26;
-  else if (phase === "diamond") energy = 1;
-  else if (phase === "reveal") energy = 0.9 - local * 0.16;
+  let energy = 0.74;
+  let curl = 0.35;
+  if (phase === "void") {
+    energy = 0.15 + local * 0.35;
+    curl = local * 0.12;
+  } else if (phase === "current") {
+    energy = 0.52 + local * 0.28;
+    curl = 0.16 + local * 0.34;
+  } else if (phase === "expansion") {
+    energy = 0.82 + local * 0.18;
+    curl = 0.55 + local * 0.45;
+  } else if (phase === "diamond") {
+    energy = 1;
+    curl = 1;
+  } else if (phase === "reveal") {
+    energy = 0.92 - local * 0.12;
+    curl = 0.78 - local * 0.2;
+  }
   const bottomGlow =
     phase === "void"
-      ? 0.35 + local * 0.65
+      ? 0.06 + local * 0.94
       : phase === "current"
         ? 1
-        : Math.max(0.22, 0.85 - Math.max(0, seconds - 2) * 0.16);
+        : phase === "expansion"
+          ? 1
+          : Math.max(0.34, 0.9 - Math.max(0, seconds - 3) * 0.18);
 
   return {
     variant: abbreviated ? "brief" : "full",
@@ -99,6 +114,7 @@ export function entryPresentation({
     wordmark,
     command,
     energy,
+    curl,
     bottomGlow,
     drift: seconds >= 3.85,
     interactive: phase === "rest",
