@@ -77,6 +77,22 @@ export const CHIEF_FIELD = Object.freeze({
     warm: false,
     alarm: true,
   }),
+  // Gateway only. Status never selects this. assemble 0 is scattered energy;
+  // the gateway eases assemble to 1. pointFrame ignores assemble, so the room
+  // stays on its own presets.
+  forming: Object.freeze({
+    spread: 1,
+    orbit: 0.03,
+    speed: 0.28,
+    filament: 0.06,
+    down: 0,
+    gather: 0,
+    alpha: 0.9,
+    assemble: 0,
+    lift: false,
+    warm: false,
+    alarm: false,
+  }),
 });
 
 const MOTION_KEYS = ["spread", "orbit", "speed", "filament", "down", "gather", "alpha"];
@@ -229,6 +245,121 @@ export function rotateView(x, y, radians) {
   return {
     x: x * cos - y * sin,
     y: x * sin + y * cos,
+  };
+}
+
+function clamp01(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return 0;
+  return Math.min(1, Math.max(0, number));
+}
+
+function smoothstep(edge0, edge1, value) {
+  const span = edge1 - edge0 || 1;
+  const t = clamp01((value - edge0) / span);
+  return t * t * (3 - 2 * t);
+}
+
+function birthOrigin(point) {
+  const phase = Number(point?.phase) || 0;
+  const cornerShift =
+    point?.corner === "e"
+      ? 0.62
+      : point?.corner === "w"
+        ? -0.62
+        : point?.corner === "n"
+          ? -0.2
+          : point?.corner === "s"
+            ? 0.16
+            : 0;
+  const lane = point?.corner ? 0.22 : point?.edge ? 0.48 : 0.78;
+  return {
+    x: Math.sin(phase * 2.7 + lane * 5) * (0.18 + lane * 0.9) + cornerShift,
+    y: 1.42 + lane * 0.38,
+  };
+}
+
+function perimeterPoint(parameter) {
+  const wrapped = ((parameter % 1) + 1) % 1;
+  const segment = wrapped * 4;
+  const side = Math.floor(segment) % 4;
+  const along = segment - Math.floor(segment);
+  if (side === 0) return { x: along, y: -1 + along };
+  if (side === 1) return { x: 1 - along, y: along };
+  if (side === 2) return { x: -along, y: 1 - along };
+  return { x: -1 + along, y: -along };
+}
+
+function perimeterParameter(point) {
+  const x = Number(point?.x) || 0;
+  const y = Number(point?.y) || 0;
+  if (x >= 0 && y <= 0) return clamp01(x) / 4;
+  if (x >= 0 && y > 0) return (1 + clamp01(y)) / 4;
+  if (x < 0 && y >= 0) return (2 + clamp01(-x)) / 4;
+  return (3 + clamp01(1 + x)) / 4;
+}
+
+function scatteredFrame(point, assemble) {
+  const origin = birthOrigin(point);
+
+  if (point?.corner) {
+    const lock = smoothstep(0.78, 1, assemble);
+    return {
+      x: origin.x + (point.x - origin.x) * lock,
+      y: origin.y + (point.y - origin.y) * lock,
+      alpha: lock,
+      size: 1.3 + lock * 1.3,
+      corner: lock > 0.98,
+    };
+  }
+
+  if (point?.edge) {
+    const approach = smoothstep(0, 0.4, assemble);
+    const slide = smoothstep(0.32, 1, assemble);
+    const target = perimeterParameter(point);
+    let delta = target - 0.5;
+    if (delta > 0.5) delta -= 1;
+    if (delta < -0.5) delta += 1;
+    const south = perimeterPoint(0.5);
+    const onEdge = perimeterPoint(0.5 + delta * slide);
+    return {
+      x: origin.x + (south.x - origin.x) * approach + (onEdge.x - south.x) * slide,
+      y: origin.y + (south.y - origin.y) * approach + (onEdge.y - south.y) * slide,
+      alpha: smoothstep(0.08, 0.5, assemble) * (0.45 + slide * 0.55),
+      size: 1.1,
+      corner: false,
+    };
+  }
+
+  const show = smoothstep(0.58, 0.96, assemble);
+  const formedX = Number(point?.x) || 0;
+  const formedY = Number(point?.y) || 0;
+  return {
+    x: origin.x + (formedX - origin.x) * show,
+    y: origin.y + (formedY - origin.y) * show,
+    alpha: show,
+    size: 0.8 + show,
+    corner: false,
+  };
+}
+
+// assemble is omitted by the room. Undefined means the diamond is already
+// formed, so this matches pointFrame. The gateway passes 0–1 while the
+// diamond is built out of the field.
+export function formationFrame(point, motion, time = 0) {
+  const formed = pointFrame(point, motion, time);
+  const assemble = motion?.assemble == null ? 1 : clamp01(motion.assemble);
+  if (assemble >= 0.999) return formed;
+  const scattered = scatteredFrame(point, assemble);
+  const blend = smoothstep(0.9, 1, assemble);
+  return {
+    x: scattered.x + (formed.x - scattered.x) * blend,
+    y: scattered.y + (formed.y - scattered.y) * blend,
+    alpha:
+      scattered.alpha * (Number(motion?.alpha) || formed.alpha || 1) * (1 - blend) +
+      formed.alpha * blend,
+    size: scattered.size + (formed.size - scattered.size) * blend,
+    corner: point?.corner ? blend > 0.98 : false,
   };
 }
 
