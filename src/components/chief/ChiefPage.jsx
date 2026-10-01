@@ -6,7 +6,11 @@ import {
   fetchChiefHistory,
   fetchChiefModels,
   fetchChiefPendingApproval,
+  archiveChiefConversation,
+  deleteChiefConversation,
   fetchChiefSessions,
+  renameChiefConversation,
+  restoreChiefConversation,
   initialTurnState,
   publicTranscriptMessages,
   selectChiefModel,
@@ -14,6 +18,7 @@ import {
 } from "../../utils/chiefApi.js";
 import { ChiefApprovalCard } from "./ChiefApprovalCard.jsx";
 import { ChiefComposer } from "./ChiefComposer.jsx";
+import { ChiefConversationAccess } from "./ChiefConversationAccess.jsx";
 import { ChiefConversationList } from "./ChiefConversationList.jsx";
 import { ChiefModelSelect } from "./ChiefModelSelect.jsx";
 import { ChiefStatus } from "./ChiefStatus.jsx";
@@ -47,6 +52,7 @@ export function ChiefPage({ user }) {
   const [sessions, setSessions] = useState([]);
   const [sessionsResolved, setSessionsResolved] = useState(false);
   const [sessionsError, setSessionsError] = useState("");
+  const [showArchived, setShowArchived] = useState(false);
   const [activeSessionId, setActiveSessionId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -85,10 +91,10 @@ export function ChiefPage({ user }) {
   }
 
   const refreshSessions = useCallback(async () => {
-    const payload = await fetchChiefSessions(user);
+    const payload = await fetchChiefSessions(user, { archived: showArchived });
     setSessions(Array.isArray(payload?.sessions) ? payload.sessions : []);
     setSessionsError("");
-  }, [user]);
+  }, [user, showArchived]);
 
   const loadHistory = useCallback(
     async (sessionId, token = generation.current) => {
@@ -143,7 +149,7 @@ export function ChiefPage({ user }) {
     if (!user) return undefined;
     let cancelled = false;
     const token = generation.current;
-    fetchChiefSessions(user)
+    fetchChiefSessions(user, { archived: showArchived })
       .then((payload) => {
         if (cancelled) return null;
         setSessions(Array.isArray(payload?.sessions) ? payload.sessions : []);
@@ -164,7 +170,7 @@ export function ChiefPage({ user }) {
     return () => {
       cancelled = true;
     };
-  }, [user, loadHistory]);
+  }, [user, loadHistory, showArchived]);
 
   useEffect(() => {
     const active = abortRef;
@@ -436,8 +442,44 @@ export function ChiefPage({ user }) {
           isLoading={!sessionsResolved}
           error={sessionsError}
           disabled={busy}
+          showArchived={showArchived}
+          onToggleArchived={() => setShowArchived((current) => !current)}
           onNewConversation={startNewConversation}
           onSelect={selectSession}
+          onRename={async (sessionId, title) => {
+            try {
+              await renameChiefConversation(user, sessionId, title);
+              await refreshSessions();
+            } catch (error) {
+              setSessionsError(errorText(error));
+            }
+          }}
+          onArchive={async (sessionId) => {
+            try {
+              await archiveChiefConversation(user, sessionId);
+              if (sessionId === activeSessionId) backToConversations();
+              await refreshSessions();
+            } catch (error) {
+              setSessionsError(errorText(error));
+            }
+          }}
+          onRestore={async (sessionId) => {
+            try {
+              await restoreChiefConversation(user, sessionId);
+              await refreshSessions();
+            } catch (error) {
+              setSessionsError(errorText(error));
+            }
+          }}
+          onDelete={async (sessionId) => {
+            try {
+              await deleteChiefConversation(user, sessionId);
+              if (sessionId === activeSessionId) backToConversations();
+              await refreshSessions();
+            } catch (error) {
+              setSessionsError(errorText(error));
+            }
+          }}
           onRetry={() => {
             setSessionsResolved(false);
             setSessionsError("");
@@ -446,6 +488,7 @@ export function ChiefPage({ user }) {
               .finally(() => setSessionsResolved(true));
           }}
         />
+        <ChiefConversationAccess key={user.uid ?? user.email ?? "signed-in"} user={user} />
       </aside>
       <div className="chief-stage">
         <header className="chief-stage-header">

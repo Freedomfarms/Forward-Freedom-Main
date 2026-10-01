@@ -68,6 +68,12 @@ export const Capability = Object.freeze({
   // inspect or request the Module 02 read switch. It does not reveal
   // financial data and it cannot grant a write.
   MODULE_ACCESS: "module:access",
+  // CHIEF extensions. Not OpenJarvis labels. Each gates one conversation
+  // tool group. The per-user flags are the real authorization and default
+  // off. Read does not imply organize, and organize does not imply delete.
+  CONVERSATION_READ: "conversation:read",
+  CONVERSATION_ORGANIZE: "conversation:organize",
+  CONVERSATION_DELETE: "conversation:delete",
 });
 
 const CAPABILITY_VALUES = new Set(Object.values(Capability));

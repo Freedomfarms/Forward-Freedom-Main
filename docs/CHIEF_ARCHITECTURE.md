@@ -678,6 +678,13 @@ previous one is merged or explicitly waived. Verification per repo policy: `npm 
   row exists. The sidebar control and `module02_access_set` write that same
   row. The set tool requires confirmation and cannot grant a write. There is
   no Module 02 mutation tool.
+- **Conversation management (delivered slice, ADR-0021).** Three independent
+  per-user flags on `chief_conversation_access`, all default off: read,
+  organize, and delete. CHIEF tools list, read, search, rename, archive,
+  restore, and delete the caller's interactive `ChiefSession` rows. Scheduled
+  sessions stay excluded. Rename, archive, and restore require confirmation.
+  Delete requires confirmation and is permanent. The signed-in user's own
+  list and history routes stay available without those flags.
 - **Phase 6b — Sidecar boundary.** `server/chief/sidecar/` provider registration + health;
   deep_research/managed-agent tool adapters; deployment recipe doc (Docker/Render/Fly) — all
   feature-flagged and optional.

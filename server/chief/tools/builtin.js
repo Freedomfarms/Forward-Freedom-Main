@@ -8,10 +8,15 @@ import { ToolRegistry } from "../core/registry.js";
 import { loadFinanceSummary } from "../../finance/aggregates.js";
 import { loadWorkspacePlanSummary } from "../../finance/workspaceSlice.js";
 import {
+  MemoryConversationAccess,
+  PrismaConversationAccess,
+} from "../security/conversation-access.js";
+import {
   denyUnlessModule02Read,
   MemoryModuleAccess,
   PrismaModuleAccess,
 } from "../security/module-access.js";
+import { createConversationTools } from "./conversations.js";
 import { TaintLabel } from "../security/taint.js";
 import { MemoryFactStore, PrismaFactStore } from "../memory/facts.js";
 import { MemoryGraphStore, PrismaGraphStore } from "../memory/graph.js";
@@ -21,6 +26,7 @@ import { PrismaAuditLog } from "../security/audit.js";
 import { ToolExecutor } from "./executor.js";
 import { CHIEF_TOOL_INVENTORY } from "./inventory.js";
 import { HANDOFF_STATE_KEY, validateHandoffNotes } from "../runtime/compaction.js";
+import { MemoryCheckpointStore, PrismaCheckpointStore } from "../runtime/checkpoint.js";
 import { bundledSkills, skillByName } from "../skills/catalog.js";
 import { MemoryScheduleStore, PrismaScheduleStore, normalizeSchedule } from "./schedule-store.js";
 import { BaseTool } from "./spec.js";
@@ -691,6 +697,8 @@ export function createChiefTools({
   skills = bundledSkills,
   search = null,
   moduleAccess = new MemoryModuleAccess(),
+  checkpoints = new MemoryCheckpointStore(),
+  conversationAccess = new MemoryConversationAccess(),
 } = {}) {
   const tools = [
     memoryRead(facts),
@@ -712,6 +720,7 @@ export function createChiefTools({
     module02AccessSet(moduleAccess),
     skillView(skills),
     createWebSearchTool(search ?? createWebSearchClient()),
+    ...createConversationTools({ store: checkpoints, access: conversationAccess }),
     mcpInvoke(mcpClient),
   ];
   for (const tool of tools) {
@@ -731,6 +740,8 @@ export async function createChiefTooling({
   mcpClient = null,
   search = null,
   moduleAccess = null,
+  conversationAccess = null,
+  checkpoints = null,
 } = {}) {
   let resolved = policy;
   if (!resolved) {
@@ -747,6 +758,9 @@ export async function createChiefTooling({
     mcpClient,
     search,
     moduleAccess: moduleAccess ?? stores?.moduleAccess ?? new PrismaModuleAccess(),
+    checkpoints: checkpoints ?? stores?.checkpoints ?? new PrismaCheckpointStore(),
+    conversationAccess:
+      conversationAccess ?? stores?.conversationAccess ?? new PrismaConversationAccess(),
   });
   const executor = new ToolExecutor({
     tools,

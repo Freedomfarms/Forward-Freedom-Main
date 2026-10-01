@@ -56,8 +56,41 @@ async function chiefJson(path, { user, method = "GET", body } = {}) {
   return response.json();
 }
 
-export function fetchChiefSessions(user) {
-  return chiefJson("/api/chief/sessions", { user });
+export function fetchChiefSessions(user, { archived = false } = {}) {
+  const query = archived ? "?archived=1" : "";
+  return chiefJson(`/api/chief/sessions${query}`, { user });
+}
+
+export function renameChiefConversation(user, sessionId, title) {
+  return chiefJson("/api/chief/conversation", {
+    user,
+    method: "PATCH",
+    body: { sessionId, title },
+  });
+}
+
+export function archiveChiefConversation(user, sessionId) {
+  return chiefJson("/api/chief/conversation", {
+    user,
+    method: "POST",
+    body: { sessionId, action: "archive" },
+  });
+}
+
+export function restoreChiefConversation(user, sessionId) {
+  return chiefJson("/api/chief/conversation", {
+    user,
+    method: "POST",
+    body: { sessionId, action: "restore" },
+  });
+}
+
+export function deleteChiefConversation(user, sessionId) {
+  return chiefJson("/api/chief/conversation", {
+    user,
+    method: "DELETE",
+    body: { sessionId, confirm: true },
+  });
 }
 
 export function fetchChiefModels(user) {

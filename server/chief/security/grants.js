@@ -5,11 +5,13 @@
 // Zero rows are not an explicit policy. OpenJarvis setup_security grants a
 // narrow _default set when no policy file is configured, so default-deny
 // does not leave every tool unreachable. This loader grants only the
-// capabilities the CHIEF inventory already uses, including web:search and
-// module:access. network:fetch stays off the baseline. finance:read lets the
-// read tools run so they can report that Module 02 access is off. The data
-// itself stays behind chief_module_access, which defaults to off and is not
-// a grant row. Any returned grant row replaces this baseline.
+// capabilities the CHIEF inventory already uses, including web:search,
+// module:access, and the three conversation labels. network:fetch stays off
+// the baseline. finance:read lets the read tools run so they can report that
+// Module 02 access is off. The conversation labels let those tools report
+// that read, organize, or delete is off. The data stays behind
+// chief_module_access and chief_conversation_access, which default to off
+// and are not grant rows. Any returned grant row replaces this baseline.
 // policyFromGrantRows stays a pure mapping of stored rows.
 
 import { withUserContext } from "../../db/prisma.js";
@@ -23,6 +25,9 @@ const BASELINE_CAPABILITIES = Object.freeze([
   Capability.SKILL_READ,
   Capability.WEB_SEARCH,
   Capability.MODULE_ACCESS,
+  Capability.CONVERSATION_READ,
+  Capability.CONVERSATION_ORGANIZE,
+  Capability.CONVERSATION_DELETE,
 ]);
 
 function baselinePolicy() {
