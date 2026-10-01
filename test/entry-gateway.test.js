@@ -14,9 +14,9 @@ import {
 import {
   createCurrent,
   fieldBudget,
-  populationOnScreen,
+  motionWeights,
+  placeParticle,
   stepCurrent,
-  visiblePopulation,
 } from "../src/components/entry/entryField.js";
 
 const gatewaySource = readFileSync(
@@ -96,41 +96,73 @@ test("the full entrance is remembered and the short one is not required to be", 
   assert.equal(readEntrySeen(null), false);
 });
 
-test("the field ignites small, then fills, and the current moves upward", () => {
-  assert.equal(fieldBudget(false), 700);
-  assert.equal(fieldBudget(true), 240);
-  assert.equal(visiblePopulation(700, "void"), 40);
-  assert.equal(visiblePopulation(240, "void"), 40);
-  assert.equal(visiblePopulation(700, "expansion"), 700);
-  assert.equal(visiblePopulation(240, "reduced"), 36);
-  const particles = createCurrent(40, 3);
-  const before = particles.map((particle) => particle.y);
-  stepCurrent(particles, 0.5, { energy: 1, assemble: 0, wordmark: 0 });
-  const risen = particles.filter((particle, index) => particle.y > before[index]).length;
-  assert.ok(risen > 30);
+function placedAt(particles, seconds) {
+  const view = entryPresentation({ elapsedMs: seconds * 1000 });
+  return particles
+    .map((particle) => placeParticle(particle, view, seconds))
+    .filter((item) => item.visible);
+}
+
+function mean(values) {
+  return values.reduce((sum, value) => sum + value, 0) / (values.length || 1);
+}
+
+test("the field ignites as a bottom source before the ribbon rises", () => {
+  assert.equal(fieldBudget(false), 1500);
+  assert.equal(fieldBudget(true), 520);
+  const particles = createCurrent(fieldBudget(false), 7);
+  const opening = placedAt(particles, 0.4);
+  const xs = opening.map((item) => item.x);
+  const span = Math.max(...xs) - Math.min(...xs);
+  assert.ok(opening.length > 200 && opening.length < 800);
+  assert.ok(span < 0.55);
+  assert.ok(mean(opening.map((item) => item.y)) < 0.25);
+  const fresh = createCurrent(80, 3);
+  const before = fresh.map((particle) => particle.flow);
+  stepCurrent(fresh, 0.5, { seconds: 1.2 });
+  const advanced = fresh.filter((particle, index) => particle.flow > before[index]).length;
+  assert.ok(advanced > 70);
 });
 
-test("expansion fills the viewport and still climbs", () => {
-  const early = entryPresentation({ elapsedMs: 200 });
-  const expansion = entryPresentation({ elapsedMs: 2500 });
-  assert.equal(expansion.phase, "expansion");
-  assert.ok(expansion.energy > early.energy);
-  assert.ok(expansion.curl > early.curl);
-  assert.ok(expansion.bottomGlow > early.bottomGlow);
-  const opening = populationOnScreen(700, entryPresentation({ elapsedMs: 400 }));
-  const filled = populationOnScreen(700, entryPresentation({ elapsedMs: 2900 }));
-  assert.equal(opening, 40);
-  assert.ok(filled > 600);
-  const particles = createCurrent(40, 5);
-  const before = particles.map((particle) => particle.y);
-  stepCurrent(particles, 0.5, {
-    energy: expansion.energy,
-    assemble: 0,
-    wordmark: 0,
-    curl: expansion.curl,
-  });
-  const risen = particles.filter((particle, index) => particle.y > before[index]).length;
-  assert.ok(risen > 30);
+test("the ribbon forms the diamond before energy covers the screen", () => {
+  const particles = createCurrent(fieldBudget(false), 7);
+  let clock = 0;
+  const stepTo = (seconds) => {
+    while (clock < seconds - 1e-6) {
+      stepCurrent(particles, 1 / 60, entryPresentation({ elapsedMs: clock * 1000 }));
+      clock += 1 / 60;
+    }
+  };
+  stepTo(1.15);
+  const ribbon = placedAt(particles, 1.15);
+  assert.ok(motionWeights(1.15).head > 0.9);
+  assert.ok(mean(ribbon.map((item) => item.x)) < -0.1);
+  assert.ok(Math.max(...ribbon.map((item) => item.y)) > 0.7);
+  assert.equal(ribbon.filter((item) => Math.abs(item.x) > 0.9).length, 0);
+
+  stepTo(2.9);
+  const forming = placedAt(particles, 2.9);
+  const formingSpan =
+    Math.max(...forming.map((item) => item.x)) - Math.min(...forming.map((item) => item.x));
+  assert.ok(motionWeights(2.9).form > 0.6);
+  assert.ok(motionWeights(2.9).coverage < 0.05);
+  assert.ok(formingSpan < 0.9);
+
+  stepTo(4.6);
+  const wide = placedAt(particles, 4.6);
+  assert.ok(motionWeights(4.6).coverage > 0.9);
+  assert.ok(wide.filter((item) => Math.abs(item.x) > 0.8).length > 40);
+
+  const settled = createCurrent(fieldBudget(false), 4).filter(
+    (particle) => particle.role === "body"
+  );
+  const formed = settled
+    .map((particle) => placeParticle(particle, entryPresentation({ elapsedMs: 5000 }), 5))
+    .filter((item) => item.visible);
+  const onDiamond = formed.filter(
+    (item) => Math.abs(item.x) < 0.42 && item.y > 0.2 && item.y < 0.82
+  );
+  assert.ok(onDiamond.length / formed.length > 0.9);
 });
 
 test("the gateway keeps authentication behavior and one canvas loop", () => {
