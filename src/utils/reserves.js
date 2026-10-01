@@ -2,7 +2,7 @@ import {
   BUDGET_CATEGORY_TYPES,
   DEFAULT_RESERVE_TARGET_MONTHS,
   budgetMonths,
-} from "../data/constants.jsx";
+} from "./budgetModel.js";
 import { getCurrentBudgetPeriod } from "./date.js";
 import { parseBudgetReviewDate } from "./budgetReview.js";
 import { fromCents, multiplyMoney, subtractMoney, sumMoney, toCents } from "./money.js";

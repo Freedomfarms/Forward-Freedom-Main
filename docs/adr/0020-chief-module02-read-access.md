@@ -6,9 +6,11 @@
 ## Decision
 
 1. `finance_summary` and `workspace_plan_summary` remain the only Module 02
-   reads. They already return the aggregates and plan slice Module 02 computes.
-   This slice does not add transaction, account, budget, or settings mutation
-   tools, and it does not widen those reads.
+   reads. `finance_summary` returns the six-month aggregate and, when this
+   user's `module02Read` flag is on, the Freedom Financial dashboard position.
+   `workspace_plan_summary` stays the label and count slice. This slice does
+   not add transaction, account, budget, or settings mutation tools.
+   `module02_access_set` changes only the permission flag.
 2. Each user has one `chief_module_access` row. `module02Read` defaults to
    false, and a missing row is off. Existing and new users are off until that
    user turns it on. The flag is not a `chief_capability_grant` row, because

@@ -637,6 +637,7 @@ test("finance reads do not import Module 01 or add a second executor", () => {
   const files = [
     "server/finance/aggregates.js",
     "server/finance/workspaceSlice.js",
+    "server/finance/dashboardPosition.js",
     "server/chief/tools/builtin.js",
   ];
   for (const file of files) {

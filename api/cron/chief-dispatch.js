@@ -20,6 +20,7 @@ import { PrismaTaskStore } from "../../server/chief/scheduler/store.js";
 import { runChiefTick } from "../../server/chief/scheduler/tick.js";
 import { PrismaTraceStore } from "../../server/chief/traces/store.js";
 import { PrismaAuditLog } from "../../server/chief/security/audit.js";
+import { PrismaModuleAccess } from "../../server/chief/security/module-access.js";
 import { createChiefTooling } from "../../server/chief/tools/builtin.js";
 import { enforceRateLimit, generalApiRateLimit } from "../../server/http/rateLimit.js";
 import { applySecurityHeaders } from "../../server/http/responseHelpers.js";
@@ -48,6 +49,7 @@ function defaultDeps() {
         checkpointStore,
         capabilityPolicy: policy ?? null,
         eventBus,
+        moduleAccess: new PrismaModuleAccess(),
       }),
     traceStore: new PrismaTraceStore(),
     audit,

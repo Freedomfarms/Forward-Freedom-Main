@@ -1,4 +1,4 @@
-import { budgetMonths, normalizeBudgetRow } from "../data/constants.jsx";
+import { budgetMonths, normalizeBudgetRow } from "./budgetModel.js";
 import { getCurrentBudgetPeriod } from "./date.js";
 import { parseMoney } from "./format.js";
 import { addMoney, subtractMoney, sumMoney } from "./money.js";

@@ -18,13 +18,19 @@
    does not import `server/agents` or `server/brain`.
 4. `finance_summary` returns that aggregate plus the existing Plaid connection
    counts (`itemCount`, `connectedCount`, `requiresAttentionCount`, `lastSyncAt`).
-   It does not return merchants, account names, institution names, Plaid
-   identifiers, tokens, or raw transactions. It does not recompute True Cash.
+   When the caller's Module 02 read flag is on, it also returns `dashboard`:
+   the Freedom Financial position computed by the dashboard utilities (spendable
+   True Cash, liquid cash, credit card debt, reserves, gross True Cash, net
+   worth, allocation, current-month budget and category spend, and the yearly
+   outlook). It does not return merchants, account names, institution names,
+   Plaid identifiers, tokens, or raw transactions. Net worth is the real sum.
+   The chart's one-dollar floor is not applied.
 5. The workspace slice stays the allowlist the CEO world model already returned.
    It now lives in `server/finance/workspaceSlice.js`. `workspace_plan_summary`
    decrypts `WorkspaceSnapshot.stateCiphertext`, sanitizes, and returns counts,
    capped labels, plan-year keys, and the stored-metric allowlist. It does not
-   return the blob, budget dollar amounts, or income dollar amounts.
+   return the blob. Dashboard dollar amounts are on `finance_summary`, not on
+   this slice.
 
 ## Consequences
 

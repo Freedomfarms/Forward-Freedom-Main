@@ -1,4 +1,4 @@
-import { budgetMonths } from "../data/constants.jsx";
+import { budgetMonths } from "./budgetModel.js";
 
 export function getCurrentTimestamp() {
   return Date.now();
