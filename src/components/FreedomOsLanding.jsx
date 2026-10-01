@@ -182,6 +182,7 @@ export function FreedomOsLanding({
   onExploreFff,
   isAdmin = false,
   onOpenAdminUsage = null,
+  onOpenChief = null,
 }) {
   const openCeoAgents = onExploreCeoAgents || (!signedIn ? onSignIn : undefined);
   const openFreedomFinancial = onExploreFreedomFinancial || onExploreFff;
@@ -407,6 +408,9 @@ export function FreedomOsLanding({
                   variant="secondary"
                   onClick={onOpenAdminUsage}
                 />
+              ) : null}
+              {typeof onOpenChief === "function" ? (
+                <PrimaryAction label="CHIEF" variant="secondary" onClick={onOpenChief} />
               ) : null}
               <PrimaryAction
                 label={signOutBusy ? "Signing out…" : "Sign Out"}

@@ -40,6 +40,7 @@ import chiefModelsHandler from "../api/chief/models.js";
 import chiefChatHandler from "../api/chief/chat.js";
 import chiefApprovalsHandler from "../api/chief/approvals.js";
 import chiefModuleAccessHandler from "../api/chief/module-access.js";
+import chiefRoomAccessHandler from "../api/chief/access.js";
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3001;
@@ -147,6 +148,7 @@ app.get("/api/chief/models", chiefModelsHandler);
 app.post("/api/chief/chat", chiefChatHandler);
 app.route("/api/chief/approvals").get(chiefApprovalsHandler).post(chiefApprovalsHandler);
 app.route("/api/chief/module-access").get(chiefModuleAccessHandler).post(chiefModuleAccessHandler);
+app.get("/api/chief/access", chiefRoomAccessHandler);
 // Cron dispatcher: GET with no JSON body; same CRON_SECRET check as Vercel.
 app.get("/api/cron/agent-dispatch", cronAgentDispatchHandler);
 

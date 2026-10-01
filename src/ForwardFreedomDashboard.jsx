@@ -689,14 +689,14 @@ function ForwardFreedomDashboard({
 } = {}) {
   const [initialAppState] = useState(() => {
     const base = initialAppStateOverride || loadPersistedAppState(storageKey);
-    // Authenticated sign-on always opens the Freedom OS module hub first.
+    // Authenticated sign-on opens the CHIEF room. Modules returns to the hub.
     // Demo / public paths keep whatever tab their seed state uses.
     if (initialAppStateOverride && !isDemoMode) {
       return {
         ...base,
         users: (base.users || []).map((user) => ({
           ...user,
-          activeTab: APP_TABS.FREEDOM_OS,
+          activeTab: APP_TABS.CHIEF,
         })),
       };
     }
@@ -2373,6 +2373,7 @@ function ForwardFreedomDashboard({
             }
             isAdmin={isPlatformAdmin}
             onOpenAdminUsage={() => setActiveTab(APP_TABS.ADMIN_USAGE)}
+            onOpenChief={() => setActiveTab(APP_TABS.CHIEF)}
           />
         </ViewErrorBoundary>
       );
@@ -2393,6 +2394,26 @@ function ForwardFreedomDashboard({
           />
         </ViewErrorBoundary>
       </FreedomOsDeck>
+    );
+  }
+
+  if (activeTab === APP_TABS.CHIEF && freedomOsAuthUser) {
+    return (
+      <ViewErrorBoundary key="chief-room" viewName={APP_TABS.CHIEF}>
+        <ChiefPage
+          user={freedomOsAuthUser}
+          onOpenFinancial={() => setActiveTab(APP_TABS.DASHBOARD)}
+          onOpenCeoAgents={() => {
+            setActiveTab(APP_TABS.FREEDOM_OS);
+            setFreedomOsModule(FREEDOM_OS_MODULE_IDS.CEO_AGENTS);
+          }}
+          onOpenModules={() => {
+            setFreedomOsModule(null);
+            setActiveTab(APP_TABS.FREEDOM_OS);
+          }}
+          onSignOut={() => void sessionControls?.onSignOut?.()}
+        />
+      </ViewErrorBoundary>
     );
   }
 
@@ -2609,7 +2630,7 @@ function ForwardFreedomDashboard({
               the boundary whenever the user switches views. */}
           <ViewErrorBoundary key={activeTab} viewName={activeTab}>
           {activeTab === APP_TABS.CHIEF ? (
-            <ChiefPage user={freedomOsAuthUser} />
+            <ChiefPage user={freedomOsAuthUser} embedded />
           ) : activeTab === APP_TABS.FREEDOM_OS ? (
             // Authenticated sessions render the full-screen deck above; only
             // demo / signed-out sessions reach this in-shell card.
