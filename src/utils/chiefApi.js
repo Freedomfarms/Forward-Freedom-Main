@@ -9,6 +9,7 @@ import {
   messageSubmission,
   modelSubmission,
 } from "./chiefProtocol.js";
+import { accessWord, conversationAccessWords, emptyRoomAccess } from "./chiefRoom.js";
 
 export {
   CHIEF_STATUS,
@@ -62,6 +63,32 @@ export function fetchChiefSessions(user) {
 
 export function fetchChiefModels(user) {
   return chiefJson("/api/chief/models", { user });
+}
+
+export async function fetchChiefRoomAccess(user) {
+  const next = emptyRoomAccess();
+  try {
+    const payload = await chiefJson("/api/chief/access", { user });
+    next.money = accessWord(payload?.money);
+    next.web = accessWord(payload?.web);
+  } catch {
+    next.money = "unavailable";
+    next.web = "unavailable";
+  }
+  try {
+    const response = await fetch("/api/chief/conversation-access", {
+      headers: await buildAuthenticatedHeaders({}, { user }),
+    });
+    if (!response.ok) return next;
+    const payload = await response.json().catch(() => null);
+    const words = conversationAccessWords(payload);
+    next.read = words.read;
+    next.organize = words.organize;
+    next.delete = words.delete;
+  } catch {
+    // Conversation permissions stay unavailable when that route is absent.
+  }
+  return next;
 }
 
 export function fetchChiefHistory(user, sessionId) {

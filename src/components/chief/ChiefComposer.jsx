@@ -3,7 +3,8 @@ export function ChiefComposer({
   onChange,
   onSubmit,
   disabled = false,
-  placeholder = "Ask CHIEF...",
+  placeholder = "Ask CHIEF",
+  inputRef = null,
 }) {
   return (
     <form
@@ -27,6 +28,7 @@ export function ChiefComposer({
       </label>
       <textarea
         id="chief-composer"
+        ref={inputRef}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}

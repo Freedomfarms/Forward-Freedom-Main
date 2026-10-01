@@ -6,18 +6,27 @@ import {
   fetchChiefHistory,
   fetchChiefModels,
   fetchChiefPendingApproval,
+  fetchChiefRoomAccess,
   fetchChiefSessions,
   initialTurnState,
-  publicTranscriptMessages,
   selectChiefModel,
   streamChiefChat,
 } from "../../utils/chiefApi.js";
+import {
+  currentTurn,
+  emptyRoomAccess,
+  formatRoomTime,
+  modelLabel,
+  moneyWebLine,
+} from "../../utils/chiefRoom.js";
+import { ChiefAccessSheet } from "./ChiefAccessSheet.jsx";
 import { ChiefApprovalCard } from "./ChiefApprovalCard.jsx";
 import { ChiefComposer } from "./ChiefComposer.jsx";
 import { ChiefConversationList } from "./ChiefConversationList.jsx";
+import { ChiefField } from "./ChiefField.jsx";
 import { ChiefModelSelect } from "./ChiefModelSelect.jsx";
 import { ChiefStatus } from "./ChiefStatus.jsx";
-import { ChiefTranscript } from "./ChiefTranscript.jsx";
+import { ChiefEarlierTurns, ChiefTranscript } from "./ChiefTranscript.jsx";
 
 const ACTIVE_SESSION_KEY = "chief.activeSessionId";
 
@@ -43,7 +52,14 @@ function errorText(error) {
   return error?.message || "CHIEF could not complete that request.";
 }
 
-export function ChiefPage({ user }) {
+export function ChiefPage({
+  user,
+  embedded = false,
+  onOpenFinancial,
+  onOpenCeoAgents,
+  onOpenModules,
+  onSignOut,
+}) {
   const [sessions, setSessions] = useState([]);
   const [sessionsResolved, setSessionsResolved] = useState(false);
   const [sessionsError, setSessionsError] = useState("");
@@ -59,6 +75,10 @@ export function ChiefPage({ user }) {
   const [approval, setApproval] = useState(null);
   const [busy, setBusy] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [placesOpen, setPlacesOpen] = useState(false);
+  const [accessOpen, setAccessOpen] = useState(false);
+  const [access, setAccess] = useState(emptyRoomAccess);
+  const [now, setNow] = useState(() => new Date());
   const [models, setModels] = useState([]);
   const [modelRoute, setModelRoute] = useState(null);
   const abortRef = useRef(null);
@@ -66,13 +86,14 @@ export function ChiefPage({ user }) {
   const generation = useRef(0);
   const activeSessionIdRef = useRef(null);
   const lastTextRef = useRef("");
-  const scrollRef = useRef(null);
+  const answerRef = useRef(null);
+  const composerRef = useRef(null);
 
   useEffect(() => {
     activeSessionIdRef.current = activeSessionId;
   }, [activeSessionId]);
 
-  const transcriptMessages = useMemo(() => publicTranscriptMessages(messages), [messages]);
+  const turnView = useMemo(() => currentTurn(messages, streamText), [messages, streamText]);
 
   function setBusyState(value) {
     busyRef.current = value;
@@ -88,6 +109,11 @@ export function ChiefPage({ user }) {
     const payload = await fetchChiefSessions(user);
     setSessions(Array.isArray(payload?.sessions) ? payload.sessions : []);
     setSessionsError("");
+  }, [user]);
+
+  const refreshAccess = useCallback(async () => {
+    if (!user) return;
+    setAccess(await fetchChiefRoomAccess(user));
   }, [user]);
 
   const loadHistory = useCallback(
@@ -175,18 +201,54 @@ export function ChiefPage({ user }) {
   }, []);
 
   useEffect(() => {
-    const node = scrollRef.current;
+    const node = answerRef.current;
     if (node) node.scrollTop = node.scrollHeight;
-  }, [transcriptMessages, streamText, approval, historyLoading, turnError]);
+  }, [turnView.answer, streamText]);
 
   useEffect(() => {
-    if (!drawerOpen) return undefined;
+    if (!user) return undefined;
+    let cancelled = false;
+    fetchChiefRoomAccess(user).then((next) => {
+      if (!cancelled) setAccess(next);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(new Date()), 15000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!viewport) return undefined;
+    function onResize() {
+      const inset = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop);
+      document.documentElement.style.setProperty("--chief-keyboard", `${Math.round(inset)}px`);
+    }
+    onResize();
+    viewport.addEventListener("resize", onResize);
+    viewport.addEventListener("scroll", onResize);
+    return () => {
+      viewport.removeEventListener("resize", onResize);
+      viewport.removeEventListener("scroll", onResize);
+      document.documentElement.style.removeProperty("--chief-keyboard");
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!drawerOpen && !placesOpen && !accessOpen) return undefined;
     function onKeyDown(event) {
-      if (event.key === "Escape") setDrawerOpen(false);
+      if (event.key !== "Escape") return;
+      setDrawerOpen(false);
+      setPlacesOpen(false);
+      setAccessOpen(false);
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [drawerOpen]);
+  }, [drawerOpen, placesOpen, accessOpen]);
 
   function selectSession(sessionId) {
     stopActiveTurn();
@@ -323,6 +385,7 @@ export function ChiefPage({ user }) {
       setStatus(turn.status === CHIEF_STATUS.ERROR ? CHIEF_STATUS.ERROR : CHIEF_STATUS.READY);
     }
     setBusyState(false);
+    void refreshAccess();
   }
 
   async function resolveApproval(decision) {
@@ -359,6 +422,7 @@ export function ChiefPage({ user }) {
       setTurnError(errorText(error));
     } finally {
       setBusyState(false);
+      void refreshAccess();
     }
   }
 
@@ -400,104 +464,225 @@ export function ChiefPage({ user }) {
       sendMessage(lastTextRef.current, { appendUser: false, sessionId: null });
   }
 
-  if (!user) {
-    return (
-      <section className="chief-page chief-page--solo" aria-label="CHIEF">
-        <div className="chief-stage">
-          <header className="chief-stage-header">
-            <div className="chief-title">CHIEF</div>
-            <ChiefStatus status={CHIEF_STATUS.READY} />
-          </header>
-          <div className="chief-transcript-scroll">
-            <div className="chief-empty-title">CHIEF</div>
-            <p className="chief-empty-copy">Sign in to talk with CHIEF.</p>
-          </div>
-        </div>
-      </section>
-    );
+  const showEmpty =
+    Boolean(user) && !historyLoading && !notFound && !turnView.userLine && !turnView.answer;
+  const transcriptError = historyError || turnError;
+  const stateDetail = transcriptError || "";
+  const canLeave = Boolean(onOpenFinancial || onOpenCeoAgents || onOpenModules);
+  const sheetOpen = drawerOpen || placesOpen || accessOpen;
+
+  useEffect(() => {
+    if (!showEmpty || busy || approval || sheetOpen) return;
+    composerRef.current?.focus();
+  }, [showEmpty, busy, approval, sheetOpen]);
+
+  function openConversations() {
+    setPlacesOpen(false);
+    setAccessOpen(false);
+    setDrawerOpen(true);
   }
 
-  const showEmpty = !historyLoading && !notFound && transcriptMessages.length === 0 && !streamText;
-  const transcriptError = historyError || turnError;
+  function openPlaces() {
+    setDrawerOpen(false);
+    setAccessOpen(false);
+    setPlacesOpen(true);
+  }
+
+  function openAccess() {
+    setDrawerOpen(false);
+    setPlacesOpen(false);
+    setAccessOpen(true);
+  }
+
+  function closeSheets() {
+    setDrawerOpen(false);
+    setPlacesOpen(false);
+    setAccessOpen(false);
+  }
 
   return (
-    <section className="chief-page" aria-label="CHIEF">
-      <div
-        className={drawerOpen ? "chief-rail-backdrop is-open" : "chief-rail-backdrop"}
-        onClick={() => setDrawerOpen(false)}
-      />
-      <aside
-        className={drawerOpen ? "chief-rail is-open" : "chief-rail"}
-        aria-label="Conversations"
-      >
-        <ChiefConversationList
-          sessions={sessions}
-          activeSessionId={activeSessionId}
-          isLoading={!sessionsResolved}
-          error={sessionsError}
-          disabled={busy}
-          onNewConversation={startNewConversation}
-          onSelect={selectSession}
-          onRetry={() => {
-            setSessionsResolved(false);
-            setSessionsError("");
-            refreshSessions()
-              .catch((error) => setSessionsError(errorText(error)))
-              .finally(() => setSessionsResolved(true));
-          }}
-        />
-      </aside>
-      <div className="chief-stage">
-        <header className="chief-stage-header">
-          <div className="chief-stage-heading">
+    <section
+      className={embedded ? "chief-room chief-room--embedded" : "chief-room"}
+      aria-label="CHIEF"
+    >
+      {sheetOpen ? <div className="chief-sheet-backdrop is-open" onClick={closeSheets} /> : null}
+      <div className="chief-room-top">
+        {canLeave ? (
+          <button
+            type="button"
+            className="chief-places-button"
+            aria-expanded={placesOpen}
+            onClick={openPlaces}
+          >
+            CHIEF
+          </button>
+        ) : (
+          <div className="chief-place chief-place--here">CHIEF</div>
+        )}
+        {canLeave ? (
+          <nav className="chief-places" aria-label="Places">
             <button
               type="button"
-              className="chief-action chief-conversations-button"
-              aria-expanded={drawerOpen}
-              onClick={() => setDrawerOpen(true)}
+              className="chief-place chief-place--here"
+              aria-current="page"
+              onClick={closeSheets}
             >
-              Conversations
+              CHIEF
             </button>
-            <div className="chief-title">CHIEF</div>
-            <ChiefModelSelect
-              models={models}
-              value={modelRoute}
-              disabled={busy || historyLoading || notFound || Boolean(approval)}
-              onChange={chooseModel}
-            />
-          </div>
-          <ChiefStatus status={status} />
-        </header>
-        <div className="chief-transcript-scroll" ref={scrollRef}>
-          <ChiefTranscript
-            messages={transcriptMessages}
-            streamText={streamText}
-            isLoading={historyLoading}
-            error={transcriptError}
-            notFound={notFound}
-            showEmpty={showEmpty}
-            onRetry={transcriptError ? retryTranscript : undefined}
-            onBackToList={backToConversations}
-          />
-          {approval ? (
-            <div className="chief-approval-slot">
-              <ChiefApprovalCard
-                disabled={busy}
-                onApprove={() => resolveApproval("approve")}
-                onDeny={() => resolveApproval("deny")}
-              />
+            {onOpenFinancial ? (
+              <button type="button" className="chief-place" onClick={onOpenFinancial}>
+                Freedom Financial
+              </button>
+            ) : null}
+            {onOpenCeoAgents ? (
+              <button type="button" className="chief-place" onClick={onOpenCeoAgents}>
+                CEO Agents
+              </button>
+            ) : null}
+            {onOpenModules ? (
+              <button type="button" className="chief-place" onClick={onOpenModules}>
+                Modules
+              </button>
+            ) : null}
+          </nav>
+        ) : null}
+        <div className="chief-instruments">
+          <div className="chief-instrument">{formatRoomTime(now)}</div>
+          {user ? (
+            <div className="chief-instrument chief-instrument--state">
+              <ChiefStatus status={status} detail={stateDetail} />
+              {transcriptError ? (
+                <button type="button" className="chief-text-button" onClick={retryTranscript}>
+                  Retry
+                </button>
+              ) : null}
             </div>
           ) : null}
-        </div>
-        <div className="chief-composer-wrap">
-          <ChiefComposer
-            value={draft}
-            onChange={setDraft}
-            onSubmit={() => sendMessage(draft)}
-            disabled={busy || historyLoading || notFound || Boolean(approval)}
-          />
+          {user ? (
+            models.length > 0 ? (
+              <ChiefModelSelect
+                models={models}
+                value={modelRoute}
+                disabled={busy || historyLoading || notFound || Boolean(approval)}
+                onChange={chooseModel}
+              />
+            ) : (
+              <div className="chief-instrument">{modelLabel(models, modelRoute)}</div>
+            )
+          ) : null}
+          {user ? (
+            <button
+              type="button"
+              className="chief-instrument chief-access"
+              aria-expanded={accessOpen}
+              onClick={openAccess}
+            >
+              {moneyWebLine(access.money, access.web)}
+            </button>
+          ) : null}
         </div>
       </div>
+      <div className={sheetOpen ? "chief-room-stage is-dim" : "chief-room-stage"}>
+        <ChiefField status={user ? status : CHIEF_STATUS.READY} />
+        {user ? (
+          <ChiefTranscript
+            userLine={turnView.userLine}
+            answer={turnView.answer}
+            answerRef={answerRef}
+            isLoading={historyLoading}
+            notFound={notFound}
+            showEmpty={showEmpty}
+            onBackToList={backToConversations}
+          />
+        ) : (
+          <div className="chief-turn">
+            <p className="chief-turn-empty">Sign in to talk with CHIEF.</p>
+          </div>
+        )}
+      </div>
+      {user ? (
+        <div className="chief-room-bottom">
+          {approval ? (
+            <ChiefApprovalCard
+              disabled={busy}
+              onApprove={() => resolveApproval("approve")}
+              onDeny={() => resolveApproval("deny")}
+            />
+          ) : (
+            <div className="chief-composer-row">
+              <button
+                type="button"
+                className="chief-text-button"
+                aria-expanded={drawerOpen}
+                onClick={openConversations}
+              >
+                Conversations
+              </button>
+              <ChiefComposer
+                value={draft}
+                onChange={setDraft}
+                onSubmit={() => sendMessage(draft)}
+                disabled={busy || historyLoading || notFound}
+                inputRef={composerRef}
+              />
+            </div>
+          )}
+        </div>
+      ) : null}
+      {drawerOpen ? (
+        <aside className="chief-sheet is-open" aria-label="Conversations">
+          <ChiefConversationList
+            sessions={sessions}
+            activeSessionId={activeSessionId}
+            isLoading={!sessionsResolved}
+            error={sessionsError}
+            disabled={busy}
+            onNewConversation={startNewConversation}
+            onSelect={selectSession}
+            onRetry={() => {
+              setSessionsResolved(false);
+              setSessionsError("");
+              refreshSessions()
+                .catch((error) => setSessionsError(errorText(error)))
+                .finally(() => setSessionsResolved(true));
+            }}
+          />
+          <ChiefEarlierTurns earlier={turnView.earlier} />
+          <button type="button" className="chief-action chief-action--quiet" onClick={closeSheets}>
+            Close
+          </button>
+        </aside>
+      ) : null}
+      {placesOpen ? (
+        <aside className="chief-sheet is-open" aria-label="Places">
+          <nav className="chief-place-list">
+            <button type="button" className="chief-place chief-place--here" onClick={closeSheets}>
+              CHIEF
+            </button>
+            {onOpenFinancial ? (
+              <button type="button" className="chief-place" onClick={onOpenFinancial}>
+                Freedom Financial
+              </button>
+            ) : null}
+            {onOpenCeoAgents ? (
+              <button type="button" className="chief-place" onClick={onOpenCeoAgents}>
+                CEO Agents
+              </button>
+            ) : null}
+            {onOpenModules ? (
+              <button type="button" className="chief-place" onClick={onOpenModules}>
+                Modules
+              </button>
+            ) : null}
+            {onSignOut ? (
+              <button type="button" className="chief-place" onClick={onSignOut}>
+                Sign out
+              </button>
+            ) : null}
+          </nav>
+        </aside>
+      ) : null}
+      {accessOpen ? <ChiefAccessSheet open access={access} onClose={closeSheets} /> : null}
     </section>
   );
 }
