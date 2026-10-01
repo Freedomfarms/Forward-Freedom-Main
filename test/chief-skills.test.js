@@ -23,6 +23,7 @@ import {
   parseSkillMarkdown,
 } from "../server/chief/skills/loader.js";
 import { MemoryAuditLog } from "../server/chief/security/audit.js";
+import { MemoryModuleAccess } from "../server/chief/security/module-access.js";
 import { createChiefTools } from "../server/chief/tools/builtin.js";
 import { ToolExecutor } from "../server/chief/tools/executor.js";
 
@@ -229,6 +230,7 @@ test("a finance procedure cannot run finance_summary unless finance:read is gran
       financeLoads += 1;
       return { itemCount: 1, connectedCount: 1, requiresAttentionCount: 0, lastSyncAt: null };
     },
+    moduleAccess: new MemoryModuleAccess([["user", true]]),
   });
   const specs = tools.map((tool) => tool.spec);
   const steps = [
