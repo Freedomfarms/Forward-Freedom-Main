@@ -73,8 +73,8 @@ test("authenticated entry paths redirect to /os and do not follow next", () => {
 test("authenticated surfaces follow the path", () => {
   assert.equal(screen("/os", { authenticated: true }), "os-shell");
   assert.equal(screen("/os/chief", { authenticated: true }), "os-chief");
-  assert.equal(screen("/os/agents", { authenticated: true }), "os-agents");
   assert.equal(screen("/os/finance", { authenticated: true }), "os-finance");
+  assert.equal(resolveAppRoute("/os/agents", { authenticated: true }).redirectTo, "/os");
   const finance = presentationForRoute({
     configured: true,
     ready: true,
@@ -84,7 +84,7 @@ test("authenticated surfaces follow the path", () => {
   assert.equal(finance.surface, "finance");
   assert.match(dashboardSource, /osSurface === "finance"/);
   assert.match(dashboardSource, /osSurface === "chief"/);
-  assert.match(dashboardSource, /osSurface === "agents"/);
+  assert.doesNotMatch(dashboardSource, /osSurface === "agents"/);
   assert.match(dashboardSource, /AuthenticatedFreedomOsShell/);
 });
 

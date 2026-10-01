@@ -8,14 +8,14 @@ const TAGLINE = "Your autonomous operating system for life, work, and wealth.";
 
 const BOOT_LINES_SIGNED_OUT = [
   { prefix: "sys", text: "freedom_os kernel loaded", tone: "ok" },
-  { prefix: "sys", text: "agent mesh online — CEO agent standing by", tone: "ok" },
+  { prefix: "sys", text: "CHIEF online — standing by", tone: "ok" },
   { prefix: "sys", text: "encrypted channel established", tone: "ok" },
   { prefix: "sys", text: "awaiting operator authentication…", tone: "wait" },
 ];
 
 const BOOT_LINES_SIGNED_IN = [
   { prefix: "sys", text: "freedom_os kernel loaded", tone: "ok" },
-  { prefix: "sys", text: "agent mesh online — CEO agent standing by", tone: "ok" },
+  { prefix: "sys", text: "CHIEF online — standing by", tone: "ok" },
   { prefix: "sys", text: "encrypted channel established", tone: "ok" },
   { prefix: "sys", text: "operator authenticated — select a module", tone: "ok" },
 ];
@@ -441,12 +441,7 @@ function FreedomOsStage({ bootLines, actions, portals }) {
   );
 }
 
-export function PublicFreedomOsHome({
-  onSignIn,
-  onCreateAccount,
-  onExploreCeoAgents,
-  onExploreFreedomFinancial,
-}) {
+export function PublicFreedomOsHome({ onSignIn, onCreateAccount, onExploreFreedomFinancial }) {
   return (
     <FreedomOsStage
       bootLines={BOOT_LINES_SIGNED_OUT}
@@ -459,11 +454,11 @@ export function PublicFreedomOsHome({
       portals={
         <>
           <PortalCard
-            eyebrow="Module 01"
-            title="CEO Agents"
-            description="Your autonomous agent operating system — CEO Agent, digests, and the team that runs missions on your behalf. Sign in to enter."
-            actionLabel="Enter CEO Agents"
-            onClick={onExploreCeoAgents || onSignIn}
+            eyebrow="CHIEF"
+            title="CHIEF"
+            description="Conversation, memory, tools, and scheduling. Sign in to enter."
+            actionLabel="Enter CHIEF"
+            onClick={onSignIn}
           />
           <PortalCard
             eyebrow="Module 02"
@@ -482,19 +477,13 @@ export function AuthenticatedFreedomOsShell({
   onSignOut,
   signOutBusy = false,
   onOpenChief,
-  onOpenAgents,
   onOpenFinance,
-  isAdmin = false,
-  onOpenAdminUsage = null,
 }) {
   return (
     <FreedomOsStage
       bootLines={BOOT_LINES_SIGNED_IN}
       actions={
         <>
-          {isAdmin && typeof onOpenAdminUsage === "function" ? (
-            <PrimaryAction label="Admin" variant="secondary" onClick={onOpenAdminUsage} />
-          ) : null}
           <PrimaryAction label="CHIEF" variant="secondary" onClick={onOpenChief} />
           <PrimaryAction
             label={signOutBusy ? "Signing out…" : "Sign Out"}
@@ -506,11 +495,11 @@ export function AuthenticatedFreedomOsShell({
       portals={
         <>
           <PortalCard
-            eyebrow="Module 01"
-            title="CEO Agents"
-            description="Your autonomous agent operating system — CEO Agent, digests, and the team that runs missions on your behalf."
-            actionLabel="Enter CEO Agents"
-            onClick={onOpenAgents}
+            eyebrow="CHIEF"
+            title="CHIEF"
+            description="Conversation, memory, tools, scheduling, and approvals."
+            actionLabel="Enter CHIEF"
+            onClick={onOpenChief}
           />
           <PortalCard
             eyebrow="Module 02"
@@ -522,5 +511,28 @@ export function AuthenticatedFreedomOsShell({
         </>
       }
     />
+  );
+}
+
+export function FreedomOsSignedOutCard() {
+  return (
+    <div
+      style={{
+        padding: 32,
+        textAlign: "center",
+        display: "grid",
+        gap: 12,
+        justifyItems: "center",
+      }}
+    >
+      <div style={{ fontSize: 44, color: "#00d8ff", textShadow: "0 0 25px rgba(0,216,255,.7)" }}>
+        ◈
+      </div>
+      <div style={{ color: "white", fontSize: 22, fontWeight: 900 }}>Freedom OS</div>
+      <div style={{ color: "#9fb0c9", fontSize: 14, lineHeight: 1.6, maxWidth: 440 }}>
+        Sign in to open Freedom OS. CHIEF and Freedom Financial live in your account. This demo
+        sandbox is Freedom Financial only.
+      </div>
+    </div>
   );
 }

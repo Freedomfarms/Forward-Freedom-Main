@@ -15,8 +15,6 @@ export function AppSidebar({
   onSkipSetup = null,
   className = "",
   onNavigate,
-  // Platform admin (from /api/me isAdmin) — gates the Admin Usage entry.
-  isAdmin = false,
 }) {
   // Freedom OS, then CHIEF, then the Freedom Financial tabs.
   const freedomOsItems = navMain.filter((item) => item.label === APP_TABS.FREEDOM_OS);
@@ -160,28 +158,6 @@ export function AppSidebar({
           onNavigate={onNavigate}
         />
       ))}
-
-      {isAdmin ? (
-        <>
-          <div
-            style={{
-              color: "#9fb0c9",
-              textTransform: "uppercase",
-              fontSize: 12,
-              marginTop: 18,
-              marginBottom: 16,
-            }}
-          >
-            Admin
-          </div>
-          <SideItem
-            item={{ icon: "⛭", label: APP_TABS.ADMIN_USAGE }}
-            activeTab={activeTab}
-            setActiveTab={setActiveTab}
-            onNavigate={onNavigate}
-          />
-        </>
-      ) : null}
 
       <button
         onClick={() => {

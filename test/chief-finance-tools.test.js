@@ -4,7 +4,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 import {
@@ -648,10 +648,6 @@ test("finance reads do not import Module 01 or add a second executor", () => {
   }
   const builtin = readFileSync(path.join(repoRoot, "server/chief/tools/builtin.js"), "utf8");
   assert.equal(builtin.split("new ToolExecutor(").length - 1, 1);
-  const financeAgent = readFileSync(path.join(repoRoot, "server/agents/types/finance.js"), "utf8");
-  assert.match(financeAgent, /finance\/aggregates\.js/);
-  assert.doesNotMatch(financeAgent, /function computeFinanceAggregates/);
-  const world = readFileSync(path.join(repoRoot, "server/brain/worldModel.js"), "utf8");
-  assert.match(world, /finance\/workspaceSlice\.js/);
-  assert.match(world, /finance\/aggregates\.js/);
+  assert.equal(existsSync(path.join(repoRoot, "server/agents/types/finance.js")), false);
+  assert.equal(existsSync(path.join(repoRoot, "server/brain/worldModel.js")), false);
 });

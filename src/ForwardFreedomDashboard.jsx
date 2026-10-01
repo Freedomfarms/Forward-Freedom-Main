@@ -109,14 +109,10 @@ import { RecurringSubscriptions } from "./components/RecurringSubscriptions.jsx"
 import { TransactionsView } from "./components/TransactionsView.jsx";
 import { WorkspaceGuideAssistant } from "./components/WorkspaceGuideAssistant.jsx";
 import {
-  FreedomOsHome,
+  AuthenticatedFreedomOsShell,
   FreedomOsSignedOutCard,
-} from "./components/freedomOs/FreedomOsHome.jsx";
-import { FreedomOsDeck } from "./components/freedomOs/FreedomOsDeck.jsx";
-import { AuthenticatedFreedomOsShell } from "./components/FreedomOsLanding.jsx";
+} from "./components/FreedomOsLanding.jsx";
 import { isModule02Tab } from "./utils/module02AccessCopy.js";
-import { FREEDOM_OS_MODULE_IDS } from "./components/freedomOs/freedomOsModules.js";
-import { AdminUsagePanel } from "./components/freedomOs/AdminUsagePanel.jsx";
 import { ChiefPage } from "./components/chief/ChiefPage.jsx";
 import { useViewportUIScale } from "./utils/useViewportUIScale.js";
 import { LegalModal } from "./components/LegalDocuments.jsx";
@@ -131,12 +127,7 @@ const LIQUID_ACCOUNT_TYPES = new Set(["Checking", "Savings", "Manual Cash"]);
 const CRYPTO_PRICE_SOURCE = "CoinGecko";
 const THIRTY_DAY_WINDOW = 30;
 const SNAPSHOT_RETENTION_DAYS = 400;
-// Admin Usage is deliberately outside navMain/navTools — it only appears in
-// the sidebar for isAdmin users, but the tab itself must always be renderable.
-const SUPPORTED_APP_TABS = new Set([
-  ...[...navMain, ...navTools].map((item) => item.label),
-  APP_TABS.ADMIN_USAGE,
-]);
+const SUPPORTED_APP_TABS = new Set([...navMain, ...navTools].map((item) => item.label));
 
 const METRIC_ICONS = {
   trueCash: (
@@ -684,20 +675,14 @@ function ForwardFreedomDashboard({
   // Returns to the Freedom OS public landing (the platform homepage) from the
   // internally rendered FFF landing view.
   onBackToOs,
-  // /api/me profile of the signed-in user (null for demo/unauthenticated).
-  // Freedom OS uses it for the isAdmin gate on the Admin Usage tab.
-  workspaceProfile = null,
   // Major surface from the URL. Null keeps the legacy tab switch for demo.
   osSurface = null,
   onNavigateOs = null,
 } = {}) {
   const [initialAppState] = useState(() => initialAppStateOverride || loadPersistedAppState(storageKey));
-  const [adminOpen, setAdminOpen] = useState(false);
   const [currentView, setCurrentView] = useState(initialView);
   const [users, setUsers] = useState(initialAppState.users);
   const [activeUserId, setActiveUserId] = useState(initialAppState.activeUserId);
-  // null = module hub; ceo_agents = Module 01. Module 02 switches activeTab.
-  const [freedomOsModule, setFreedomOsModule] = useState(null);
   const [editingUserId, setEditingUserId] = useState(null);
   const [draftUserName, setDraftUserName] = useState("");
   const [pendingManualEditAccountId, setPendingManualEditAccountId] = useState(null);
@@ -751,16 +736,13 @@ function ForwardFreedomDashboard({
   // /os/finance keeps Module 02's saved tab. A CHIEF or hub tab stored from
   // older sessions is shown as Command Center without rewriting that save.
   const activeTab =
-    osSurface === "finance" &&
-    storedActiveTab !== APP_TABS.ADMIN_USAGE &&
-    !isModule02Tab(storedActiveTab)
+    osSurface === "finance" && !isModule02Tab(storedActiveTab)
       ? APP_TABS.DASHBOARD
       : storedActiveTab;
   const onboardingProgress = evaluateOnboardingProgress(activeUser, activeTab);
   // Freedom OS requires an authenticated Firebase user for its API calls; in
   // demo/public sessions the tab renders a static sign-in card instead.
   const freedomOsAuthUser = !isDemoMode && sessionControls?.user ? sessionControls.user : null;
-  const isPlatformAdmin = Boolean(freedomOsAuthUser) && workspaceProfile?.isAdmin === true;
   const activeRange = activeUser.activeRange;
   const metricSnapshots = activeUser.metricSnapshots;
   const currentBudgetPeriod = getBudgetPeriodAtOffset(0);
@@ -801,7 +783,6 @@ function ForwardFreedomDashboard({
     setActiveUserField("plaidTransactionOverrides", valueOrUpdater);
   const setOnboarding = (valueOrUpdater) => setActiveUserField("onboarding", valueOrUpdater);
   const navigateOs = (path) => {
-    if (path !== "/os") setAdminOpen(false);
     onNavigateOs?.(path);
   };
   const setActiveTab = (valueOrUpdater) => {
@@ -818,22 +799,7 @@ function ForwardFreedomDashboard({
         return;
       }
     }
-    // Returning to Freedom OS always shows the module hub, not a nested module.
-    if (next === APP_TABS.FREEDOM_OS) {
-      setFreedomOsModule(null);
-    }
     setActiveUserField("activeTab", next);
-  };
-
-  const handleSelectFreedomOsModule = (moduleId) => {
-    if (moduleId === FREEDOM_OS_MODULE_IDS.CEO_AGENTS) {
-      setFreedomOsModule(FREEDOM_OS_MODULE_IDS.CEO_AGENTS);
-      return;
-    }
-    if (moduleId === FREEDOM_OS_MODULE_IDS.FREEDOM_FINANCIAL) {
-      setFreedomOsModule(null);
-      setActiveTab(APP_TABS.DASHBOARD);
-    }
   };
   const setActiveRange = (valueOrUpdater) => setActiveUserField("activeRange", valueOrUpdater);
   // Switching household profiles must keep the current page. The active tab is
@@ -2368,30 +2334,13 @@ function ForwardFreedomDashboard({
   // The URL chooses the major surface. Demo sessions have no osSurface and
   // keep the tab switch below.
   if (osSurface === "shell" && freedomOsAuthUser) {
-    if (adminOpen && isPlatformAdmin) {
-      return (
-        <FreedomOsDeck
-          sessionControls={sessionControls}
-          isAdmin={isPlatformAdmin}
-          moduleLabel="Admin"
-          onBackToModules={() => setAdminOpen(false)}
-          onOpenAdminUsage={() => setAdminOpen(true)}
-        >
-          <AdminUsagePanel user={freedomOsAuthUser} />
-        </FreedomOsDeck>
-      );
-    }
-
     return (
       <ViewErrorBoundary key="freedom-os-shell" viewName={APP_TABS.FREEDOM_OS}>
         <AuthenticatedFreedomOsShell
           onSignOut={() => void sessionControls?.onSignOut?.()}
           signOutBusy={Boolean(sessionControls?.isBusy)}
           onOpenChief={() => navigateOs("/os/chief")}
-          onOpenAgents={() => navigateOs("/os/agents")}
           onOpenFinance={() => navigateOs("/os/finance")}
-          isAdmin={isPlatformAdmin}
-          onOpenAdminUsage={() => setAdminOpen(true)}
         />
       </ViewErrorBoundary>
     );
@@ -2403,7 +2352,6 @@ function ForwardFreedomDashboard({
         <ChiefPage
           user={freedomOsAuthUser}
           onOpenFinancial={() => navigateOs("/os/finance")}
-          onOpenCeoAgents={() => navigateOs("/os/agents")}
           onOpenModules={() => navigateOs("/os")}
           onSignOut={() => void sessionControls?.onSignOut?.()}
         />
@@ -2411,67 +2359,19 @@ function ForwardFreedomDashboard({
     );
   }
 
-  if (osSurface === "agents" && freedomOsAuthUser) {
-    return (
-      <FreedomOsDeck
-        sessionControls={sessionControls}
-        isAdmin={isPlatformAdmin}
-        moduleLabel="Module 01 · CEO Agents"
-        onBackToModules={() => navigateOs("/os")}
-        onOpenAdminUsage={() => {
-          setAdminOpen(true);
-          onNavigateOs?.("/os");
-        }}
-      >
-        <ViewErrorBoundary key="ceo-agents" viewName={APP_TABS.FREEDOM_OS}>
-          <FreedomOsHome
-            user={freedomOsAuthUser}
-            onOpenFinanceTool={() => navigateOs("/os/finance")}
-          />
-        </ViewErrorBoundary>
-      </FreedomOsDeck>
-    );
-  }
-
   // Demo and signed-out sessions keep the in-shell signed-out card below.
   // Authenticated /os/* surfaces are handled above, so a stored CHIEF tab
   // cannot override /os/finance.
   if (!osSurface && activeTab === APP_TABS.FREEDOM_OS && freedomOsAuthUser) {
-    const inCeoAgents = freedomOsModule === FREEDOM_OS_MODULE_IDS.CEO_AGENTS;
-
-    if (!inCeoAgents) {
-      return (
-        <ViewErrorBoundary key="freedom-os-home" viewName={APP_TABS.FREEDOM_OS}>
-          <AuthenticatedFreedomOsShell
-            onSignOut={() => void sessionControls?.onSignOut?.()}
-            signOutBusy={Boolean(sessionControls?.isBusy)}
-            onOpenAgents={() => handleSelectFreedomOsModule(FREEDOM_OS_MODULE_IDS.CEO_AGENTS)}
-            onOpenFinance={() =>
-              handleSelectFreedomOsModule(FREEDOM_OS_MODULE_IDS.FREEDOM_FINANCIAL)
-            }
-            isAdmin={isPlatformAdmin}
-            onOpenAdminUsage={() => setActiveTab(APP_TABS.ADMIN_USAGE)}
-            onOpenChief={() => setActiveTab(APP_TABS.CHIEF)}
-          />
-        </ViewErrorBoundary>
-      );
-    }
-
     return (
-      <FreedomOsDeck
-        sessionControls={sessionControls}
-        isAdmin={isPlatformAdmin}
-        moduleLabel="Module 01 · CEO Agents"
-        onBackToModules={() => setFreedomOsModule(null)}
-        onOpenAdminUsage={() => setActiveTab(APP_TABS.ADMIN_USAGE)}
-      >
-        <ViewErrorBoundary key="ceo-agents" viewName={APP_TABS.FREEDOM_OS}>
-          <FreedomOsHome
-            user={freedomOsAuthUser}
-            onOpenFinanceTool={() => setActiveTab(APP_TABS.DASHBOARD)}
-          />
-        </ViewErrorBoundary>
-      </FreedomOsDeck>
+      <ViewErrorBoundary key="freedom-os-home" viewName={APP_TABS.FREEDOM_OS}>
+        <AuthenticatedFreedomOsShell
+          onSignOut={() => void sessionControls?.onSignOut?.()}
+          signOutBusy={Boolean(sessionControls?.isBusy)}
+          onOpenFinance={() => setActiveTab(APP_TABS.DASHBOARD)}
+          onOpenChief={() => setActiveTab(APP_TABS.CHIEF)}
+        />
+      </ViewErrorBoundary>
     );
   }
 
@@ -2481,14 +2381,7 @@ function ForwardFreedomDashboard({
         <ChiefPage
           user={freedomOsAuthUser}
           onOpenFinancial={() => setActiveTab(APP_TABS.DASHBOARD)}
-          onOpenCeoAgents={() => {
-            setActiveTab(APP_TABS.FREEDOM_OS);
-            setFreedomOsModule(FREEDOM_OS_MODULE_IDS.CEO_AGENTS);
-          }}
-          onOpenModules={() => {
-            setFreedomOsModule(null);
-            setActiveTab(APP_TABS.FREEDOM_OS);
-          }}
+          onOpenModules={() => setActiveTab(APP_TABS.FREEDOM_OS)}
           onSignOut={() => void sessionControls?.onSignOut?.()}
         />
       </ViewErrorBoundary>
@@ -2507,7 +2400,6 @@ function ForwardFreedomDashboard({
           onboardingProgress={onboardingProgress}
           onOpenSetupStep={openOnboardingStep}
           onSkipSetup={skipOnboarding}
-          isAdmin={isPlatformAdmin}
         />
 
         <div className={`mobile-nav-backdrop${isMobileNavOpen ? " is-open" : ""}`} onClick={() => setIsMobileNavOpen(false)} />
@@ -2521,7 +2413,6 @@ function ForwardFreedomDashboard({
             onboardingProgress={onboardingProgress}
             onOpenSetupStep={openOnboardingStep}
             onSkipSetup={skipOnboarding}
-            isAdmin={isPlatformAdmin}
             onNavigate={() => setIsMobileNavOpen(false)}
           />
         </div>
@@ -2710,18 +2601,9 @@ function ForwardFreedomDashboard({
           {activeTab === APP_TABS.CHIEF ? (
             <ChiefPage user={freedomOsAuthUser} embedded />
           ) : activeTab === APP_TABS.FREEDOM_OS ? (
-            // Authenticated sessions render the full-screen deck above; only
+            // Authenticated sessions render the full-screen shell above; only
             // demo / signed-out sessions reach this in-shell card.
             <FreedomOsSignedOutCard />
-          ) : activeTab === APP_TABS.ADMIN_USAGE ? (
-            isPlatformAdmin ? (
-              <AdminUsagePanel user={freedomOsAuthUser} />
-            ) : (
-              <ModulePlaceholder
-                activeTab={activeTab}
-                householdProfilesProps={householdProfilesProps}
-              />
-            )
           ) : activeTab === APP_TABS.DASHBOARD ? (
             <DashboardView
               activeRange={activeRange}

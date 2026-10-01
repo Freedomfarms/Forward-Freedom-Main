@@ -11,29 +11,6 @@ import plaidExchangePublicTokenHandler from "../api/plaid/exchange-public-token.
 import plaidSyncHandler from "../api/plaid/sync.js";
 import plaidUserHandler from "../api/plaid/user.js";
 import plaidWebhookHandler from "../api/plaid/webhook.js";
-import agentsHandler from "../api/agents.js";
-import agentByIdHandler from "../api/agents/[id].js";
-import agentRunHandler from "../api/agents/[id]/run.js";
-import agentRunsHandler from "../api/agents/[id]/runs.js";
-import agentRunByIdHandler from "../api/agents/[id]/runs/[runId].js";
-import agentChatHandler from "../api/agents/[id]/chat.js";
-import agentConversationsHandler from "../api/agents/[id]/conversations.js";
-import agentConversationByIdHandler from "../api/agents/[id]/conversations/[conversationId].js";
-import agentConversationMessagesHandler from "../api/agents/[id]/conversations/[conversationId]/messages.js";
-import ceoAgentHandler from "../api/agents/ceo.js";
-import ceoProfileHandler from "../api/agents/ceo/profile.js";
-import ceoNarrativeProfileHandler from "../api/agents/ceo/profile/narrative.js";
-import ceoDigestHandler from "../api/agents/ceo/digest.js";
-import ceoChatHandler from "../api/agents/ceo/chat.js";
-import ceoConversationsHandler from "../api/agents/ceo/conversations.js";
-import ceoConversationByIdHandler from "../api/agents/ceo/conversations/[conversationId].js";
-import ceoConversationMessagesHandler from "../api/agents/ceo/conversations/[conversationId]/messages.js";
-import ceoDocumentsHandler from "../api/agents/ceo/documents.js";
-import onboardingHandler from "../api/agents/onboarding.js";
-import notificationsHandler from "../api/notifications.js";
-import notificationByIdHandler from "../api/notifications/[id].js";
-import adminUsageHandler from "../api/admin/usage.js";
-import cronAgentDispatchHandler from "../api/cron/agent-dispatch.js";
 import chiefSessionsHandler from "../api/chief/sessions.js";
 import chiefSessionSearchHandler from "../api/chief/session-search.js";
 import chiefHistoryHandler from "../api/chief/history.js";
@@ -67,13 +44,7 @@ app.post(
   plaidWebhookHandler
 );
 
-// Document/onboarding uploads can carry up to 10 files at 500,000 KB each
-// (size still enforced in the documents module). Other API routes stay at 1mb.
-const largeJsonParser = express.json({ limit: "5500mb" });
-const defaultJsonParser = express.json({ limit: "1mb" });
-app.use("/api/agents/ceo/documents", largeJsonParser);
-app.use("/api/agents/onboarding", largeJsonParser);
-app.use(defaultJsonParser);
+app.use(express.json({ limit: "1mb" }));
 
 // Mirror the Vercel route modules in local Express so development and deployment
 // exercise the same API entry points. Each handler also enforces its own
@@ -88,59 +59,6 @@ app.post("/api/plaid/exchange-public-token", plaidExchangePublicTokenHandler);
 app.get("/api/plaid/sync", plaidSyncHandler);
 app.delete("/api/plaid/user", plaidUserHandler);
 
-// Freedom OS agent platform (Phase 5). Static /api/agents/ceo* routes are
-// registered BEFORE the dynamic /api/agents/:id routes so "ceo" can never be
-// captured as an :id (Vercel resolves the same precedence automatically).
-app.route("/api/agents/ceo").get(ceoAgentHandler).put(ceoAgentHandler);
-app.route("/api/agents/ceo/profile").get(ceoProfileHandler).patch(ceoProfileHandler);
-app
-  .route("/api/agents/ceo/profile/narrative")
-  .get(ceoNarrativeProfileHandler)
-  .post(ceoNarrativeProfileHandler);
-app.route("/api/agents/ceo/digest").get(ceoDigestHandler).post(ceoDigestHandler);
-app.route("/api/agents/ceo/chat").get(ceoChatHandler).post(ceoChatHandler);
-app
-  .route("/api/agents/ceo/conversations")
-  .get(ceoConversationsHandler)
-  .post(ceoConversationsHandler);
-app
-  .route("/api/agents/ceo/conversations/:conversationId")
-  .patch(ceoConversationByIdHandler)
-  .delete(ceoConversationByIdHandler);
-app.get(
-  "/api/agents/ceo/conversations/:conversationId/messages",
-  ceoConversationMessagesHandler
-);
-app
-  .route("/api/agents/ceo/documents")
-  .get(ceoDocumentsHandler)
-  .post(ceoDocumentsHandler)
-  .delete(ceoDocumentsHandler);
-app.post("/api/agents/onboarding", onboardingHandler);
-app.route("/api/agents").get(agentsHandler).post(agentsHandler);
-app.route("/api/agents/:id").patch(agentByIdHandler).delete(agentByIdHandler);
-app.post("/api/agents/:id/run", agentRunHandler);
-app.get("/api/agents/:id/runs", agentRunsHandler);
-app
-  .route("/api/agents/:id/runs/:runId")
-  .get(agentRunByIdHandler)
-  .post(agentRunByIdHandler);
-app.route("/api/agents/:id/chat").get(agentChatHandler).post(agentChatHandler);
-app
-  .route("/api/agents/:id/conversations")
-  .get(agentConversationsHandler)
-  .post(agentConversationsHandler);
-app
-  .route("/api/agents/:id/conversations/:conversationId")
-  .patch(agentConversationByIdHandler)
-  .delete(agentConversationByIdHandler);
-app.get(
-  "/api/agents/:id/conversations/:conversationId/messages",
-  agentConversationMessagesHandler
-);
-app.get("/api/notifications", notificationsHandler);
-app.patch("/api/notifications/:id", notificationByIdHandler);
-app.get("/api/admin/usage", adminUsageHandler);
 // CHIEF conversation lifecycle. Vercel serves api/chief/*.js directly; local
 // Express mirrors those handlers without changing them.
 app
@@ -155,8 +73,6 @@ app.post("/api/chief/chat", chiefChatHandler);
 app.route("/api/chief/approvals").get(chiefApprovalsHandler).post(chiefApprovalsHandler);
 app.route("/api/chief/module-access").get(chiefModuleAccessHandler).post(chiefModuleAccessHandler);
 app.get("/api/chief/access", chiefRoomAccessHandler);
-// Cron dispatcher: GET with no JSON body; same CRON_SECRET check as Vercel.
-app.get("/api/cron/agent-dispatch", cronAgentDispatchHandler);
 
 app.listen(PORT, () => {
   console.log(`Freedom OS API server listening on http://localhost:${PORT}`);

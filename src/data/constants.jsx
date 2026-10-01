@@ -47,8 +47,6 @@ export const APP_TABS = {
   INVESTMENTS: "Investments",
   REPORTS: "Reports",
   SETTINGS: "Settings",
-  // Platform admin usage reporting — only shown when /api/me reports isAdmin.
-  ADMIN_USAGE: "Admin Usage",
 };
 
 export const APP_TAB_VALUES = Object.values(APP_TABS);
