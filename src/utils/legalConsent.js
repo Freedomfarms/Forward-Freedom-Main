@@ -1,5 +1,6 @@
 import { LEGAL_CONSENT_VERSION } from "../content/legalContent.js";
 import { recordLegalConsent } from "./api.js";
+import { PENDING_LEGAL_CONSENT_STORAGE_KEY } from "./clientSessionCleanup.js";
 
 // Legal consent is checked in the auth UI before the Firebase session exists,
 // so the acceptance is staged in localStorage and flushed to the server (with
@@ -7,21 +8,51 @@ import { recordLegalConsent } from "./api.js";
 // durable server-side record of when and which document revision the user
 // accepted, and survives reloads or popup/redirect sign-in flows where the
 // immediate post-sign-in request could be interrupted.
-const PENDING_LEGAL_CONSENT_STORAGE_KEY = "fff::pendingLegalConsent";
+//
+// When an email is known, it is stored on the marker. A later flush for a
+// different signed-in email discards the marker instead of recording it.
 
-export function markPendingLegalConsent(method = null) {
+function normalizeConsentEmail(email) {
+  const value = String(email || "")
+    .trim()
+    .toLowerCase();
+  return value || null;
+}
+
+function consentEmailFrom(options) {
+  if (typeof options === "string") return normalizeConsentEmail(options);
+  return normalizeConsentEmail(options?.email);
+}
+
+export function markPendingLegalConsent(method = null, options = {}) {
+  const email = consentEmailFrom(options);
+  const record = {
+    version: LEGAL_CONSENT_VERSION,
+    method: method || null,
+    agreedAt: new Date().toISOString(),
+  };
+  if (email) record.email = email;
   try {
-    window.localStorage.setItem(
-      PENDING_LEGAL_CONSENT_STORAGE_KEY,
-      JSON.stringify({
-        version: LEGAL_CONSENT_VERSION,
-        method: method || null,
-        agreedAt: new Date().toISOString(),
-      })
-    );
+    window.localStorage.setItem(PENDING_LEGAL_CONSENT_STORAGE_KEY, JSON.stringify(record));
   } catch {
     // Storage unavailable (private mode/quota): the flush below will be a
     // no-op, but consent is still enforced by the auth form itself.
+  }
+}
+
+export function bindPendingLegalConsentEmail(email) {
+  const pending = readPendingLegalConsent();
+  const normalized = normalizeConsentEmail(email);
+  if (!pending || !normalized) return false;
+  if (pending.email && pending.email !== normalized) return false;
+  try {
+    window.localStorage.setItem(
+      PENDING_LEGAL_CONSENT_STORAGE_KEY,
+      JSON.stringify({ ...pending, email: normalized })
+    );
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -39,7 +70,7 @@ function readPendingLegalConsent() {
   }
 }
 
-function clearPendingLegalConsent() {
+export function clearPendingLegalConsent() {
   try {
     window.localStorage.removeItem(PENDING_LEGAL_CONSENT_STORAGE_KEY);
   } catch {
@@ -50,6 +81,18 @@ function clearPendingLegalConsent() {
 export async function flushPendingLegalConsent(options = {}) {
   const pending = readPendingLegalConsent();
   if (!pending) return false;
+
+  const userEmail = normalizeConsentEmail(options.user?.email);
+  if (pending.email) {
+    if (userEmail && pending.email !== userEmail) {
+      clearPendingLegalConsent();
+      return false;
+    }
+  } else if (userEmail) {
+    // Unbound marker plus a known account would stamp whoever happens to be
+    // signed in. Leave it unapplied. Sign-out deletes the marker.
+    return false;
+  }
 
   let payload;
   try {
@@ -87,7 +130,7 @@ export async function submitLegalConsent({ method = "reconsent" } = {}, options 
   // so it is flushed on a later session, and let the gate close now (the
   // server fails open on enforcement in this same state).
   if (payload?.legalConsentPersisted === false) {
-    markPendingLegalConsent(method);
+    markPendingLegalConsent(method, { email: options.user?.email });
     return true;
   }
 

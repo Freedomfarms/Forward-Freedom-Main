@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { LegalModal } from "./LegalDocuments.jsx";
 
-// Freedom OS landing — same page signed-out and signed-in. Signed-out shows
-// Sign In + Create Access; signed-in swaps to Sign Out and modules enter the app.
+// Shared Freedom OS entry visuals. PublicFreedomOsHome and
+// AuthenticatedFreedomOsShell are separate screens that reuse this frame.
 
 const TAGLINE = "Your autonomous operating system for life, work, and wealth.";
 
@@ -166,27 +166,7 @@ function PortalCard({ eyebrow, title, description, actionLabel, onClick }) {
   );
 }
 
-/**
- * Freedom OS front door — same composition signed-out and signed-in.
- * Signed-in: Sign In → Sign Out, Create Access hidden, modules enter the app.
- */
-export function FreedomOsLanding({
-  signedIn = false,
-  onSignIn,
-  onCreateAccount,
-  onSignOut,
-  signOutBusy = false,
-  onExploreCeoAgents,
-  onExploreFreedomFinancial,
-  // Legacy alias used by older call sites.
-  onExploreFff,
-  isAdmin = false,
-  onOpenAdminUsage = null,
-  onOpenChief = null,
-}) {
-  const openCeoAgents = onExploreCeoAgents || (!signedIn ? onSignIn : undefined);
-  const openFreedomFinancial = onExploreFreedomFinancial || onExploreFff;
-  const bootLines = signedIn ? BOOT_LINES_SIGNED_IN : BOOT_LINES_SIGNED_OUT;
+function FreedomOsStage({ bootLines, actions, portals }) {
   const [activeDocument, setActiveDocument] = useState(null);
   const typedTagline = useTypedText(TAGLINE);
   const taglineDone = typedTagline.length === TAGLINE.length;
@@ -395,64 +375,18 @@ export function FreedomOsLanding({
           ))}
         </div>
 
-        {/* Auth actions — Sign In / Create Access when signed out; Sign Out when in. */}
         <div
           className="fosl-actions fosl-rise"
           style={{ marginTop: "clamp(22px, 4vh, 38px)", animationDelay: "300ms" }}
         >
-          {signedIn ? (
-            <>
-              {isAdmin && typeof onOpenAdminUsage === "function" ? (
-                <PrimaryAction
-                  label="Admin"
-                  variant="secondary"
-                  onClick={onOpenAdminUsage}
-                />
-              ) : null}
-              {typeof onOpenChief === "function" ? (
-                <PrimaryAction label="CHIEF" variant="secondary" onClick={onOpenChief} />
-              ) : null}
-              <PrimaryAction
-                label={signOutBusy ? "Signing out…" : "Sign Out"}
-                onClick={onSignOut}
-                disabled={signOutBusy}
-              />
-            </>
-          ) : (
-            <>
-              <PrimaryAction label="Sign In" onClick={onSignIn} />
-              <PrimaryAction label="Create Access" variant="secondary" onClick={onCreateAccount} />
-            </>
-          )}
+          {actions}
         </div>
 
-        {/* Module portals */}
         <div
           className="fosl-portals fosl-rise"
           style={{ marginTop: "clamp(24px, 4.5vh, 42px)", animationDelay: "380ms" }}
         >
-          <PortalCard
-            eyebrow="Module 01"
-            title="CEO Agents"
-            description={
-              signedIn
-                ? "Your autonomous agent operating system — CEO Agent, digests, and the team that runs missions on your behalf."
-                : "Your autonomous agent operating system — CEO Agent, digests, and the team that runs missions on your behalf. Sign in to enter."
-            }
-            actionLabel="Enter CEO Agents"
-            onClick={openCeoAgents}
-          />
-          <PortalCard
-            eyebrow="Module 02"
-            title="Freedom Financial"
-            description={
-              signedIn
-                ? "Accounts, budgets, forecasting, and real-time cash intelligence — the financial command center inside Freedom OS."
-                : "Accounts, budgets, forecasting, and real-time cash intelligence — including a no-sign-up demo sandbox."
-            }
-            actionLabel={signedIn ? "Enter Freedom Financial" : "Explore Freedom Financial"}
-            onClick={openFreedomFinancial}
-          />
+          {portals}
         </div>
       </div>
 
@@ -504,5 +438,89 @@ export function FreedomOsLanding({
 
       <LegalModal activeDocument={activeDocument} closeDocument={() => setActiveDocument(null)} />
     </div>
+  );
+}
+
+export function PublicFreedomOsHome({
+  onSignIn,
+  onCreateAccount,
+  onExploreCeoAgents,
+  onExploreFreedomFinancial,
+}) {
+  return (
+    <FreedomOsStage
+      bootLines={BOOT_LINES_SIGNED_OUT}
+      actions={
+        <>
+          <PrimaryAction label="Sign In" onClick={onSignIn} />
+          <PrimaryAction label="Create Account" variant="secondary" onClick={onCreateAccount} />
+        </>
+      }
+      portals={
+        <>
+          <PortalCard
+            eyebrow="Module 01"
+            title="CEO Agents"
+            description="Your autonomous agent operating system — CEO Agent, digests, and the team that runs missions on your behalf. Sign in to enter."
+            actionLabel="Enter CEO Agents"
+            onClick={onExploreCeoAgents || onSignIn}
+          />
+          <PortalCard
+            eyebrow="Module 02"
+            title="Freedom Financial"
+            description="Accounts, budgets, forecasting, and real-time cash intelligence — including a no-sign-up demo sandbox."
+            actionLabel="Explore Freedom Financial"
+            onClick={onExploreFreedomFinancial}
+          />
+        </>
+      }
+    />
+  );
+}
+
+export function AuthenticatedFreedomOsShell({
+  onSignOut,
+  signOutBusy = false,
+  onOpenChief,
+  onOpenAgents,
+  onOpenFinance,
+  isAdmin = false,
+  onOpenAdminUsage = null,
+}) {
+  return (
+    <FreedomOsStage
+      bootLines={BOOT_LINES_SIGNED_IN}
+      actions={
+        <>
+          {isAdmin && typeof onOpenAdminUsage === "function" ? (
+            <PrimaryAction label="Admin" variant="secondary" onClick={onOpenAdminUsage} />
+          ) : null}
+          <PrimaryAction label="CHIEF" variant="secondary" onClick={onOpenChief} />
+          <PrimaryAction
+            label={signOutBusy ? "Signing out…" : "Sign Out"}
+            onClick={onSignOut}
+            disabled={signOutBusy}
+          />
+        </>
+      }
+      portals={
+        <>
+          <PortalCard
+            eyebrow="Module 01"
+            title="CEO Agents"
+            description="Your autonomous agent operating system — CEO Agent, digests, and the team that runs missions on your behalf."
+            actionLabel="Enter CEO Agents"
+            onClick={onOpenAgents}
+          />
+          <PortalCard
+            eyebrow="Module 02"
+            title="Freedom Financial"
+            description="Accounts, budgets, forecasting, and real-time cash intelligence — the financial command center inside Freedom OS."
+            actionLabel="Enter Freedom Financial"
+            onClick={onOpenFinance}
+          />
+        </>
+      }
+    />
   );
 }

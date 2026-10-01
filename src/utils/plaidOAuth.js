@@ -1,4 +1,4 @@
-const PENDING_LINK_KEY = "plaid_pending_link";
+export const PENDING_LINK_KEY = "plaid_pending_link";
 const RECEIVED_URI_KEY = "plaid_oauth_received_uri";
 
 export function savePendingPlaidLinkState(state) {

@@ -2,7 +2,10 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { AuthProvider, useAuth } from "./context/AuthContext.jsx";
 import { ErrorBoundary } from "./components/ErrorBoundary.jsx";
 import { LandingPage } from "./components/LandingPage.jsx";
-import { FreedomOsLanding } from "./components/FreedomOsLanding.jsx";
+import { PublicFreedomOsHome } from "./components/FreedomOsLanding.jsx";
+import { navigateApp, readSignupInitialForm } from "./routing/appLocation.js";
+import { presentationForRoute } from "./routing/appRoutes.js";
+import { clearSignedOutClientState } from "./utils/clientSessionCleanup.js";
 
 const ForwardFreedomDashboard = lazy(() => import("./ForwardFreedomDashboard.jsx"));
 const AuthScreen = lazy(() =>
@@ -352,6 +355,8 @@ function AuthenticatedWorkspaceApp({
   resendVerificationEmail,
   requestPasswordReset,
   updateProfileName,
+  osSurface = "shell",
+  onNavigateOs,
 }) {
   const storageKey = useMemo(() => buildScopedAppStateStorageKey(user.uid), [user.uid]);
   const [workspaceSeedState, setWorkspaceSeedState] = useState(null);
@@ -968,6 +973,8 @@ function AuthenticatedWorkspaceApp({
           sessionControls={sessionControls}
           persistLocally={false}
           workspaceProfile={profileDetails}
+          osSurface={osSurface}
+          onNavigateOs={onNavigateOs}
         />
       </LazyRouteBoundary>
       {workspaceConflict ? (
@@ -980,66 +987,75 @@ function AuthenticatedWorkspaceApp({
   );
 }
 
-function UnconfiguredPublicApp() {
-  const [publicView, setPublicView] = useState("landing");
-  const [authMode, setAuthMode] = useState("login");
-  const [demoSessionKey, setDemoSessionKey] = useState(0);
+function useAppPathname() {
+  const [pathname, setPathname] = useState(() =>
+    typeof window === "undefined" ? "/" : window.location.pathname
+  );
 
-  // Without Firebase there is no authenticated owner, so this public path must
-  // never persist financial data. Also purge anything a previous visit wrote to
-  // the default localStorage key before persistence was disabled here.
   useEffect(() => {
-    clearPersistedAppState();
+    const sync = () => setPathname(window.location.pathname);
+    window.addEventListener("popstate", sync);
+    return () => window.removeEventListener("popstate", sync);
   }, []);
 
-  if (publicView === "demo") {
+  return pathname;
+}
+
+function openFinanceAuth(payload = {}) {
+  if (payload?.mode === "create-account") {
+    navigateApp("/signup", {
+      state: {
+        initialForm: {
+          fullName: payload.primaryUserName || "",
+          email: payload.email || "",
+        },
+      },
+    });
+    return;
+  }
+  navigateApp("/login");
+}
+
+function PublicRouteScreen({ screen, demoSessionKey }) {
+  if (screen === "demo") {
     return (
       <LazyRouteBoundary message="Loading demo workspace...">
-        <DemoWorkspaceApp
-          key={demoSessionKey}
-          onExit={() => setPublicView("landing")}
-        />
+        <DemoWorkspaceApp key={demoSessionKey} onExit={() => navigateApp("/")} />
       </LazyRouteBoundary>
     );
   }
 
-  // Sign-in still renders here so the flow matches the configured app; any
-  // submit attempt surfaces the "not configured yet" error from AuthContext.
-  if (publicView === "auth") {
+  if (screen === "login" || screen === "signup") {
+    const initialForm = screen === "signup" ? readSignupInitialForm() : null;
     return (
       <LazyRouteBoundary message="Loading sign-in...">
-        <AuthScreen initialMode={authMode} onBackHome={() => setPublicView("landing")} />
-      </LazyRouteBoundary>
-    );
-  }
-
-  if (publicView === "fff") {
-    return (
-      <LazyRouteBoundary message="Loading workspace...">
-        <ForwardFreedomDashboard
-          initialView="landing"
-          persistLocally={false}
-          onBackToOs={() => setPublicView("landing")}
-          onEnterDemo={() => {
-            setDemoSessionKey((current) => current + 1);
-            setPublicView("demo");
-          }}
+        <AuthScreen
+          key={screen}
+          initialMode={screen === "signup" ? "register" : "login"}
+          initialForm={initialForm}
+          onBackHome={() => navigateApp("/")}
+          onModeChange={(mode) => navigateApp(mode === "register" ? "/signup" : "/login")}
         />
       </LazyRouteBoundary>
     );
   }
 
-  const openAuthScreen = (mode) => {
-    setAuthMode(mode);
-    setPublicView("auth");
-  };
+  if (screen === "finance-marketing") {
+    return (
+      <LandingPage
+        enterApp={openFinanceAuth}
+        onEnterDemo={() => navigateApp("/demo")}
+        onBackToOs={() => navigateApp("/")}
+      />
+    );
+  }
 
   return (
-    <FreedomOsLanding
-      onSignIn={() => openAuthScreen("login")}
-      onCreateAccount={() => openAuthScreen("register")}
-      onExploreCeoAgents={() => openAuthScreen("login")}
-      onExploreFreedomFinancial={() => setPublicView("fff")}
+    <PublicFreedomOsHome
+      onSignIn={() => navigateApp("/login")}
+      onCreateAccount={() => navigateApp("/signup")}
+      onExploreCeoAgents={() => navigateApp("/login")}
+      onExploreFreedomFinancial={() => navigateApp("/finance")}
     />
   );
 }
@@ -1057,108 +1073,95 @@ function AppContent() {
     updateProfileName,
     user,
   } = useAuth();
-  const [publicView, setPublicView] = useState("landing");
+  const pathname = useAppPathname();
   const [demoSessionKey, setDemoSessionKey] = useState(0);
-  const [authScreenConfig, setAuthScreenConfig] = useState({
-    mode: "login",
-    initialForm: null,
+  const demoPathRef = useRef(false);
+  const suspendRedirectRef = useRef(false);
+  const presentation = presentationForRoute({
+    configured,
+    ready,
+    authenticated: Boolean(user),
+    pathname,
   });
 
-  if (!configured) {
-    return <UnconfiguredPublicApp />;
-  }
+  useEffect(() => {
+    if (!configured) clearPersistedAppState();
+  }, [configured]);
 
-  if (!user) {
-    if (!ready) {
-      return <AppLoadingScreen message="Restoring your session..." />;
-    }
+  useEffect(() => {
+    if (suspendRedirectRef.current) return;
+    if (presentation.screen !== "redirect" || !presentation.redirectTo) return;
+    if (normalizeRedirectPath(presentation.redirectTo) === normalizeRedirectPath(pathname)) return;
+    navigateApp(presentation.redirectTo, { replace: true });
+  }, [pathname, presentation.redirectTo, presentation.screen]);
 
-    if (publicView === "demo") {
-      return (
-        <LazyRouteBoundary message="Loading demo workspace...">
-          <DemoWorkspaceApp
-            key={demoSessionKey}
-            onExit={() => setPublicView("landing")}
-          />
-        </LazyRouteBoundary>
-      );
-    }
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has("next")) return;
+    navigateApp(`${window.location.pathname}${window.location.search}${window.location.hash}`, {
+      replace: true,
+    });
+  }, [pathname]);
 
-    if (publicView === "auth") {
-      return (
-        <LazyRouteBoundary message="Loading sign-in...">
-          <AuthScreen
-            initialMode={authScreenConfig.mode}
-            initialForm={authScreenConfig.initialForm}
-            onBackHome={() => setPublicView("landing")}
-          />
-        </LazyRouteBoundary>
-      );
-    }
-
-    const openAuthScreen = (payload = {}) => {
-      setAuthScreenConfig({
-        mode: payload?.mode === "create-account" ? "register" : "login",
-        initialForm:
-          payload?.mode === "create-account"
-            ? {
-                fullName: payload.primaryUserName || "",
-                email: payload.email || "",
-              }
-            : null,
-      });
-      setPublicView("auth");
-    };
-
-    const openDemo = () => {
+  useEffect(() => {
+    const onDemo = normalizeRedirectPath(pathname) === "/demo";
+    if (onDemo && !demoPathRef.current) {
       setDemoSessionKey((current) => current + 1);
-      setPublicView("demo");
-    };
-
-    // Module 02 — Freedom Financial marketing / demo entry (signed out).
-    if (publicView === "fff") {
-      return (
-        <LandingPage
-          enterApp={openAuthScreen}
-          onEnterDemo={openDemo}
-          onBackToOs={() => setPublicView("landing")}
-        />
-      );
     }
+    demoPathRef.current = onDemo;
+  }, [pathname]);
 
-    // Freedom OS landing is the main homepage: Module 01 CEO Agents and
-    // Module 02 Freedom Financial. Sign-in and account creation launch here.
+  if (presentation.screen === "restoring") {
     return (
-      <FreedomOsLanding
-        onSignIn={() => openAuthScreen()}
-        onCreateAccount={() => openAuthScreen({ mode: "create-account" })}
-        onExploreCeoAgents={() => openAuthScreen()}
-        onExploreFreedomFinancial={() => setPublicView("fff")}
+      <AppLoadingScreen
+        message={user ? "Loading secure workspace..." : "Restoring your session..."}
       />
     );
   }
 
-  if (!ready) {
-    return <AppLoadingScreen />;
+  if (presentation.screen === "redirect" || presentation.screen === "reserved") {
+    return (
+      <AppLoadingScreen message={user ? "Opening Freedom OS..." : "Loading Freedom OS..."} />
+    );
   }
 
-  return (
-    <AuthenticatedWorkspaceApp
-      key={user.uid}
-      user={user}
-      signOut={async () => {
-        setAuthScreenConfig({ mode: "login", initialForm: null });
-        setPublicView("landing");
-        return signOut();
-      }}
-      isBusy={isBusy}
-      authNotice={notice}
-      requestEmailChange={requestEmailChange}
-      resendVerificationEmail={resendVerificationEmail}
-      requestPasswordReset={requestPasswordReset}
-      updateProfileName={updateProfileName}
-    />
-  );
+  if (presentation.surface && user) {
+    return (
+      <AuthenticatedWorkspaceApp
+        key={user.uid}
+        user={user}
+        osSurface={presentation.surface}
+        onNavigateOs={(path) => navigateApp(path)}
+        signOut={async () => {
+          // Hold path redirects until Firebase has cleared the user. Otherwise
+          // "/" is treated as an authenticated entry and bounced back to /os,
+          // or /os is treated as signed-out and bounced to /login.
+          suspendRedirectRef.current = true;
+          clearSignedOutClientState(user.uid);
+          try {
+            await signOut();
+          } finally {
+            navigateApp("/", { replace: true });
+            suspendRedirectRef.current = false;
+          }
+        }}
+        isBusy={isBusy}
+        authNotice={notice}
+        requestEmailChange={requestEmailChange}
+        resendVerificationEmail={resendVerificationEmail}
+        requestPasswordReset={requestPasswordReset}
+        updateProfileName={updateProfileName}
+      />
+    );
+  }
+
+  return <PublicRouteScreen screen={presentation.screen} demoSessionKey={demoSessionKey} />;
+}
+
+function normalizeRedirectPath(pathname) {
+  if (typeof pathname !== "string" || pathname.length === 0) return "/";
+  if (pathname.length > 1 && pathname.endsWith("/")) return pathname.slice(0, -1);
+  return pathname;
 }
 
 export default function App() {

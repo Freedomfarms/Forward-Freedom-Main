@@ -131,3 +131,66 @@ test("a failed flush keeps consent pending so the next session retries", async (
     await close();
   }
 });
+
+test("pending consent bound to one email is not recorded for another account", async () => {
+  const { mod, close } = await loadConsentModule();
+  const fakeWindow = installFakeWindow();
+  const calls = [];
+  const originalFetch = global.fetch;
+  global.fetch = async (_url, init = {}) => {
+    calls.push(JSON.parse(init.body));
+    return { ok: true, status: 200, headers: { get: () => null }, json: async () => ({ user: {} }) };
+  };
+
+  try {
+    mod.markPendingLegalConsent("email-login", { email: "a@example.com" });
+    const flushed = await mod.flushPendingLegalConsent({
+      user: { email: "b@example.com" },
+    });
+    assert.equal(flushed, false);
+    assert.equal(calls.length, 0);
+    assert.equal(fakeWindow.store.has("fff::pendingLegalConsent"), false);
+
+    mod.markPendingLegalConsent("email-signup", { email: "b@example.com" });
+    const own = await mod.flushPendingLegalConsent({
+      user: { email: "B@Example.com" },
+    });
+    assert.equal(own, true);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].legalConsent.method, "email-signup");
+  } finally {
+    global.fetch = originalFetch;
+    fakeWindow.restore();
+    await close();
+  }
+});
+
+test("an unbound consent marker is not applied to a signed-in account", async () => {
+  const { mod, close } = await loadConsentModule();
+  const fakeWindow = installFakeWindow();
+  const calls = [];
+  const originalFetch = global.fetch;
+  global.fetch = async () => {
+    calls.push(true);
+    return { ok: true, status: 200, headers: { get: () => null }, json: async () => ({ user: {} }) };
+  };
+
+  try {
+    mod.markPendingLegalConsent("google");
+    const flushed = await mod.flushPendingLegalConsent({
+      user: { email: "b@example.com" },
+    });
+    assert.equal(flushed, false);
+    assert.equal(calls.length, 0);
+    assert.equal(mod.bindPendingLegalConsentEmail("b@example.com"), true);
+    const bound = await mod.flushPendingLegalConsent({
+      user: { email: "b@example.com" },
+    });
+    assert.equal(bound, true);
+    assert.equal(calls.length, 1);
+  } finally {
+    global.fetch = originalFetch;
+    fakeWindow.restore();
+    await close();
+  }
+});
