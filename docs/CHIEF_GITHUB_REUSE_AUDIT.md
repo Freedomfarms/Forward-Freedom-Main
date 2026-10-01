@@ -1,8 +1,8 @@
 # CHIEF — GitHub Reuse Audit (Module 03 research deliverable)
 
-Status: research complete, awaiting approval. No CHIEF code has been written. Module 01 and
-Module 02 are untouched and are **not** used as an architectural foundation anywhere in this
-document.
+Status: research record. CHIEF now ships in this repository. Module 01 (CEO Agents /
+Freedom Brain) has been retired. Freedom Financial was not used as an architectural
+foundation anywhere in this document.
 
 This audit answers one question: **what proven open-source implementation can CHIEF bring in so
 we do not reinvent it?** Every important component found in the four target repositories is

@@ -1,8 +1,8 @@
 # Freedom OS
 
-Freedom OS is a React + Vite personal operating system with two modules: Module 01 — CEO Agents
-(an autonomous agent platform), and Module 02 — Freedom Financial (the Forward Freedom Financial
-planning workspace with budgeting, income, accounts, transactions, and Plaid-backed sync).
+Freedom OS is a React + Vite personal operating system. CHIEF (JARVIS) is the AI layer
+for conversation, tools, scheduling, and approvals. Freedom Financial is the command center
+for budgeting, income, accounts, transactions, and Plaid-backed sync.
 
 ## Current production foundation
 

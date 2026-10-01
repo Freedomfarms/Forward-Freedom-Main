@@ -5,11 +5,12 @@ The guiding principle is **privacy over database convenience**: sensitive
 financial data is encrypted at rest with per-record envelope encryption, and no
 employee, developer, database administrator, or owner can casually read it.
 
-It covers both the financial workspace (Plaid, encryption, §§1–8) and the
-**Freedom OS agent platform** (§§9–14): the per-account CEO Agent and its
-read-only sub-agents, Postgres row-level security, agent audit logging, the
-living profile, and LLM data minimization. Operational details (env vars,
-cron, admin setup) live in `docs/FREEDOM_OS.md`.
+It covers the financial workspace (Plaid, encryption, §§1–8), CHIEF as the
+AI layer (§9), and Postgres row-level security (§10). Operational details
+(env vars, cron) live in `docs/FREEDOM_OS.md`.
+
+The CEO agent platform, Freedom Brain, and their tables have been retired.
+CHIEF does not use that architecture.
 
 ## 1. What Freedom OS never has access to
 
@@ -184,54 +185,24 @@ The RLS design — roles, policies, and the narrowly-scoped service-role bypass
 - Rate limits apply per route (`server/http/rateLimit.js`).
 - Security headers + CSP are applied to every response.
 
-## 9. Freedom OS agent platform
+## 9. CHIEF
 
-Freedom OS adds a per-account team of AI agents on top of the financial
-workspace:
+CHIEF is the Freedom OS AI layer. Model credentials stay on the server
+(`server/chief/models/`). `CHIEF_ANTHROPIC_API_KEY` is the preferred Anthropic
+credential; `ANTHROPIC_API_KEY` remains the fallback while Anthropic is enabled
+in `CHIEF_MODEL_PROVIDERS`.
 
-- **CEO Agent** — the per-account orchestrator (default name "CEO Agent",
-  exactly one per user; `CeoAgentConfig`). It synthesizes a digest from
-  sub-agent run summaries, hosts the main chat, and owns the living profile
-  (§14). Personality is preset-driven (a fixed enum of server-side tone
-  snippets) — there are no free-text system prompts, and avatars are preset
-  keys, never uploaded or AI-generated images.
-- **Sub-agents** (`AgentConfig`) — Finance, Research, and Reminders, all
-  **read-only**. The runner's fail-closed gate (`server/agents/runner.js`)
-  only executes agents whose permission level is `READ_ONLY` or `DRAFT_ONLY`;
-  `ACTION_REQUIRED_APPROVAL` and `AUTONOMOUS` exist in the schema but are
-  rejected until a later phase unlocks them. Any gate failure is recorded as a
-  `SKIPPED` run in the audit log (§13).
+CHIEF's Freedom Financial tools are read-only. They run only when the user
+has enabled Module 02 access (`ChiefModuleAccess`), and `writeAccess` stays
+false. CHIEF does not transfer, trade, or write financial records.
 
-**Agents never execute financial or third-party actions.** There is no code
-path through which an agent can make transfers, trades, or payments, or
-contact any third party. Allowed non-financial effects are:
-
-- **Self-notification**: an in-app `Notification` row and, when email is
-  enabled for that agent, an email sent via Resend exclusively to the user's
-  own verified account address — the recipient is structurally hardcoded, with
-  no parameter through which any other destination can be supplied
-  (`server/agents/emailDelivery.js`, `server/agents/types/reminders.js`).
-- **Task-scoped self-management** in a sub-agent's own chat: that agent may
-  update its own schedule / instructions / definition of done / pause state /
-  email toggle, or trigger its own manual run, via allowlisted server-side
-  `taskAction` handling (`server/agents/chatActions.js`). It cannot edit other
-  agents or CEO settings.
-
-**Finance agent = observations only.** Its fixed system prompt limits it to
-surfacing observations and patterns ("dining spend is 40% above your 3-month
-average") and explicitly forbids prescriptive directives or investment
-recommendations of any kind. It is **not** an investment adviser. §12 covers
-what data it may see.
-
-**Research agent** reads no user financial data at all — its topic comes from
-the agent's own configuration — and its only tool is Anthropic's
-provider-executed web search (read-only by construction; no code or network
-access runs on our side).
+Scheduled work is `/api/cron/chief-dispatch`, authenticated with `CRON_SECRET`.
+CHIEF approvals, traces, and conversation history live in `chief_*` tables.
 
 ## 10. Postgres row-level security (RLS)
 
-On top of the app-level scoping (§7), every user-scoped table — including all
-agent tables — has row-level security **enabled and forced**
+On top of the app-level scoping (§7), every user-scoped table has row-level
+security **enabled and forced**
 (`ENABLE ROW LEVEL SECURITY` + `FORCE ROW LEVEL SECURITY`; `FORCE` applies the
 policies even to the table owner).
 
@@ -258,89 +229,13 @@ Roles:
   are exactly:
   1. the Plaid webhook resolving an incoming `item_id` to its owning user
      (Plaid sends no user token, so the owner is unknown until this lookup);
-  2. the cron dispatcher enumerating due agents across users
-     (`api/cron/agent-dispatch.js`) — the moment a due agent's owner is known,
-     the run executes inside `withUserContext(userId, ...)`;
-  3. admin usage/cost reporting (`api/admin/usage.js`, §13), gated on
-     `User.isAdmin`.
+  2. the CHIEF scheduler tick enumerating due tasks across users
+     (`server/chief/scheduler/store.js`) — once an owner is known, the run
+     continues inside that user's context.
 
   Every call site carries a comment justifying the bypass. Nothing else —
-  handlers, agent runtime, UI-serving code — may import the service client.
+  request handlers or UI-serving code — may import the service client.
 
 Rollout order, role creation SQL, troubleshooting, and post-rollout
 verification: `docs/RLS_ROLLOUT.md`. Covered by `test/rls-isolation.test.js`
 and `test/rls-policy-remediation.test.js` (§7).
-
-## 11. Agent data & encryption
-
-Agent data follows the same envelope-encryption scheme as financial data (§4):
-anything sensitive is ciphertext at rest, and only the non-financial metadata
-needed for lookups, scheduling, and usage reporting stays queryable.
-
-| Table | Encrypted | Plaintext (queryable) |
-| --- | --- | --- |
-| `CeoAgentConfig` | living profile (`profileCiphertext`), cached digest (`lastDigestCiphertext`) | name, personality preset, avatar key, timestamps |
-| `AgentRun` | full run output (`outputCiphertext`) | `summary` (aggregates only — never merchant names or account identifiers), `status`, token counts, estimated cost, `dataAccessed` JSON |
-| `AgentChatMessage` | message content (`contentCiphertext`) | role, timestamps, foreign keys |
-
-`AgentRun.summary` is the one deliberately plaintext output: a short
-human-readable line the CEO digest consumes cheaply. Every agent's system
-prompt forbids merchant names, account names/numbers, and institution names in
-its output, and the Finance agent structurally never sees them in the first
-place (§12).
-
-## 12. LLM data minimization
-
-- **Finance agent aggregates only.** All aggregation happens server-side; only
-  category/amount/date (month) aggregates and account-**type** balance totals
-  are ever sent to Anthropic — never merchant names, account names/IDs, or
-  institution names. Those columns are never even `SELECT`ed by the agent
-  (`server/agents/types/finance.js`), so they structurally cannot reach a
-  prompt, a run summary, or a digest. Asserted by
-  `test/agent-finance-aggregates.test.js` against the exact prompt payload.
-- **User content is data, not instructions.** System prompts are fixed
-  server-side templates. Everything user-derived — the living profile, agent
-  instructions, definition of done, chat messages, prior run outputs — is
-  injected only through delimited, explicitly-labeled data sections inside the
-  user message (`server/agents/prompts.js`); no code path concatenates user
-  text into a system prompt, and delimiter look-alikes in user text are
-  neutralized.
-- **Platform key only, no BYOK.** Every model call goes through a single
-  chokepoint (`server/agents/llm.js`) using the platform `ANTHROPIC_API_KEY`.
-  Users never supply their own key and no per-user key is stored.
-
-## 13. Audit & admin
-
-Every agent run — including runs blocked by the fail-closed gate — is recorded
-as an `AgentRun` row: `userId`, `agentType`, `dataAccessed` (a JSON
-description of what data the run read), plaintext `summary` (aggregates only),
-full output (encrypted), model, token counts, estimated cost, status
-(`RUNNING` / `SUCCEEDED` / `FAILED` / `SKIPPED`), and start/completion
-timestamps. The audit trail survives agent deletion: `agentConfigId` is
-nullable with `SetNull`, and `agentType` is denormalized onto the run.
-
-The admin usage panel is gated on `User.isAdmin`, which is DB-only — no API
-can set it (`docs/FREEDOM_OS.md` documents how to grant it).
-`GET /api/admin/usage` returns cross-user **aggregates only**: run counts,
-token totals, and estimated cost per user and agent type. An admin has **no**
-access to another user's financial data, decrypted agent output, chat, or
-profile — those stay ciphertext behind RLS, and no admin endpoint reads them.
-
-## 14. Living profile
-
-The CEO Agent maintains an encrypted "living profile" — long-term shared
-memory that all agents read and feed, stored on
-`CeoAgentConfig.profileCiphertext` (§11):
-
-- **Structured categories:** financial goals, known accounts & relationships,
-  stated preferences, recurring concerns, and life context. Each entry records
-  its text, source (onboarding, user edit, or the agent type that surfaced
-  it), and timestamps.
-- **Auto-updated:** after each run and chat, a cheap extraction pass proposes
-  profile updates (`server/agents/profile.js`). Extraction is best-effort by
-  contract — it can never fail the run it follows.
-- **User-controlled:** the user can view, edit, and delete entries via
-  `GET`/`PATCH` `/api/agents/ceo/profile` (and the profile view in the UI).
-- **Tombstones make deletion durable:** deleting an entry records its id in a
-  tombstone list, and automatic merging never re-adds an entry the user
-  removed. Covered by `test/agent-profile-ops.test.js`.

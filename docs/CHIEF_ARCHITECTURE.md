@@ -1,6 +1,11 @@
 # CHIEF — Final Architecture and Implementation Sequence (Module 03)
 
-Status: design for approval. No production code has been written. Companion document:
+> CHIEF is the current Freedom OS AI layer. Module 01 (CEO Agents / Freedom
+> Brain) has been retired and is not a peer system. Isolation rules that name
+> those paths still apply: CHIEF must not import or recreate that platform.
+> Freedom Financial remains separate, and CHIEF's access to it stays read-only.
+
+Status: design record. CHIEF now ships in this repository. Companion document:
 [CHIEF_GITHUB_REUSE_AUDIT.md](./CHIEF_GITHUB_REUSE_AUDIT.md) (the approved audit; commit-pinned
 source findings and classifications referenced throughout as "audit §N").
 
