@@ -15,6 +15,7 @@ import {
   CHIEF_FIELD,
   createDiamondPoints,
   fieldMotionForStatus,
+  formationFrame,
   pointFrame,
   rotateView,
 } from "../src/components/chief/chiefField.js";
@@ -181,6 +182,31 @@ test("the diamond corners stay put while real work blooms", () => {
   const bloomed = pointFrame(sample, bloom, 0);
   assert.ok(Math.hypot(bloomed.x, bloomed.y) > Math.hypot(sample.x, sample.y));
   assert.equal(CHIEF_FIELD.drawScale, 0.4);
+});
+
+test("the forming preset builds the diamond without replacing the room", () => {
+  assert.notEqual(fieldMotionForStatus(CHIEF_STATUS.READY), CHIEF_FIELD.forming);
+  assert.equal(fieldMotionForStatus(CHIEF_STATUS.READY).filament, 0);
+  assert.equal(CHIEF_FIELD.forming.assemble, 0);
+  const points = createDiamondPoints(64, 4);
+  const done = { ...CHIEF_FIELD.forming, assemble: 1 };
+  const early = { ...CHIEF_FIELD.forming, assemble: 0 };
+  for (const corner of points.filter((point) => point.corner)) {
+    const room = pointFrame(corner, CHIEF_FIELD.ready, 2);
+    const formed = formationFrame(corner, done, 2);
+    assert.equal(formed.x, room.x);
+    assert.equal(formed.y, room.y);
+    const born = formationFrame(corner, early, 2);
+    assert.ok(Math.hypot(born.x - room.x, born.y - room.y) > 0.25);
+  }
+  const edge = points.find((point) => point.edge);
+  const finalEdge = pointFrame(edge, done, 0.4);
+  assert.deepEqual(formationFrame(edge, done, 0.4), finalEdge);
+  const far = formationFrame(edge, { ...CHIEF_FIELD.forming, assemble: 0.12 }, 0);
+  const near = formationFrame(edge, { ...CHIEF_FIELD.forming, assemble: 0.94 }, 0);
+  const farDist = Math.hypot(far.x - finalEdge.x, far.y - finalEdge.y);
+  const nearDist = Math.hypot(near.x - finalEdge.x, near.y - finalEdge.y);
+  assert.ok(nearDist < farDist);
 });
 
 test("view rotation turns the diamond without moving field-space corners", () => {

@@ -23,6 +23,10 @@ const homeSource = readFileSync(
   new URL("../src/components/FreedomOsLanding.jsx", import.meta.url),
   "utf8"
 );
+const gatewaySource = readFileSync(
+  new URL("../src/components/entry/MadFuturicsGateway.jsx", import.meta.url),
+  "utf8"
+);
 const demoSource = readFileSync(
   new URL("../src/components/DemoWorkspaceApp.jsx", import.meta.url),
   "utf8"
@@ -37,8 +41,9 @@ test("signed-out / is the public homepage", () => {
   assert.equal(screen("/"), "public-home");
   assert.equal(resolveAppRoute("/").kind, "public-home");
   assert.match(homeSource, /export function PublicFreedomOsHome/);
-  assert.match(homeSource, /label="Sign In"/);
-  assert.match(homeSource, /label="Create Account"/);
+  assert.match(homeSource, /MadFuturicsGateway/);
+  assert.match(gatewaySource, /ENTER THE SYSTEM/);
+  assert.match(gatewaySource, /Create account/);
   assert.match(appSource, /navigateApp\("\/login"\)/);
   assert.match(appSource, /navigateApp\("\/signup"\)/);
 });

@@ -5,46 +5,8 @@ import {
   clearPendingLegalConsent,
   markPendingLegalConsent,
 } from "../utils/legalConsent.js";
+import { MadFuturicsGateway } from "./entry/MadFuturicsGateway.jsx";
 import { LegalModal } from "./LegalDocuments.jsx";
-
-function buildButtonStyle({ primary = false, danger = false } = {}) {
-  return {
-    width: "100%",
-    borderRadius: 12,
-    border: primary
-      ? "1px solid rgba(120,220,255,.45)"
-      : danger
-        ? "1px solid rgba(255,93,122,.34)"
-        : "1px solid rgba(0,216,255,.22)",
-    background: primary
-      ? "linear-gradient(90deg,#0077ff,#00d8ff)"
-      : danger
-        ? "rgba(255,36,77,.10)"
-        : "rgba(0,136,255,.08)",
-    color: "white",
-    padding: "13px 16px",
-    cursor: "pointer",
-    fontWeight: 800,
-    fontSize: 14,
-    letterSpacing: 0.3,
-    boxShadow: primary ? "0 0 22px rgba(0,136,255,.24)" : "none",
-  };
-}
-
-function buildInputStyle() {
-  return {
-    width: "100%",
-    background: "rgba(0,136,255,.08)",
-    border: "1px solid rgba(0,216,255,.22)",
-    color: "#eef6ff",
-    borderRadius: 12,
-    padding: "13px 14px",
-    outline: "none",
-    fontSize: 14,
-    fontWeight: 600,
-    boxSizing: "border-box",
-  };
-}
 
 export function AuthScreen({
   initialMode = "login",
@@ -72,6 +34,7 @@ export function AuthScreen({
   const [agreedToLegal, setAgreedToLegal] = useState(false);
   const [activeDocument, setActiveDocument] = useState(null);
   const [formError, setFormError] = useState("");
+  const [credentialsOpen, setCredentialsOpen] = useState(() => Boolean(initialForm?.email));
   const hasError = Boolean(formError || error);
   const feedbackId = hasError ? "auth-feedback" : notice ? "auth-notice" : undefined;
 
@@ -82,9 +45,23 @@ export function AuthScreen({
     if (notice) clearNotice();
   };
 
+  const revealCredentials = () => {
+    if (!form.email.trim() || !form.email.includes("@")) {
+      setFormError("Enter your email address.");
+      return false;
+    }
+    setFormError("");
+    setCredentialsOpen(true);
+    return true;
+  };
+
   const handleEmailSubmit = async (event) => {
     event.preventDefault();
 
+    if (!credentialsOpen) {
+      revealCredentials();
+      return;
+    }
     if (!form.email.trim()) {
       setFormError("Enter your email address.");
       return;
@@ -142,6 +119,7 @@ export function AuthScreen({
 
   const handleGoogleSignIn = () => {
     if (!agreedToLegal) {
+      setCredentialsOpen(true);
       setFormError("Review and accept the Terms of Service and Privacy Policy to continue.");
       return;
     }
@@ -162,188 +140,60 @@ export function AuthScreen({
   };
 
   return (
-    <div
-      className="auth-page"
-      style={{
-        minHeight: "100vh",
-        background:
-          "radial-gradient(circle at 20% 20%, rgba(0,136,255,.24), transparent 24%), radial-gradient(circle at 80% 18%, rgba(0,216,255,.16), transparent 20%), linear-gradient(180deg, #020711, #041121 72%, #030d1a)",
-        color: "#eef6ff",
-        display: "grid",
-        placeItems: "center",
-        padding: 24,
-      }}
-    >
-      <div
-        className="auth-layout"
-        style={{
-          width: "min(1080px, 100%)",
-          display: "grid",
-          gridTemplateColumns: "minmax(0, 1.08fr) minmax(360px, .92fr)",
-          gap: 28,
-          alignItems: "stretch",
-        }}
-      >
-        <section
-          className="auth-marketing-panel"
-          style={{
-            borderRadius: 24,
-            border: "1px solid rgba(0,216,255,.20)",
-            background: "rgba(3,17,32,.78)",
-            padding: "38px 42px",
-            boxShadow: "inset 0 0 80px rgba(0,70,150,.12)",
-          }}
-        >
-          <div
-            style={{
-              color: "#8feaff",
-              textTransform: "uppercase",
-              letterSpacing: 1.6,
-              fontSize: 12,
-              fontWeight: 900,
-            }}
-          >
-            Built for serious operators
-          </div>
-          <h1
-            className="auth-title"
-            style={{ margin: "16px 0 0", fontSize: 44, lineHeight: 1.1, color: "white" }}
-          >
-            Your life, work, and wealth — protected at the core.
-          </h1>
-          <p style={{ marginTop: 18, color: "#b7c9de", fontSize: 17, lineHeight: 1.75 }}>
-            Freedom OS runs on production-grade identity, encryption, and bank-grade connections so
-            every module stays yours alone.
-          </p>
-
-          <div
-            className="auth-feature-grid"
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(148px, 1fr))",
-              gap: 14,
-              marginTop: 28,
-            }}
-          >
-            {[
-              ["Firebase Auth", "Google + email sign-in with verified sessions."],
-              ["Envelope encryption", "Sensitive data encrypted at rest."],
-              ["PostgreSQL", "Durable server-side workspace storage."],
-              ["Plaid", "Bank-grade account linking."],
-              ["Hardened API layer", "Rate limits, security headers, and consent gates."],
-            ].map(([title, body]) => (
-              <div
-                key={title}
-                style={{
-                  borderRadius: 16,
-                  border: "1px solid rgba(0,216,255,.14)",
-                  background: "rgba(4,18,34,.72)",
-                  padding: "18px 18px 16px",
-                }}
-              >
-                <div style={{ color: "white", fontWeight: 800, fontSize: 15 }}>{title}</div>
-                <div style={{ color: "#8ea8ca", lineHeight: 1.6, fontSize: 13, marginTop: 10 }}>
-                  {body}
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section
-          className="auth-form-panel"
-          style={{
-            borderRadius: 24,
-            border: "1px solid rgba(0,216,255,.22)",
-            background: "rgba(4,14,28,.92)",
-            padding: 28,
-            boxShadow: "0 0 45px rgba(0,100,220,.16)",
-          }}
-        >
-          {typeof onBackHome === "function" ? (
+    <MadFuturicsGateway variant={mode === "register" ? "signup" : "login"}>
+      {typeof onBackHome === "function" ? (
+        <button type="button" className="mf-back" onClick={onBackHome}>
+          Return
+        </button>
+      ) : null}
+      <form className="mf-auth" onSubmit={handleEmailSubmit}>
+        <p className="mf-kicker">IDENTIFY YOURSELF</p>
+        <div className="mf-modes">
+          {[
+            ["login", "Sign in"],
+            ["register", "Create account"],
+          ].map(([value, label]) => (
             <button
+              key={value}
               type="button"
-              onClick={onBackHome}
-              style={{
-                background: "transparent",
-                border: "none",
-                color: "#8feaff",
-                cursor: "pointer",
-                padding: 0,
-                marginBottom: 18,
-                fontWeight: 800,
+              aria-pressed={mode === value}
+              onClick={() => {
+                setMode(value);
+                setFormError("");
+                clearError();
+                clearNotice();
+                if (typeof onModeChange === "function") onModeChange(value);
               }}
             >
-              ← Back to Home
+              {label}
             </button>
-          ) : null}
-          <div style={{ display: "flex", gap: 10, marginBottom: 24 }}>
-            {[
-              ["login", "Sign In"],
-              ["register", "Create Access"],
-            ].map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                aria-pressed={mode === value}
-                onClick={() => {
-                  setMode(value);
-                  setFormError("");
-                  clearError();
-                  clearNotice();
-                  if (typeof onModeChange === "function") onModeChange(value);
-                }}
-                style={{
-                  flex: 1,
-                  borderRadius: 999,
-                  border:
-                    mode === value
-                      ? "1px solid rgba(0,216,255,.42)"
-                      : "1px solid rgba(0,216,255,.18)",
-                  background: mode === value ? "rgba(0,136,255,.18)" : "rgba(0,136,255,.06)",
-                  color: mode === value ? "#f4fbff" : "#9fb0c9",
-                  padding: "11px 14px",
-                  cursor: "pointer",
-                  fontWeight: 800,
-                }}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+          ))}
+        </div>
 
-          <button
-            type="button"
-            onClick={handleGoogleSignIn}
-            disabled={isBusy}
-            style={buildButtonStyle({ primary: true })}
-          >
-            Continue with Google
-          </button>
+        <label className="mf-label" htmlFor="auth-email">
+          Email
+          <input
+            id="auth-email"
+            className="mf-input"
+            type="email"
+            value={form.email}
+            onChange={(event) => updateForm("email", event.target.value)}
+            placeholder="you@example.com"
+            autoComplete="email"
+            required
+            aria-invalid={hasError && !form.email.trim() ? "true" : undefined}
+            aria-describedby={feedbackId}
+          />
+        </label>
 
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 12,
-              color: "#7d97b9",
-              fontSize: 12,
-              margin: "18px 0",
-              textTransform: "uppercase",
-              letterSpacing: 1,
-            }}
-          >
-            <div style={{ height: 1, flex: 1, background: "rgba(0,216,255,.14)" }} />
-            or use email
-            <div style={{ height: 1, flex: 1, background: "rgba(0,216,255,.14)" }} />
-          </div>
-
-          <form onSubmit={handleEmailSubmit} style={{ display: "grid", gap: 14 }}>
+        {credentialsOpen ? (
+          <>
             {mode === "register" ? (
-              <label style={{ display: "grid", gap: 7 }}>
-                <span style={{ color: "#8fb1d9", fontSize: 12, fontWeight: 800 }}>Full name</span>
+              <label className="mf-label" htmlFor="auth-full-name">
+                Full name
                 <input
                   id="auth-full-name"
+                  className="mf-input"
                   type="text"
                   value={form.fullName}
                   onChange={(event) => updateForm("fullName", event.target.value)}
@@ -352,165 +202,100 @@ export function AuthScreen({
                   required={mode === "register"}
                   aria-invalid={hasError && !form.fullName.trim() ? "true" : undefined}
                   aria-describedby={feedbackId}
-                  style={buildInputStyle()}
                 />
               </label>
             ) : null}
-
-            <label style={{ display: "grid", gap: 7 }}>
-              <span style={{ color: "#8fb1d9", fontSize: 12, fontWeight: 800 }}>Email</span>
-              <input
-                id="auth-email"
-                type="email"
-                value={form.email}
-                onChange={(event) => updateForm("email", event.target.value)}
-                placeholder="you@example.com"
-                autoComplete="email"
-                required
-                aria-invalid={hasError && !form.email.trim() ? "true" : undefined}
-                aria-describedby={feedbackId}
-                style={buildInputStyle()}
-              />
-            </label>
-
-            <label style={{ display: "grid", gap: 7 }}>
-              <span style={{ color: "#8fb1d9", fontSize: 12, fontWeight: 800 }}>Password</span>
+            <label className="mf-label" htmlFor="auth-password">
+              Password
               <input
                 id="auth-password"
+                className="mf-input"
                 type="password"
                 value={form.password}
                 onChange={(event) => updateForm("password", event.target.value)}
-                placeholder={mode === "register" ? "Choose a secure password" : "Enter your password"}
+                placeholder={mode === "register" ? "Choose a secure password" : "Password"}
                 autoComplete={mode === "register" ? "new-password" : "current-password"}
                 required
                 aria-invalid={hasError && !form.password ? "true" : undefined}
                 aria-describedby={feedbackId}
-                style={buildInputStyle()}
               />
             </label>
+          </>
+        ) : null}
 
-            <label
-              style={{
-                display: "flex",
-                gap: 10,
-                alignItems: "flex-start",
-                color: "#c6d7ea",
-                fontSize: 12,
-                lineHeight: 1.6,
-              }}
+        <label className="mf-consent" htmlFor="auth-legal-consent">
+          <input
+            id="auth-legal-consent"
+            type="checkbox"
+            checked={agreedToLegal}
+            onChange={(event) => {
+              setAgreedToLegal(event.target.checked);
+              if (formError) setFormError("");
+            }}
+            required
+            aria-invalid={hasError && !agreedToLegal ? "true" : undefined}
+            aria-describedby={feedbackId}
+          />
+          <span>
+            I agree to the{" "}
+            <button
+              type="button"
+              className="mf-inline-button"
+              onClick={() => setActiveDocument("terms")}
             >
-              <input
-                id="auth-legal-consent"
-                type="checkbox"
-                checked={agreedToLegal}
-                onChange={(event) => {
-                  setAgreedToLegal(event.target.checked);
-                  if (formError) setFormError("");
-                }}
-                required
-                aria-invalid={hasError && !agreedToLegal ? "true" : undefined}
-                aria-describedby={feedbackId}
-                style={{ marginTop: 3 }}
-              />
-              <span>
-                I agree to the{" "}
-                <button
-                  type="button"
-                  onClick={() => setActiveDocument("terms")}
-                  style={{
-                    background: "transparent",
-                    border: "none",
-                    color: "#8feaff",
-                    cursor: "pointer",
-                    padding: 0,
-                    fontWeight: 800,
-                  }}
-                >
-                  Terms of Service
-                </button>{" "}
-                and{" "}
-                <button
-                  type="button"
-                  onClick={() => setActiveDocument("privacy")}
-                  style={{
-                    background: "transparent",
-                    border: "none",
-                    color: "#8feaff",
-                    cursor: "pointer",
-                    padding: 0,
-                    fontWeight: 800,
-                  }}
-                >
-                  Privacy Policy
-                </button>
-                , including connected-account data handling through Plaid.
-              </span>
-            </label>
-
-            {formError || error ? (
-              <div
-                id="auth-feedback"
-                role="alert"
-                style={{
-                  borderRadius: 12,
-                  border: "1px solid rgba(255,93,122,.24)",
-                  background: "rgba(255,36,77,.08)",
-                  color: "#ffd9df",
-                  padding: "12px 14px",
-                  lineHeight: 1.5,
-                }}
-              >
-                {formError || error}
-              </div>
-            ) : null}
-
-            {notice ? (
-              <div
-                id="auth-notice"
-                role="status"
-                aria-live="polite"
-                style={{
-                  borderRadius: 12,
-                  border: "1px solid rgba(0,216,255,.22)",
-                  background: "rgba(0,136,255,.10)",
-                  color: "#dff7ff",
-                  padding: "12px 14px",
-                  lineHeight: 1.5,
-                }}
-              >
-                {notice}
-              </div>
-            ) : null}
-
-            <button type="submit" disabled={isBusy} style={buildButtonStyle({ primary: true })}>
-              {isBusy
-                ? "Working..."
-                : mode === "register"
-                  ? "Create Protected Access"
-                  : "Enter Workspace"}
+              Terms of Service
+            </button>{" "}
+            and{" "}
+            <button
+              type="button"
+              className="mf-inline-button"
+              onClick={() => setActiveDocument("privacy")}
+            >
+              Privacy Policy
             </button>
+            , including connected-account data handling through Plaid.
+          </span>
+        </label>
 
-            {mode === "login" ? (
-              <button
-                type="button"
-                disabled={isBusy}
-                onClick={() => {
-                  void handlePasswordReset();
-                }}
-                style={buildButtonStyle()}
-              >
-                Send Password Reset Email
-              </button>
-            ) : null}
-          </form>
-
-          <div style={{ marginTop: 18, color: "#7d97b9", fontSize: 12, lineHeight: 1.6 }}>
-            By continuing, you confirm this workspace should move through authenticated production
-            access with linked-account disclosures available before Plaid connection.
+        {formError || error ? (
+          <div id="auth-feedback" className="mf-alert" role="alert">
+            {formError || error}
           </div>
-        </section>
-      </div>
+        ) : null}
+        {notice ? (
+          <div id="auth-notice" className="mf-notice" role="status" aria-live="polite">
+            {notice}
+          </div>
+        ) : null}
+
+        <button type="button" className="mf-google" onClick={handleGoogleSignIn} disabled={isBusy}>
+          Continue with Google
+        </button>
+
+        {credentialsOpen ? (
+          <button type="submit" className="mf-submit" disabled={isBusy}>
+            {isBusy ? "Working..." : mode === "register" ? "Create access" : "Enter"}
+          </button>
+        ) : (
+          <button type="submit" className="mf-submit">
+            Continue
+          </button>
+        )}
+
+        {credentialsOpen && mode === "login" ? (
+          <button
+            type="button"
+            className="mf-text-button"
+            disabled={isBusy}
+            onClick={() => {
+              void handlePasswordReset();
+            }}
+          >
+            Send password reset
+          </button>
+        ) : null}
+      </form>
       <LegalModal activeDocument={activeDocument} closeDocument={() => setActiveDocument(null)} />
-    </div>
+    </MadFuturicsGateway>
   );
 }

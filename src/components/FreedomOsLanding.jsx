@@ -1,17 +1,12 @@
 import { useEffect, useState } from "react";
+import { MadFuturicsGateway } from "./entry/MadFuturicsGateway.jsx";
 import { LegalModal } from "./LegalDocuments.jsx";
+import "./entry/entry.css";
 
 // Shared Freedom OS entry visuals. PublicFreedomOsHome and
 // AuthenticatedFreedomOsShell are separate screens that reuse this frame.
 
 const TAGLINE = "Your autonomous operating system for life, work, and wealth.";
-
-const BOOT_LINES_SIGNED_OUT = [
-  { prefix: "sys", text: "freedom_os kernel loaded", tone: "ok" },
-  { prefix: "sys", text: "agent mesh online — CEO agent standing by", tone: "ok" },
-  { prefix: "sys", text: "encrypted channel established", tone: "ok" },
-  { prefix: "sys", text: "awaiting operator authentication…", tone: "wait" },
-];
 
 const BOOT_LINES_SIGNED_IN = [
   { prefix: "sys", text: "freedom_os kernel loaded", tone: "ok" },
@@ -97,9 +92,7 @@ function PrimaryAction({ label, onClick, variant = "primary", disabled = false }
       className="fosl-portal"
       style={{
         color: isPrimary ? "#01131f" : "#eaf9ff",
-        background: isPrimary
-          ? "linear-gradient(90deg, #22d3ee, #60a5fa)"
-          : "rgba(2,18,36,.66)",
+        background: isPrimary ? "linear-gradient(90deg, #22d3ee, #60a5fa)" : "rgba(2,18,36,.66)",
         border: isPrimary ? "1px solid rgba(190,245,255,.7)" : "1px solid rgba(0,216,255,.32)",
         borderRadius: 12,
         padding: "15px 26px",
@@ -148,7 +141,9 @@ function PortalCard({ eyebrow, title, description, actionLabel, onClick }) {
       >
         {eyebrow}
       </div>
-      <div style={{ color: "white", fontSize: 18, fontWeight: 900, letterSpacing: 0.3 }}>{title}</div>
+      <div style={{ color: "white", fontSize: 18, fontWeight: 900, letterSpacing: 0.3 }}>
+        {title}
+      </div>
       <div style={{ color: "#9fc0dd", fontSize: 12.5, lineHeight: 1.6 }}>{description}</div>
       <div
         style={{
@@ -441,39 +436,13 @@ function FreedomOsStage({ bootLines, actions, portals }) {
   );
 }
 
-export function PublicFreedomOsHome({
-  onSignIn,
-  onCreateAccount,
-  onExploreCeoAgents,
-  onExploreFreedomFinancial,
-}) {
+export function PublicFreedomOsHome({ onSignIn, onCreateAccount, onExploreFreedomFinancial }) {
   return (
-    <FreedomOsStage
-      bootLines={BOOT_LINES_SIGNED_OUT}
-      actions={
-        <>
-          <PrimaryAction label="Sign In" onClick={onSignIn} />
-          <PrimaryAction label="Create Account" variant="secondary" onClick={onCreateAccount} />
-        </>
-      }
-      portals={
-        <>
-          <PortalCard
-            eyebrow="Module 01"
-            title="CEO Agents"
-            description="Your autonomous agent operating system — CEO Agent, digests, and the team that runs missions on your behalf. Sign in to enter."
-            actionLabel="Enter CEO Agents"
-            onClick={onExploreCeoAgents || onSignIn}
-          />
-          <PortalCard
-            eyebrow="Module 02"
-            title="Freedom Financial"
-            description="Accounts, budgets, forecasting, and real-time cash intelligence — including a no-sign-up demo sandbox."
-            actionLabel="Explore Freedom Financial"
-            onClick={onExploreFreedomFinancial}
-          />
-        </>
-      }
+    <MadFuturicsGateway
+      variant="home"
+      onEnter={onSignIn}
+      onCreateAccount={onCreateAccount}
+      onExploreFinance={onExploreFreedomFinancial}
     />
   );
 }
@@ -488,39 +457,41 @@ export function AuthenticatedFreedomOsShell({
   onOpenAdminUsage = null,
 }) {
   return (
-    <FreedomOsStage
-      bootLines={BOOT_LINES_SIGNED_IN}
-      actions={
-        <>
-          {isAdmin && typeof onOpenAdminUsage === "function" ? (
-            <PrimaryAction label="Admin" variant="secondary" onClick={onOpenAdminUsage} />
-          ) : null}
-          <PrimaryAction label="CHIEF" variant="secondary" onClick={onOpenChief} />
-          <PrimaryAction
-            label={signOutBusy ? "Signing out…" : "Sign Out"}
-            onClick={onSignOut}
-            disabled={signOutBusy}
-          />
-        </>
-      }
-      portals={
-        <>
-          <PortalCard
-            eyebrow="Module 01"
-            title="CEO Agents"
-            description="Your autonomous agent operating system — CEO Agent, digests, and the team that runs missions on your behalf."
-            actionLabel="Enter CEO Agents"
-            onClick={onOpenAgents}
-          />
-          <PortalCard
-            eyebrow="Module 02"
-            title="Freedom Financial"
-            description="Accounts, budgets, forecasting, and real-time cash intelligence — the financial command center inside Freedom OS."
-            actionLabel="Enter Freedom Financial"
-            onClick={onOpenFinance}
-          />
-        </>
-      }
-    />
+    <div className="mf-os-arrive">
+      <FreedomOsStage
+        bootLines={BOOT_LINES_SIGNED_IN}
+        actions={
+          <>
+            {isAdmin && typeof onOpenAdminUsage === "function" ? (
+              <PrimaryAction label="Admin" variant="secondary" onClick={onOpenAdminUsage} />
+            ) : null}
+            <PrimaryAction label="CHIEF" variant="secondary" onClick={onOpenChief} />
+            <PrimaryAction
+              label={signOutBusy ? "Signing out…" : "Sign Out"}
+              onClick={onSignOut}
+              disabled={signOutBusy}
+            />
+          </>
+        }
+        portals={
+          <>
+            <PortalCard
+              eyebrow="Module 01"
+              title="CEO Agents"
+              description="Your autonomous agent operating system — CEO Agent, digests, and the team that runs missions on your behalf."
+              actionLabel="Enter CEO Agents"
+              onClick={onOpenAgents}
+            />
+            <PortalCard
+              eyebrow="Module 02"
+              title="Freedom Financial"
+              description="Accounts, budgets, forecasting, and real-time cash intelligence — the financial command center inside Freedom OS."
+              actionLabel="Enter Freedom Financial"
+              onClick={onOpenFinance}
+            />
+          </>
+        }
+      />
+    </div>
   );
 }
