@@ -31,11 +31,13 @@ function sessionContext(row) {
   return context;
 }
 
-export function projectInteractiveSessions(rows) {
+export function projectInteractiveSessions(rows, { archived = false } = {}) {
   const sessions = [];
   for (const row of rows ?? []) {
     if (!row?.id) continue;
     if (sessionContext(row)?.origin === "schedule") continue;
+    const isArchived = Boolean(row.archivedAt);
+    if (archived ? !isArchived : isArchived) continue;
     const session = {
       sessionId: row.id,
       title: sessionTitle(row.title),

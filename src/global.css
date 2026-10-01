@@ -1406,6 +1406,123 @@ textarea:focus-visible,
   background: transparent;
 }
 
+.chief-action--danger {
+  border-color: rgba(255, 140, 140, 0.7);
+  background: rgba(120, 24, 32, 0.45);
+  color: #ffd6d6;
+}
+
+.chief-convo-list,
+.chief-convo-group,
+.chief-convo {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.chief-convo-group {
+  margin-top: 8px;
+}
+
+.chief-convo {
+  padding: 8px 10px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(30, 144, 255, 0.28);
+  background: rgba(3, 17, 32, 0.55);
+}
+
+.chief-convo.is-active {
+  border-color: rgba(143, 234, 255, 0.7);
+  background: rgba(0, 136, 255, 0.16);
+}
+
+.chief-convo-open {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: white;
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.chief-convo-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chief-convo-time,
+.chief-convo-actions button,
+.chief-convo-rename button {
+  color: #8feaff;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.chief-convo-actions,
+.chief-convo-rename,
+.chief-convo-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.chief-convo-actions button,
+.chief-convo-rename button {
+  min-height: 36px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.chief-convo-delete {
+  color: #ffb4b4;
+}
+
+.chief-convo-rename input {
+  flex: 1;
+  min-width: 0;
+  min-height: 36px;
+  border-radius: 8px;
+  border: 1px solid rgba(0, 216, 255, 0.35);
+  background: rgba(1, 8, 18, 0.8);
+  color: #eaf3ff;
+  font: inherit;
+  padding: 0 8px;
+}
+
+.chief-convo-confirm p,
+.chief-archived-note p,
+.chief-convo-error {
+  margin: 0;
+  color: #ffb4b4;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.chief-archived-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.chief-archived-note p {
+  color: #9fb0c9;
+}
+
 .chief-action:focus-visible {
   outline: 2px solid #8feaff;
   outline-offset: 2px;

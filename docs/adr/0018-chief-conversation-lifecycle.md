@@ -47,7 +47,7 @@ could not offer "my conversations" without inventing its own registry.
 
 - A future JARVIS client can list, open, and continue conversations without a
   client-owned session registry.
-- Search, pagination, AI titles, deletion, and the JARVIS UI stay out of this
-  slice.
+- Search, pagination, and cross-conversation recall stay out of this slice.
+  Titles, archive, and delete are ADR-0021.
 - Phase 17 history, the turn machine, approvals, and the scheduler are
   unchanged aside from the read method on the existing store.

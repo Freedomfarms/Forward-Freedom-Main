@@ -142,7 +142,11 @@ app.patch("/api/notifications/:id", notificationByIdHandler);
 app.get("/api/admin/usage", adminUsageHandler);
 // CHIEF conversation lifecycle. Vercel serves api/chief/*.js directly; local
 // Express mirrors those handlers without changing them.
-app.get("/api/chief/sessions", chiefSessionsHandler);
+app
+  .route("/api/chief/sessions")
+  .get(chiefSessionsHandler)
+  .patch(chiefSessionsHandler)
+  .delete(chiefSessionsHandler);
 app.get("/api/chief/history", chiefHistoryHandler);
 app.get("/api/chief/models", chiefModelsHandler);
 app.post("/api/chief/chat", chiefChatHandler);
