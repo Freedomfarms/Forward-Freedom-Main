@@ -21,7 +21,7 @@ export function ChiefTranscript({
   if (isLoading) {
     return (
       <div className="chief-turn">
-        <p className="chief-turn-user">Loading conversation...</p>
+        <p className="chief-turn-note">Loading conversation...</p>
       </div>
     );
   }

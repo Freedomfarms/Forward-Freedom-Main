@@ -14,11 +14,15 @@ import { resolveWebSearchCredential } from "../../server/chief/tools/web-search.
 import { applySecurityHeaders } from "../../server/http/responseHelpers.js";
 import { enforceRateLimit, generalApiRateLimit } from "../../server/http/rateLimit.js";
 
+function reject(response, status, error) {
+  response.status(status).json({ error, message: error });
+}
+
 export async function handleChiefRoomAccess(request, response, deps = {}) {
   applySecurityHeaders(response);
   if (!(await enforceRateLimit(request, response, generalApiRateLimit))) return;
   if (request.method !== "GET") {
-    response.status(405).json({ error: "GET required" });
+    reject(response, 405, "GET required");
     return;
   }
 
@@ -27,11 +31,11 @@ export async function handleChiefRoomAccess(request, response, deps = {}) {
   try {
     userId = (await authenticate(request)).uid;
   } catch (error) {
-    response.status(error.status || 401).json({ error: error.message || "Unauthorized" });
+    reject(response, error.status || 401, error.message || "Unauthorized");
     return;
   }
   if (!userId) {
-    response.status(401).json({ error: "Unauthorized" });
+    reject(response, 401, "Unauthorized");
     return;
   }
 
