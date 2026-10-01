@@ -16,6 +16,7 @@ import {
   createDiamondPoints,
   fieldMotionForStatus,
   pointFrame,
+  rotateView,
 } from "../src/components/chief/chiefField.js";
 import {
   conversationAccessWords,
@@ -179,6 +180,33 @@ test("the diamond corners stay put while real work blooms", () => {
   const sample = { x: 0.2, y: 0.15, corner: null, edge: false, layer: 1, phase: 0 };
   const bloomed = pointFrame(sample, bloom, 0);
   assert.ok(Math.hypot(bloomed.x, bloomed.y) > Math.hypot(sample.x, sample.y));
+  assert.equal(CHIEF_FIELD.drawScale, 0.4);
+});
+
+test("view rotation turns the diamond without moving field-space corners", () => {
+  const north = rotateView(0, -1, Math.PI / 2);
+  assert.ok(Math.abs(north.x - 1) < 1e-10);
+  assert.ok(Math.abs(north.y) < 1e-10);
+  assert.deepEqual(rotateView(0.4, -0.2, 0), { x: 0.4, y: -0.2 });
+  const corners = [
+    [0, -1],
+    [1, 0],
+    [0, 1],
+    [-1, 0],
+  ];
+  const turned = corners.map(([x, y]) => rotateView(x, y, 0.7));
+  for (const point of turned) {
+    assert.ok(Math.abs(Math.hypot(point.x, point.y) - 1) < 1e-10);
+  }
+  const field = readFileSync(
+    path.join(process.cwd(), "src/components/chief/ChiefField.jsx"),
+    "utf8"
+  );
+  assert.match(field, /pointerdown/);
+  assert.match(field, /prefers-reduced-motion/);
+  assert.ok(
+    field.indexOf("pointColor(posed, motion)") < field.indexOf("rotateView(posed.x, posed.y")
+  );
 });
 
 test("the room source keeps conversation plain and navigation literal", () => {

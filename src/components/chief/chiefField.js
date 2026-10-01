@@ -9,6 +9,8 @@ export const CHIEF_FIELD = Object.freeze({
   mobilePoints: 180,
   edgePoints: 36,
   ease: 0.08,
+  // Share of the shorter canvas side. The frame size in CSS is the other half.
+  drawScale: 0.4,
   color: Object.freeze({
     ready: "#8feaff",
     working: "#eaf7ff",
@@ -215,6 +217,18 @@ export function pointFrame(point, motion, time = 0) {
     alpha: (Number(motion.alpha) || 0) * (0.28 + point.layer * 0.72),
     size: 0.7 + point.layer * 1.5,
     corner: false,
+  };
+}
+
+// View rotation only. Field space, corners, and status color stay as posed.
+export function rotateView(x, y, radians) {
+  const angle = Number(radians) || 0;
+  if (!angle) return { x, y };
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  return {
+    x: x * cos - y * sin,
+    y: x * sin + y * cos,
   };
 }
 

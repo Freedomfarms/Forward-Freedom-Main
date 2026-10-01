@@ -12,11 +12,15 @@ function publicAccess(row) {
   return { module02Read: row?.module02Read === true, writeAccess: false };
 }
 
+function reject(response, status, error) {
+  response.status(status).json({ error, message: error });
+}
+
 export async function handleChiefModuleAccess(request, response, deps = {}) {
   applySecurityHeaders(response);
   if (!(await enforceRateLimit(request, response, generalApiRateLimit))) return;
   if (request.method !== "GET" && request.method !== "POST") {
-    response.status(405).json({ error: "GET or POST required" });
+    reject(response, 405, "GET or POST required");
     return;
   }
 
@@ -25,11 +29,15 @@ export async function handleChiefModuleAccess(request, response, deps = {}) {
   try {
     userId = (await authenticate(request)).uid;
   } catch (error) {
-    response.status(error.status || 401).json({ error: error.message || "Unauthorized" });
+    // The only application 403 on this route is authenticateRequest (a
+    // disabled account). A normal read-only grant does not return 403.
+    // `message` is set so the client does not describe that JSON as a
+    // body-less firewall block. This route never grants a write.
+    reject(response, error.status || 401, error.message || "Unauthorized");
     return;
   }
   if (!userId) {
-    response.status(401).json({ error: "Unauthorized" });
+    reject(response, 401, "Unauthorized");
     return;
   }
 
@@ -42,16 +50,20 @@ export async function handleChiefModuleAccess(request, response, deps = {}) {
     }
     const body = await readJsonBody(request);
     if (typeof body.module02Read !== "boolean") {
-      response.status(400).json({ error: "module02Read must be a boolean" });
+      reject(response, 400, "module02Read must be a boolean");
       return;
     }
     const saved = await store.setModule02ReadEnabled(userId, body.module02Read);
     response.status(200).json(publicAccess(saved));
   } catch (error) {
     const status = error.status || 500;
-    response.status(status).json({
-      error: status >= 500 ? "Module 02 access could not be saved." : error.message,
-    });
+    reject(
+      response,
+      status,
+      status >= 500
+        ? "Module 02 access could not be saved."
+        : error.message || "Module 02 access could not be saved."
+    );
   }
 }
 

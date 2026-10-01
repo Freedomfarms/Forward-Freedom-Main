@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   CHIEF_FIELD,
@@ -7,6 +7,7 @@ import {
   fieldMotionForStatus,
   pointColor,
   pointFrame,
+  rotateView,
 } from "./chiefField.js";
 
 function withAlpha(hex, alpha) {
@@ -18,9 +19,20 @@ function withAlpha(hex, alpha) {
   return `rgba(${red}, ${green}, ${blue}, ${value})`;
 }
 
+function pointerAngle(event, element) {
+  const rect = element.getBoundingClientRect();
+  return Math.atan2(
+    event.clientY - (rect.top + rect.height / 2),
+    event.clientX - (rect.left + rect.width / 2)
+  );
+}
+
 export function ChiefField({ status }) {
   const canvasRef = useRef(null);
+  const frameRef = useRef(null);
   const statusRef = useRef(status);
+  const rotationRef = useRef(0);
+  const [turning, setTurning] = useState(false);
 
   useEffect(() => {
     statusRef.current = status;
@@ -28,7 +40,8 @@ export function ChiefField({ status }) {
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return undefined;
+    const frameEl = frameRef.current;
+    if (!canvas || !frameEl) return undefined;
     const media = window.matchMedia("(prefers-reduced-motion: reduce)");
     const mobileQuery = window.matchMedia("(max-width: 1023px)");
     let points = createDiamondPoints(
@@ -38,6 +51,7 @@ export function ChiefField({ status }) {
     let frame = 0;
     let loop = 0;
     let alive = true;
+    let drag = null;
 
     function paint(now, token) {
       if (!alive || token !== loop) return;
@@ -56,18 +70,20 @@ export function ChiefField({ status }) {
         canvas.height = height;
       }
       context.clearRect(0, 0, width, height);
-      const scale = Math.min(width, height) * 0.36;
+      const scale = Math.min(width, height) * CHIEF_FIELD.drawScale;
       const originX = width / 2;
       const originY = height / 2;
       const time = reduce ? 0 : now / 1000;
+      const rotation = rotationRef.current;
       for (const point of points) {
         const posed = pointFrame(point, motion, time);
         const color = pointColor(posed, motion);
+        const turned = rotateView(posed.x, posed.y, rotation);
         context.fillStyle = withAlpha(color, posed.alpha);
         context.beginPath();
         context.arc(
-          originX + posed.x * scale,
-          originY + posed.y * scale,
+          originX + turned.x * scale,
+          originY + turned.y * scale,
           Math.max(0.6, posed.size) * ratio,
           0,
           Math.PI * 2
@@ -75,6 +91,10 @@ export function ChiefField({ status }) {
         context.fill();
       }
       if (!reduce) frame = requestAnimationFrame((next) => paint(next, token));
+    }
+
+    function paintStill() {
+      if (media.matches) paint(0, loop);
     }
 
     function start() {
@@ -85,20 +105,51 @@ export function ChiefField({ status }) {
       else frame = requestAnimationFrame((next) => paint(next, token));
     }
 
+    function onPointerDown(event) {
+      if (event.button !== 0) return;
+      drag = {
+        pointerId: event.pointerId,
+        startAngle: pointerAngle(event, frameEl),
+        startRotation: rotationRef.current,
+      };
+      setTurning(true);
+      if (frameEl.setPointerCapture) frameEl.setPointerCapture(event.pointerId);
+    }
+
+    function onPointerMove(event) {
+      if (!drag || event.pointerId !== drag.pointerId) return;
+      rotationRef.current = drag.startRotation + (pointerAngle(event, frameEl) - drag.startAngle);
+      paintStill();
+    }
+
+    function endDrag(event) {
+      if (!drag || event.pointerId !== drag.pointerId) return;
+      drag = null;
+      setTurning(false);
+    }
+
     const observer = new ResizeObserver(() => start());
     observer.observe(canvas);
     start();
     media.addEventListener("change", start);
+    frameEl.addEventListener("pointerdown", onPointerDown);
+    frameEl.addEventListener("pointermove", onPointerMove);
+    frameEl.addEventListener("pointerup", endDrag);
+    frameEl.addEventListener("pointercancel", endDrag);
     return () => {
       alive = false;
       observer.disconnect();
       cancelAnimationFrame(frame);
       media.removeEventListener("change", start);
+      frameEl.removeEventListener("pointerdown", onPointerDown);
+      frameEl.removeEventListener("pointermove", onPointerMove);
+      frameEl.removeEventListener("pointerup", endDrag);
+      frameEl.removeEventListener("pointercancel", endDrag);
     };
   }, []);
 
   return (
-    <div className="chief-field-frame">
+    <div ref={frameRef} className={turning ? "chief-field-frame is-turning" : "chief-field-frame"}>
       <canvas ref={canvasRef} className="chief-field" aria-hidden="true" />
     </div>
   );

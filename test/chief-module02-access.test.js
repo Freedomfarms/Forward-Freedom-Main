@@ -239,6 +239,22 @@ test("Module 02 access defaults off and the UI writes the same row CHIEF reads",
     },
   });
   assert.equal(denied.state.statusCode, 401);
+  assert.equal(denied.state.body.message, "Unauthorized");
+  assert.equal(await access.isModule02ReadEnabled(USER_A), false);
+
+  const blocked = mockResponse();
+  await handleChiefModuleAccess(apiRequest("POST", { module02Read: true }), blocked.response, {
+    store: access,
+    authenticate: async () => {
+      const error = new Error("This account has been disabled.");
+      error.status = 403;
+      throw error;
+    },
+  });
+  assert.equal(blocked.state.statusCode, 403);
+  assert.equal(blocked.state.body.error, "This account has been disabled.");
+  assert.equal(blocked.state.body.message, blocked.state.body.error);
+  assert.equal(blocked.state.body.writeAccess, undefined);
   assert.equal(await access.isModule02ReadEnabled(USER_A), false);
 });
 
