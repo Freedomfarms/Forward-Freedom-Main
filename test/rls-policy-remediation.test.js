@@ -77,6 +77,9 @@ const laterRlsModels = {
   ChiefAuditLog: chiefFoundationMigration,
   ChiefBudget: chiefFoundationMigration,
   ChiefModuleAccess: "20261001120000_chief_module02_access",
+  WorkforceBinding: "20261002150000_workforce_observation_journal",
+  ObservedAgent: "20261002150000_workforce_observation_journal",
+  ActivityEvent: "20261002150000_workforce_observation_journal",
 };
 
 // CHIEF models map to snake_case physical tables via @@map; the RLS

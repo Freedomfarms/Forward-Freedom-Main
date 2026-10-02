@@ -152,6 +152,9 @@ model User {
   chiefAuditLogs          ChiefAuditLog[]
   chiefBudgets            ChiefBudget[]
   chiefModuleAccess       ChiefModuleAccess?
+  workforceBindings       WorkforceBinding[]
+  observedAgents          ObservedAgent[]
+  activityEvents          ActivityEvent[]
 }
 
 model PlaidItem {
@@ -718,6 +721,30 @@ enum ChiefRelationOrigin {
   SEMANTIC
 }
 
+// Workforce observation. OTEL is platform telemetry. SELF_REPORT is untrusted
+// context. The pair is also a SQL check constraint.
+enum WorkforceSource {
+  OTEL
+  SELF_REPORT
+}
+
+enum WorkforceTrust {
+  PLATFORM
+  UNTRUSTED
+}
+
+enum WorkforceLiveness {
+  ACTIVE
+  IDLE
+  STALE
+  UNKNOWN
+}
+
+enum WorkforceBindingStatus {
+  ACTIVE
+  REVOKED
+}
+
 // One durable CHIEF conversation/checkpoint root (möbius `sessions`).
 // PENDING_APPROVAL is the suspended-turn state: any serverless instance can
 // resume the turn from the journals below after an ExecApproval Op arrives.
@@ -1150,6 +1177,76 @@ model ChiefBudget {
 
   @@unique([userId, scope, periodType])
   @@map("chief_budget")
+}
+
+// One Freedom OS user linked to the Grok Bot member CHIEF may observe.
+// Absence of a row means no observation is accepted. Revoked refuses appends.
+model WorkforceBinding {
+  id                String                  @id @default(cuid())
+  userId            String                  @unique
+  status            WorkforceBindingStatus  @default(ACTIVE)
+  cursorAccountId   String?
+  emailCiphertext   String?
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+  user              User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  agents            ObservedAgent[]
+  events            ActivityEvent[]
+
+  @@map("workforce_binding")
+}
+
+// Projection of one external bot. displayName and role come only from a
+// self-report identity event. identityTrust records that those strings are
+// untrusted. OTEL does not fill them.
+model ObservedAgent {
+  id             String              @id @default(cuid())
+  userId         String
+  bindingId      String
+  externalId     String
+  displayName    String?
+  role           String?
+  identityTrust  WorkforceTrust?
+  lastEventAt    DateTime?
+  lastTurnId     String?
+  liveness       WorkforceLiveness   @default(UNKNOWN)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  user           User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  binding        WorkforceBinding    @relation(fields: [bindingId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, externalId])
+  @@index([bindingId])
+  @@map("observed_agent")
+}
+
+// Append-only observation. Unique per user, source, and source event id so
+// an OTEL retry and a self-report can share an id string without colliding.
+model ActivityEvent {
+  id               String            @id @default(cuid())
+  userId           String
+  bindingId        String
+  source           WorkforceSource
+  trust            WorkforceTrust
+  sourceEventId    String
+  kind             String
+  occurredAt       DateTime
+  ingestedAt       DateTime          @default(now())
+  agentExternalId  String
+  turnId           String?
+  rootTurnId       String?
+  toolCallId       String?
+  sequence         Int?
+  provenance       String?
+  coded            Json?
+  textCiphertext   String?
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  binding          WorkforceBinding  @relation(fields: [bindingId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, source, sourceEventId])
+  @@index([userId, occurredAt])
+  @@index([userId, agentExternalId, occurredAt])
+  @@map("activity_event")
 }
 
 // Self-notification only: agents may notify the user (in-app or via the

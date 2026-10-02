@@ -1,9 +1,11 @@
 # CHIEF × Grok Bot — Observability Architecture (audit)
 
-Status: **audit for approval**. No implementation code is included. No agents, runtime,
-flow-map UI, or memory layer are proposed for this phase.
+Status: approved direction. Both ingest paths are first-class. See
+[CHIEF_CONTROL_PLANE_PLAN.md](./CHIEF_CONTROL_PLANE_PLAN.md) and
+ADR-0022 / ADR-0023. The journal foundation is in the schema. Neither ingest
+is connected yet.
 
-Audited: 2026-10-02, against Freedom OS `main` at `c85515a` and the public docs listed
+Original audit (2026-10-02), against Freedom OS `main` at `c85515a` and the public docs listed
 in each section.
 
 Governing boundary:
