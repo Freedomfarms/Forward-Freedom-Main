@@ -224,7 +224,7 @@ test("a read tool skips mutation approval and a write requires it", async () => 
         { name: "memory_write", requiresConfirmation: true },
       ]
     ),
-    { mutationIds: ["w"], readIds: ["r"] }
+    { mutationIds: ["w"], readIds: ["r"], explicitIds: [] }
   );
 
   const ran = [];

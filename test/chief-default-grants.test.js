@@ -23,11 +23,16 @@ const ALLOWED = [
   Capability.MEMORY_READ,
   Capability.MEMORY_WRITE,
   Capability.SCHEDULE_CREATE,
+  Capability.SCHEDULE_READ,
   Capability.FINANCE_READ,
   Capability.SKILL_READ,
   Capability.WEB_SEARCH,
   Capability.MODULE_ACCESS,
   Capability.CONVERSATION_READ,
+  Capability.CONVERSATION_WRITE,
+  Capability.CONVERSATION_DELETE,
+  Capability.SETTINGS_READ,
+  Capability.SETTINGS_WRITE,
 ];
 
 const DENIED = [
@@ -35,6 +40,7 @@ const DENIED = [
   Capability.FILE_WRITE,
   Capability.NETWORK_FETCH,
   Capability.CODE_EXECUTE,
+  Capability.CODE_READ,
   Capability.CHANNEL_SEND,
   Capability.TOOL_INVOKE,
   Capability.SYSTEM_ADMIN,

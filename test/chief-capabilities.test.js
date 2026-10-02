@@ -45,13 +45,27 @@ test("capability wire values match upstream, plus the CHIEF-only labels", () => 
   assert.equal(values.has("web:search"), true);
   assert.equal(values.has("module:access"), true);
   assert.equal(values.has("conversation:read"), true);
-  assert.equal(values.size, upstream.size + 5);
+  assert.equal(values.has("schedule:read"), true);
+  assert.equal(values.has("conversation:write"), true);
+  assert.equal(values.has("conversation:delete"), true);
+  assert.equal(values.has("settings:read"), true);
+  assert.equal(values.has("settings:write"), true);
+  assert.equal(values.has("code:read"), true);
+  assert.equal(values.size, upstream.size + 11);
   assert.equal(isCapability("file:read"), true);
   assert.equal(isCapability("finance:read"), true);
   assert.equal(isCapability("skill:read"), true);
   assert.equal(isCapability("web:search"), true);
   assert.equal(isCapability("module:access"), true);
   assert.equal(isCapability("conversation:read"), true);
+  assert.equal(isCapability("schedule:read"), true);
+  assert.equal(isCapability("conversation:write"), true);
+  assert.equal(isCapability("conversation:delete"), true);
+  assert.equal(isCapability("settings:read"), true);
+  assert.equal(isCapability("settings:write"), true);
+  assert.equal(isCapability("code:read"), true);
+  assert.notEqual(Capability.CODE_READ, Capability.CODE_EXECUTE);
+  assert.notEqual(Capability.CODE_READ, Capability.FILE_READ);
   assert.equal(isCapability("file:destroy"), false);
 });
 

@@ -16,13 +16,13 @@ export const CHIEF_TOOL_INVENTORY = Object.freeze({
   kg_lookup: Object.freeze([Capability.MEMORY_READ]),
   kg_link: Object.freeze([Capability.MEMORY_WRITE]),
   schedule_create: Object.freeze([Capability.SCHEDULE_CREATE]),
-  schedule_list: Object.freeze([Capability.SCHEDULE_CREATE]),
+  schedule_list: Object.freeze([Capability.SCHEDULE_READ]),
   schedule_pause: Object.freeze([Capability.SCHEDULE_CREATE]),
   schedule_resume: Object.freeze([Capability.SCHEDULE_CREATE]),
   schedule_cancel: Object.freeze([Capability.SCHEDULE_CREATE]),
   schedule_update: Object.freeze([Capability.SCHEDULE_CREATE]),
-  schedule_runs: Object.freeze([Capability.SCHEDULE_CREATE]),
-  schedule_outcome: Object.freeze([Capability.SCHEDULE_CREATE]),
+  schedule_runs: Object.freeze([Capability.SCHEDULE_READ]),
+  schedule_outcome: Object.freeze([Capability.SCHEDULE_READ]),
   finance_summary: Object.freeze([Capability.FINANCE_READ]),
   workspace_plan_summary: Object.freeze([Capability.FINANCE_READ]),
   module02_access_status: Object.freeze([Capability.MODULE_ACCESS]),
@@ -31,7 +31,26 @@ export const CHIEF_TOOL_INVENTORY = Object.freeze({
   web_search: Object.freeze([Capability.WEB_SEARCH]),
   conversation_search: Object.freeze([Capability.CONVERSATION_READ]),
   conversation_retrieve: Object.freeze([Capability.CONVERSATION_READ]),
+  conversation_rename: Object.freeze([Capability.CONVERSATION_WRITE]),
+  conversation_archive: Object.freeze([Capability.CONVERSATION_WRITE]),
+  conversation_restore: Object.freeze([Capability.CONVERSATION_WRITE]),
+  conversation_delete: Object.freeze([Capability.CONVERSATION_DELETE]),
+  settings_read: Object.freeze([Capability.SETTINGS_READ]),
+  settings_update: Object.freeze([Capability.SETTINGS_WRITE]),
+  code_tree: Object.freeze([Capability.CODE_READ]),
+  code_read: Object.freeze([Capability.CODE_READ]),
+  code_search: Object.freeze([Capability.CODE_READ]),
 });
+
+// Scheduled turns do not search or manage the user's conversations.
+export const SCHEDULED_TURN_EXCLUDED_TOOLS = Object.freeze([
+  "conversation_search",
+  "conversation_retrieve",
+  "conversation_rename",
+  "conversation_archive",
+  "conversation_restore",
+  "conversation_delete",
+]);
 
 export const FORBIDDEN_TOOL_NAMES = Object.freeze([
   "shell_exec",

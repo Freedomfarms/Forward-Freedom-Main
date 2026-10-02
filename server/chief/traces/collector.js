@@ -78,6 +78,27 @@ function toolName(data) {
   return typeof data?.tool === "string" ? data.tool : "";
 }
 
+const CODE_TRACE_STRINGS = ["operation", "repository", "ref", "path"];
+const CODE_TRACE_NUMBERS = ["bytes", "lines", "matches", "durationMs"];
+
+export function codeTraceDetail(code) {
+  if (!code || typeof code !== "object" || Array.isArray(code)) return {};
+  const detail = {};
+  for (const key of CODE_TRACE_STRINGS) {
+    const value = code[key];
+    if (typeof value !== "string" || !value || value.length > 200) continue;
+    if (/[\n\r]/.test(value) || /ghp_|gho_|github_pat_|bearer\s/i.test(value)) continue;
+    detail[key] = value;
+  }
+  for (const key of CODE_TRACE_NUMBERS) {
+    const value = code[key];
+    if (typeof value === "number" && Number.isFinite(value) && value >= 0 && value < 1e12) {
+      detail[key] = value;
+    }
+  }
+  return detail;
+}
+
 export class TraceCollector {
   constructor({
     bus = null,
@@ -242,7 +263,7 @@ export class TraceCollector {
     this._rememberCaller(event?.data);
     const name = toolName(event?.data) || this._pendingTool || "";
     this._pendingTool = null;
-    this._pushTool(name, event?.data?.success === true);
+    this._pushTool(name, event?.data?.success === true, event?.data?.code);
   }
 
   _onCapabilityDenied(event) {
@@ -251,12 +272,12 @@ export class TraceCollector {
     this._pushTool(toolName(event?.data), false);
   }
 
-  _pushTool(name, success) {
+  _pushTool(name, success, code) {
     this._push({
       stepType: TRACE_STEP.TOOL_CALL,
       name: name || null,
       status: success ? "ok" : "error",
-      detail: { tool: name || null, success: Boolean(success) },
+      detail: { tool: name || null, success: Boolean(success), ...codeTraceDetail(code) },
     });
   }
 

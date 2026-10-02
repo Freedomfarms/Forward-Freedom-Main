@@ -25,6 +25,7 @@ import {
 } from "./operative.js";
 import { planRetry } from "./retry.js";
 import { RunStatus } from "./store.js";
+import { SCHEDULED_TURN_EXCLUDED_TOOLS } from "../tools/inventory.js";
 
 export const LOCK_TTL_MS = 15 * 60 * 1000;
 export const DEFAULT_TICK_LIMIT = 3;
@@ -277,7 +278,7 @@ async function runScheduledTask({
       },
       signal: AbortSignal.timeout(turnTimeoutMs),
       toolSpecs: (tooling.specs ?? []).filter(
-        (spec) => spec.name !== "conversation_search" && spec.name !== "conversation_retrieve"
+        (spec) => !SCHEDULED_TURN_EXCLUDED_TOOLS.includes(spec.name)
       ),
       onEvent(event) {
         if (event?.msg?.type === EventMsgType.TURN_ABORTED) abortReason = event.msg.reason ?? null;

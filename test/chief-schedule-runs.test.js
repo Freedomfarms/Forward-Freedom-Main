@@ -62,6 +62,7 @@ function run(fields = {}) {
 function policy() {
   const granted = new CapabilityPolicy({ defaultDeny: true });
   granted.grant("chief", Capability.SCHEDULE_CREATE);
+  granted.grant("chief", Capability.SCHEDULE_READ);
   granted.grant("chief", Capability.MEMORY_READ);
   return granted;
 }
@@ -253,8 +254,8 @@ test("stored statuses are visible and the read does not mutate or confirm", asyn
   const tools = await tooling(schedule);
   const spec = tools.specs.find((item) => item.name === "schedule_runs");
   assert.equal(spec.requiresConfirmation, false);
-  assert.deepEqual(spec.requiredCapabilities, [Capability.SCHEDULE_CREATE]);
-  assert.deepEqual(CHIEF_TOOL_INVENTORY.schedule_runs, [Capability.SCHEDULE_CREATE]);
+  assert.deepEqual(spec.requiredCapabilities, [Capability.SCHEDULE_READ]);
+  assert.deepEqual(CHIEF_TOOL_INVENTORY.schedule_runs, [Capability.SCHEDULE_READ]);
   const listed = await tools.executor.execute(
     { callId: "s", name: "schedule_runs", arguments: {} },
     { userId: "user-1" }

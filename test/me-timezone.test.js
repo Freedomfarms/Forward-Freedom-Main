@@ -99,6 +99,8 @@ test("PATCH /api/me writes a valid User.timezone", async () => {
   assert.equal(response.statusCode, 200);
   assert.equal(response.body.user.timezone, "America/Denver");
   assert.equal(users.get("user-1").timezone, "America/Denver");
+  assert.equal(users.get("user-1").email, "user-1@example.com");
+  assert.equal(users.get("user-1").displayName, "Ada");
 });
 
 test("PATCH /api/me rejects an invalid timezone without AgentError", async () => {
