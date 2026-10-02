@@ -9,6 +9,9 @@
 // (src/middleware/tools.rs, commit 3e1aaf5). The turn passes only those call
 // ids to ApprovalCoordinator. The spec never carries an execute function;
 // ToolExecutor is the only caller of BaseTool.execute.
+// A spec the control plane forbids cannot be constructed.
+
+import { assertToolAllowed } from "./inventory.js";
 
 export function defineToolSpec(fields) {
   if (typeof fields !== "object" || fields === null) {
@@ -24,7 +27,7 @@ export function defineToolSpec(fields) {
   if (!(timeoutSeconds > 0)) {
     throw new TypeError(`tool '${fields.name}' timeoutSeconds must be positive`);
   }
-  return Object.freeze({
+  const spec = Object.freeze({
     name: fields.name,
     description: fields.description || fields.name,
     parameters: fields.parameters ?? { type: "object", properties: {} },
@@ -34,6 +37,8 @@ export function defineToolSpec(fields) {
     requiredCapabilities: Object.freeze([...(fields.requiredCapabilities ?? [])]),
     metadata: Object.freeze({ ...(fields.metadata ?? {}) }),
   });
+  assertToolAllowed(spec);
+  return spec;
 }
 
 export class BaseTool {

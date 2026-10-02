@@ -3,6 +3,7 @@
 // boundary guard blocks it until scanner patterns are ported. No
 // code-execution tool is registered.
 
+import { assertControlPlane } from "../control/plane.js";
 import { Capability } from "../core/capabilities.js";
 import { ToolRegistry } from "../core/registry.js";
 import { loadFinanceSummary } from "../../finance/aggregates.js";
@@ -811,6 +812,7 @@ export function createChiefTools({
   moduleAccess = new MemoryModuleAccess(),
   checkpointStore = null,
 } = {}) {
+  assertControlPlane(CHIEF_TOOL_INVENTORY);
   const tools = [
     memoryRead(facts),
     memoryWrite(facts),

@@ -26,6 +26,8 @@ test("capability wire values match upstream, plus the CHIEF-only labels", () => 
   assert.equal(Capability.WEB_SEARCH, "web:search");
   assert.equal(Capability.MODULE_ACCESS, "module:access");
   assert.equal(Capability.CONVERSATION_READ, "conversation:read");
+  assert.equal(Capability.WORKFORCE_READ, "workforce:read");
+  assert.equal(Capability.CODEBASE_READ, "codebase:read");
   const upstream = new Set([
     "file:read",
     "file:write",
@@ -45,13 +47,19 @@ test("capability wire values match upstream, plus the CHIEF-only labels", () => 
   assert.equal(values.has("web:search"), true);
   assert.equal(values.has("module:access"), true);
   assert.equal(values.has("conversation:read"), true);
-  assert.equal(values.size, upstream.size + 5);
+  assert.equal(values.size, upstream.size + 7);
   assert.equal(isCapability("file:read"), true);
   assert.equal(isCapability("finance:read"), true);
   assert.equal(isCapability("skill:read"), true);
   assert.equal(isCapability("web:search"), true);
   assert.equal(isCapability("module:access"), true);
   assert.equal(isCapability("conversation:read"), true);
+  assert.equal(isCapability("workforce:read"), true);
+  assert.equal(isCapability("codebase:read"), true);
+  assert.equal(isCapability("codebase:write"), false);
+  assert.equal(isCapability("git:commit"), false);
+  assert.equal(isCapability("git:push"), false);
+  assert.equal(isCapability("deploy"), false);
   assert.equal(isCapability("file:destroy"), false);
 });
 

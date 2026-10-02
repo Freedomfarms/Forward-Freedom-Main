@@ -11,14 +11,18 @@
 //     the CHIEF-only extensions "finance:read" (Phase 7), "skill:read"
 //     (Phase 8), "web:search" (governed public web search),
 //     "module:access" (the per-user Module 02 read switch), and
-//     "conversation:read" (search and retrieve this user's conversations).
+//     "conversation:read" (search and retrieve this user's conversations),
+//     "workforce:read" (read the Grok observation journal; not a tool yet),
+//     and "codebase:read" (read Freedom OS source; not a tool yet).
+//     There is no codebase write, git, or deploy label.
 //     Financial reads must not reuse memory:read. Loading a procedure must
 //     not reuse memory:read either. Conversation recall must not reuse
 //     memory:read or finance:read. Public web search must not reuse
 //     network:fetch: that label is general outbound network access, and it
 //     stays off the default baseline. module:access lets the user inspect
 //     or request the Module 02 read switch. It does not grant the financial
-//     data itself. OpenJarvis has none of these five labels.
+//     data itself. OpenJarvis has none of these labels. workforce:read and
+//     codebase:read are off the empty-grant baseline.
 //   - CapabilityPolicy check order: explicit denials always win; grants are
 //     glob-matched on capability and optionally on resource; agents with no
 //     explicit policy fall back to `_default` wildcard grants; an anonymous
@@ -74,6 +78,14 @@ export const Capability = Object.freeze({
   // user's own conversations. It is not memory:read and it is not
   // finance:read. It cannot write a session, a fact, or Module 02.
   CONVERSATION_READ: "conversation:read",
+  // CHIEF extension. Not an OpenJarvis label. Reads the workforce observation
+  // journal. It does not create an agent, send a command, or grant a write.
+  // Off the empty-grant baseline until a picture tool is added on purpose.
+  WORKFORCE_READ: "workforce:read",
+  // CHIEF extension. Not an OpenJarvis label. Reserved for read-only source
+  // inspection. There is no paired write label. Off the baseline, and no
+  // tool is registered.
+  CODEBASE_READ: "codebase:read",
 });
 
 const CAPABILITY_VALUES = new Set(Object.values(Capability));
