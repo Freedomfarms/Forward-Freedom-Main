@@ -31,6 +31,8 @@ const ALLOWED = [
   Capability.CONVERSATION_READ,
   Capability.CONVERSATION_WRITE,
   Capability.CONVERSATION_DELETE,
+  Capability.SETTINGS_READ,
+  Capability.SETTINGS_WRITE,
 ];
 
 const DENIED = [

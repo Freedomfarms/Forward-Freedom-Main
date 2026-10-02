@@ -60,13 +60,26 @@ Existing tools, plus conversation rename, archive, restore, and delete on
 Schedule create, update, pause, and resume require `schedule:create`.
 `schedule_cancel` is destructive.
 
+`settings_read` and `settings_update` call `server/platform/userSettings.js`, the
+same timezone persistence `PATCH /api/me` uses. The only supported user setting
+is `User.timezone`. `settings_read` is a read and requires `settings:read`.
+`settings_update` is a write, requires `settings:write`, and waits for
+`ApprovalCoordinator`. Both use `context.userId`. A model-supplied `userId` is
+ignored. The result is `{ timezone }` only. Email, role, admin status, legal
+consent, credentials, and tokens are not settings and are not returned.
+CEO agent name, personality, avatar, and model stay on the retired agent API
+and are not registered. Nickname values such as "Eastern" are not accepted by
+the service; the model must send an IANA name (`America/New_York` for Eastern).
+
 ## Not implemented
 
 - Code intelligence (`code_tree`, `code_read`, `code_search`) and any GitHub credential
 - Grok Build hook ingestion and workforce status
 - Operational events and the flow-map graph
 - Freedom Diamond changes
-- Finance writes, Plaid actions, and settings ports beyond the Module 02 switch
+- Finance writes and Plaid actions
+- Settings other than timezone
+- Model-facing `capability_search` and generic `capability_invoke`
 - Module 01
 
 CHIEF still cannot commit, push, deploy, or run a shell.

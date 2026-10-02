@@ -78,6 +78,8 @@ export const CAPABILITY_CATALOG = Object.freeze({
     Confirmation.REQUIRED,
     AuditPolicy.FULL
   ),
+  settings_read: entry("settings", Effect.READ, Confirmation.NONE, AuditPolicy.DENY_ONLY),
+  settings_update: entry("settings", Effect.WRITE, Confirmation.REQUIRED, AuditPolicy.DENY_ONLY),
 });
 
 export function catalogEntry(name) {
