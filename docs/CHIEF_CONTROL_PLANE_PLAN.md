@@ -1,10 +1,13 @@
 # CHIEF control plane and workforce journal — implementation plan
 
-Status: approved direction, with the both-ingress amendment. This change implements
-**Phase A** and the **Phase B foundation** only.
+Status: approved direction, with the both-ingress amendment. Phase A and the Phase B
+foundation are in place. Phase C connects the self-report ingress only.
+Enterprise OpenTelemetry was checked on 2026-10-02 and is not available here:
+the cloud environment is personal, and there is no OTEL collector credential.
+The OTEL route is not built. CHIEF still has no workforce read tool.
 
-Phases C through H are specified here so later work has a place to land. They are
-not built in this change.
+Phase C in this change is the self-report ingress. Phases D through H are specified
+here so later work has a place to land. They are not built.
 
 Governing rules:
 
@@ -46,7 +49,7 @@ Governing rules:
 
 | Phase | Adds                                                                                                                            |
 | ----- | ------------------------------------------------------------------------------------------------------------------------------- |
-| C     | OTEL log normalizer and authenticated self-report ingress, both calling `appendObservation`                                     |
+| C     | Self-report ingress calls `appendObservation`. OTEL waits until Enterprise export exists.                                       |
 | D     | Read-only `workforce_picture` tool, capability `workforce:read`, still not on the empty-grant baseline until explicitly granted |
 | E     | TurnMachine briefing that must include `describeCoverage`                                                                       |
 | F     | Pure graph function over the journal. No canvas.                                                                                |
@@ -112,18 +115,16 @@ activity; platform telemetry is unavailable."
 
 ## 5. API boundaries
 
-No new HTTP route in this change.
+Phase C adds the self-report routes. The OTEL route is not built.
 
-Future ingress, not built now:
+| Route                                  | Caller                            | Writes                          |
+| -------------------------------------- | --------------------------------- | ------------------------------- |
+| `POST /api/chief/workforce/report`     | Per-user report key               | `source: self_report` only      |
+| `POST /api/chief/workforce/report-key` | Signed-in Freedom OS user         | Key hash on that user's binding |
+| OTEL `POST /v1/logs`                   | Not available in this environment | Not built                       |
 
-| Route                | Caller                               | Writes                     |
-| -------------------- | ------------------------------------ | -------------------------- |
-| OTEL `POST /v1/logs` | Cursor, bearer token, member binding | `source: otel` only        |
-| Self-report          | Per-user ingest key                  | `source: self_report` only |
-
-Both call `appendObservation` for the already-authenticated user. The body does
-not choose the user. CHIEF's chat API is unchanged until Phase D adds a tool
-inside the existing turn.
+The report body does not choose the user. The key does. CHIEF's chat API is
+unchanged. `workforce_picture` is still Phase D.
 
 ---
 
@@ -133,10 +134,13 @@ inside the existing turn.
 Catalog  ->  grants baseline  ->  CapabilityPolicy  ->  ToolExecutor
 Live tools stay on that path. Reserved and forbidden rows have no executor entry.
 
-(no ingress yet)
+Report key  ->  user id from the key, never from the body
         |
         v
-normalizeObservation  ->  trust from source, kind namespace checked
+shapeSelfReport  ->  source self_report, provenance report
+        |
+        v
+normalizeObservation  ->  trust UNTRUSTED, freedom.report.* kinds
         |
         v
 appendObservation(tx, userId)  ->  ActivityEvent
@@ -146,6 +150,8 @@ projectAgent  ->  ObservedAgent (name only from a self-report identity event)
         |
         v
 describeCoverage  ->  later briefing (Phase E)
+
+Enterprise OTEL has no route until a deployment actually has the export.
 ```
 
 OTEL absence does not block a self-report, and a self-report does not overwrite

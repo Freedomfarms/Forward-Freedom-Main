@@ -6,6 +6,7 @@
 
 import { encrypt as sealText } from "../../security/envelope.js";
 import { DbTrust, normalizeObservation, projectAgent } from "./journal.js";
+import { hashReportToken, parseReportToken } from "./reportKey.js";
 
 function bindingKey(userId) {
   return userId;
@@ -92,6 +93,35 @@ async function writeAgent(tx, userId, bindingId, event, now) {
   return tx.observedAgent.update({
     where: { userId_externalId: { userId, externalId: event.agentExternalId } },
     data,
+  });
+}
+
+export async function saveReportKey(tx, userId, token, now = new Date()) {
+  const parsed = parseReportToken(token);
+  if (!parsed || parsed.userId !== userId) {
+    throw new Error("report key does not match the user");
+  }
+  const binding = await openWorkforceBinding(tx, userId);
+  if (binding.status !== "ACTIVE") {
+    throw new Error("workforce binding is not active");
+  }
+  return tx.workforceBinding.update({
+    where: { userId },
+    data: {
+      reportKeyHash: hashReportToken(token),
+      reportKeyIssuedAt: now,
+    },
+  });
+}
+
+export async function revokeReportKey(tx, userId) {
+  await requireActiveBinding(tx, userId);
+  return tx.workforceBinding.update({
+    where: { userId },
+    data: {
+      reportKeyHash: null,
+      reportKeyIssuedAt: null,
+    },
   });
 }
 
