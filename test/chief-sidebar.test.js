@@ -345,8 +345,7 @@ test("sidebar UI navigates with the existing session flow", () => {
   assert.equal(api.includes("conversation_retrieve"), false);
 
   assert.match(css, /\.chief-room\.has-nav\.is-nav-collapsed/);
-  assert.match(css, /grid-template-columns: 52px minmax\(0, 1fr\)/);
-  assert.match(css, /\.chief-field-frame \{\s*width: min\(640px, 80vw\)/);
+  assert.match(css, /\.chief-field-frame \{\s*position: absolute;\s*inset: 0;/);
   assert.match(css, /max-width: 1023px/);
   assert.match(css, /\.chief-nav \{\s*display: none;/);
   assert.match(read("server/index.js"), /\/api\/chief\/session-search/);

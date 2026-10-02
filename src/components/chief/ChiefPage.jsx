@@ -684,95 +684,107 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onSignOut }
     );
   }
 
+  const instruments = (
+    <div className="chief-instruments">
+      <div className="chief-instrument">{formatRoomTime(now)}</div>
+      {user ? (
+        <div className="chief-instrument chief-instrument--state">
+          <ChiefStatus status={status} detail={stateDetail} />
+          {transcriptError ? (
+            <button type="button" className="chief-text-button" onClick={retryTranscript}>
+              Retry
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+      {user ? (
+        models.length > 0 ? (
+          <ChiefModelSelect
+            models={models}
+            value={modelRoute}
+            disabled={busy || historyLoading || notFound || Boolean(approval)}
+            onChange={chooseModel}
+          />
+        ) : (
+          <div className="chief-instrument">{modelLabel(models, modelRoute)}</div>
+        )
+      ) : null}
+      {user ? (
+        <button
+          type="button"
+          className="chief-instrument chief-access"
+          aria-expanded={accessOpen}
+          onClick={openAccess}
+        >
+          {moneyWebLine(access.money, access.web)}
+        </button>
+      ) : null}
+    </div>
+  );
+
   return (
     <section className={roomClass} aria-label="CHIEF">
-      {desktopNav ? (
-        <aside
-          id="chief-conversation-nav"
-          className={navCollapsed ? "chief-nav is-collapsed" : "chief-nav"}
-          aria-label="Conversations"
-        >
-          {navToggle("chief-nav-toggle")}
-          {navCollapsed ? null : (
-            <>
-              {conversationList}
-              <ChiefEarlierTurns earlier={turnView.earlier} />
-            </>
-          )}
-        </aside>
-      ) : null}
       {sheetOpen ? <div className="chief-sheet-backdrop is-open" onClick={closeSheets} /> : null}
-      <div className="chief-room-top">
-        <div className="chief-room-brand">
-          {user && narrowNav ? navToggle("chief-nav-toggle") : null}
-          {canLeave ? (
-            <button
-              type="button"
-              className="chief-places-button"
-              aria-expanded={placesOpen}
-              onClick={openPlaces}
-            >
-              CHIEF
-            </button>
-          ) : (
-            <div className="chief-place chief-place--here">CHIEF</div>
-          )}
-        </div>
-        {canLeave ? (
-          <nav className="chief-places" aria-label="Places">
-            <button
-              type="button"
-              className="chief-place chief-place--here"
-              aria-current="page"
-              onClick={closeSheets}
-            >
-              CHIEF
-            </button>
-            {onOpenFinancial ? (
-              <button type="button" className="chief-place" onClick={onOpenFinancial}>
-                Freedom Financial
-              </button>
-            ) : null}
-          </nav>
-        ) : null}
-        <div className="chief-instruments">
-          <div className="chief-instrument">{formatRoomTime(now)}</div>
-          {user ? (
-            <div className="chief-instrument chief-instrument--state">
-              <ChiefStatus status={status} detail={stateDetail} />
-              {transcriptError ? (
-                <button type="button" className="chief-text-button" onClick={retryTranscript}>
-                  Retry
-                </button>
-              ) : null}
-            </div>
-          ) : null}
-          {user ? (
-            models.length > 0 ? (
-              <ChiefModelSelect
-                models={models}
-                value={modelRoute}
-                disabled={busy || historyLoading || notFound || Boolean(approval)}
-                onChange={chooseModel}
-              />
-            ) : (
-              <div className="chief-instrument">{modelLabel(models, modelRoute)}</div>
-            )
-          ) : null}
-          {user ? (
-            <button
-              type="button"
-              className="chief-instrument chief-access"
-              aria-expanded={accessOpen}
-              onClick={openAccess}
-            >
-              {moneyWebLine(access.money, access.web)}
-            </button>
-          ) : null}
-        </div>
-      </div>
       <div className={sheetOpen ? "chief-room-stage is-dim" : "chief-room-stage"}>
         <ChiefField status={user ? status : CHIEF_STATUS.READY} />
+        {desktopNav ? (
+          <aside
+            id="chief-conversation-nav"
+            className={navCollapsed ? "chief-nav is-collapsed" : "chief-nav"}
+            aria-label="Conversations"
+          >
+            {navToggle("chief-nav-toggle")}
+            {navCollapsed ? null : (
+              <>
+                {canLeave ? (
+                  <nav className="chief-places" aria-label="Places">
+                    <button
+                      type="button"
+                      className="chief-place chief-place--here"
+                      aria-current="page"
+                      onClick={closeSheets}
+                    >
+                      CHIEF
+                    </button>
+                    {onOpenFinancial ? (
+                      <button type="button" className="chief-place" onClick={onOpenFinancial}>
+                        Freedom Financial
+                      </button>
+                    ) : null}
+                  </nav>
+                ) : (
+                  <div className="chief-place chief-place--here">CHIEF</div>
+                )}
+                {conversationList}
+                <ChiefEarlierTurns earlier={turnView.earlier} />
+              </>
+            )}
+          </aside>
+        ) : null}
+        {narrowNav ? (
+          <div className="chief-stage-tools">
+            {user ? navToggle("chief-nav-toggle") : null}
+            {canLeave ? (
+              <button
+                type="button"
+                className="chief-places-button"
+                aria-expanded={placesOpen}
+                onClick={openPlaces}
+              >
+                CHIEF
+              </button>
+            ) : (
+              <div className="chief-place chief-place--here">CHIEF</div>
+            )}
+          </div>
+        ) : (
+          <aside className="chief-telemetry" aria-label="CHIEF status">
+            {instruments}
+          </aside>
+        )}
+      </div>
+      <div className="chief-room-bottom">
+        {narrowNav ? <div className="chief-dock-meta">{instruments}</div> : null}
         {user ? (
           <ChiefTranscript
             userLine={turnView.userLine}
@@ -788,10 +800,8 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onSignOut }
             <p className="chief-turn-empty">Sign in to talk with CHIEF.</p>
           </div>
         )}
-      </div>
-      {user ? (
-        <div className="chief-room-bottom">
-          {approval && !activeArchived ? (
+        {user ? (
+          approval && !activeArchived ? (
             <ChiefApprovalCard
               disabled={busy}
               onApprove={() => resolveApproval("approve")}
@@ -825,9 +835,9 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onSignOut }
                 />
               )}
             </div>
-          )}
-        </div>
-      ) : null}
+          )
+        ) : null}
+      </div>
       {narrowNav && drawerOpen ? (
         <aside
           id="chief-conversation-nav"

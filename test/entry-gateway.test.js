@@ -251,7 +251,8 @@ test("the gateway keeps authentication behavior and one canvas loop", () => {
     new URL("../src/components/chief/ChiefField.jsx", import.meta.url),
     "utf8"
   );
-  assert.match(chiefFieldSource, /pointFrame/);
+  assert.match(chiefFieldSource, /renderIntelligence/);
+  assert.doesNotMatch(chiefFieldSource, /pointFrame/);
   assert.doesNotMatch(chiefFieldSource, /createCurrent/);
   assert.doesNotMatch(chiefFieldSource, /formationFrame/);
 });

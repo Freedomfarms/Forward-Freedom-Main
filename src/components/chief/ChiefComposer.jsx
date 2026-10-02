@@ -3,26 +3,30 @@ export function ChiefComposer({
   onChange,
   onSubmit,
   disabled = false,
-  placeholder = "Ask CHIEF",
+  placeholder = "Ask CHIEF anything...",
   inputRef = null,
 }) {
   return (
     <form
+      className="chief-composer"
       onSubmit={(event) => {
         event.preventDefault();
         if (!disabled) onSubmit();
       }}
-      style={{
-        display: "flex",
-        gap: 10,
-        alignItems: "flex-end",
-        position: "relative",
-        border: "1px solid rgba(30,144,255,.32)",
-        background: "rgba(3,17,32,.82)",
-        borderRadius: 14,
-        padding: 10,
-      }}
     >
+      <button
+        type="button"
+        className="chief-mic"
+        disabled
+        aria-label="Microphone"
+        title="Voice is not connected yet"
+      >
+        <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <rect x="6" y="1.5" width="4" height="8" rx="2" stroke="currentColor" strokeWidth="1.4" />
+          <path d="M3.5 7.5a4.5 4.5 0 0 0 9 0" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+          <path d="M8 12v2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+        </svg>
+      </button>
       <label htmlFor="chief-composer" className="chief-sr">
         Message CHIEF
       </label>
@@ -33,24 +37,12 @@ export function ChiefComposer({
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
         disabled={disabled}
-        rows={2}
+        rows={1}
         onKeyDown={(event) => {
           if (event.key === "Enter" && !event.shiftKey) {
             event.preventDefault();
             if (!disabled) onSubmit();
           }
-        }}
-        style={{
-          flex: 1,
-          minWidth: 0,
-          resize: "none",
-          border: "none",
-          background: "transparent",
-          color: "#eaf3ff",
-          fontSize: 15,
-          lineHeight: 1.45,
-          minHeight: 44,
-          padding: "10px 8px",
         }}
       />
       <button type="submit" className="chief-action" disabled={disabled || !value.trim()}>
