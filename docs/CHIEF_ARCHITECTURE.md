@@ -1,8 +1,11 @@
 # CHIEF — Final Architecture and Implementation Sequence (Module 03)
 
-Status: design for approval. No production code has been written. Companion document:
-[CHIEF_GITHUB_REUSE_AUDIT.md](./CHIEF_GITHUB_REUSE_AUDIT.md) (the approved audit; commit-pinned
-source findings and classifications referenced throughout as "audit §N").
+Status: historical design. The live tool surface is the capability registry in
+[CHIEF_CAPABILITIES.md](./CHIEF_CAPABILITIES.md). This document's hand-maintained tool
+inventory is no longer the long-term architecture. Read-only code intelligence is
+documented in [CHIEF_CAPABILITIES.md](./CHIEF_CAPABILITIES.md). Grok workforce
+observability, the operational graph, and finance writes are not implemented.
+Companion document: [CHIEF_GITHUB_REUSE_AUDIT.md](./CHIEF_GITHUB_REUSE_AUDIT.md).
 
 Governing objective: **compose and integrate existing proven work — do not reinvent it.**
 For every major component this document answers: _why are we building this instead of

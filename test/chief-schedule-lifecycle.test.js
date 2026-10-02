@@ -76,6 +76,7 @@ function task(fields = {}) {
 function policy() {
   const granted = new CapabilityPolicy({ defaultDeny: true });
   granted.grant("chief", Capability.SCHEDULE_CREATE);
+  granted.grant("chief", Capability.SCHEDULE_READ);
   granted.grant("chief", Capability.MEMORY_READ);
   return granted;
 }

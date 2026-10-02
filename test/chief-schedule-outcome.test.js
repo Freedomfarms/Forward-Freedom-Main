@@ -91,6 +91,7 @@ function run(fields = {}) {
 function policy() {
   const granted = new CapabilityPolicy({ defaultDeny: true });
   granted.grant("chief", Capability.SCHEDULE_CREATE);
+  granted.grant("chief", Capability.SCHEDULE_READ);
   granted.grant("chief", Capability.MEMORY_READ);
   return granted;
 }
@@ -141,8 +142,8 @@ test("a succeeded run returns the ledger fields and the stored summary", async (
   const tool = tools.tools.find((item) => item.spec.name === "schedule_outcome");
   assert.equal(spec.requiresConfirmation, false);
   assert.equal(tool.isLocal, true);
-  assert.deepEqual(spec.requiredCapabilities, [Capability.SCHEDULE_CREATE]);
-  assert.deepEqual(CHIEF_TOOL_INVENTORY.schedule_outcome, [Capability.SCHEDULE_CREATE]);
+  assert.deepEqual(spec.requiredCapabilities, [Capability.SCHEDULE_READ]);
+  assert.deepEqual(CHIEF_TOOL_INVENTORY.schedule_outcome, [Capability.SCHEDULE_READ]);
   const result = await tools.executor.execute(
     { callId: "o", name: "schedule_outcome", arguments: { runId: " run-1 " } },
     { userId: "user-1" }

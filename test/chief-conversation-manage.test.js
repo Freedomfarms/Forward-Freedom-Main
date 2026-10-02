@@ -505,7 +505,7 @@ test("prisma delete drops approvals for that session and leaves traces alone", a
   ]);
 });
 
-test("conversation management does not add a second store or model tools", () => {
+test("conversation capabilities use the checkpoint store and do not add a second store", () => {
   const route = readFileSync(new URL("../api/chief/sessions.js", import.meta.url), "utf8");
   const tools = readFileSync(new URL("../server/chief/tools/builtin.js", import.meta.url), "utf8");
   const checkpoint = readFileSync(
@@ -514,8 +514,15 @@ test("conversation management does not add a second store or model tools", () =>
   );
   assert.equal(route.includes("AgentConversation"), false);
   assert.equal(route.includes("userId: body"), false);
-  assert.equal(tools.includes("conversation_delete"), false);
   assert.equal(tools.includes("conversation_list"), false);
+  assert.equal(tools.includes("conversation_rename"), true);
+  assert.equal(tools.includes("conversation_archive"), true);
+  assert.equal(tools.includes("conversation_restore"), true);
+  assert.equal(tools.includes("conversation_delete"), true);
+  assert.equal(tools.includes("renameSession"), true);
+  assert.equal(tools.includes("setArchived"), true);
+  assert.equal(tools.includes("deleteOwnedSession"), true);
+  assert.equal(tools.includes("AgentConversation"), false);
   assert.equal(checkpoint.includes("agentConversation"), false);
   assert.equal(checkpoint.includes("chiefTrace.delete"), false);
 });

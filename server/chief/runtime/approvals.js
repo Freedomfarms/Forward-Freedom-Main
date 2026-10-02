@@ -169,10 +169,11 @@ export class ApprovalCoordinator {
     return state;
   }
 
-  authorize(sessionId, calls, mutationCallIds) {
+  authorize(sessionId, calls, mutationCallIds, { explicitCallIds = [] } = {}) {
     const state = this._state(sessionId);
     const policy = this._defaultPolicy;
     const callsById = new Map(calls.map((call) => [call.callId, call]));
+    const explicit = new Set(explicitCallIds);
     const approved = [];
     const requested = [];
     for (const callId of mutationCallIds) {
@@ -180,7 +181,12 @@ export class ApprovalCoordinator {
       if (!call) {
         throw new Error(`unknown mutation call \`${callId}\``);
       }
-      if (policy !== ApprovalPolicy.ASK || state.approvedForSession.has(callKey(sessionId, call))) {
+      // Destructive and high-impact calls always wait for this confirmation.
+      // A session-wide allow, or an earlier approved_for_session key, does not
+      // skip them. An approved decision for this batch still grants the call.
+      const policySkipsAsk = policy !== ApprovalPolicy.ASK;
+      const sticky = state.approvedForSession.has(callKey(sessionId, call));
+      if (!explicit.has(callId) && (policySkipsAsk || sticky)) {
         approved.push(callId);
       } else {
         requested.push(callId);
@@ -206,7 +212,7 @@ export class ApprovalCoordinator {
     };
   }
 
-  resolve(sessionId, calls, approvalCallIds, decision, permissions) {
+  resolve(sessionId, calls, approvalCallIds, decision, permissions, { explicitCallIds = [] } = {}) {
     if (!decisionGrants(decision)) {
       return permissions;
     }
@@ -220,7 +226,10 @@ export class ApprovalCoordinator {
     if (decision.type !== ReviewDecisionType.APPROVED_FOR_SESSION) {
       return permissions;
     }
-    const keys = approvalCallIds.map((callId) => callKey(sessionId, callsById.get(callId)));
+    const explicit = new Set(explicitCallIds);
+    const keys = approvalCallIds
+      .filter((callId) => !explicit.has(callId))
+      .map((callId) => callKey(sessionId, callsById.get(callId)));
     const state = this._state(sessionId);
     for (const key of keys) {
       if (state.approvedForSession.size >= MAX_SESSION_APPROVALS) {

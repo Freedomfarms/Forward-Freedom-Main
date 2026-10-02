@@ -22,19 +22,24 @@ test("the catalog matches the live tool inventory", () => {
   assert.equal(createChiefTools().length > 0, true);
 });
 
-test("the empty-grant baseline is unchanged and excludes observation and source read", () => {
+test("the empty-grant baseline follows the reconciled catalog", () => {
   assert.deepEqual(baselineCapabilities(), [
     Capability.MEMORY_READ,
     Capability.MEMORY_WRITE,
     Capability.SCHEDULE_CREATE,
+    Capability.SCHEDULE_READ,
     Capability.FINANCE_READ,
     Capability.SKILL_READ,
     Capability.WEB_SEARCH,
     Capability.MODULE_ACCESS,
     Capability.CONVERSATION_READ,
+    Capability.CONVERSATION_WRITE,
+    Capability.CONVERSATION_DELETE,
+    Capability.SETTINGS_READ,
+    Capability.SETTINGS_WRITE,
   ]);
   assert.equal(baselineCapabilities().includes(Capability.WORKFORCE_READ), false);
-  assert.equal(baselineCapabilities().includes(Capability.CODEBASE_READ), false);
+  assert.equal(baselineCapabilities().includes(Capability.CODE_READ), false);
   assert.equal(baselineCapabilities().includes(Capability.FILE_WRITE), false);
   assert.equal(baselineCapabilities().includes(Capability.CODE_EXECUTE), false);
   assert.equal(baselineCapabilities().includes(Capability.TOOL_INVOKE), false);
@@ -51,10 +56,15 @@ test("codebase admits read or forbidden, and forbidden rows cannot be granted", 
     );
     if (entry.effect === ControlEffect.FORBIDDEN) assert.equal(entry.capability, null);
   }
-  const read = codebase.find((entry) => entry.id === "codebase.read");
-  assert.equal(read.capability, Capability.CODEBASE_READ);
-  assert.equal(read.tool, null);
-  assert.equal(read.baseline, false);
+  const reads = codebase.filter((entry) => entry.status === "live");
+  assert.deepEqual(
+    reads.map((entry) => entry.tool),
+    ["code_tree", "code_read", "code_search"]
+  );
+  for (const entry of reads) {
+    assert.equal(entry.capability, Capability.CODE_READ);
+    assert.equal(entry.baseline, false);
+  }
   const observe = CONTROL_PLANE.find((entry) => entry.id === "workforce.observe");
   assert.equal(observe.capability, Capability.WORKFORCE_READ);
   assert.equal(observe.tool, null);
@@ -77,5 +87,5 @@ test("repository mutation tools and capabilities cannot be registered", () => {
     /cannot require git:commit/
   );
   assert.equal(isForbiddenControlCapability("codebase:write"), true);
-  assert.equal(isForbiddenControlCapability(Capability.CODEBASE_READ), false);
+  assert.equal(isForbiddenControlCapability(Capability.CODE_READ), false);
 });

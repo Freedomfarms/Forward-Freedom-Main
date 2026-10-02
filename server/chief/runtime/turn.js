@@ -58,21 +58,27 @@ import { ApprovalCoordinator, ReviewDecisionType } from "./approvals.js";
 import { HANDOFF_STATE_KEY, compactTranscript } from "./compaction.js";
 import { lastTurnUserText } from "../context/assemble.js";
 import { TraceCollector } from "../traces/collector.js";
+import { effectRequiresExplicitConfirmation } from "../capabilities/descriptor.js";
 import { ToolExecutor } from "../tools/executor.js";
 
 export function classifyToolCalls(calls, specs) {
   if (!Array.isArray(specs) || specs.length === 0) {
-    return { mutationIds: calls.map((call) => call.callId), readIds: [] };
+    return { mutationIds: calls.map((call) => call.callId), readIds: [], explicitIds: [] };
   }
   const byName = new Map(specs.map((spec) => [spec.name, spec]));
   const mutationIds = [];
   const readIds = [];
+  const explicitIds = [];
   for (const call of calls) {
     const spec = byName.get(call.name);
-    if (spec && spec.requiresConfirmation !== true) readIds.push(call.callId);
-    else mutationIds.push(call.callId);
+    if (spec && spec.requiresConfirmation !== true) {
+      readIds.push(call.callId);
+    } else {
+      mutationIds.push(call.callId);
+      if (effectRequiresExplicitConfirmation(spec?.effect)) explicitIds.push(call.callId);
+    }
   }
-  return { mutationIds, readIds };
+  return { mutationIds, readIds, explicitIds };
 }
 
 export const TurnPhase = Object.freeze({
@@ -384,6 +390,7 @@ export class TurnMachine {
       const outcome = await this._authorize(execution, streamed.toolCalls);
       if (outcome === "suspended") return;
       if (outcome === "aborted") return;
+      if (outcome === "session_deleted") return;
     }
     await this._abort(execution.turnId, "max_model_steps");
   }
@@ -529,13 +536,15 @@ export class TurnMachine {
     const decision = this._approvals.authorize(
       this._sessionId,
       toolCalls,
-      classification.mutationIds
+      classification.mutationIds,
+      { explicitCallIds: classification.explicitIds }
     );
     if (decision.type === "execute") {
       const granted = new Set(
         classification.mutationIds.filter((callId) => decision.permissions.forCall(callId).mutation)
       );
-      await this._executeCalls(execution, toolCalls, granted);
+      const ran = await this._executeCalls(execution, toolCalls, granted);
+      if (ran === "session_deleted") return "session_deleted";
       return "continue";
     }
     const preApprovedCallIds = classification.mutationIds.filter(
@@ -550,6 +559,7 @@ export class TurnMachine {
       preApprovedCallIds,
       mutationCallIds: classification.mutationIds,
       readCallIds: classification.readIds,
+      explicitCallIds: classification.explicitIds,
     };
     this._emit(eventMsg.execApprovalRequest(this._checkpoint.pendingApproval));
     await this._persist({ approval: { opened: true } });
@@ -560,6 +570,7 @@ export class TurnMachine {
   async _executeCalls(execution, calls, grantedMutations = new Set()) {
     execution.phase = TurnPhase.EXECUTE;
     const results = [];
+    let deletedSessionId = null;
     for (const call of calls) {
       this._emit(
         eventMsg.toolCallBegin({
@@ -594,9 +605,18 @@ export class TurnMachine {
         })
       );
       results.push(toolResultMessage(call, result.output));
+      if (typeof result.deletedSessionId === "string") deletedSessionId = result.deletedSessionId;
     }
     this._checkpoint.transcript.push(...results);
+    if (deletedSessionId === this._sessionId) {
+      this._status = "completed";
+      this._checkpoint.activeExecution = null;
+      this._checkpoint.pendingApproval = null;
+      this._emit(eventMsg.turnComplete(execution.turnId));
+      return "session_deleted";
+    }
     await this._persist({ transcriptDelta: results });
+    return "continue";
   }
 
   async _resumeApproval(op) {
@@ -632,7 +652,8 @@ export class TurnMachine {
       pending.calls,
       pending.requestedCallIds,
       decision,
-      permissions
+      permissions,
+      { explicitCallIds: pending.explicitCallIds ?? [] }
     );
     this._checkpoint.approvedForSession = this._approvals.exportKeys(this._sessionId);
     const mutationCallIds = pending.mutationCallIds ?? pending.calls.map((call) => call.callId);
@@ -677,7 +698,10 @@ export class TurnMachine {
       deniedMessages.push(message);
     }
     if (deniedMessages.length) await this._persist({ transcriptDelta: deniedMessages });
-    if (toRun.length) await this._executeCalls(execution, toRun, grantedMutations);
+    if (toRun.length) {
+      const ran = await this._executeCalls(execution, toRun, grantedMutations);
+      if (ran === "session_deleted") return;
+    }
     await this._modelLoop();
   }
 

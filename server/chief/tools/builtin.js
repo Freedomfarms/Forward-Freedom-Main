@@ -23,12 +23,17 @@ import { PrismaAuditLog } from "../security/audit.js";
 import { ToolExecutor } from "./executor.js";
 import { CHIEF_TOOL_INVENTORY } from "./inventory.js";
 import { HANDOFF_STATE_KEY, validateHandoffNotes } from "../runtime/compaction.js";
+import { CapabilityRegistry, registerTool } from "../capabilities/registry.js";
 import { PrismaCheckpointStore } from "../runtime/checkpoint.js";
+import { validateUserTitle } from "../runtime/conversationTitle.js";
 import { retrieveOwnedConversation } from "../runtime/recall.js";
 import { bundledSkills, skillByName } from "../skills/catalog.js";
 import { MemoryScheduleStore, PrismaScheduleStore, normalizeSchedule } from "./schedule-store.js";
 import { BaseTool } from "./spec.js";
 import { createWebSearchClient, createWebSearchTool } from "./web-search.js";
+import { createCodeTools } from "../codeintel/tools.js";
+import { withUserContext } from "../../db/prisma.js";
+import { readUserSettings, updateUserTimezone } from "../../platform/userSettings.js";
 
 function memoryRead(store) {
   return new BaseTool({
@@ -276,7 +281,7 @@ function scheduleList(store) {
         "List this user's scheduled tasks: id, name, kind, status, next run, last run, and whether a run is waiting on approval. Does not return run results or operator state.",
       category: "schedule",
       requiresConfirmation: false,
-      requiredCapabilities: [Capability.SCHEDULE_CREATE],
+      requiredCapabilities: [Capability.SCHEDULE_READ],
       parameters: { type: "object", properties: {} },
     },
     async execute(_params, context) {
@@ -435,7 +440,7 @@ function scheduleOutcome(store) {
         "Read one of this user's scheduled runs: ledger times and status, the stored summary, and the stored error. Does not return the session, the prompt, tool output, or ciphertext. Does not run or change a task.",
       category: "schedule",
       requiresConfirmation: false,
-      requiredCapabilities: [Capability.SCHEDULE_CREATE],
+      requiredCapabilities: [Capability.SCHEDULE_READ],
       parameters: {
         type: "object",
         properties: { runId: { type: "string" } },
@@ -459,7 +464,7 @@ function scheduleRuns(store) {
         "List this user's scheduled runs: id, task, status, attempts, start, and completion. Does not return results, errors, prompts, or session ids. Does not run or change a task.",
       category: "schedule",
       requiresConfirmation: false,
-      requiredCapabilities: [Capability.SCHEDULE_CREATE],
+      requiredCapabilities: [Capability.SCHEDULE_READ],
       parameters: {
         type: "object",
         properties: { taskId: { type: "string" } },
@@ -799,7 +804,223 @@ function conversationRetrieve(store) {
   });
 }
 
-export function createChiefTools({
+const SESSION_PARAMETERS = {
+  type: "object",
+  properties: {
+    session_id: {
+      type: "string",
+      description: "Conversation to change. Omit to use the current conversation.",
+    },
+  },
+};
+
+function sessionTarget(params, context) {
+  const requested = typeof params?.session_id === "string" ? params.session_id.trim() : "";
+  return requested || (typeof context?.sessionId === "string" ? context.sessionId : "");
+}
+
+function sessionPayload(record) {
+  return {
+    session_id: record.id,
+    title: record.title ?? null,
+    archived: Boolean(record.archivedAt),
+  };
+}
+
+const SETTINGS_IGNORED_KEYS = new Set(["userId", "user_id"]);
+
+function settingsPayload(params) {
+  if (typeof params !== "object" || params === null || Array.isArray(params)) {
+    return { error: "settings input must be an object" };
+  }
+  const keys = Object.keys(params).filter((key) => !SETTINGS_IGNORED_KEYS.has(key));
+  return { keys };
+}
+
+function settingsFailure(error, fallback) {
+  const known =
+    error?.code === "INVALID_TIMEZONE" ||
+    error?.code === "TIMEZONE_SCHEMA_MISSING" ||
+    error?.code === "UNAUTHENTICATED";
+  return {
+    output: JSON.stringify({
+      error: known ? error.message : fallback,
+      code: error?.code || "SETTINGS_ERROR",
+    }),
+    isError: true,
+  };
+}
+
+function settingsRead(withUser = withUserContext) {
+  return new BaseTool({
+    isLocal: true,
+    spec: {
+      name: "settings_read",
+      description:
+        "Read the authenticated user's Freedom OS timezone. This returns timezone only. It does not accept a user id and does not return email, role, admin status, legal consent, credentials, or tokens.",
+      category: "settings",
+      requiresConfirmation: false,
+      requiredCapabilities: [Capability.SETTINGS_READ],
+      parameters: { type: "object", additionalProperties: false, properties: {} },
+    },
+    async execute(params, context) {
+      if (!context?.userId) {
+        return {
+          output: JSON.stringify({ error: "authenticated user is required" }),
+          isError: true,
+        };
+      }
+      const payload = settingsPayload(params);
+      if (payload.error) return { output: JSON.stringify({ error: payload.error }), isError: true };
+      try {
+        const settings = await readUserSettings(context.userId, { withUser });
+        return { output: JSON.stringify({ timezone: settings.timezone }) };
+      } catch (error) {
+        return settingsFailure(error, "Settings could not be read.");
+      }
+    },
+  });
+}
+
+function settingsUpdate(withUser = withUserContext) {
+  return new BaseTool({
+    isLocal: true,
+    spec: {
+      name: "settings_update",
+      description:
+        "Change the authenticated user's Freedom OS timezone. timezone must be an IANA name such as America/New_York. Eastern Time is America/New_York, Central is America/Chicago, Mountain is America/Denver, and Pacific is America/Los_Angeles. Timezone is the only user setting this can change. The change waits for confirmation. It does not accept a user id, a database query, or any other field.",
+      category: "settings",
+      requiresConfirmation: true,
+      requiredCapabilities: [Capability.SETTINGS_WRITE],
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          timezone: {
+            type: "string",
+            description: "IANA timezone, for example America/New_York.",
+          },
+        },
+        required: ["timezone"],
+      },
+    },
+    async execute(params, context) {
+      if (!context?.userId) {
+        return {
+          output: JSON.stringify({ error: "authenticated user is required" }),
+          isError: true,
+        };
+      }
+      const payload = settingsPayload(params);
+      if (payload.error) return { output: JSON.stringify({ error: payload.error }), isError: true };
+      if (payload.keys.length !== 1 || payload.keys[0] !== "timezone") {
+        return {
+          output: JSON.stringify({ error: "only timezone can be updated" }),
+          isError: true,
+        };
+      }
+      try {
+        const record = await updateUserTimezone(context.userId, params.timezone, { withUser });
+        return { output: JSON.stringify({ timezone: record?.timezone || null }) };
+      } catch (error) {
+        return settingsFailure(error, "Settings could not be updated.");
+      }
+    },
+  });
+}
+
+function conversationRename(store) {
+  return new BaseTool({
+    isLocal: true,
+    spec: {
+      name: "conversation_rename",
+      description:
+        "Rename one of this user's conversations. Uses the current conversation when session_id is omitted. Does not accept a user id.",
+      category: "conversation",
+      requiresConfirmation: true,
+      requiredCapabilities: [Capability.CONVERSATION_WRITE],
+      parameters: {
+        type: "object",
+        properties: {
+          ...SESSION_PARAMETERS.properties,
+          title: { type: "string" },
+        },
+        required: ["title"],
+      },
+    },
+    async execute(params, context) {
+      const denied = recallDenied(context);
+      if (denied) return denied;
+      const sessionId = sessionTarget(params, context);
+      const validated = validateUserTitle(params?.title);
+      if (validated.error)
+        return { output: JSON.stringify({ error: validated.error }), isError: true };
+      if (!sessionId || typeof store?.renameSession !== "function") {
+        return { output: JSON.stringify({ error: "session not found" }), isError: true };
+      }
+      const record = await store.renameSession(context.userId, sessionId, validated.title);
+      if (!record) return { output: JSON.stringify({ error: "session not found" }), isError: true };
+      return { output: JSON.stringify(sessionPayload(record)) };
+    },
+  });
+}
+
+function conversationArchived(store, { name, description, archived }) {
+  return new BaseTool({
+    isLocal: true,
+    spec: {
+      name,
+      description,
+      category: "conversation",
+      requiresConfirmation: true,
+      requiredCapabilities: [Capability.CONVERSATION_WRITE],
+      parameters: SESSION_PARAMETERS,
+    },
+    async execute(params, context) {
+      const denied = recallDenied(context);
+      if (denied) return denied;
+      const sessionId = sessionTarget(params, context);
+      if (!sessionId || typeof store?.setArchived !== "function") {
+        return { output: JSON.stringify({ error: "session not found" }), isError: true };
+      }
+      const record = await store.setArchived(context.userId, sessionId, archived);
+      if (!record) return { output: JSON.stringify({ error: "session not found" }), isError: true };
+      return { output: JSON.stringify(sessionPayload(record)) };
+    },
+  });
+}
+
+function conversationDelete(store) {
+  return new BaseTool({
+    isLocal: true,
+    spec: {
+      name: "conversation_delete",
+      description:
+        "Permanently delete one of this user's conversations. Uses the current conversation when session_id is omitted. Requires explicit confirmation. Does not accept a user id.",
+      category: "conversation",
+      requiresConfirmation: true,
+      requiredCapabilities: [Capability.CONVERSATION_DELETE],
+      parameters: SESSION_PARAMETERS,
+    },
+    async execute(params, context) {
+      const denied = recallDenied(context);
+      if (denied) return denied;
+      const sessionId = sessionTarget(params, context);
+      if (!sessionId || typeof store?.deleteOwnedSession !== "function") {
+        return { output: JSON.stringify({ error: "session not found" }), isError: true };
+      }
+      const deleted = await store.deleteOwnedSession(context.userId, sessionId);
+      if (!deleted)
+        return { output: JSON.stringify({ error: "session not found" }), isError: true };
+      return {
+        output: JSON.stringify({ deleted: true, session_id: sessionId }),
+        deletedSessionId: sessionId,
+      };
+    },
+  });
+}
+
+export function createChiefCapabilityRegistry({
   facts = new MemoryFactStore(),
   graph = new MemoryGraphStore(),
   schedule = new MemoryScheduleStore(),
@@ -811,8 +1032,11 @@ export function createChiefTools({
   search = null,
   moduleAccess = new MemoryModuleAccess(),
   checkpointStore = null,
+  settingsWithUser = withUserContext,
+  codeintel = null,
 } = {}) {
   assertControlPlane(CHIEF_TOOL_INVENTORY);
+  const registry = new CapabilityRegistry();
   const tools = [
     memoryRead(facts),
     memoryWrite(facts),
@@ -836,7 +1060,59 @@ export function createChiefTools({
     mcpInvoke(mcpClient),
     conversationSearch(checkpointStore),
     conversationRetrieve(checkpointStore),
+    conversationRename(checkpointStore),
+    conversationArchived(checkpointStore, {
+      name: "conversation_archive",
+      description:
+        "Archive one of this user's conversations. Uses the current conversation when session_id is omitted. Does not accept a user id.",
+      archived: true,
+    }),
+    conversationArchived(checkpointStore, {
+      name: "conversation_restore",
+      description:
+        "Restore one of this user's archived conversations. Uses the current conversation when session_id is omitted. Does not accept a user id.",
+      archived: false,
+    }),
+    conversationDelete(checkpointStore),
+    settingsRead(settingsWithUser),
+    settingsUpdate(settingsWithUser),
+    ...createCodeTools(codeintel ?? undefined),
   ];
+  for (const tool of tools) registerTool(registry, tool);
+  return registry;
+}
+
+export function createChiefTools({
+  facts = new MemoryFactStore(),
+  graph = new MemoryGraphStore(),
+  schedule = new MemoryScheduleStore(),
+  mcpClient = null,
+  loadFinance = loadFinanceSummary,
+  loadWorkspace = loadWorkspacePlanSummary,
+  loadPosition = null,
+  skills = bundledSkills,
+  search = null,
+  moduleAccess = new MemoryModuleAccess(),
+  checkpointStore = null,
+  settingsWithUser = withUserContext,
+  codeintel = null,
+} = {}) {
+  const registry = createChiefCapabilityRegistry({
+    facts,
+    graph,
+    schedule,
+    mcpClient,
+    loadFinance,
+    loadWorkspace,
+    loadPosition,
+    skills,
+    search,
+    moduleAccess,
+    checkpointStore,
+    settingsWithUser,
+    codeintel,
+  });
+  const tools = registry.toBaseTools();
   for (const tool of tools) {
     if (!ToolRegistry.contains(tool.spec.name)) {
       ToolRegistry.registerValue(tool.spec.name, tool.spec);
@@ -872,6 +1148,8 @@ export async function createChiefTooling({
     loadPosition: loadFreedomFinancialPosition,
     moduleAccess: moduleAccess ?? stores?.moduleAccess ?? new PrismaModuleAccess(),
     checkpointStore: stores?.checkpoints ?? new PrismaCheckpointStore(),
+    settingsWithUser: stores?.settingsWithUser,
+    codeintel: stores?.codeintel,
   });
   const executor = new ToolExecutor({
     tools,
