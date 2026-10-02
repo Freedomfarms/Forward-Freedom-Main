@@ -45,13 +45,19 @@ test("capability wire values match upstream, plus the CHIEF-only labels", () => 
   assert.equal(values.has("web:search"), true);
   assert.equal(values.has("module:access"), true);
   assert.equal(values.has("conversation:read"), true);
-  assert.equal(values.size, upstream.size + 5);
+  assert.equal(values.has("schedule:read"), true);
+  assert.equal(values.has("conversation:write"), true);
+  assert.equal(values.has("conversation:delete"), true);
+  assert.equal(values.size, upstream.size + 8);
   assert.equal(isCapability("file:read"), true);
   assert.equal(isCapability("finance:read"), true);
   assert.equal(isCapability("skill:read"), true);
   assert.equal(isCapability("web:search"), true);
   assert.equal(isCapability("module:access"), true);
   assert.equal(isCapability("conversation:read"), true);
+  assert.equal(isCapability("schedule:read"), true);
+  assert.equal(isCapability("conversation:write"), true);
+  assert.equal(isCapability("conversation:delete"), true);
   assert.equal(isCapability("file:destroy"), false);
 });
 

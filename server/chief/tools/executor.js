@@ -159,6 +159,12 @@ export class ToolExecutor {
       return this._denied(call, context, state.sessionTaint, scanned);
     }
 
+    if (state.tool.spec.audit === "full") {
+      await this._writeAudit(call, context, {
+        action: state.isError ? "capability.failed" : "capability.executed",
+        output: `${state.tool.spec.name} ${state.tool.spec.effect} ${state.isError ? "failed" : "completed"}`,
+      });
+    }
     this._publish(EventType.TOOL_CALL_END, {
       tool: tool.spec.name,
       success: !state.isError,
@@ -173,6 +179,7 @@ export class ToolExecutor {
       isError: state.isError,
       sessionTaint: state.sessionTaint,
       cancelled: false,
+      deletedSessionId: state.deletedSessionId ?? null,
     };
   }
 
@@ -335,6 +342,8 @@ export class ToolExecutor {
     const result = winner.result ?? {};
     state.output = typeof result.output === "string" ? result.output : "";
     state.isError = Boolean(result.isError);
+    if (typeof result.deletedSessionId === "string")
+      state.deletedSessionId = result.deletedSessionId;
     if (Array.isArray(result.sessionTaint)) {
       state.sessionTaint = unionTaint(state.sessionTaint, result.sessionTaint);
     }

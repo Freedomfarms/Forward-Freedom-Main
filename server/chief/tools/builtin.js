@@ -22,7 +22,9 @@ import { PrismaAuditLog } from "../security/audit.js";
 import { ToolExecutor } from "./executor.js";
 import { CHIEF_TOOL_INVENTORY } from "./inventory.js";
 import { HANDOFF_STATE_KEY, validateHandoffNotes } from "../runtime/compaction.js";
+import { CapabilityRegistry, registerTool } from "../capabilities/registry.js";
 import { PrismaCheckpointStore } from "../runtime/checkpoint.js";
+import { validateUserTitle } from "../runtime/conversationTitle.js";
 import { retrieveOwnedConversation } from "../runtime/recall.js";
 import { bundledSkills, skillByName } from "../skills/catalog.js";
 import { MemoryScheduleStore, PrismaScheduleStore, normalizeSchedule } from "./schedule-store.js";
@@ -275,7 +277,7 @@ function scheduleList(store) {
         "List this user's scheduled tasks: id, name, kind, status, next run, last run, and whether a run is waiting on approval. Does not return run results or operator state.",
       category: "schedule",
       requiresConfirmation: false,
-      requiredCapabilities: [Capability.SCHEDULE_CREATE],
+      requiredCapabilities: [Capability.SCHEDULE_READ],
       parameters: { type: "object", properties: {} },
     },
     async execute(_params, context) {
@@ -434,7 +436,7 @@ function scheduleOutcome(store) {
         "Read one of this user's scheduled runs: ledger times and status, the stored summary, and the stored error. Does not return the session, the prompt, tool output, or ciphertext. Does not run or change a task.",
       category: "schedule",
       requiresConfirmation: false,
-      requiredCapabilities: [Capability.SCHEDULE_CREATE],
+      requiredCapabilities: [Capability.SCHEDULE_READ],
       parameters: {
         type: "object",
         properties: { runId: { type: "string" } },
@@ -458,7 +460,7 @@ function scheduleRuns(store) {
         "List this user's scheduled runs: id, task, status, attempts, start, and completion. Does not return results, errors, prompts, or session ids. Does not run or change a task.",
       category: "schedule",
       requiresConfirmation: false,
-      requiredCapabilities: [Capability.SCHEDULE_CREATE],
+      requiredCapabilities: [Capability.SCHEDULE_READ],
       parameters: {
         type: "object",
         properties: { taskId: { type: "string" } },
@@ -798,7 +800,121 @@ function conversationRetrieve(store) {
   });
 }
 
-export function createChiefTools({
+const SESSION_PARAMETERS = {
+  type: "object",
+  properties: {
+    session_id: {
+      type: "string",
+      description: "Conversation to change. Omit to use the current conversation.",
+    },
+  },
+};
+
+function sessionTarget(params, context) {
+  const requested = typeof params?.session_id === "string" ? params.session_id.trim() : "";
+  return requested || (typeof context?.sessionId === "string" ? context.sessionId : "");
+}
+
+function sessionPayload(record) {
+  return {
+    session_id: record.id,
+    title: record.title ?? null,
+    archived: Boolean(record.archivedAt),
+  };
+}
+
+function conversationRename(store) {
+  return new BaseTool({
+    isLocal: true,
+    spec: {
+      name: "conversation_rename",
+      description:
+        "Rename one of this user's conversations. Uses the current conversation when session_id is omitted. Does not accept a user id.",
+      category: "conversation",
+      requiresConfirmation: true,
+      requiredCapabilities: [Capability.CONVERSATION_WRITE],
+      parameters: {
+        type: "object",
+        properties: {
+          ...SESSION_PARAMETERS.properties,
+          title: { type: "string" },
+        },
+        required: ["title"],
+      },
+    },
+    async execute(params, context) {
+      const denied = recallDenied(context);
+      if (denied) return denied;
+      const sessionId = sessionTarget(params, context);
+      const validated = validateUserTitle(params?.title);
+      if (validated.error)
+        return { output: JSON.stringify({ error: validated.error }), isError: true };
+      if (!sessionId || typeof store?.renameSession !== "function") {
+        return { output: JSON.stringify({ error: "session not found" }), isError: true };
+      }
+      const record = await store.renameSession(context.userId, sessionId, validated.title);
+      if (!record) return { output: JSON.stringify({ error: "session not found" }), isError: true };
+      return { output: JSON.stringify(sessionPayload(record)) };
+    },
+  });
+}
+
+function conversationArchived(store, { name, description, archived }) {
+  return new BaseTool({
+    isLocal: true,
+    spec: {
+      name,
+      description,
+      category: "conversation",
+      requiresConfirmation: true,
+      requiredCapabilities: [Capability.CONVERSATION_WRITE],
+      parameters: SESSION_PARAMETERS,
+    },
+    async execute(params, context) {
+      const denied = recallDenied(context);
+      if (denied) return denied;
+      const sessionId = sessionTarget(params, context);
+      if (!sessionId || typeof store?.setArchived !== "function") {
+        return { output: JSON.stringify({ error: "session not found" }), isError: true };
+      }
+      const record = await store.setArchived(context.userId, sessionId, archived);
+      if (!record) return { output: JSON.stringify({ error: "session not found" }), isError: true };
+      return { output: JSON.stringify(sessionPayload(record)) };
+    },
+  });
+}
+
+function conversationDelete(store) {
+  return new BaseTool({
+    isLocal: true,
+    spec: {
+      name: "conversation_delete",
+      description:
+        "Permanently delete one of this user's conversations. Uses the current conversation when session_id is omitted. Requires explicit confirmation. Does not accept a user id.",
+      category: "conversation",
+      requiresConfirmation: true,
+      requiredCapabilities: [Capability.CONVERSATION_DELETE],
+      parameters: SESSION_PARAMETERS,
+    },
+    async execute(params, context) {
+      const denied = recallDenied(context);
+      if (denied) return denied;
+      const sessionId = sessionTarget(params, context);
+      if (!sessionId || typeof store?.deleteOwnedSession !== "function") {
+        return { output: JSON.stringify({ error: "session not found" }), isError: true };
+      }
+      const deleted = await store.deleteOwnedSession(context.userId, sessionId);
+      if (!deleted)
+        return { output: JSON.stringify({ error: "session not found" }), isError: true };
+      return {
+        output: JSON.stringify({ deleted: true, session_id: sessionId }),
+        deletedSessionId: sessionId,
+      };
+    },
+  });
+}
+
+export function createChiefCapabilityRegistry({
   facts = new MemoryFactStore(),
   graph = new MemoryGraphStore(),
   schedule = new MemoryScheduleStore(),
@@ -811,6 +927,7 @@ export function createChiefTools({
   moduleAccess = new MemoryModuleAccess(),
   checkpointStore = null,
 } = {}) {
+  const registry = new CapabilityRegistry();
   const tools = [
     memoryRead(facts),
     memoryWrite(facts),
@@ -834,7 +951,52 @@ export function createChiefTools({
     mcpInvoke(mcpClient),
     conversationSearch(checkpointStore),
     conversationRetrieve(checkpointStore),
+    conversationRename(checkpointStore),
+    conversationArchived(checkpointStore, {
+      name: "conversation_archive",
+      description:
+        "Archive one of this user's conversations. Uses the current conversation when session_id is omitted. Does not accept a user id.",
+      archived: true,
+    }),
+    conversationArchived(checkpointStore, {
+      name: "conversation_restore",
+      description:
+        "Restore one of this user's archived conversations. Uses the current conversation when session_id is omitted. Does not accept a user id.",
+      archived: false,
+    }),
+    conversationDelete(checkpointStore),
   ];
+  for (const tool of tools) registerTool(registry, tool);
+  return registry;
+}
+
+export function createChiefTools({
+  facts = new MemoryFactStore(),
+  graph = new MemoryGraphStore(),
+  schedule = new MemoryScheduleStore(),
+  mcpClient = null,
+  loadFinance = loadFinanceSummary,
+  loadWorkspace = loadWorkspacePlanSummary,
+  loadPosition = null,
+  skills = bundledSkills,
+  search = null,
+  moduleAccess = new MemoryModuleAccess(),
+  checkpointStore = null,
+} = {}) {
+  const registry = createChiefCapabilityRegistry({
+    facts,
+    graph,
+    schedule,
+    mcpClient,
+    loadFinance,
+    loadWorkspace,
+    loadPosition,
+    skills,
+    search,
+    moduleAccess,
+    checkpointStore,
+  });
+  const tools = registry.toBaseTools();
   for (const tool of tools) {
     if (!ToolRegistry.contains(tool.spec.name)) {
       ToolRegistry.registerValue(tool.spec.name, tool.spec);

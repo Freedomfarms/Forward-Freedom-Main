@@ -55,6 +55,8 @@ export const Capability = Object.freeze({
   CHANNEL_SEND: "channel:send",
   TOOL_INVOKE: "tool:invoke",
   SCHEDULE_CREATE: "schedule:create",
+  // CHIEF extension. Schedule reads do not reuse the write grant.
+  SCHEDULE_READ: "schedule:read",
   SYSTEM_ADMIN: "system:admin",
   // CHIEF extension. Not an OpenJarvis label. Financial tools require this
   // instead of memory:read.
@@ -74,6 +76,10 @@ export const Capability = Object.freeze({
   // user's own conversations. It is not memory:read and it is not
   // finance:read. It cannot write a session, a fact, or Module 02.
   CONVERSATION_READ: "conversation:read",
+  // CHIEF extension. Rename, archive, and restore. Not a delete.
+  CONVERSATION_WRITE: "conversation:write",
+  // CHIEF extension. Permanent conversation deletion.
+  CONVERSATION_DELETE: "conversation:delete",
 });
 
 const CAPABILITY_VALUES = new Set(Object.values(Capability));
