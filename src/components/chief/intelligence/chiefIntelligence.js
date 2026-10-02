@@ -468,7 +468,7 @@ export function intelligenceParticle(index, time, motion, fieldScale = 1) {
   const speed = Number(motion?.speed) || 0;
   const activity = Number(motion?.particle) || 0;
   const angle = seedA * Math.PI * 2;
-  const radius = Math.pow(seedB, 1.18) * 0.88 * fieldScale;
+  const radius = Math.pow(seedB, 1.35) * 0.88 * fieldScale;
   const depth = (seedC * 2 - 1) * (0.42 + radius * 0.85);
   const swirl = time * (0.012 + seedD * 0.024) * speed * (seedC > 0.5 ? 1 : -1);
   const turbulence =
@@ -483,7 +483,7 @@ export function intelligenceParticle(index, time, motion, fieldScale = 1) {
     x: Math.cos(angle + swirl + depth * 0.34) * (radius * lobe + turbulence) + clusterX,
     y:
       Math.sin(angle + swirl * 0.72) *
-        (radius * (0.68 + seedD * 0.36) + turbulence * 0.6) +
+        (radius * (0.62 + seedD * 0.26) + turbulence * 0.6) +
       Math.sin(angle * 2 + seedC * 4) * radius * 0.08 +
       clusterY,
     z: depth,
