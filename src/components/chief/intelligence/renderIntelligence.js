@@ -82,14 +82,15 @@ function drawWave(context, wave, width, height, time, motion) {
     else context.lineTo(originX + x, originY + y);
   }
   const gradient = context.createLinearGradient(originX - reach, originY, originX + reach, originY);
-  const alpha = wave.alpha * (Number(motion.intensity) || 0) * (0.65 + (Number(motion.glow) || 0) * 0.5);
+  const alpha =
+    wave.alpha * (Number(motion.intensity) || 0) * (0.38 + (Number(motion.glow) || 0) * 0.22);
   gradient.addColorStop(0, "rgba(186, 140, 255, 0)");
-  gradient.addColorStop(0.32, `rgba(206, 170, 255, ${alpha * 0.7})`);
-  gradient.addColorStop(0.5, `rgba(255, 236, 255, ${alpha})`);
-  gradient.addColorStop(0.68, `rgba(176, 110, 245, ${alpha * 0.65})`);
+  gradient.addColorStop(0.32, `rgba(206, 170, 255, ${alpha * 0.55})`);
+  gradient.addColorStop(0.5, `rgba(236, 220, 255, ${alpha * 0.7})`);
+  gradient.addColorStop(0.68, `rgba(176, 110, 245, ${alpha * 0.5})`);
   gradient.addColorStop(1, "rgba(186, 140, 255, 0)");
   context.strokeStyle = gradient;
-  context.lineWidth = wave.width;
+  context.lineWidth = wave.width * 0.5;
   context.stroke();
 }
 
@@ -98,14 +99,14 @@ function drawOrbits(context, front, originX, originY, scale, time, motion) {
   const intensity = Number(motion.intensity) || 0;
   for (const orbit of ORBITS) {
     const points = sampleRing(orbit, time, motion);
-    const alpha = orbit.alpha * intensity * (front ? 1 : 0.55);
+    const alpha = orbit.alpha * intensity * (front ? 1 : 0.4);
     context.lineCap = "round";
     context.lineJoin = "round";
-    context.strokeStyle = rgba(orbit.color, alpha * (0.45 + glow * 0.35));
-    context.lineWidth = orbit.width * (8 + glow * 4);
+    context.strokeStyle = rgba(orbit.color, alpha * (0.16 + glow * 0.08));
+    context.lineWidth = orbit.width * (2.2 + glow * 0.7);
     strokeRibbon(context, points, front, originX, originY, scale);
-    context.strokeStyle = rgba([255, 246, 255], alpha * 0.9);
-    context.lineWidth = Math.max(1.1, orbit.width * 0.7);
+    context.strokeStyle = rgba([255, 248, 255], Math.min(1, alpha));
+    context.lineWidth = Math.max(0.85, orbit.width * 0.42);
     strokeRibbon(context, points, front, originX, originY, scale);
 
     for (const angle of sparkAngles(orbit, time, motion)) {
@@ -114,14 +115,14 @@ function drawOrbits(context, front, originX, originY, scale, time, motion) {
       if (point.z >= 0 !== front) continue;
       const x = originX + point.x * scale;
       const y = originY + point.y * scale;
-      const radius = 3.2 + glow * 3.2;
-      const spark = context.createRadialGradient(x, y, 0, x, y, radius * 5);
+      const sparkRadius = 1.4 + glow * 0.9;
+      const spark = context.createRadialGradient(x, y, 0, x, y, sparkRadius * 2.4);
       spark.addColorStop(0, `rgba(255, 252, 255, ${0.95 * intensity})`);
-      spark.addColorStop(0.28, rgba(orbit.color, 0.7 * intensity));
+      spark.addColorStop(0.35, rgba(orbit.color, 0.55 * intensity));
       spark.addColorStop(1, rgba(orbit.color, 0));
       context.fillStyle = spark;
       context.beginPath();
-      context.arc(x, y, radius * 5, 0, Math.PI * 2);
+      context.arc(x, y, sparkRadius * 2.4, 0, Math.PI * 2);
       context.fill();
     }
   }
@@ -133,14 +134,23 @@ function coreRadius(scale, time, motion, amplitude) {
 
 function drawBloom(context, originX, originY, radius, motion) {
   const glow = Number(motion.glow) || 0;
-  const bloom = context.createRadialGradient(originX, originY, radius * 0.08, originX, originY, radius * 3.6);
-  bloom.addColorStop(0, `rgba(255, 250, 255, ${0.5 * glow})`);
-  bloom.addColorStop(0.16, `rgba(210, 170, 255, ${0.34 * glow})`);
-  bloom.addColorStop(0.4, `rgba(120, 48, 210, ${0.18 * glow})`);
+  // Atmosphere lives outside the core. Peak light on the center is about a third
+  // lower than the previous wash, and it falls off before the old 3.6× halo.
+  const bloom = context.createRadialGradient(
+    originX,
+    originY,
+    radius * 0.72,
+    originX,
+    originY,
+    radius * 2.35
+  );
+  bloom.addColorStop(0, `rgba(255, 248, 255, ${0.32 * glow})`);
+  bloom.addColorStop(0.22, `rgba(198, 150, 255, ${0.2 * glow})`);
+  bloom.addColorStop(0.58, `rgba(110, 42, 196, ${0.1 * glow})`);
   bloom.addColorStop(1, "rgba(40, 0, 70, 0)");
   context.fillStyle = bloom;
   context.beginPath();
-  context.arc(originX, originY, radius * 3.6, 0, Math.PI * 2);
+  context.arc(originX, originY, radius * 2.35, 0, Math.PI * 2);
   context.fill();
 }
 
@@ -154,10 +164,11 @@ function drawCoreBody(context, originX, originY, radius, time, motion) {
     radius
   );
   body.addColorStop(0, "rgba(255, 255, 255, 1)");
-  body.addColorStop(0.14, "rgba(248, 236, 255, 0.95)");
-  body.addColorStop(0.4, "rgba(186, 110, 255, 0.72)");
-  body.addColorStop(0.68, "rgba(120, 48, 210, 0.28)");
-  body.addColorStop(1, "rgba(90, 20, 170, 0)");
+  body.addColorStop(0.1, "rgba(244, 230, 255, 0.98)");
+  body.addColorStop(0.28, "rgba(176, 104, 240, 0.98)");
+  body.addColorStop(0.62, "rgba(104, 40, 186, 0.96)");
+  body.addColorStop(0.88, "rgba(72, 24, 140, 0.92)");
+  body.addColorStop(1, "rgba(48, 12, 96, 0)");
   context.fillStyle = body;
   context.beginPath();
   context.arc(originX, originY, radius, 0, Math.PI * 2);
@@ -169,7 +180,7 @@ function drawCoreBody(context, originX, originY, radius, time, motion) {
   hot.addColorStop(1, "rgba(255, 255, 255, 0)");
   context.fillStyle = hot;
   context.beginPath();
-  context.arc(originX, originY, radius * 0.16, 0, Math.PI * 2);
+  context.arc(originX, originY, radius * 0.13, 0, Math.PI * 2);
   context.fill();
 
   const motes = 70;
@@ -221,7 +232,11 @@ export function renderIntelligence(context, { width, height, time, motion, ampli
   context.globalCompositeOperation = "lighter";
   drawOrbits(context, false, originX, originY, scale, time, motion);
   drawBloom(context, originX, originY, radius, motion);
+
+  context.globalCompositeOperation = "source-over";
   drawCoreBody(context, originX, originY, radius, time, motion);
+
+  context.globalCompositeOperation = "lighter";
   drawOrbits(context, true, originX, originY, scale, time, motion);
   for (const wave of WAVES) {
     if (wave.layer === "front") drawWave(context, wave, width, height, time, motion);
