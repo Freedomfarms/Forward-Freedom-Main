@@ -1,13 +1,15 @@
 import {
   AMBIENT_COUNT,
-  NEBULA,
-  ORBITS,
+  ENERGY_RIBBONS,
+  INTELLIGENCE_PARTICLE_COUNT,
+  PLASMA_LAYERS,
   WAVES,
   ambientParticle,
   coreScale,
-  projectRing,
-  sampleRing,
-  sparkAngles,
+  intelligenceParticle,
+  ribbonNodeParameters,
+  ribbonPoint,
+  sampleRibbon,
 } from "./chiefIntelligence.js";
 
 function rgba(color, alpha) {
@@ -35,28 +37,70 @@ function strokeRibbon(context, points, front, originX, originY, scale) {
   context.stroke();
 }
 
-function drawNebula(context, width, height, time, motion) {
+function smoothClosedPath(context, points) {
+  const first = points[0];
+  const last = points[points.length - 1];
+  context.beginPath();
+  context.moveTo((first.x + last.x) / 2, (first.y + last.y) / 2);
+  for (let index = 0; index < points.length; index += 1) {
+    const point = points[index];
+    const next = points[(index + 1) % points.length];
+    context.quadraticCurveTo(point.x, point.y, (point.x + next.x) / 2, (point.y + next.y) / 2);
+  }
+  context.closePath();
+}
+
+function drawPlasma(context, width, height, time, motion) {
   const originX = width / 2;
   const originY = height / 2;
   const scale = Math.min(width, height);
-  const driftScale = (Number(motion.speed) || 0) * 0.15;
+  const speed = Number(motion.speed) || 0;
+  const intensity = Number(motion.intensity) || 0;
   const previous = context.globalCompositeOperation;
   context.globalCompositeOperation = "screen";
-  for (const cloud of NEBULA) {
-    const x = originX + (cloud.x + Math.sin(time * driftScale + cloud.drift * 8) * cloud.drift) * scale;
-    const y = originY + (cloud.y + Math.cos(time * driftScale * 0.8 + cloud.x) * cloud.drift) * scale;
-    const radius = cloud.r * scale * 0.72;
-    const lit = cloud.color.map((channel) => Math.min(255, channel + 70));
-    const gradient = context.createRadialGradient(x, y, radius * 0.1, x, y, radius);
-    const alpha = 0.34 * (Number(motion.intensity) || 0);
-    gradient.addColorStop(0, rgba(lit, alpha));
-    gradient.addColorStop(0.42, rgba(cloud.color, alpha * 0.7));
-    gradient.addColorStop(1, rgba(cloud.color, 0));
+  context.save();
+  context.filter = `blur(${Math.max(6, scale * 0.012)}px)`;
+  for (const layer of PLASMA_LAYERS) {
+    const drift = time * layer.drift * speed;
+    const centerX = originX + (layer.x + Math.sin(drift + layer.phase) * 0.035) * scale;
+    const centerY = originY + (layer.y + Math.cos(drift * 0.8 + layer.phase) * 0.028) * scale;
+    const points = [];
+    const steps = 42;
+    for (let index = 0; index < steps; index += 1) {
+      const angle = (index / steps) * Math.PI * 2;
+      const turbulence =
+        1 +
+        Math.sin(angle * 3 + layer.phase + drift) * 0.17 +
+        Math.sin(angle * 7 - layer.phase - drift * 0.7) * 0.075;
+      points.push({
+        x:
+          centerX +
+          Math.cos(angle) * layer.radiusX * scale * turbulence +
+          Math.sin(angle * 2 + layer.phase) * scale * 0.035,
+        y:
+          centerY +
+          Math.sin(angle) * layer.radiusY * scale * turbulence +
+          Math.cos(angle * 3 - layer.phase) * scale * 0.025,
+      });
+    }
+    smoothClosedPath(context, points);
+    const radius = Math.max(layer.radiusX, layer.radiusY) * scale;
+    const gradient = context.createRadialGradient(
+      centerX + Math.sin(layer.phase) * radius * 0.18,
+      centerY - Math.cos(layer.phase) * radius * 0.12,
+      radius * 0.06,
+      centerX,
+      centerY,
+      radius
+    );
+    const alpha = layer.alpha * intensity;
+    gradient.addColorStop(0, rgba(layer.color, alpha * 0.8));
+    gradient.addColorStop(0.46, rgba(layer.color, alpha * 0.48));
+    gradient.addColorStop(1, rgba(layer.color, 0));
     context.fillStyle = gradient;
-    context.beginPath();
-    context.arc(x, y, radius, 0, Math.PI * 2);
     context.fill();
   }
+  context.restore();
   context.globalCompositeOperation = previous;
 }
 
@@ -94,119 +138,92 @@ function drawWave(context, wave, width, height, time, motion) {
   context.stroke();
 }
 
-function drawOrbits(context, front, originX, originY, scale, time, motion) {
+function drawRibbons(context, front, originX, originY, scale, time, motion) {
   const glow = Number(motion.glow) || 0;
   const intensity = Number(motion.intensity) || 0;
-  for (const orbit of ORBITS) {
-    const points = sampleRing(orbit, time, motion);
-    const alpha = orbit.alpha * intensity * (front ? 1 : 0.4);
+  for (const ribbon of ENERGY_RIBBONS) {
+    const points = sampleRibbon(ribbon, time, motion);
+    const alpha = ribbon.alpha * intensity * (front ? 1 : 0.36);
     context.lineCap = "round";
     context.lineJoin = "round";
-    context.strokeStyle = rgba(orbit.color, alpha * (0.16 + glow * 0.08));
-    context.lineWidth = orbit.width * (2.2 + glow * 0.7);
+    context.strokeStyle = rgba(ribbon.color, alpha * (0.13 + glow * 0.06));
+    context.lineWidth = ribbon.width * (3.8 + glow * 1.1);
     strokeRibbon(context, points, front, originX, originY, scale);
-    context.strokeStyle = rgba([255, 248, 255], Math.min(1, alpha));
-    context.lineWidth = Math.max(0.85, orbit.width * 0.42);
+    context.strokeStyle = rgba(ribbon.color, Math.min(1, alpha * 0.92));
+    context.lineWidth = Math.max(0.72, ribbon.width * 0.58);
     strokeRibbon(context, points, front, originX, originY, scale);
 
-    for (const angle of sparkAngles(orbit, time, motion)) {
-      const wobble = 1 + Math.sin(angle * 3 + orbit.phase) * orbit.wobble;
-      const point = projectRing(orbit, angle, wobble);
+    for (const parameter of ribbonNodeParameters(ribbon, time, motion)) {
+      const point = ribbonPoint(ribbon, parameter, time, motion);
       if (point.z >= 0 !== front) continue;
       const x = originX + point.x * scale;
       const y = originY + point.y * scale;
-      const sparkRadius = 1.4 + glow * 0.9;
-      const spark = context.createRadialGradient(x, y, 0, x, y, sparkRadius * 2.4);
+      const sparkRadius = 1.25 + glow * 1.15;
+      const spark = context.createRadialGradient(x, y, 0, x, y, sparkRadius * 3.2);
       spark.addColorStop(0, `rgba(255, 252, 255, ${0.95 * intensity})`);
-      spark.addColorStop(0.35, rgba(orbit.color, 0.55 * intensity));
-      spark.addColorStop(1, rgba(orbit.color, 0));
+      spark.addColorStop(0.28, rgba(ribbon.color, 0.68 * intensity));
+      spark.addColorStop(1, rgba(ribbon.color, 0));
       context.fillStyle = spark;
       context.beginPath();
-      context.arc(x, y, sparkRadius * 2.4, 0, Math.PI * 2);
+      context.arc(x, y, sparkRadius * 3.2, 0, Math.PI * 2);
       context.fill();
     }
   }
 }
 
-function coreRadius(scale, time, motion, amplitude) {
-  return scale * 0.3 * coreScale(time, motion, amplitude);
-}
-
-function drawBloom(context, originX, originY, radius, motion) {
+function drawIntelligenceParticles(
+  context,
+  front,
+  originX,
+  originY,
+  scale,
+  time,
+  motion,
+  amplitude
+) {
+  const fieldScale = coreScale(time, motion, amplitude);
   const glow = Number(motion.glow) || 0;
-  // Atmosphere lives outside the core. Peak light on the center is about a third
-  // lower than the previous wash, and it falls off before the old 3.6× halo.
-  const bloom = context.createRadialGradient(
-    originX,
-    originY,
-    radius * 0.72,
-    originX,
-    originY,
-    radius * 2.35
-  );
-  bloom.addColorStop(0, `rgba(255, 248, 255, ${0.32 * glow})`);
-  bloom.addColorStop(0.22, `rgba(198, 150, 255, ${0.2 * glow})`);
-  bloom.addColorStop(0.58, `rgba(110, 42, 196, ${0.1 * glow})`);
-  bloom.addColorStop(1, "rgba(40, 0, 70, 0)");
-  context.fillStyle = bloom;
-  context.beginPath();
-  context.arc(originX, originY, radius * 2.35, 0, Math.PI * 2);
-  context.fill();
-}
-
-function drawCoreBody(context, originX, originY, radius, time, motion) {
-  const body = context.createRadialGradient(
-    originX - radius * 0.16,
-    originY - radius * 0.2,
-    radius * 0.02,
-    originX,
-    originY,
-    radius
-  );
-  body.addColorStop(0, "rgba(255, 255, 255, 1)");
-  body.addColorStop(0.1, "rgba(244, 230, 255, 0.98)");
-  body.addColorStop(0.28, "rgba(176, 104, 240, 0.98)");
-  body.addColorStop(0.62, "rgba(104, 40, 186, 0.96)");
-  body.addColorStop(0.88, "rgba(72, 24, 140, 0.92)");
-  body.addColorStop(1, "rgba(48, 12, 96, 0)");
-  context.fillStyle = body;
-  context.beginPath();
-  context.arc(originX, originY, radius, 0, Math.PI * 2);
-  context.fill();
-
-  const hot = context.createRadialGradient(originX, originY, 0, originX, originY, radius * 0.32);
-  hot.addColorStop(0, "rgba(255, 255, 255, 1)");
-  hot.addColorStop(0.4, "rgba(250, 240, 255, 0.92)");
-  hot.addColorStop(1, "rgba(255, 255, 255, 0)");
-  context.fillStyle = hot;
-  context.beginPath();
-  context.arc(originX, originY, radius * 0.13, 0, Math.PI * 2);
-  context.fill();
-
-  const motes = 70;
-  const activity = Number(motion.particle) || 0;
-  for (let index = 0; index < motes; index += 1) {
-    const spin = time * 0.22 * (Number(motion.speed) || 0) + index;
-    const ring = 0.12 + (index % 9) * 0.09;
-    const x = originX + Math.cos(spin + index * 0.7) * radius * ring;
-    const y = originY + Math.sin(spin * 0.65 + index * 1.15) * radius * ring;
-    context.fillStyle = `rgba(226, 214, 255, ${0.25 + activity * 0.55})`;
+  for (let index = 0; index < INTELLIGENCE_PARTICLE_COUNT; index += 1) {
+    const particle = intelligenceParticle(index, time, motion, fieldScale);
+    if (particle.z >= 0 !== front) continue;
+    const depth = front ? 0.72 + particle.z * 0.72 : 0.36 + (particle.z + 0.4) * 0.18;
+    const alpha = Math.max(0.04, particle.alpha * depth);
+    const x = originX + particle.x * scale;
+    const y = originY + particle.y * scale;
+    const color = particle.warm
+      ? [255, 208, 154]
+      : particle.hot
+        ? [255, 246, 255]
+        : [198, 154, 255];
+    if (particle.hot && index % 3 === 0) {
+      const haloRadius = particle.size * (2.6 + glow * 1.8);
+      const halo = context.createRadialGradient(x, y, 0, x, y, haloRadius);
+      halo.addColorStop(0, rgba(color, alpha * 0.58));
+      halo.addColorStop(1, rgba(color, 0));
+      context.fillStyle = halo;
+      context.beginPath();
+      context.arc(x, y, haloRadius, 0, Math.PI * 2);
+      context.fill();
+    }
+    context.fillStyle = rgba(color, alpha);
     context.beginPath();
-    context.arc(x, y, 0.45 + (index % 3) * 0.28, 0, Math.PI * 2);
+    context.arc(x, y, particle.size * (front ? 1 : 0.78), 0, Math.PI * 2);
     context.fill();
   }
 }
 
-function drawDust(context, originX, originY, scale, time, motion) {
+function drawDust(context, front, originX, originY, scale, time, motion) {
   for (let index = 0; index < AMBIENT_COUNT; index += 1) {
     const particle = ambientParticle(index, time, motion);
+    if (particle.z >= 0 !== front) continue;
     if (particle.alpha < 0.02) continue;
-    context.fillStyle = `rgba(214, 186, 255, ${particle.alpha})`;
+    const depth = front ? 0.6 + particle.z * 0.4 : 0.32;
+    context.fillStyle = `rgba(214, 186, 255, ${particle.alpha * depth})`;
     context.beginPath();
     context.arc(
       originX + particle.x * scale,
       originY + particle.y * scale,
-      particle.size,
+      particle.size * (front ? 1 : 0.72),
       0,
       Math.PI * 2
     );
@@ -220,28 +237,23 @@ export function renderIntelligence(context, { width, height, time, motion, ampli
   const originY = height * 0.46;
   const scale = Math.min(width, height) * 0.4;
 
-  const radius = coreRadius(scale, time, motion, amplitude);
-
   context.globalCompositeOperation = "source-over";
-  drawNebula(context, width, height, time, motion);
+  drawPlasma(context, width, height, time, motion);
+  drawDust(context, false, originX, originY, scale * 1.28, time, motion);
   context.lineCap = "round";
   for (const wave of WAVES) {
     if (wave.layer === "back") drawWave(context, wave, width, height, time, motion);
   }
 
   context.globalCompositeOperation = "lighter";
-  drawOrbits(context, false, originX, originY, scale, time, motion);
-  drawBloom(context, originX, originY, radius, motion);
-
-  context.globalCompositeOperation = "source-over";
-  drawCoreBody(context, originX, originY, radius, time, motion);
-
-  context.globalCompositeOperation = "lighter";
-  drawOrbits(context, true, originX, originY, scale, time, motion);
+  drawRibbons(context, false, originX, originY, scale, time, motion);
+  drawIntelligenceParticles(context, false, originX, originY, scale, time, motion, amplitude);
+  drawIntelligenceParticles(context, true, originX, originY, scale, time, motion, amplitude);
+  drawRibbons(context, true, originX, originY, scale, time, motion);
   for (const wave of WAVES) {
     if (wave.layer === "front") drawWave(context, wave, width, height, time, motion);
   }
-  drawDust(context, originX, originY, scale, time, motion);
+  drawDust(context, true, originX, originY, scale * 1.28, time, motion);
   context.globalCompositeOperation = "source-over";
   const vignette = context.createRadialGradient(
     originX,

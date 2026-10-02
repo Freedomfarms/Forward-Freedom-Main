@@ -20,9 +20,12 @@ import {
   rotateView,
 } from "../src/components/chief/chiefField.js";
 import {
+  ENERGY_RIBBONS,
   coreScale,
+  intelligenceParticle,
   motionPreset,
   resolveAmplitude,
+  sampleRibbon,
   visualStateForStatus,
 } from "../src/components/chief/intelligence/chiefIntelligence.js";
 import {
@@ -269,6 +272,26 @@ test("the room intelligence maps status onto idle, thinking, and speaking", () =
   assert.match(field, /visualStateForStatus/);
   assert.equal(field.includes("createDiamondPoints"), false);
   assert.equal(field.includes("pointColor"), false);
+});
+
+test("the room intelligence is seven turbulent ribbons around a particle field", () => {
+  const idle = motionPreset("idle");
+  assert.equal(ENERGY_RIBBONS.length, 7);
+  const shapes = ENERGY_RIBBONS.map((ribbon) => sampleRibbon(ribbon, 2.4, idle, 96));
+  for (const points of shapes) {
+    assert.equal(points.length, 97);
+    const radii = points.map((point) => Math.hypot(point.x, point.y));
+    assert.ok(Math.max(...radii) - Math.min(...radii) > 0.18);
+    assert.ok(points.some((point) => point.z < 0));
+    assert.ok(points.some((point) => point.z >= 0));
+  }
+  const particles = Array.from({ length: 160 }, (_, index) =>
+    intelligenceParticle(index, 2.4, idle)
+  );
+  assert.ok(particles.some((particle) => particle.warm));
+  assert.ok(particles.some((particle) => particle.hot));
+  assert.ok(particles.some((particle) => particle.z < 0));
+  assert.ok(particles.some((particle) => particle.z >= 0));
 });
 
 test("the room source keeps conversation plain and navigation literal", () => {
