@@ -1,5 +1,5 @@
 // Workforce journal: both sources, derived trust, and coverage wording.
-// No ingress and no CHIEF tool.
+// Ingress is covered by chief-workforce-report.test.js. No CHIEF read tool.
 
 import test from "node:test";
 import assert from "node:assert/strict";

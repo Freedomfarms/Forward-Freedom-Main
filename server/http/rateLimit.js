@@ -165,6 +165,23 @@ export const plaidWebhookRateLimit = rateLimit({
   max: 120,
 });
 
+// Self-report posts are assertions, not a platform stream. The cap is high
+// enough for a bot that reports several notes a minute and low enough that a
+// leaked key cannot fill the journal without bound.
+export const workforceReportRateLimit = rateLimit({
+  ...baseRateLimitOptions,
+  windowMs: 60 * 1000,
+  max: 120,
+  message: { error: true, message: "Too many workforce reports. Please try again later." },
+});
+
+export const workforceReportKeyRateLimit = rateLimit({
+  ...baseRateLimitOptions,
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  message: { error: true, message: "Too many report-key changes. Please try again later." },
+});
+
 // App-wide backstop for the self-hosted Express server (server/index.js). Each
 // route handler still enforces its own stricter limit; this separate instance
 // only bounds aggregate per-IP traffic and any future route mounted without a

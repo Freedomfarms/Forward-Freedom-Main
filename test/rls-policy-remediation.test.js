@@ -99,6 +99,22 @@ test("remediation inventory is exactly every user-scoped model", () => {
   );
 });
 
+test("the report-key migration does not weaken workforce row-level security", () => {
+  const sql = withoutComments(
+    readFileSync(
+      new URL(
+        "../prisma/migrations/20261002170000_workforce_report_key/migration.sql",
+        import.meta.url
+      ),
+      "utf8"
+    )
+  );
+  assert.match(sql, /"reportKeyHash"/);
+  assert.doesNotMatch(sql, /DISABLE ROW LEVEL SECURITY/i);
+  assert.doesNotMatch(sql, /DROP POLICY/i);
+  assert.doesNotMatch(sql, /chief_agent/);
+});
+
 test("models added after the remediation enable and force RLS in their own migration", () => {
   for (const [model, migration] of Object.entries(laterRlsModels)) {
     const table = physicalTableName(model);

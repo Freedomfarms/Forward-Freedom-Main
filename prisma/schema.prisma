@@ -1187,6 +1187,10 @@ model WorkforceBinding {
   status            WorkforceBindingStatus  @default(ACTIVE)
   cursorAccountId   String?
   emailCiphertext   String?
+  // SHA-256 of the self-report key. The plaintext is shown once and not stored.
+  // Null means no key is active. Enterprise OTEL does not use this column.
+  reportKeyHash     String?                 @unique
+  reportKeyIssuedAt DateTime?
   createdAt         DateTime                @default(now())
   updatedAt         DateTime                @updatedAt
   user              User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
