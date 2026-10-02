@@ -7,7 +7,8 @@
 // does not leave every tool unreachable. This loader grants only the
 // capabilities the CHIEF inventory already uses, including web:search,
 // module:access, conversation:read, conversation:write, conversation:delete,
-// schedule:read, settings:read, and settings:write. network:fetch stays off the baseline.
+// schedule:read, settings:read, and settings:write. network:fetch, file:read,
+// and code:read stay off the baseline.
 // finance:read lets the read tools run so they can report that Module 02
 // access is off. The data
 // itself stays behind chief_module_access, which defaults to off and is not
