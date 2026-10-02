@@ -587,6 +587,7 @@ export class TurnMachine {
         agentId: "chief",
         caller: { kind: this._callerKind, id: execution.turnId, trigger: this._callerTrigger },
         mutationApproved: grantedMutations.has(call.callId),
+        model: this._checkpoint.modelRoute ?? null,
         sessionTaint: this._checkpoint.sessionTaint ?? [],
         saveMiddlewareState: (middlewareId, state) =>
           this._store.saveMiddlewareState(this._userId, this._sessionId, middlewareId, state),

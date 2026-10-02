@@ -7,8 +7,11 @@
 // does not leave every tool unreachable. This loader grants only the
 // capabilities the CHIEF inventory already uses, including web:search,
 // module:access, conversation:read, conversation:write, conversation:delete,
-// schedule:read, settings:read, and settings:write. network:fetch, file:read,
-// and code:read stay off the baseline.
+// schedule:read, settings:read, settings:write, capability:read, and
+// code:read. network:fetch, file:read, file:write, and code:execute stay
+// off the baseline. Connector labels stay off until that connector is
+// connected. code:read is the configured repository, not a user GitHub
+// account and not a shell.
 // finance:read lets the read tools run so they can report that Module 02
 // access is off. The data
 // itself stays behind chief_module_access, which defaults to off and is not
@@ -16,6 +19,7 @@
 // policyFromGrantRows stays a pure mapping of stored rows.
 
 import { withUserContext } from "../../db/prisma.js";
+import { defaultConnectors } from "../connectors/registry.js";
 import { Capability, CapabilityPolicy } from "../core/capabilities.js";
 
 const BASELINE_CAPABILITIES = Object.freeze([
@@ -32,11 +36,20 @@ const BASELINE_CAPABILITIES = Object.freeze([
   Capability.CONVERSATION_DELETE,
   Capability.SETTINGS_READ,
   Capability.SETTINGS_WRITE,
+  Capability.CAPABILITY_READ,
+  Capability.CODE_READ,
 ]);
 
-function baselinePolicy() {
+function baselinePolicy(connectors = defaultConnectors()) {
   const policy = new CapabilityPolicy({ defaultDeny: true });
-  for (const capability of BASELINE_CAPABILITIES) {
+  const granted = new Set(BASELINE_CAPABILITIES);
+  for (const connector of connectors) {
+    if (connector?.connected !== true) continue;
+    for (const capability of connector.capabilities ?? []) {
+      if (typeof capability.grant === "string" && capability.grant) granted.add(capability.grant);
+    }
+  }
+  for (const capability of granted) {
     policy.grant("_default", capability);
   }
   return policy;

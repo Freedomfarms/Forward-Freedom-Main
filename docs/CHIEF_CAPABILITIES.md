@@ -53,6 +53,14 @@ A `userId` in the model's arguments is ignored. Module 02 data stays behind
 Unknown names fail closed. The model cannot register a capability or change a grant.
 There is no generic invocation that accepts a function, import, query, or shell command.
 
+`capability_discover` is the read-only inventory. It reports canonical capabilities,
+the tools that implement them, the grant that enforces each one, whether confirmation
+is required, and connectors that are not connected. Email, calendar, drive, GitHub
+account, and filesystem access stay unavailable until a connector is registered.
+Adding that connector registers its tools. It does not require a new CHIEF loop.
+`web:read` is enforced by `web:search`. `workspace:read` is enforced by `finance:read`.
+`code:read` is the configured repository, not a user GitHub account.
+
 ## What is registered now
 
 Existing tools, plus conversation rename, archive, restore, and delete on
@@ -73,7 +81,7 @@ the service; the model must send an IANA name (`America/New_York` for Eastern).
 
 `code_tree`, `code_read`, and `code_search` read the configured Freedom OS
 repository through `server/chief/codeintel/`. They require `code:read`, which
-is not on the empty-grant baseline. The effect is `read` and confirmation is
+is on the empty-grant baseline. The effect is `read` and confirmation is
 `none`. The credential is `CHIEF_CODE_READ_TOKEN`, a server-side contents-read
 token. The repository is `CHIEF_CODE_REPOSITORY` (default
 `Freedomfarms/Forward-Freedom-Main`). The model supplies a path, ref, query,
@@ -94,7 +102,7 @@ CHIEF can inspect Freedom OS source and cannot modify, commit, push, or deploy i
 - Freedom Diamond changes
 - Finance writes and Plaid actions
 - Settings other than timezone
-- Model-facing `capability_search` and generic `capability_invoke`
+- Generic `capability_invoke` that accepts a function, import, query, or shell command
 - Module 01
 
 CHIEF still cannot commit, push, deploy, or run a shell.

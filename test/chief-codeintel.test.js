@@ -114,11 +114,11 @@ test("code capabilities are read-only and require code:read", () => {
   assert.equal(codeGuidance(["memory_read"]), "");
 });
 
-test("code:read is off the empty-grant baseline and an explicit deny wins", async () => {
+test("code:read is on the empty-grant baseline and an explicit deny wins", async () => {
   const policy = await loadCapabilityPolicy("user-a", {
     withUser: async (_userId, fn) => fn({ chiefCapabilityGrant: { findMany: async () => [] } }),
   });
-  assert.equal(policy.check("chief", Capability.CODE_READ), false);
+  assert.equal(policy.check("chief", Capability.CODE_READ), true);
   assert.equal(policy.check("chief", Capability.FILE_READ), false);
   assert.equal(policy.check("chief", Capability.CODE_EXECUTE), false);
 

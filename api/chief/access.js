@@ -3,6 +3,10 @@
 // The body is not accepted. This route does not change grants or flags.
 
 import { authenticateRequest } from "../../server/auth/verifyAuth.js";
+import {
+  discoverCapabilities,
+  projectAccessInventory,
+} from "../../server/chief/capabilities/discover.js";
 import { loadCapabilityPolicy } from "../../server/chief/security/grants.js";
 import { PrismaModuleAccess } from "../../server/chief/security/module-access.js";
 import {
@@ -54,8 +58,9 @@ export async function handleChiefRoomAccess(request, response, deps = {}) {
   }
 
   let web;
+  let policy = null;
   try {
-    const policy = await loadPolicy(userId);
+    policy = await loadPolicy(userId);
     web = projectWebAccess({
       granted: webSearchGranted(policy),
       credentialPresent,
@@ -65,7 +70,21 @@ export async function handleChiefRoomAccess(request, response, deps = {}) {
     web = projectWebAccess({ readable: false });
   }
 
-  response.status(200).json({ money, web });
+  let inventory;
+  try {
+    inventory = projectAccessInventory(
+      discoverCapabilities({
+        policy,
+        module02Read: money === "on",
+        module02Readable: money !== "unavailable",
+        webCredentialPresent: credentialPresent,
+      })
+    );
+  } catch {
+    inventory = null;
+  }
+
+  response.status(200).json({ money, web, inventory });
 }
 
 export default function handler(request, response) {

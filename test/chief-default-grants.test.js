@@ -33,6 +33,8 @@ const ALLOWED = [
   Capability.CONVERSATION_DELETE,
   Capability.SETTINGS_READ,
   Capability.SETTINGS_WRITE,
+  Capability.CAPABILITY_READ,
+  Capability.CODE_READ,
 ];
 
 const DENIED = [
@@ -40,8 +42,16 @@ const DENIED = [
   Capability.FILE_WRITE,
   Capability.NETWORK_FETCH,
   Capability.CODE_EXECUTE,
-  Capability.CODE_READ,
   Capability.CHANNEL_SEND,
+  Capability.EMAIL_READ,
+  Capability.EMAIL_SEND,
+  Capability.CALENDAR_READ,
+  Capability.CALENDAR_WRITE,
+  Capability.DRIVE_READ,
+  Capability.GITHUB_READ,
+  Capability.GITHUB_WRITE,
+  Capability.DATA_READ,
+  Capability.DATA_WRITE,
   Capability.TOOL_INVOKE,
   Capability.SYSTEM_ADMIN,
 ];

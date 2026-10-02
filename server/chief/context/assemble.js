@@ -16,6 +16,7 @@
 // CHIEF refuses a fenced persona and drops a fenced one at recall time,
 // because this text is placed in the system message.
 
+import { discoverCapabilities, renderCapabilityContext } from "../capabilities/discover.js";
 import { fencesOutput, scanInjection } from "../security/injection.js";
 import { bundledSkills } from "../skills/catalog.js";
 import { renderSkillsIndex } from "../skills/index.js";
@@ -105,6 +106,7 @@ export async function assembleSystemPrompt({
     conversationRecallGuidance(availableTools),
     settingsGuidance(availableTools),
     codeGuidance(availableTools),
+    capabilitySection({ availableTools, capabilityPolicy, module02Read }),
     skillsIndex,
     handoffSection(notes),
   ]
@@ -121,6 +123,17 @@ export async function assembleSystemPrompt({
     bus,
   });
   return messages[0]?.content ?? base;
+}
+
+function capabilitySection({ availableTools, capabilityPolicy, module02Read }) {
+  if (availableTools == null) return "";
+  const names = availableTools instanceof Set ? availableTools : new Set(availableTools);
+  const snapshot = discoverCapabilities({
+    policy: capabilityPolicy,
+    module02Read,
+    exposedTools: names,
+  });
+  return renderCapabilityContext(snapshot, { discoverExposed: names.has("capability_discover") });
 }
 
 function governanceLine() {

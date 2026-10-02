@@ -100,7 +100,13 @@ test("room access route reports money and web without secrets", async () => {
     credentialPresent: false,
   });
   assert.equal(off.state.statusCode, 200);
-  assert.deepEqual(off.state.body, { money: "off", web: "unavailable" });
+  assert.equal(off.state.body.money, "off");
+  assert.equal(off.state.body.web, "unavailable");
+  assert.ok(off.state.body.inventory.unavailable.some((row) => row.id === "email:read"));
+  assert.match(
+    off.state.body.inventory.unavailable.find((row) => row.id === "email:read").detail,
+    /no email connector is currently connected/
+  );
   assert.equal(JSON.stringify(off.state.body).includes("KEY"), false);
 
   const on = mockResponse();
@@ -110,7 +116,9 @@ test("room access route reports money and web without secrets", async () => {
     loadPolicy: async () => grantedPolicy(),
     credentialPresent: true,
   });
-  assert.deepEqual(on.state.body, { money: "on", web: "on" });
+  assert.equal(on.state.body.money, "on");
+  assert.equal(on.state.body.web, "on");
+  assert.ok(on.state.body.inventory.read.some((row) => row.id === "web:read"));
 
   const denied = mockResponse();
   await handleChiefRoomAccess(apiRequest("GET"), denied.response, {
@@ -134,7 +142,9 @@ test("room access route reports money and web without secrets", async () => {
     },
     credentialPresent: true,
   });
-  assert.deepEqual(unread.state.body, { money: "unavailable", web: "unavailable" });
+  assert.equal(unread.state.body.money, "unavailable");
+  assert.equal(unread.state.body.web, "unavailable");
+  assert.ok(unread.state.body.inventory.unavailable.some((row) => row.id === "email:read"));
 
   const posted = mockResponse();
   await handleChiefRoomAccess(apiRequest("POST"), posted.response, {

@@ -15,6 +15,10 @@ export class MemoryAuditLog {
       action: entry.action,
       resource: entry.resource ?? null,
       summary: entry.summary ?? null,
+      sessionId: entry.sessionId ?? null,
+      model: entry.model ?? null,
+      capability: entry.capability ?? null,
+      approval: entry.approval ?? null,
       createdAt: new Date().toISOString(),
     };
     this.entries.push(row);

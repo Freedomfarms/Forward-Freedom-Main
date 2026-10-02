@@ -13,7 +13,10 @@
 //     "module:access" (the per-user Module 02 read switch), and
 //     "conversation:read" (search and retrieve this user's conversations),
 //     "settings:read", and "settings:write" (the user's timezone on the
-//     existing profile service).
+//     existing profile service). "capability:read" is the control-plane
+//     inventory. email, calendar, drive, github, and data labels are CHIEF
+//     connector boundaries. They do not grant a connector that is not
+//     connected, and they are not OpenJarvis labels.
 //     Financial reads must not reuse memory:read. Loading a procedure must
 //     not reuse memory:read either. Conversation recall must not reuse
 //     memory:read or finance:read. Public web search must not reuse
@@ -89,6 +92,20 @@ export const Capability = Object.freeze({
   SETTINGS_READ: "settings:read",
   // CHIEF extension. Change this user's timezone. Not a general profile write.
   SETTINGS_WRITE: "settings:write",
+  // CHIEF extension. Read the control-plane inventory. It does not grant
+  // any other capability and it cannot change a policy.
+  CAPABILITY_READ: "capability:read",
+  // CHIEF connector boundaries. A label here is not a connected mailbox,
+  // calendar, drive, or GitHub account.
+  EMAIL_READ: "email:read",
+  EMAIL_SEND: "email:send",
+  CALENDAR_READ: "calendar:read",
+  CALENDAR_WRITE: "calendar:write",
+  DRIVE_READ: "drive:read",
+  GITHUB_READ: "github:read",
+  GITHUB_WRITE: "github:write",
+  DATA_READ: "data:read",
+  DATA_WRITE: "data:write",
 });
 
 const CAPABILITY_VALUES = new Set(Object.values(Capability));

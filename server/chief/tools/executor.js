@@ -162,7 +162,11 @@ export class ToolExecutor {
     if (state.tool.spec.audit === "full") {
       await this._writeAudit(call, context, {
         action: state.isError ? "capability.failed" : "capability.executed",
-        output: `${state.tool.spec.name} ${state.tool.spec.effect} ${state.isError ? "failed" : "completed"}`,
+        output: auditSummary(
+          `${state.tool.spec.name} ${state.tool.spec.effect} ${state.isError ? "failed" : "completed"}`,
+          context,
+          state.tool
+        ),
       });
     }
     this._publish(EventType.TOOL_CALL_END, {
@@ -309,6 +313,7 @@ export class ToolExecutor {
       .then(() =>
         state.tool.execute(state.params, {
           ...state.context,
+          capabilityPolicy: this._policy,
           call: state.call,
           signal: controller.signal,
           sessionTaint: state.sessionTaint,
@@ -404,13 +409,18 @@ export class ToolExecutor {
 
   async _writeAudit(call, context, verdict) {
     if (!this._audit || !verdict?.action) return;
+    const tool = this._tools.get(call?.name);
     try {
       await this._audit.write({
         userId: context?.userId ?? null,
         actor: context?.caller?.kind || context?.agentId || "chief",
         action: verdict.action,
         resource: call?.name ?? null,
-        summary: verdict.output,
+        summary: auditSummary(verdict.output, context, tool),
+        sessionId: context?.sessionId ?? null,
+        model: context?.model ?? null,
+        capability: capabilityLabel(tool),
+        approval: approvalState(context, tool),
       });
     } catch {
       // The denial still stands when the audit write fails.
@@ -420,6 +430,29 @@ export class ToolExecutor {
   _publish(eventType, data) {
     this._bus?.publish(eventType, data);
   }
+}
+
+function capabilityLabel(tool) {
+  const required = tool?.spec?.requiredCapabilities ?? [];
+  return required.length ? required.join(",") : null;
+}
+
+function approvalState(context, tool) {
+  if (!tool?.spec?.requiresConfirmation) return "not_required";
+  return context?.mutationApproved === true ? "approved" : "not_approved";
+}
+
+function auditSummary(base, context, tool) {
+  const text = String(base ?? "");
+  if (text.includes("capability=")) return text;
+  const parts = [text];
+  const capability = capabilityLabel(tool);
+  if (capability) parts.push(`capability=${capability}`);
+  if (context?.sessionId) parts.push(`session=${context.sessionId}`);
+  if (context?.model) parts.push(`model=${context.model}`);
+  if (context?.turnId) parts.push(`turn=${context.turnId}`);
+  parts.push(`approval=${approvalState(context, tool)}`);
+  return parts.join(" | ");
 }
 
 function safeJson(value) {

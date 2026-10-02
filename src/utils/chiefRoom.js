@@ -45,6 +45,35 @@ export function emptyRoomAccess() {
     read: CHIEF_ACCESS.UNAVAILABLE,
     organize: CHIEF_ACCESS.UNAVAILABLE,
     delete: CHIEF_ACCESS.UNAVAILABLE,
+    inventory: null,
+  };
+}
+
+function accessRows(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((row) => row && typeof row.id === "string" && row.id.trim())
+    .map((row) => ({
+      id: row.id.trim(),
+      state: typeof row.state === "string" ? row.state : "",
+      detail: typeof row.detail === "string" ? row.detail : "",
+      approval: row.approval === true,
+    }));
+}
+
+function accessNames(value) {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim());
+}
+
+export function normalizeAccessInventory(inventory) {
+  if (!inventory || typeof inventory !== "object") return null;
+  return {
+    connected: accessNames(inventory.connected),
+    read: accessRows(inventory.read),
+    actions: accessRows(inventory.actions),
+    approvalRequired: accessNames(inventory.approvalRequired),
+    unavailable: accessRows(inventory.unavailable),
   };
 }
 

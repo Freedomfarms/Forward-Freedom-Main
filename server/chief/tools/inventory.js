@@ -40,6 +40,7 @@ export const CHIEF_TOOL_INVENTORY = Object.freeze({
   code_tree: Object.freeze([Capability.CODE_READ]),
   code_read: Object.freeze([Capability.CODE_READ]),
   code_search: Object.freeze([Capability.CODE_READ]),
+  capability_discover: Object.freeze([Capability.CAPABILITY_READ]),
 });
 
 // Scheduled turns do not search or manage the user's conversations.
@@ -60,6 +61,16 @@ export const FORBIDDEN_TOOL_NAMES = Object.freeze([
   "bash",
   "code_execute",
 ]);
+
+export function inventoryFromTools(tools, base = CHIEF_TOOL_INVENTORY) {
+  const inventory = { ...base };
+  for (const tool of tools ?? []) {
+    const name = tool?.spec?.name;
+    if (!name || Object.hasOwn(inventory, name)) continue;
+    inventory[name] = Object.freeze([...(tool.spec.requiredCapabilities ?? [])]);
+  }
+  return Object.freeze(inventory);
+}
 
 export function assertToolAllowed(spec) {
   if (FORBIDDEN_TOOL_NAMES.includes(spec?.name)) {

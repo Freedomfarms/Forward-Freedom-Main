@@ -20,16 +20,27 @@ import { fencesOutput, scanInjection } from "../security/injection.js";
 import { closedPolicy, loadCapabilityPolicy } from "../security/grants.js";
 import { PrismaAuditLog } from "../security/audit.js";
 import { ToolExecutor } from "./executor.js";
-import { CHIEF_TOOL_INVENTORY } from "./inventory.js";
+import { inventoryFromTools } from "./inventory.js";
 import { HANDOFF_STATE_KEY, validateHandoffNotes } from "../runtime/compaction.js";
+import { discoverCapabilities } from "../capabilities/discover.js";
 import { CapabilityRegistry, registerTool } from "../capabilities/registry.js";
+import {
+  defaultConnectors,
+  descriptorFromConnectorTool,
+  loadConnectorTools,
+} from "../connectors/registry.js";
 import { PrismaCheckpointStore } from "../runtime/checkpoint.js";
 import { validateUserTitle } from "../runtime/conversationTitle.js";
 import { retrieveOwnedConversation } from "../runtime/recall.js";
 import { bundledSkills, skillByName } from "../skills/catalog.js";
 import { MemoryScheduleStore, PrismaScheduleStore, normalizeSchedule } from "./schedule-store.js";
 import { BaseTool } from "./spec.js";
-import { createWebSearchClient, createWebSearchTool } from "./web-search.js";
+import {
+  createWebSearchClient,
+  createWebSearchTool,
+  resolveWebSearchCredential,
+} from "./web-search.js";
+import { readCodeConfig } from "../codeintel/policy.js";
 import { createCodeTools } from "../codeintel/tools.js";
 import { withUserContext } from "../../db/prisma.js";
 import { readUserSettings, updateUserTimezone } from "../../platform/userSettings.js";
@@ -1019,6 +1030,46 @@ function conversationDelete(store) {
   });
 }
 
+function capabilityDiscover({ moduleAccess, connectors }) {
+  return new BaseTool({
+    isLocal: true,
+    spec: {
+      name: "capability_discover",
+      description:
+        "Read the control-plane inventory for this user: capabilities, the tools that implement them, grants, approval requirements, and connectors that are not connected. Read-only. Does not return credentials, email addresses, or other account secrets. Does not change grants.",
+      category: "control",
+      requiresConfirmation: false,
+      requiredCapabilities: [Capability.CAPABILITY_READ],
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {},
+      },
+    },
+    async execute(_params, context) {
+      let module02Read = false;
+      let module02Readable = true;
+      if (moduleAccess?.isModule02ReadEnabled && context?.userId) {
+        try {
+          module02Read = (await moduleAccess.isModule02ReadEnabled(context.userId)) === true;
+        } catch {
+          module02Readable = false;
+        }
+      }
+      const snapshot = discoverCapabilities({
+        policy: context?.capabilityPolicy ?? null,
+        agentId: context?.agentId || "chief",
+        connectors,
+        module02Read,
+        module02Readable,
+        webCredentialPresent: Boolean(resolveWebSearchCredential()),
+        codeEnabled: readCodeConfig().enabled === true,
+      });
+      return { output: JSON.stringify(snapshot) };
+    },
+  });
+}
+
 export function createChiefCapabilityRegistry({
   facts = new MemoryFactStore(),
   graph = new MemoryGraphStore(),
@@ -1033,6 +1084,7 @@ export function createChiefCapabilityRegistry({
   checkpointStore = null,
   settingsWithUser = withUserContext,
   codeintel = null,
+  connectors = defaultConnectors(),
 } = {}) {
   const registry = new CapabilityRegistry();
   const tools = [
@@ -1075,8 +1127,16 @@ export function createChiefCapabilityRegistry({
     settingsRead(settingsWithUser),
     settingsUpdate(settingsWithUser),
     ...createCodeTools(codeintel ?? undefined),
+    capabilityDiscover({ moduleAccess, connectors }),
   ];
   for (const tool of tools) registerTool(registry, tool);
+  for (const tool of loadConnectorTools(connectors)) {
+    registry.register({
+      descriptor: descriptorFromConnectorTool(tool.spec),
+      execute: (params, context) => tool.execute(params, context),
+      isLocal: tool.isLocal !== false,
+    });
+  }
   return registry;
 }
 
@@ -1094,6 +1154,7 @@ export function createChiefTools({
   checkpointStore = null,
   settingsWithUser = withUserContext,
   codeintel = null,
+  connectors = defaultConnectors(),
 } = {}) {
   const registry = createChiefCapabilityRegistry({
     facts,
@@ -1109,6 +1170,7 @@ export function createChiefTools({
     checkpointStore,
     settingsWithUser,
     codeintel,
+    connectors,
   });
   const tools = registry.toBaseTools();
   for (const tool of tools) {
@@ -1128,6 +1190,7 @@ export async function createChiefTooling({
   mcpClient = null,
   search = null,
   moduleAccess = null,
+  connectors = defaultConnectors(),
 } = {}) {
   let resolved = policy;
   if (!resolved) {
@@ -1148,13 +1211,14 @@ export async function createChiefTooling({
     checkpointStore: stores?.checkpoints ?? new PrismaCheckpointStore(),
     settingsWithUser: stores?.settingsWithUser,
     codeintel: stores?.codeintel,
+    connectors,
   });
   const executor = new ToolExecutor({
     tools,
     policy: resolved,
     audit,
     bus,
-    inventory: CHIEF_TOOL_INVENTORY,
+    inventory: inventoryFromTools(tools),
   });
   if (!executor.gatesInstalled) {
     throw new Error("refusing to publish CHIEF tools without the gate pipeline");
