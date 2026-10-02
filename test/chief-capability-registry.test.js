@@ -135,8 +135,11 @@ test("the model cannot supply a handler or bypass ToolExecutor", () => {
     specs.some((spec) => spec.name === "finance_write"),
     false
   );
+  const codeRead = specs.find((spec) => spec.name === "code_read");
+  assert.equal(codeRead.effect, "read");
+  assert.equal(typeof codeRead.execute, "undefined");
   assert.equal(
-    specs.some((spec) => spec.name === "code_read"),
+    specs.some((spec) => spec.name === "code_write" || spec.name === "shell_exec"),
     false
   );
 });

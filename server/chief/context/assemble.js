@@ -104,6 +104,7 @@ export async function assembleSystemPrompt({
     module02AccessGuidance(availableTools, { module02Read }),
     conversationRecallGuidance(availableTools),
     settingsGuidance(availableTools),
+    codeGuidance(availableTools),
     skillsIndex,
     handoffSection(notes),
   ]
@@ -206,6 +207,18 @@ export function settingsGuidance(availableTools) {
     "Eastern Time is America/New_York, Central is America/Chicago, Mountain is America/Denver, and Pacific is America/Los_Angeles. " +
     "settings_update waits for confirmation. Do not tell the user to change it in the interface. " +
     "Do not pass a user id. Do not claim email, role, admin status, legal consent, or financial records were changed."
+  );
+}
+
+export function codeGuidance(availableTools) {
+  if (availableTools == null) return "";
+  const tools = availableTools instanceof Set ? availableTools : new Set(availableTools);
+  if (!tools.has("code_read") && !tools.has("code_search") && !tools.has("code_tree")) return "";
+  return (
+    "When the user asks how Freedom OS source works, where an API, component, or table is implemented, or what a file does, call code_tree, code_read, or code_search. " +
+    "These tools read the configured repository only. They cannot edit files, commit, push, open a pull request, or deploy. " +
+    "If a code tool says code access is not enabled or code intelligence is unavailable, say that and do not invent source. " +
+    "Do not pass a URL, a repository name, or a user id."
   );
 }
 

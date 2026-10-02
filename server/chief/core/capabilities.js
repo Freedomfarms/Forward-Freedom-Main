@@ -52,6 +52,9 @@ export const Capability = Object.freeze({
   FILE_WRITE: "file:write",
   NETWORK_FETCH: "network:fetch",
   CODE_EXECUTE: "code:execute",
+  // CHIEF extension. Read the configured repository. Not file:read, not
+  // code:execute, and not on the default baseline.
+  CODE_READ: "code:read",
   MEMORY_READ: "memory:read",
   MEMORY_WRITE: "memory:write",
   CHANNEL_SEND: "channel:send",

@@ -9,17 +9,17 @@ approval lifecycle.
 
 Each capability has:
 
-| Field                          | Values                                                                                |
-| ------------------------------ | ------------------------------------------------------------------------------------- |
-| `name`                         | Stable tool name                                                                      |
-| `description`                  | What the model is allowed to ask for                                                  |
-| `inputSchema` / `outputSchema` | JSON schema. No executable code                                                       |
-| `subsystem`                    | `memory`, `scheduler`, `finance`, `settings`, `skills`, `web`, `mcp`, `conversations` |
-| `effect`                       | `read`, `write`, `destructive`, `external`, `high_impact`                             |
-| `requiredCapabilities`         | Server grant labels                                                                   |
-| `confirmation`                 | `none` or `required`                                                                  |
-| `audit`                        | `deny_only` or `full`                                                                 |
-| `exposure`                     | `baseline` or `on_demand`                                                             |
+| Field                          | Values                                                                                        |
+| ------------------------------ | --------------------------------------------------------------------------------------------- |
+| `name`                         | Stable tool name                                                                              |
+| `description`                  | What the model is allowed to ask for                                                          |
+| `inputSchema` / `outputSchema` | JSON schema. No executable code                                                               |
+| `subsystem`                    | `memory`, `scheduler`, `finance`, `settings`, `skills`, `web`, `mcp`, `conversations`, `code` |
+| `effect`                       | `read`, `write`, `destructive`, `external`, `high_impact`                                     |
+| `requiredCapabilities`         | Server grant labels                                                                           |
+| `confirmation`                 | `none` or `required`                                                                          |
+| `audit`                        | `deny_only` or `full`                                                                         |
+| `exposure`                     | `baseline` or `on_demand`                                                                     |
 
 The catalog of governance metadata is `server/chief/capabilities/catalog.js`.
 The registry is `server/chief/capabilities/registry.js`. Implementations stay in
@@ -71,9 +71,24 @@ CEO agent name, personality, avatar, and model stay on the retired agent API
 and are not registered. Nickname values such as "Eastern" are not accepted by
 the service; the model must send an IANA name (`America/New_York` for Eastern).
 
+`code_tree`, `code_read`, and `code_search` read the configured Freedom OS
+repository through `server/chief/codeintel/`. They require `code:read`, which
+is not on the empty-grant baseline. The effect is `read` and confirmation is
+`none`. The credential is `CHIEF_CODE_READ_TOKEN`, a server-side contents-read
+token. The repository is `CHIEF_CODE_REPOSITORY` (default
+`Freedomfarms/Forward-Freedom-Main`). The model supplies a path, ref, query,
+or line range. It cannot supply a URL or a repository name. Protected paths
+such as `.env` files, private keys, and credential JSON are refused before
+any bytes are returned. A file that is too large is not truncated; the tool
+asks for `start_line` and `end_line`. File-body search uses the default
+branch. Another ref can be listed and read, and path-name search still runs
+there. There is no repository index yet.
+
+CHIEF can inspect Freedom OS source and cannot modify, commit, push, or deploy it.
+
 ## Not implemented
 
-- Code intelligence (`code_tree`, `code_read`, `code_search`) and any GitHub credential
+- A repository symbol index for routes, APIs, and imports
 - Grok Build hook ingestion and workforce status
 - Operational events and the flow-map graph
 - Freedom Diamond changes

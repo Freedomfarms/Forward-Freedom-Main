@@ -30,6 +30,7 @@ import { bundledSkills, skillByName } from "../skills/catalog.js";
 import { MemoryScheduleStore, PrismaScheduleStore, normalizeSchedule } from "./schedule-store.js";
 import { BaseTool } from "./spec.js";
 import { createWebSearchClient, createWebSearchTool } from "./web-search.js";
+import { createCodeTools } from "../codeintel/tools.js";
 import { withUserContext } from "../../db/prisma.js";
 import { readUserSettings, updateUserTimezone } from "../../platform/userSettings.js";
 
@@ -1031,6 +1032,7 @@ export function createChiefCapabilityRegistry({
   moduleAccess = new MemoryModuleAccess(),
   checkpointStore = null,
   settingsWithUser = withUserContext,
+  codeintel = null,
 } = {}) {
   const registry = new CapabilityRegistry();
   const tools = [
@@ -1072,6 +1074,7 @@ export function createChiefCapabilityRegistry({
     conversationDelete(checkpointStore),
     settingsRead(settingsWithUser),
     settingsUpdate(settingsWithUser),
+    ...createCodeTools(codeintel ?? undefined),
   ];
   for (const tool of tools) registerTool(registry, tool);
   return registry;
@@ -1090,6 +1093,7 @@ export function createChiefTools({
   moduleAccess = new MemoryModuleAccess(),
   checkpointStore = null,
   settingsWithUser = withUserContext,
+  codeintel = null,
 } = {}) {
   const registry = createChiefCapabilityRegistry({
     facts,
@@ -1104,6 +1108,7 @@ export function createChiefTools({
     moduleAccess,
     checkpointStore,
     settingsWithUser,
+    codeintel,
   });
   const tools = registry.toBaseTools();
   for (const tool of tools) {
@@ -1142,6 +1147,7 @@ export async function createChiefTooling({
     moduleAccess: moduleAccess ?? stores?.moduleAccess ?? new PrismaModuleAccess(),
     checkpointStore: stores?.checkpoints ?? new PrismaCheckpointStore(),
     settingsWithUser: stores?.settingsWithUser,
+    codeintel: stores?.codeintel,
   });
   const executor = new ToolExecutor({
     tools,
