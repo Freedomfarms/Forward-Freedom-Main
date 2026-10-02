@@ -44,6 +44,7 @@ const DENIED = [
   Capability.CHANNEL_SEND,
   Capability.TOOL_INVOKE,
   Capability.SYSTEM_ADMIN,
+  Capability.WORKFORCE_READ,
 ];
 
 function emptyLoader() {

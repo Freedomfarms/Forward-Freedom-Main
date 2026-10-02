@@ -77,6 +77,9 @@ const laterRlsModels = {
   ChiefAuditLog: chiefFoundationMigration,
   ChiefBudget: chiefFoundationMigration,
   ChiefModuleAccess: "20261001120000_chief_module02_access",
+  WorkforceBinding: "20261002150000_workforce_observation_journal",
+  ObservedAgent: "20261002150000_workforce_observation_journal",
+  ActivityEvent: "20261002150000_workforce_observation_journal",
 };
 
 // CHIEF models map to snake_case physical tables via @@map; the RLS
@@ -94,6 +97,22 @@ test("remediation inventory is exactly every user-scoped model", () => {
     [...expectedTables, ...Object.keys(laterRlsModels)].sort(),
     userScopedModels(prismaSchema)
   );
+});
+
+test("the report-key migration does not weaken workforce row-level security", () => {
+  const sql = withoutComments(
+    readFileSync(
+      new URL(
+        "../prisma/migrations/20261002170000_workforce_report_key/migration.sql",
+        import.meta.url
+      ),
+      "utf8"
+    )
+  );
+  assert.match(sql, /"reportKeyHash"/);
+  assert.doesNotMatch(sql, /DISABLE ROW LEVEL SECURITY/i);
+  assert.doesNotMatch(sql, /DROP POLICY/i);
+  assert.doesNotMatch(sql, /chief_agent/);
 });
 
 test("models added after the remediation enable and force RLS in their own migration", () => {

@@ -5,34 +5,18 @@
 // Zero rows are not an explicit policy. OpenJarvis setup_security grants a
 // narrow _default set when no policy file is configured, so default-deny
 // does not leave every tool unreachable. This loader grants only the
-// capabilities the CHIEF inventory already uses, including web:search,
-// module:access, conversation:read, conversation:write, conversation:delete,
-// schedule:read, settings:read, and settings:write. network:fetch, file:read,
-// and code:read stay off the baseline.
-// finance:read lets the read tools run so they can report that Module 02
-// access is off. The data
-// itself stays behind chief_module_access, which defaults to off and is not
-// a grant row. Any returned grant row replaces this baseline.
-// policyFromGrantRows stays a pure mapping of stored rows.
+// capabilities the reconciled control-plane catalog marks baseline.
+// workforce:read and code:read stay off it. network:fetch and file:read stay
+// off it. finance:read lets the read tools run so they can report that Module 02
+// access is off. The data itself stays behind chief_module_access, which
+// defaults to off and is not a grant row. Any returned grant row replaces this
+// baseline. policyFromGrantRows stays a pure mapping of stored rows.
 
 import { withUserContext } from "../../db/prisma.js";
-import { Capability, CapabilityPolicy } from "../core/capabilities.js";
+import { CapabilityPolicy } from "../core/capabilities.js";
+import { baselineCapabilities } from "../control/plane.js";
 
-const BASELINE_CAPABILITIES = Object.freeze([
-  Capability.MEMORY_READ,
-  Capability.MEMORY_WRITE,
-  Capability.SCHEDULE_CREATE,
-  Capability.SCHEDULE_READ,
-  Capability.FINANCE_READ,
-  Capability.SKILL_READ,
-  Capability.WEB_SEARCH,
-  Capability.MODULE_ACCESS,
-  Capability.CONVERSATION_READ,
-  Capability.CONVERSATION_WRITE,
-  Capability.CONVERSATION_DELETE,
-  Capability.SETTINGS_READ,
-  Capability.SETTINGS_WRITE,
-]);
+const BASELINE_CAPABILITIES = Object.freeze(baselineCapabilities());
 
 function baselinePolicy() {
   const policy = new CapabilityPolicy({ defaultDeny: true });
