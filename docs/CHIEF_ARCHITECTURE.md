@@ -2,7 +2,8 @@
 
 Status: historical design. The live tool surface is the capability registry in
 [CHIEF_CAPABILITIES.md](./CHIEF_CAPABILITIES.md). This document's hand-maintained tool
-inventory is no longer the long-term architecture. Code intelligence, Grok workforce
+inventory is no longer the long-term architecture. Read-only code intelligence is
+documented in [CHIEF_CAPABILITIES.md](./CHIEF_CAPABILITIES.md). Grok workforce
 observability, the operational graph, and finance writes are not implemented.
 Companion document: [CHIEF_GITHUB_REUSE_AUDIT.md](./CHIEF_GITHUB_REUSE_AUDIT.md).
 

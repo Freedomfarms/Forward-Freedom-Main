@@ -9,17 +9,17 @@ approval lifecycle.
 
 Each capability has:
 
-| Field                          | Values                                                                                |
-| ------------------------------ | ------------------------------------------------------------------------------------- |
-| `name`                         | Stable tool name                                                                      |
-| `description`                  | What the model is allowed to ask for                                                  |
-| `inputSchema` / `outputSchema` | JSON schema. No executable code                                                       |
-| `subsystem`                    | `memory`, `scheduler`, `finance`, `settings`, `skills`, `web`, `mcp`, `conversations` |
-| `effect`                       | `read`, `write`, `destructive`, `external`, `high_impact`                             |
-| `requiredCapabilities`         | Server grant labels                                                                   |
-| `confirmation`                 | `none` or `required`                                                                  |
-| `audit`                        | `deny_only` or `full`                                                                 |
-| `exposure`                     | `baseline` or `on_demand`                                                             |
+| Field                          | Values                                                                                        |
+| ------------------------------ | --------------------------------------------------------------------------------------------- |
+| `name`                         | Stable tool name                                                                              |
+| `description`                  | What the model is allowed to ask for                                                          |
+| `inputSchema` / `outputSchema` | JSON schema. No executable code                                                               |
+| `subsystem`                    | `memory`, `scheduler`, `finance`, `settings`, `skills`, `web`, `mcp`, `conversations`, `code` |
+| `effect`                       | `read`, `write`, `destructive`, `external`, `high_impact`                                     |
+| `requiredCapabilities`         | Server grant labels                                                                           |
+| `confirmation`                 | `none` or `required`                                                                          |
+| `audit`                        | `deny_only` or `full`                                                                         |
+| `exposure`                     | `baseline` or `on_demand`                                                                     |
 
 The catalog of governance metadata is `server/chief/capabilities/catalog.js`.
 The registry is `server/chief/capabilities/registry.js`. Implementations stay in
@@ -60,13 +60,41 @@ Existing tools, plus conversation rename, archive, restore, and delete on
 Schedule create, update, pause, and resume require `schedule:create`.
 `schedule_cancel` is destructive.
 
+`settings_read` and `settings_update` call `server/platform/userSettings.js`, the
+same timezone persistence `PATCH /api/me` uses. The only supported user setting
+is `User.timezone`. `settings_read` is a read and requires `settings:read`.
+`settings_update` is a write, requires `settings:write`, and waits for
+`ApprovalCoordinator`. Both use `context.userId`. A model-supplied `userId` is
+ignored. The result is `{ timezone }` only. Email, role, admin status, legal
+consent, credentials, and tokens are not settings and are not returned.
+CEO agent name, personality, avatar, and model stay on the retired agent API
+and are not registered. Nickname values such as "Eastern" are not accepted by
+the service; the model must send an IANA name (`America/New_York` for Eastern).
+
+`code_tree`, `code_read`, and `code_search` read the configured Freedom OS
+repository through `server/chief/codeintel/`. They require `code:read`, which
+is not on the empty-grant baseline. The effect is `read` and confirmation is
+`none`. The credential is `CHIEF_CODE_READ_TOKEN`, a server-side contents-read
+token. The repository is `CHIEF_CODE_REPOSITORY` (default
+`Freedomfarms/Forward-Freedom-Main`). The model supplies a path, ref, query,
+or line range. It cannot supply a URL or a repository name. Protected paths
+such as `.env` files, private keys, and credential JSON are refused before
+any bytes are returned. A file that is too large is not truncated; the tool
+asks for `start_line` and `end_line`. File-body search uses the default
+branch. Another ref can be listed and read, and path-name search still runs
+there. There is no repository index yet.
+
+CHIEF can inspect Freedom OS source and cannot modify, commit, push, or deploy it.
+
 ## Not implemented
 
-- Code intelligence (`code_tree`, `code_read`, `code_search`) and any GitHub credential
+- A repository symbol index for routes, APIs, and imports
 - Grok Build hook ingestion and workforce status
 - Operational events and the flow-map graph
 - Freedom Diamond changes
-- Finance writes, Plaid actions, and settings ports beyond the Module 02 switch
+- Finance writes and Plaid actions
+- Settings other than timezone
+- Model-facing `capability_search` and generic `capability_invoke`
 - Module 01
 
 CHIEF still cannot commit, push, deploy, or run a shell.

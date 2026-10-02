@@ -35,6 +35,11 @@ export const CHIEF_TOOL_INVENTORY = Object.freeze({
   conversation_archive: Object.freeze([Capability.CONVERSATION_WRITE]),
   conversation_restore: Object.freeze([Capability.CONVERSATION_WRITE]),
   conversation_delete: Object.freeze([Capability.CONVERSATION_DELETE]),
+  settings_read: Object.freeze([Capability.SETTINGS_READ]),
+  settings_update: Object.freeze([Capability.SETTINGS_WRITE]),
+  code_tree: Object.freeze([Capability.CODE_READ]),
+  code_read: Object.freeze([Capability.CODE_READ]),
+  code_search: Object.freeze([Capability.CODE_READ]),
 });
 
 // Scheduled turns do not search or manage the user's conversations.

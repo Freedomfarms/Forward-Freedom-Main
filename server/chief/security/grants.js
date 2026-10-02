@@ -7,7 +7,8 @@
 // does not leave every tool unreachable. This loader grants only the
 // capabilities the CHIEF inventory already uses, including web:search,
 // module:access, conversation:read, conversation:write, conversation:delete,
-// and schedule:read. network:fetch stays off the baseline.
+// schedule:read, settings:read, and settings:write. network:fetch, file:read,
+// and code:read stay off the baseline.
 // finance:read lets the read tools run so they can report that Module 02
 // access is off. The data
 // itself stays behind chief_module_access, which defaults to off and is not
@@ -29,6 +30,8 @@ const BASELINE_CAPABILITIES = Object.freeze([
   Capability.CONVERSATION_READ,
   Capability.CONVERSATION_WRITE,
   Capability.CONVERSATION_DELETE,
+  Capability.SETTINGS_READ,
+  Capability.SETTINGS_WRITE,
 ]);
 
 function baselinePolicy() {

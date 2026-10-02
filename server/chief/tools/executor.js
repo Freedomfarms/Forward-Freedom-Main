@@ -171,6 +171,7 @@ export class ToolExecutor {
       result: String(state.output ?? "").slice(0, 10240),
       agent: context.agentId || "chief",
       caller: context.caller ?? null,
+      ...(state.traceMeta ? { code: state.traceMeta } : {}),
     });
     return {
       callId: call.callId,
@@ -344,6 +345,8 @@ export class ToolExecutor {
     state.isError = Boolean(result.isError);
     if (typeof result.deletedSessionId === "string")
       state.deletedSessionId = result.deletedSessionId;
+    if (result.traceMeta && typeof result.traceMeta === "object")
+      state.traceMeta = result.traceMeta;
     if (Array.isArray(result.sessionTaint)) {
       state.sessionTaint = unionTaint(state.sessionTaint, result.sessionTaint);
     }

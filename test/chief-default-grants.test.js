@@ -31,6 +31,8 @@ const ALLOWED = [
   Capability.CONVERSATION_READ,
   Capability.CONVERSATION_WRITE,
   Capability.CONVERSATION_DELETE,
+  Capability.SETTINGS_READ,
+  Capability.SETTINGS_WRITE,
 ];
 
 const DENIED = [
@@ -38,6 +40,7 @@ const DENIED = [
   Capability.FILE_WRITE,
   Capability.NETWORK_FETCH,
   Capability.CODE_EXECUTE,
+  Capability.CODE_READ,
   Capability.CHANNEL_SEND,
   Capability.TOOL_INVOKE,
   Capability.SYSTEM_ADMIN,

@@ -30,6 +30,9 @@ import { bundledSkills, skillByName } from "../skills/catalog.js";
 import { MemoryScheduleStore, PrismaScheduleStore, normalizeSchedule } from "./schedule-store.js";
 import { BaseTool } from "./spec.js";
 import { createWebSearchClient, createWebSearchTool } from "./web-search.js";
+import { createCodeTools } from "../codeintel/tools.js";
+import { withUserContext } from "../../db/prisma.js";
+import { readUserSettings, updateUserTimezone } from "../../platform/userSettings.js";
 
 function memoryRead(store) {
   return new BaseTool({
@@ -823,6 +826,108 @@ function sessionPayload(record) {
   };
 }
 
+const SETTINGS_IGNORED_KEYS = new Set(["userId", "user_id"]);
+
+function settingsPayload(params) {
+  if (typeof params !== "object" || params === null || Array.isArray(params)) {
+    return { error: "settings input must be an object" };
+  }
+  const keys = Object.keys(params).filter((key) => !SETTINGS_IGNORED_KEYS.has(key));
+  return { keys };
+}
+
+function settingsFailure(error, fallback) {
+  const known =
+    error?.code === "INVALID_TIMEZONE" ||
+    error?.code === "TIMEZONE_SCHEMA_MISSING" ||
+    error?.code === "UNAUTHENTICATED";
+  return {
+    output: JSON.stringify({
+      error: known ? error.message : fallback,
+      code: error?.code || "SETTINGS_ERROR",
+    }),
+    isError: true,
+  };
+}
+
+function settingsRead(withUser = withUserContext) {
+  return new BaseTool({
+    isLocal: true,
+    spec: {
+      name: "settings_read",
+      description:
+        "Read the authenticated user's Freedom OS timezone. This returns timezone only. It does not accept a user id and does not return email, role, admin status, legal consent, credentials, or tokens.",
+      category: "settings",
+      requiresConfirmation: false,
+      requiredCapabilities: [Capability.SETTINGS_READ],
+      parameters: { type: "object", additionalProperties: false, properties: {} },
+    },
+    async execute(params, context) {
+      if (!context?.userId) {
+        return {
+          output: JSON.stringify({ error: "authenticated user is required" }),
+          isError: true,
+        };
+      }
+      const payload = settingsPayload(params);
+      if (payload.error) return { output: JSON.stringify({ error: payload.error }), isError: true };
+      try {
+        const settings = await readUserSettings(context.userId, { withUser });
+        return { output: JSON.stringify({ timezone: settings.timezone }) };
+      } catch (error) {
+        return settingsFailure(error, "Settings could not be read.");
+      }
+    },
+  });
+}
+
+function settingsUpdate(withUser = withUserContext) {
+  return new BaseTool({
+    isLocal: true,
+    spec: {
+      name: "settings_update",
+      description:
+        "Change the authenticated user's Freedom OS timezone. timezone must be an IANA name such as America/New_York. Eastern Time is America/New_York, Central is America/Chicago, Mountain is America/Denver, and Pacific is America/Los_Angeles. Timezone is the only user setting this can change. The change waits for confirmation. It does not accept a user id, a database query, or any other field.",
+      category: "settings",
+      requiresConfirmation: true,
+      requiredCapabilities: [Capability.SETTINGS_WRITE],
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          timezone: {
+            type: "string",
+            description: "IANA timezone, for example America/New_York.",
+          },
+        },
+        required: ["timezone"],
+      },
+    },
+    async execute(params, context) {
+      if (!context?.userId) {
+        return {
+          output: JSON.stringify({ error: "authenticated user is required" }),
+          isError: true,
+        };
+      }
+      const payload = settingsPayload(params);
+      if (payload.error) return { output: JSON.stringify({ error: payload.error }), isError: true };
+      if (payload.keys.length !== 1 || payload.keys[0] !== "timezone") {
+        return {
+          output: JSON.stringify({ error: "only timezone can be updated" }),
+          isError: true,
+        };
+      }
+      try {
+        const record = await updateUserTimezone(context.userId, params.timezone, { withUser });
+        return { output: JSON.stringify({ timezone: record?.timezone || null }) };
+      } catch (error) {
+        return settingsFailure(error, "Settings could not be updated.");
+      }
+    },
+  });
+}
+
 function conversationRename(store) {
   return new BaseTool({
     isLocal: true,
@@ -926,6 +1031,8 @@ export function createChiefCapabilityRegistry({
   search = null,
   moduleAccess = new MemoryModuleAccess(),
   checkpointStore = null,
+  settingsWithUser = withUserContext,
+  codeintel = null,
 } = {}) {
   const registry = new CapabilityRegistry();
   const tools = [
@@ -965,6 +1072,9 @@ export function createChiefCapabilityRegistry({
       archived: false,
     }),
     conversationDelete(checkpointStore),
+    settingsRead(settingsWithUser),
+    settingsUpdate(settingsWithUser),
+    ...createCodeTools(codeintel ?? undefined),
   ];
   for (const tool of tools) registerTool(registry, tool);
   return registry;
@@ -982,6 +1092,8 @@ export function createChiefTools({
   search = null,
   moduleAccess = new MemoryModuleAccess(),
   checkpointStore = null,
+  settingsWithUser = withUserContext,
+  codeintel = null,
 } = {}) {
   const registry = createChiefCapabilityRegistry({
     facts,
@@ -995,6 +1107,8 @@ export function createChiefTools({
     search,
     moduleAccess,
     checkpointStore,
+    settingsWithUser,
+    codeintel,
   });
   const tools = registry.toBaseTools();
   for (const tool of tools) {
@@ -1032,6 +1146,8 @@ export async function createChiefTooling({
     loadPosition: loadFreedomFinancialPosition,
     moduleAccess: moduleAccess ?? stores?.moduleAccess ?? new PrismaModuleAccess(),
     checkpointStore: stores?.checkpoints ?? new PrismaCheckpointStore(),
+    settingsWithUser: stores?.settingsWithUser,
+    codeintel: stores?.codeintel,
   });
   const executor = new ToolExecutor({
     tools,

@@ -11,7 +11,9 @@
 //     the CHIEF-only extensions "finance:read" (Phase 7), "skill:read"
 //     (Phase 8), "web:search" (governed public web search),
 //     "module:access" (the per-user Module 02 read switch), and
-//     "conversation:read" (search and retrieve this user's conversations).
+//     "conversation:read" (search and retrieve this user's conversations),
+//     "settings:read", and "settings:write" (the user's timezone on the
+//     existing profile service).
 //     Financial reads must not reuse memory:read. Loading a procedure must
 //     not reuse memory:read either. Conversation recall must not reuse
 //     memory:read or finance:read. Public web search must not reuse
@@ -50,6 +52,9 @@ export const Capability = Object.freeze({
   FILE_WRITE: "file:write",
   NETWORK_FETCH: "network:fetch",
   CODE_EXECUTE: "code:execute",
+  // CHIEF extension. Read the configured repository. Not file:read, not
+  // code:execute, and not on the default baseline.
+  CODE_READ: "code:read",
   MEMORY_READ: "memory:read",
   MEMORY_WRITE: "memory:write",
   CHANNEL_SEND: "channel:send",
@@ -80,6 +85,10 @@ export const Capability = Object.freeze({
   CONVERSATION_WRITE: "conversation:write",
   // CHIEF extension. Permanent conversation deletion.
   CONVERSATION_DELETE: "conversation:delete",
+  // CHIEF extension. Read this user's timezone. Not identity, admin, or consent.
+  SETTINGS_READ: "settings:read",
+  // CHIEF extension. Change this user's timezone. Not a general profile write.
+  SETTINGS_WRITE: "settings:write",
 });
 
 const CAPABILITY_VALUES = new Set(Object.values(Capability));
