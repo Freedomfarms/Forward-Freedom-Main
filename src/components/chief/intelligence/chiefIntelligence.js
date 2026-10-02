@@ -71,92 +71,135 @@ const PRESETS = Object.freeze({
   }),
 });
 
-// Independent orbits. speed sign is direction. tiltX / tiltZ are radians.
-// wobble keeps the path from reading as a perfect ellipse.
-export const ORBITS = Object.freeze([
+// Seven independent field lines. They are deliberately asymmetric: every
+// ribbon has a different footprint, center, depth wave, deformation, and flow
+// direction. A frozen frame should read as plasma, not nested ellipses.
+export const ENERGY_RIBBONS = Object.freeze([
   Object.freeze({
-    radius: 0.58,
-    tiltX: 0.35,
-    tiltZ: 0.15,
+    radiusX: 0.66,
+    radiusY: 0.56,
+    offsetX: -0.04,
+    offsetY: -0.01,
+    tilt: 0.36,
+    pitch: 0.54,
+    depth: 0.28,
+    depthFrequency: 1,
     speed: 0.11,
-    width: 1.6,
-    alpha: 0.95,
-    wobble: 0.045,
+    width: 1.65,
+    alpha: 1,
+    turbulence: 0.075,
+    harmonic: 3,
     phase: 0.2,
-    color: Object.freeze([255, 236, 214]),
-    sparks: 1,
+    color: Object.freeze([255, 190, 224]),
+    nodes: 2,
   }),
   Object.freeze({
-    radius: 0.66,
-    tiltX: 1.05,
-    tiltZ: 0.55,
-    speed: -0.08,
-    width: 1.8,
-    alpha: 0.8,
-    wobble: 0.06,
-    phase: 1.4,
-    color: Object.freeze([236, 214, 255]),
-    sparks: 2,
+    radiusX: 0.62,
+    radiusY: 0.72,
+    offsetX: 0.04,
+    offsetY: 0.02,
+    tilt: -0.48,
+    pitch: 0.78,
+    depth: 0.34,
+    depthFrequency: 1,
+    speed: -0.082,
+    width: 1.95,
+    alpha: 0.9,
+    turbulence: 0.105,
+    harmonic: 4,
+    phase: 1.35,
+    color: Object.freeze([238, 218, 255]),
+    nodes: 2,
   }),
   Object.freeze({
-    radius: 0.72,
-    tiltX: 0.72,
-    tiltZ: -1.15,
-    speed: 0.07,
-    width: 1.45,
-    alpha: 0.78,
-    wobble: 0.07,
-    phase: 2.2,
-    color: Object.freeze([255, 228, 246]),
-    sparks: 1,
-  }),
-  Object.freeze({
-    radius: 0.78,
-    tiltX: 1.35,
-    tiltZ: 0.25,
-    speed: -0.055,
-    width: 2,
-    alpha: 0.7,
-    wobble: 0.055,
-    phase: 0.8,
-    color: Object.freeze([186, 130, 255]),
-    sparks: 2,
-  }),
-  Object.freeze({
-    radius: 0.84,
-    tiltX: 0.18,
-    tiltZ: 0.95,
-    speed: 0.046,
-    width: 1.35,
-    alpha: 0.66,
-    wobble: 0.05,
-    phase: 3.1,
-    color: Object.freeze([255, 244, 255]),
-    sparks: 1,
-  }),
-  Object.freeze({
-    radius: 0.9,
-    tiltX: 1.55,
-    tiltZ: -0.45,
-    speed: -0.038,
-    width: 1.2,
+    radiusX: 0.78,
+    radiusY: 0.52,
+    offsetX: 0.02,
+    offsetY: -0.05,
+    tilt: 0.86,
+    pitch: 0.5,
+    depth: 0.26,
+    depthFrequency: 2,
+    speed: 0.068,
+    width: 0.85,
     alpha: 0.55,
-    wobble: 0.065,
-    phase: 4.4,
-    color: Object.freeze([168, 112, 236]),
-    sparks: 1,
+    turbulence: 0.09,
+    harmonic: 5,
+    phase: 2.25,
+    color: Object.freeze([255, 222, 182]),
+    nodes: 1,
   }),
   Object.freeze({
-    radius: 0.96,
-    tiltX: 0.95,
-    tiltZ: 1.7,
-    speed: 0.03,
-    width: 1.05,
+    radiusX: 0.68,
+    radiusY: 0.7,
+    offsetX: -0.025,
+    offsetY: 0.05,
+    tilt: 1.32,
+    pitch: 0.72,
+    depth: 0.36,
+    depthFrequency: 1,
+    speed: -0.056,
+    width: 2.1,
+    alpha: 0.8,
+    turbulence: 0.12,
+    harmonic: 3,
+    phase: 0.78,
+    color: Object.freeze([190, 128, 255]),
+    nodes: 2,
+  }),
+  Object.freeze({
+    radiusX: 0.86,
+    radiusY: 0.66,
+    offsetX: -0.05,
+    offsetY: 0.035,
+    tilt: -1.02,
+    pitch: 0.9,
+    depth: 0.33,
+    depthFrequency: 1,
+    speed: 0.045,
+    width: 1.25,
+    alpha: 0.72,
+    turbulence: 0.08,
+    harmonic: 6,
+    phase: 3.12,
+    color: Object.freeze([255, 244, 255]),
+    nodes: 1,
+  }),
+  Object.freeze({
+    radiusX: 0.72,
+    radiusY: 0.82,
+    offsetX: 0.055,
+    offsetY: -0.02,
+    tilt: 0.48,
+    pitch: 1,
+    depth: 0.38,
+    depthFrequency: 2,
+    speed: -0.037,
+    width: 0.75,
     alpha: 0.42,
-    wobble: 0.04,
-    phase: 5.2,
-    color: Object.freeze([210, 186, 255]),
-    sparks: 1,
+    turbulence: 0.11,
+    harmonic: 4,
+    phase: 4.38,
+    color: Object.freeze([170, 108, 236]),
+    nodes: 1,
+  }),
+  Object.freeze({
+    radiusX: 0.94,
+    radiusY: 0.72,
+    offsetX: 0.01,
+    offsetY: 0.03,
+    tilt: -0.24,
+    pitch: 0.52,
+    depth: 0.3,
+    depthFrequency: 1,
+    speed: 0.029,
+    width: 0.65,
+    alpha: 0.32,
+    turbulence: 0.095,
+    harmonic: 5,
+    phase: 5.16,
+    color: Object.freeze([214, 184, 255]),
+    nodes: 1,
   }),
 ]);
 
@@ -217,12 +260,77 @@ export const WAVES = Object.freeze([
   }),
 ]);
 
-export const NEBULA = Object.freeze([
-  Object.freeze({ x: -0.42, y: 0.08, r: 0.95, drift: 0.08, color: Object.freeze([42, 8, 78]) }),
-  Object.freeze({ x: 0.46, y: -0.12, r: 0.8, drift: 0.06, color: Object.freeze([24, 6, 52]) }),
-  Object.freeze({ x: 0.02, y: 0.28, r: 0.62, drift: 0.1, color: Object.freeze([68, 18, 112]) }),
-  Object.freeze({ x: -0.12, y: -0.34, r: 0.58, drift: 0.07, color: Object.freeze([32, 6, 64]) }),
-  Object.freeze({ x: 0.2, y: 0.02, r: 0.4, drift: 0.12, color: Object.freeze([90, 30, 150]) }),
+export const PLASMA_LAYERS = Object.freeze([
+  Object.freeze({
+    x: -0.58,
+    y: -0.08,
+    radiusX: 0.78,
+    radiusY: 0.5,
+    phase: 0.4,
+    drift: 0.045,
+    alpha: 0.24,
+    color: Object.freeze([76, 20, 138]),
+  }),
+  Object.freeze({
+    x: 0.56,
+    y: 0.02,
+    radiusX: 0.72,
+    radiusY: 0.62,
+    phase: 1.7,
+    drift: -0.038,
+    alpha: 0.22,
+    color: Object.freeze([96, 28, 164]),
+  }),
+  Object.freeze({
+    x: -0.18,
+    y: 0.48,
+    radiusX: 0.9,
+    radiusY: 0.42,
+    phase: 2.8,
+    drift: 0.052,
+    alpha: 0.2,
+    color: Object.freeze([64, 14, 120]),
+  }),
+  Object.freeze({
+    x: 0.12,
+    y: -0.5,
+    radiusX: 0.82,
+    radiusY: 0.38,
+    phase: 4.1,
+    drift: -0.042,
+    alpha: 0.17,
+    color: Object.freeze([112, 34, 174]),
+  }),
+  Object.freeze({
+    x: 0.36,
+    y: 0.3,
+    radiusX: 0.58,
+    radiusY: 0.44,
+    phase: 5.2,
+    drift: 0.061,
+    alpha: 0.15,
+    color: Object.freeze([164, 58, 194]),
+  }),
+  Object.freeze({
+    x: -0.24,
+    y: 0.04,
+    radiusX: 0.48,
+    radiusY: 0.3,
+    phase: 0.96,
+    drift: -0.07,
+    alpha: 0.17,
+    color: Object.freeze([142, 42, 202]),
+  }),
+  Object.freeze({
+    x: 0.22,
+    y: -0.09,
+    radiusX: 0.42,
+    radiusY: 0.28,
+    phase: 3.72,
+    drift: 0.075,
+    alpha: 0.14,
+    color: Object.freeze([188, 62, 206]),
+  }),
 ]);
 
 export function visualStateForStatus(status) {
@@ -271,41 +379,61 @@ export function coreScale(time, motion, amplitude) {
   return 1 + organicWave(time) * pulse * depth;
 }
 
-export function projectRing(orbit, angle, radiusScale = 1) {
-  const radius = orbit.radius * radiusScale;
-  const x = Math.cos(angle) * radius;
-  const z0 = Math.sin(angle) * radius;
-  const cosX = Math.cos(orbit.tiltX);
-  const sinX = Math.sin(orbit.tiltX);
-  const y1 = -z0 * sinX;
-  const z1 = z0 * cosX;
-  const cosZ = Math.cos(orbit.tiltZ);
-  const sinZ = Math.sin(orbit.tiltZ);
-  const x2 = x * cosZ - y1 * sinZ;
-  const y2 = x * sinZ + y1 * cosZ;
-  const perspective = 1 / (1.18 - z1 * 0.28);
-  return { x: x2 * perspective, y: y2 * perspective, z: z1 };
+export function ribbonPoint(ribbon, parameter, time, motion) {
+  const speed = Number(motion?.speed) || 0;
+  const flow = time * ribbon.speed * speed;
+  const angle = parameter * Math.PI * 2;
+  const turbulence = ribbon.turbulence * (0.72 + (Number(motion?.wave) || 0) * 0.2);
+  const radial =
+    1 +
+    Math.sin(angle * ribbon.harmonic + ribbon.phase + flow * 0.8) * turbulence +
+    Math.sin(angle * 2 - ribbon.phase * 0.7 - flow * 0.45) * turbulence * 0.55;
+  const slip = Math.sin(angle * 3 + ribbon.phase - flow) * turbulence * 0.24;
+  const x0 = Math.cos(angle + slip) * ribbon.radiusX * radial + ribbon.offsetX;
+  const y0 =
+    Math.sin(angle) *
+      ribbon.radiusY *
+      (1 + Math.cos(angle * (ribbon.harmonic - 1) - flow) * turbulence * 0.58) +
+    ribbon.offsetY;
+  const z0 =
+    Math.sin(angle * ribbon.depthFrequency + ribbon.phase + flow * 0.62) * ribbon.depth +
+    Math.cos(angle * 2 - ribbon.phase) * turbulence * 0.8;
+  const cosPitch = Math.cos(ribbon.pitch);
+  const sinPitch = Math.sin(ribbon.pitch);
+  const y1 = y0 * cosPitch - z0 * sinPitch;
+  const z1 = y0 * sinPitch + z0 * cosPitch;
+  const cosTilt = Math.cos(ribbon.tilt);
+  const sinTilt = Math.sin(ribbon.tilt);
+  const x2 = x0 * cosTilt - y1 * sinTilt;
+  const y2 = x0 * sinTilt + y1 * cosTilt;
+  const perspective = 1 / (1.28 - z1 * 0.22);
+  return {
+    x: x2 * perspective,
+    y: y2 * perspective,
+    z: z1,
+    energy:
+      0.58 +
+      Math.sin(angle * 3 + ribbon.phase + flow * 1.6) * 0.28 +
+      Math.sin(angle * 7 - ribbon.phase - flow * 0.9) * 0.14,
+  };
 }
 
-export function sampleRing(orbit, time, motion, steps = 80) {
-  const spin = time * orbit.speed * (Number(motion?.speed) || 0);
+export function sampleRibbon(ribbon, time, motion, steps = 112) {
   const points = [];
   for (let index = 0; index <= steps; index += 1) {
-    const angle = (index / steps) * Math.PI * 2 + spin;
-    const wobble = 1 + Math.sin(angle * 3 + orbit.phase) * orbit.wobble;
-    points.push(projectRing(orbit, angle, wobble));
+    points.push(ribbonPoint(ribbon, index / steps, time, motion));
   }
   return points;
 }
 
-export function sparkAngles(orbit, time, motion) {
-  const count = orbit.sparks || 0;
-  const angles = [];
-  const spin = time * orbit.speed * (Number(motion?.speed) || 0) * 1.35;
+export function ribbonNodeParameters(ribbon, time, motion) {
+  const count = ribbon.nodes || 0;
+  const parameters = [];
+  const flow = time * Math.abs(ribbon.speed) * (Number(motion?.speed) || 0) * 0.42;
   for (let index = 0; index < count; index += 1) {
-    angles.push(spin + orbit.phase + (index * Math.PI * 2) / count);
+    parameters.push((flow + ribbon.phase / (Math.PI * 2) + index / count) % 1);
   }
-  return angles;
+  return parameters;
 }
 
 function unitHash(index) {
@@ -326,10 +454,48 @@ export function ambientParticle(index, time, motion) {
   return {
     x: Math.cos(angle) * (radius + drift),
     y: Math.sin(angle) * (radius * (0.48 + seedC * 0.55) + drift * 0.6),
+    z: seedC * 2 - 1,
     alpha: (0.12 + seedC * 0.5) * activity,
     size: 0.55 + seedA * 1.35,
   };
 }
 
-export const AMBIENT_COUNT = 64;
+export function intelligenceParticle(index, time, motion, fieldScale = 1) {
+  const seedA = unitHash(index + 101);
+  const seedB = unitHash(index + 509);
+  const seedC = unitHash(index + 911);
+  const seedD = unitHash(index + 1301);
+  const speed = Number(motion?.speed) || 0;
+  const activity = Number(motion?.particle) || 0;
+  const angle = seedA * Math.PI * 2;
+  const radius = Math.pow(seedB, 1.35) * 0.88 * fieldScale;
+  const depth = (seedC * 2 - 1) * (0.42 + radius * 0.85);
+  const swirl = time * (0.012 + seedD * 0.024) * speed * (seedC > 0.5 ? 1 : -1);
+  const turbulence =
+    Math.sin(time * 0.18 * speed + seedD * 11 + radius * 20) * (0.008 + radius * 0.035);
+  const lobe = 0.78 + Math.sin(angle * 3 + seedC * 5.2) * 0.2;
+  const concentration = 1 - Math.min(1, radius / 0.34);
+  const cluster = index % 3;
+  const clusterX = (cluster === 0 ? -0.055 : cluster === 1 ? 0.045 : 0.018) * concentration;
+  const clusterY = (cluster === 0 ? 0.018 : cluster === 1 ? -0.038 : 0.052) * concentration;
+  const micro = seedD < 0.72;
+  return {
+    x: Math.cos(angle + swirl + depth * 0.34) * (radius * lobe + turbulence) + clusterX,
+    y:
+      Math.sin(angle + swirl * 0.72) *
+        (radius * (0.62 + seedD * 0.26) + turbulence * 0.6) +
+      Math.sin(angle * 2 + seedC * 4) * radius * 0.08 +
+      clusterY,
+    z: depth,
+    alpha: (micro ? 0.28 + seedD * 0.46 : 0.48 + seedD * 0.62) * (0.7 + activity * 0.5),
+    size: micro
+      ? 0.18 + seedA * 0.62
+      : 0.62 + seedA * 1.42 + (1 - Math.min(1, radius * 1.35)) * seedC * 0.46,
+    warm: seedD > 0.962,
+    hot: seedC > 0.88,
+  };
+}
+
+export const AMBIENT_COUNT = 180;
+export const INTELLIGENCE_PARTICLE_COUNT = 3200;
 export const EASE = 0.06;

@@ -675,10 +675,16 @@ test("CHIEF UI status names the search and the client bundle has no search crede
     [...WEB_SEARCH_CREDENTIAL_ENV],
     ["CHIEF_BRAVE_SEARCH_API_KEY", "BRAVE_SEARCH_API_KEY"]
   );
+  const chiefComponentFiles = readdirSync("src/components/chief", {
+    recursive: true,
+    withFileTypes: true,
+  })
+    .filter((entry) => entry.isFile())
+    .map((entry) => path.join(entry.parentPath, entry.name));
   const files = [
     "src/utils/chiefApi.js",
     "src/utils/chiefProtocol.js",
-    ...readdirSync("src/components/chief").map((name) => path.join("src/components/chief", name)),
+    ...chiefComponentFiles,
   ];
   const source = files.map((file) => readFileSync(file, "utf8")).join("\n");
   assert.equal(source.includes("CHIEF_BRAVE_SEARCH_API_KEY"), false);
