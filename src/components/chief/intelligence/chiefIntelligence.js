@@ -30,12 +30,13 @@ const MOTION_KEYS = [
   "flicker",
   "spin",
   "body",
+  "contract",
 ];
 
 // speed is the shared clock. Speaking stays at least 2.9× idle.
 // pulse is core radius travel, not opacity.
-// body is the resting scale. outflow, density, organize, flicker, and spin
-// drive the volumetric core. wave is the strength of internal energy streams.
+// body is the resting scale. contract pulls particles inward.
+// outflow sends energy out from the nucleus. wave is internal current strength.
 const PRESETS = Object.freeze({
   idle: Object.freeze({
     speed: 1,
@@ -50,6 +51,7 @@ const PRESETS = Object.freeze({
     flicker: 0.7,
     spin: 0.28,
     body: 1,
+    contract: 0.08,
   }),
   listening: Object.freeze({
     speed: 1.45,
@@ -58,12 +60,13 @@ const PRESETS = Object.freeze({
     particle: 0.68,
     pulse: 0.034,
     wave: 1,
-    outflow: 0.48,
+    outflow: 0.05,
     density: 0.88,
     organize: 0.9,
     flicker: 0.18,
     spin: 0.2,
-    body: 1.07,
+    body: 1.035,
+    contract: 0.55,
   }),
   thinking: Object.freeze({
     speed: 2.05,
@@ -72,12 +75,13 @@ const PRESETS = Object.freeze({
     particle: 0.9,
     pulse: 0.02,
     wave: 1.25,
-    outflow: 0.16,
+    outflow: 0.12,
     density: 1.16,
     organize: 0.38,
     flicker: 0.22,
     spin: 0.86,
-    body: 1.02,
+    body: 0.955,
+    contract: 0.78,
   }),
   speaking: Object.freeze({
     speed: 3,
@@ -91,7 +95,8 @@ const PRESETS = Object.freeze({
     organize: 0.52,
     flicker: 0.1,
     spin: 0.34,
-    body: 1.035,
+    body: 1.02,
+    contract: 0.04,
   }),
   approval: Object.freeze({
     speed: 0.82,
@@ -106,6 +111,7 @@ const PRESETS = Object.freeze({
     flicker: 0.12,
     spin: 0.16,
     body: 0.98,
+    contract: 0.12,
   }),
   error: Object.freeze({
     speed: 0.4,
@@ -120,6 +126,7 @@ const PRESETS = Object.freeze({
     flicker: 0.04,
     spin: 0.06,
     body: 0.94,
+    contract: 0.2,
   }),
 });
 

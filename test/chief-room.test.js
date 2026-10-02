@@ -294,7 +294,11 @@ test("the room intelligence is one dense core, shared by text and voice", () => 
   const speaking = motionPreset("speaking");
   assert.ok(listening.body > idle.body);
   assert.ok(listening.organize > thinking.organize);
+  assert.ok(listening.contract > idle.contract);
+  assert.ok(listening.outflow < thinking.outflow);
   assert.ok(thinking.density > idle.density);
+  assert.ok(thinking.body < idle.body);
+  assert.ok(thinking.contract > listening.contract);
   assert.ok(thinking.spin > speaking.spin);
   assert.ok(speaking.outflow > thinking.outflow);
   assert.equal(easeMotion(idle, speaking, 1).outflow, speaking.outflow);
