@@ -8,6 +8,7 @@ import {
   REDUCED_ENTRY_MS,
   entryDurationMs,
   entryPresentation,
+  gatewayEntryClock,
   markEntrySeen,
   readEntrySeen,
 } from "../src/components/entry/entryTimeline.js";
@@ -58,16 +59,64 @@ test("the first visit plays the five second construction", () => {
   assert.equal(rest.complete, true);
 });
 
-test("returning visitors and direct auth routes use the short activation", () => {
-  assert.equal(entryDurationMs({ abbreviated: true }), BRIEF_ENTRY_MS);
-  assert.ok(BRIEF_ENTRY_MS >= 750 && BRIEF_ENTRY_MS <= 1500);
-  assert.equal(entryPresentation({ elapsedMs: 0, abbreviated: true }).phase, "void");
-  const done = entryPresentation({ elapsedMs: BRIEF_ENTRY_MS, abbreviated: true });
-  assert.equal(done.phase, "rest");
-  assert.equal(done.interactive, true);
-  assert.equal(done.assemble, 1);
-  assert.match(gatewaySource, /variant !== "home"/);
+test("home, login, and return visits use the full five second construction", () => {
+  for (const label of ["home", "login", "signup"]) {
+    const clock = gatewayEntryClock();
+    const origin = entryPresentation(clock);
+    assert.equal(clock.elapsedMs, 0, label);
+    assert.equal(clock.abbreviated, false, label);
+    assert.equal(clock.durationMs, FULL_ENTRY_MS, label);
+    assert.equal(origin.phase, "void", label);
+    assert.equal(origin.assemble, 0, label);
+    assert.equal(origin.seconds, 0, label);
+    assert.equal(origin.variant, "full", label);
+  }
+  assert.equal(entryPresentation({ elapsedMs: FULL_ENTRY_MS }).phase, "rest");
+  assert.doesNotMatch(gatewaySource, /readEntrySeen/);
+  assert.doesNotMatch(gatewaySource, /markEntrySeen/);
+  assert.doesNotMatch(gatewaySource, /variant !== "home"/);
+  assert.doesNotMatch(gatewaySource, /elapsedMs:\s*5000/);
+  assert.match(gatewaySource, /gatewayEntryClock/);
+  assert.match(authSource, /variant=\{mode === "register" \? "signup" : "login"\}/);
   assert.match(appSource, /initialMode=\{screen === "signup" \? "register" : "login"\}/);
+  assert.match(appSource, /MadFuturicsBoot/);
+});
+
+test("logout and a stored entry flag do not shorten the formation", () => {
+  const storage = new Map();
+  const memory = {
+    getItem: (key) => (storage.has(key) ? storage.get(key) : null),
+    setItem: (key, value) => storage.set(key, value),
+  };
+  assert.equal(markEntrySeen(memory), true);
+  assert.equal(readEntrySeen(memory), true);
+  const clock = gatewayEntryClock();
+  const origin = entryPresentation(clock);
+  assert.equal(clock.durationMs, FULL_ENTRY_MS);
+  assert.equal(clock.elapsedMs, 0);
+  assert.equal(clock.abbreviated, false);
+  assert.equal(origin.phase, "void");
+  assert.equal(origin.assemble, 0);
+  assert.doesNotMatch(gatewaySource, /localStorage/);
+  assert.doesNotMatch(gatewaySource, /ENTRY_SEEN_KEY/);
+});
+
+test("boot and loading start at the origin instead of the finished field", () => {
+  const clock = gatewayEntryClock({ reducedMotion: false });
+  const origin = entryPresentation(clock);
+  const finished = entryPresentation({ elapsedMs: 5000 });
+  assert.equal(clock.elapsedMs, 0);
+  assert.equal(clock.durationMs, FULL_ENTRY_MS);
+  assert.equal(origin.phase, "void");
+  assert.equal(origin.assemble, 0);
+  assert.equal(origin.seconds, 0);
+  assert.equal(finished.phase, "rest");
+  assert.notEqual(origin.phase, finished.phase);
+  assert.match(gatewaySource, /reducedMotion: boot \? false : reduced/);
+  assert.match(gatewaySource, /applyElapsed\(0\)/);
+  assert.match(gatewaySource, /showBootChrome/);
+  assert.doesNotMatch(gatewaySource, /elapsedMs:\s*5000/);
+  assert.doesNotMatch(gatewaySource, /elapsedMs:\s*boot \? 5000/);
 });
 
 test("reduced motion settles the diamond and wordmark without the full boot", () => {
@@ -84,7 +133,7 @@ test("reduced motion settles the diamond and wordmark without the full boot", ()
   assert.equal(settled.interactive, true);
 });
 
-test("the full entrance is remembered and the short one is not required to be", () => {
+test("the seen flag can still be stored and does not choose the clock", () => {
   const storage = new Map();
   const memory = {
     getItem: (key) => (storage.has(key) ? storage.get(key) : null),
@@ -94,6 +143,9 @@ test("the full entrance is remembered and the short one is not required to be", 
   assert.equal(markEntrySeen(memory), true);
   assert.equal(readEntrySeen(memory), true);
   assert.equal(readEntrySeen(null), false);
+  assert.equal(entryDurationMs({ abbreviated: true }), BRIEF_ENTRY_MS);
+  assert.equal(gatewayEntryClock().abbreviated, false);
+  assert.equal(gatewayEntryClock().durationMs, FULL_ENTRY_MS);
 });
 
 function placedAt(particles, seconds) {
@@ -185,6 +237,21 @@ test("the gateway keeps authentication behavior and one canvas loop", () => {
   assert.match(fieldSource, /ResizeObserver/);
   assert.match(fieldSource, /devicePixelRatio/);
   assert.match(fieldSource, /formationFrame/);
+  assert.match(fieldSource, /token !== loop/);
+  assert.match(fieldSource, /token === loop/);
+  assert.match(fieldSource, /cancelAnimationFrame\(frame\)/);
+  assert.match(fieldSource, /observer\.disconnect\(\)/);
+  assert.match(fieldSource, /removeEventListener\("visibilitychange", onVisible\)/);
+  assert.match(fieldSource, /removeEventListener\("change", start\)/);
+  assert.match(gatewaySource, /removeEventListener\("change", onChange\)/);
+  assert.match(gatewaySource, /cancelAnimationFrame\(frame\)/);
   assert.doesNotMatch(packageSource, /"three"/);
   assert.doesNotMatch(fieldSource, /from "three"/);
+  const chiefFieldSource = readFileSync(
+    new URL("../src/components/chief/ChiefField.jsx", import.meta.url),
+    "utf8"
+  );
+  assert.match(chiefFieldSource, /pointFrame/);
+  assert.doesNotMatch(chiefFieldSource, /createCurrent/);
+  assert.doesNotMatch(chiefFieldSource, /formationFrame/);
 });
