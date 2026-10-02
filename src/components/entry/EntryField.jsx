@@ -36,6 +36,7 @@ export function EntryField({ sceneRef }) {
     let particles = createCurrent(fieldBudget(mobileQuery.matches), 7);
     let corners = createDiamondPoints(4, 1);
     let frame = 0;
+    let loop = 0;
     let alive = true;
     let last = performance.now();
     const motion = { ...CHIEF_FIELD.forming, assemble: 1 };
@@ -160,8 +161,8 @@ export function EntryField({ sceneRef }) {
       }
     }
 
-    function paint(now) {
-      if (!alive) return;
+    function paint(now, token) {
+      if (!alive || token !== loop) return;
       if (document.visibilityState === "hidden") return;
 
       const source = sceneRef.current || {};
@@ -223,13 +224,15 @@ export function EntryField({ sceneRef }) {
 
       paintDiamond(context, view, time, width, height);
       context.globalCompositeOperation = "source-over";
-      if (!reduced) frame = requestAnimationFrame(paint);
+      if (!reduced && token === loop) frame = requestAnimationFrame((next) => paint(next, token));
     }
 
     function start() {
+      loop += 1;
+      const token = loop;
       cancelAnimationFrame(frame);
       last = performance.now();
-      frame = requestAnimationFrame(paint);
+      frame = requestAnimationFrame((next) => paint(next, token));
     }
 
     function onVisible() {
@@ -238,7 +241,7 @@ export function EntryField({ sceneRef }) {
 
     const observer = new ResizeObserver(() => {
       resize();
-      if (sceneRef.current?.population === "reduced") paint(performance.now());
+      if (sceneRef.current?.population === "reduced") paint(performance.now(), loop);
     });
     observer.observe(host);
     resize();

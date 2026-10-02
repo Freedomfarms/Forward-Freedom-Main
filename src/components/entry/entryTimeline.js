@@ -1,6 +1,8 @@
-// Pure clock for the Freedom OS gateway. First visit plays the 5 second
-// construction. Login, signup, and return visits compress it. Reduced motion
-// settles immediately.
+// Pure clock for the Freedom OS gateway. Home, login, signup, boot, and
+// return visits all play the 5 second construction from elapsed 0.
+// `abbreviated` remains for compatibility and is not selected by the gateway.
+// Reduced motion settles immediately.
+// ENTRY_SEEN_KEY is retained for compatibility and does not choose the clock.
 
 export const FULL_ENTRY_MS = 5000;
 export const BRIEF_ENTRY_MS = 1100;
@@ -28,6 +30,18 @@ export function markEntrySeen(storage) {
   } catch {
     return false;
   }
+}
+
+// One clock for every fresh gateway entry. The seen-flag is not an input:
+// a stored `madfuturics.entry.complete` value must not shorten the sequence.
+export function gatewayEntryClock({ reducedMotion = false } = {}) {
+  const reduced = reducedMotion === true;
+  return {
+    elapsedMs: 0,
+    abbreviated: false,
+    reducedMotion: reduced,
+    durationMs: entryDurationMs({ reducedMotion: reduced, abbreviated: false }),
+  };
 }
 
 function easeOut(value) {

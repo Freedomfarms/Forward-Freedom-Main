@@ -2,21 +2,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { LegalModal } from "../LegalDocuments.jsx";
 import { EntryField } from "./EntryField.jsx";
-import {
-  entryDurationMs,
-  entryPresentation,
-  markEntrySeen,
-  readEntrySeen,
-} from "./entryTimeline.js";
+import { entryPresentation, gatewayEntryClock } from "./entryTimeline.js";
 import "./entry.css";
-
-function safeStorage() {
-  try {
-    return window.localStorage;
-  } catch {
-    return null;
-  }
-}
 
 function useReducedMotion() {
   const [reduced, setReduced] = useState(
@@ -33,6 +20,14 @@ function useReducedMotion() {
   }, []);
 
   return reduced;
+}
+
+function showBootChrome(root) {
+  if (!root) return;
+  root.style.setProperty("--mf-reveal", "1");
+  root.style.setProperty("--mf-command", "1");
+  root.classList.add("is-ready");
+  root.querySelector(".mf-command")?.removeAttribute("inert");
 }
 
 function applyScene(root, scene, view) {
@@ -61,15 +56,9 @@ export function MadFuturicsGateway({
 }) {
   const reduced = useReducedMotion();
   const boot = variant === "boot";
-  const [returning] = useState(() => (variant === "home" ? readEntrySeen(safeStorage()) : false));
-  const abbreviated = variant !== "home" || returning;
   const rootRef = useRef(null);
   const sceneRef = useRef({
-    ...entryPresentation({
-      elapsedMs: boot ? 5000 : 0,
-      reducedMotion: boot ? false : reduced,
-      abbreviated: boot ? false : abbreviated,
-    }),
+    ...entryPresentation(gatewayEntryClock({ reducedMotion: boot ? false : reduced })),
     surge: boot,
     hover: false,
     pulse: 0,
@@ -78,39 +67,35 @@ export function MadFuturicsGateway({
   useLayoutEffect(() => {
     const root = rootRef.current;
     const scene = sceneRef.current;
-    if (boot) {
-      const view = entryPresentation({ elapsedMs: 5000, reducedMotion: false, abbreviated: false });
-      applyScene(root, scene, { ...view, surge: true });
-      return undefined;
-    }
-
-    const duration = entryDurationMs({ reducedMotion: reduced, abbreviated });
+    const clock = gatewayEntryClock({ reducedMotion: boot ? false : reduced });
     const started = performance.now();
     let frame = 0;
     let stopped = false;
 
+    const applyElapsed = (elapsed) => {
+      const view = entryPresentation({
+        elapsedMs: elapsed,
+        reducedMotion: clock.reducedMotion,
+        abbreviated: clock.abbreviated,
+      });
+      applyScene(root, scene, { ...view, surge: boot });
+      if (boot) showBootChrome(root);
+    };
+
     const tick = (now) => {
       if (stopped) return;
       const elapsed = now - started;
-      const view = entryPresentation({
-        elapsedMs: elapsed,
-        reducedMotion: reduced,
-        abbreviated,
-      });
-      applyScene(root, scene, { ...view, surge: false });
-      if (elapsed < duration) {
-        frame = requestAnimationFrame(tick);
-        return;
-      }
-      if (variant === "home" && !abbreviated && !reduced) markEntrySeen(safeStorage());
+      applyElapsed(elapsed);
+      if (elapsed < clock.durationMs) frame = requestAnimationFrame(tick);
     };
 
+    applyElapsed(0);
     frame = requestAnimationFrame(tick);
     return () => {
       stopped = true;
       cancelAnimationFrame(frame);
     };
-  }, [abbreviated, boot, reduced, variant]);
+  }, [boot, reduced]);
 
   const [activeDocument, setActiveDocument] = useState(null);
 
