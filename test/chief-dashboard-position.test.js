@@ -436,7 +436,7 @@ test("finance_summary returns the position only for the authenticated user when 
   assert.deepEqual(JSON.parse(changed.output), {
     module02Read: false,
     writeAccess: false,
-    message: "Module 02 read access is off.",
+    message: "Freedom Financial read access is off.",
   });
   assert.deepEqual(loads, [USER_A]);
 });

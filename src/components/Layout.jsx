@@ -17,9 +17,13 @@ export function AppSidebar({
   onNavigate,
   // Platform admin (from /api/me isAdmin) — gates the Admin Usage entry.
   isAdmin = false,
+  // Demo keeps the Freedom OS tab. Routed sessions return home through CHIEF.
+  showModuleHub = true,
 }) {
-  // Freedom OS, then CHIEF, then the Freedom Financial tabs.
-  const freedomOsItems = navMain.filter((item) => item.label === APP_TABS.FREEDOM_OS);
+  // CHIEF, then the Freedom Financial tabs. The hub item is demo-only.
+  const freedomOsItems = showModuleHub
+    ? navMain.filter((item) => item.label === APP_TABS.FREEDOM_OS)
+    : [];
   const chiefItems = navMain.filter((item) => item.label === APP_TABS.CHIEF);
   const financeItems = navMain.filter(
     (item) => item.label !== APP_TABS.FREEDOM_OS && item.label !== APP_TABS.CHIEF

@@ -6,10 +6,10 @@
 import { withUserContext } from "../../db/prisma.js";
 
 export const MODULE02_READ_DISABLED =
-  "Module 02 read access is currently disabled. CHIEF cannot view this user's financial data.";
+  "Freedom Financial read access is currently disabled. CHIEF cannot view this user's financial data.";
 
 export const MODULE02_WRITE_UNAVAILABLE =
-  "Module 02 write access is not currently available. CHIEF cannot change financial data.";
+  "Freedom Financial write access is not currently available. CHIEF cannot change financial data.";
 
 function requireUserId(userId) {
   const id = typeof userId === "string" ? userId.trim() : "";
@@ -86,7 +86,7 @@ export class PrismaModuleAccess {
       return { userId: row.userId, module02Read: row.module02Read === true, writeAccess: false };
     } catch (error) {
       if (isMissingModuleAccessTable(error)) {
-        const wrapped = new Error("Module 02 access storage is not available.");
+        const wrapped = new Error("Freedom Financial access storage is not available.");
         wrapped.status = 503;
         throw wrapped;
       }

@@ -61,8 +61,8 @@ export async function handleChiefModuleAccess(request, response, deps = {}) {
       response,
       status,
       status >= 500
-        ? "Module 02 access could not be saved."
-        : error.message || "Module 02 access could not be saved."
+        ? "Freedom Financial access could not be saved."
+        : error.message || "Freedom Financial access could not be saved."
     );
   }
 }
