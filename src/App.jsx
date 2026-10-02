@@ -167,7 +167,7 @@ function AuthenticatedWorkspaceApp({
   resendVerificationEmail,
   requestPasswordReset,
   updateProfileName,
-  osSurface = "shell",
+  osSurface = "chief",
   onNavigateOs,
 }) {
   const storageKey = useMemo(() => buildScopedAppStateStorageKey(user.uid), [user.uid]);
@@ -961,7 +961,7 @@ function AppContent() {
         onNavigateOs={(path) => navigateApp(path)}
         signOut={async () => {
           // Hold path redirects until Firebase has cleared the user. Otherwise
-          // "/" is treated as an authenticated entry and bounced back to /os,
+          // "/" is treated as an authenticated entry and bounced back to /os/chief,
           // or /os is treated as signed-out and bounced to /login.
           suspendRedirectRef.current = true;
           clearSignedOutClientState(user.uid);

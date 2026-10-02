@@ -57,14 +57,7 @@ function errorText(error) {
   return error?.message || "CHIEF could not complete that request.";
 }
 
-export function ChiefPage({
-  user,
-  embedded = false,
-  onOpenFinancial,
-  onOpenCeoAgents,
-  onOpenModules,
-  onSignOut,
-}) {
+export function ChiefPage({ user, embedded = false, onOpenFinancial, onSignOut }) {
   const sessionUid = typeof user?.uid === "string" ? user.uid : "";
   const [sessions, setSessions] = useState([]);
   const [archivedSessions, setArchivedSessions] = useState([]);
@@ -591,7 +584,7 @@ export function ChiefPage({
     Boolean(user) && !historyLoading && !notFound && !turnView.userLine && !turnView.answer;
   const transcriptError = historyError || turnError;
   const stateDetail = transcriptError || "";
-  const canLeave = Boolean(onOpenFinancial || onOpenCeoAgents || onOpenModules);
+  const canLeave = Boolean(onOpenFinancial);
   const sheetOpen = drawerOpen || placesOpen || accessOpen;
   const desktopNav = Boolean(user) && !narrowNav;
   const navExpanded = narrowNav ? drawerOpen : !navCollapsed;
@@ -740,16 +733,6 @@ export function ChiefPage({
                 Freedom Financial
               </button>
             ) : null}
-            {onOpenCeoAgents ? (
-              <button type="button" className="chief-place" onClick={onOpenCeoAgents}>
-                CEO Agents
-              </button>
-            ) : null}
-            {onOpenModules ? (
-              <button type="button" className="chief-place" onClick={onOpenModules}>
-                Modules
-              </button>
-            ) : null}
           </nav>
         ) : null}
         <div className="chief-instruments">
@@ -867,16 +850,6 @@ export function ChiefPage({
             {onOpenFinancial ? (
               <button type="button" className="chief-place" onClick={onOpenFinancial}>
                 Freedom Financial
-              </button>
-            ) : null}
-            {onOpenCeoAgents ? (
-              <button type="button" className="chief-place" onClick={onOpenCeoAgents}>
-                CEO Agents
-              </button>
-            ) : null}
-            {onOpenModules ? (
-              <button type="button" className="chief-place" onClick={onOpenModules}>
-                Modules
               </button>
             ) : null}
             {onSignOut ? (

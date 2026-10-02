@@ -108,14 +108,8 @@ import { ObjectivesBoard } from "./components/ObjectivesBoard.jsx";
 import { RecurringSubscriptions } from "./components/RecurringSubscriptions.jsx";
 import { TransactionsView } from "./components/TransactionsView.jsx";
 import { WorkspaceGuideAssistant } from "./components/WorkspaceGuideAssistant.jsx";
-import {
-  FreedomOsHome,
-  FreedomOsSignedOutCard,
-} from "./components/freedomOs/FreedomOsHome.jsx";
-import { FreedomOsDeck } from "./components/freedomOs/FreedomOsDeck.jsx";
-import { AuthenticatedFreedomOsShell } from "./components/FreedomOsLanding.jsx";
+import { FreedomOsSignedOutCard } from "./components/freedomOs/FreedomOsHome.jsx";
 import { isModule02Tab } from "./utils/module02AccessCopy.js";
-import { FREEDOM_OS_MODULE_IDS } from "./components/freedomOs/freedomOsModules.js";
 import { AdminUsagePanel } from "./components/freedomOs/AdminUsagePanel.jsx";
 import { ChiefPage } from "./components/chief/ChiefPage.jsx";
 import { useViewportUIScale } from "./utils/useViewportUIScale.js";
@@ -692,12 +686,9 @@ function ForwardFreedomDashboard({
   onNavigateOs = null,
 } = {}) {
   const [initialAppState] = useState(() => initialAppStateOverride || loadPersistedAppState(storageKey));
-  const [adminOpen, setAdminOpen] = useState(false);
   const [currentView, setCurrentView] = useState(initialView);
   const [users, setUsers] = useState(initialAppState.users);
   const [activeUserId, setActiveUserId] = useState(initialAppState.activeUserId);
-  // null = module hub; ceo_agents = Module 01. Module 02 switches activeTab.
-  const [freedomOsModule, setFreedomOsModule] = useState(null);
   const [editingUserId, setEditingUserId] = useState(null);
   const [draftUserName, setDraftUserName] = useState("");
   const [pendingManualEditAccountId, setPendingManualEditAccountId] = useState(null);
@@ -748,8 +739,8 @@ function ForwardFreedomDashboard({
   const storedActiveTab = SUPPORTED_APP_TABS.has(activeUser.activeTab)
     ? activeUser.activeTab
     : APP_TABS.FREEDOM_OS;
-  // /os/finance keeps Module 02's saved tab. A CHIEF or hub tab stored from
-  // older sessions is shown as Command Center without rewriting that save.
+  // /os/finance keeps Freedom Financial's saved tab. A CHIEF or hub tab stored
+  // from older sessions is shown as Command Center without rewriting that save.
   const activeTab =
     osSurface === "finance" &&
     storedActiveTab !== APP_TABS.ADMIN_USAGE &&
@@ -801,7 +792,6 @@ function ForwardFreedomDashboard({
     setActiveUserField("plaidTransactionOverrides", valueOrUpdater);
   const setOnboarding = (valueOrUpdater) => setActiveUserField("onboarding", valueOrUpdater);
   const navigateOs = (path) => {
-    if (path !== "/os") setAdminOpen(false);
     onNavigateOs?.(path);
   };
   const setActiveTab = (valueOrUpdater) => {
@@ -809,31 +799,12 @@ function ForwardFreedomDashboard({
     const next =
       typeof valueOrUpdater === "function" ? valueOrUpdater(current) : valueOrUpdater;
     if (typeof onNavigateOs === "function") {
-      if (next === APP_TABS.CHIEF) {
+      if (next === APP_TABS.CHIEF || next === APP_TABS.FREEDOM_OS) {
         navigateOs("/os/chief");
         return;
       }
-      if (next === APP_TABS.FREEDOM_OS) {
-        navigateOs("/os");
-        return;
-      }
-    }
-    // Returning to Freedom OS always shows the module hub, not a nested module.
-    if (next === APP_TABS.FREEDOM_OS) {
-      setFreedomOsModule(null);
     }
     setActiveUserField("activeTab", next);
-  };
-
-  const handleSelectFreedomOsModule = (moduleId) => {
-    if (moduleId === FREEDOM_OS_MODULE_IDS.CEO_AGENTS) {
-      setFreedomOsModule(FREEDOM_OS_MODULE_IDS.CEO_AGENTS);
-      return;
-    }
-    if (moduleId === FREEDOM_OS_MODULE_IDS.FREEDOM_FINANCIAL) {
-      setFreedomOsModule(null);
-      setActiveTab(APP_TABS.DASHBOARD);
-    }
   };
   const setActiveRange = (valueOrUpdater) => setActiveUserField("activeRange", valueOrUpdater);
   // Switching household profiles must keep the current page. The active tab is
@@ -2365,130 +2336,29 @@ function ForwardFreedomDashboard({
     setIsMobileNavOpen(false);
   };
 
-  // The URL chooses the major surface. Demo sessions have no osSurface and
-  // keep the tab switch below.
-  if (osSurface === "shell" && freedomOsAuthUser) {
-    if (adminOpen && isPlatformAdmin) {
-      return (
-        <FreedomOsDeck
-          sessionControls={sessionControls}
-          isAdmin={isPlatformAdmin}
-          moduleLabel="Admin"
-          onBackToModules={() => setAdminOpen(false)}
-          onOpenAdminUsage={() => setAdminOpen(true)}
-        >
-          <AdminUsagePanel user={freedomOsAuthUser} />
-        </FreedomOsDeck>
-      );
-    }
-
-    return (
-      <ViewErrorBoundary key="freedom-os-shell" viewName={APP_TABS.FREEDOM_OS}>
-        <AuthenticatedFreedomOsShell
-          onSignOut={() => void sessionControls?.onSignOut?.()}
-          signOutBusy={Boolean(sessionControls?.isBusy)}
-          onOpenChief={() => navigateOs("/os/chief")}
-          onOpenAgents={() => navigateOs("/os/agents")}
-          onOpenFinance={() => navigateOs("/os/finance")}
-          isAdmin={isPlatformAdmin}
-          onOpenAdminUsage={() => setAdminOpen(true)}
-        />
-      </ViewErrorBoundary>
-    );
-  }
-
+  // The URL chooses the major surface. CHIEF is the authenticated home.
+  // Demo sessions have no osSurface and keep the tab switch below.
   if (osSurface === "chief" && freedomOsAuthUser) {
     return (
       <ViewErrorBoundary key="chief-room" viewName={APP_TABS.CHIEF}>
         <ChiefPage
           user={freedomOsAuthUser}
           onOpenFinancial={() => navigateOs("/os/finance")}
-          onOpenCeoAgents={() => navigateOs("/os/agents")}
-          onOpenModules={() => navigateOs("/os")}
           onSignOut={() => void sessionControls?.onSignOut?.()}
         />
       </ViewErrorBoundary>
     );
   }
 
-  if (osSurface === "agents" && freedomOsAuthUser) {
-    return (
-      <FreedomOsDeck
-        sessionControls={sessionControls}
-        isAdmin={isPlatformAdmin}
-        moduleLabel="Module 01 · CEO Agents"
-        onBackToModules={() => navigateOs("/os")}
-        onOpenAdminUsage={() => {
-          setAdminOpen(true);
-          onNavigateOs?.("/os");
-        }}
-      >
-        <ViewErrorBoundary key="ceo-agents" viewName={APP_TABS.FREEDOM_OS}>
-          <FreedomOsHome
-            user={freedomOsAuthUser}
-            onOpenFinanceTool={() => navigateOs("/os/finance")}
-          />
-        </ViewErrorBoundary>
-      </FreedomOsDeck>
-    );
-  }
-
   // Demo and signed-out sessions keep the in-shell signed-out card below.
-  // Authenticated /os/* surfaces are handled above, so a stored CHIEF tab
-  // cannot override /os/finance.
-  if (!osSurface && activeTab === APP_TABS.FREEDOM_OS && freedomOsAuthUser) {
-    const inCeoAgents = freedomOsModule === FREEDOM_OS_MODULE_IDS.CEO_AGENTS;
-
-    if (!inCeoAgents) {
-      return (
-        <ViewErrorBoundary key="freedom-os-home" viewName={APP_TABS.FREEDOM_OS}>
-          <AuthenticatedFreedomOsShell
-            onSignOut={() => void sessionControls?.onSignOut?.()}
-            signOutBusy={Boolean(sessionControls?.isBusy)}
-            onOpenAgents={() => handleSelectFreedomOsModule(FREEDOM_OS_MODULE_IDS.CEO_AGENTS)}
-            onOpenFinance={() =>
-              handleSelectFreedomOsModule(FREEDOM_OS_MODULE_IDS.FREEDOM_FINANCIAL)
-            }
-            isAdmin={isPlatformAdmin}
-            onOpenAdminUsage={() => setActiveTab(APP_TABS.ADMIN_USAGE)}
-            onOpenChief={() => setActiveTab(APP_TABS.CHIEF)}
-          />
-        </ViewErrorBoundary>
-      );
-    }
-
-    return (
-      <FreedomOsDeck
-        sessionControls={sessionControls}
-        isAdmin={isPlatformAdmin}
-        moduleLabel="Module 01 · CEO Agents"
-        onBackToModules={() => setFreedomOsModule(null)}
-        onOpenAdminUsage={() => setActiveTab(APP_TABS.ADMIN_USAGE)}
-      >
-        <ViewErrorBoundary key="ceo-agents" viewName={APP_TABS.FREEDOM_OS}>
-          <FreedomOsHome
-            user={freedomOsAuthUser}
-            onOpenFinanceTool={() => setActiveTab(APP_TABS.DASHBOARD)}
-          />
-        </ViewErrorBoundary>
-      </FreedomOsDeck>
-    );
-  }
-
+  // Authenticated /os/finance stays on the financial workspace, so a stored
+  // CHIEF tab cannot override it.
   if (!osSurface && activeTab === APP_TABS.CHIEF && freedomOsAuthUser) {
     return (
       <ViewErrorBoundary key="chief-room" viewName={APP_TABS.CHIEF}>
         <ChiefPage
           user={freedomOsAuthUser}
           onOpenFinancial={() => setActiveTab(APP_TABS.DASHBOARD)}
-          onOpenCeoAgents={() => {
-            setActiveTab(APP_TABS.FREEDOM_OS);
-            setFreedomOsModule(FREEDOM_OS_MODULE_IDS.CEO_AGENTS);
-          }}
-          onOpenModules={() => {
-            setFreedomOsModule(null);
-            setActiveTab(APP_TABS.FREEDOM_OS);
-          }}
           onSignOut={() => void sessionControls?.onSignOut?.()}
         />
       </ViewErrorBoundary>
@@ -2508,6 +2378,7 @@ function ForwardFreedomDashboard({
           onOpenSetupStep={openOnboardingStep}
           onSkipSetup={skipOnboarding}
           isAdmin={isPlatformAdmin}
+          showModuleHub={typeof onNavigateOs !== "function"}
         />
 
         <div className={`mobile-nav-backdrop${isMobileNavOpen ? " is-open" : ""}`} onClick={() => setIsMobileNavOpen(false)} />
@@ -2522,6 +2393,7 @@ function ForwardFreedomDashboard({
             onOpenSetupStep={openOnboardingStep}
             onSkipSetup={skipOnboarding}
             isAdmin={isPlatformAdmin}
+            showModuleHub={typeof onNavigateOs !== "function"}
             onNavigate={() => setIsMobileNavOpen(false)}
           />
         </div>

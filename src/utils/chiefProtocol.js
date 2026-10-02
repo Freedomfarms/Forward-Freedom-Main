@@ -14,8 +14,8 @@ export const CHIEF_STATUS = Object.freeze({
   TOOL: "CHIEF is using a tool",
   FINANCE: "Checking your financial data",
   WEB_SEARCH: "CHIEF is searching the web...",
-  MODULE_ACCESS: "Checking Module 02 access",
-  MODULE_ACCESS_SET: "Updating Module 02 access",
+  MODULE_ACCESS: "Checking Freedom Financial access",
+  MODULE_ACCESS_SET: "Updating Freedom Financial access",
   APPROVAL: "Waiting for approval",
   ERROR: "Error",
 });

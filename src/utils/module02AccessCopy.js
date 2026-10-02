@@ -1,11 +1,12 @@
-// Shared Module 02 CHIEF-access copy. No network and no Firebase, so the
-// sidebar and the tests use the same sentences. Tab labels match APP_TABS.
+// Shared Freedom Financial CHIEF-access copy. No network and no Firebase, so
+// the sidebar and the tests use the same sentences. Tab labels match APP_TABS.
+// The stored flag remains module02Read.
 
 export const MODULE02_ACCESS_OFF_COPY =
-  "Read-only access allows CHIEF to view your Module 02 financial information. CHIEF cannot make changes.";
+  "Read-only access allows CHIEF to view your Freedom Financial information. CHIEF cannot make changes.";
 
 export const MODULE02_ACCESS_ON_COPY =
-  "CHIEF can view Module 02 data. Read-only — CHIEF cannot modify your financial data.";
+  "CHIEF can view Freedom Financial data. Read-only — CHIEF cannot modify your financial data.";
 
 const NOT_MODULE_02 = new Set(["Freedom OS", "CHIEF", "Admin Usage"]);
 

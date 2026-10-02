@@ -63,11 +63,11 @@ test("signed-out /finance and /demo keep the marketing page and demo sandbox", (
   assert.match(demoSource, /isDemoMode/);
 });
 
-test("authenticated entry paths redirect to /os and do not follow next", () => {
+test("authenticated entry paths redirect to /os/chief and do not follow next", () => {
   for (const path of ["/", "/login", "/signup"]) {
     const route = resolveAppRoute(path, { authenticated: true });
     assert.equal(route.kind, "redirect");
-    assert.equal(route.redirectTo, "/os");
+    assert.equal(route.redirectTo, "/os/chief");
     assert.equal(route.redirectTo.includes("next"), false);
   }
   assert.equal(screen("/", { authenticated: true }), "redirect");
@@ -76,9 +76,11 @@ test("authenticated entry paths redirect to /os and do not follow next", () => {
 });
 
 test("authenticated surfaces follow the path", () => {
-  assert.equal(screen("/os", { authenticated: true }), "os-shell");
+  assert.equal(screen("/os", { authenticated: true }), "redirect");
+  assert.equal(resolveAppRoute("/os", { authenticated: true }).redirectTo, "/os/chief");
   assert.equal(screen("/os/chief", { authenticated: true }), "os-chief");
-  assert.equal(screen("/os/agents", { authenticated: true }), "os-agents");
+  assert.equal(screen("/os/agents", { authenticated: true }), "redirect");
+  assert.equal(resolveAppRoute("/os/agents", { authenticated: true }).redirectTo, "/os/chief");
   assert.equal(screen("/os/finance", { authenticated: true }), "os-finance");
   const finance = presentationForRoute({
     configured: true,
@@ -87,10 +89,17 @@ test("authenticated surfaces follow the path", () => {
     pathname: "/os/finance",
   });
   assert.equal(finance.surface, "finance");
+  const chief = presentationForRoute({
+    configured: true,
+    ready: true,
+    authenticated: true,
+    pathname: "/os/chief",
+  });
+  assert.equal(chief.surface, "chief");
   assert.match(dashboardSource, /osSurface === "finance"/);
   assert.match(dashboardSource, /osSurface === "chief"/);
-  assert.match(dashboardSource, /osSurface === "agents"/);
-  assert.match(dashboardSource, /AuthenticatedFreedomOsShell/);
+  assert.doesNotMatch(dashboardSource, /AuthenticatedFreedomOsShell/);
+  assert.doesNotMatch(dashboardSource, /\/os\/agents/);
 });
 
 test("signed-out protected paths redirect to /login", () => {
@@ -120,8 +129,8 @@ test("protected UI does not mount while Firebase is restoring", () => {
 
 test("unknown paths fall back without leaving the app", () => {
   assert.equal(resolveAppRoute("/nope").redirectTo, "/");
-  assert.equal(resolveAppRoute("/nope", { authenticated: true }).redirectTo, "/os");
-  assert.equal(resolveAppRoute("/os/unknown", { authenticated: true }).redirectTo, "/os");
+  assert.equal(resolveAppRoute("/nope", { authenticated: true }).redirectTo, "/os/chief");
+  assert.equal(resolveAppRoute("/os/unknown", { authenticated: true }).redirectTo, "/os/chief");
   assert.equal(resolveAppRoute("/os/unknown").redirectTo, "/login");
 });
 
@@ -133,7 +142,7 @@ test("next is stripped and external targets are refused", () => {
   assert.equal(resolveAppRoute("/login?next=https://evil.example").kind, "login");
   assert.equal(
     resolveAppRoute("/login?next=https://evil.example", { authenticated: true }).redirectTo,
-    "/os"
+    "/os/chief"
   );
 
   const calls = [];

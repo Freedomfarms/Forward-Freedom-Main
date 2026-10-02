@@ -31,8 +31,8 @@ test("a JSON 403 is the application sentence, and an empty 403 stays an edge blo
   assert.match(apiFailureMessage(403, {}), /HTTP 403/);
   assert.match(apiFailureMessage(403, {}), /Vercel Firewall/);
   assert.equal(
-    apiFailureMessage(500, { error: "Module 02 access could not be saved." }),
-    "Module 02 access could not be saved."
+    apiFailureMessage(500, { error: "Freedom Financial access could not be saved." }),
+    "Freedom Financial access could not be saved."
   );
   assert.match(apiFailureMessage(500, {}), /Server error \(500\)/);
 });

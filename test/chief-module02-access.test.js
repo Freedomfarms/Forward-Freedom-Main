@@ -399,7 +399,7 @@ test("the acceptance conversation enables, reads, refuses a write, and disables"
     {
       parts: [{ type: "tool-call", toolCallId: "f", toolName: "finance_summary", input: {} }],
     },
-    { text: "Module 02 read access is currently disabled." },
+    { text: "Freedom Financial read access is currently disabled." },
   ]);
   const position = await askOff.run({
     userId: USER_A,
@@ -426,7 +426,7 @@ test("the acceptance conversation enables, reads, refuses a write, and disables"
         },
       ],
     },
-    { text: "Module 02 read-only access is on." },
+    { text: "Freedom Financial read-only access is on." },
   ]);
   const enableMachine = new TurnMachine({
     store: ctx.store,
@@ -436,7 +436,7 @@ test("the acceptance conversation enables, reads, refuses a write, and disables"
   });
   const requested = await enableMachine.run({
     userId: USER_A,
-    submission: message("CHIEF, turn on my Module 02 read-only access.", "q2"),
+    submission: message("CHIEF, turn on my Freedom Financial read-only access.", "q2"),
     toolSpecs: specs,
   });
   assert.equal(requested.status, "suspended");
@@ -479,7 +479,7 @@ test("the acceptance conversation enables, reads, refuses a write, and disables"
   assert.match(readMachine.engine.seen[0].system, /is not a request to enable/);
 
   const write = await machine(ctx, [
-    { text: "Module 02 write access is not currently available." },
+    { text: "Freedom Financial write access is not currently available." },
   ]).run({
     userId: USER_A,
     submission: message("Change my budget.", "q4"),
@@ -503,7 +503,7 @@ test("the acceptance conversation enables, reads, refuses a write, and disables"
         },
       ],
     },
-    { text: "Module 02 read access is off." },
+    { text: "Freedom Financial read access is off." },
   ]);
   const disableMachine = new TurnMachine({
     store: ctx.store,
@@ -513,7 +513,7 @@ test("the acceptance conversation enables, reads, refuses a write, and disables"
   });
   const disableRequest = await disableMachine.run({
     userId: USER_A,
-    submission: message("CHIEF, turn off my Module 02 access.", "q5"),
+    submission: message("CHIEF, turn off my Freedom Financial access.", "q5"),
     toolSpecs: specs,
   });
   assert.equal(disableRequest.status, "suspended");
@@ -531,7 +531,7 @@ test("the acceptance conversation enables, reads, refuses a write, and disables"
     {
       parts: [{ type: "tool-call", toolCallId: "f3", toolName: "finance_summary", input: {} }],
     },
-    { text: "Module 02 read access is currently disabled." },
+    { text: "Freedom Financial read access is currently disabled." },
   ]).run({
     userId: USER_A,
     submission: message("What's my financial position?", "q6"),
@@ -552,20 +552,22 @@ test("a question about Module 02 does not enable access", async () => {
         { type: "tool-call", toolCallId: "st", toolName: "module02_access_status", input: {} },
       ],
     },
-    { text: "Module 02 read access is off." },
+    { text: "Freedom Financial read access is off." },
   ]);
   const asked = await askedMachine.run({
     userId: USER_A,
-    submission: message("Can you access Module 02?", "ask"),
+    submission: message("Can you access Freedom Financial?", "ask"),
     toolSpecs: ctx.specs,
   });
   assert.equal(asked.status, "completed");
   assert.equal(await ctx.access.isModule02ReadEnabled(USER_A), false);
   assert.match(askedMachine.engine.seen[0].system, /is not a request to enable/);
 
-  const about = await machine(ctx, [{ text: "Module 02 is your financial workspace." }]).run({
+  const about = await machine(ctx, [
+    { text: "Freedom Financial is your financial workspace." },
+  ]).run({
     userId: USER_A,
-    submission: message("Tell me about Module 02", "about"),
+    submission: message("Tell me about Freedom Financial", "about"),
     toolSpecs: ctx.specs,
   });
   assert.equal(about.status, "completed");
@@ -640,7 +642,7 @@ test("Claude, GPT, and Grok share the user flag and web search stays separate", 
           { type: "tool-call", toolCallId: `${model}-off`, toolName: "finance_summary", input: {} },
         ],
       },
-      { text: "Module 02 read access is currently disabled." },
+      { text: "Freedom Financial read access is currently disabled." },
     ]);
     const denied = await deniedMachine.run({
       userId: USER_A,
@@ -665,8 +667,8 @@ test("Claude, GPT, and Grok share the user flag and web search stays separate", 
     { userId: USER_A }
   );
   assert.equal(memory.isError, false);
-  assert.equal(statusForToolName("module02_access_status"), "Checking Module 02 access");
-  assert.equal(statusForToolName("module02_access_set"), "Updating Module 02 access");
+  assert.equal(statusForToolName("module02_access_status"), "Checking Freedom Financial access");
+  assert.equal(statusForToolName("module02_access_set"), "Updating Freedom Financial access");
   assert.equal(statusForToolName("web_search"), "CHIEF is searching the web...");
 });
 
