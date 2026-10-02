@@ -27,7 +27,7 @@ test("capability wire values match upstream, plus the CHIEF-only labels", () => 
   assert.equal(Capability.MODULE_ACCESS, "module:access");
   assert.equal(Capability.CONVERSATION_READ, "conversation:read");
   assert.equal(Capability.WORKFORCE_READ, "workforce:read");
-  assert.equal(Capability.CODEBASE_READ, "codebase:read");
+  assert.equal(Capability.CODE_READ, "code:read");
   const upstream = new Set([
     "file:read",
     "file:write",
@@ -47,7 +47,14 @@ test("capability wire values match upstream, plus the CHIEF-only labels", () => 
   assert.equal(values.has("web:search"), true);
   assert.equal(values.has("module:access"), true);
   assert.equal(values.has("conversation:read"), true);
-  assert.equal(values.size, upstream.size + 7);
+  assert.equal(values.has("schedule:read"), true);
+  assert.equal(values.has("conversation:write"), true);
+  assert.equal(values.has("conversation:delete"), true);
+  assert.equal(values.has("settings:read"), true);
+  assert.equal(values.has("settings:write"), true);
+  assert.equal(values.has("code:read"), true);
+  assert.equal(values.has("workforce:read"), true);
+  assert.equal(values.size, upstream.size + 12);
   assert.equal(isCapability("file:read"), true);
   assert.equal(isCapability("finance:read"), true);
   assert.equal(isCapability("skill:read"), true);
@@ -55,11 +62,19 @@ test("capability wire values match upstream, plus the CHIEF-only labels", () => 
   assert.equal(isCapability("module:access"), true);
   assert.equal(isCapability("conversation:read"), true);
   assert.equal(isCapability("workforce:read"), true);
-  assert.equal(isCapability("codebase:read"), true);
+  assert.equal(isCapability("codebase:read"), false);
   assert.equal(isCapability("codebase:write"), false);
   assert.equal(isCapability("git:commit"), false);
   assert.equal(isCapability("git:push"), false);
   assert.equal(isCapability("deploy"), false);
+  assert.equal(isCapability("schedule:read"), true);
+  assert.equal(isCapability("conversation:write"), true);
+  assert.equal(isCapability("conversation:delete"), true);
+  assert.equal(isCapability("settings:read"), true);
+  assert.equal(isCapability("settings:write"), true);
+  assert.equal(isCapability("code:read"), true);
+  assert.notEqual(Capability.CODE_READ, Capability.CODE_EXECUTE);
+  assert.notEqual(Capability.CODE_READ, Capability.FILE_READ);
   assert.equal(isCapability("file:destroy"), false);
 });
 

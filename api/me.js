@@ -9,10 +9,8 @@ import { respondInternalError } from "../server/http/errorHelpers.js";
 import { enforceRateLimit, generalApiRateLimit } from "../server/http/rateLimit.js";
 import { readJsonBody } from "../server/http/requestHelpers.js";
 import { applySecurityHeaders } from "../server/http/responseHelpers.js";
-import {
-  isMissingTimezoneColumnError,
-  normalizeIanaTimeZone,
-} from "../server/platform/timezone.js";
+import { isMissingTimezoneColumnError } from "../server/platform/timezone.js";
+import { updateUserTimezone as persistUserTimezone } from "../server/platform/userSettings.js";
 
 const LEGAL_CONSENT_VERSION_MAX_LENGTH = 64;
 const LEGAL_CONSENT_METHOD_MAX_LENGTH = 32;
@@ -250,45 +248,11 @@ async function recordLegalConsent(decodedToken, consent) {
   }
 }
 
-function timezoneHttpError(message, code, status) {
-  const error = new Error(message);
-  error.status = status;
-  error.code = code;
-  return error;
-}
-
-async function updateUserTimezone(decodedToken, timezone) {
-  const normalized = normalizeIanaTimeZone(timezone);
-  if (!normalized) {
-    throw timezoneHttpError(
-      "timezone must be a valid IANA timezone (e.g. America/New_York).",
-      "INVALID_TIMEZONE",
-      400
-    );
-  }
-  try {
-    const record = await withUserContext(decodedToken.uid, (tx) =>
-      tx.user.upsert({
-        where: { id: decodedToken.uid },
-        update: { timezone: normalized, ...buildProfileColumns(decodedToken) },
-        create: {
-          id: decodedToken.uid,
-          ...buildProfileColumns(decodedToken),
-          timezone: normalized,
-        },
-      })
-    );
-    return record;
-  } catch (error) {
-    if (isMissingTimezoneColumnError(error)) {
-      throw timezoneHttpError(
-        "Timezone support is not available on this database yet.",
-        "TIMEZONE_SCHEMA_MISSING",
-        503
-      );
-    }
-    throw error;
-  }
+function updateUserTimezone(decodedToken, timezone) {
+  return persistUserTimezone(decodedToken.uid, timezone, {
+    profileColumns: buildProfileColumns(decodedToken),
+    withUser: withUserContext,
+  });
 }
 
 export default async function handler(request, response) {

@@ -1,7 +1,8 @@
-# ADR-0022: CHIEF capabilities are one control-plane catalog
+# ADR-0025: CHIEF capabilities are one control-plane catalog
 
 - Status: accepted with the workforce-observation foundation
 - Date: 2026-10-02
+- Renumbered from 0022 when the capability-registry ADR kept that number.
 - Scope: `server/chief/control/plane.js`, grants, tool registration
 
 ## Context
@@ -34,15 +35,17 @@ operations are impossible.
    with the same single capability. `createChiefTools` checks that before
    returning tools.
 3. The empty-grant baseline is the catalog's `baseline: true` capabilities, in
-   catalog order. It is the same eight labels as before this ADR. `workforce:read`
-   and `codebase:read` are reserved and off the baseline.
+   catalog order. After reconciliation with the capability registry, that list
+   includes the registry's schedule-read, conversation-write, conversation-delete,
+   and settings labels. `workforce:read` stays reserved and off the baseline.
+   Repository read is the live `code:read` tools, also off the baseline.
 4. `mcp_invoke` stays remote, capability `tool:invoke`, off the baseline.
 5. The codebase domain admits `read` or `forbidden` only. Forbidden operations
    have a tool name and no capability label. `defineToolSpec` and
    `assertToolAllowed` reject those names. There is no `codebase:write` label.
-6. Reserved operations have no tool. They document settings, workflows, files,
-   system inspection, message read, workforce observation, and codebase read
-   so the next tool has a row to fill. They do not run.
+6. Reserved operations have no tool. They document workflows, files,
+   system inspection, message read, and workforce observation so the next tool
+   has a row to fill. They do not run. Settings and repository read are live.
 
 ## Consequences
 

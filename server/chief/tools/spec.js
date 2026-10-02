@@ -27,18 +27,36 @@ export function defineToolSpec(fields) {
   if (!(timeoutSeconds > 0)) {
     throw new TypeError(`tool '${fields.name}' timeoutSeconds must be positive`);
   }
-  const spec = Object.freeze({
+  const confirmation =
+    fields.confirmation === "required" || fields.confirmation === "none"
+      ? fields.confirmation
+      : null;
+  const spec = {
     name: fields.name,
     description: fields.description || fields.name,
-    parameters: fields.parameters ?? { type: "object", properties: {} },
+    parameters: fields.parameters ?? fields.inputSchema ?? { type: "object", properties: {} },
     category: fields.category ?? "",
-    requiresConfirmation: fields.requiresConfirmation === true,
+    requiresConfirmation: confirmation
+      ? confirmation === "required"
+      : fields.requiresConfirmation === true,
     timeoutSeconds,
     requiredCapabilities: Object.freeze([...(fields.requiredCapabilities ?? [])]),
     metadata: Object.freeze({ ...(fields.metadata ?? {}) }),
-  });
-  assertToolAllowed(spec);
-  return spec;
+  };
+  if (typeof fields.effect === "string") spec.effect = fields.effect;
+  if (typeof fields.subsystem === "string") spec.subsystem = fields.subsystem;
+  if (confirmation) spec.confirmation = confirmation;
+  if (typeof fields.audit === "string") spec.audit = fields.audit;
+  if (typeof fields.exposure === "string") spec.exposure = fields.exposure;
+  if (fields.inputSchema && typeof fields.inputSchema === "object") {
+    spec.inputSchema = fields.inputSchema;
+  }
+  if (fields.outputSchema && typeof fields.outputSchema === "object") {
+    spec.outputSchema = fields.outputSchema;
+  }
+  const frozen = Object.freeze(spec);
+  assertToolAllowed(frozen);
+  return frozen;
 }
 
 export class BaseTool {

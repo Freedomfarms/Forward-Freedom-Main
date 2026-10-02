@@ -5,13 +5,12 @@
 // Zero rows are not an explicit policy. OpenJarvis setup_security grants a
 // narrow _default set when no policy file is configured, so default-deny
 // does not leave every tool unreachable. This loader grants only the
-// capabilities the control-plane catalog marks baseline. workforce:read and
-// codebase:read stay off it. network:fetch stays off the baseline.
-// finance:read lets the read tools run so they can report that Module 02
-// access is off. The data
-// itself stays behind chief_module_access, which defaults to off and is not
-// a grant row. Any returned grant row replaces this baseline.
-// policyFromGrantRows stays a pure mapping of stored rows.
+// capabilities the reconciled control-plane catalog marks baseline.
+// workforce:read and code:read stay off it. network:fetch and file:read stay
+// off it. finance:read lets the read tools run so they can report that Module 02
+// access is off. The data itself stays behind chief_module_access, which
+// defaults to off and is not a grant row. Any returned grant row replaces this
+// baseline. policyFromGrantRows stays a pure mapping of stored rows.
 
 import { withUserContext } from "../../db/prisma.js";
 import { CapabilityPolicy } from "../core/capabilities.js";

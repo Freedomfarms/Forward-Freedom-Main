@@ -12,9 +12,12 @@
 //     (Phase 8), "web:search" (governed public web search),
 //     "module:access" (the per-user Module 02 read switch), and
 //     "conversation:read" (search and retrieve this user's conversations),
-//     "workforce:read" (read the Grok observation journal; not a tool yet),
-//     and "codebase:read" (read Freedom OS source; not a tool yet).
-//     There is no codebase write, git, or deploy label.
+//     "conversation:write", "conversation:delete", "schedule:read",
+//     "settings:read", "settings:write" (the user's timezone),
+//     "code:read" (read the configured repository; not file:read, not
+//     code:execute, and not a write), and "workforce:read" (read the Grok
+//     observation journal; not a tool yet). There is no codebase write, git,
+//     or deploy label.
 //     Financial reads must not reuse memory:read. Loading a procedure must
 //     not reuse memory:read either. Conversation recall must not reuse
 //     memory:read or finance:read. Public web search must not reuse
@@ -22,7 +25,7 @@
 //     stays off the default baseline. module:access lets the user inspect
 //     or request the Module 02 read switch. It does not grant the financial
 //     data itself. OpenJarvis has none of these labels. workforce:read and
-//     codebase:read are off the empty-grant baseline.
+//     code:read are off the empty-grant baseline.
 //   - CapabilityPolicy check order: explicit denials always win; grants are
 //     glob-matched on capability and optionally on resource; agents with no
 //     explicit policy fall back to `_default` wildcard grants; an anonymous
@@ -54,11 +57,16 @@ export const Capability = Object.freeze({
   FILE_WRITE: "file:write",
   NETWORK_FETCH: "network:fetch",
   CODE_EXECUTE: "code:execute",
+  // CHIEF extension. Read the configured repository. Not file:read, not
+  // code:execute, and not on the default baseline.
+  CODE_READ: "code:read",
   MEMORY_READ: "memory:read",
   MEMORY_WRITE: "memory:write",
   CHANNEL_SEND: "channel:send",
   TOOL_INVOKE: "tool:invoke",
   SCHEDULE_CREATE: "schedule:create",
+  // CHIEF extension. Schedule reads do not reuse the write grant.
+  SCHEDULE_READ: "schedule:read",
   SYSTEM_ADMIN: "system:admin",
   // CHIEF extension. Not an OpenJarvis label. Financial tools require this
   // instead of memory:read.
@@ -78,14 +86,18 @@ export const Capability = Object.freeze({
   // user's own conversations. It is not memory:read and it is not
   // finance:read. It cannot write a session, a fact, or Module 02.
   CONVERSATION_READ: "conversation:read",
+  // CHIEF extension. Rename, archive, and restore. Not a delete.
+  CONVERSATION_WRITE: "conversation:write",
+  // CHIEF extension. Permanent conversation deletion.
+  CONVERSATION_DELETE: "conversation:delete",
+  // CHIEF extension. Read this user's timezone. Not identity, admin, or consent.
+  SETTINGS_READ: "settings:read",
+  // CHIEF extension. Change this user's timezone. Not a general profile write.
+  SETTINGS_WRITE: "settings:write",
   // CHIEF extension. Not an OpenJarvis label. Reads the workforce observation
   // journal. It does not create an agent, send a command, or grant a write.
   // Off the empty-grant baseline until a picture tool is added on purpose.
   WORKFORCE_READ: "workforce:read",
-  // CHIEF extension. Not an OpenJarvis label. Reserved for read-only source
-  // inspection. There is no paired write label. Off the baseline, and no
-  // tool is registered.
-  CODEBASE_READ: "codebase:read",
 });
 
 const CAPABILITY_VALUES = new Set(Object.values(Capability));

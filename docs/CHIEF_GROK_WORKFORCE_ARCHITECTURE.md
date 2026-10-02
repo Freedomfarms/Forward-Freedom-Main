@@ -2,7 +2,7 @@
 
 Status: approved direction. Both ingest paths stay first-class in the journal.
 See [CHIEF_CONTROL_PLANE_PLAN.md](./CHIEF_CONTROL_PLANE_PLAN.md) and
-ADR-0022 / ADR-0023 / ADR-0024. Enterprise OpenTelemetry is not configured in
+ADR-0025 / ADR-0026 / ADR-0027. Enterprise OpenTelemetry is not configured in
 this environment, so Phase C connects the self-report ingress only. OTEL remains
 unconnected. CHIEF still has no workforce read tool.
 

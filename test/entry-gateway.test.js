@@ -245,8 +245,9 @@ test("the gateway keeps authentication behavior and one canvas loop", () => {
   assert.match(fieldSource, /removeEventListener\("change", start\)/);
   assert.match(gatewaySource, /removeEventListener\("change", onChange\)/);
   assert.match(gatewaySource, /cancelAnimationFrame\(frame\)/);
-  assert.doesNotMatch(packageSource, /"three"/);
   assert.doesNotMatch(fieldSource, /from "three"/);
+  assert.doesNotMatch(gatewaySource, /from "three"/);
+  assert.match(packageSource, /"three"/);
   const chiefFieldSource = readFileSync(
     new URL("../src/components/chief/ChiefField.jsx", import.meta.url),
     "utf8"

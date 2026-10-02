@@ -1,7 +1,8 @@
-# ADR-0024: Phase C connects self-report because Enterprise OTEL is unavailable
+# ADR-0027: Phase C connects self-report because Enterprise OTEL is unavailable
 
 - Status: accepted
 - Date: 2026-10-02
+- Renumbered from 0024 when the code-intelligence ADR kept that number.
 - Scope: `server/chief/workforce/ingest.js`, `api/chief/workforce/report`, `api/chief/workforce/report-key`
 
 ## Context

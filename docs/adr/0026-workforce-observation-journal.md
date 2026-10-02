@@ -1,7 +1,8 @@
-# ADR-0023: Workforce observation is a two-source journal
+# ADR-0026: Workforce observation is a two-source journal
 
 - Status: accepted as the Phase B foundation
 - Date: 2026-10-02
+- Renumbered from 0023 when the settings-capabilities ADR kept that number.
 - Scope: `server/chief/workforce/`, `WorkforceBinding`, `ObservedAgent`, `ActivityEvent`
 
 ## Context
