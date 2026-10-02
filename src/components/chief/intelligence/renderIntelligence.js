@@ -215,6 +215,33 @@ function drawRibbons(context, front, originX, originY, scale, time, motion) {
   }
 }
 
+function drawLocalFieldGlow(context, originX, originY, scale, time, motion) {
+  const glow = Number(motion.glow) || 0;
+  const speed = Number(motion.speed) || 0;
+  const patches = [
+    [-0.12, -0.05, 0.34, [116, 44, 216], 0.13, 0.7],
+    [0.1, -0.08, 0.29, [196, 74, 224], 0.1, 1.9],
+    [0.08, 0.12, 0.38, [92, 30, 184], 0.12, 3.2],
+    [-0.08, 0.14, 0.26, [184, 108, 255], 0.08, 4.6],
+  ];
+  const previous = context.globalCompositeOperation;
+  context.globalCompositeOperation = "screen";
+  for (const [offsetX, offsetY, radiusScale, color, alpha, phase] of patches) {
+    const x = originX + (offsetX + Math.sin(time * 0.08 * speed + phase) * 0.025) * scale;
+    const y = originY + (offsetY + Math.cos(time * 0.065 * speed + phase) * 0.02) * scale;
+    const radius = radiusScale * scale;
+    const gradient = context.createRadialGradient(x, y, radius * 0.04, x, y, radius);
+    gradient.addColorStop(0, rgba(color, alpha * glow));
+    gradient.addColorStop(0.45, rgba(color, alpha * glow * 0.48));
+    gradient.addColorStop(1, rgba(color, 0));
+    context.fillStyle = gradient;
+    context.beginPath();
+    context.arc(x, y, radius, 0, Math.PI * 2);
+    context.fill();
+  }
+  context.globalCompositeOperation = previous;
+}
+
 function drawIntelligenceParticles(
   context,
   front,
@@ -291,6 +318,7 @@ export function renderIntelligence(context, { width, height, time, motion, ampli
 
   context.globalCompositeOperation = "lighter";
   drawRibbons(context, false, originX, originY, scale, time, motion);
+  drawLocalFieldGlow(context, originX, originY, scale, time, motion);
   drawIntelligenceParticles(context, false, originX, originY, scale, time, motion, amplitude);
   drawIntelligenceParticles(context, true, originX, originY, scale, time, motion, amplitude);
   drawRibbons(context, true, originX, originY, scale, time, motion);

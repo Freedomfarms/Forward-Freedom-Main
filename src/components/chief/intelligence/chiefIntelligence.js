@@ -76,8 +76,8 @@ const PRESETS = Object.freeze({
 // direction. A frozen frame should read as plasma, not nested ellipses.
 export const ENERGY_RIBBONS = Object.freeze([
   Object.freeze({
-    radiusX: 0.9,
-    radiusY: 0.78,
+    radiusX: 0.66,
+    radiusY: 0.56,
     offsetX: -0.04,
     offsetY: -0.01,
     tilt: 0.36,
@@ -85,8 +85,8 @@ export const ENERGY_RIBBONS = Object.freeze([
     depth: 0.28,
     depthFrequency: 1,
     speed: 0.11,
-    width: 1.45,
-    alpha: 0.92,
+    width: 1.65,
+    alpha: 1,
     turbulence: 0.075,
     harmonic: 3,
     phase: 0.2,
@@ -94,8 +94,8 @@ export const ENERGY_RIBBONS = Object.freeze([
     nodes: 2,
   }),
   Object.freeze({
-    radiusX: 0.76,
-    radiusY: 0.92,
+    radiusX: 0.62,
+    radiusY: 0.72,
     offsetX: 0.04,
     offsetY: 0.02,
     tilt: -0.48,
@@ -103,8 +103,8 @@ export const ENERGY_RIBBONS = Object.freeze([
     depth: 0.34,
     depthFrequency: 1,
     speed: -0.082,
-    width: 1.75,
-    alpha: 0.84,
+    width: 1.95,
+    alpha: 0.9,
     turbulence: 0.105,
     harmonic: 4,
     phase: 1.35,
@@ -112,8 +112,8 @@ export const ENERGY_RIBBONS = Object.freeze([
     nodes: 2,
   }),
   Object.freeze({
-    radiusX: 0.98,
-    radiusY: 0.67,
+    radiusX: 0.78,
+    radiusY: 0.52,
     offsetX: 0.02,
     offsetY: -0.05,
     tilt: 0.86,
@@ -121,8 +121,8 @@ export const ENERGY_RIBBONS = Object.freeze([
     depth: 0.26,
     depthFrequency: 2,
     speed: 0.068,
-    width: 1.2,
-    alpha: 0.78,
+    width: 0.85,
+    alpha: 0.55,
     turbulence: 0.09,
     harmonic: 5,
     phase: 2.25,
@@ -130,8 +130,8 @@ export const ENERGY_RIBBONS = Object.freeze([
     nodes: 1,
   }),
   Object.freeze({
-    radiusX: 0.82,
-    radiusY: 0.88,
+    radiusX: 0.68,
+    radiusY: 0.7,
     offsetX: -0.025,
     offsetY: 0.05,
     tilt: 1.32,
@@ -139,8 +139,8 @@ export const ENERGY_RIBBONS = Object.freeze([
     depth: 0.36,
     depthFrequency: 1,
     speed: -0.056,
-    width: 1.85,
-    alpha: 0.7,
+    width: 2.1,
+    alpha: 0.8,
     turbulence: 0.12,
     harmonic: 3,
     phase: 0.78,
@@ -148,8 +148,8 @@ export const ENERGY_RIBBONS = Object.freeze([
     nodes: 2,
   }),
   Object.freeze({
-    radiusX: 1,
-    radiusY: 0.78,
+    radiusX: 0.86,
+    radiusY: 0.66,
     offsetX: -0.05,
     offsetY: 0.035,
     tilt: -1.02,
@@ -157,8 +157,8 @@ export const ENERGY_RIBBONS = Object.freeze([
     depth: 0.33,
     depthFrequency: 1,
     speed: 0.045,
-    width: 1.3,
-    alpha: 0.68,
+    width: 1.25,
+    alpha: 0.72,
     turbulence: 0.08,
     harmonic: 6,
     phase: 3.12,
@@ -166,8 +166,8 @@ export const ENERGY_RIBBONS = Object.freeze([
     nodes: 1,
   }),
   Object.freeze({
-    radiusX: 0.88,
-    radiusY: 0.98,
+    radiusX: 0.72,
+    radiusY: 0.82,
     offsetX: 0.055,
     offsetY: -0.02,
     tilt: 0.48,
@@ -175,8 +175,8 @@ export const ENERGY_RIBBONS = Object.freeze([
     depth: 0.38,
     depthFrequency: 2,
     speed: -0.037,
-    width: 1.05,
-    alpha: 0.58,
+    width: 0.75,
+    alpha: 0.42,
     turbulence: 0.11,
     harmonic: 4,
     phase: 4.38,
@@ -184,8 +184,8 @@ export const ENERGY_RIBBONS = Object.freeze([
     nodes: 1,
   }),
   Object.freeze({
-    radiusX: 1.08,
-    radiusY: 0.88,
+    radiusX: 0.94,
+    radiusY: 0.72,
     offsetX: 0.01,
     offsetY: 0.03,
     tilt: -0.24,
@@ -193,8 +193,8 @@ export const ENERGY_RIBBONS = Object.freeze([
     depth: 0.3,
     depthFrequency: 1,
     speed: 0.029,
-    width: 0.95,
-    alpha: 0.5,
+    width: 0.65,
+    alpha: 0.32,
     turbulence: 0.095,
     harmonic: 5,
     phase: 5.16,
@@ -310,6 +310,26 @@ export const PLASMA_LAYERS = Object.freeze([
     drift: 0.061,
     alpha: 0.15,
     color: Object.freeze([164, 58, 194]),
+  }),
+  Object.freeze({
+    x: -0.24,
+    y: 0.04,
+    radiusX: 0.48,
+    radiusY: 0.3,
+    phase: 0.96,
+    drift: -0.07,
+    alpha: 0.17,
+    color: Object.freeze([142, 42, 202]),
+  }),
+  Object.freeze({
+    x: 0.22,
+    y: -0.09,
+    radiusX: 0.42,
+    radiusY: 0.28,
+    phase: 3.72,
+    drift: 0.075,
+    alpha: 0.14,
+    color: Object.freeze([188, 62, 206]),
   }),
 ]);
 
@@ -448,26 +468,34 @@ export function intelligenceParticle(index, time, motion, fieldScale = 1) {
   const speed = Number(motion?.speed) || 0;
   const activity = Number(motion?.particle) || 0;
   const angle = seedA * Math.PI * 2;
-  const radius = Math.pow(seedB, 1.48) * 0.68 * fieldScale;
-  const depth = (seedC * 2 - 1) * (0.3 + radius * 0.75);
+  const radius = Math.pow(seedB, 1.18) * 0.88 * fieldScale;
+  const depth = (seedC * 2 - 1) * (0.42 + radius * 0.85);
   const swirl = time * (0.012 + seedD * 0.024) * speed * (seedC > 0.5 ? 1 : -1);
   const turbulence =
     Math.sin(time * 0.18 * speed + seedD * 11 + radius * 20) * (0.008 + radius * 0.035);
   const lobe = 0.78 + Math.sin(angle * 3 + seedC * 5.2) * 0.2;
+  const concentration = 1 - Math.min(1, radius / 0.34);
+  const cluster = index % 3;
+  const clusterX = (cluster === 0 ? -0.055 : cluster === 1 ? 0.045 : 0.018) * concentration;
+  const clusterY = (cluster === 0 ? 0.018 : cluster === 1 ? -0.038 : 0.052) * concentration;
+  const micro = seedD < 0.72;
   return {
-    x: Math.cos(angle + swirl + depth * 0.34) * (radius * lobe + turbulence),
+    x: Math.cos(angle + swirl + depth * 0.34) * (radius * lobe + turbulence) + clusterX,
     y:
       Math.sin(angle + swirl * 0.72) *
         (radius * (0.68 + seedD * 0.36) + turbulence * 0.6) +
-      Math.sin(angle * 2 + seedC * 4) * radius * 0.08,
+      Math.sin(angle * 2 + seedC * 4) * radius * 0.08 +
+      clusterY,
     z: depth,
-    alpha: (0.34 + seedD * 0.74) * (0.68 + activity * 0.52),
-    size: 0.42 + seedA * 1.38 + (1 - Math.min(1, radius * 1.9)) * seedC * 0.52,
-    warm: seedD > 0.945,
-    hot: seedC > 0.84,
+    alpha: (micro ? 0.28 + seedD * 0.46 : 0.48 + seedD * 0.62) * (0.7 + activity * 0.5),
+    size: micro
+      ? 0.18 + seedA * 0.62
+      : 0.62 + seedA * 1.42 + (1 - Math.min(1, radius * 1.35)) * seedC * 0.46,
+    warm: seedD > 0.962,
+    hot: seedC > 0.88,
   };
 }
 
 export const AMBIENT_COUNT = 180;
-export const INTELLIGENCE_PARTICLE_COUNT = 1800;
+export const INTELLIGENCE_PARTICLE_COUNT = 3200;
 export const EASE = 0.06;
