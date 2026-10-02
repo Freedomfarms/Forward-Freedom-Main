@@ -26,9 +26,10 @@ export function ChiefTranscript({
     );
   }
 
+  if (showEmpty && !userLine && !answer) return null;
+
   return (
     <div className="chief-turn">
-      {showEmpty ? <p className="chief-turn-empty">What do you want to take care of?</p> : null}
       {userLine ? <p className="chief-turn-user">{userLine}</p> : null}
       {answer ? (
         <p className="chief-answer" ref={answerRef}>

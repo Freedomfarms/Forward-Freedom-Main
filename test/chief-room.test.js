@@ -20,6 +20,12 @@ import {
   rotateView,
 } from "../src/components/chief/chiefField.js";
 import {
+  coreScale,
+  motionPreset,
+  resolveAmplitude,
+  visualStateForStatus,
+} from "../src/components/chief/intelligence/chiefIntelligence.js";
+import {
   conversationAccessWords,
   currentTurn,
   fieldKindForStatus,
@@ -224,15 +230,45 @@ test("view rotation turns the diamond without moving field-space corners", () =>
   for (const point of turned) {
     assert.ok(Math.abs(Math.hypot(point.x, point.y) - 1) < 1e-10);
   }
+});
+
+test("the room intelligence maps status onto idle, thinking, and speaking", () => {
+  assert.equal(visualStateForStatus(CHIEF_STATUS.READY), "idle");
+  assert.equal(visualStateForStatus(CHIEF_STATUS.RESPONDING), "speaking");
+  assert.equal(visualStateForStatus(CHIEF_STATUS.WORKING), "thinking");
+  assert.equal(visualStateForStatus(CHIEF_STATUS.WEB_SEARCH), "thinking");
+  assert.equal(visualStateForStatus(CHIEF_STATUS.APPROVAL), "approval");
+  assert.equal(visualStateForStatus(CHIEF_STATUS.ERROR), "error");
+  assert.equal(motionPreset("listening").speed > motionPreset("idle").speed, true);
+  assert.ok(motionPreset("speaking").speed / motionPreset("idle").speed >= 2.9);
+  assert.ok(motionPreset("thinking").speed < motionPreset("speaking").speed);
+  assert.equal(resolveAmplitude(null), null);
+  assert.equal(resolveAmplitude(0), 0);
+
+  let idleTravel = 0;
+  let speakingTravel = 0;
+  for (let step = 0; step < 160; step += 1) {
+    const time = step / 12;
+    idleTravel = Math.max(idleTravel, Math.abs(coreScale(time, motionPreset("idle"), null) - 1));
+    speakingTravel = Math.max(
+      speakingTravel,
+      Math.abs(coreScale(time, motionPreset("speaking"), null) - 1)
+    );
+  }
+  assert.ok(speakingTravel > idleTravel * 4);
+  assert.equal(coreScale(1.2, motionPreset("speaking"), 0), 1);
+  const quiet = Math.abs(coreScale(1.2, motionPreset("speaking"), 0.2) - 1);
+  const loud = Math.abs(coreScale(1.2, motionPreset("speaking"), 1) - 1);
+  assert.ok(loud > quiet);
+
   const field = readFileSync(
     path.join(process.cwd(), "src/components/chief/ChiefField.jsx"),
     "utf8"
   );
-  assert.match(field, /pointerdown/);
   assert.match(field, /prefers-reduced-motion/);
-  assert.ok(
-    field.indexOf("pointColor(posed, motion)") < field.indexOf("rotateView(posed.x, posed.y")
-  );
+  assert.match(field, /visualStateForStatus/);
+  assert.equal(field.includes("createDiamondPoints"), false);
+  assert.equal(field.includes("pointColor"), false);
 });
 
 test("the room source keeps conversation plain and navigation literal", () => {
