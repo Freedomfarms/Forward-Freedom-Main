@@ -7,7 +7,7 @@ import {
   resolveAmplitude,
   visualStateForStatus,
 } from "./intelligence/chiefIntelligence.js";
-import { renderIntelligence } from "./intelligence/renderIntelligence.js";
+import { createIntelligenceRenderer } from "./intelligence/renderIntelligence.js";
 
 export function ChiefField({ status, phase = null, amplitude = null }) {
   const canvasRef = useRef(null);
@@ -24,6 +24,12 @@ export function ChiefField({ status, phase = null, amplitude = null }) {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return undefined;
+    let view;
+    try {
+      view = createIntelligenceRenderer(canvas);
+    } catch {
+      return undefined;
+    }
     const media = window.matchMedia("(prefers-reduced-motion: reduce)");
     let motion = { ...motionPreset("idle") };
     let frame = 0;
@@ -36,18 +42,11 @@ export function ChiefField({ status, phase = null, amplitude = null }) {
       const state = phaseRef.current || visualStateForStatus(statusRef.current);
       const target = motionPreset(state);
       motion = easeMotion(motion, target, reduce ? 1 : EASE);
-      const context = canvas.getContext("2d");
       const rect = canvas.getBoundingClientRect();
-      const ratio = Math.min(window.devicePixelRatio || 1, 1.5);
-      const width = Math.max(1, Math.floor(rect.width * ratio));
-      const height = Math.max(1, Math.floor(rect.height * ratio));
-      if (canvas.width !== width || canvas.height !== height) {
-        canvas.width = width;
-        canvas.height = height;
-      }
-      renderIntelligence(context, {
-        width,
-        height,
+      view.render({
+        cssWidth: Math.max(1, rect.width),
+        cssHeight: Math.max(1, rect.height),
+        pixelRatio: Math.min(window.devicePixelRatio || 1, 1.5),
         time: reduce ? 0 : now / 1000,
         motion: reduce ? target : motion,
         amplitude: resolveAmplitude(amplitudeRef.current),
@@ -72,6 +71,7 @@ export function ChiefField({ status, phase = null, amplitude = null }) {
       observer.disconnect();
       cancelAnimationFrame(frame);
       media.removeEventListener("change", start);
+      view.dispose();
     };
   }, []);
 

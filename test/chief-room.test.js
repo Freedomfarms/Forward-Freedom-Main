@@ -20,12 +20,12 @@ import {
   rotateView,
 } from "../src/components/chief/chiefField.js";
 import {
-  ENERGY_RIBBONS,
+  CORE_PARTICLE_COUNT,
   coreScale,
-  intelligenceParticle,
+  createCoreParticles,
+  easeMotion,
   motionPreset,
   resolveAmplitude,
-  sampleRibbon,
   visualStateForStatus,
 } from "../src/components/chief/intelligence/chiefIntelligence.js";
 import {
@@ -274,24 +274,45 @@ test("the room intelligence maps status onto idle, thinking, and speaking", () =
   assert.equal(field.includes("pointColor"), false);
 });
 
-test("the room intelligence is seven turbulent ribbons around a particle field", () => {
-  const idle = motionPreset("idle");
-  assert.equal(ENERGY_RIBBONS.length, 7);
-  const shapes = ENERGY_RIBBONS.map((ribbon) => sampleRibbon(ribbon, 2.4, idle, 96));
-  for (const points of shapes) {
-    assert.equal(points.length, 97);
-    const radii = points.map((point) => Math.hypot(point.x, point.y));
-    assert.ok(Math.max(...radii) - Math.min(...radii) > 0.18);
-    assert.ok(points.some((point) => point.z < 0));
-    assert.ok(points.some((point) => point.z >= 0));
+test("the room intelligence is one dense core, shared by text and voice", () => {
+  assert.ok(CORE_PARTICLE_COUNT >= 3000);
+  const layout = createCoreParticles(CORE_PARTICLE_COUNT);
+  assert.equal(layout.count, CORE_PARTICLE_COUNT);
+  let near = 0;
+  let inside = 0;
+  for (let index = 0; index < layout.count; index += 1) {
+    const radius = layout.radii[index];
+    if (radius < 0.5) near += 1;
+    if (radius < 0.9) inside += 1;
   }
-  const particles = Array.from({ length: 160 }, (_, index) =>
-    intelligenceParticle(index, 2.4, idle)
+  assert.ok(near / layout.count > 0.45);
+  assert.ok(inside / layout.count > 0.75);
+
+  const idle = motionPreset("idle");
+  const listening = motionPreset("listening");
+  const thinking = motionPreset("thinking");
+  const speaking = motionPreset("speaking");
+  assert.ok(listening.body > idle.body);
+  assert.ok(listening.organize > thinking.organize);
+  assert.ok(thinking.density > idle.density);
+  assert.ok(thinking.spin > speaking.spin);
+  assert.ok(speaking.outflow > thinking.outflow);
+  assert.equal(easeMotion(idle, speaking, 1).outflow, speaking.outflow);
+
+  const root = process.cwd();
+  const renderer = readFileSync(
+    path.join(root, "src/components/chief/intelligence/renderIntelligence.js"),
+    "utf8"
   );
-  assert.ok(particles.some((particle) => particle.warm));
-  assert.ok(particles.some((particle) => particle.hot));
-  assert.ok(particles.some((particle) => particle.z < 0));
-  assert.ok(particles.some((particle) => particle.z >= 0));
+  const model = readFileSync(
+    path.join(root, "src/components/chief/intelligence/chiefIntelligence.js"),
+    "utf8"
+  );
+  assert.match(renderer, /from "three"/);
+  assert.equal(renderer.includes("ENERGY_RIBBONS"), false);
+  assert.equal(renderer.includes("ORBITS"), false);
+  assert.equal(model.includes("ENERGY_RIBBONS"), false);
+  assert.equal(model.includes("ORBITS"), false);
 });
 
 test("the room source keeps conversation plain and navigation literal", () => {
