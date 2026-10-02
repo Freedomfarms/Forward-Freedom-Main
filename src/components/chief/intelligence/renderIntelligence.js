@@ -17,24 +17,34 @@ function rgba(color, alpha) {
   return `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${value})`;
 }
 
-function strokeRibbon(context, points, front, originX, originY, scale) {
-  let drawing = false;
-  context.beginPath();
-  for (const point of points) {
-    if (point.z >= 0 !== front) {
-      drawing = false;
-      continue;
-    }
-    const x = originX + point.x * scale;
-    const y = originY + point.y * scale;
-    if (!drawing) {
-      context.moveTo(x, y);
-      drawing = true;
-    } else {
-      context.lineTo(x, y);
-    }
+function strokeEnergyCore(
+  context,
+  points,
+  front,
+  originX,
+  originY,
+  scale,
+  color,
+  alpha,
+  width,
+  minimumEnergy = 0.24
+) {
+  context.lineCap = "butt";
+  context.lineWidth = width;
+  for (let index = 1; index < points.length; index += 1) {
+    const previous = points[index - 1];
+    const point = points[index];
+    if (previous.z >= 0 !== front || point.z >= 0 !== front) continue;
+    const energy = Math.max(0.08, Math.min(1, (previous.energy + point.energy) / 2));
+    if (energy < minimumEnergy) continue;
+    const depth = front ? 0.72 + Math.max(0, point.z) * 0.42 : 0.42;
+    context.strokeStyle = rgba(color, alpha * energy * depth);
+    context.beginPath();
+    context.moveTo(originX + previous.x * scale, originY + previous.y * scale);
+    context.lineTo(originX + point.x * scale, originY + point.y * scale);
+    context.stroke();
   }
-  context.stroke();
+  context.lineCap = "round";
 }
 
 function smoothClosedPath(context, points) {
@@ -93,12 +103,16 @@ function drawPlasma(context, width, height, time, motion) {
       centerY,
       radius
     );
-    const alpha = layer.alpha * intensity;
-    gradient.addColorStop(0, rgba(layer.color, alpha * 0.8));
-    gradient.addColorStop(0.46, rgba(layer.color, alpha * 0.48));
+    const alpha = layer.alpha * intensity * 1.72;
+    const light = layer.color.map((channel) => Math.min(255, channel + 42));
+    gradient.addColorStop(0, rgba(light, alpha * 0.9));
+    gradient.addColorStop(0.46, rgba(layer.color, alpha * 0.58));
     gradient.addColorStop(1, rgba(layer.color, 0));
     context.fillStyle = gradient;
     context.fill();
+    context.strokeStyle = rgba(light, alpha * 0.22);
+    context.lineWidth = Math.max(4, scale * 0.012);
+    context.stroke();
   }
   context.restore();
   context.globalCompositeOperation = previous;
@@ -143,15 +157,32 @@ function drawRibbons(context, front, originX, originY, scale, time, motion) {
   const intensity = Number(motion.intensity) || 0;
   for (const ribbon of ENERGY_RIBBONS) {
     const points = sampleRibbon(ribbon, time, motion);
-    const alpha = ribbon.alpha * intensity * (front ? 1 : 0.36);
+    const alpha = ribbon.alpha * intensity * (front ? 1 : 0.54);
     context.lineCap = "round";
     context.lineJoin = "round";
-    context.strokeStyle = rgba(ribbon.color, alpha * (0.13 + glow * 0.06));
-    context.lineWidth = ribbon.width * (3.8 + glow * 1.1);
-    strokeRibbon(context, points, front, originX, originY, scale);
-    context.strokeStyle = rgba(ribbon.color, Math.min(1, alpha * 0.92));
-    context.lineWidth = Math.max(0.72, ribbon.width * 0.58);
-    strokeRibbon(context, points, front, originX, originY, scale);
+    strokeEnergyCore(
+      context,
+      points,
+      front,
+      originX,
+      originY,
+      scale,
+      ribbon.color,
+      alpha * (0.24 + glow * 0.14),
+      ribbon.width * (6.2 + glow * 2),
+      0.12
+    );
+    strokeEnergyCore(
+      context,
+      points,
+      front,
+      originX,
+      originY,
+      scale,
+      ribbon.color,
+      front ? Math.min(1.9, 0.88 + alpha * 1.08) : Math.min(1.1, alpha * 1.38),
+      Math.max(1.15, ribbon.width * 0.82)
+    );
 
     for (const parameter of ribbonNodeParameters(ribbon, time, motion)) {
       const point = ribbonPoint(ribbon, parameter, time, motion);
@@ -166,6 +197,19 @@ function drawRibbons(context, front, originX, originY, scale, time, motion) {
       context.fillStyle = spark;
       context.beginPath();
       context.arc(x, y, sparkRadius * 3.2, 0, Math.PI * 2);
+      context.fill();
+    }
+    const flow = time * Math.abs(ribbon.speed) * (Number(motion.speed) || 0) * 0.34;
+    for (let index = 0; index < 14; index += 1) {
+      const parameter = (index * 0.173 + ribbon.phase * 0.113 + flow) % 1;
+      const point = ribbonPoint(ribbon, parameter, time, motion);
+      if (point.z >= 0 !== front) continue;
+      const x = originX + point.x * scale;
+      const y = originY + point.y * scale;
+      const moteAlpha = alpha * (0.2 + ((index * 7) % 10) * 0.045);
+      context.fillStyle = rgba(ribbon.color, moteAlpha);
+      context.beginPath();
+      context.arc(x, y, 0.45 + (index % 3) * 0.3, 0, Math.PI * 2);
       context.fill();
     }
   }
@@ -195,8 +239,8 @@ function drawIntelligenceParticles(
       : particle.hot
         ? [255, 246, 255]
         : [198, 154, 255];
-    if (particle.hot && index % 3 === 0) {
-      const haloRadius = particle.size * (2.6 + glow * 1.8);
+    if (particle.hot && index % 2 === 0) {
+      const haloRadius = particle.size * (2.8 + glow * 2.1);
       const halo = context.createRadialGradient(x, y, 0, x, y, haloRadius);
       halo.addColorStop(0, rgba(color, alpha * 0.58));
       halo.addColorStop(1, rgba(color, 0));
@@ -235,7 +279,7 @@ export function renderIntelligence(context, { width, height, time, motion, ampli
   context.clearRect(0, 0, width, height);
   const originX = width / 2;
   const originY = height * 0.46;
-  const scale = Math.min(width, height) * 0.4;
+  const scale = Math.min(width, height) * 0.46;
 
   context.globalCompositeOperation = "source-over";
   drawPlasma(context, width, height, time, motion);
