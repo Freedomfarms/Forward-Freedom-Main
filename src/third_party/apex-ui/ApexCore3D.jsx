@@ -116,7 +116,7 @@ function Equalizer() {
   )
 }
 
-function Core({ state, variant, corner = false, bigDock = false }) {
+function Core({ state, variant, corner = false, bigDock = false, audioLevelRef = null }) {
   const group = useRef()
   const points = useRef()
   const spreadRef = useRef(0)
@@ -312,7 +312,13 @@ function Core({ state, variant, corner = false, bigDock = false }) {
           // bubbling ball (messengers return here when their target closes)
           let r = ballR[i] * Rt + Math.sin(t * speed[i] + phase[i]) * bubbleAmp
           if (speaking) r += Math.sin(ballR[i] * 5.5 - t * 5.0) * waveAmp
-          else if (!sleeping) r += Math.sin(ballR[i] * 3.0 - t * 1.7) * (waveAmp * 0.22)  // awake: slow breathing ripple
+          else if (!sleeping) {
+            const mic = st === 'listening' && audioLevelRef
+              ? Math.max(0, Math.min(1, Number(audioLevelRef.current) || 0))
+              : 0
+            const listenScale = st === 'listening' ? 0.45 + mic * 1.4 : 1
+            r += Math.sin(ballR[i] * 3.0 - t * 1.7) * (waveAmp * 0.22) * listenScale  // awake: slow breathing ripple
+          }
           if (corner && !bigDock) r = Math.min(r, 0.66)   // hard cap only for the SMALL corner (eng); chat dock is full-size
           dx = dir[i * 3] * r; dy = dir[i * 3 + 1] * r; dz = dir[i * 3 + 2] * r
         }
@@ -422,7 +428,7 @@ function Core({ state, variant, corner = false, bigDock = false }) {
   )
 }
 
-export default function ApexCore3D({ state = 'idle', variant = 'geodesic', onClick, corner = false, bigDock = false, contained = false }) {
+export default function ApexCore3D({ state = 'idle', variant = 'geodesic', onClick, corner = false, bigDock = false, contained = false, audioLevelRef = null }) {
   const st = normalizeState(state)
   const label = st === 'processing' ? 'Processing' : st === 'listening' ? 'Listening' : st === 'speaking' ? 'Speaking' : 'Standby'
   const [bgIdx, setBgIdx] = useState(2) // Grid default
@@ -469,7 +475,7 @@ export default function ApexCore3D({ state = 'idle', variant = 'geodesic', onCli
         }}
       >{/* canvas must NOT capture pointers â€” it sat over the reasoning web and ate every agent click.
             The orb's stop-on-click is handled by the wrapper div (onClick), not the 3D scene. */}
-        <Core state={state} variant={variant} corner={corner} bigDock={bigDock} />
+        <Core state={state} variant={variant} corner={corner} bigDock={bigDock} audioLevelRef={audioLevelRef} />
         <EffectComposer>
           {/* Site copy — FINAL: everything else in this scene is byte-matched to the app
               (particle sizes, layers, blend modes). The one non-copyable difference is the

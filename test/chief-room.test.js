@@ -19,7 +19,10 @@ import {
   pointFrame,
   rotateView,
 } from "../src/components/chief/chiefField.js";
-import { visualStateForStatus, webStateForStatus } from "../src/components/chief/apexVisualState.js";
+import {
+  visualStateForStatus,
+  webStateForStatus,
+} from "../src/components/chief/apexVisualState.js";
 import {
   conversationAccessWords,
   currentTurn,
@@ -240,8 +243,13 @@ test("view rotation turns the diamond without moving field-space corners", () =>
 test("the room intelligence maps status onto the APEX orb and web", () => {
   assert.equal(visualStateForStatus(CHIEF_STATUS.READY), "idle");
   assert.equal(webStateForStatus(CHIEF_STATUS.READY), "standby");
-  assert.equal(visualStateForStatus(CHIEF_STATUS.RESPONDING), "speaking");
-  assert.equal(webStateForStatus(CHIEF_STATUS.RESPONDING), "speaking");
+  assert.equal(visualStateForStatus(CHIEF_STATUS.RESPONDING), "thinking");
+  assert.equal(webStateForStatus(CHIEF_STATUS.RESPONDING), "processing");
+  assert.equal(visualStateForStatus(CHIEF_STATUS.RESPONDING, "speaking"), "speaking");
+  assert.equal(webStateForStatus(CHIEF_STATUS.READY, "listening"), "listening");
+  assert.equal(visualStateForStatus(CHIEF_STATUS.READY, "listening"), "listening");
+  assert.equal(visualStateForStatus(CHIEF_STATUS.READY, "thinking"), "thinking");
+  assert.equal(visualStateForStatus(CHIEF_STATUS.ERROR, "error"), "idle");
   assert.equal(visualStateForStatus(CHIEF_STATUS.WORKING), "thinking");
   assert.equal(webStateForStatus(CHIEF_STATUS.WORKING), "processing");
   assert.equal(visualStateForStatus(CHIEF_STATUS.WEB_SEARCH), "thinking");
@@ -262,7 +270,13 @@ test("the room intelligence maps status onto the APEX orb and web", () => {
   assert.equal(page.includes("renderIntelligence"), false);
   assert.match(world, /prefers-reduced-motion/);
   assert.match(world, /opacity=\{0\.12\}/);
-  assert.match(world, /<ApexHeroOrb state=\{orbState\} interactive=\{false\} \/>/);
+  assert.match(
+    world,
+    /<ApexHeroOrb state=\{orbState\} interactive=\{false\} audioLevelRef=\{audioLevelRef\} \/>/
+  );
+  assert.match(hero, /listening/);
+  assert.match(page, /sendMessage/);
+  assert.match(page, /onCoreTap/);
   assert.match(hero, /variant="frame"/);
   assert.match(hero, /variant="particles"/);
   assert.doesNotMatch(hero, /variant="geodesic"/);

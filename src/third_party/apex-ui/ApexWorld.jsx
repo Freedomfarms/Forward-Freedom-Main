@@ -14,7 +14,7 @@ import ShaderBackground from "./ShaderBackground";
 import OrbStatusBar from "./OrbStatusBar";
 import "./apex-ui.css";
 
-export default function ApexWorld({ orbState = "idle", webState = "standby", roster = null, onSelect = null }) {
+export default function ApexWorld({ orbState = "idle", webState = "standby", roster = null, onSelect = null, onCoreTap = null, audioLevelRef = null }) {
   const [reduced, setReduced] = useState(false);
 
   useEffect(() => {
@@ -71,8 +71,36 @@ export default function ApexWorld({ orbState = "idle", webState = "standby", ros
       ) : null}
 
       <div style={{ position: "absolute", left: "50%", top: "50%", width: "min(560px, 58vw)", height: "min(500px, 56vw, 70vh)", transform: "translate(-50%, -50%)", zIndex: 3, pointerEvents: "none" }}>
-        <ApexHeroOrb state={orbState} interactive={false} />
+        <ApexHeroOrb state={orbState} interactive={false} audioLevelRef={audioLevelRef} />
       </div>
+
+      <div
+        role="button"
+        tabIndex={0}
+        aria-label="CHIEF voice"
+        onClick={() => onCoreTap?.()}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onCoreTap?.();
+          }
+        }}
+        onMouseDown={(event) => event.preventDefault()}
+        style={{
+          position: "absolute",
+          left: "50%",
+          top: "50%",
+          transform: "translate(-50%, -50%)",
+          width: "min(340px, 36vw)",
+          height: "min(340px, 36vw)",
+          borderRadius: "50%",
+          zIndex: 4,
+          cursor: "pointer",
+          background: "transparent",
+          border: "none",
+          userSelect: "none",
+        }}
+      />
 
       <OrbStatusBar state={orbState} />
     </div>
