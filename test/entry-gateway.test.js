@@ -248,12 +248,12 @@ test("the gateway keeps authentication behavior and one canvas loop", () => {
   assert.doesNotMatch(fieldSource, /from "three"/);
   assert.doesNotMatch(gatewaySource, /from "three"/);
   assert.match(packageSource, /"three"/);
-  const chiefFieldSource = readFileSync(
-    new URL("../src/components/chief/ChiefField.jsx", import.meta.url),
+  const chiefPageSource = readFileSync(
+    new URL("../src/components/chief/ChiefPage.jsx", import.meta.url),
     "utf8"
   );
-  assert.match(chiefFieldSource, /renderIntelligence/);
-  assert.doesNotMatch(chiefFieldSource, /pointFrame/);
-  assert.doesNotMatch(chiefFieldSource, /createCurrent/);
-  assert.doesNotMatch(chiefFieldSource, /formationFrame/);
+  assert.match(chiefPageSource, /ApexWorld/);
+  assert.doesNotMatch(chiefPageSource, /renderIntelligence/);
+  assert.doesNotMatch(chiefPageSource, /ChiefField/);
+  assert.match(readFileSync(new URL("../src/components/chief/chiefField.js", import.meta.url), "utf8"), /formationFrame/);
 });
