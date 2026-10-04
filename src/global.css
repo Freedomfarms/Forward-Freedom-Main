@@ -1459,7 +1459,7 @@ textarea:focus-visible,
   z-index: 4;
   display: grid;
   gap: 8px;
-  padding: 0 18vw  calc(16px + env(safe-area-inset-bottom, 0px) + var(--chief-keyboard));
+  padding: 0 18vw calc(16px + env(safe-area-inset-bottom, 0px) + var(--chief-keyboard));
 }
 
 .chief-composer {
@@ -1947,5 +1947,113 @@ textarea:focus-visible,
 @media (prefers-reduced-motion: reduce) {
   .chief-sheet {
     transition: none;
+  }
+}
+
+.chief-settings {
+  position: absolute;
+  z-index: 8;
+  top: 18px;
+  right: 18px;
+  bottom: 18px;
+  width: min(460px, calc(100vw - 36px));
+  display: none;
+  overflow: auto;
+  padding: 18px 18px 28px;
+  border-radius: 22px;
+  border: 1px solid rgba(192, 132, 252, 0.38);
+  background: rgba(8, 4, 16, 0.78);
+  box-shadow: 0 0 42px rgba(88, 28, 160, 0.28);
+  backdrop-filter: blur(16px);
+  color: #f6f0ff;
+}
+
+.chief-settings.is-open {
+  display: block;
+}
+
+.chief-settings-head,
+.chief-settings-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.chief-settings-layout {
+  display: grid;
+  grid-template-columns: 148px minmax(0, 1fr);
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.chief-settings-nav {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+}
+
+.chief-settings-nav button,
+.chief-settings-choice {
+  text-align: left;
+  border-radius: 12px;
+  border: 1px solid rgba(192, 132, 252, 0.22);
+  background: rgba(18, 8, 32, 0.45);
+  color: #f6f0ff;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.chief-settings-nav button.is-current,
+.chief-settings-choice.is-current {
+  border-color: rgba(192, 132, 252, 0.7);
+  box-shadow: 0 0 16px rgba(120, 60, 196, 0.35);
+}
+
+.chief-settings-choice {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.chief-settings-body,
+.chief-settings-systems,
+.chief-settings-group {
+  display: grid;
+  gap: 12px;
+}
+
+.chief-settings-system,
+.chief-settings-confirm {
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(192, 132, 252, 0.2);
+  background: rgba(18, 8, 32, 0.4);
+}
+
+.chief-settings-toggle {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.chief-settings-toggle-label {
+  display: block;
+  color: #f6f0ff;
+  font-size: 14px;
+}
+
+@media (max-width: 720px) {
+  .chief-settings {
+    left: 12px;
+    right: 12px;
+    width: auto;
+  }
+
+  .chief-settings-layout {
+    grid-template-columns: 1fr;
   }
 }

@@ -92,6 +92,7 @@ export function ChiefTranscript({
   isLoading = false,
   notFound = false,
   showEmpty = false,
+  showResponseText = true,
   onBackToList,
 }) {
   if (notFound) {
@@ -119,7 +120,7 @@ export function ChiefTranscript({
     <div className="chief-turn">
       {userLine ? <p className="chief-turn-user">{userLine}</p> : null}
       {answer ? (
-        <div className="chief-answer" ref={answerRef}>
+        <div className={showResponseText ? "chief-answer" : "chief-sr"} ref={answerRef}>
           <ChiefMarkdown text={answer} />
         </div>
       ) : null}
@@ -127,7 +128,7 @@ export function ChiefTranscript({
   );
 }
 
-export function ChiefEarlierTurns({ earlier = [] }) {
+export function ChiefEarlierTurns({ earlier = [], showResponseText = true }) {
   if (!earlier.length) return null;
   return (
     <div className="chief-earlier">
@@ -137,8 +138,12 @@ export function ChiefEarlierTurns({ earlier = [] }) {
           <p key={message.id} className="chief-earlier-user">
             {message.text}
           </p>
-        ) : (
+        ) : showResponseText ? (
           <div key={message.id} className="chief-earlier-chief">
+            <ChiefMarkdown text={message.text} />
+          </div>
+        ) : (
+          <div key={message.id} className="chief-sr">
             <ChiefMarkdown text={message.text} />
           </div>
         )

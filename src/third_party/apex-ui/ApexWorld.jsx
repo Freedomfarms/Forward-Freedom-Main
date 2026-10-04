@@ -14,7 +14,18 @@ import ShaderBackground from "./ShaderBackground";
 import OrbStatusBar from "./OrbStatusBar";
 import "./apex-ui.css";
 
-export default function ApexWorld({ orbState = "idle", webState = "standby", roster = null, onSelect = null, onCoreTap = null, audioLevelRef = null }) {
+export default function ApexWorld({
+  orbState = "idle",
+  webState = "standby",
+  roster = null,
+  onSelect = null,
+  onCoreTap = null,
+  audioLevelRef = null,
+  motionPreference = "system",
+  animationIntensity = "full",
+  showLabels = true,
+  showStatus = true,
+}) {
   const [reduced, setReduced] = useState(false);
 
   useEffect(() => {
@@ -26,33 +37,62 @@ export default function ApexWorld({ orbState = "idle", webState = "standby", ros
   }, []);
 
   const nodes = Array.isArray(roster) ? roster : [];
+  const motionOff =
+    animationIntensity === "off" ||
+    motionPreference === "reduce" ||
+    (motionPreference === "system" && reduced);
+  const resolvedMotion = motionOff ? "off" : animationIntensity === "low" ? "low" : "full";
 
   return (
-    <div className="apex-ui-root" style={{ position: "absolute", inset: 0, overflow: "hidden", userSelect: "none" }}>
-      <div aria-hidden="true" style={{
-        position: "absolute", inset: 0,
-        background: "radial-gradient(ellipse 95% 88% at 50% 42%, #122c43 0%, #0c1d30 38%, #07111f 72%, #050b14 100%)",
-      }} />
+    <div
+      className="apex-ui-root"
+      style={{ position: "absolute", inset: 0, overflow: "hidden", userSelect: "none" }}
+    >
+      <div
+        aria-hidden="true"
+        style={{
+          position: "absolute",
+          inset: 0,
+          background:
+            "radial-gradient(ellipse 95% 88% at 50% 42%, #122c43 0%, #0c1d30 38%, #07111f 72%, #050b14 100%)",
+        }}
+      />
 
-      {!reduced && (
+      {resolvedMotion !== "off" && (
         <div aria-hidden="true" style={{ position: "absolute", inset: 0, zIndex: 0 }}>
-          <ShaderBackground opacity={0.12} voiceActive={orbState === "speaking"} gold={false} />
+          <ShaderBackground
+            opacity={resolvedMotion === "low" ? 0.04 : 0.12}
+            voiceActive={orbState === "speaking"}
+            gold={false}
+          />
         </div>
       )}
 
-      <div aria-hidden="true" style={{
-        position: "absolute", inset: 0, zIndex: 1, pointerEvents: "none", mixBlendMode: "screen",
-        background: `radial-gradient(circle at 50% 42%, rgba(13,210,255,${orbState === "speaking" ? 0.30 : 0.18}) 0%, rgba(13,170,228,0.08) 30%, rgba(8,17,31,0) 62%)`,
-        transition: "background 0.6s ease",
-      }} />
+      <div
+        aria-hidden="true"
+        style={{
+          position: "absolute",
+          inset: 0,
+          zIndex: 1,
+          pointerEvents: "none",
+          mixBlendMode: "screen",
+          background: `radial-gradient(circle at 50% 42%, rgba(13,210,255,${orbState === "speaking" ? 0.3 : 0.18}) 0%, rgba(13,170,228,0.08) 30%, rgba(8,17,31,0) 62%)`,
+          transition: "background 0.6s ease",
+        }}
+      />
 
-      <div aria-hidden="true" style={{ position: "absolute", inset: 0, zIndex: 2, pointerEvents: "none" }}>
+      <div
+        aria-hidden="true"
+        style={{ position: "absolute", inset: 0, zIndex: 2, pointerEvents: "none" }}
+      >
         <ReasoningWeb
           state={webState}
           mode="full"
           coreless
           roster={roster}
           onSelect={onSelect}
+          showLabels={showLabels}
+          motion={resolvedMotion}
         />
       </div>
 
@@ -61,7 +101,10 @@ export default function ApexWorld({ orbState = "idle", webState = "standby", ros
           <ul>
             {nodes.map((node) => (
               <li key={node[0]}>
-                <button type="button" onClick={() => onSelect?.({ key: node[0], name: node[1], color: "#00e5ff" })}>
+                <button
+                  type="button"
+                  onClick={() => onSelect?.({ key: node[0], name: node[1], color: "#00e5ff" })}
+                >
                   {node[1]}
                 </button>
               </li>
@@ -70,8 +113,24 @@ export default function ApexWorld({ orbState = "idle", webState = "standby", ros
         </nav>
       ) : null}
 
-      <div style={{ position: "absolute", left: "50%", top: "50%", width: "min(560px, 58vw)", height: "min(500px, 56vw, 70vh)", transform: "translate(-50%, -50%)", zIndex: 3, pointerEvents: "none" }}>
-        <ApexHeroOrb state={orbState} interactive={false} audioLevelRef={audioLevelRef} />
+      <div
+        style={{
+          position: "absolute",
+          left: "50%",
+          top: "50%",
+          width: "min(560px, 58vw)",
+          height: "min(500px, 56vw, 70vh)",
+          transform: "translate(-50%, -50%)",
+          zIndex: 3,
+          pointerEvents: "none",
+        }}
+      >
+        <ApexHeroOrb
+          state={orbState}
+          interactive={false}
+          audioLevelRef={audioLevelRef}
+          staticCore={resolvedMotion === "off"}
+        />
       </div>
 
       <div
@@ -102,7 +161,7 @@ export default function ApexWorld({ orbState = "idle", webState = "standby", ros
         }}
       />
 
-      <OrbStatusBar state={orbState} />
+      {showStatus ? <OrbStatusBar state={orbState} /> : null}
     </div>
   );
 }
