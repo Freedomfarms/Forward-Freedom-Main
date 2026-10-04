@@ -2,6 +2,8 @@ export function ChiefComposer({
   value,
   onChange,
   onSubmit,
+  onVoice,
+  voiceActive = false,
   disabled = false,
   placeholder = "Ask CHIEF anything...",
   inputRef = null,
@@ -16,14 +18,20 @@ export function ChiefComposer({
     >
       <button
         type="button"
-        className="chief-mic"
-        disabled
-        aria-label="Microphone"
-        title="Voice is not connected yet"
+        className={voiceActive ? "chief-mic is-live" : "chief-mic"}
+        aria-label="CHIEF voice"
+        aria-pressed={voiceActive}
+        title="Tap to talk"
+        onClick={onVoice}
       >
         <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="none">
           <rect x="6" y="1.5" width="4" height="8" rx="2" stroke="currentColor" strokeWidth="1.4" />
-          <path d="M3.5 7.5a4.5 4.5 0 0 0 9 0" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+          <path
+            d="M3.5 7.5a4.5 4.5 0 0 0 9 0"
+            stroke="currentColor"
+            strokeWidth="1.4"
+            strokeLinecap="round"
+          />
           <path d="M8 12v2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
         </svg>
       </button>

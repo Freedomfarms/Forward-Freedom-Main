@@ -1,19 +1,21 @@
 // CHIEF turn status → APEX visual state.
-// Listening stays implemented in the vendored orb and is not selected here:
-// CHIEF has no listening signal.
+// Speaking means TTS playback. Token streaming stays thinking.
 
 import { fieldKindForStatus } from "../../utils/chiefRoom.js";
 
-export function visualStateForStatus(status) {
+export function visualStateForStatus(status, voicePhase = "idle") {
+  if (voicePhase === "speaking") return "speaking";
+  if (voicePhase === "listening") return "listening";
+  if (voicePhase === "thinking") return "thinking";
   const kind = fieldKindForStatus(status);
-  if (kind === "responding") return "speaking";
   if (kind === "ready" || kind === "approval" || kind === "error") return "idle";
   return "thinking";
 }
 
-export function webStateForStatus(status) {
-  const orb = visualStateForStatus(status);
+export function webStateForStatus(status, voicePhase = "idle") {
+  const orb = visualStateForStatus(status, voicePhase);
   if (orb === "speaking") return "speaking";
+  if (orb === "listening") return "listening";
   if (orb === "thinking") return "processing";
   return "standby";
 }

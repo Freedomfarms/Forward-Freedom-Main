@@ -15,9 +15,9 @@ const ApexCore3D = lazy(() => import("./ApexCore3D"));
 const STAGE_W = 900;
 const STAGE_H = 900;
 
-export type OrbState = "idle" | "thinking" | "speaking";
+export type OrbState = "idle" | "listening" | "thinking" | "speaking";
 
-export default function ApexHeroOrb({ state: controlled, onStateChange, interactive = true }: { state?: OrbState; onStateChange?: (s: OrbState) => void; interactive?: boolean } = {}) {
+export default function ApexHeroOrb({ state: controlled, onStateChange, interactive = true, audioLevelRef = null }: { state?: OrbState; onStateChange?: (s: OrbState) => void; interactive?: boolean; audioLevelRef?: { current: number } | null } = {}) {
   const boxRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(0.6);
   const [inner, setInner] = useState<OrbState>("idle");
@@ -97,7 +97,7 @@ export default function ApexHeroOrb({ state: controlled, onStateChange, interact
             Skipped entirely under prefers-reduced-motion (static ring remains). */}
         {!reducedMotion && (
           <Suspense fallback={null}>
-            <ApexCore3D state={state} variant="particles" contained onClick={undefined} />
+            <ApexCore3D state={state} variant="particles" contained onClick={undefined} audioLevelRef={audioLevelRef} />
           </Suspense>
         )}
       </div>

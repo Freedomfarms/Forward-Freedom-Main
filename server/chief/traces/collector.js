@@ -35,6 +35,7 @@ export const TRACE_STEP = Object.freeze({
   GENERATE: "GENERATE",
   TOOL_CALL: "TOOL_CALL",
   RESPOND: "RESPOND",
+  VOICE: "VOICE",
 });
 
 const FORBIDDEN_DETAIL_KEYS = new Set([

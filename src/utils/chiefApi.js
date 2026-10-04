@@ -197,6 +197,44 @@ export async function selectChiefModel({ user, sessionId = null, route }) {
   return { sessionId: nextSessionId, route: selected };
 }
 
+export function fetchChiefVoiceConfig(user) {
+  return chiefJson("/api/chief/voice", { user });
+}
+
+export function fetchChiefVoices(user) {
+  return chiefJson("/api/chief/voice/voices", { user });
+}
+
+export async function requestChiefSpeech(user, body, { signal } = {}) {
+  const response = await fetch("/api/chief/voice", {
+    method: "POST",
+    headers: await buildAuthenticatedHeaders({ "Content-Type": "application/json" }, { user }),
+    body: JSON.stringify(body),
+    signal,
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    const code = typeof payload?.code === "string" ? payload.code : "provider_error";
+    const error = new ApiRequestError(
+      chiefUserMessage(
+        typeof payload?.error === "string" ? payload.error : "CHIEF could not speak."
+      ),
+      { status: response.status }
+    );
+    error.code = code;
+    throw error;
+  }
+  return response.arrayBuffer();
+}
+
+export function recordChiefVoiceTrace(user, body) {
+  return chiefJson("/api/chief/voice/trace", {
+    user,
+    method: "POST",
+    body,
+  });
+}
+
 export function decideChiefApproval({ user, sessionId, approvalId, decision }) {
   return chiefJson("/api/chief/approvals", {
     user,
