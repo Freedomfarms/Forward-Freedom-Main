@@ -45,13 +45,22 @@ A `userId` in the model's arguments is ignored. Module 02 data stays behind
 
 1. Call the service the UI already uses. Do not copy its logic.
 2. Add one catalog row with effect, confirmation, audit, and exposure.
-3. Add the grant label to `CHIEF_TOOL_INVENTORY` and, when it should be available
-   with zero grant rows, to the baseline in `server/chief/security/grants.js`.
+3. Add the grant label to `CHIEF_TOOL_INVENTORY` and a `baseline: true` row in
+   `server/chief/control/plane.js`. `loadCapabilityPolicy` reads that catalog.
+   Do not add a second baseline list.
 4. Register the tool through `createChiefCapabilityRegistry`.
 5. Do not edit `TurnMachine` to special-case the feature.
 
 Unknown names fail closed. The model cannot register a capability or change a grant.
 There is no generic invocation that accepts a function, import, query, or shell command.
+
+`capability_discover` is the read-only inventory. It reports canonical capabilities,
+the tools that implement them, the grant that enforces each one, whether confirmation
+is required, and connectors that are not connected. Email, calendar, drive, GitHub
+account, and filesystem access stay unavailable until a connector is registered.
+Adding that connector registers its tools. It does not require a new CHIEF loop.
+`web:read` is enforced by `web:search`. `workspace:read` is enforced by `finance:read`.
+`code:read` is the configured repository, not a user GitHub account.
 
 ## What is registered now
 
@@ -73,7 +82,7 @@ the service; the model must send an IANA name (`America/New_York` for Eastern).
 
 `code_tree`, `code_read`, and `code_search` read the configured Freedom OS
 repository through `server/chief/codeintel/`. They require `code:read`, which
-is not on the empty-grant baseline. The effect is `read` and confirmation is
+is on the empty-grant baseline. The effect is `read` and confirmation is
 `none`. The credential is `CHIEF_CODE_READ_TOKEN`, a server-side contents-read
 token. The repository is `CHIEF_CODE_REPOSITORY` (default
 `Freedomfarms/Forward-Freedom-Main`). The model supplies a path, ref, query,
@@ -94,7 +103,7 @@ CHIEF can inspect Freedom OS source and cannot modify, commit, push, or deploy i
 - Freedom Diamond changes
 - Finance writes and Plaid actions
 - Settings other than timezone
-- Model-facing `capability_search` and generic `capability_invoke`
+- Generic `capability_invoke` that accepts a function, import, query, or shell command
 - Module 01
 
 CHIEF still cannot commit, push, deploy, or run a shell.

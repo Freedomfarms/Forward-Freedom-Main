@@ -648,8 +648,9 @@ previous one is merged or explicitly waived. Verification per repo policy: `npm 
 - **Phase 16 — Default capability baseline (delivered slice, ADR-0016).**
   `loadCapabilityPolicy` grants `_default` `memory:read`, `memory:write`,
   `schedule:create`, `finance:read`, and `skill:read` when the caller has
-  zero `chief_capability_grant` rows. `defaultDeny` stays true. Any explicit
-  row replaces that baseline. A load failure stays deny-all. Confirmation,
+  zero `chief_capability_grant` rows. `defaultDeny` stays true. Stored rows
+  merge onto that baseline, and an explicit deny still removes the named
+  capability. A load failure stays deny-all. Confirmation,
   the boundary guard, and the scheduler are unchanged.
 - **Phase 17 — Session history (delivered slice, ADR-0017).** `GET /api/chief/history`
   returns one caller-owned interactive transcript from the existing checkpoint.

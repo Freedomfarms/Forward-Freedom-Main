@@ -34,8 +34,11 @@ the server, API, or migrations inserts grant rows.
 2. `loadCapabilityPolicy` returns a `defaultDeny: true` policy with `_default`
    grants for `memory:read`, `memory:write`, `schedule:create`,
    `finance:read`, and `skill:read` only when the query returns zero rows.
-3. A non-empty row set replaces that baseline. The loader does not merge
-   `_default` into a user who already has explicit rows.
+3. A non-empty row set is merged onto that baseline. `_default` stays in
+   place. Each other agent with stored rows receives a copy of the baseline
+   grants, then the stored grants, then the stored denies. An explicit deny
+   still wins, including a deny stored on `_default`. The loader does not
+   replace the baseline with only the stored rows.
 4. A thrown load is unchanged: `createChiefTooling` still substitutes
    `closedPolicy()`, which denies every capability.
 5. The baseline does not include `file:read`, `file:write`, `network:fetch`,
@@ -49,7 +52,7 @@ the server, API, or migrations inserts grant rows.
 
 - A user with no grant rows can call the existing read tools, and mutation
   tools still stop at confirmation.
-- An explicit grant for one capability does not unlock the rest of the
-  baseline.
+- An explicit grant for one capability keeps the rest of the baseline. An
+  explicit deny removes that capability.
 - MCP stays blocked because `mcp_invoke` is non-local. The baseline does not
   grant `tool:invoke`.
