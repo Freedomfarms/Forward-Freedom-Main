@@ -27,6 +27,7 @@ function Slider({ label, min, max, step, value, onChange }) {
 
 export function ChiefVoiceSheet({
   open = false,
+  inline = false,
   user,
   onClose,
   onSettings,
@@ -79,22 +80,24 @@ export function ChiefVoiceSheet({
     onSettings?.(saved);
   }
 
+  const shown = inline || open;
+
   return (
     <aside
       className={
-        open
-          ? "chief-sheet chief-sheet--right chief-sheet--voice is-open"
-          : "chief-sheet chief-sheet--right chief-sheet--voice"
+        inline
+          ? "chief-voice-inline"
+          : open
+            ? "chief-sheet chief-sheet--right chief-sheet--voice is-open"
+            : "chief-sheet chief-sheet--right chief-sheet--voice"
       }
       aria-label="CHIEF voice"
-      aria-hidden={open ? undefined : true}
+      aria-hidden={shown ? undefined : true}
     >
       <div className="chief-sheet-title">Voice</div>
       <p className="chief-sheet-copy">
-        ElevenLabs speaks CHIEF. Tap the core to talk. Typed and spoken turns stay in this
-        conversation.
+        Tap the core to talk. Typed and spoken turns stay in this conversation.
       </p>
-      <p className="chief-sheet-copy">Provider: ElevenLabs</p>
       {configured === false ? (
         <p className="chief-sheet-copy">ElevenLabs is not configured on the server.</p>
       ) : null}
@@ -178,9 +181,11 @@ export function ChiefVoiceSheet({
         >
           {testing ? "Speaking…" : "Test voice"}
         </button>
-        <button type="button" className="chief-action chief-action--quiet" onClick={onClose}>
-          Close
-        </button>
+        {inline ? null : (
+          <button type="button" className="chief-action chief-action--quiet" onClick={onClose}>
+            Close
+          </button>
+        )}
       </div>
     </aside>
   );

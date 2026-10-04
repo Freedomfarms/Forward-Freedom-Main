@@ -112,6 +112,7 @@ import { FreedomOsHome, FreedomOsSignedOutCard } from "./components/freedomOs/Fr
 import { isFreedomFinancialTab } from "./utils/freedomFinancialAccessCopy.js";
 import { AdminUsagePanel } from "./components/freedomOs/AdminUsagePanel.jsx";
 import { ChiefPage } from "./components/chief/ChiefPage.jsx";
+import { ChiefSettingsExtras } from "./components/chief/ChiefSettingsExtras.jsx";
 import { useViewportUIScale } from "./utils/useViewportUIScale.js";
 import { LegalModal } from "./components/LegalDocuments.jsx";
 
@@ -2382,7 +2383,8 @@ function ForwardFreedomDashboard({
               CHIEF
             </button>
           </div>
-          <div style={{ padding: 16 }}>
+          <div style={{ padding: 16, display: "grid", gap: 16 }}>
+            {chiefFace === "settings" ? <ChiefSettingsExtras user={freedomOsAuthUser} /> : null}
             <FreedomOsHome
               user={freedomOsAuthUser}
               initialView={chiefFace === "settings" ? "settings" : "home"}

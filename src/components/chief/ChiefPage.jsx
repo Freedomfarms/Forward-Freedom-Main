@@ -34,13 +34,13 @@ import ApexWorld from "../../third_party/apex-ui/ApexWorld.jsx";
 import { visualStateForStatus, webStateForStatus } from "./apexVisualState.js";
 import { CHIEF_NAV_ROSTER } from "./chiefNavRoster.js";
 import { ChiefAccessSheet } from "./ChiefAccessSheet.jsx";
+import { ChiefSettingsExtras } from "./ChiefSettingsExtras.jsx";
 import { ChiefApprovalCard } from "./ChiefApprovalCard.jsx";
 import { ChiefComposer } from "./ChiefComposer.jsx";
 import { ChiefConversationList } from "./ChiefConversationList.jsx";
 import { ChiefModelSelect } from "./ChiefModelSelect.jsx";
 import { ChiefStatus } from "./ChiefStatus.jsx";
 import { ChiefEarlierTurns, ChiefTranscript } from "./ChiefTranscript.jsx";
-import { ChiefVoiceSheet } from "./ChiefVoiceSheet.jsx";
 import { useChiefVoice } from "./voice/useChiefVoice.js";
 
 const NARROW_NAV_QUERY = "(max-width: 1023px)";
@@ -127,6 +127,7 @@ export function ChiefPage({
   const [room, setRoom] = useState("home");
   const [placesOpen, setPlacesOpen] = useState(false);
   const [accessOpen, setAccessOpen] = useState(false);
+  const [localSettingsOpen, setLocalSettingsOpen] = useState(false);
   const [access, setAccess] = useState(emptyRoomAccess);
   const [now, setNow] = useState(() => new Date());
   const [models, setModels] = useState([]);
@@ -141,7 +142,6 @@ export function ChiefPage({
   const sendMessageRef = useRef(async () => voiceTurnResult());
   const abortTurnRef = useRef(() => {});
   const voiceSilenceRef = useRef(() => {});
-  const [voiceOpen, setVoiceOpen] = useState(false);
 
   const readStoredSessionId = useCallback(() => {
     discardLegacyChiefActiveSessionKey();
@@ -360,16 +360,17 @@ export function ChiefPage({
   }, [navQuery, searchAttempt, user]);
 
   useEffect(() => {
-    if (!drawerOpen && !placesOpen && !accessOpen) return undefined;
+    if (!drawerOpen && !placesOpen && !accessOpen && !localSettingsOpen) return undefined;
     function onKeyDown(event) {
       if (event.key !== "Escape") return;
       setDrawerOpen(false);
       setPlacesOpen(false);
       setAccessOpen(false);
+      setLocalSettingsOpen(false);
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [drawerOpen, placesOpen, accessOpen]);
+  }, [drawerOpen, placesOpen, accessOpen, localSettingsOpen]);
 
   function selectSession(sessionId) {
     stopActiveTurn();
@@ -673,7 +674,7 @@ export function ChiefPage({
   const transcriptError = historyError || turnError;
   const stateDetail = transcriptError || "";
   const canLeave = Boolean(onOpenFinancial);
-  const sheetOpen = drawerOpen || placesOpen || accessOpen || voiceOpen;
+  const sheetOpen = drawerOpen || placesOpen || accessOpen || localSettingsOpen;
   const desktopNav = Boolean(user) && !narrowNav;
   const navExpanded = narrowNav ? drawerOpen : !navCollapsed;
   const navQueryTrimmed = navQuery.trim();
@@ -725,7 +726,7 @@ export function ChiefPage({
     setDrawerOpen(false);
     setPlacesOpen(false);
     setAccessOpen(false);
-    setVoiceOpen(false);
+    setLocalSettingsOpen(false);
   }
 
   const conversationList = (
@@ -779,9 +780,6 @@ export function ChiefPage({
       {user ? (
         <div className="chief-instrument chief-instrument--state">
           <ChiefStatus status={status} detail={stateDetail} />
-          <button type="button" className="chief-text-button" onClick={() => setVoiceOpen(true)}>
-            Voice
-          </button>
           {transcriptError ? (
             <button type="button" className="chief-text-button" onClick={retryTranscript}>
               Retry
@@ -834,7 +832,11 @@ export function ChiefPage({
       return;
     }
     if (key === "settings") {
-      onOpenSettings?.();
+      if (onOpenSettings) {
+        onOpenSettings();
+        return;
+      }
+      setLocalSettingsOpen(true);
     }
   }
 
@@ -850,54 +852,114 @@ export function ChiefPage({
   const orbState = visualStateForStatus(fieldStatus, voice.phase);
   const webState = webStateForStatus(fieldStatus, voice.phase);
   const voiceNote = voice.caption || (voice.phase === "error" ? turnError : "");
+  const homeClass = embedded ? "chief-apex-home chief-apex-home--embedded" : "chief-apex-home";
+  const homeDock = user ? (
+    <>
+      <ChiefTranscript
+        labeled
+        userLine={turnView.userLine}
+        answer={turnView.answer}
+        answerRef={answerRef}
+        isLoading={historyLoading}
+        notFound={notFound}
+        showEmpty={showEmpty}
+        onBackToList={backToConversations}
+      />
+      {transcriptError ? (
+        <p className="chief-turn-note">
+          {transcriptError}{" "}
+          <button type="button" className="chief-text-button" onClick={retryTranscript}>
+            Retry
+          </button>
+        </p>
+      ) : null}
+      {approval && !activeArchived ? (
+        <ChiefApprovalCard
+          disabled={busy}
+          onApprove={() => resolveApproval("approve")}
+          onDeny={() => resolveApproval("deny")}
+        />
+      ) : (
+        <div className="chief-composer-row">
+          {activeArchived ? (
+            <div className="chief-archived-note">
+              <p>This conversation is archived. Restore it to continue.</p>
+              <button
+                type="button"
+                className="chief-action"
+                disabled={busy}
+                onClick={() => {
+                  restoreConversation(activeSessionId).catch((error) =>
+                    setTurnError(errorText(error))
+                  );
+                }}
+              >
+                Restore
+              </button>
+            </div>
+          ) : (
+            <ChiefComposer
+              value={draft}
+              onChange={setDraft}
+              onSubmit={() => sendMessage(draft)}
+              onVoice={voice.onCoreTap}
+              voiceActive={voice.phase === "listening" || voice.phase === "speaking"}
+              disabled={busy || historyLoading || notFound}
+              inputRef={composerRef}
+            />
+          )}
+        </div>
+      )}
+    </>
+  ) : (
+    <div className="chief-turn">
+      <p className="chief-turn-empty">Sign in to talk with CHIEF.</p>
+    </div>
+  );
 
   if (room === "home") {
     return (
-      <section
-        className="chief-apex-home"
-        aria-label="CHIEF"
-        style={{
-          position: "relative",
-          height: "100vh",
-          minHeight: 620,
-          overflow: "hidden",
-          background: "#04080f",
-          color: "#f0ede8",
-        }}
-      >
-        <ApexClock />
-        {user ? (
-          <button type="button" className="chief-voice-open" onClick={() => setVoiceOpen(true)}>
-            Voice
-          </button>
+      <section className={homeClass} aria-label="CHIEF">
+        <div className="chief-apex-stage">
+          <ApexClock />
+          <ApexWorld
+            orbState={orbState}
+            webState={webState}
+            roster={CHIEF_NAV_ROSTER}
+            onSelect={openNode}
+            onCoreTap={user ? voice.onCoreTap : undefined}
+            audioLevelRef={voice.audioLevelRef}
+            caption={voiceNote}
+          />
+          <p className="chief-sr" aria-live="polite">
+            {voice.phase === "listening"
+              ? "Listening"
+              : voice.phase === "speaking"
+                ? "Speaking"
+                : voiceNote}
+          </p>
+        </div>
+        <div className="chief-apex-dock" aria-label="CHIEF conversation">
+          {homeDock}
+        </div>
+        {localSettingsOpen ? (
+          <>
+            <div
+              className="chief-sheet-backdrop is-open"
+              onClick={() => setLocalSettingsOpen(false)}
+            />
+            <aside className="chief-sheet chief-sheet--right is-open" aria-label="CHIEF settings">
+              <ChiefSettingsExtras user={user} onVoiceSettings={voice.updateSettings} />
+              <button
+                type="button"
+                className="chief-action chief-action--quiet"
+                onClick={() => setLocalSettingsOpen(false)}
+              >
+                Close
+              </button>
+            </aside>
+          </>
         ) : null}
-        <ApexWorld
-          orbState={orbState}
-          webState={webState}
-          roster={CHIEF_NAV_ROSTER}
-          onSelect={openNode}
-          onCoreTap={user ? voice.onCoreTap : undefined}
-          audioLevelRef={voice.audioLevelRef}
-        />
-        {voiceNote ? <p className="chief-voice-caption">{voiceNote}</p> : null}
-        <p className="chief-sr" aria-live="polite">
-          {voice.phase === "listening"
-            ? "Listening"
-            : voice.phase === "speaking"
-              ? "Speaking"
-              : voiceNote}
-        </p>
-        {voiceOpen ? (
-          <div className="chief-sheet-backdrop is-open" onClick={() => setVoiceOpen(false)} />
-        ) : null}
-        <ChiefVoiceSheet
-          open={voiceOpen}
-          user={user}
-          onClose={() => setVoiceOpen(false)}
-          onSettings={voice.updateSettings}
-          onTest={voice.testVoice}
-          disabled={voice.phase !== "idle"}
-        />
       </section>
     );
   }
@@ -1060,14 +1122,6 @@ export function ChiefPage({
         </aside>
       ) : null}
       {accessOpen ? <ChiefAccessSheet open access={access} onClose={closeSheets} /> : null}
-      <ChiefVoiceSheet
-        open={voiceOpen}
-        user={user}
-        onClose={() => setVoiceOpen(false)}
-        onSettings={voice.updateSettings}
-        onTest={voice.testVoice}
-        disabled={voice.phase !== "idle"}
-      />
     </section>
   );
 }
