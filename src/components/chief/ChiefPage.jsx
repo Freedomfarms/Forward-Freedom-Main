@@ -29,11 +29,14 @@ import {
   readChiefActiveSessionId,
   writeChiefActiveSessionId,
 } from "../../utils/chiefActiveSession.js";
+import ApexClock from "../../third_party/apex-ui/ApexClock.jsx";
+import ApexWorld from "../../third_party/apex-ui/ApexWorld.jsx";
+import { visualStateForStatus, webStateForStatus } from "./apexVisualState.js";
+import { CHIEF_NAV_ROSTER } from "./chiefNavRoster.js";
 import { ChiefAccessSheet } from "./ChiefAccessSheet.jsx";
 import { ChiefApprovalCard } from "./ChiefApprovalCard.jsx";
 import { ChiefComposer } from "./ChiefComposer.jsx";
 import { ChiefConversationList } from "./ChiefConversationList.jsx";
-import { ChiefField } from "./ChiefField.jsx";
 import { ChiefModelSelect } from "./ChiefModelSelect.jsx";
 import { ChiefStatus } from "./ChiefStatus.jsx";
 import { ChiefEarlierTurns, ChiefTranscript } from "./ChiefTranscript.jsx";
@@ -57,7 +60,14 @@ function errorText(error) {
   return error?.message || "CHIEF could not complete that request.";
 }
 
-export function ChiefPage({ user, embedded = false, onOpenFinancial, onSignOut }) {
+export function ChiefPage({
+  user,
+  embedded = false,
+  onOpenFinancial,
+  onOpenAgents,
+  onOpenSettings,
+  onSignOut,
+}) {
   const sessionUid = typeof user?.uid === "string" ? user.uid : "";
   const [sessions, setSessions] = useState([]);
   const [archivedSessions, setArchivedSessions] = useState([]);
@@ -85,6 +95,7 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onSignOut }
     error: "",
   });
   const [searchAttempt, setSearchAttempt] = useState(0);
+  const [room, setRoom] = useState("home");
   const [placesOpen, setPlacesOpen] = useState(false);
   const [accessOpen, setAccessOpen] = useState(false);
   const [access, setAccess] = useState(emptyRoomAccess);
@@ -722,11 +733,61 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onSignOut }
     </div>
   );
 
+  function returnHome() {
+    closeSheets();
+    setRoom("home");
+  }
+
+  function openNode(node) {
+    const key = node?.key;
+    if (key === "finance") {
+      onOpenFinancial?.();
+      return;
+    }
+    if (key === "convos") {
+      setRoom("convos");
+      return;
+    }
+    if (key === "agents") {
+      onOpenAgents?.();
+      return;
+    }
+    if (key === "settings") {
+      onOpenSettings?.();
+    }
+  }
+
+  const fieldStatus = user ? status : CHIEF_STATUS.READY;
+
+  if (room === "home") {
+    return (
+      <section
+        className="chief-apex-home"
+        aria-label="CHIEF"
+        style={{
+          position: "relative",
+          height: "100vh",
+          minHeight: 620,
+          overflow: "hidden",
+          background: "#04080f",
+          color: "#f0ede8",
+        }}
+      >
+        <ApexClock />
+        <ApexWorld
+          orbState={visualStateForStatus(fieldStatus)}
+          webState={webStateForStatus(fieldStatus)}
+          roster={CHIEF_NAV_ROSTER}
+          onSelect={openNode}
+        />
+      </section>
+    );
+  }
+
   return (
     <section className={roomClass} aria-label="CHIEF">
       {sheetOpen ? <div className="chief-sheet-backdrop is-open" onClick={closeSheets} /> : null}
       <div className={sheetOpen ? "chief-room-stage is-dim" : "chief-room-stage"}>
-        <ChiefField status={user ? status : CHIEF_STATUS.READY} />
         {desktopNav ? (
           <aside
             id="chief-conversation-nav"
@@ -742,7 +803,7 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onSignOut }
                       type="button"
                       className="chief-place chief-place--here"
                       aria-current="page"
-                      onClick={closeSheets}
+                      onClick={returnHome}
                     >
                       CHIEF
                     </button>
@@ -753,7 +814,9 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onSignOut }
                     ) : null}
                   </nav>
                 ) : (
-                  <div className="chief-place chief-place--here">CHIEF</div>
+                  <button type="button" className="chief-place chief-place--here" onClick={returnHome}>
+                    CHIEF
+                  </button>
                 )}
                 {conversationList}
                 <ChiefEarlierTurns earlier={turnView.earlier} />
@@ -774,7 +837,9 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onSignOut }
                 CHIEF
               </button>
             ) : (
-              <div className="chief-place chief-place--here">CHIEF</div>
+              <button type="button" className="chief-place chief-place--here" onClick={returnHome}>
+                CHIEF
+              </button>
             )}
           </div>
         ) : (
@@ -854,7 +919,7 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onSignOut }
       {placesOpen ? (
         <aside className="chief-sheet is-open" aria-label="Places">
           <nav className="chief-place-list">
-            <button type="button" className="chief-place chief-place--here" onClick={closeSheets}>
+            <button type="button" className="chief-place chief-place--here" onClick={returnHome}>
               CHIEF
             </button>
             {onOpenFinancial ? (

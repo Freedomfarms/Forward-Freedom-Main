@@ -108,7 +108,7 @@ import { ObjectivesBoard } from "./components/ObjectivesBoard.jsx";
 import { RecurringSubscriptions } from "./components/RecurringSubscriptions.jsx";
 import { TransactionsView } from "./components/TransactionsView.jsx";
 import { WorkspaceGuideAssistant } from "./components/WorkspaceGuideAssistant.jsx";
-import { FreedomOsSignedOutCard } from "./components/freedomOs/FreedomOsHome.jsx";
+import { FreedomOsHome, FreedomOsSignedOutCard } from "./components/freedomOs/FreedomOsHome.jsx";
 import { isModule02Tab } from "./utils/module02AccessCopy.js";
 import { AdminUsagePanel } from "./components/freedomOs/AdminUsagePanel.jsx";
 import { ChiefPage } from "./components/chief/ChiefPage.jsx";
@@ -685,6 +685,14 @@ function ForwardFreedomDashboard({
   osSurface = null,
   onNavigateOs = null,
 } = {}) {
+  const [chiefFace, setChiefFace] = useState("home");
+  // Leaving /os/chief returns the next visit to the APEX home. Adjusted while
+  // rendering so a popstate back to finance does not keep the agents face.
+  const [chiefFaceSurface, setChiefFaceSurface] = useState(osSurface);
+  if (chiefFaceSurface !== osSurface) {
+    setChiefFaceSurface(osSurface);
+    if (osSurface !== "chief") setChiefFace("home");
+  }
   const [initialAppState] = useState(() => initialAppStateOverride || loadPersistedAppState(storageKey));
   const [currentView, setCurrentView] = useState(initialView);
   const [users, setUsers] = useState(initialAppState.users);
@@ -2336,16 +2344,60 @@ function ForwardFreedomDashboard({
     setIsMobileNavOpen(false);
   };
 
+  const chiefCallbacks = {
+    onOpenFinancial: () =>
+      osSurface === "chief" ? navigateOs("/os/finance") : setActiveTab(APP_TABS.DASHBOARD),
+    onOpenAgents: () => setChiefFace("agents"),
+    onOpenSettings: () => setChiefFace("settings"),
+    onSignOut: () => void sessionControls?.onSignOut?.(),
+  };
+  const chiefModule =
+    freedomOsAuthUser &&
+    (chiefFace === "agents" || chiefFace === "settings") &&
+    (osSurface === "chief" || (!osSurface && activeTab === APP_TABS.CHIEF));
+
   // The URL chooses the major surface. CHIEF is the authenticated home.
   // Demo sessions have no osSurface and keep the tab switch below.
+  if (chiefModule) {
+    return (
+      <ViewErrorBoundary key={chiefFace} viewName={APP_TABS.CHIEF}>
+        <div style={{ minHeight: "100vh", background: "#010409", color: "#eaf3ff" }}>
+          <div style={{ padding: "14px 16px 0" }}>
+            <button
+              type="button"
+              onClick={() => setChiefFace("home")}
+              style={{
+                border: "1px solid rgba(0,216,255,.26)",
+                borderRadius: 10,
+                background: "rgba(2,18,36,.66)",
+                color: "#dff2ff",
+                padding: "10px 15px",
+                cursor: "pointer",
+                fontWeight: 800,
+                fontSize: 12,
+                letterSpacing: 0.8,
+                textTransform: "uppercase",
+              }}
+            >
+              CHIEF
+            </button>
+          </div>
+          <div style={{ padding: 16 }}>
+            <FreedomOsHome
+              user={freedomOsAuthUser}
+              initialView={chiefFace === "settings" ? "settings" : "home"}
+              onOpenFinanceTool={() => navigateOs("/os/finance")}
+            />
+          </div>
+        </div>
+      </ViewErrorBoundary>
+    );
+  }
+
   if (osSurface === "chief" && freedomOsAuthUser) {
     return (
       <ViewErrorBoundary key="chief-room" viewName={APP_TABS.CHIEF}>
-        <ChiefPage
-          user={freedomOsAuthUser}
-          onOpenFinancial={() => navigateOs("/os/finance")}
-          onSignOut={() => void sessionControls?.onSignOut?.()}
-        />
+        <ChiefPage user={freedomOsAuthUser} {...chiefCallbacks} />
       </ViewErrorBoundary>
     );
   }
@@ -2356,11 +2408,7 @@ function ForwardFreedomDashboard({
   if (!osSurface && activeTab === APP_TABS.CHIEF && freedomOsAuthUser) {
     return (
       <ViewErrorBoundary key="chief-room" viewName={APP_TABS.CHIEF}>
-        <ChiefPage
-          user={freedomOsAuthUser}
-          onOpenFinancial={() => setActiveTab(APP_TABS.DASHBOARD)}
-          onSignOut={() => void sessionControls?.onSignOut?.()}
-        />
+        <ChiefPage user={freedomOsAuthUser} {...chiefCallbacks} />
       </ViewErrorBoundary>
     );
   }

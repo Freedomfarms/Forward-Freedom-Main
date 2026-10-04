@@ -111,7 +111,7 @@ export function FreedomOsSignedOutCard() {
   );
 }
 
-export function FreedomOsHome({ user, onOpenFinanceTool }) {
+export function FreedomOsHome({ user, onOpenFinanceTool, initialView = "home" }) {
   const bootstrap = useFreedomOsBootstrap({ user, enabled: Boolean(user) });
   const {
     ceoAgent,
@@ -132,7 +132,9 @@ export function FreedomOsHome({ user, onOpenFinanceTool }) {
     reload,
   } = bootstrap;
 
-  const [view, setView] = useState("home"); // home | settings | profile
+  const [view, setView] = useState(
+    initialView === "settings" || initialView === "profile" ? initialView : "home"
+  ); // home | settings | profile
   const [selectedAgentId, setSelectedAgentId] = useState(null);
   const [isDigestOpen, setIsDigestOpen] = useState(false);
   const [isRefreshingDigest, setIsRefreshingDigest] = useState(false);

@@ -1,0 +1,46 @@
+/* Relevant rules from APEX-UI app/globals.css (commit a8732fad).
+   Scoped to the vendored shell. The app body/font stack is not replaced. */
+
+.apex-ui-root {
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  color: #f0ede8;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+.apex-ui-root .visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.apex-overview {
+  position: fixed;
+  top: 10px;
+  left: 0;
+  width: 540px;
+  max-width: 92vw;
+  z-index: 30;
+}
+
+@media (max-width: 1000px) {
+  .apex-overview {
+    position: absolute;
+    top: 10px;
+    width: 100%;
+  }
+}
+
+@keyframes agentPulse {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.06); }
+}
+
+@media (max-width: 700px) {
+  .sb-hint { display: none; }
+}

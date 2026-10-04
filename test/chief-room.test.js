@@ -19,15 +19,7 @@ import {
   pointFrame,
   rotateView,
 } from "../src/components/chief/chiefField.js";
-import {
-  CORE_PARTICLE_COUNT,
-  coreScale,
-  createCoreParticles,
-  easeMotion,
-  motionPreset,
-  resolveAmplitude,
-  visualStateForStatus,
-} from "../src/components/chief/intelligence/chiefIntelligence.js";
+import { visualStateForStatus, webStateForStatus } from "../src/components/chief/apexVisualState.js";
 import {
   conversationAccessWords,
   currentTurn,
@@ -245,88 +237,39 @@ test("view rotation turns the diamond without moving field-space corners", () =>
   }
 });
 
-test("the room intelligence maps status onto idle, thinking, and speaking", () => {
+test("the room intelligence maps status onto the APEX orb and web", () => {
   assert.equal(visualStateForStatus(CHIEF_STATUS.READY), "idle");
+  assert.equal(webStateForStatus(CHIEF_STATUS.READY), "standby");
   assert.equal(visualStateForStatus(CHIEF_STATUS.RESPONDING), "speaking");
+  assert.equal(webStateForStatus(CHIEF_STATUS.RESPONDING), "speaking");
   assert.equal(visualStateForStatus(CHIEF_STATUS.WORKING), "thinking");
+  assert.equal(webStateForStatus(CHIEF_STATUS.WORKING), "processing");
   assert.equal(visualStateForStatus(CHIEF_STATUS.WEB_SEARCH), "thinking");
-  assert.equal(visualStateForStatus(CHIEF_STATUS.APPROVAL), "approval");
-  assert.equal(visualStateForStatus(CHIEF_STATUS.ERROR), "error");
-  assert.equal(motionPreset("listening").speed > motionPreset("idle").speed, true);
-  assert.ok(motionPreset("speaking").speed / motionPreset("idle").speed >= 2.9);
-  assert.ok(motionPreset("thinking").speed < motionPreset("speaking").speed);
-  assert.equal(resolveAmplitude(null), null);
-  assert.equal(resolveAmplitude(0), 0);
-
-  let idleTravel = 0;
-  let speakingTravel = 0;
-  for (let step = 0; step < 160; step += 1) {
-    const time = step / 12;
-    idleTravel = Math.max(idleTravel, Math.abs(coreScale(time, motionPreset("idle"), null) - 1));
-    speakingTravel = Math.max(
-      speakingTravel,
-      Math.abs(coreScale(time, motionPreset("speaking"), null) - 1)
-    );
-  }
-  assert.ok(speakingTravel > idleTravel * 4);
-  assert.equal(coreScale(1.2, motionPreset("speaking"), 0), 1);
-  const quiet = Math.abs(coreScale(1.2, motionPreset("speaking"), 0.2) - 1);
-  const loud = Math.abs(coreScale(1.2, motionPreset("speaking"), 1) - 1);
-  assert.ok(loud > quiet);
-
-  const field = readFileSync(
-    path.join(process.cwd(), "src/components/chief/ChiefField.jsx"),
-    "utf8"
-  );
-  assert.match(field, /prefers-reduced-motion/);
-  assert.match(field, /visualStateForStatus/);
-  assert.equal(field.includes("createDiamondPoints"), false);
-  assert.equal(field.includes("pointColor"), false);
-});
-
-test("the room intelligence is one dense core, shared by text and voice", () => {
-  assert.ok(CORE_PARTICLE_COUNT >= 3000);
-  const layout = createCoreParticles(CORE_PARTICLE_COUNT);
-  assert.equal(layout.count, CORE_PARTICLE_COUNT);
-  let near = 0;
-  let inside = 0;
-  for (let index = 0; index < layout.count; index += 1) {
-    const radius = layout.radii[index];
-    if (radius < 0.5) near += 1;
-    if (radius < 0.9) inside += 1;
-  }
-  assert.ok(near / layout.count > 0.45);
-  assert.ok(inside / layout.count > 0.75);
-
-  const idle = motionPreset("idle");
-  const listening = motionPreset("listening");
-  const thinking = motionPreset("thinking");
-  const speaking = motionPreset("speaking");
-  assert.ok(listening.body > idle.body);
-  assert.ok(listening.organize > thinking.organize);
-  assert.ok(listening.contract > idle.contract);
-  assert.ok(listening.outflow < thinking.outflow);
-  assert.ok(thinking.density > idle.density);
-  assert.ok(thinking.body < idle.body);
-  assert.ok(thinking.contract > listening.contract);
-  assert.ok(thinking.spin > speaking.spin);
-  assert.ok(speaking.outflow > thinking.outflow);
-  assert.equal(easeMotion(idle, speaking, 1).outflow, speaking.outflow);
+  assert.equal(webStateForStatus(CHIEF_STATUS.TOOL), "processing");
+  assert.equal(visualStateForStatus(CHIEF_STATUS.APPROVAL), "idle");
+  assert.equal(webStateForStatus(CHIEF_STATUS.APPROVAL), "standby");
+  assert.equal(visualStateForStatus(CHIEF_STATUS.ERROR), "idle");
+  assert.equal(webStateForStatus(CHIEF_STATUS.ERROR), "standby");
 
   const root = process.cwd();
-  const renderer = readFileSync(
-    path.join(root, "src/components/chief/intelligence/renderIntelligence.js"),
-    "utf8"
-  );
-  const model = readFileSync(
-    path.join(root, "src/components/chief/intelligence/chiefIntelligence.js"),
-    "utf8"
-  );
-  assert.match(renderer, /from "three"/);
-  assert.equal(renderer.includes("ENERGY_RIBBONS"), false);
-  assert.equal(renderer.includes("ORBITS"), false);
-  assert.equal(model.includes("ENERGY_RIBBONS"), false);
-  assert.equal(model.includes("ORBITS"), false);
+  const page = readFileSync(path.join(root, "src/components/chief/ChiefPage.jsx"), "utf8");
+  const world = readFileSync(path.join(root, "src/third_party/apex-ui/ApexWorld.jsx"), "utf8");
+  const hero = readFileSync(path.join(root, "src/third_party/apex-ui/ApexHeroOrb.tsx"), "utf8");
+  const core = readFileSync(path.join(root, "src/third_party/apex-ui/ApexCore3D.jsx"), "utf8");
+  assert.match(page, /ApexWorld/);
+  assert.match(page, /visualStateForStatus/);
+  assert.equal(page.includes("ChiefField"), false);
+  assert.equal(page.includes("renderIntelligence"), false);
+  assert.match(world, /prefers-reduced-motion/);
+  assert.match(world, /opacity=\{0\.12\}/);
+  assert.match(world, /<ApexHeroOrb state=\{orbState\} interactive=\{false\} \/>/);
+  assert.match(hero, /variant="frame"/);
+  assert.match(hero, /variant="particles"/);
+  assert.doesNotMatch(hero, /variant="geodesic"/);
+  assert.doesNotMatch(hero, /variant="meridian"/);
+  assert.doesNotMatch(hero, /variant="gyro"/);
+  assert.match(core, /const N = 1200/);
+  assert.match(core, /dpr=\{\[1, 1\.5\]\}/);
 });
 
 test("the room source keeps conversation plain and navigation literal", () => {
