@@ -3,6 +3,7 @@
 
 import { authenticateRequest } from "../../server/auth/verifyAuth.js";
 import {
+  configuredElevenVoiceId,
   ELEVENLABS_PROVIDER,
   listElevenLabsVoices,
   readElevenLabsApiKey,
@@ -49,6 +50,7 @@ export async function handleChiefVoices(request, response, deps = {}) {
 
   response.status(200).json({
     provider: ELEVENLABS_PROVIDER,
+    defaultVoiceId: configuredElevenVoiceId(deps.env ?? process.env),
     voices: result.voices,
   });
 }

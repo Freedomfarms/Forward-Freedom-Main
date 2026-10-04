@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchChiefSpeech, fetchChiefVoices } from "../../utils/chiefApi.js";
 import { createChiefSpeechInput, playChiefSpeech } from "../../utils/chiefSpeech.js";
-import { readChiefVoiceId, writeChiefVoiceId } from "../../utils/chiefVoicePreference.js";
+import {
+  readChiefVoiceId,
+  selectChiefVoiceId,
+  writeChiefVoiceId,
+} from "../../utils/chiefVoicePreference.js";
 import { createAudioLevel } from "./voice/audioLevel.js";
 import { normalizeVoiceSettings, readVoiceSettings } from "./voice/voiceSettings.js";
 
@@ -69,11 +73,11 @@ export function useChiefVoice({ user, sessionUid, onTranscript }) {
         setVoicesError("ElevenLabs returned no voices.");
         return;
       }
+      const configured = typeof payload?.defaultVoiceId === "string" ? payload.defaultVoiceId : "";
       setVoiceId((current) => {
         const stored = current || readChiefVoiceId(sessionUid);
-        const match = list.some((voice) => voice.voice_id === stored);
-        const next = match ? stored : list[0].voice_id;
-        writeChiefVoiceId(sessionUid, next);
+        const next = selectChiefVoiceId(list, { stored, configured });
+        if (next) writeChiefVoiceId(sessionUid, next);
         return next;
       });
     } catch (error) {

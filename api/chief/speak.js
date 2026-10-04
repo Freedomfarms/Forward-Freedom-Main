@@ -39,6 +39,7 @@ export async function handleChiefSpeak(request, response, deps = {}) {
       voiceSettings: request.body,
       signal: controller.signal,
       logger,
+      env: deps.env ?? process.env,
     });
   } catch (error) {
     if (error?.name === "AbortError") return;
