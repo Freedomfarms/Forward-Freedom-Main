@@ -4,42 +4,25 @@
 //
 // Zero rows are not an explicit policy. OpenJarvis setup_security grants a
 // narrow _default set when no policy file is configured, so default-deny
-// does not leave every tool unreachable. This loader grants only the
-// capabilities the CHIEF inventory already uses, including web:search,
-// module:access, conversation:read, conversation:write, conversation:delete,
-// schedule:read, settings:read, settings:write, capability:read, and
-// code:read. network:fetch, file:read, file:write, and code:execute stay
-// off the baseline. Connector labels stay off until that connector is
-// connected. code:read is the configured repository, not a user GitHub
-// account and not a shell.
+// does not leave every tool unreachable. The built-in baseline is
+// baselineCapabilities() in the control-plane catalog. That list includes
+// the ordinary reads, including capability:read and code:read. workforce:read
+// stays off it. network:fetch, file:read, file:write, and code:execute stay
+// off it. A connected connector adds its own grants on top. A disconnected
+// connector adds none. code:read is the configured repository, not a user
+// GitHub account and not a shell.
 // finance:read lets the read tools run so they can report that Module 02
-// access is off. The data
-// itself stays behind chief_module_access, which defaults to off and is not
-// a grant row. Stored rows merge onto this baseline. An explicit deny still
-// removes that capability. policyFromGrantRows stays a pure mapping of
-// stored rows and does not merge.
+// access is off. The data itself stays behind chief_module_access, which
+// defaults to off and is not a grant row. Stored rows merge onto this
+// baseline. An explicit deny still removes that capability.
+// policyFromGrantRows stays a pure mapping of stored rows and does not merge.
 
 import { withUserContext } from "../../db/prisma.js";
 import { defaultConnectors } from "../connectors/registry.js";
-import { Capability, CapabilityPolicy } from "../core/capabilities.js";
+import { CapabilityPolicy } from "../core/capabilities.js";
+import { baselineCapabilities } from "../control/plane.js";
 
-const BASELINE_CAPABILITIES = Object.freeze([
-  Capability.MEMORY_READ,
-  Capability.MEMORY_WRITE,
-  Capability.SCHEDULE_CREATE,
-  Capability.SCHEDULE_READ,
-  Capability.FINANCE_READ,
-  Capability.SKILL_READ,
-  Capability.WEB_SEARCH,
-  Capability.MODULE_ACCESS,
-  Capability.CONVERSATION_READ,
-  Capability.CONVERSATION_WRITE,
-  Capability.CONVERSATION_DELETE,
-  Capability.SETTINGS_READ,
-  Capability.SETTINGS_WRITE,
-  Capability.CAPABILITY_READ,
-  Capability.CODE_READ,
-]);
+const BASELINE_CAPABILITIES = Object.freeze(baselineCapabilities());
 
 function baselinePolicy(connectors = defaultConnectors()) {
   const policy = new CapabilityPolicy({ defaultDeny: true });

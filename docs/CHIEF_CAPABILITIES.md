@@ -45,8 +45,9 @@ A `userId` in the model's arguments is ignored. Module 02 data stays behind
 
 1. Call the service the UI already uses. Do not copy its logic.
 2. Add one catalog row with effect, confirmation, audit, and exposure.
-3. Add the grant label to `CHIEF_TOOL_INVENTORY` and, when it should be available
-   with zero grant rows, to the baseline in `server/chief/security/grants.js`.
+3. Add the grant label to `CHIEF_TOOL_INVENTORY` and a `baseline: true` row in
+   `server/chief/control/plane.js`. `loadCapabilityPolicy` reads that catalog.
+   Do not add a second baseline list.
 4. Register the tool through `createChiefCapabilityRegistry`.
 5. Do not edit `TurnMachine` to special-case the feature.
 

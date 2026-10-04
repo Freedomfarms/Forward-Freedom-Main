@@ -9,14 +9,25 @@ import {
   projectAccessInventory,
   renderCapabilityContext,
 } from "../server/chief/capabilities/discover.js";
+import { assembleSystemPrompt } from "../server/chief/context/assemble.js";
+import {
+  CONTROL_PLANE,
+  ControlDomain,
+  ControlEffect,
+  assertControlPlane,
+  baselineCapabilities,
+  isForbiddenControlCapability,
+} from "../server/chief/control/plane.js";
 import { Capability, CapabilityPolicy } from "../server/chief/core/capabilities.js";
 import { defineConnector } from "../server/chief/connectors/registry.js";
+import { MemoryFactStore } from "../server/chief/memory/facts.js";
 import { ApprovalCoordinator } from "../server/chief/runtime/approvals.js";
 import { classifyToolCalls, toolSpecsToAiTools } from "../server/chief/runtime/turn.js";
 import { MemoryAuditLog } from "../server/chief/security/audit.js";
 import { loadCapabilityPolicy } from "../server/chief/security/grants.js";
 import { createChiefTooling, createChiefTools } from "../server/chief/tools/builtin.js";
-import { BaseTool } from "../server/chief/tools/spec.js";
+import { CHIEF_TOOL_INVENTORY } from "../server/chief/tools/inventory.js";
+import { BaseTool, defineToolSpec } from "../server/chief/tools/spec.js";
 import {
   XAI_PROVIDER_ID,
   ANTHROPIC_PROVIDER_ID,
@@ -300,4 +311,120 @@ test("Claude, GPT, and Grok receive the same capability surface", async () => {
   assert.ok(surfaces[0].includes("web_search"));
   assert.equal(surfaces[0].includes("email_search"), false);
   assert.equal(surfaces[0].includes("shell_exec"), false);
+  assert.equal(surfaces[0].includes("git_commit"), false);
+  assert.equal(surfaces[0].includes("deploy"), false);
+});
+
+test("the catalog matches the live tool inventory", () => {
+  assert.equal(assertControlPlane(CHIEF_TOOL_INVENTORY), true);
+  assert.equal(createChiefTools().length > 0, true);
+  assert.equal(CHIEF_TOOL_INVENTORY.capability_discover[0], Capability.CAPABILITY_READ);
+  assert.equal(CHIEF_TOOL_INVENTORY.code_read[0], Capability.CODE_READ);
+});
+
+test("the empty-grant baseline is the catalog, including code and capability reads", async () => {
+  assert.equal(baselineCapabilities().includes(Capability.CAPABILITY_READ), true);
+  assert.equal(baselineCapabilities().includes(Capability.CODE_READ), true);
+  assert.equal(baselineCapabilities().includes(Capability.WORKFORCE_READ), false);
+  assert.equal(baselineCapabilities().includes(Capability.FILE_WRITE), false);
+  assert.equal(baselineCapabilities().includes(Capability.CODE_EXECUTE), false);
+  assert.equal(baselineCapabilities().includes(Capability.TOOL_INVOKE), false);
+  const policy = await emptyGrants();
+  assert.deepEqual(
+    policy.listGrants("_default").map((grant) => grant.capability),
+    baselineCapabilities()
+  );
+  const stored = await loadCapabilityPolicy("user-a", {
+    withUser: async (_userId, fn) =>
+      fn({
+        chiefCapabilityGrant: {
+          findMany: async () => [{ agentId: "chief", capability: "memory:read", deny: false }],
+        },
+      }),
+  });
+  assert.equal(stored.check("chief", Capability.CODE_READ), true);
+  assert.equal(stored.check("chief", Capability.CAPABILITY_READ), true);
+  assert.equal(stored.check("chief", Capability.WORKFORCE_READ), false);
+  const denied = await loadCapabilityPolicy("user-a", {
+    withUser: async (_userId, fn) =>
+      fn({
+        chiefCapabilityGrant: {
+          findMany: async () => [
+            { agentId: "chief", capability: "memory:read", deny: false },
+            { agentId: "chief", capability: "code:read", deny: true },
+          ],
+        },
+      }),
+  });
+  assert.equal(denied.check("chief", Capability.CODE_READ), false);
+  assert.equal(denied.check("chief", Capability.CAPABILITY_READ), true);
+});
+
+test("codebase admits read or forbidden, and forbidden rows cannot be granted", () => {
+  const codebase = CONTROL_PLANE.filter((entry) => entry.domain === ControlDomain.CODEBASE);
+  assert.equal(codebase.length > 0, true);
+  for (const entry of codebase) {
+    assert.equal(
+      entry.effect === ControlEffect.READ || entry.effect === ControlEffect.FORBIDDEN,
+      true,
+      entry.id
+    );
+    if (entry.effect === ControlEffect.FORBIDDEN) assert.equal(entry.capability, null);
+  }
+  const reads = codebase.filter((entry) => entry.status === "live");
+  assert.deepEqual(
+    reads.map((entry) => entry.tool),
+    ["code_tree", "code_read", "code_search"]
+  );
+  for (const entry of reads) {
+    assert.equal(entry.capability, Capability.CODE_READ);
+    assert.equal(entry.baseline, true);
+  }
+  const observe = CONTROL_PLANE.find((entry) => entry.id === "workforce.observe");
+  assert.equal(observe.capability, Capability.WORKFORCE_READ);
+  assert.equal(observe.tool, null);
+  assert.equal(observe.baseline, false);
+  const discover = CONTROL_PLANE.find((entry) => entry.id === "control.discover");
+  assert.equal(discover.tool, "capability_discover");
+  assert.equal(discover.baseline, true);
+});
+
+test("repository mutation tools and capabilities cannot be registered", () => {
+  for (const name of [
+    "codebase_write",
+    "source_write",
+    "git_add",
+    "git_commit",
+    "git_push",
+    "deploy",
+  ]) {
+    assert.throws(() => defineToolSpec({ name, description: name }), /not allowed/);
+  }
+  assert.throws(
+    () => defineToolSpec({ name: "notes", requiredCapabilities: ["git:commit"] }),
+    /cannot require git:commit/
+  );
+  assert.equal(isForbiddenControlCapability("codebase:write"), true);
+  assert.equal(isForbiddenControlCapability(Capability.CODE_READ), false);
+});
+
+test("code inspection is offered for Freedom OS questions and not for every prompt", async () => {
+  const facts = new MemoryFactStore();
+  const prompt = await assembleSystemPrompt({
+    userId: "user-a",
+    query: "Why does CHIEF require approval before sending mail?",
+    facts,
+    availableTools: ["code_read", "code_tree", "code_search", "memory_read"],
+  });
+  assert.match(prompt, /code_read/);
+  assert.match(prompt, /does not need to say to search the code/);
+  assert.match(prompt, /cannot edit files/);
+  assert.match(prompt, /Do not call these tools for ordinary chat/);
+  const quiet = await assembleSystemPrompt({
+    userId: "user-a",
+    query: "What is 2 + 2?",
+    facts,
+    availableTools: ["memory_read"],
+  });
+  assert.doesNotMatch(quiet, /code_read/);
 });

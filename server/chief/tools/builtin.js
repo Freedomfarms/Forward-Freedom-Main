@@ -3,6 +3,7 @@
 // boundary guard blocks it until scanner patterns are ported. No
 // code-execution tool is registered.
 
+import { assertControlPlane } from "../control/plane.js";
 import { Capability } from "../core/capabilities.js";
 import { ToolRegistry } from "../core/registry.js";
 import { loadFinanceSummary } from "../../finance/aggregates.js";
@@ -20,7 +21,7 @@ import { fencesOutput, scanInjection } from "../security/injection.js";
 import { closedPolicy, loadCapabilityPolicy } from "../security/grants.js";
 import { PrismaAuditLog } from "../security/audit.js";
 import { ToolExecutor } from "./executor.js";
-import { inventoryFromTools } from "./inventory.js";
+import { CHIEF_TOOL_INVENTORY, inventoryFromTools } from "./inventory.js";
 import { HANDOFF_STATE_KEY, validateHandoffNotes } from "../runtime/compaction.js";
 import { discoverCapabilities } from "../capabilities/discover.js";
 import { CapabilityRegistry, registerTool } from "../capabilities/registry.js";
@@ -1086,6 +1087,7 @@ export function createChiefCapabilityRegistry({
   codeintel = null,
   connectors = defaultConnectors(),
 } = {}) {
+  assertControlPlane(CHIEF_TOOL_INVENTORY);
   const registry = new CapabilityRegistry();
   const tools = [
     memoryRead(facts),

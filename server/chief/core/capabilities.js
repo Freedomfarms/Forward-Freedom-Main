@@ -12,18 +12,22 @@
 //     (Phase 8), "web:search" (governed public web search),
 //     "module:access" (the per-user Module 02 read switch), and
 //     "conversation:read" (search and retrieve this user's conversations),
+//     "conversation:write", "conversation:delete", "schedule:read",
 //     "settings:read", and "settings:write" (the user's timezone on the
 //     existing profile service). "capability:read" is the control-plane
 //     inventory. email, calendar, drive, github, and data labels are CHIEF
 //     connector boundaries. They do not grant a connector that is not
-//     connected, and they are not OpenJarvis labels.
+//     connected, and they are not OpenJarvis labels. "workforce:read" reads
+//     the Grok observation journal and is not a tool yet. There is no
+//     codebase write, git, or deploy label.
 //     Financial reads must not reuse memory:read. Loading a procedure must
 //     not reuse memory:read either. Conversation recall must not reuse
 //     memory:read or finance:read. Public web search must not reuse
 //     network:fetch: that label is general outbound network access, and it
 //     stays off the default baseline. module:access lets the user inspect
 //     or request the Module 02 read switch. It does not grant the financial
-//     data itself. OpenJarvis has none of these five labels.
+//     data itself. OpenJarvis has none of these labels. workforce:read stays
+//     off the empty-grant baseline until a picture tool is added on purpose.
 //   - CapabilityPolicy check order: explicit denials always win; grants are
 //     glob-matched on capability and optionally on resource; agents with no
 //     explicit policy fall back to `_default` wildcard grants; an anonymous
@@ -56,7 +60,7 @@ export const Capability = Object.freeze({
   NETWORK_FETCH: "network:fetch",
   CODE_EXECUTE: "code:execute",
   // CHIEF extension. Read the configured repository. Not file:read, not
-  // code:execute, and not on the default baseline.
+  // code:execute, and not a repository write. It is on the default baseline.
   CODE_READ: "code:read",
   MEMORY_READ: "memory:read",
   MEMORY_WRITE: "memory:write",
@@ -106,6 +110,10 @@ export const Capability = Object.freeze({
   GITHUB_WRITE: "github:write",
   DATA_READ: "data:read",
   DATA_WRITE: "data:write",
+  // CHIEF extension. Not an OpenJarvis label. Reads the workforce observation
+  // journal. It does not create an agent, send a command, or grant a write.
+  // Off the empty-grant baseline until a picture tool is added on purpose.
+  WORKFORCE_READ: "workforce:read",
 });
 
 const CAPABILITY_VALUES = new Set(Object.values(Capability));

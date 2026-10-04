@@ -25,7 +25,7 @@ baseline. `code:execute` stays forbidden.
 capabilities are `code_tree`, `code_read`, and `code_search`. Each is effect
 `read`, confirmation `none`, and requires `code:read`.
 
-`code:read` is not on the empty-grant baseline. An explicit deny still wins.
+`code:read` is on the empty-grant baseline. An explicit deny still wins.
 The model cannot grant it.
 
 The repository is server configuration, defaulting to

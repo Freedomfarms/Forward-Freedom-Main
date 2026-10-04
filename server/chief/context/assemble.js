@@ -228,7 +228,10 @@ export function codeGuidance(availableTools) {
   const tools = availableTools instanceof Set ? availableTools : new Set(availableTools);
   if (!tools.has("code_read") && !tools.has("code_search") && !tools.has("code_tree")) return "";
   return (
-    "When the user asks how Freedom OS source works, where an API, component, or table is implemented, or what a file does, call code_tree, code_read, or code_search. " +
+    "When a question is about how Freedom OS or CHIEF actually works, call code_tree, code_read, or code_search and answer from that source. " +
+    "That includes why a behavior exists, where an API, component, approval, capability, or connector is implemented, and whether the current source grants access. " +
+    "Decide that yourself. The user does not need to say to search the code. " +
+    "Do not call these tools for ordinary chat, arithmetic, live finances, or questions the current tools already answer. " +
     "These tools read the configured repository only. They cannot edit files, commit, push, open a pull request, or deploy. " +
     "If a code tool says code access is not enabled or code intelligence is unavailable, say that and do not invent source. " +
     "Do not pass a URL, a repository name, or a user id."

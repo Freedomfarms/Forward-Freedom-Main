@@ -8,6 +8,7 @@
 // server cannot impersonate a reviewed local tool by name.
 
 import { Capability } from "../core/capabilities.js";
+import { isForbiddenControlCapability, isForbiddenControlTool } from "../control/plane.js";
 
 export const CHIEF_TOOL_INVENTORY = Object.freeze({
   memory_read: Object.freeze([Capability.MEMORY_READ]),
@@ -76,7 +77,16 @@ export function assertToolAllowed(spec) {
   if (FORBIDDEN_TOOL_NAMES.includes(spec?.name)) {
     throw new Error(`code-execution tool '${spec.name}' is not allowed`);
   }
-  if ((spec?.requiredCapabilities ?? []).includes(Capability.CODE_EXECUTE)) {
+  if (isForbiddenControlTool(spec?.name)) {
+    throw new Error(`tool '${spec.name}' is not allowed by the control plane`);
+  }
+  const required = spec?.requiredCapabilities ?? [];
+  if (required.includes(Capability.CODE_EXECUTE)) {
     throw new Error(`tool '${spec?.name}' cannot require code:execute`);
+  }
+  for (const label of required) {
+    if (isForbiddenControlCapability(label)) {
+      throw new Error(`tool '${spec?.name}' cannot require ${label}`);
+    }
   }
 }

@@ -10,6 +10,7 @@ import { readFileSync } from "node:fs";
 import { discoverCapabilities } from "../server/chief/capabilities/discover.js";
 import { createCodeIntel } from "../server/chief/codeintel/index.js";
 import { defineConnector } from "../server/chief/connectors/registry.js";
+import { baselineCapabilities } from "../server/chief/control/plane.js";
 import { Capability } from "../server/chief/core/capabilities.js";
 import { MemoryFactStore } from "../server/chief/memory/facts.js";
 import { quietAttention } from "../server/chief/scheduler/operative.js";
@@ -24,23 +25,7 @@ import { ToolExecutor } from "../server/chief/tools/executor.js";
 import { MemoryScheduleStore } from "../server/chief/tools/schedule-store.js";
 import { BaseTool } from "../server/chief/tools/spec.js";
 
-const ALLOWED = [
-  Capability.MEMORY_READ,
-  Capability.MEMORY_WRITE,
-  Capability.SCHEDULE_CREATE,
-  Capability.SCHEDULE_READ,
-  Capability.FINANCE_READ,
-  Capability.SKILL_READ,
-  Capability.WEB_SEARCH,
-  Capability.MODULE_ACCESS,
-  Capability.CONVERSATION_READ,
-  Capability.CONVERSATION_WRITE,
-  Capability.CONVERSATION_DELETE,
-  Capability.SETTINGS_READ,
-  Capability.SETTINGS_WRITE,
-  Capability.CAPABILITY_READ,
-  Capability.CODE_READ,
-];
+const ALLOWED = Object.freeze(baselineCapabilities());
 
 const DENIED = [
   Capability.FILE_READ,
@@ -59,6 +44,7 @@ const DENIED = [
   Capability.DATA_WRITE,
   Capability.TOOL_INVOKE,
   Capability.SYSTEM_ADMIN,
+  Capability.WORKFORCE_READ,
 ];
 
 function grantLoader(rows, calls = null) {
