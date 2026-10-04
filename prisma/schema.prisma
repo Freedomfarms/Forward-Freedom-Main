@@ -713,6 +713,7 @@ enum ChiefTraceStepType {
   GENERATE
   TOOL_CALL
   RESPOND
+  VOICE
 }
 
 // Knowledge-graph relation origin (matches cortex-map's edge model).

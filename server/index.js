@@ -44,6 +44,9 @@ import chiefSpeakHandler from "../api/chief/speak.js";
 import chiefApprovalsHandler from "../api/chief/approvals.js";
 import chiefModuleAccessHandler from "../api/chief/module-access.js";
 import chiefRoomAccessHandler from "../api/chief/access.js";
+import chiefVoiceHandler from "../api/chief/voice.js";
+import chiefVoiceVoicesHandler from "../api/chief/voice/voices.js";
+import chiefVoiceTraceHandler from "../api/chief/voice/trace.js";
 import chiefWorkforceReportHandler from "../api/chief/workforce/report.js";
 import chiefWorkforceReportKeyHandler from "../api/chief/workforce/report-key.js";
 
@@ -65,11 +68,7 @@ app.use("/api", expressServerBackstopRateLimit);
 // express.json() never re-serializes the payload — a re-serialized body is not
 // byte-identical to what Plaid sent and would make the SHA-256 signature check
 // in webhookVerification.js fail for every webhook (bug C-1).
-app.post(
-  "/api/plaid/webhook",
-  express.raw({ type: "*/*", limit: "256kb" }),
-  plaidWebhookHandler
-);
+app.post("/api/plaid/webhook", express.raw({ type: "*/*", limit: "256kb" }), plaidWebhookHandler);
 
 // Document/onboarding uploads can carry up to 10 files at 500,000 KB each
 // (size still enforced in the documents module). Other API routes stay at 1mb.
@@ -111,10 +110,7 @@ app
   .route("/api/agents/ceo/conversations/:conversationId")
   .patch(ceoConversationByIdHandler)
   .delete(ceoConversationByIdHandler);
-app.get(
-  "/api/agents/ceo/conversations/:conversationId/messages",
-  ceoConversationMessagesHandler
-);
+app.get("/api/agents/ceo/conversations/:conversationId/messages", ceoConversationMessagesHandler);
 app
   .route("/api/agents/ceo/documents")
   .get(ceoDocumentsHandler)
@@ -125,10 +121,7 @@ app.route("/api/agents").get(agentsHandler).post(agentsHandler);
 app.route("/api/agents/:id").patch(agentByIdHandler).delete(agentByIdHandler);
 app.post("/api/agents/:id/run", agentRunHandler);
 app.get("/api/agents/:id/runs", agentRunsHandler);
-app
-  .route("/api/agents/:id/runs/:runId")
-  .get(agentRunByIdHandler)
-  .post(agentRunByIdHandler);
+app.route("/api/agents/:id/runs/:runId").get(agentRunByIdHandler).post(agentRunByIdHandler);
 app.route("/api/agents/:id/chat").get(agentChatHandler).post(agentChatHandler);
 app
   .route("/api/agents/:id/conversations")
@@ -138,10 +131,7 @@ app
   .route("/api/agents/:id/conversations/:conversationId")
   .patch(agentConversationByIdHandler)
   .delete(agentConversationByIdHandler);
-app.get(
-  "/api/agents/:id/conversations/:conversationId/messages",
-  agentConversationMessagesHandler
-);
+app.get("/api/agents/:id/conversations/:conversationId/messages", agentConversationMessagesHandler);
 app.get("/api/notifications", notificationsHandler);
 app.patch("/api/notifications/:id", notificationByIdHandler);
 app.get("/api/admin/usage", adminUsageHandler);
@@ -161,6 +151,9 @@ app.post("/api/chief/chat", chiefChatHandler);
 app.route("/api/chief/approvals").get(chiefApprovalsHandler).post(chiefApprovalsHandler);
 app.route("/api/chief/module-access").get(chiefModuleAccessHandler).post(chiefModuleAccessHandler);
 app.get("/api/chief/access", chiefRoomAccessHandler);
+app.route("/api/chief/voice").get(chiefVoiceHandler).post(chiefVoiceHandler);
+app.get("/api/chief/voice/voices", chiefVoiceVoicesHandler);
+app.post("/api/chief/voice/trace", chiefVoiceTraceHandler);
 app.post("/api/chief/workforce/report", chiefWorkforceReportHandler);
 app
   .route("/api/chief/workforce/report-key")
