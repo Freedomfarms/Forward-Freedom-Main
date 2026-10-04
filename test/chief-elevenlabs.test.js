@@ -20,6 +20,7 @@ import {
   upstreamDetail,
 } from "../server/chief/voice/elevenlabs.js";
 import { takePcmSamples, transcriptFromSpeechEvent } from "../src/utils/chiefSpeech.js";
+import { selectChiefVoiceId } from "../src/utils/chiefVoicePreference.js";
 
 const SECRET = "xi-test-key-should-not-leak";
 const VOICE = "21m00Tcm4TlvDq8ikWAM";
@@ -167,7 +168,11 @@ test("voice list failure reports the upstream status", async () => {
   await handleChiefVoices(request(), http.response, {
     authenticate: auth("user-1"),
     env: { ELEVENLABS_API_KEY: SECRET },
-    logger: { error(_message, fields) { logs.push(fields); } },
+    logger: {
+      error(_message, fields) {
+        logs.push(fields);
+      },
+    },
     fetchImpl: async () =>
       jsonResponse(401, { detail: { status: "invalid_api_key", message: `bad ${SECRET}` } }),
   });
@@ -212,10 +217,7 @@ test("speech streams pcm for the selected voice_id and strips markdown", async (
   assert.equal(http.headers["X-Chief-Audio-Format"], "pcm_24000");
   assert.deepEqual(Buffer.concat(http.chunks), Buffer.from(payload));
   assert.equal(calls.length, 1);
-  assert.equal(
-    calls[0].url,
-    `${ELEVENLABS_SPEECH_URL}/${VOICE}/stream?output_format=pcm_24000`
-  );
+  assert.equal(calls[0].url, `${ELEVENLABS_SPEECH_URL}/${VOICE}/stream?output_format=pcm_24000`);
   assert.equal(calls[0].init.headers["xi-api-key"], SECRET);
   assert.equal(calls[0].init.body.model_id, "eleven_flash_v2_5");
   assert.equal(calls[0].init.body.text, "What is happening with my vendors?");
@@ -333,6 +335,116 @@ test("flash model rejection falls back to a second stream", async () => {
   assert.equal(opened.ok, true);
   assert.equal(opened.format, "mp3_44100_128");
   assert.equal(plainSpeechText("**bold** and [vendors](https://example.test)"), "bold and vendors");
+});
+
+const LIBRARY_VOICE = "pX6i0Dc29C8b3143knvS";
+const FREE_VOICE = "CwhRBWXzGAHq8TQ4Fs17";
+const LIBRARY_DETAIL =
+  "Free users cannot use library voices via the API. Please upgrade your subscription to use this voice.";
+
+function audioResponse(byte) {
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new Uint8Array([byte]));
+      controller.close();
+    },
+  });
+  return new Response(stream, { status: 200 });
+}
+
+test("CHIEF keeps a free-tier voice and drops a library voice", () => {
+  const voices = [
+    { voice_id: LIBRARY_VOICE, name: "Library", category: "professional" },
+    { voice_id: FREE_VOICE, name: "Roger", category: "premade" },
+    { voice_id: "EXAVITQu4vr4xnSDxMaL", name: "Sarah", category: "premade" },
+  ];
+  assert.equal(selectChiefVoiceId(voices, { stored: LIBRARY_VOICE, configured: "" }), FREE_VOICE);
+  assert.equal(
+    selectChiefVoiceId(voices, { stored: LIBRARY_VOICE, configured: "EXAVITQu4vr4xnSDxMaL" }),
+    "EXAVITQu4vr4xnSDxMaL"
+  );
+  assert.equal(
+    selectChiefVoiceId(voices, { stored: FREE_VOICE, configured: "EXAVITQu4vr4xnSDxMaL" }),
+    FREE_VOICE
+  );
+  assert.equal(
+    selectChiefVoiceId(
+      [
+        {
+          voice_id: LIBRARY_VOICE,
+          name: "Blocked",
+          category: "premade",
+          free_users_allowed: false,
+        },
+      ],
+      { stored: LIBRARY_VOICE }
+    ),
+    ""
+  );
+});
+
+test("a free-plan library voice 402 speaks with ELEVENLABS_VOICE_ID", async () => {
+  const urls = [];
+  const opened = await openElevenLabsSpeech({
+    apiKey: SECRET,
+    voiceId: LIBRARY_VOICE,
+    text: "Hello",
+    env: { ELEVENLABS_VOICE_ID: FREE_VOICE },
+    logger: silentLogger,
+    fetchImpl: async (url) => {
+      urls.push(String(url));
+      if (String(url).includes(LIBRARY_VOICE)) {
+        return jsonResponse(402, {
+          detail: { status: "payment_required", message: LIBRARY_DETAIL },
+        });
+      }
+      return audioResponse(7);
+    },
+  });
+  assert.equal(opened.ok, true);
+  assert.equal(
+    urls.some((url) => url.includes(`${FREE_VOICE}/stream`)),
+    true
+  );
+  assert.equal(
+    urls.some((url) => url.includes("/voices")),
+    false
+  );
+});
+
+test("the same library voice in ELEVENLABS_VOICE_ID falls through to a default voice", async () => {
+  const urls = [];
+  const opened = await openElevenLabsSpeech({
+    apiKey: SECRET,
+    voiceId: LIBRARY_VOICE,
+    text: "Hello",
+    env: { ELEVENLABS_VOICE_ID: LIBRARY_VOICE },
+    logger: silentLogger,
+    fetchImpl: async (url) => {
+      const href = String(url);
+      urls.push(href);
+      if (href.includes("/voices")) {
+        assert.match(href, /voice_type=default/);
+        return jsonResponse(200, {
+          voices: [
+            { voice_id: LIBRARY_VOICE, name: "Library", category: "professional" },
+            { voice_id: FREE_VOICE, name: "Roger", category: "premade" },
+          ],
+          has_more: false,
+        });
+      }
+      if (href.includes(LIBRARY_VOICE)) {
+        return jsonResponse(402, { detail: { message: LIBRARY_DETAIL } });
+      }
+      return audioResponse(1);
+    },
+  });
+  assert.equal(opened.ok, true);
+  assert.equal(urls.filter((url) => url.includes(`${LIBRARY_VOICE}/stream`)).length, 1);
+  assert.equal(
+    urls.some((url) => url.includes(`${FREE_VOICE}/stream`)),
+    true
+  );
 });
 
 test("an upstream 401 is not retried", async () => {

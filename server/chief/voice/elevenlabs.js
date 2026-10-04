@@ -82,11 +82,15 @@ export function publicVoices(payload) {
     const name = typeof row?.name === "string" ? row.name.trim() : "";
     if (!isVoiceId(voiceId) || !name || seen.has(voiceId)) continue;
     seen.add(voiceId);
-    voices.push({
+    const voice = {
       voice_id: voiceId,
       name,
       category: typeof row?.category === "string" ? row.category : "",
-    });
+    };
+    if (typeof row?.free_users_allowed === "boolean") {
+      voice.free_users_allowed = row.free_users_allowed;
+    }
+    voices.push(voice);
   }
   return voices;
 }
@@ -111,10 +115,17 @@ function elevenHeaders(apiKey, accept) {
   };
 }
 
+export function configuredElevenVoiceId(env = process.env) {
+  const voiceId =
+    typeof env?.ELEVENLABS_VOICE_ID === "string" ? env.ELEVENLABS_VOICE_ID.trim() : "";
+  return isVoiceId(voiceId) ? voiceId : "";
+}
+
 export async function listElevenLabsVoices({
   fetchImpl = fetch,
   apiKey,
   pageLimit = PAGE_LIMIT,
+  voiceType = "",
 } = {}) {
   if (!apiKey) {
     return {
@@ -129,6 +140,7 @@ export async function listElevenLabsVoices({
   for (let page = 0; page < pageLimit; page += 1) {
     const url = new URL(ELEVENLABS_VOICES_URL);
     url.searchParams.set("page_size", String(PAGE_SIZE));
+    if (voiceType) url.searchParams.set("voice_type", voiceType);
     if (token) url.searchParams.set("next_page_token", token);
     let response;
     try {
@@ -167,7 +179,11 @@ export async function listElevenLabsVoices({
       };
     }
     voices.push(...publicVoices(payload));
-    if (!payload?.has_more || typeof payload?.next_page_token !== "string" || !payload.next_page_token) {
+    if (
+      !payload?.has_more ||
+      typeof payload?.next_page_token !== "string" ||
+      !payload.next_page_token
+    ) {
       break;
     }
     token = payload.next_page_token;
@@ -204,9 +220,7 @@ async function requestSpeech({
   signal,
   settings,
 }) {
-  const url = new URL(
-    `${ELEVENLABS_SPEECH_URL}/${encodeURIComponent(voiceId)}/stream`
-  );
+  const url = new URL(`${ELEVENLABS_SPEECH_URL}/${encodeURIComponent(voiceId)}/stream`);
   url.searchParams.set("output_format", format);
   const accept = format.startsWith("mp3") ? "audio/mpeg" : "application/octet-stream";
   let response;
@@ -242,26 +256,32 @@ async function requestSpeech({
   return { ok: true, response, format, model };
 }
 
-export async function openElevenLabsSpeech({
-  fetchImpl = fetch,
-  apiKey,
-  voiceId,
-  text,
-  voiceSettings,
-  signal,
-  logger = console,
-} = {}) {
-  const spoken = plainSpeechText(text);
-  const settings = speechVoiceSettings(voiceSettings);
-  if (!apiKey) {
-    return { ok: false, status: 503, message: "ElevenLabs is not configured." };
-  }
-  if (!isVoiceId(voiceId)) {
-    return { ok: false, status: 400, message: "Choose an ElevenLabs voice." };
-  }
-  if (!spoken) {
-    return { ok: false, status: 400, message: "There is nothing to speak." };
-  }
+function libraryVoiceRefusal(result) {
+  if (!result || result.ok || result.status !== 402) return false;
+  return /library voice/i.test(`${result.detail || ""} ${result.message || ""}`);
+}
+
+const LIBRARY_VOICE_CATEGORIES = new Set(["professional", "famous", "high_quality"]);
+
+async function defaultFreeVoiceId({ fetchImpl, apiKey, avoid }) {
+  const listed = await listElevenLabsVoices({
+    fetchImpl,
+    apiKey,
+    voiceType: "default",
+    pageLimit: 1,
+  });
+  if (!listed.ok) return "";
+  const usable = listed.voices.filter(
+    (voice) =>
+      voice.voice_id !== avoid &&
+      voice.free_users_allowed !== false &&
+      !LIBRARY_VOICE_CATEGORIES.has(voice.category)
+  );
+  const premade = usable.find((voice) => voice.category === "premade");
+  return (premade || usable[0])?.voice_id || "";
+}
+
+async function speakWithModels({ fetchImpl, apiKey, voiceId, text, signal, settings, logger }) {
   let last = null;
   for (let index = 0; index < SPEECH_ATTEMPTS.length; index += 1) {
     const attempt = SPEECH_ATTEMPTS[index];
@@ -269,7 +289,7 @@ export async function openElevenLabsSpeech({
       fetchImpl,
       apiKey,
       voiceId,
-      text: spoken,
+      text,
       model: attempt.model,
       format: attempt.format,
       signal,
@@ -288,6 +308,61 @@ export async function openElevenLabsSpeech({
       continue;
     }
     break;
+  }
+  return last;
+}
+
+export async function openElevenLabsSpeech({
+  fetchImpl = fetch,
+  apiKey,
+  voiceId,
+  text,
+  voiceSettings,
+  signal,
+  logger = console,
+  env = process.env,
+} = {}) {
+  const spoken = plainSpeechText(text);
+  const settings = speechVoiceSettings(voiceSettings);
+  if (!apiKey) {
+    return { ok: false, status: 503, message: "ElevenLabs is not configured." };
+  }
+  if (!isVoiceId(voiceId)) {
+    return { ok: false, status: 400, message: "Choose an ElevenLabs voice." };
+  }
+  if (!spoken) {
+    return { ok: false, status: 400, message: "There is nothing to speak." };
+  }
+  const attempt = (id) =>
+    speakWithModels({
+      fetchImpl,
+      apiKey,
+      voiceId: id,
+      text: spoken,
+      signal,
+      settings,
+      logger,
+    });
+  let last = await attempt(voiceId);
+  if (!libraryVoiceRefusal(last)) return last;
+
+  const tried = new Set([voiceId]);
+  const configured = configuredElevenVoiceId(env);
+  if (configured && !tried.has(configured)) {
+    logger.error?.("[chief-voice] ElevenLabs library voice is unavailable on this plan", {
+      status: 402,
+    });
+    tried.add(configured);
+    last = await attempt(configured);
+    if (!libraryVoiceRefusal(last)) return last;
+  }
+
+  const discovered = await defaultFreeVoiceId({ fetchImpl, apiKey, avoid: voiceId });
+  if (discovered && !tried.has(discovered)) {
+    logger.error?.("[chief-voice] ElevenLabs library voice is unavailable on this plan", {
+      status: 402,
+    });
+    last = await attempt(discovered);
   }
   return last;
 }
