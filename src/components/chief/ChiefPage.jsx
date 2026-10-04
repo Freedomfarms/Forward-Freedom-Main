@@ -40,8 +40,10 @@ import { ChiefConversationList } from "./ChiefConversationList.jsx";
 import { ChiefModelSelect } from "./ChiefModelSelect.jsx";
 import { ChiefStatus } from "./ChiefStatus.jsx";
 import { ChiefEarlierTurns, ChiefTranscript } from "./ChiefTranscript.jsx";
+import { ChiefSettings } from "./ChiefSettings.jsx";
 import { ChiefVoiceSheet } from "./ChiefVoiceSheet.jsx";
 import { useChiefVoice } from "./voice/useChiefVoice.js";
+import { readChiefPreferences, writeChiefPreferences } from "../../utils/chiefPreferences.js";
 
 const NARROW_NAV_QUERY = "(max-width: 1023px)";
 
@@ -89,14 +91,7 @@ function assistantTextFrom(messages, streamText) {
   return answer || (typeof streamText === "string" ? streamText.trim() : "");
 }
 
-export function ChiefPage({
-  user,
-  embedded = false,
-  onOpenFinancial,
-  onOpenAgents,
-  onOpenSettings,
-  onSignOut,
-}) {
+export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgents, onSignOut }) {
   const sessionUid = typeof user?.uid === "string" ? user.uid : "";
   const [sessions, setSessions] = useState([]);
   const [archivedSessions, setArchivedSessions] = useState([]);
@@ -130,7 +125,12 @@ export function ChiefPage({
   const [access, setAccess] = useState(emptyRoomAccess);
   const [now, setNow] = useState(() => new Date());
   const [models, setModels] = useState([]);
+  const [defaultModel, setDefaultModel] = useState(null);
   const [modelRoute, setModelRoute] = useState(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSection, setSettingsSection] = useState("voice");
+  const [preferences, setPreferences] = useState(() => readChiefPreferences());
+  const speakReplyRef = useRef(async () => {});
   const abortRef = useRef(null);
   const busyRef = useRef(false);
   const generation = useRef(0);
@@ -230,10 +230,14 @@ export function ChiefPage({
     let cancelled = false;
     fetchChiefModels(user)
       .then((payload) => {
-        if (!cancelled) setModels(Array.isArray(payload?.models) ? payload.models : []);
+        if (cancelled) return;
+        setModels(Array.isArray(payload?.models) ? payload.models : []);
+        setDefaultModel(typeof payload?.defaultModel === "string" ? payload.defaultModel : null);
       })
       .catch(() => {
-        if (!cancelled) setModels([]);
+        if (cancelled) return;
+        setModels([]);
+        setDefaultModel(null);
       });
     return () => {
       cancelled = true;
@@ -360,16 +364,18 @@ export function ChiefPage({
   }, [navQuery, searchAttempt, user]);
 
   useEffect(() => {
-    if (!drawerOpen && !placesOpen && !accessOpen) return undefined;
+    if (!drawerOpen && !placesOpen && !accessOpen && !settingsOpen && !voiceOpen) return undefined;
     function onKeyDown(event) {
       if (event.key !== "Escape") return;
       setDrawerOpen(false);
       setPlacesOpen(false);
       setAccessOpen(false);
+      setSettingsOpen(false);
+      setVoiceOpen(false);
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [drawerOpen, placesOpen, accessOpen]);
+  }, [drawerOpen, placesOpen, accessOpen, settingsOpen, voiceOpen]);
 
   function selectSession(sessionId) {
     stopActiveTurn();
@@ -583,6 +589,9 @@ export function ChiefPage({
         setBusyState(false);
       }
       if (generation.current === turnToken) void refreshAccess();
+    }
+    if (source !== "voice" && result?.ok && result.text) {
+      void speakReplyRef.current(result.text);
     }
     return result;
   }
@@ -834,8 +843,14 @@ export function ChiefPage({
       return;
     }
     if (key === "settings") {
-      onOpenSettings?.();
+      setSettingsSection("voice");
+      setSettingsOpen(true);
+      setRoom("home");
     }
+  }
+
+  function applyPreferences(next) {
+    setPreferences(writeChiefPreferences(next));
   }
 
   const voice = useChiefVoice({
@@ -845,6 +860,8 @@ export function ChiefPage({
     abortTurnRef,
     silenceRef: voiceSilenceRef,
     setTurnError,
+    preferences,
+    speakReplyRef,
   });
   const fieldStatus = user ? status : CHIEF_STATUS.READY;
   const orbState = visualStateForStatus(fieldStatus, voice.phase);
@@ -878,6 +895,10 @@ export function ChiefPage({
           onSelect={openNode}
           onCoreTap={user ? voice.onCoreTap : undefined}
           audioLevelRef={voice.audioLevelRef}
+          motionPreference={preferences.appearance.reducedMotion}
+          animationIntensity={preferences.appearance.animationIntensity}
+          showLabels={preferences.appearance.showNavLabels}
+          showStatus={preferences.appearance.showTelemetry}
         />
         {voiceNote ? <p className="chief-voice-caption">{voiceNote}</p> : null}
         <p className="chief-sr" aria-live="polite">
@@ -897,6 +918,35 @@ export function ChiefPage({
           onSettings={voice.updateSettings}
           onTest={voice.testVoice}
           disabled={voice.phase !== "idle"}
+        />
+        <ChiefSettings
+          open={settingsOpen}
+          section={settingsSection}
+          onSection={setSettingsSection}
+          onClose={() => setSettingsOpen(false)}
+          user={user}
+          models={models}
+          defaultModel={defaultModel}
+          modelRoute={modelRoute}
+          modelBusy={busy}
+          onChooseModel={chooseModel}
+          access={access}
+          onRefreshAccess={() => {
+            void refreshAccess();
+          }}
+          activeSessionId={activeSessionId}
+          onStartConversation={() => {
+            startNewConversation();
+            setRoom("convos");
+          }}
+          onClearConversation={(sessionId) => {
+            deleteConversation(sessionId).catch((error) => setTurnError(errorText(error)));
+          }}
+          preferences={preferences}
+          onPreferences={applyPreferences}
+          onVoiceSettings={voice.updateSettings}
+          onTestVoice={voice.testVoice}
+          voiceDisabled={voice.phase !== "idle"}
         />
       </section>
     );
@@ -941,7 +991,10 @@ export function ChiefPage({
                   </button>
                 )}
                 {conversationList}
-                <ChiefEarlierTurns earlier={turnView.earlier} />
+                <ChiefEarlierTurns
+                  earlier={turnView.earlier}
+                  showResponseText={preferences.conversation.showResponseText}
+                />
               </>
             )}
           </aside>
@@ -964,14 +1017,16 @@ export function ChiefPage({
               </button>
             )}
           </div>
-        ) : (
+        ) : preferences.appearance.showTelemetry ? (
           <aside className="chief-telemetry" aria-label="CHIEF status">
             {instruments}
           </aside>
-        )}
+        ) : null}
       </div>
       <div className="chief-room-bottom">
-        {narrowNav ? <div className="chief-dock-meta">{instruments}</div> : null}
+        {narrowNav && preferences.appearance.showTelemetry ? (
+          <div className="chief-dock-meta">{instruments}</div>
+        ) : null}
         {user ? (
           <ChiefTranscript
             userLine={turnView.userLine}
@@ -980,6 +1035,7 @@ export function ChiefPage({
             isLoading={historyLoading}
             notFound={notFound}
             showEmpty={showEmpty}
+            showResponseText={preferences.conversation.showResponseText}
             onBackToList={backToConversations}
           />
         ) : (
@@ -1019,6 +1075,7 @@ export function ChiefPage({
                   onSubmit={() => sendMessage(draft)}
                   onVoice={voice.onCoreTap}
                   voiceActive={voice.phase === "listening" || voice.phase === "speaking"}
+                  enterToSend={preferences.conversation.enterToSend}
                   disabled={busy || historyLoading || notFound}
                   inputRef={composerRef}
                 />
@@ -1034,7 +1091,10 @@ export function ChiefPage({
           aria-label="Conversations"
         >
           {conversationList}
-          <ChiefEarlierTurns earlier={turnView.earlier} />
+          <ChiefEarlierTurns
+            earlier={turnView.earlier}
+            showResponseText={preferences.conversation.showResponseText}
+          />
           <button type="button" className="chief-action chief-action--quiet" onClick={closeSheets}>
             Close
           </button>

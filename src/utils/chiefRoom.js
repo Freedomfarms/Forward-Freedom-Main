@@ -46,6 +46,7 @@ export function emptyRoomAccess() {
     organize: CHIEF_ACCESS.UNAVAILABLE,
     delete: CHIEF_ACCESS.UNAVAILABLE,
     inventory: null,
+    systems: null,
   };
 }
 
@@ -64,6 +65,22 @@ function accessRows(value) {
 function accessNames(value) {
   if (!Array.isArray(value)) return [];
   return value.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim());
+}
+
+const SYSTEM_ACCESS = new Set(["read", "write", "read_write", "not_connected"]);
+
+export function normalizeConnectedSystems(value) {
+  if (!Array.isArray(value)) return null;
+  return value
+    .filter((row) => row && typeof row.name === "string" && row.name.trim())
+    .map((row) => ({
+      id: typeof row.id === "string" && row.id.trim() ? row.id.trim() : row.name.trim(),
+      name: row.name.trim(),
+      status:
+        typeof row.status === "string" && row.status.trim() ? row.status.trim() : "Not connected",
+      access: SYSTEM_ACCESS.has(row.access) ? row.access : "not_connected",
+      detail: typeof row.detail === "string" ? row.detail : "",
+    }));
 }
 
 export function normalizeAccessInventory(inventory) {

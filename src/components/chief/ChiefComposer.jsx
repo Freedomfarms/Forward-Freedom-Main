@@ -4,6 +4,7 @@ export function ChiefComposer({
   onSubmit,
   onVoice,
   voiceActive = false,
+  enterToSend = true,
   disabled = false,
   placeholder = "Ask CHIEF anything...",
   inputRef = null,
@@ -47,6 +48,7 @@ export function ChiefComposer({
         disabled={disabled}
         rows={1}
         onKeyDown={(event) => {
+          if (!enterToSend) return;
           if (event.key === "Enter" && !event.shiftKey) {
             event.preventDefault();
             if (!disabled) onSubmit();

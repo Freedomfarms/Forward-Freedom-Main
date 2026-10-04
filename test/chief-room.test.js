@@ -269,11 +269,10 @@ test("the room intelligence maps status onto the APEX orb and web", () => {
   assert.equal(page.includes("ChiefField"), false);
   assert.equal(page.includes("renderIntelligence"), false);
   assert.match(world, /prefers-reduced-motion/);
-  assert.match(world, /opacity=\{0\.12\}/);
-  assert.match(
-    world,
-    /<ApexHeroOrb state=\{orbState\} interactive=\{false\} audioLevelRef=\{audioLevelRef\} \/>/
-  );
+  assert.match(world, /0\.12/);
+  assert.match(world, /staticCore=\{resolvedMotion === "off"\}/);
+  assert.match(world, /state=\{orbState\}/);
+  assert.match(world, /audioLevelRef=\{audioLevelRef\}/);
   assert.match(hero, /listening/);
   assert.match(page, /sendMessage/);
   assert.match(page, /onCoreTap/);

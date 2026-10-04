@@ -2348,12 +2348,11 @@ function ForwardFreedomDashboard({
     onOpenFinancial: () =>
       osSurface === "chief" ? navigateOs("/os/finance") : setActiveTab(APP_TABS.DASHBOARD),
     onOpenAgents: () => setChiefFace("agents"),
-    onOpenSettings: () => setChiefFace("settings"),
     onSignOut: () => void sessionControls?.onSignOut?.(),
   };
   const chiefModule =
     freedomOsAuthUser &&
-    (chiefFace === "agents" || chiefFace === "settings") &&
+    chiefFace === "agents" &&
     (osSurface === "chief" || (!osSurface && activeTab === APP_TABS.CHIEF));
 
   // The URL chooses the major surface. CHIEF is the authenticated home.
@@ -2385,7 +2384,7 @@ function ForwardFreedomDashboard({
           <div style={{ padding: 16 }}>
             <FreedomOsHome
               user={freedomOsAuthUser}
-              initialView={chiefFace === "settings" ? "settings" : "home"}
+              initialView="home"
               onOpenFinanceTool={() => navigateOs("/os/finance")}
             />
           </div>
