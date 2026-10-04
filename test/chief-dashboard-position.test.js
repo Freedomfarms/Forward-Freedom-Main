@@ -9,7 +9,7 @@ import { assembleSystemPrompt, createContextAssembler } from "../server/chief/co
 import { Capability, CapabilityPolicy } from "../server/chief/core/capabilities.js";
 import {
   MemoryModuleAccess,
-  MODULE02_READ_DISABLED,
+  FREEDOM_FINANCIAL_READ_DISABLED,
 } from "../server/chief/security/module-access.js";
 import { MemoryAuditLog } from "../server/chief/security/audit.js";
 import { createChiefTools } from "../server/chief/tools/builtin.js";
@@ -389,7 +389,7 @@ test("finance_summary returns the position only for the authenticated user when 
   for (const name of WRITE_NAMES) assert.equal(names.includes(name), false);
   assert.equal(Object.hasOwn(CHIEF_TOOL_INVENTORY, "finance_write"), false);
   const finance = tools.find((tool) => tool.spec.name === "finance_summary");
-  const setAccess = tools.find((tool) => tool.spec.name === "module02_access_set");
+  const setAccess = tools.find((tool) => tool.spec.name === "freedom_financial_access_set");
   assert.equal(finance.spec.requiresConfirmation, false);
   assert.equal(setAccess.spec.requiresConfirmation, true);
   assert.deepEqual(finance.spec.requiredCapabilities, [Capability.FINANCE_READ]);
@@ -404,16 +404,16 @@ test("finance_summary returns the position only for the authenticated user when 
     inventory: CHIEF_TOOL_INVENTORY,
   });
 
-  await access.setModule02ReadEnabled(USER_A, false);
+  await access.setFreedomFinancialReadEnabled(USER_A, false);
   const denied = await executor.execute(
     { callId: "off", name: "finance_summary", arguments: {} },
     { userId: USER_A }
   );
-  assert.equal(denied.output, MODULE02_READ_DISABLED);
+  assert.equal(denied.output, FREEDOM_FINANCIAL_READ_DISABLED);
   assert.deepEqual(loads, []);
   assert.deepEqual(positions, []);
 
-  await access.setModule02ReadEnabled(USER_A, true);
+  await access.setFreedomFinancialReadEnabled(USER_A, true);
   const allowed = await executor.execute(
     { callId: "on", name: "finance_summary", arguments: { userId: USER_B } },
     { userId: USER_A }
@@ -430,18 +430,18 @@ test("finance_summary returns the position only for the authenticated user when 
   assert.deepEqual(positions, [USER_A]);
 
   const changed = await executor.execute(
-    { callId: "set", name: "module02_access_set", arguments: { enabled: false } },
+    { callId: "set", name: "freedom_financial_access_set", arguments: { enabled: false } },
     { userId: USER_A, mutationApproved: true }
   );
   assert.deepEqual(JSON.parse(changed.output), {
-    module02Read: false,
+    freedomFinancialRead: false,
     writeAccess: false,
     message: "Freedom Financial read access is off.",
   });
   assert.deepEqual(loads, [USER_A]);
 });
 
-test("system guidance follows the caller's module02Read flag", async () => {
+test("system guidance follows the caller's freedomFinancialRead flag", async () => {
   const facts = {
     async read() {
       return [];
@@ -451,7 +451,7 @@ test("system guidance follows the caller's module02Read flag", async () => {
     userId: USER_A,
     query: "What is my True Cash?",
     facts,
-    availableTools: ["finance_summary", "module02_access_set"],
+    availableTools: ["finance_summary", "freedom_financial_access_set"],
   });
   assert.match(off, /read access is off/);
   assert.match(off, /write access is not currently available/);
@@ -462,8 +462,8 @@ test("system guidance follows the caller's module02Read flag", async () => {
     userId: USER_A,
     query: "What is my True Cash?",
     facts,
-    availableTools: ["finance_summary", "module02_access_set"],
-    module02Read: true,
+    availableTools: ["finance_summary", "freedom_financial_access_set"],
+    freedomFinancialRead: true,
   });
   assert.match(on, /read access is on/);
   assert.match(on, /write access is not currently available/);
@@ -478,7 +478,7 @@ test("system guidance follows the caller's module02Read flag", async () => {
     availableTools: ["finance_summary"],
   });
   assert.match(prompted, /read access is on/);
-  await access.setModule02ReadEnabled(USER_A, false);
+  await access.setFreedomFinancialReadEnabled(USER_A, false);
   const denied = await assembler({
     userId: USER_A,
     transcript: [{ role: "user", content: "What is my net worth?" }],

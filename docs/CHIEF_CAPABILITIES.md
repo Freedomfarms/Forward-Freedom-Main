@@ -37,9 +37,9 @@ the existing stores and are registered from `server/chief/tools/builtin.js`.
 6. The call times out.
 7. Output and injection scanning run.
 
-A `userId` in the model's arguments is ignored. Module 02 data stays behind
-`module02Read`. A `finance:read` grant does not turn that switch on.
-`module02_access_set` is high impact and calls `PrismaModuleAccess.setModule02ReadEnabled`.
+A `userId` in the model's arguments is ignored. Freedom Financial data stays behind
+`freedomFinancialRead`. A `finance:read` grant does not turn that switch on.
+`freedom_financial_access_set` is high impact and calls `PrismaModuleAccess.setFreedomFinancialReadEnabled`.
 
 ## How a new Freedom OS capability is registered
 
@@ -95,6 +95,6 @@ CHIEF can inspect Freedom OS source and cannot modify, commit, push, or deploy i
 - Finance writes and Plaid actions
 - Settings other than timezone
 - Model-facing `capability_search` and generic `capability_invoke`
-- Module 01
+- CEO Agents
 
 CHIEF still cannot commit, push, deploy, or run a shell.

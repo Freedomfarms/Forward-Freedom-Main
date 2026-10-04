@@ -32,8 +32,13 @@ export const CAPABILITY_CATALOG = Object.freeze({
   schedule_outcome: entry("scheduler", Effect.READ, Confirmation.NONE, AuditPolicy.DENY_ONLY),
   finance_summary: entry("finance", Effect.READ, Confirmation.NONE, AuditPolicy.DENY_ONLY),
   workspace_plan_summary: entry("finance", Effect.READ, Confirmation.NONE, AuditPolicy.DENY_ONLY),
-  module02_access_status: entry("settings", Effect.READ, Confirmation.NONE, AuditPolicy.DENY_ONLY),
-  module02_access_set: entry(
+  freedom_financial_access_status: entry(
+    "settings",
+    Effect.READ,
+    Confirmation.NONE,
+    AuditPolicy.DENY_ONLY
+  ),
+  freedom_financial_access_set: entry(
     "settings",
     Effect.HIGH_IMPACT,
     Confirmation.REQUIRED,

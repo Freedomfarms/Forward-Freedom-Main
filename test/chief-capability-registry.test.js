@@ -208,7 +208,7 @@ test("destructive and high-impact capabilities require a fresh confirmation", ()
   const calls = [
     { callId: "cancel", name: "schedule_cancel", arguments: { taskId: "task-1" } },
     { callId: "rename", name: "schedule_update", arguments: { taskId: "task-1" } },
-    { callId: "access", name: "module02_access_set", arguments: { enabled: true } },
+    { callId: "access", name: "freedom_financial_access_set", arguments: { enabled: true } },
   ];
   const classification = classifyToolCalls(calls, specs);
   assert.deepEqual(classification.explicitIds, ["cancel", "access"]);
@@ -302,7 +302,7 @@ test("conversation capabilities use the checkpoint store and ignore a model user
   );
 });
 
-test("Module 02 remains a separate switch from the finance grant", async () => {
+test("Freedom Financial remains a separate switch from the finance grant", async () => {
   const access = new MemoryModuleAccess();
   const tooling = await createChiefTooling({
     userId: "user-a",
@@ -311,7 +311,7 @@ test("Module 02 remains a separate switch from the finance grant", async () => {
     moduleAccess: access,
   });
   const summary = tooling.tools.find((tool) => tool.spec.name === "finance_summary");
-  const toggle = tooling.tools.find((tool) => tool.spec.name === "module02_access_set");
+  const toggle = tooling.tools.find((tool) => tool.spec.name === "freedom_financial_access_set");
   assert.equal(summary.spec.effect, Effect.READ);
   assert.equal(toggle.spec.effect, Effect.HIGH_IMPACT);
   const blocked = await tooling.executor.execute(
@@ -320,12 +320,16 @@ test("Module 02 remains a separate switch from the finance grant", async () => {
   );
   assert.equal(blocked.isError, true);
   const enabled = await tooling.executor.execute(
-    { callId: "m", name: "module02_access_set", arguments: { enabled: true, userId: "user-b" } },
+    {
+      callId: "m",
+      name: "freedom_financial_access_set",
+      arguments: { enabled: true, userId: "user-b" },
+    },
     { userId: "user-a", agentId: "chief", mutationApproved: true }
   );
   assert.equal(enabled.isError, false);
-  assert.equal(await access.isModule02ReadEnabled("user-a"), true);
-  assert.equal(await access.isModule02ReadEnabled("user-b"), false);
+  assert.equal(await access.isFreedomFinancialReadEnabled("user-a"), true);
+  assert.equal(await access.isFreedomFinancialReadEnabled("user-b"), false);
 });
 
 test("deleting the current conversation confirms, then removes that session", async () => {

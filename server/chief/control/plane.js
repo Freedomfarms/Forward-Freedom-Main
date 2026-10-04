@@ -229,14 +229,14 @@ export const CONTROL_PLANE = Object.freeze([
     domain: ControlDomain.MODULE,
     effect: ControlEffect.READ,
     capability: Capability.MODULE_ACCESS,
-    tool: "module02_access_status",
+    tool: "freedom_financial_access_status",
   }),
   live({
     id: "module.access_set",
     domain: ControlDomain.MODULE,
     effect: ControlEffect.CONFIRM,
     capability: Capability.MODULE_ACCESS,
-    tool: "module02_access_set",
+    tool: "freedom_financial_access_set",
   }),
   live({
     id: "conversation.search",

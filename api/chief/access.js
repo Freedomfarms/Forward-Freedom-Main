@@ -39,7 +39,8 @@ export async function handleChiefRoomAccess(request, response, deps = {}) {
     return;
   }
 
-  const readMoney = deps.readMoney ?? ((id) => new PrismaModuleAccess().isModule02ReadEnabled(id));
+  const readMoney =
+    deps.readMoney ?? ((id) => new PrismaModuleAccess().isFreedomFinancialReadEnabled(id));
   const loadPolicy = deps.loadPolicy ?? loadCapabilityPolicy;
   const credentialPresent =
     typeof deps.credentialPresent === "boolean"

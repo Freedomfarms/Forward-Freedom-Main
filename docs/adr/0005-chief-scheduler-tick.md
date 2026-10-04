@@ -9,7 +9,7 @@
 1. There is one dispatch path: Vercel cron → `api/cron/chief-dispatch` → `runChiefTick`
    → claim → `TurnMachine.run` with `callerKind: "schedule"` and trigger
    `schedule:<taskId>`. The tick does not call a model or a tool. It builds a message and
-   records the outcome. Module 01's `/api/cron/agent-dispatch` and runner are not used.
+   records the outcome. The CEO Agents `/api/cron/agent-dispatch` and runner are not used.
 2. The database is the only scheduler state. `ChiefScheduledTask.nextRunAt` is set when
    the task is created (and back-filled by the tick for rows that lack it). A claim is a
    compare-and-swap on `(id, status ACTIVE, observed nextRunAt, lock free or stale)` that

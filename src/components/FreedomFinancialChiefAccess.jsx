@@ -1,16 +1,15 @@
 import { useEffect, useState } from "react";
 
 import { styles } from "../styles.js";
-import { module02AccessCopy } from "../utils/module02AccessCopy.js";
+import { freedomFinancialAccessCopy } from "../utils/freedomFinancialAccessCopy.js";
 import {
-  fetchModule02ChiefAccess,
-  saveModule02ChiefAccess,
-} from "../utils/module02ChiefAccess.js";
+  fetchFreedomFinancialChiefAccess,
+  saveFreedomFinancialChiefAccess,
+} from "../utils/freedomFinancialChiefAccess.js";
 
-// Small Module 02 control. Freedom Financial has no settings screen, so this
-// sits at the bottom of the Module 02 sidebar and writes the same server
-// record CHIEF uses.
-export function Module02ChiefAccess({ user }) {
+// Freedom Financial has no settings screen, so this control sits at the bottom
+// of the Freedom Financial sidebar and writes the same server record CHIEF uses.
+export function FreedomFinancialChiefAccess({ user }) {
   const [enabled, setEnabled] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -18,10 +17,10 @@ export function Module02ChiefAccess({ user }) {
 
   useEffect(() => {
     let cancelled = false;
-    fetchModule02ChiefAccess(user)
+    fetchFreedomFinancialChiefAccess(user)
       .then((row) => {
         if (cancelled) return;
-        setEnabled(row.module02Read === true);
+        setEnabled(row.freedomFinancialRead === true);
         setLoaded(true);
       })
       .catch((err) => {
@@ -41,8 +40,8 @@ export function Module02ChiefAccess({ user }) {
     setBusy(true);
     setError("");
     try {
-      const saved = await saveModule02ChiefAccess(user, next);
-      setEnabled(saved.module02Read === true);
+      const saved = await saveFreedomFinancialChiefAccess(user, next);
+      setEnabled(saved.freedomFinancialRead === true);
     } catch (err) {
       setError(err?.message || "CHIEF access could not be updated.");
     } finally {
@@ -84,7 +83,7 @@ export function Module02ChiefAccess({ user }) {
         {enabled ? "ON" : "OFF"}
       </button>
       <div style={{ color: "#d5e4f7", fontSize: 12, lineHeight: 1.45, marginTop: 10 }}>
-        {module02AccessCopy(enabled)}
+        {freedomFinancialAccessCopy(enabled)}
       </div>
       {error ? (
         <div style={{ color: "#ffd0d6", fontSize: 12, lineHeight: 1.4, marginTop: 8 }}>{error}</div>

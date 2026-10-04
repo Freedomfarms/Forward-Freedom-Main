@@ -18,7 +18,7 @@
    does not import `server/agents` or `server/brain`.
 4. `finance_summary` returns that aggregate plus the existing Plaid connection
    counts (`itemCount`, `connectedCount`, `requiresAttentionCount`, `lastSyncAt`).
-   When the caller's Module 02 read flag is on, it also returns `dashboard`:
+   When the caller's Freedom Financial read flag is on, it also returns `dashboard`:
    the Freedom Financial position computed by the dashboard utilities (spendable
    True Cash, liquid cash, credit card debt, reserves, gross True Cash, net
    worth, allocation, current-month budget and category spend, and the yearly

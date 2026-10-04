@@ -7,7 +7,7 @@
 // does not leave every tool unreachable. This loader grants only the
 // capabilities the reconciled control-plane catalog marks baseline.
 // workforce:read and code:read stay off it. network:fetch and file:read stay
-// off it. finance:read lets the read tools run so they can report that Module 02
+// off it. finance:read lets the read tools run so they can report that Freedom Financial
 // access is off. The data itself stays behind chief_module_access, which
 // defaults to off and is not a grant row. Any returned grant row replaces this
 // baseline. policyFromGrantRows stays a pure mapping of stored rows.

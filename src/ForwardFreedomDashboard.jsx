@@ -109,7 +109,7 @@ import { RecurringSubscriptions } from "./components/RecurringSubscriptions.jsx"
 import { TransactionsView } from "./components/TransactionsView.jsx";
 import { WorkspaceGuideAssistant } from "./components/WorkspaceGuideAssistant.jsx";
 import { FreedomOsSignedOutCard } from "./components/freedomOs/FreedomOsHome.jsx";
-import { isModule02Tab } from "./utils/module02AccessCopy.js";
+import { isFreedomFinancialTab } from "./utils/freedomFinancialAccessCopy.js";
 import { AdminUsagePanel } from "./components/freedomOs/AdminUsagePanel.jsx";
 import { ChiefPage } from "./components/chief/ChiefPage.jsx";
 import { useViewportUIScale } from "./utils/useViewportUIScale.js";
@@ -744,7 +744,7 @@ function ForwardFreedomDashboard({
   const activeTab =
     osSurface === "finance" &&
     storedActiveTab !== APP_TABS.ADMIN_USAGE &&
-    !isModule02Tab(storedActiveTab)
+    !isFreedomFinancialTab(storedActiveTab)
       ? APP_TABS.DASHBOARD
       : storedActiveTab;
   const onboardingProgress = evaluateOnboardingProgress(activeUser, activeTab);

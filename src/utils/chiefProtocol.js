@@ -57,8 +57,8 @@ export function formatChiefTime(value, now = Date.now()) {
 
 export function statusForToolName(name) {
   if (name === "web_search") return CHIEF_STATUS.WEB_SEARCH;
-  if (name === "module02_access_set") return CHIEF_STATUS.MODULE_ACCESS_SET;
-  if (name === "module02_access_status") return CHIEF_STATUS.MODULE_ACCESS;
+  if (name === "freedom_financial_access_set") return CHIEF_STATUS.MODULE_ACCESS_SET;
+  if (name === "freedom_financial_access_status") return CHIEF_STATUS.MODULE_ACCESS;
   if (FINANCE_TOOLS.has(name)) return CHIEF_STATUS.FINANCE;
   return CHIEF_STATUS.TOOL;
 }

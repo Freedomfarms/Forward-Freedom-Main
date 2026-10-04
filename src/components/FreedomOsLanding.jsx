@@ -130,17 +130,19 @@ function PortalCard({ eyebrow, title, description, actionLabel, onClick }) {
         alignContent: "start",
       }}
     >
-      <div
-        style={{
-          color: "#67e8f9",
-          fontSize: 10,
-          fontWeight: 900,
-          letterSpacing: 2.2,
-          textTransform: "uppercase",
-        }}
-      >
-        {eyebrow}
-      </div>
+      {eyebrow ? (
+        <div
+          style={{
+            color: "#67e8f9",
+            fontSize: 10,
+            fontWeight: 900,
+            letterSpacing: 2.2,
+            textTransform: "uppercase",
+          }}
+        >
+          {eyebrow}
+        </div>
+      ) : null}
       <div style={{ color: "white", fontSize: 18, fontWeight: 900, letterSpacing: 0.3 }}>
         {title}
       </div>
@@ -476,14 +478,12 @@ export function AuthenticatedFreedomOsShell({
         portals={
           <>
             <PortalCard
-              eyebrow="Module 01"
               title="CEO Agents"
               description="Your autonomous agent operating system — CEO Agent, digests, and the team that runs missions on your behalf."
               actionLabel="Enter CEO Agents"
               onClick={onOpenAgents}
             />
             <PortalCard
-              eyebrow="Module 02"
               title="Freedom Financial"
               description="Accounts, budgets, forecasting, and real-time cash intelligence — the financial command center inside Freedom OS."
               actionLabel="Enter Freedom Financial"

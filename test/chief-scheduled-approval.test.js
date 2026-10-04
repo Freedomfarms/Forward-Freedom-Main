@@ -592,7 +592,7 @@ test("prisma finish from AWAITING_APPROVAL is compare-and-swap and does not move
   assert.equal(runStatus, RunStatus.SUCCEEDED);
 });
 
-test("phase 11 does not add a second loop, executor, sender, or module 01 import", () => {
+test("phase 11 does not add a second loop, executor, sender, or CEO Agents import", () => {
   const resume = readFileSync("server/chief/scheduler/resume.js", "utf8");
   const tick = readFileSync("server/chief/scheduler/tick.js", "utf8");
   const approvals = readFileSync("api/chief/approvals.js", "utf8");

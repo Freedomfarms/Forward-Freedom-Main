@@ -355,7 +355,7 @@ test("a procedure that names a confirming tool still suspends", async () => {
   assert.equal((await facts.read({ userId: "user" })).length, 0);
 });
 
-test("skill modules do not add an executor, a model loop, or a Module 01 import", () => {
+test("skill modules do not add an executor, a model loop, or a CEO Agents import", () => {
   const skillDir = path.join(repoRoot, "server/chief/skills");
   const files = readdirSync(skillDir).filter((name) => name.endsWith(".js"));
   assert.ok(files.includes("loader.js"));

@@ -1,5 +1,5 @@
 // Shared financial aggregates. Pure computation plus the minimized select the
-// finance agent already proved safe. CHIEF and Module 01 both call this module.
+// finance agent already proved safe. CHIEF and CEO Agents both call this module.
 // It does not import an agent, a model, or CHIEF.
 
 import { withUserContext } from "../db/prisma.js";

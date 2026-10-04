@@ -1,4 +1,4 @@
-// Per-user Module 02 read access. The flag defaults off, the UI and the
+// Per-user Freedom Financial read access. The flag defaults off, the UI and the
 // confirmed CHIEF tool write the same row, and the finance tools stay read-only.
 
 import test from "node:test";
@@ -6,14 +6,17 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { handleChiefModuleAccess } from "../api/chief/module-access.js";
-import { assembleSystemPrompt, module02AccessGuidance } from "../server/chief/context/assemble.js";
+import {
+  assembleSystemPrompt,
+  freedomFinancialAccessGuidance,
+} from "../server/chief/context/assemble.js";
 import { Capability, CapabilityPolicy } from "../server/chief/core/capabilities.js";
 import { MemoryCheckpointStore } from "../server/chief/runtime/checkpoint.js";
 import { TurnMachine } from "../server/chief/runtime/turn.js";
 import { MemoryAuditLog } from "../server/chief/security/audit.js";
 import {
   MemoryModuleAccess,
-  MODULE02_READ_DISABLED,
+  FREEDOM_FINANCIAL_READ_DISABLED,
   PrismaModuleAccess,
 } from "../server/chief/security/module-access.js";
 import { createChiefTools } from "../server/chief/tools/builtin.js";
@@ -21,12 +24,12 @@ import { ToolExecutor } from "../server/chief/tools/executor.js";
 import { CHIEF_TOOL_INVENTORY } from "../server/chief/tools/inventory.js";
 import { statusForToolName } from "../src/utils/chiefProtocol.js";
 import {
-  isModule02Tab,
-  MODULE02_ACCESS_OFF_COPY,
-  MODULE02_ACCESS_ON_COPY,
-  module02AccessCopy,
-  module02AccessPayload,
-} from "../src/utils/module02AccessCopy.js";
+  isFreedomFinancialTab,
+  FREEDOM_FINANCIAL_ACCESS_OFF_COPY,
+  FREEDOM_FINANCIAL_ACCESS_ON_COPY,
+  freedomFinancialAccessCopy,
+  freedomFinancialAccessPayload,
+} from "../src/utils/freedomFinancialAccessCopy.js";
 
 const USER_A = "user-a";
 const USER_B = "user-b";
@@ -140,11 +143,12 @@ function world({ enabled = [] } = {}) {
 
 function contextAssemblerFor(access) {
   return async function contextAssembler({ userId, availableTools }) {
-    let module02Read = false;
+    let freedomFinancialRead = false;
     try {
-      if (userId) module02Read = (await access.isModule02ReadEnabled(userId)) === true;
+      if (userId)
+        freedomFinancialRead = (await access.isFreedomFinancialReadEnabled(userId)) === true;
     } catch {
-      module02Read = false;
+      freedomFinancialRead = false;
     }
     return assembleSystemPrompt({
       userId,
@@ -154,7 +158,7 @@ function contextAssemblerFor(access) {
           return [];
         },
       },
-      module02Read,
+      freedomFinancialRead,
     });
   };
 }
@@ -198,10 +202,10 @@ function mockResponse() {
   };
 }
 
-test("Module 02 access defaults off and the UI writes the same row CHIEF reads", async () => {
+test("Freedom Financial access defaults off and the UI writes the same row CHIEF reads", async () => {
   const access = new MemoryModuleAccess();
-  assert.equal(await access.isModule02ReadEnabled(USER_A), false);
-  assert.equal(await access.isModule02ReadEnabled(USER_B), false);
+  assert.equal(await access.isFreedomFinancialReadEnabled(USER_A), false);
+  assert.equal(await access.isFreedomFinancialReadEnabled(USER_B), false);
 
   const off = mockResponse();
   await handleChiefModuleAccess(apiRequest("GET"), off.response, {
@@ -209,98 +213,114 @@ test("Module 02 access defaults off and the UI writes the same row CHIEF reads",
     authenticate: async () => ({ uid: USER_A }),
   });
   assert.equal(off.state.statusCode, 200);
-  assert.deepEqual(off.state.body, { module02Read: false, writeAccess: false });
+  assert.deepEqual(off.state.body, { freedomFinancialRead: false, writeAccess: false });
 
   const on = mockResponse();
   await handleChiefModuleAccess(
-    apiRequest("POST", { module02Read: true, userId: USER_B }),
+    apiRequest("POST", { freedomFinancialRead: true, userId: USER_B }),
     on.response,
     { store: access, authenticate: async () => ({ uid: USER_A }) }
   );
   assert.equal(on.state.statusCode, 200);
-  assert.deepEqual(on.state.body, { module02Read: true, writeAccess: false });
-  assert.equal(await access.isModule02ReadEnabled(USER_A), true);
-  assert.equal(await access.isModule02ReadEnabled(USER_B), false);
+  assert.deepEqual(on.state.body, { freedomFinancialRead: true, writeAccess: false });
+  assert.equal(await access.isFreedomFinancialReadEnabled(USER_A), true);
+  assert.equal(await access.isFreedomFinancialReadEnabled(USER_B), false);
 
   const other = mockResponse();
   await handleChiefModuleAccess(apiRequest("GET"), other.response, {
     store: access,
     authenticate: async () => ({ uid: USER_B }),
   });
-  assert.deepEqual(other.state.body, { module02Read: false, writeAccess: false });
+  assert.deepEqual(other.state.body, { freedomFinancialRead: false, writeAccess: false });
 
   const disabled = mockResponse();
-  await handleChiefModuleAccess(apiRequest("POST", { module02Read: false }), disabled.response, {
-    store: access,
-    authenticate: async () => ({ uid: USER_A }),
-  });
-  assert.equal(disabled.state.body.module02Read, false);
-  assert.equal(await access.isModule02ReadEnabled(USER_A), false);
+  await handleChiefModuleAccess(
+    apiRequest("POST", { freedomFinancialRead: false }),
+    disabled.response,
+    {
+      store: access,
+      authenticate: async () => ({ uid: USER_A }),
+    }
+  );
+  assert.equal(disabled.state.body.freedomFinancialRead, false);
+  assert.equal(await access.isFreedomFinancialReadEnabled(USER_A), false);
 
   const ambiguous = mockResponse();
-  await handleChiefModuleAccess(apiRequest("POST", { module02Read: "true" }), ambiguous.response, {
-    store: access,
-    authenticate: async () => ({ uid: USER_A }),
-  });
+  await handleChiefModuleAccess(
+    apiRequest("POST", { freedomFinancialRead: "true" }),
+    ambiguous.response,
+    {
+      store: access,
+      authenticate: async () => ({ uid: USER_A }),
+    }
+  );
   assert.equal(ambiguous.state.statusCode, 400);
-  assert.equal(await access.isModule02ReadEnabled(USER_A), false);
+  assert.equal(await access.isFreedomFinancialReadEnabled(USER_A), false);
 
   const denied = mockResponse();
-  await handleChiefModuleAccess(apiRequest("POST", { module02Read: true }), denied.response, {
-    authenticate: async () => {
-      const error = new Error("Unauthorized");
-      error.status = 401;
-      throw error;
-    },
-  });
+  await handleChiefModuleAccess(
+    apiRequest("POST", { freedomFinancialRead: true }),
+    denied.response,
+    {
+      authenticate: async () => {
+        const error = new Error("Unauthorized");
+        error.status = 401;
+        throw error;
+      },
+    }
+  );
   assert.equal(denied.state.statusCode, 401);
   assert.equal(denied.state.body.message, "Unauthorized");
-  assert.equal(await access.isModule02ReadEnabled(USER_A), false);
+  assert.equal(await access.isFreedomFinancialReadEnabled(USER_A), false);
 
   const blocked = mockResponse();
-  await handleChiefModuleAccess(apiRequest("POST", { module02Read: true }), blocked.response, {
-    store: access,
-    authenticate: async () => {
-      const error = new Error("This account has been disabled.");
-      error.status = 403;
-      throw error;
-    },
-  });
+  await handleChiefModuleAccess(
+    apiRequest("POST", { freedomFinancialRead: true }),
+    blocked.response,
+    {
+      store: access,
+      authenticate: async () => {
+        const error = new Error("This account has been disabled.");
+        error.status = 403;
+        throw error;
+      },
+    }
+  );
   assert.equal(blocked.state.statusCode, 403);
   assert.equal(blocked.state.body.error, "This account has been disabled.");
   assert.equal(blocked.state.body.message, blocked.state.body.error);
   assert.equal(blocked.state.body.writeAccess, undefined);
-  assert.equal(await access.isModule02ReadEnabled(USER_A), false);
+  assert.equal(await access.isFreedomFinancialReadEnabled(USER_A), false);
 });
 
-test("the sidebar control is the Module 02 read switch and uses the shared copy", () => {
-  assert.equal(isModule02Tab("Command Center"), true);
-  assert.equal(isModule02Tab("Transactions"), true);
-  assert.equal(isModule02Tab("CHIEF"), false);
-  assert.equal(isModule02Tab("Freedom OS"), false);
-  assert.equal(isModule02Tab("Admin Usage"), false);
-  assert.equal(module02AccessCopy(false), MODULE02_ACCESS_OFF_COPY);
-  assert.equal(module02AccessCopy(true), MODULE02_ACCESS_ON_COPY);
-  assert.deepEqual(module02AccessPayload(true), { module02Read: true });
-  assert.deepEqual(module02AccessPayload(false), { module02Read: false });
-  assert.deepEqual(module02AccessPayload("true"), { module02Read: false });
+test("the sidebar control is the Freedom Financial read switch and uses the shared copy", () => {
+  assert.equal(isFreedomFinancialTab("Command Center"), true);
+  assert.equal(isFreedomFinancialTab("Transactions"), true);
+  assert.equal(isFreedomFinancialTab("CHIEF"), false);
+  assert.equal(isFreedomFinancialTab("Freedom OS"), false);
+  assert.equal(isFreedomFinancialTab("Admin Usage"), false);
+  assert.equal(freedomFinancialAccessCopy(false), FREEDOM_FINANCIAL_ACCESS_OFF_COPY);
+  assert.equal(freedomFinancialAccessCopy(true), FREEDOM_FINANCIAL_ACCESS_ON_COPY);
+  assert.deepEqual(freedomFinancialAccessPayload(true), { freedomFinancialRead: true });
+  assert.deepEqual(freedomFinancialAccessPayload(false), { freedomFinancialRead: false });
+  assert.deepEqual(freedomFinancialAccessPayload("true"), { freedomFinancialRead: false });
 
   const layout = readFileSync(new URL("../src/components/Layout.jsx", import.meta.url), "utf8");
   const panel = readFileSync(
-    new URL("../src/components/Module02ChiefAccess.jsx", import.meta.url),
+    new URL("../src/components/FreedomFinancialChiefAccess.jsx", import.meta.url),
     "utf8"
   );
-  assert.match(layout, /isModule02Tab\(activeTab\)/);
-  assert.match(layout, /Module02ChiefAccess/);
+  assert.match(layout, /isFreedomFinancialTab\(activeTab\)/);
+  assert.match(layout, /FreedomFinancialChiefAccess/);
   assert.match(layout, /isDemoMode/);
   assert.match(panel, /CHIEF Access/);
-  assert.match(panel, /saveModule02ChiefAccess/);
-  assert.match(panel, /fetchModule02ChiefAccess/);
+  assert.match(panel, /saveFreedomFinancialChiefAccess/);
+  assert.match(panel, /fetchFreedomFinancialChiefAccess/);
   assert.match(panel, /aria-pressed/);
   assert.doesNotMatch(panel, /deleteTransaction|updateBudget|addAccount|\/api\/workspace/);
 });
 
-test("finance tools stay read-only and refuse Module 02 data while access is off", async () => {
+test("finance tools stay read-only and refuse Freedom Financial data while access is off", async () => {
   const ctx = world();
   for (const name of FINANCE_READS) {
     const spec = ctx.specs.find((item) => item.name === name);
@@ -319,7 +339,7 @@ test("finance tools stay read-only and refuse Module 02 data while access is off
     );
   }
   assert.equal(
-    ctx.specs.find((spec) => spec.name === "module02_access_set").requiresConfirmation,
+    ctx.specs.find((spec) => spec.name === "freedom_financial_access_set").requiresConfirmation,
     true
   );
 
@@ -329,33 +349,37 @@ test("finance tools stay read-only and refuse Module 02 data while access is off
       { userId: USER_A }
     );
     assert.equal(blocked.isError, true);
-    assert.equal(blocked.output, MODULE02_READ_DISABLED);
+    assert.equal(blocked.output, FREEDOM_FINANCIAL_READ_DISABLED);
     assert.equal(blocked.output.includes(ONLY_A), false);
     assert.equal(blocked.output.includes(ONLY_B), false);
   }
   assert.deepEqual(ctx.loads, []);
 
   const status = await ctx.executor.execute(
-    { callId: "status", name: "module02_access_status", arguments: { userId: USER_B } },
+    { callId: "status", name: "freedom_financial_access_status", arguments: { userId: USER_B } },
     { userId: USER_A }
   );
-  assert.deepEqual(JSON.parse(status.output), { module02Read: false, writeAccess: false });
-  assert.equal(await ctx.access.isModule02ReadEnabled(USER_A), false);
+  assert.deepEqual(JSON.parse(status.output), { freedomFinancialRead: false, writeAccess: false });
+  assert.equal(await ctx.access.isFreedomFinancialReadEnabled(USER_A), false);
 
   const silent = await ctx.executor.execute(
-    { callId: "set", name: "module02_access_set", arguments: { enabled: true, userId: USER_B } },
+    {
+      callId: "set",
+      name: "freedom_financial_access_set",
+      arguments: { enabled: true, userId: USER_B },
+    },
     { userId: USER_A, caller: { kind: "schedule" } }
   );
   assert.match(silent.output, /requires confirmation/);
-  assert.equal(await ctx.access.isModule02ReadEnabled(USER_A), false);
-  assert.equal(await ctx.access.isModule02ReadEnabled(USER_B), false);
+  assert.equal(await ctx.access.isFreedomFinancialReadEnabled(USER_A), false);
+  assert.equal(await ctx.access.isFreedomFinancialReadEnabled(USER_B), false);
 
   const coerced = await ctx.executor.execute(
-    { callId: "bad", name: "module02_access_set", arguments: { enabled: "true" } },
+    { callId: "bad", name: "freedom_financial_access_set", arguments: { enabled: "true" } },
     { userId: USER_A, mutationApproved: true }
   );
   assert.equal(coerced.isError, true);
-  assert.equal(await ctx.access.isModule02ReadEnabled(USER_A), false);
+  assert.equal(await ctx.access.isFreedomFinancialReadEnabled(USER_A), false);
 
   const missing = await ctx.executor.execute(
     { callId: "budget", name: "edit_budget", arguments: { amount: 1 } },
@@ -365,7 +389,7 @@ test("finance tools stay read-only and refuse Module 02 data while access is off
   assert.deepEqual(ctx.loads, []);
 });
 
-test("an enabled user can read only their own Module 02 data", async () => {
+test("an enabled user can read only their own Freedom Financial data", async () => {
   const ctx = world({ enabled: [USER_A] });
   const summary = await ctx.executor.execute(
     { callId: "f", name: "finance_summary", arguments: { userId: USER_B } },
@@ -386,7 +410,7 @@ test("an enabled user can read only their own Module 02 data", async () => {
     { callId: "b", name: "finance_summary", arguments: {} },
     { userId: USER_B }
   );
-  assert.equal(other.output, MODULE02_READ_DISABLED);
+  assert.equal(other.output, FREEDOM_FINANCIAL_READ_DISABLED);
   assert.equal(ctx.loads.includes(USER_B), false);
 });
 
@@ -421,7 +445,7 @@ test("the acceptance conversation enables, reads, refuses a write, and disables"
         {
           type: "tool-call",
           toolCallId: "on",
-          toolName: "module02_access_set",
+          toolName: "freedom_financial_access_set",
           input: { enabled: true },
         },
       ],
@@ -440,7 +464,7 @@ test("the acceptance conversation enables, reads, refuses a write, and disables"
     toolSpecs: specs,
   });
   assert.equal(requested.status, "suspended");
-  assert.equal(await ctx.access.isModule02ReadEnabled(USER_A), false);
+  assert.equal(await ctx.access.isFreedomFinancialReadEnabled(USER_A), false);
   const enabled = await enableMachine.run({
     userId: USER_A,
     sessionId: requested.sessionId,
@@ -448,8 +472,8 @@ test("the acceptance conversation enables, reads, refuses a write, and disables"
     toolSpecs: specs,
   });
   assert.equal(enabled.status, "completed");
-  assert.equal(await ctx.access.isModule02ReadEnabled(USER_A), true);
-  assert.equal(await ctx.access.isModule02ReadEnabled(USER_B), false);
+  assert.equal(await ctx.access.isFreedomFinancialReadEnabled(USER_A), true);
+  assert.equal(await ctx.access.isFreedomFinancialReadEnabled(USER_B), false);
   assert.match(enabled.checkpoint.transcript.at(-1).content, /read-only access is on/);
 
   const readMachine = machine(ctx, [
@@ -498,7 +522,7 @@ test("the acceptance conversation enables, reads, refuses a write, and disables"
         {
           type: "tool-call",
           toolCallId: "off",
-          toolName: "module02_access_set",
+          toolName: "freedom_financial_access_set",
           input: { enabled: false },
         },
       ],
@@ -517,7 +541,7 @@ test("the acceptance conversation enables, reads, refuses a write, and disables"
     toolSpecs: specs,
   });
   assert.equal(disableRequest.status, "suspended");
-  assert.equal(await ctx.access.isModule02ReadEnabled(USER_A), true);
+  assert.equal(await ctx.access.isFreedomFinancialReadEnabled(USER_A), true);
   const disabled = await disableMachine.run({
     userId: USER_A,
     sessionId: disableRequest.sessionId,
@@ -525,7 +549,7 @@ test("the acceptance conversation enables, reads, refuses a write, and disables"
     toolSpecs: specs,
   });
   assert.equal(disabled.status, "completed");
-  assert.equal(await ctx.access.isModule02ReadEnabled(USER_A), false);
+  assert.equal(await ctx.access.isFreedomFinancialReadEnabled(USER_A), false);
 
   const again = await machine(ctx, [
     {
@@ -543,13 +567,18 @@ test("the acceptance conversation enables, reads, refuses a write, and disables"
   assert.equal(JSON.stringify(again.checkpoint.transcript).includes(ONLY_A), false);
 });
 
-test("a question about Module 02 does not enable access", async () => {
+test("a question about Freedom Financial does not enable access", async () => {
   const ctx = world();
   ctx.store = new MemoryCheckpointStore();
   const askedMachine = machine(ctx, [
     {
       parts: [
-        { type: "tool-call", toolCallId: "st", toolName: "module02_access_status", input: {} },
+        {
+          type: "tool-call",
+          toolCallId: "st",
+          toolName: "freedom_financial_access_status",
+          input: {},
+        },
       ],
     },
     { text: "Freedom Financial read access is off." },
@@ -560,7 +589,7 @@ test("a question about Module 02 does not enable access", async () => {
     toolSpecs: ctx.specs,
   });
   assert.equal(asked.status, "completed");
-  assert.equal(await ctx.access.isModule02ReadEnabled(USER_A), false);
+  assert.equal(await ctx.access.isFreedomFinancialReadEnabled(USER_A), false);
   assert.match(askedMachine.engine.seen[0].system, /is not a request to enable/);
 
   const about = await machine(ctx, [
@@ -571,27 +600,27 @@ test("a question about Module 02 does not enable access", async () => {
     toolSpecs: ctx.specs,
   });
   assert.equal(about.status, "completed");
-  assert.equal(await ctx.access.isModule02ReadEnabled(USER_A), false);
-  assert.equal(module02AccessGuidance(null), "");
-  assert.match(module02AccessGuidance(["finance_summary"]), /read access is off/);
+  assert.equal(await ctx.access.isFreedomFinancialReadEnabled(USER_A), false);
+  assert.equal(freedomFinancialAccessGuidance(null), "");
+  assert.match(freedomFinancialAccessGuidance(["finance_summary"]), /read access is off/);
   assert.match(
-    module02AccessGuidance(["finance_summary"]),
+    freedomFinancialAccessGuidance(["finance_summary"]),
     /write access is not currently available/
   );
   assert.match(
-    module02AccessGuidance(["finance_summary"], { module02Read: false }),
+    freedomFinancialAccessGuidance(["finance_summary"], { freedomFinancialRead: false }),
     /read access is off/
   );
   assert.match(
-    module02AccessGuidance(["finance_summary"], { module02Read: true }),
+    freedomFinancialAccessGuidance(["finance_summary"], { freedomFinancialRead: true }),
     /read access is on/
   );
   assert.match(
-    module02AccessGuidance(["finance_summary"], { module02Read: true }),
+    freedomFinancialAccessGuidance(["finance_summary"], { freedomFinancialRead: true }),
     /write access is not currently available/
   );
   assert.doesNotMatch(
-    module02AccessGuidance(["finance_summary"], { module02Read: true }),
+    freedomFinancialAccessGuidance(["finance_summary"], { freedomFinancialRead: true }),
     /read access is off/
   );
 });
@@ -625,16 +654,16 @@ test("Claude, GPT, and Grok share the user flag and web search stays separate", 
     assert.equal(answerMachine.engine.seen.at(-1).model, model);
     assert.ok(answerMachine.engine.seen.at(-1).toolNames.includes("finance_summary"));
     assert.ok(answerMachine.engine.seen.at(-1).toolNames.includes("web_search"));
-    assert.ok(answerMachine.engine.seen.at(-1).toolNames.includes("module02_access_set"));
+    assert.ok(answerMachine.engine.seen.at(-1).toolNames.includes("freedom_financial_access_set"));
     for (const name of WRITE_NAMES) {
       assert.equal(answerMachine.engine.seen.at(-1).toolNames.includes(name), false);
     }
     assert.match(answer.checkpoint.transcript.at(-1).content, new RegExp(ONLY_A));
   }
-  assert.equal(await ctx.access.isModule02ReadEnabled(USER_A), true);
+  assert.equal(await ctx.access.isFreedomFinancialReadEnabled(USER_A), true);
   assert.deepEqual(ctx.loads, [USER_A, USER_A, USER_A]);
 
-  await ctx.access.setModule02ReadEnabled(USER_A, false);
+  await ctx.access.setFreedomFinancialReadEnabled(USER_A, false);
   for (const model of ["claude", "gpt", "grok"]) {
     const deniedMachine = machine(ctx, [
       {
@@ -660,19 +689,25 @@ test("Claude, GPT, and Grok share the user flag and web search stays separate", 
   );
   assert.equal(search.isError, false);
   assert.match(search.output, /Public markets/);
-  assert.equal(await ctx.access.isModule02ReadEnabled(USER_A), false);
+  assert.equal(await ctx.access.isFreedomFinancialReadEnabled(USER_A), false);
 
   const memory = await ctx.executor.execute(
     { callId: "mem", name: "memory_read", arguments: { query: "notes" } },
     { userId: USER_A }
   );
   assert.equal(memory.isError, false);
-  assert.equal(statusForToolName("module02_access_status"), "Checking Freedom Financial access");
-  assert.equal(statusForToolName("module02_access_set"), "Updating Freedom Financial access");
+  assert.equal(
+    statusForToolName("freedom_financial_access_status"),
+    "Checking Freedom Financial access"
+  );
+  assert.equal(
+    statusForToolName("freedom_financial_access_set"),
+    "Updating Freedom Financial access"
+  );
   assert.equal(statusForToolName("web_search"), "CHIEF is searching the web...");
 });
 
-test("user B cannot read user A's Module 02 data through a conversation", async () => {
+test("user B cannot read user A's Freedom Financial data through a conversation", async () => {
   const ctx = world({ enabled: [USER_A, USER_B] });
   ctx.store = new MemoryCheckpointStore();
   const a = await machine(ctx, [
@@ -716,22 +751,22 @@ test("the database store is per user and fails closed when the table is missing"
         chiefModuleAccess: {
           async findUnique({ where }) {
             assert.equal(where.userId, userId);
-            return rows.has(where.userId) ? { module02Read: rows.get(where.userId) } : null;
+            return rows.has(where.userId) ? { freedomFinancialRead: rows.get(where.userId) } : null;
           },
           async upsert({ where, create, update }) {
             assert.equal(where.userId, userId);
             assert.equal(create.userId, userId);
-            rows.set(userId, update.module02Read);
-            return { userId, module02Read: update.module02Read };
+            rows.set(userId, update.freedomFinancialRead);
+            return { userId, freedomFinancialRead: update.freedomFinancialRead };
           },
         },
       });
     },
   });
-  assert.equal(await store.isModule02ReadEnabled(USER_A), false);
-  await store.setModule02ReadEnabled(USER_A, true);
-  assert.equal(await store.isModule02ReadEnabled(USER_B), false);
-  assert.equal(await store.isModule02ReadEnabled(USER_A), true);
+  assert.equal(await store.isFreedomFinancialReadEnabled(USER_A), false);
+  await store.setFreedomFinancialReadEnabled(USER_A, true);
+  assert.equal(await store.isFreedomFinancialReadEnabled(USER_B), false);
+  assert.equal(await store.isFreedomFinancialReadEnabled(USER_A), true);
   assert.deepEqual(seen, [USER_A, USER_A, USER_B, USER_A]);
 
   const missing = new PrismaModuleAccess({
@@ -741,22 +776,22 @@ test("the database store is per user and fails closed when the table is missing"
       throw error;
     },
   });
-  assert.equal(await missing.isModule02ReadEnabled(USER_A), false);
-  await assert.rejects(missing.setModule02ReadEnabled(USER_A, true), /not available/);
+  assert.equal(await missing.isFreedomFinancialReadEnabled(USER_A), false);
+  await assert.rejects(missing.setFreedomFinancialReadEnabled(USER_A, true), /not available/);
 });
 
-test("existing Module 02 reads and web search are not replaced", () => {
+test("existing Freedom Financial reads and web search are not replaced", () => {
   const aggregates = readFileSync(
     new URL("../server/finance/aggregates.js", import.meta.url),
     "utf8"
   );
   const workspace = readFileSync(new URL("../api/workspace.js", import.meta.url), "utf8");
   const web = readFileSync(new URL("../server/chief/tools/web-search.js", import.meta.url), "utf8");
-  assert.doesNotMatch(aggregates, /module02Read|chief_module_access/);
-  assert.doesNotMatch(workspace, /module02Read|chief_module_access/);
-  assert.doesNotMatch(web, /module02Read|module02_access/);
+  assert.doesNotMatch(aggregates, /freedomFinancialRead|chief_module_access/);
+  assert.doesNotMatch(workspace, /freedomFinancialRead|chief_module_access/);
+  assert.doesNotMatch(web, /freedomFinancialRead|freedom_financial_access/);
   assert.match(
     readFileSync(new URL("../server/chief/tools/builtin.js", import.meta.url), "utf8"),
-    /denyUnlessModule02Read/
+    /denyUnlessFreedomFinancialRead/
   );
 });

@@ -31,4 +31,4 @@ output is `{ timezone }` only.
   A stored grant row still replaces the baseline entirely.
 - No other profile, admin, consent, or financial field is writable from CHIEF.
 - Code intelligence, Grok workforce ingestion, the operational graph, finance
-  writes, and Module 01 remain out of scope.
+  writes, and CEO Agents remain out of scope.
