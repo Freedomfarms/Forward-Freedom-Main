@@ -632,7 +632,7 @@ test("an uninventoried tool still fails closed and these reads add no second run
     });
 });
 
-test("finance reads do not import Module 01 or add a second executor", () => {
+test("finance reads do not import CEO Agents or add a second executor", () => {
   const repoRoot = process.cwd();
   const files = [
     "server/finance/aggregates.js",

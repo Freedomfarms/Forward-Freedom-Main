@@ -89,20 +89,20 @@ function readinessFor(entry, ctx) {
         "Web read is granted, but web search is currently unavailable because no search credential is configured.",
     });
   }
-  if (entry.readiness === "module02") {
-    if (ctx.module02Readable === false) {
+  if (entry.readiness === "freedomFinancial") {
+    if (ctx.freedomFinancialReadable === false) {
       return rowFrom(entry, {
         granted: true,
         availability: "unavailable",
         reason: "Freedom Financial access could not be read.",
       });
     }
-    if (ctx.module02Read !== true) {
+    if (ctx.freedomFinancialRead !== true) {
       return rowFrom(entry, {
         granted: true,
         availability: "gated",
         reason:
-          "The grant is on. Freedom Financial record data stays off until Module 02 read access is turned on.",
+          "The grant is on. Freedom Financial record data stays off until Freedom Financial read access is turned on.",
       });
     }
   }
@@ -168,8 +168,8 @@ export function discoverCapabilities({
   policy = null,
   agentId = "chief",
   connectors = null,
-  module02Read = false,
-  module02Readable = true,
+  freedomFinancialRead = false,
+  freedomFinancialReadable = true,
   webCredentialPresent = null,
   codeEnabled = null,
   exposedTools = null,
@@ -179,8 +179,8 @@ export function discoverCapabilities({
     policy,
     policyLoaded: policyLoaded(policy),
     agentId: agentId || "chief",
-    module02Read: module02Read === true,
-    module02Readable: module02Readable !== false,
+    freedomFinancialRead: freedomFinancialRead === true,
+    freedomFinancialReadable: freedomFinancialReadable !== false,
     webCredentialPresent:
       webCredentialPresent === null
         ? Boolean(resolveWebSearchCredential())

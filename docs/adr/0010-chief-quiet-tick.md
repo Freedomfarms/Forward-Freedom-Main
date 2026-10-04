@@ -22,9 +22,9 @@ explicit.
 - OpenJarvis `operative.py`, `monitor_operative.py`, and `morning_digest.py`
   (`5e5f5ef`) are not used for this decision. The digest is a second agent
   with its own delivery. `security/scanner.py` is not used.
-- Module 01 `Notification` is not used. It is a different product surface,
+- CEO Agents `Notification` is not used. It is a different product surface,
   keyed by `agentConfigId`, and importing it would couple the scheduler to
-  Module 01.
+  CEO Agents.
 
 ## Decision
 

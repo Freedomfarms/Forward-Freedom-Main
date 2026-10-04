@@ -11,7 +11,7 @@
 // off it. A connected connector adds its own grants on top. A disconnected
 // connector adds none. code:read is the configured repository, not a user
 // GitHub account and not a shell.
-// finance:read lets the read tools run so they can report that Module 02
+// finance:read lets the read tools run so they can report that Freedom Financial
 // access is off. The data itself stays behind chief_module_access, which
 // defaults to off and is not a grant row. Stored rows merge onto this
 // baseline. An explicit deny still removes that capability.

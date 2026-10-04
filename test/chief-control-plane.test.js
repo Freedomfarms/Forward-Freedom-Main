@@ -128,7 +128,7 @@ test("discovery reports granted reads, approval, and disconnected connectors", a
   const policy = await emptyGrants();
   const snapshot = discoverCapabilities({
     policy,
-    module02Read: false,
+    freedomFinancialRead: false,
     webCredentialPresent: true,
     codeEnabled: true,
   });
@@ -290,7 +290,7 @@ test("Claude, GPT, and Grok receive the same capability surface", async () => {
     discoverCapabilities({
       policy,
       provider,
-      module02Read: true,
+      freedomFinancialRead: true,
       webCredentialPresent: true,
       codeEnabled: true,
     })

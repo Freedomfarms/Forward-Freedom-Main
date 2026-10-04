@@ -43,7 +43,8 @@ export async function handleChiefRoomAccess(request, response, deps = {}) {
     return;
   }
 
-  const readMoney = deps.readMoney ?? ((id) => new PrismaModuleAccess().isModule02ReadEnabled(id));
+  const readMoney =
+    deps.readMoney ?? ((id) => new PrismaModuleAccess().isFreedomFinancialReadEnabled(id));
   const loadPolicy = deps.loadPolicy ?? loadCapabilityPolicy;
   const credentialPresent =
     typeof deps.credentialPresent === "boolean"
@@ -75,8 +76,8 @@ export async function handleChiefRoomAccess(request, response, deps = {}) {
     inventory = projectAccessInventory(
       discoverCapabilities({
         policy,
-        module02Read: money === "on",
-        module02Readable: money !== "unavailable",
+        freedomFinancialRead: money === "on",
+        freedomFinancialReadable: money !== "unavailable",
         webCredentialPresent: credentialPresent,
       })
     );

@@ -10,7 +10,7 @@ import { loadFinanceSummary } from "../../finance/aggregates.js";
 import { loadFreedomFinancialPosition } from "../../finance/dashboardPosition.js";
 import { loadWorkspacePlanSummary } from "../../finance/workspaceSlice.js";
 import {
-  denyUnlessModule02Read,
+  denyUnlessFreedomFinancialRead,
   MemoryModuleAccess,
   PrismaModuleAccess,
 } from "../security/module-access.js";
@@ -508,7 +508,7 @@ function financeSummary(
       parameters: { type: "object", properties: {} },
     },
     async execute(_params, context) {
-      const denied = await denyUnlessModule02Read(access, context.userId);
+      const denied = await denyUnlessFreedomFinancialRead(access, context.userId);
       if (denied) return denied;
       try {
         const summary = await load(context.userId);
@@ -552,7 +552,7 @@ function workspacePlanSummary(load = loadWorkspacePlanSummary, access = new Memo
       parameters: { type: "object", properties: {} },
     },
     async execute(_params, context) {
-      const denied = await denyUnlessModule02Read(access, context.userId);
+      const denied = await denyUnlessFreedomFinancialRead(access, context.userId);
       if (denied) return denied;
       try {
         const summary = await load(context.userId);
@@ -571,11 +571,11 @@ function workspacePlanSummary(load = loadWorkspacePlanSummary, access = new Memo
   });
 }
 
-function module02AccessStatus(access) {
+function freedomFinancialAccessStatus(access) {
   return new BaseTool({
     isLocal: true,
     spec: {
-      name: "module02_access_status",
+      name: "freedom_financial_access_status",
       description:
         "Report whether the authenticated user has turned on CHIEF's read-only Freedom Financial access. Does not enable or disable access and does not return financial data.",
       category: "settings",
@@ -586,22 +586,22 @@ function module02AccessStatus(access) {
     async execute(_params, context) {
       let enabled;
       try {
-        enabled = (await access.isModule02ReadEnabled(context.userId)) === true;
+        enabled = (await access.isFreedomFinancialReadEnabled(context.userId)) === true;
       } catch {
         enabled = false;
       }
       return {
-        output: JSON.stringify({ module02Read: enabled, writeAccess: false }),
+        output: JSON.stringify({ freedomFinancialRead: enabled, writeAccess: false }),
       };
     },
   });
 }
 
-function module02AccessSet(access) {
+function freedomFinancialAccessSet(access) {
   return new BaseTool({
     isLocal: true,
     spec: {
-      name: "module02_access_set",
+      name: "freedom_financial_access_set",
       description:
         "Turn this authenticated user's Freedom Financial read access on or off. Call only when the user explicitly asks to enable or disable that read access. A question about Freedom Financial or finances is not a request to change it. enabled must be a boolean. This grants read access only and cannot create, edit, or delete financial data.",
       category: "settings",
@@ -622,16 +622,16 @@ function module02AccessSet(access) {
     },
     async execute(params, context) {
       if (typeof params?.enabled !== "boolean") {
-        return { output: "module02Read must be a boolean", isError: true };
+        return { output: "freedomFinancialRead must be a boolean", isError: true };
       }
       try {
-        const saved = await access.setModule02ReadEnabled(context.userId, params.enabled);
+        const saved = await access.setFreedomFinancialReadEnabled(context.userId, params.enabled);
         return {
           output: JSON.stringify({
-            module02Read: saved.module02Read === true,
+            freedomFinancialRead: saved.freedomFinancialRead === true,
             writeAccess: false,
             message:
-              saved.module02Read === true
+              saved.freedomFinancialRead === true
                 ? "Freedom Financial read-only access is on. CHIEF cannot modify financial data."
                 : "Freedom Financial read access is off.",
           }),
@@ -1048,21 +1048,22 @@ function capabilityDiscover({ moduleAccess, connectors }) {
       },
     },
     async execute(_params, context) {
-      let module02Read = false;
-      let module02Readable = true;
-      if (moduleAccess?.isModule02ReadEnabled && context?.userId) {
+      let freedomFinancialRead = false;
+      let freedomFinancialReadable = true;
+      if (moduleAccess?.isFreedomFinancialReadEnabled && context?.userId) {
         try {
-          module02Read = (await moduleAccess.isModule02ReadEnabled(context.userId)) === true;
+          freedomFinancialRead =
+            (await moduleAccess.isFreedomFinancialReadEnabled(context.userId)) === true;
         } catch {
-          module02Readable = false;
+          freedomFinancialReadable = false;
         }
       }
       const snapshot = discoverCapabilities({
         policy: context?.capabilityPolicy ?? null,
         agentId: context?.agentId || "chief",
         connectors,
-        module02Read,
-        module02Readable,
+        freedomFinancialRead,
+        freedomFinancialReadable,
         webCredentialPresent: Boolean(resolveWebSearchCredential()),
         codeEnabled: readCodeConfig().enabled === true,
       });
@@ -1105,8 +1106,8 @@ export function createChiefCapabilityRegistry({
     scheduleOutcome(schedule),
     financeSummary(loadFinance, moduleAccess, loadPosition),
     workspacePlanSummary(loadWorkspace, moduleAccess),
-    module02AccessStatus(moduleAccess),
-    module02AccessSet(moduleAccess),
+    freedomFinancialAccessStatus(moduleAccess),
+    freedomFinancialAccessSet(moduleAccess),
     skillView(skills),
     createWebSearchTool(search ?? createWebSearchClient()),
     mcpInvoke(mcpClient),

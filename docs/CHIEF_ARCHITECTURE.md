@@ -13,7 +13,7 @@ reusing/adapting something that already exists?_
 
 Absolute constraints honored throughout:
 
-- Module 01 and Module 02 are not part of CHIEF: no imports, no dependencies, no modifications,
+- CEO Agents and Freedom Financial are not part of CHIEF: no imports, no dependencies, no modifications,
   no architectural derivation (§4 dependency boundaries make this mechanically enforceable).
 - cortex-map is REUSE DIRECTLY: vendored as-is under a third-party boundary (§8).
 - OpenJarvis reuse is prioritized before building equivalents (§6 sourcing rule, §7.1).
@@ -38,7 +38,7 @@ provider/tool boundary. The Command Center UI reuses the vendored cortex-map ren
 ```
                         FREEDOM OS (Vercel + Postgres + Firebase auth)
  ┌────────────────┬─────────────────┬──────────────────────────────────────────────────┐
- │   MODULE 01    │    MODULE 02    │              MODULE 03 — CHIEF                   │
+ │   CEO AGENTS   │FREEDOM FINANCIAL│                MODULE 03 — CHIEF                 │
  │  (untouched,   │   (untouched,   │                                                  │
  │   no imports)  │    no imports)  │  ┌────────────────────────────────────────────┐  │
  └────────────────┴─────────────────┘  │ COMMAND CENTER UI (src/components/chief)   │  │
@@ -146,28 +146,28 @@ Applied to every present and future CHIEF capability, in order:
   `@modelcontextprotocol/sdk`, `cron-parser`, `@prisma/client`.
 - Shared **platform** infrastructure only (module-agnostic, used by the whole app): Firebase
   auth verification (`server/auth/verifyAuth.js`), the Prisma client/db helpers, and the at-rest
-  encryption utilities. These are Freedom OS platform facts, not Module 01/02 architecture
+  encryption utilities. These are Freedom OS platform facts, not CEO Agents and Freedom Financial architecture
   (audit §11).
 
 **`server/chief/**` must NOT import (and vice versa):\*\*
 
-- `server/brain/**`, `server/agents/**`, `server/memory/**`, `server/capabilities/**` (Module 01
-  server code), any `api/agents*` handler, or Module 01/02 UI code.
+- `server/brain/**`, `server/agents/**`, `server/memory/**`, `server/capabilities/**` (CEO Agents
+  server code), any `api/agents*` handler, or CEO Agents and Freedom Financial UI code.
 
 **UI boundaries:** `src/components/chief/**` may import `src/third_party/cortex-map` and global
-platform CSS; it must not import `src/components/freedomOs/**` or Module 02 components. CHIEF
+platform CSS; it must not import `src/components/freedomOs/**` or Freedom Financial components. CHIEF
 defines its own UI tokens.
 
 **Shared files touched (additive-only):** `vercel.json` (one new cron entry for
-`/api/cron/chief-dispatch` — Module 01's cron entry is not modified), `prisma/schema.prisma`
+`/api/cron/chief-dispatch` — the CEO Agents cron entry is not modified), `prisma/schema.prisma`
 (new `Chief*` models only; no changes to existing models), `package.json` (new deps only),
-module hub registration (one new module id + card; Module 01/02 entries untouched).
+module hub registration (one new module id + card; CEO Agents and Freedom Financial entries untouched).
 
 **Enforcement:** an ESLint `no-restricted-imports` rule fails the build if any file under
-`server/chief/` or `src/components/chief/` imports from the forbidden paths, and if Module 01/02
+`server/chief/` or `src/components/chief/` imports from the forbidden paths, and if CEO Agents and Freedom Financial
 paths import from CHIEF. Added in Phase 0 so the boundary is enforced before any code exists.
 
-**Module 01/02 as external systems (later, per Module 03 spec):** if/when CHIEF needs their
+**CEO Agents and Freedom Financial as external systems (later, per Module 03 spec):** if/when CHIEF needs their
 data, it consumes defined **read-only interfaces** exposed as CHIEF tools behind capability
 gates — the same way it would consume any external API. Not part of the core build; explicitly
 out of scope until approved separately.
@@ -519,7 +519,7 @@ From möbius (`3e1aaf5`): turn phase machine with pending-approval suspension; c
 | Scene-graph projector (CHIEF state → cortex-map nodes/edges/clusters, §7.4) | By design: cortex-map is "bring your own graph"; the projector is the intended integration surface, not a gap in reuse                                                                                                                                                         |
 | SSE→handle event bridge (EventMsg → `flash/ignite/focus`, §7.4)             | The renderer exposes the imperative handle exactly for external drivers; binding CHIEF's event taxonomy to it is CHIEF-specific integration code                                                                                                                               |
 | Command Center HUD panels                                                   | UI composition against Freedom OS's own design language; the audited UIs (OpenJarvis React app, möbius TUI) serve different products. The one substantial visualization (3D scene) IS reused unmodified. OpenJarvis's agents/traces/approvals screens are used as UX reference |
-| Module 01/02 read-only interface adapters (deferred)                        | Freedom-OS-specific by definition; consumed as external tools per §4; out of scope until separately approved                                                                                                                                                                   |
+| CEO Agents and Freedom Financial read-only interface adapters (deferred)    | Freedom-OS-specific by definition; consumed as external tools per §4; out of scope until separately approved                                                                                                                                                                   |
 
 Anything not listed here is not being built new. If implementation surfaces a genuine new-build
 need, it gets an ADR with this same justification before code.
@@ -603,7 +603,7 @@ previous one is merged or explicitly waived. Verification per repo policy: `npm 
   scheduled run stores `attention: false` on the result object already
   passed to `finish()`. The value does not read the answer or tool output.
   A successful quiet run stays `SUCCEEDED`. No notification is sent, and
-  Module 01 `Notification` is not used. A later audit is required before
+  CEO Agents `Notification` is not used. A later audit is required before
   any run can raise attention and deliver it.
 - **Phase 11 — Scheduled approval resume (delivered slice, ADR-0011).** A
   scheduled turn that suspended on a confirming tool stays
@@ -676,12 +676,12 @@ previous one is merged or explicitly waived. Verification per repo policy: `npm 
   that tool runs inside a Claude call and never enters this executor. The
   empty-grant baseline also grants `web:search`. `network:fetch` stays denied.
   No browser, login, form, or scheduled news monitor.
-- **Module 02 read access (delivered slice, ADR-0020).** `finance_summary` and
-  `workspace_plan_summary` stay the only Module 02 reads. Each user's
-  `chief_module_access.module02Read` flag defaults to off, including when no
-  row exists. The sidebar control and `module02_access_set` write that same
+- **Freedom Financial read access (delivered slice, ADR-0020).** `finance_summary` and
+  `workspace_plan_summary` stay the only Freedom Financial reads. Each user's
+  `chief_module_access.freedomFinancialRead` flag defaults to off, including when no
+  row exists. The sidebar control and `freedom_financial_access_set` write that same
   row. The set tool requires confirmation and cannot grant a write. There is
-  no Module 02 mutation tool.
+  no Freedom Financial mutation tool.
 - **Phase 6b — Sidecar boundary.** `server/chief/sidecar/` provider registration + health;
   deep_research/managed-agent tool adapters; deployment recipe doc (Docker/Render/Fly) — all
   feature-flagged and optional.
@@ -711,7 +711,7 @@ previous one is merged or explicitly waived. Verification per repo policy: `npm 
 | **Sidecar operational burden / single-user state model**                                           | Optional + feature-flagged; CHIEF fully functional without it; sidecar output passes the memory trust-tier gate; per-deployment provisioning documented, never assumed                                                                                                                                                                                                                                                                                             |
 | **Prompt injection / memory poisoning**                                                            | Ported OpenJarvis defenses: injection scan before extraction; trust tiers with no silent promotion; ToolExecutor output taint detection; approval gates fail closed (denied ⇒ synthetic error result, never silent skip)                                                                                                                                                                                                                                           |
 | **Cost runaway from autonomous/background execution**                                              | `ChiefBudget` caps (per-run/per-period) enforced in the model layer before `streamText` / `generateText` (Phase 3, carried from the Phase 2 ledger — ADR-0003), so a later autonomous tick cannot bypass the turn machine; `CHIEF_MODELS_ENABLED=false` pauses every caller (§5.5); cheap-model tiering via the router's existing urgency rule. A missing `chief_budget` row means no cap is configured. Autonomy levels 3–4 stay off until they share this check. |
-| **Cross-module contamination** (accidental coupling to Module 01/02)                               | ESLint import-boundary rules from Phase 0; `chief_*` table namespace with only-`User` FKs; additive-only touches to shared files; PR review checklist item                                                                                                                                                                                                                                                                                                         |
+| **Cross-module contamination** (accidental coupling to CEO Agents and Freedom Financial)           | ESLint import-boundary rules from Phase 0; `chief_*` table namespace with only-`User` FKs; additive-only touches to shared files; PR review checklist item                                                                                                                                                                                                                                                                                                         |
 | **Schema evolution of checkpoints**                                                                | Version column on checkpoint JSON + Prisma migrations (documented deviation from möbius reject-on-mismatch, §7.2)                                                                                                                                                                                                                                                                                                                                                  |
 | **Licensing hygiene**                                                                              | Phase 0 delivers `THIRD_PARTY_NOTICES.md` before any ported/vendored code lands; Apache-2.0 attribution headers on ported modules; möbius NOTICE propagated; nothing copied from the unlicensed jarvis-architecture repo                                                                                                                                                                                                                                           |
 

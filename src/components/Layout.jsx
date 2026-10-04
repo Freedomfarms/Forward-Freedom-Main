@@ -1,7 +1,7 @@
 import { APP_TABS, navMain, navTools } from "../data/constants.jsx";
-import { isModule02Tab } from "../utils/module02AccessCopy.js";
+import { isFreedomFinancialTab } from "../utils/freedomFinancialAccessCopy.js";
 import { SetupChecklistPanel } from "./OnboardingExperience.jsx";
-import { Module02ChiefAccess } from "./Module02ChiefAccess.jsx";
+import { FreedomFinancialChiefAccess } from "./FreedomFinancialChiefAccess.jsx";
 import { styles } from "../styles.js";
 import { HouseholdProfilesControl, SideItem } from "./Common.jsx";
 
@@ -215,8 +215,8 @@ export function AppSidebar({
         Back to Home
       </button>
 
-      {sessionControls?.user && !sessionControls.isDemoMode && isModule02Tab(activeTab) ? (
-        <Module02ChiefAccess
+      {sessionControls?.user && !sessionControls.isDemoMode && isFreedomFinancialTab(activeTab) ? (
+        <FreedomFinancialChiefAccess
           key={sessionControls.user.uid ?? sessionControls.user.email ?? "signed-in"}
           user={sessionControls.user}
         />

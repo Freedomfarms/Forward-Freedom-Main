@@ -18,7 +18,7 @@ import {
   statusBadgeStyle,
 } from "./freedomOsShared.js";
 
-// Module 01 — CEO Agents. One CEO conversation for information, execution,
+// CEO Agents. One CEO conversation for information, execution,
 // creating agents, and managing the team. No separate "+ New Agent" builder.
 
 function truncate(text, maxLength = 110) {

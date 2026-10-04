@@ -10,7 +10,7 @@
 //   - the Capability label set, verbatim ("file:read" … "system:admin"), plus
 //     the CHIEF-only extensions "finance:read" (Phase 7), "skill:read"
 //     (Phase 8), "web:search" (governed public web search),
-//     "module:access" (the per-user Module 02 read switch), and
+//     "module:access" (the per-user Freedom Financial read switch), and
 //     "conversation:read" (search and retrieve this user's conversations),
 //     "conversation:write", "conversation:delete", "schedule:read",
 //     "settings:read", and "settings:write" (the user's timezone on the
@@ -25,7 +25,7 @@
 //     memory:read or finance:read. Public web search must not reuse
 //     network:fetch: that label is general outbound network access, and it
 //     stays off the default baseline. module:access lets the user inspect
-//     or request the Module 02 read switch. It does not grant the financial
+//     or request the Freedom Financial read switch. It does not grant the financial
 //     data itself. OpenJarvis has none of these labels. workforce:read stays
 //     off the empty-grant baseline until a picture tool is added on purpose.
 //   - CapabilityPolicy check order: explicit denials always win; grants are
@@ -81,12 +81,12 @@ export const Capability = Object.freeze({
   // does not authorize arbitrary HTTP, browsing, or mutation.
   WEB_SEARCH: "web:search",
   // CHIEF extension. Not an OpenJarvis label. Lets the authenticated user
-  // inspect or request the Module 02 read switch. It does not reveal
+  // inspect or request the Freedom Financial read switch. It does not reveal
   // financial data and it cannot grant a write.
   MODULE_ACCESS: "module:access",
   // CHIEF extension. Not an OpenJarvis label. Searches and reads this
   // user's own conversations. It is not memory:read and it is not
-  // finance:read. It cannot write a session, a fact, or Module 02.
+  // finance:read. It cannot write a session, a fact, or Freedom Financial.
   CONVERSATION_READ: "conversation:read",
   // CHIEF extension. Rename, archive, and restore. Not a delete.
   CONVERSATION_WRITE: "conversation:write",

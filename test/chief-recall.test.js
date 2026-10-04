@@ -492,7 +492,7 @@ test("another user's session id is not found", async () => {
   assert.equal(read.historical, undefined);
 });
 
-test("tools are read-only, ignore a model user id, and do not touch memory or Module 02", async () => {
+test("tools are read-only, ignore a model user id, and do not touch memory or Freedom Financial", async () => {
   const store = new MemoryCheckpointStore();
   const record = await seed(store, "user-a", "owned", {
     title: "Jarvis notes",
@@ -507,11 +507,11 @@ test("tools are read-only, ignore a model user id, and do not touch memory or Mo
     recallDocument: "jarvis other notes",
   });
   const moduleAccess = {
-    isModule02ReadEnabled() {
-      throw new Error("module02 touched");
+    isFreedomFinancialReadEnabled() {
+      throw new Error("freedom financial access touched");
     },
-    setModule02Read() {
-      throw new Error("module02 touched");
+    setFreedomFinancialReadEnabled() {
+      throw new Error("freedom financial access touched");
     },
   };
   const facts = new MemoryFactStore();

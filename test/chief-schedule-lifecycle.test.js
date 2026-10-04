@@ -533,7 +533,7 @@ test("finance_summary still requires finance:read and lifecycle stays quiet", as
   }
 });
 
-test("phase 12 does not add a second loop, sender, or module 01 import", () => {
+test("phase 12 does not add a second loop, sender, or CEO Agents import", () => {
   const files = [
     "server/chief/tools/schedule-store.js",
     "server/chief/tools/builtin.js",

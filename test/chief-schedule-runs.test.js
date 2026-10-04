@@ -348,7 +348,7 @@ test("prisma listRuns selects six columns inside the caller context", async () =
   assert.equal(queries.length, 1);
 });
 
-test("phase 13 does not add a second loop, sender, or module 01 import", () => {
+test("phase 13 does not add a second loop, sender, or CEO Agents import", () => {
   const files = [
     "server/chief/tools/schedule-store.js",
     "server/chief/tools/builtin.js",

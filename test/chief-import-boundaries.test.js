@@ -38,7 +38,7 @@ async function assertAllowed(relativeFilePath, code) {
   );
 }
 
-test("CHIEF server code cannot import Module 01 server code", async () => {
+test("CHIEF server code cannot import CEO Agents server code", async () => {
   await assertBlocked(
     "server/chief/runtime/turn.js",
     'import { brainTurn } from "../../brain/index.js";'
@@ -50,7 +50,7 @@ test("CHIEF server code cannot import Module 01 server code", async () => {
   );
 });
 
-test("CHIEF API handlers cannot import Module 01 code", async () => {
+test("CHIEF API handlers cannot import CEO Agents code", async () => {
   await assertBlocked("api/chief/chat.js", 'import handler from "../../server/brain/index.js";');
   await assertBlocked(
     "api/cron/chief-dispatch.js",
@@ -60,7 +60,7 @@ test("CHIEF API handlers cannot import Module 01 code", async () => {
 });
 
 test("CHIEF's own subdirectories are not false positives", async () => {
-  // server/chief/agents is CHIEF's agent hierarchy, not Module 01's
+  // server/chief/agents is CHIEF's agent hierarchy, not the CEO Agents
   // server/agents — the rule must resolve paths, not match names.
   await assertAllowed(
     "server/chief/runtime/turn.js",
@@ -87,7 +87,7 @@ test("dynamic imports are also gated", async () => {
   );
 });
 
-test("CHIEF UI cannot import Module 01 UI or client plumbing", async () => {
+test("CHIEF UI cannot import CEO Agents UI or client plumbing", async () => {
   await assertBlocked(
     "src/components/chief/CommandCenter.jsx",
     'import FreedomOsHome from "../freedomOs/FreedomOsHome.jsx";'
@@ -102,7 +102,7 @@ test("CHIEF UI cannot import Module 01 UI or client plumbing", async () => {
   );
 });
 
-test("Module 01 server code cannot import CHIEF", async () => {
+test("CEO Agents server code cannot import CHIEF", async () => {
   await assertBlocked("server/agents/runner.js", 'import { chiefTurn } from "../chief/index.js";');
   await assertBlocked(
     "server/brain/index.js",
@@ -110,7 +110,7 @@ test("Module 01 server code cannot import CHIEF", async () => {
   );
 });
 
-test("Module 01 UI cannot import CHIEF UI or vendored code", async () => {
+test("CEO Agents UI cannot import CHIEF UI or vendored code", async () => {
   await assertBlocked(
     "src/components/freedomOs/FreedomOsHome.jsx",
     'import CommandCenter from "../chief/CommandCenter.jsx";'
@@ -149,8 +149,8 @@ test("vendored third_party code cannot reach into the application", async () => 
   );
 });
 
-test("CHIEF model layer cannot reuse Module 01's LLM wrapper", async () => {
-  // server/agents/llm.js is Module 01's Anthropic client; CHIEF's provider
+test("CHIEF model layer cannot reuse the CEO Agents LLM wrapper", async () => {
+  // server/agents/llm.js is the CEO Agents Anthropic client; CHIEF's provider
   // layer must go through its own descriptors (server/chief/models/providers.js).
   await assertBlocked(
     "server/chief/models/providers.js",
@@ -187,7 +187,7 @@ test("Phase 3 orchestration does not import a provider SDK", () => {
   for (const file of files) {
     const source = readFileSync(path.join(repoRoot, file), "utf8");
     assert.doesNotMatch(source, /@ai-sdk\//, `${file} imports a provider SDK`);
-    assert.doesNotMatch(source, /server\/(brain|agents|memory)\//, `${file} imports Module 01`);
+    assert.doesNotMatch(source, /server\/(brain|agents|memory)\//, `${file} imports CEO Agents`);
     assert.doesNotMatch(source, /hermes|AIAgent|NousResearch/i, `${file} couples to Hermes`);
     assert.doesNotMatch(source, /createXai|@ai-sdk\/xai/, `${file} couples to the Grok SDK`);
   }

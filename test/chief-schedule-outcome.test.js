@@ -390,7 +390,7 @@ test("prisma getOutcome decrypts summary only inside the caller context", async 
   );
 });
 
-test("phase 15 does not add a second loop, sender, or module 01 import", () => {
+test("phase 15 does not add a second loop, sender, or CEO Agents import", () => {
   const files = [
     "server/chief/tools/schedule-store.js",
     "server/chief/tools/builtin.js",

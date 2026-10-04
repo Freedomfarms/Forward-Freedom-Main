@@ -1,6 +1,6 @@
-// GET/POST /api/chief/module-access — the authenticated user's Module 02
+// GET/POST /api/chief/module-access — the authenticated user's Freedom Financial
 // read switch. The body cannot name another user, and the flag cannot grant
-// a write. CHIEF's module02_access_set uses the same store.
+// a write. CHIEF's freedom_financial_access_set uses the same store.
 
 import { authenticateRequest } from "../../server/auth/verifyAuth.js";
 import { PrismaModuleAccess } from "../../server/chief/security/module-access.js";
@@ -9,7 +9,7 @@ import { enforceRateLimit, generalApiRateLimit } from "../../server/http/rateLim
 import { readJsonBody } from "../../server/http/requestHelpers.js";
 
 function publicAccess(row) {
-  return { module02Read: row?.module02Read === true, writeAccess: false };
+  return { freedomFinancialRead: row?.freedomFinancialRead === true, writeAccess: false };
 }
 
 function reject(response, status, error) {
@@ -44,16 +44,16 @@ export async function handleChiefModuleAccess(request, response, deps = {}) {
   const store = deps.store ?? new PrismaModuleAccess();
   try {
     if (request.method === "GET") {
-      const enabled = await store.isModule02ReadEnabled(userId);
-      response.status(200).json(publicAccess({ module02Read: enabled }));
+      const enabled = await store.isFreedomFinancialReadEnabled(userId);
+      response.status(200).json(publicAccess({ freedomFinancialRead: enabled }));
       return;
     }
     const body = await readJsonBody(request);
-    if (typeof body.module02Read !== "boolean") {
-      reject(response, 400, "module02Read must be a boolean");
+    if (typeof body.freedomFinancialRead !== "boolean") {
+      reject(response, 400, "freedomFinancialRead must be a boolean");
       return;
     }
-    const saved = await store.setModule02ReadEnabled(userId, body.module02Read);
+    const saved = await store.setFreedomFinancialReadEnabled(userId, body.freedomFinancialRead);
     response.status(200).json(publicAccess(saved));
   } catch (error) {
     const status = error.status || 500;

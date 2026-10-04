@@ -241,11 +241,13 @@ test("inventory is the security floor for inventoried tools", () => {
     Capability.SKILL_READ,
   ]);
   assert.deepEqual(
-    canonicalToolCapabilities("module02_access_status", { inventory: CHIEF_TOOL_INVENTORY }),
+    canonicalToolCapabilities("freedom_financial_access_status", {
+      inventory: CHIEF_TOOL_INVENTORY,
+    }),
     [Capability.MODULE_ACCESS]
   );
   assert.deepEqual(
-    canonicalToolCapabilities("module02_access_set", { inventory: CHIEF_TOOL_INVENTORY }),
+    canonicalToolCapabilities("freedom_financial_access_set", { inventory: CHIEF_TOOL_INVENTORY }),
     [Capability.MODULE_ACCESS]
   );
   assert.deepEqual(canonicalToolCapabilities("web_search", { inventory: CHIEF_TOOL_INVENTORY }), [

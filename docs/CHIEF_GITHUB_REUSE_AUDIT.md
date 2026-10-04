@@ -1,7 +1,7 @@
 # CHIEF — GitHub Reuse Audit (Module 03 research deliverable)
 
-Status: research complete, awaiting approval. No CHIEF code has been written. Module 01 and
-Module 02 are untouched and are **not** used as an architectural foundation anywhere in this
+Status: research complete, awaiting approval. No CHIEF code has been written. CEO Agents and
+Freedom Financial are untouched and are **not** used as an architectural foundation anywhere in this
 document.
 
 This audit answers one question: **what proven open-source implementation can CHIEF bring in so
@@ -319,7 +319,7 @@ No copyleft anywhere in the selected set; nothing blocks proprietary use of Free
 ## 8. Persistence/database implications
 
 All ported stores re-base onto the existing Postgres via Prisma (new, namespaced tables; no
-foreign keys into Module 01/02 tables other than `User`):
+foreign keys into CEO Agents and Freedom Financial tables other than `User`):
 
 | CHIEF store (new tables)                                                                                     | Ported from                                                              | Notes                                                                                                      |
 | ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
@@ -355,7 +355,7 @@ middleware hooks, subagent coordination (later phase).
 **Rewritten/new (no adequate open implementation for our runtime):** the serverless execution
 shell (HTTP/SSE handlers that load-resume-persist turns; cron tick dispatcher), Prisma/RLS
 persistence adapters behind the ported store interfaces, integration adapters that expose
-Module 01/02 data to CHIEF as read-only tools via public interfaces, and the Command Center UI
+CEO Agents and Freedom Financial data to CHIEF as read-only tools via public interfaces, and the Command Center UI
 around cortex-map (built on the existing Freedom OS design system).
 
 **Explicitly not built in v1:** code-execution tools/sandbox, voice, channels
@@ -368,7 +368,7 @@ around cortex-map (built on the existing Freedom OS design system).
 ```
                        FREEDOM OS  (Vercel + Postgres)
    ┌──────────────┬──────────────────┬───────────────────────────────────┐
-   │  MODULE 01   │    MODULE 02     │        MODULE 03 — CHIEF          │
+   │  CEO AGENTS  │FREEDOM FINANCIAL │         MODULE 03 — CHIEF         │
    │  (untouched) │   (untouched)    │                                   │
    └──────┬───────┴────────┬─────────┘                                   │
           │ read-only      │ read-only                                   │
@@ -415,21 +415,21 @@ or suspend on approval) → atomic save (checkpoint + transcript delta + events)
 to the Command Center over SSE → traces recorded → facts/knowledge extracted asynchronously by a
 scheduled task with injection scan and trust tiers.
 
-## 11. Conceptual borrowings from Module 01: NONE
+## 11. Conceptual borrowings from CEO Agents: NONE
 
 CHIEF's architecture above is derived entirely from OpenJarvis, möbius, cortex-map, and
 ecosystem libraries. Specifically:
 
 - No use or imitation of `server/brain/` (brainTurn), `server/agents/` (toolBelt, runner,
-  registry), `server/memory/`, `BrainJob`, world-model, or any Module 01 UI. CHIEF's turn loop
+  registry), `server/memory/`, `BrainJob`, world-model, or any CEO Agents UI. CHIEF's turn loop
   is the möbius phase machine; its registries, tools, memory, traces, scheduler are OpenJarvis
-  ports. No code imports from Module 01 paths will exist under CHIEF's directories.
+  ports. No code imports from CEO Agents paths will exist under CHIEF's directories.
 - Unavoidable **shared platform infrastructure** (module-agnostic, used by all modules, listed
   for full transparency): Firebase authentication verification, the Prisma/Postgres connection
   and RLS conventions, the repo's at-rest encryption utilities, and the Vercel deployment
   platform (CHIEF adds its **own separate** cron entry in `vercel.json`; additive only). These
-  are Freedom OS platform facts, not Module 01 architecture.
-- Module 01 and Module 02 appear in CHIEF only as **external systems** accessed through
+  are Freedom OS platform facts, not CEO Agents architecture.
+- CEO Agents and Freedom Financial appear in CHIEF only as **external systems** accessed through
   read-only interfaces, per the Module 03 spec.
 
 ---

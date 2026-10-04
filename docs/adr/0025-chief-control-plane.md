@@ -65,7 +65,7 @@ stays a pure mapping and does not merge. A thrown load stays deny-all.
 
 `capability:read` and `code:read` are on that baseline. `workforce:read` stays
 reserved and off it. `file:read`, `network:fetch`, `code:execute`, and
-`tool:invoke` stay off it. `finance:read` does not turn Module 02 data on.
+`tool:invoke` stay off it. `finance:read` does not turn Freedom Financial data on.
 
 ### Governance
 

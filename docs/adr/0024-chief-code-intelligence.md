@@ -17,7 +17,7 @@ baseline. `code:execute` stays forbidden.
   execution path.
 - GitHub's contents, git tree, and code-search reads are the existing remote
   API. No local checkout is mounted into the tool.
-- No Module 01 registry, shell, or filesystem module is reused.
+- No CEO Agents registry, shell, or filesystem module is reused.
 
 ## Decision
 

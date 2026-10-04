@@ -9,8 +9,8 @@ import globals from "globals";
 // ─────────────────────────────────────────────────────────────────────────────
 // CHIEF (Module 03) import boundaries — docs/CHIEF_ARCHITECTURE.md §4.
 //
-// CHIEF is architecturally independent of Module 01 (CEO Agents) and Module 02
-// (Freedom Financial). These rules make the boundary mechanical: they resolve
+// CHIEF is architecturally independent of CEO Agents and Freedom Financial.
+// These rules make the boundary mechanical: they resolve
 // every relative import to a real file path and fail the lint if it crosses a
 // forbidden boundary, in either direction. Bare specifiers (npm packages) are
 // never affected. The zones reference directories that may not exist yet; the
@@ -40,7 +40,7 @@ function fileInZone(zone, filename) {
 // import targets those files may never reach.
 const CHIEF_BOUNDARIES = [
   {
-    // CHIEF server + API code must not touch Module 01 server code or handlers.
+    // CHIEF server + API code must not touch CEO Agents server code or handlers.
     zones: [rp("server/chief"), rp("api/chief")],
     // Plain-prefix zones: matches api/cron/chief-dispatch.js and any future
     // api/cron/chief-*.js endpoints.
@@ -55,7 +55,7 @@ const CHIEF_BOUNDARIES = [
           rp("api/agents"),
           rp("api/notifications"),
         ],
-        message: "CHIEF must not import Module 01 server code (docs/CHIEF_ARCHITECTURE.md §4).",
+        message: "CHIEF must not import CEO Agents server code (docs/CHIEF_ARCHITECTURE.md §4).",
       },
       {
         targets: [rp("src/components")],
@@ -64,7 +64,7 @@ const CHIEF_BOUNDARIES = [
     ],
   },
   {
-    // CHIEF UI must not import Module 01 UI or Module 01 client plumbing.
+    // CHIEF UI must not import CEO Agents UI or CEO Agents client plumbing.
     zones: [rp("src/components/chief")],
     forbidden: [
       {
@@ -75,7 +75,7 @@ const CHIEF_BOUNDARIES = [
           rp("src/ForwardFreedomDashboard"),
         ],
         message:
-          "CHIEF UI must not import Module 01 UI or client plumbing (docs/CHIEF_ARCHITECTURE.md §4).",
+          "CHIEF UI must not import CEO Agents UI or client plumbing (docs/CHIEF_ARCHITECTURE.md §4).",
       },
       {
         targets: [rp("server")],
@@ -104,7 +104,7 @@ const CHIEF_BOUNDARIES = [
     ],
   },
   {
-    // Reverse isolation: Module 01 server code must not import CHIEF.
+    // Reverse isolation: CEO Agents server code must not import CHIEF.
     zones: [
       rp("server/brain"),
       rp("server/agents"),
@@ -117,18 +117,18 @@ const CHIEF_BOUNDARIES = [
     forbidden: [
       {
         targets: [rp("server/chief"), rp("api/chief")],
-        message: "Module 01 must not import CHIEF code (docs/CHIEF_ARCHITECTURE.md §4).",
+        message: "CEO Agents must not import CHIEF code (docs/CHIEF_ARCHITECTURE.md §4).",
       },
     ],
   },
   {
-    // Reverse isolation: Module 01 UI must not import CHIEF UI or vendored code.
+    // Reverse isolation: CEO Agents UI must not import CHIEF UI or vendored code.
     zones: [rp("src/components/freedomOs")],
     forbidden: [
       {
         targets: [rp("src/components/chief"), rp("src/third_party")],
         message:
-          "Module 01 UI must not import CHIEF UI or third_party code (docs/CHIEF_ARCHITECTURE.md §4).",
+          "CEO Agents UI must not import CHIEF UI or third_party code (docs/CHIEF_ARCHITECTURE.md §4).",
       },
     ],
   },

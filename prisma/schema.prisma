@@ -1115,13 +1115,13 @@ model ChiefApproval {
   @@map("chief_approval")
 }
 
-// Per-user CHIEF permission for Module 02 reads. Absence of a row is OFF.
+// Per-user CHIEF permission for Freedom Financial reads. Absence of a row is OFF.
 // This is not a capability grant: a grant row would replace the whole baseline.
-// module02Read never authorizes a write.
+// freedomFinancialRead never authorizes a write.
 model ChiefModuleAccess {
-  userId       String   @id
-  module02Read Boolean  @default(false)
-  updatedAt    DateTime @updatedAt
+  userId               String   @id
+  freedomFinancialRead Boolean  @default(false)
+  updatedAt            DateTime @updatedAt
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("chief_module_access")

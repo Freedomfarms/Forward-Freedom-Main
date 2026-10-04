@@ -1,7 +1,7 @@
 # Freedom OS
 
-Freedom OS is a React + Vite personal operating system with two modules: Module 01 — CEO Agents
-(an autonomous agent platform), and Module 02 — Freedom Financial (the Forward Freedom Financial
+Freedom OS is a React + Vite personal operating system with CEO Agents
+(an autonomous agent platform) and Freedom Financial (the Forward Freedom Financial
 planning workspace with budgeting, income, accounts, transactions, and Plaid-backed sync).
 
 ## Current production foundation

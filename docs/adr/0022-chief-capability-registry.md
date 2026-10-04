@@ -18,7 +18,7 @@ service.
 - möbius `ApprovalCoordinator` stays the only confirmation lifecycle.
 - BUILD NEW descriptor and registry modules, because neither upstream has Freedom OS
   subsystem metadata (effect, audit, exposure) or this server's user-scoped stores.
-- No Module 01 registry is reused. `server/capabilities/registry.js` belongs to the
+- No CEO Agents registry is reused. `server/capabilities/registry.js` belongs to the
   retired CEO agent inventory.
 
 ## Decision
@@ -26,7 +26,7 @@ service.
 A capability is a frozen descriptor plus a server-side implementation. The model
 receives the descriptor. `TurnMachine` still authorizes calls. `ToolExecutor` still
 runs the gates. The implementation calls the existing schedule store, checkpoint
-store, or Module 02 access store.
+store, or Freedom Financial access store.
 
 Effects `destructive` and `high_impact` require a fresh confirmation. Session-wide
 approval and `full_access` do not skip them. An `approved` decision for the current
@@ -43,7 +43,7 @@ calls `deleteOwnedSession`.
 - Empty capability-grant rows gain `schedule:read`, `conversation:write`, and
   `conversation:delete` on the baseline. A stored grant row still replaces the
   baseline entirely.
-- `schedule_cancel` is destructive. `module02_access_set` is high impact.
+- `schedule_cancel` is destructive. `freedom_financial_access_set` is high impact.
 - Code intelligence, Grok workforce ingestion, the operational graph, finance
   writes, and settings ports are not part of this decision.
 - CHIEF still has no GitHub write credential, deploy credential, or shell.

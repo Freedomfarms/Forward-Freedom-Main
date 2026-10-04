@@ -1,5 +1,5 @@
 // Read-only projection of the access the CHIEF room is allowed to show.
-// Money follows the Module 02 read flag. Web follows the same capability
+// Money follows the Freedom Financial read flag. Web follows the same capability
 // check ToolExecutor uses, plus whether a search credential exists.
 // This module does not grant anything and does not return secrets.
 

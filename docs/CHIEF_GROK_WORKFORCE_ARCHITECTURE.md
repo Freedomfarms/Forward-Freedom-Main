@@ -95,8 +95,8 @@ agent" with "CHIEF observed this agent." A later implementation uses new tables.
 
 ### What this phase leaves alone
 
-Module 01 (`server/agents`, `api/agents`, the CEO brain), the financial Command
-Center, Module 02 writes, the Freedom Diamond / particle-field renderers, and the
+CEO Agents (`server/agents`, `api/agents`, the CEO brain), the financial Command
+Center, Freedom Financial writes, the Freedom Diamond / particle-field renderers, and the
 unused `ChiefAgent*` lifecycle.
 
 ---
@@ -568,7 +568,7 @@ Neither choice is made here.
 - The key will sit in a Bot skill or MCP header on the shared Grok computer, so
   every Bot on that member's computer can use it. That matches Grok Bot's own
   rule: the computer is not a per-bot security boundary. The key grants report
-  rights only, not chat, not finance, not Module 02.
+  rights only, not chat, not finance, not Freedom Financial.
 - Body size cap, rate limit, schema check. Unknown fields dropped.
 - Reports do not create `ChiefFact` rows and do not grant capabilities.
 
