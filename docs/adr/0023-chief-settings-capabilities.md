@@ -28,7 +28,8 @@ output is `{ timezone }` only.
 ## Consequences
 
 - Empty grant rows gain `settings:read` and `settings:write` on the baseline.
-  A stored grant row still replaces the baseline entirely.
+  A stored grant row is merged onto that baseline. An explicit deny still
+  removes the named capability.
 - No other profile, admin, consent, or financial field is writable from CHIEF.
 - Code intelligence, Grok workforce ingestion, the operational graph, finance
   writes, and Module 01 remain out of scope.

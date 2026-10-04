@@ -15,8 +15,9 @@
 // finance:read lets the read tools run so they can report that Module 02
 // access is off. The data
 // itself stays behind chief_module_access, which defaults to off and is not
-// a grant row. Any returned grant row replaces this baseline.
-// policyFromGrantRows stays a pure mapping of stored rows.
+// a grant row. Stored rows merge onto this baseline. An explicit deny still
+// removes that capability. policyFromGrantRows stays a pure mapping of
+// stored rows and does not merge.
 
 import { withUserContext } from "../../db/prisma.js";
 import { defaultConnectors } from "../connectors/registry.js";
@@ -55,15 +56,19 @@ function baselinePolicy(connectors = defaultConnectors()) {
   return policy;
 }
 
+function assertGrantRow(row) {
+  if (typeof row?.agentId !== "string" || row.agentId.trim() === "") {
+    throw new Error("capability grant agentId must be a nonempty string");
+  }
+  if (typeof row.capability !== "string" || row.capability.trim() === "") {
+    throw new Error("capability grant capability must be a nonempty string");
+  }
+}
+
 export function policyFromGrantRows(rows, { defaultDeny = true } = {}) {
   const byAgent = new Map();
   for (const row of rows ?? []) {
-    if (typeof row?.agentId !== "string" || row.agentId.trim() === "") {
-      throw new Error("capability grant agentId must be a nonempty string");
-    }
-    if (typeof row.capability !== "string" || row.capability.trim() === "") {
-      throw new Error("capability grant capability must be a nonempty string");
-    }
+    assertGrantRow(row);
     if (!byAgent.has(row.agentId)) {
       byAgent.set(row.agentId, { agent_id: row.agentId, grants: [], deny: [] });
     }
@@ -78,14 +83,49 @@ export function policyFromGrantRows(rows, { defaultDeny = true } = {}) {
   });
 }
 
+// CapabilityPolicy does not inherit `_default` once an agent has its own
+// rows. Copy the baseline onto those agents, then add stored grants and
+// apply stored denies. A deny on `_default` is copied too, so an explicit
+// deny still wins after that agent stops inheriting.
+function mergeStoredGrants(policy, rows) {
+  for (const row of rows) assertGrantRow(row);
+  const baseline = policy.listGrants("_default");
+  const shadowed = new Set();
+  for (const row of rows) {
+    if (row.agentId !== "_default") shadowed.add(row.agentId);
+  }
+  for (const agentId of shadowed) {
+    for (const grant of baseline) {
+      policy.grant(agentId, grant.capability, grant.pattern);
+    }
+  }
+  const defaultDenies = [];
+  for (const row of rows) {
+    if (row.deny) {
+      policy.deny(row.agentId, row.capability);
+      if (row.agentId === "_default") defaultDenies.push(row.capability);
+    } else {
+      policy.grant(row.agentId, row.capability, row.pattern || "*");
+    }
+  }
+  for (const agentId of shadowed) {
+    for (const capability of defaultDenies) policy.deny(agentId, capability);
+  }
+  return policy;
+}
+
 export function closedPolicy() {
   return new CapabilityPolicy({ defaultDeny: true });
 }
 
-export async function loadCapabilityPolicy(userId, { withUser = withUserContext } = {}) {
+export async function loadCapabilityPolicy(
+  userId,
+  { withUser = withUserContext, connectors } = {}
+) {
   const rows = await withUser(userId, (tx) =>
     tx.chiefCapabilityGrant.findMany({ where: { userId } })
   );
-  if (!rows || rows.length === 0) return baselinePolicy();
-  return policyFromGrantRows(rows);
+  const policy = baselinePolicy(connectors);
+  if (!rows || rows.length === 0) return policy;
+  return mergeStoredGrants(policy, rows);
 }

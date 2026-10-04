@@ -1195,7 +1195,7 @@ export async function createChiefTooling({
   let resolved = policy;
   if (!resolved) {
     try {
-      resolved = await loadCapabilityPolicy(userId);
+      resolved = await loadCapabilityPolicy(userId, { connectors });
     } catch {
       resolved = closedPolicy();
     }

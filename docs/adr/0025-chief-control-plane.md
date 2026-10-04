@@ -40,7 +40,8 @@ outside fenced code.
 ## Consequences
 
 - Empty grant rows gain `capability:read` and `code:read`. A stored grant row
-  still replaces the baseline entirely.
+  is merged onto that baseline. An explicit deny still removes the named
+  capability.
 - Email, calendar, drive, GitHub account, and filesystem connectors are
   unavailable until one is registered. Resend agent-run delivery is not a
   mailbox connector.

@@ -44,8 +44,8 @@ Claude.
    alias still fails closed as `system:admin`.
 2. `loadCapabilityPolicy` grants `web:search` on the empty-row baseline,
    beside the Phase 16 labels. `network:fetch` stays off that baseline. An
-   explicit grant row still replaces the baseline. A failed load stays
-   deny-all.
+   explicit grant row is merged onto the baseline. An explicit deny still
+   removes the named capability. A failed load stays deny-all.
 3. The only network call is `GET https://api.search.brave.com/res/v1/web/search`
    with `redirect: "error"`. The model cannot supply a URL, host, or method.
    Result links are returned as text. They are not fetched.

@@ -52,8 +52,8 @@ token.
 - CHIEF can inspect Freedom OS source and cannot modify, commit, push, or
   deploy it. The code module has no write route and no shell.
 - Users without `code:read` get the existing capability denial.
-- A stored grant row still replaces the baseline and must include `code:read`
-  itself if code intelligence should be allowed.
+- A stored grant row is merged onto the baseline, so `code:read` stays
+  available unless an explicit deny removes it.
 - Route, symbol, and import indexes remain future work.
 - Grok workforce ingestion, the operational graph, and finance writes are not
   part of this decision.
