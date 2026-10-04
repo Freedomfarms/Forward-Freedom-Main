@@ -222,11 +222,20 @@ export async function fetchChiefVoices(user) {
   return response.json();
 }
 
-export async function fetchChiefSpeech({ user, text, voiceId, signal }) {
+export async function fetchChiefSpeech({ user, text, voiceId, voiceSettings, signal }) {
+  const settings = voiceSettings && typeof voiceSettings === "object" ? voiceSettings : {};
   const response = await fetch("/api/chief/speak", {
     method: "POST",
     headers: await buildAuthenticatedHeaders({ "Content-Type": "application/json" }, { user }),
-    body: JSON.stringify({ text, voice_id: voiceId }),
+    body: JSON.stringify({
+      text,
+      voice_id: voiceId,
+      voice_settings: {
+        speed: settings.speed,
+        stability: settings.stability,
+        similarity_boost: settings.similarityBoost ?? settings.similarity_boost,
+      },
+    }),
     signal,
   });
   if (!response.ok || !response.body) throw await readVoiceError(response);

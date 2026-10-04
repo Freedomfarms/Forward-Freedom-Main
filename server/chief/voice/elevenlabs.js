@@ -175,7 +175,35 @@ export async function listElevenLabsVoices({
   return { ok: true, status: 200, voices };
 }
 
-async function requestSpeech({ fetchImpl, apiKey, voiceId, text, model, format, signal }) {
+// The dock speaks with eleven_flash_v2_5 (multilingual v2 only if flash
+// rejects the request). Stream VoiceSettings accepts speed, stability, and
+// similarity_boost for that model. Style is omitted: GET /v1/models reports
+// can_use_style false for eleven_flash_v2_5, so a style slider would not
+// change the audio this path plays.
+export function speechVoiceSettings(input) {
+  const source = input && typeof input === "object" ? input : {};
+  const nested =
+    source.voice_settings && typeof source.voice_settings === "object"
+      ? source.voice_settings
+      : source;
+  const similarity = nested.similarity_boost ?? nested.similarityBoost;
+  return {
+    speed: clamp(nested.speed, 0.7, 1.2, 1),
+    stability: clamp(nested.stability, 0, 1, 0.7),
+    similarity_boost: clamp(similarity, 0, 1, 0.75),
+  };
+}
+
+async function requestSpeech({
+  fetchImpl,
+  apiKey,
+  voiceId,
+  text,
+  model,
+  format,
+  signal,
+  settings,
+}) {
   const url = new URL(
     `${ELEVENLABS_SPEECH_URL}/${encodeURIComponent(voiceId)}/stream`
   );
@@ -189,7 +217,11 @@ async function requestSpeech({ fetchImpl, apiKey, voiceId, text, model, format, 
         ...elevenHeaders(apiKey, accept),
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ text, model_id: model }),
+      body: JSON.stringify({
+        text,
+        model_id: model,
+        voice_settings: settings,
+      }),
       signal,
     });
   } catch (error) {
@@ -215,10 +247,12 @@ export async function openElevenLabsSpeech({
   apiKey,
   voiceId,
   text,
+  voiceSettings,
   signal,
   logger = console,
 } = {}) {
   const spoken = plainSpeechText(text);
+  const settings = speechVoiceSettings(voiceSettings);
   if (!apiKey) {
     return { ok: false, status: 503, message: "ElevenLabs is not configured." };
   }
@@ -239,6 +273,7 @@ export async function openElevenLabsSpeech({
       model: attempt.model,
       format: attempt.format,
       signal,
+      settings,
     });
     if (result.ok) return result;
     last = result;

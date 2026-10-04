@@ -176,7 +176,10 @@ function mergeSamples(parts) {
   return merged;
 }
 
-export async function playPcmStream(body, { audioContext, signal, sampleRate = PCM_RATE } = {}) {
+export async function playPcmStream(
+  body,
+  { audioContext, signal, sampleRate = PCM_RATE, onPlaybackStart } = {}
+) {
   if (!body || !audioContext) throw new Error("CHIEF could not play that response.");
   const reader = body.getReader();
   const sources = [];
@@ -199,6 +202,7 @@ export async function playPcmStream(body, { audioContext, signal, sampleRate = P
     const scheduled = schedulePcm(audioContext, merged, sampleRate, nextTime);
     sources.push(scheduled.source);
     nextTime = scheduled.nextTime;
+    if (!started) onPlaybackStart?.();
     started = true;
   }
 
@@ -236,7 +240,7 @@ export async function playPcmStream(body, { audioContext, signal, sampleRate = P
   }
 }
 
-function playMp3Blob(blob, { signal } = {}) {
+function playMp3Blob(blob, { signal, onPlaybackStart } = {}) {
   const url = URL.createObjectURL(blob);
   const audio = new Audio(url);
   return new Promise((resolve, reject) => {
@@ -260,20 +264,20 @@ function playMp3Blob(blob, { signal } = {}) {
     }
     signal?.addEventListener("abort", onAbort, { once: true });
     audio.play().then(
-      () => {},
+      () => onPlaybackStart?.(),
       (error) => finish(error?.name === "AbortError" ? abortError() : error)
     );
   });
 }
 
-export async function playChiefSpeech(response, { audioContext, signal } = {}) {
+export async function playChiefSpeech(response, { audioContext, signal, onPlaybackStart } = {}) {
   const format = response?.headers?.get?.("X-Chief-Audio-Format") || "pcm_24000";
   if (signal?.aborted) throw abortError();
   if (format === "mp3") {
     const blob = await response.blob();
     if (signal?.aborted) throw abortError();
-    await playMp3Blob(blob, { signal });
+    await playMp3Blob(blob, { signal, onPlaybackStart });
     return;
   }
-  await playPcmStream(response.body, { audioContext, signal });
+  await playPcmStream(response.body, { audioContext, signal, onPlaybackStart });
 }

@@ -220,6 +220,12 @@ test("speech streams pcm for the selected voice_id and strips markdown", async (
   assert.equal(calls[0].init.body.model_id, "eleven_flash_v2_5");
   assert.equal(calls[0].init.body.text, "What is happening with my vendors?");
   assert.equal(calls[0].init.body.text.includes("**"), false);
+  assert.deepEqual(calls[0].init.body.voice_settings, {
+    speed: 1,
+    stability: 0.7,
+    similarity_boost: 0.75,
+  });
+  assert.equal("style" in calls[0].init.body.voice_settings, false);
   assert.equal(JSON.stringify(http.state.body || {}).includes(SECRET), false);
   assert.equal(Buffer.concat(http.chunks).includes(Buffer.from(SECRET)), false);
 });
@@ -247,16 +253,66 @@ test("a rejected voice id never reaches ElevenLabs", async () => {
   assert.equal(isVoiceId("bad id"), false);
 });
 
+test("saved voice settings are sent and style is not", async () => {
+  const calls = [];
+  const fetchImpl = async (_url, init) => {
+    calls.push(JSON.parse(init.body));
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new Uint8Array([1]));
+        controller.close();
+      },
+    });
+    return new Response(stream, { status: 200 });
+  };
+  const http = mockResponse();
+  await handleChiefSpeak(
+    request({
+      method: "POST",
+      body: {
+        text: "Hello",
+        voice_id: VOICE,
+        voice_settings: {
+          speed: 9,
+          stability: -1,
+          similarity_boost: 0.2,
+          style: 0.9,
+        },
+      },
+    }),
+    http.response,
+    {
+      authenticate: auth("user-1"),
+      env: { ELEVENLABS_API_KEY: SECRET },
+      logger: silentLogger,
+      fetchImpl,
+    }
+  );
+  assert.equal(http.state.statusCode, 200);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].model_id, "eleven_flash_v2_5");
+  assert.deepEqual(calls[0].voice_settings, {
+    speed: 1.2,
+    stability: 0,
+    similarity_boost: 0.2,
+  });
+  assert.equal(JSON.stringify(calls[0]).includes("style"), false);
+  assert.equal(calls[0].text, "Hello");
+});
+
 test("flash model rejection falls back to a second stream", async () => {
   const models = [];
+  const settings = [];
   const opened = await openElevenLabsSpeech({
     apiKey: SECRET,
     voiceId: VOICE,
     text: "**Hello** there",
+    voiceSettings: { speed: 0.8, stability: 0.4, similarityBoost: 0.6, style: 1 },
     logger: silentLogger,
     fetchImpl: async (_url, init) => {
       const body = JSON.parse(init.body);
       models.push(body.model_id);
+      settings.push(body.voice_settings);
       if (body.model_id === "eleven_flash_v2_5") {
         return jsonResponse(400, { detail: { message: "model does not support tts" } });
       }
@@ -270,6 +326,10 @@ test("flash model rejection falls back to a second stream", async () => {
     },
   });
   assert.deepEqual(models, ["eleven_flash_v2_5", "eleven_multilingual_v2"]);
+  assert.deepEqual(settings, [
+    { speed: 0.8, stability: 0.4, similarity_boost: 0.6 },
+    { speed: 0.8, stability: 0.4, similarity_boost: 0.6 },
+  ]);
   assert.equal(opened.ok, true);
   assert.equal(opened.format, "mp3_44100_128");
   assert.equal(plainSpeechText("**bold** and [vendors](https://example.test)"), "bold and vendors");
@@ -332,6 +392,11 @@ test("the browser never receives the ElevenLabs key or a second chat path", () =
   assert.match(api, /\/api\/chief\/voices/);
   assert.match(api, /\/api\/chief\/speak/);
   assert.match(api, /voice_id: voiceId/);
+  assert.match(api, /similarity_boost/);
+  assert.match(read("src/components/chief/useChiefVoice.js"), /readVoiceSettings/);
+  assert.match(read("src/components/chief/ChiefPage.jsx"), /voice\.speakAnswer\(spoken\)/);
+  assert.match(read("src/components/chief/ChiefSettings.jsx"), /Style \(unavailable\)/);
+  assert.match(read("server/chief/voice/elevenlabs.js"), /can_use_style false/);
   const page = read("src/components/chief/ChiefPage.jsx");
   assert.match(page, /onTranscript: \(text\) => sendRef\.current\(text\)/);
   assert.match(page, /streamChiefChat/);

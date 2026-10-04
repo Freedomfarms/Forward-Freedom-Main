@@ -36,6 +36,7 @@ export async function handleChiefSpeak(request, response, deps = {}) {
       apiKey,
       voiceId: request.body?.voice_id,
       text: request.body?.text,
+      voiceSettings: request.body,
       signal: controller.signal,
       logger,
     });

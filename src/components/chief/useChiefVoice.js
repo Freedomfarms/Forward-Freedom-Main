@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchChiefSpeech, fetchChiefVoices } from "../../utils/chiefApi.js";
 import { createChiefSpeechInput, playChiefSpeech } from "../../utils/chiefSpeech.js";
 import { readChiefVoiceId, writeChiefVoiceId } from "../../utils/chiefVoicePreference.js";
+import { createAudioLevel } from "./voice/audioLevel.js";
+import { normalizeVoiceSettings, readVoiceSettings } from "./voice/voiceSettings.js";
 
 // Voice list, microphone capture, and spoken playback for the open CHIEF
 // session. Transcripts are handed back to the page so they enter the same
@@ -30,6 +32,9 @@ export function useChiefVoice({ user, sessionUid, onTranscript }) {
   const audioCtxRef = useRef(null);
   const speechRef = useRef(null);
   const userRef = useRef(user);
+  const voiceTurnRef = useRef(false);
+  const meterRef = useRef(null);
+  const [audioLevelRef] = useState(() => ({ current: 0 }));
 
   useEffect(() => {
     onTranscriptRef.current = onTranscript;
@@ -42,6 +47,14 @@ export function useChiefVoice({ user, sessionUid, onTranscript }) {
   useEffect(() => {
     voiceIdRef.current = voiceId;
   }, [voiceId]);
+
+  useEffect(() => {
+    const meter = createAudioLevel({ levelRef: audioLevelRef });
+    meterRef.current = meter;
+    return () => {
+      void meter.stop();
+    };
+  }, [audioLevelRef]);
 
   const loadVoices = useCallback(async () => {
     const currentUser = userRef.current;
@@ -83,10 +96,12 @@ export function useChiefVoice({ user, sessionUid, onTranscript }) {
       onEnd: () => {
         setListening(false);
         setInterim("");
+        void meterRef.current?.stop();
       },
       onInterim: (text) => setInterim(text),
       onTranscript: (text) => {
         setInterim("");
+        voiceTurnRef.current = true;
         onTranscriptRef.current?.(text);
       },
       onError: (message) => {
@@ -115,18 +130,15 @@ export function useChiefVoice({ user, sessionUid, onTranscript }) {
     setAudioActive(false);
   }, []);
 
-  const markSpeaking = useCallback(() => {
-    setAudioActive(true);
-  }, []);
-
   const stopListening = useCallback(() => {
     speechRef.current?.abort();
     setListening(false);
     setInterim("");
+    void meterRef.current?.stop();
   }, []);
 
   const speakAnswer = useCallback(
-    async (text) => {
+    async (text, settingsOverride) => {
       const spoken = typeof text === "string" ? text.trim() : "";
       const selected = voiceIdRef.current;
       const currentUser = userRef.current;
@@ -139,22 +151,32 @@ export function useChiefVoice({ user, sessionUid, onTranscript }) {
         setSpeechError("Select an ElevenLabs voice before CHIEF can speak.");
         return;
       }
+      const saved = readVoiceSettings();
+      const voiceSettings = settingsOverride
+        ? normalizeVoiceSettings({ ...saved, ...settingsOverride })
+        : saved;
       speakAbortRef.current?.abort();
       const controller = new AbortController();
       speakAbortRef.current = controller;
-      setAudioActive(true);
+      setAudioActive(false);
       setSpeechError("");
       try {
         const response = await fetchChiefSpeech({
           user: currentUser,
           text: spoken,
           voiceId: selected,
+          voiceSettings,
           signal: controller.signal,
         });
         if (controller.signal.aborted) return;
         await playChiefSpeech(response, {
           audioContext: ensureAudio(),
           signal: controller.signal,
+          onPlaybackStart: () => {
+            if (!controller.signal.aborted && speakAbortRef.current === controller) {
+              setAudioActive(true);
+            }
+          },
         });
       } catch (error) {
         if (controller.signal.aborted || error?.name === "AbortError") return;
@@ -183,12 +205,19 @@ export function useChiefVoice({ user, sessionUid, onTranscript }) {
     setAudioActive(false);
     setSpeechError("");
     ensureAudio();
+    void meterRef.current?.start();
     try {
       input.start();
     } catch (error) {
       setSpeechError(error?.message || "Speech recognition could not start.");
     }
   }, [ensureAudio, listening]);
+
+  const consumeVoiceTurn = useCallback(() => {
+    const armed = voiceTurnRef.current;
+    voiceTurnRef.current = false;
+    return armed;
+  }, []);
 
   const chooseVoice = useCallback(
     (next) => {
@@ -213,8 +242,9 @@ export function useChiefVoice({ user, sessionUid, onTranscript }) {
     toggleListening,
     stopListening,
     stopSpeaking,
-    markSpeaking,
     speakAnswer,
     ensureAudio,
+    audioLevelRef,
+    consumeVoiceTurn,
   };
 }

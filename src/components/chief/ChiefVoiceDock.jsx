@@ -32,6 +32,8 @@ export function ChiefVoiceDock({
   onVoiceId,
   onRetryVoices,
   speechError = "",
+  showResponseText = true,
+  enterToSend = true,
 }) {
   const expanded = Boolean(
     draft.trim() ||
@@ -86,7 +88,7 @@ export function ChiefVoiceDock({
 
       {signedIn ? (
         <div className="chief-voice-dock-log">
-          <ChiefEarlierTurns earlier={earlier} />
+          <ChiefEarlierTurns earlier={earlier} showResponseText={showResponseText} />
           <ChiefTranscript
             userLine={userLine}
             answer={answer}
@@ -94,6 +96,7 @@ export function ChiefVoiceDock({
             isLoading={historyLoading}
             notFound={notFound}
             showEmpty={showEmpty}
+            showResponseText={showResponseText}
             onBackToList={onBackToList}
           />
           {interim ? <p className="chief-voice-interim">{interim}</p> : null}
@@ -126,6 +129,7 @@ export function ChiefVoiceDock({
           disabled={disabled}
           listening={listening}
           onMicrophone={onMicrophone}
+          enterToSend={enterToSend}
           inputRef={composerRef}
         />
       ) : null}
