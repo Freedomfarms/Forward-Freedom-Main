@@ -31,7 +31,7 @@ import {
 } from "../../utils/chiefActiveSession.js";
 import ApexClock from "../../third_party/apex-ui/ApexClock.jsx";
 import ApexWorld from "../../third_party/apex-ui/ApexWorld.jsx";
-import { visualStateForStatus, webStateForStatus } from "./apexVisualState.js";
+import { visualStateForInteraction, webStateForInteraction } from "./apexVisualState.js";
 import { CHIEF_NAV_ROSTER } from "./chiefNavRoster.js";
 import { ChiefAccessSheet } from "./ChiefAccessSheet.jsx";
 import { ChiefApprovalCard } from "./ChiefApprovalCard.jsx";
@@ -40,6 +40,8 @@ import { ChiefConversationList } from "./ChiefConversationList.jsx";
 import { ChiefModelSelect } from "./ChiefModelSelect.jsx";
 import { ChiefStatus } from "./ChiefStatus.jsx";
 import { ChiefEarlierTurns, ChiefTranscript } from "./ChiefTranscript.jsx";
+import { ChiefVoiceDock } from "./ChiefVoiceDock.jsx";
+import { useChiefVoice } from "./useChiefVoice.js";
 
 const NARROW_NAV_QUERY = "(max-width: 1023px)";
 
@@ -109,6 +111,12 @@ export function ChiefPage({
   const lastTextRef = useRef("");
   const answerRef = useRef(null);
   const composerRef = useRef(null);
+  const sendRef = useRef(() => {});
+  const voice = useChiefVoice({
+    user,
+    sessionUid,
+    onTranscript: (text) => sendRef.current(text),
+  });
 
   const readStoredSessionId = useCallback(() => {
     discardLegacyChiefActiveSessionKey();
@@ -337,6 +345,8 @@ export function ChiefPage({
 
   function selectSession(sessionId) {
     stopActiveTurn();
+    voice.stopListening();
+    voice.stopSpeaking();
     generation.current += 1;
     const token = generation.current;
     setActiveSessionId(sessionId);
@@ -353,6 +363,8 @@ export function ChiefPage({
 
   function startNewConversation() {
     stopActiveTurn();
+    voice.stopListening();
+    voice.stopSpeaking();
     generation.current += 1;
     setActiveSessionId(null);
     writeStoredSessionId(null);
@@ -418,14 +430,17 @@ export function ChiefPage({
     if (window.matchMedia("(max-width: 1023px)").matches) setDrawerOpen(true);
   }
 
-  // Text send is the only V1 entry. A later push-to-talk control should call
-  // sendMessage with the same session so voice joins this conversation.
+  // Typed text and speech transcripts both enter here. The session id is the
+  // open conversation, so voice and text share one TurnMachine history.
   async function sendMessage(
     text,
     { appendUser = true, sessionId = activeSessionIdRef.current } = {}
   ) {
     const trimmed = typeof text === "string" ? text.trim() : "";
     if (!trimmed || !user || busyRef.current) return;
+    voice.stopListening();
+    voice.stopSpeaking();
+    voice.ensureAudio();
     if (archivedSessions.some((session) => session.sessionId === sessionId)) {
       setTurnError("This conversation is archived. Restore it before sending.");
       return;
@@ -477,13 +492,27 @@ export function ChiefPage({
     if (controller.signal.aborted || abortRef.current !== controller) return;
 
     const sessionIdNow = turn.sessionId;
+    let spoken = "";
+    if (turn.finished && turn.status !== CHIEF_STATUS.ERROR && !turn.error) {
+      spoken = typeof turn.streamText === "string" ? turn.streamText.trim() : "";
+      if (spoken) voice.markSpeaking();
+    }
     if (sessionIdNow && (turn.finished || turn.approval)) {
       try {
         const payload = await fetchChiefHistory(user, sessionIdNow);
         if (abortRef.current !== controller) return;
-        setMessages(Array.isArray(payload?.messages) ? payload.messages : []);
+        const historyMessages = Array.isArray(payload?.messages) ? payload.messages : [];
+        setMessages(historyMessages);
         setStreamText("");
         setNotFound(false);
+        if (
+          !spoken &&
+          turn.finished &&
+          turn.status !== CHIEF_STATUS.ERROR &&
+          !turn.error
+        ) {
+          spoken = currentTurn(historyMessages, "").answer.trim();
+        }
       } catch (error) {
         if (abortRef.current !== controller) return;
         if (error?.status === 404) {
@@ -513,7 +542,20 @@ export function ChiefPage({
     }
     setBusyState(false);
     void refreshAccess();
+    if (
+      spoken &&
+      turn.status !== CHIEF_STATUS.ERROR &&
+      !turn.error &&
+      !controller.signal.aborted &&
+      abortRef.current === controller
+    ) {
+      void voice.speakAnswer(spoken);
+    }
   }
+
+  useEffect(() => {
+    sendRef.current = sendMessage;
+  });
 
   async function resolveApproval(decision) {
     if (!approval?.id || !activeSessionId || busyRef.current) return;
@@ -758,6 +800,22 @@ export function ChiefPage({
   }
 
   const fieldStatus = user ? status : CHIEF_STATUS.READY;
+  const interaction = {
+    status: fieldStatus,
+    listening: voice.listening,
+    speaking: voice.audioActive,
+  };
+
+  function submitDraft(text) {
+    voice.ensureAudio();
+    return sendMessage(text);
+  }
+
+  function toggleMicrophone() {
+    if (busy || historyLoading || notFound || activeArchived || approval) return;
+    voice.ensureAudio();
+    voice.toggleListening();
+  }
 
   if (room === "home") {
     return (
@@ -775,10 +833,45 @@ export function ChiefPage({
       >
         <ApexClock />
         <ApexWorld
-          orbState={visualStateForStatus(fieldStatus)}
-          webState={webStateForStatus(fieldStatus)}
+          orbState={visualStateForInteraction(interaction)}
+          webState={webStateForInteraction(interaction)}
           roster={CHIEF_NAV_ROSTER}
           onSelect={openNode}
+          coreListening={voice.listening}
+          onCoreActivate={user && !approval && !activeArchived ? toggleMicrophone : null}
+        />
+        <ChiefVoiceDock
+          signedIn={Boolean(user)}
+          userLine={turnView.userLine}
+          answer={turnView.answer}
+          earlier={turnView.earlier}
+          answerRef={answerRef}
+          historyLoading={historyLoading}
+          notFound={notFound}
+          showEmpty={showEmpty}
+          onBackToList={backToConversations}
+          draft={draft}
+          onDraft={setDraft}
+          onSubmit={() => submitDraft(draft)}
+          disabled={busy || historyLoading || notFound}
+          listening={voice.listening}
+          interim={voice.interim}
+          onMicrophone={toggleMicrophone}
+          composerRef={composerRef}
+          approval={Boolean(approval) && !activeArchived}
+          onApprove={() => resolveApproval("approve")}
+          onDeny={() => resolveApproval("deny")}
+          archived={activeArchived}
+          onRestore={() => {
+            restoreConversation(activeSessionId).catch((error) => setTurnError(errorText(error)));
+          }}
+          voices={voice.voices}
+          voicesLoading={voice.voicesLoading}
+          voicesError={voice.voicesError}
+          voiceId={voice.voiceId}
+          onVoiceId={voice.chooseVoice}
+          onRetryVoices={voice.retryVoices}
+          speechError={voice.speechError}
         />
       </section>
     );
@@ -891,13 +984,23 @@ export function ChiefPage({
                   </button>
                 </div>
               ) : (
-                <ChiefComposer
-                  value={draft}
-                  onChange={setDraft}
-                  onSubmit={() => sendMessage(draft)}
-                  disabled={busy || historyLoading || notFound}
-                  inputRef={composerRef}
-                />
+                <>
+                  <ChiefComposer
+                    value={draft}
+                    onChange={setDraft}
+                    onSubmit={() => submitDraft(draft)}
+                    disabled={busy || historyLoading || notFound}
+                    listening={voice.listening}
+                    onMicrophone={toggleMicrophone}
+                    inputRef={composerRef}
+                  />
+                  {voice.interim ? <p className="chief-voice-interim">{voice.interim}</p> : null}
+                  {voice.speechError ? (
+                    <p className="chief-voice-note" role="alert">
+                      {voice.speechError}
+                    </p>
+                  ) : null}
+                </>
               )}
             </div>
           )

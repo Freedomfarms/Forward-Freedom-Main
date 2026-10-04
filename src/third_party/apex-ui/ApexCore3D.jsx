@@ -79,6 +79,30 @@ function normalizeState(state) {
   return 'standby'
 }
 
+// Existing particle ball, posed by the state CHIEF already passes in.
+// Idle breathes. Listening opens slightly and settles inward. Thinking
+// tightens and speeds up. Speaking keeps the outward wave.
+function particlePose(st, smallCorner, bigDock) {
+  const radius = (corner, dock, overview) => (smallCorner ? corner : bigDock ? dock : overview)
+  const sleeping = st === 'standby'
+  const speaking = st === 'speaking'
+  const listening = st === 'listening'
+  const thinking = st === 'processing'
+  if (sleeping) {
+    return { sleeping, speaking, listening, thinking, baseTarget: radius(0.5, 0.62, 0.58), spin: 0.07, pace: 1, wave: 0, size: 0.026, opacity: 1, color: 0x00e5ff }
+  }
+  if (listening) {
+    return { sleeping, speaking, listening, thinking, baseTarget: radius(0.62, 0.82, 0.78), spin: 0.1, pace: 0.8, wave: 0.06, size: 0.02, opacity: 0.9, color: 0x00e5ff }
+  }
+  if (thinking) {
+    return { sleeping, speaking, listening, thinking, baseTarget: radius(0.42, 0.5, 0.48), spin: 0.28, pace: 2.6, wave: 0.28, size: 0.04, opacity: 1, color: 0xf4fdff }
+  }
+  if (speaking) {
+    return { sleeping, speaking, listening, thinking, baseTarget: radius(0.6, 1.05, 1.2), spin: 0.18, pace: 1.7, wave: 1, size: 0.022, opacity: 0.96, color: 0x00e5ff }
+  }
+  return { sleeping, speaking, listening, thinking, baseTarget: radius(0.72, 1.18, 1.5), spin: 0.07, pace: 1, wave: 0.22, size: 0.018, opacity: 0.92, color: 0x00e5ff }
+}
+
 function makeSprite() {
   const c = document.createElement('canvas')
   c.width = c.height = 64
@@ -197,7 +221,8 @@ function Core({ state, variant, corner = false, bigDock = false }) {
     // Kept deliberately lean â€” no per-frame matrix/cursor work â€” so it never starves the
     // mic / speech-recognition pipeline.
     if (variant === 'particles') {
-      const sleeping = st === 'standby', speaking = st === 'speaking'
+      const pose = particlePose(st, corner && !bigDock, bigDock)
+      const sleeping = pose.sleeping, speaking = pose.speaking
       // In chat the orb is small in the corner â€” keep the ball well inside its ring so it
       // doesn't pop out; overview keeps the big expansion + escaping waves.
       const smallCorner = corner && !bigDock                       // engineering = tiny corner; chat = full-size dock
@@ -205,9 +230,7 @@ function Core({ state, variant, corner = false, bigDock = false }) {
       // bigDock (chat) fills its ring to the SAME ratio as overview: the chat ring is CSS-scaled 0.78
       // (CHAT_T) while the particle group keeps the overview world-scale, so chat Rt â‰ˆ overview Rt Ã— 0.78
       // (awake 1.5Ã—0.78â‰ˆ1.18) â€” was 0.98, which read as a tight blob instead of a filled circle.
-      const baseTarget = sleeping ? (smallCorner ? 0.5 : (bigDock ? 0.62 : 0.58))
-                       : speaking ? (smallCorner ? 0.6 : (bigDock ? 1.05 : 1.2))
-                       : (smallCorner ? 0.72 : (bigDock ? 1.18 : 1.5))
+      const baseTarget = pose.baseTarget
       rtRef.current = THREE.MathUtils.lerp(rtRef.current, baseTarget, 0.05)
       const Rt = rtRef.current
       // Awake boil scales WITH the expanded radius (at a flat 0.12 over an Rt~1.2-1.5 ball the boil
@@ -217,7 +240,7 @@ function Core({ state, variant, corner = false, bigDock = false }) {
 
       if (group.current) {
         group.current.rotation.x = 0.3
-        group.current.rotation.y += d * 0.07          // gentle spin only
+        group.current.rotation.y += d * pose.spin          // gentle spin only
         group.current.rotation.z = 0
         if (corner) {
           // Track the ring's REAL on-screen centre (canvas is full-screen here) so the ball
@@ -310,8 +333,10 @@ function Core({ state, variant, corner = false, bigDock = false }) {
           }
         } else {
           // bubbling ball (messengers return here when their target closes)
-          let r = ballR[i] * Rt + Math.sin(t * speed[i] + phase[i]) * bubbleAmp
+          let r = ballR[i] * Rt + Math.sin(t * speed[i] * pose.pace + phase[i]) * bubbleAmp
           if (speaking) r += Math.sin(ballR[i] * 5.5 - t * 5.0) * waveAmp
+          else if (pose.listening) r += Math.sin(ballR[i] * 2.0 - t * 0.55) * (waveAmp * pose.wave)
+          else if (pose.thinking) r += Math.sin(ballR[i] * 4.2 - t * 3.6) * (waveAmp * pose.wave)
           else if (!sleeping) r += Math.sin(ballR[i] * 3.0 - t * 1.7) * (waveAmp * 0.22)  // awake: slow breathing ripple
           if (corner && !bigDock) r = Math.min(r, 0.66)   // hard cap only for the SMALL corner (eng); chat dock is full-size
           dx = dir[i * 3] * r; dy = dir[i * 3 + 1] * r; dz = dir[i * 3 + 2] * r
@@ -330,8 +355,9 @@ function Core({ state, variant, corner = false, bigDock = false }) {
       }
       if (points.current) {
         points.current.geometry.attributes.position.needsUpdate = true
-        points.current.material.size = sleeping ? 0.026 : 0.018  // finer motes (vibrant when asleep) — exact app values
-        points.current.material.opacity = sleeping ? 1.0 : 0.92
+        points.current.material.size = pose.size
+        points.current.material.opacity = pose.opacity
+        points.current.material.color.set(pose.color)
       }
       return
     }

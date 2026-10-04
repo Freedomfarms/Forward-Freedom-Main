@@ -19,7 +19,12 @@ import {
   pointFrame,
   rotateView,
 } from "../src/components/chief/chiefField.js";
-import { visualStateForStatus, webStateForStatus } from "../src/components/chief/apexVisualState.js";
+import {
+  visualStateForInteraction,
+  visualStateForStatus,
+  webStateForInteraction,
+  webStateForStatus,
+} from "../src/components/chief/apexVisualState.js";
 import {
   conversationAccessWords,
   currentTurn,
@@ -250,6 +255,34 @@ test("the room intelligence maps status onto the APEX orb and web", () => {
   assert.equal(webStateForStatus(CHIEF_STATUS.APPROVAL), "standby");
   assert.equal(visualStateForStatus(CHIEF_STATUS.ERROR), "idle");
   assert.equal(webStateForStatus(CHIEF_STATUS.ERROR), "standby");
+  assert.equal(
+    visualStateForInteraction({ status: CHIEF_STATUS.READY, listening: true }),
+    "listening"
+  );
+  assert.equal(
+    webStateForInteraction({ status: CHIEF_STATUS.READY, listening: true }),
+    "listening"
+  );
+  assert.equal(
+    visualStateForInteraction({ status: CHIEF_STATUS.READY, speaking: true }),
+    "speaking"
+  );
+  assert.equal(
+    visualStateForInteraction({ status: CHIEF_STATUS.WORKING }),
+    "thinking"
+  );
+  assert.equal(
+    webStateForInteraction({ status: CHIEF_STATUS.WORKING }),
+    "processing"
+  );
+  assert.equal(
+    visualStateForInteraction({ status: CHIEF_STATUS.RESPONDING }),
+    "speaking"
+  );
+  assert.equal(
+    visualStateForInteraction({ status: CHIEF_STATUS.WORKING, listening: true }),
+    "listening"
+  );
 
   const root = process.cwd();
   const page = readFileSync(path.join(root, "src/components/chief/ChiefPage.jsx"), "utf8");
@@ -257,7 +290,9 @@ test("the room intelligence maps status onto the APEX orb and web", () => {
   const hero = readFileSync(path.join(root, "src/third_party/apex-ui/ApexHeroOrb.tsx"), "utf8");
   const core = readFileSync(path.join(root, "src/third_party/apex-ui/ApexCore3D.jsx"), "utf8");
   assert.match(page, /ApexWorld/);
-  assert.match(page, /visualStateForStatus/);
+  assert.match(page, /visualStateForInteraction/);
+  assert.match(page, /ChiefVoiceDock/);
+  assert.match(page, /sendRef\.current = sendMessage/);
   assert.equal(page.includes("ChiefField"), false);
   assert.equal(page.includes("renderIntelligence"), false);
   assert.match(world, /prefers-reduced-motion/);

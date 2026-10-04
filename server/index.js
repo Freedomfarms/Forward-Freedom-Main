@@ -39,6 +39,8 @@ import chiefSessionSearchHandler from "../api/chief/session-search.js";
 import chiefHistoryHandler from "../api/chief/history.js";
 import chiefModelsHandler from "../api/chief/models.js";
 import chiefChatHandler from "../api/chief/chat.js";
+import chiefVoicesHandler from "../api/chief/voices.js";
+import chiefSpeakHandler from "../api/chief/speak.js";
 import chiefApprovalsHandler from "../api/chief/approvals.js";
 import chiefModuleAccessHandler from "../api/chief/module-access.js";
 import chiefRoomAccessHandler from "../api/chief/access.js";
@@ -153,6 +155,8 @@ app
 app.get("/api/chief/session-search", chiefSessionSearchHandler);
 app.get("/api/chief/history", chiefHistoryHandler);
 app.get("/api/chief/models", chiefModelsHandler);
+app.get("/api/chief/voices", chiefVoicesHandler);
+app.post("/api/chief/speak", chiefSpeakHandler);
 app.post("/api/chief/chat", chiefChatHandler);
 app.route("/api/chief/approvals").get(chiefApprovalsHandler).post(chiefApprovalsHandler);
 app.route("/api/chief/module-access").get(chiefModuleAccessHandler).post(chiefModuleAccessHandler);

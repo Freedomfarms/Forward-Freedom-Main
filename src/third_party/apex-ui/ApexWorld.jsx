@@ -14,7 +14,14 @@ import ShaderBackground from "./ShaderBackground";
 import OrbStatusBar from "./OrbStatusBar";
 import "./apex-ui.css";
 
-export default function ApexWorld({ orbState = "idle", webState = "standby", roster = null, onSelect = null }) {
+export default function ApexWorld({
+  orbState = "idle",
+  webState = "standby",
+  roster = null,
+  onSelect = null,
+  onCoreActivate = null,
+  coreListening = false,
+}) {
   const [reduced, setReduced] = useState(false);
 
   useEffect(() => {
@@ -73,6 +80,30 @@ export default function ApexWorld({ orbState = "idle", webState = "standby", ros
       <div style={{ position: "absolute", left: "50%", top: "50%", width: "min(560px, 58vw)", height: "min(500px, 56vw, 70vh)", transform: "translate(-50%, -50%)", zIndex: 3, pointerEvents: "none" }}>
         <ApexHeroOrb state={orbState} interactive={false} />
       </div>
+
+      {onCoreActivate ? (
+        <button
+          type="button"
+          className="chief-core-hit"
+          aria-label={coreListening ? "Stop listening" : "Speak to CHIEF"}
+          aria-pressed={coreListening}
+          onClick={onCoreActivate}
+          style={{
+            position: "absolute",
+            left: "50%",
+            top: "50%",
+            width: "min(240px, 32vw)",
+            height: "min(240px, 32vw)",
+            transform: "translate(-50%, -50%)",
+            zIndex: 4,
+            border: 0,
+            borderRadius: "50%",
+            background: "transparent",
+            cursor: "pointer",
+            pointerEvents: "auto",
+          }}
+        />
+      ) : null}
 
       <OrbStatusBar state={orbState} />
     </div>
