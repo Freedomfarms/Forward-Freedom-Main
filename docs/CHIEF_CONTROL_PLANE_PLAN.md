@@ -98,7 +98,7 @@ activity; platform telemetry is unavailable."
   `git:push`, and `deploy` are not labels. Tool names `codebase_write`,
   `source_write`, `git_commit`, `git_push`, `git_add`, and `deploy` cannot be
   constructed. Repository read is `code:read` on `code_tree`, `code_read`, and
-  `code_search`, off the baseline.
+  `code_search`, on the baseline.
 - `file:write` stays an unused OpenJarvis label for a future user-file operation.
   It is not source write, it is not granted, and it has no tool.
 - `workforce:read` is off the baseline. Nothing in this change exposes a tool.

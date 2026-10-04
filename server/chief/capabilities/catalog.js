@@ -85,27 +85,10 @@ export const CAPABILITY_CATALOG = Object.freeze({
   ),
   settings_read: entry("settings", Effect.READ, Confirmation.NONE, AuditPolicy.DENY_ONLY),
   settings_update: entry("settings", Effect.WRITE, Confirmation.REQUIRED, AuditPolicy.DENY_ONLY),
-  code_tree: entry(
-    "code",
-    Effect.READ,
-    Confirmation.NONE,
-    AuditPolicy.DENY_ONLY,
-    Exposure.ON_DEMAND
-  ),
-  code_read: entry(
-    "code",
-    Effect.READ,
-    Confirmation.NONE,
-    AuditPolicy.DENY_ONLY,
-    Exposure.ON_DEMAND
-  ),
-  code_search: entry(
-    "code",
-    Effect.READ,
-    Confirmation.NONE,
-    AuditPolicy.DENY_ONLY,
-    Exposure.ON_DEMAND
-  ),
+  code_tree: entry("code", Effect.READ, Confirmation.NONE, AuditPolicy.DENY_ONLY),
+  code_read: entry("code", Effect.READ, Confirmation.NONE, AuditPolicy.DENY_ONLY),
+  code_search: entry("code", Effect.READ, Confirmation.NONE, AuditPolicy.DENY_ONLY),
+  capability_discover: entry("control", Effect.READ, Confirmation.NONE, AuditPolicy.DENY_ONLY),
 });
 
 export function catalogEntry(name) {

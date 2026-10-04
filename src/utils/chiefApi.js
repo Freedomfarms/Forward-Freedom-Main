@@ -9,7 +9,7 @@ import {
   messageSubmission,
   modelSubmission,
 } from "./chiefProtocol.js";
-import { accessWord, emptyRoomAccess } from "./chiefRoom.js";
+import { accessWord, emptyRoomAccess, normalizeAccessInventory } from "./chiefRoom.js";
 import { sidebarSearchPath } from "./chiefSidebar.js";
 
 export {
@@ -101,6 +101,9 @@ export async function fetchChiefRoomAccess(user) {
     const payload = await chiefJson("/api/chief/access", { user });
     next.money = accessWord(payload?.money);
     next.web = accessWord(payload?.web);
+    if (payload?.inventory && typeof payload.inventory === "object") {
+      next.inventory = normalizeAccessInventory(payload.inventory);
+    }
   } catch {
     next.money = "unavailable";
     next.web = "unavailable";

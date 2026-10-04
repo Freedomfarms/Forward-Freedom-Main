@@ -1392,7 +1392,66 @@ textarea:focus-visible,
   color: var(--chief-ink);
   font-size: 14px;
   line-height: 1.4;
-  white-space: pre-wrap;
+}
+
+.chief-md p,
+.chief-md ul,
+.chief-md ol,
+.chief-md pre,
+.chief-md table,
+.chief-md h1,
+.chief-md h2,
+.chief-md h3,
+.chief-md h4,
+.chief-md h5,
+.chief-md h6 {
+  margin: 0 0 0.45em;
+}
+
+.chief-md h1,
+.chief-md h2,
+.chief-md h3,
+.chief-md h4,
+.chief-md h5,
+.chief-md h6 {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--chief-ink);
+}
+
+.chief-md strong {
+  font-weight: 700;
+}
+
+.chief-md em {
+  font-style: italic;
+}
+
+.chief-md a {
+  color: #c4b5fd;
+}
+
+.chief-md code,
+.chief-md pre {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.chief-md pre {
+  overflow: auto;
+  white-space: pre;
+}
+
+.chief-md table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.chief-md th,
+.chief-md td {
+  border: 1px solid rgba(196, 160, 255, 0.28);
+  padding: 2px 6px;
+  text-align: left;
+  vertical-align: top;
 }
 
 .chief-room-bottom {

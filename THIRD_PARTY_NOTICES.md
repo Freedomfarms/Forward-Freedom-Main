@@ -302,6 +302,27 @@ Conventions used in this repository:
   philosophy, human-in-the-loop reversibility rules) inform CHIEF's design, as recorded in
   the audit.
 
+## APEX-UI (Ruben Mouradian / Reznikov Engineering)
+
+- Repository: https://github.com/RubenM1990/APEX-UI
+- Commit vendored: `a8732fad1078a809cadfa810cb0d89cf4445dbed`
+- License: MIT
+- Copyright: Copyright (c) 2026 Ruben Mouradian (Reznikov Engineering)
+- Use in this repository: **vendored visual shell** for the CHIEF home at `/os/chief`.
+  The Next.js application is not included. See `src/third_party/apex-ui/VENDORED.md`.
+- Full license text: `licenses/APEX-UI-LICENSE-MIT.txt` (also copied beside the
+  vendored files at `src/third_party/apex-ui/LICENSE`).
+- 21st.dev attribution for `ShaderBackground.jsx` and the overview lamp panel
+  design is in `src/third_party/apex-ui/CREDITS.md`. Keep that file with those pieces.
+- The shipped interface uses the CHIEF name. The APEX product name and Reznikov
+  Engineering branding are not shown in the UI.
+- Runtime dependencies added for this shell: `three@0.184.0` (MIT),
+  `@react-three/fiber@9.7.0` (MIT), `@react-three/postprocessing@3.0.5` (MIT),
+  `postprocessing@6.39.4` (Zlib).
+- React and ReactDOM stay on `19.2.6`, the version already installed in this
+  app. `@react-three/fiber@9.7.0` accepts React `>=19 <19.3`, and `latest`
+  currently resolves to 19.3.0.
+
 ## npm dependencies used by CHIEF
 
 Installed through npm with licenses shipped in `node_modules`; listed here so the reuse

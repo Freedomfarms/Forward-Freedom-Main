@@ -38,6 +38,7 @@ export const ControlDomain = Object.freeze({
   INTEGRATION: "integration",
   WORKFORCE: "workforce",
   CODEBASE: "codebase",
+  CONTROL: "control",
 });
 
 // Tool names that must never be constructable. They are not code execution;
@@ -295,12 +296,18 @@ export const CONTROL_PLANE = Object.freeze([
     tool: "settings_update",
   }),
   live({
+    id: "control.discover",
+    domain: ControlDomain.CONTROL,
+    effect: ControlEffect.READ,
+    capability: Capability.CAPABILITY_READ,
+    tool: "capability_discover",
+  }),
+  live({
     id: "code.tree",
     domain: ControlDomain.CODEBASE,
     effect: ControlEffect.READ,
     capability: Capability.CODE_READ,
     tool: "code_tree",
-    baseline: false,
   }),
   live({
     id: "code.read",
@@ -308,7 +315,6 @@ export const CONTROL_PLANE = Object.freeze([
     effect: ControlEffect.READ,
     capability: Capability.CODE_READ,
     tool: "code_read",
-    baseline: false,
   }),
   live({
     id: "code.search",
@@ -316,7 +322,6 @@ export const CONTROL_PLANE = Object.freeze([
     effect: ControlEffect.READ,
     capability: Capability.CODE_READ,
     tool: "code_search",
-    baseline: false,
   }),
   live({
     id: "integration.mcp_invoke",

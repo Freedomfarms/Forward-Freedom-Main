@@ -244,6 +244,23 @@ export default [
     },
   },
   {
+    // Vendored APEX-UI is copied intact (commit a8732fad). Its simulation
+    // writes typed arrays and updates refs during render; that is the upstream
+    // animation model, not application code to restyle.
+    files: ["src/third_party/**/*.{js,jsx}"],
+    rules: {
+      "no-empty": "off",
+      "no-unused-vars": "off",
+      "react-hooks/refs": "off",
+      "react-hooks/immutability": "off",
+      "react-hooks/purity": "off",
+      "react-hooks/use-memo": "off",
+      "react-hooks/exhaustive-deps": "off",
+      "react-hooks/set-state-in-effect": "off",
+      "react-refresh/only-export-components": "off",
+    },
+  },
+  {
     // CHIEF (Module 03) import boundaries — applies everywhere; the rule
     // self-filters by zone. See docs/CHIEF_ARCHITECTURE.md §4.
     files: ["**/*.{js,jsx,mjs}"],
