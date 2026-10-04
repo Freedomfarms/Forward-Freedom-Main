@@ -20,7 +20,9 @@ import {
   rotateView,
 } from "../src/components/chief/chiefField.js";
 import {
+  visualStateForInteraction,
   visualStateForStatus,
+  webStateForInteraction,
   webStateForStatus,
 } from "../src/components/chief/apexVisualState.js";
 import {
@@ -243,13 +245,6 @@ test("view rotation turns the diamond without moving field-space corners", () =>
 test("the room intelligence maps status onto the APEX orb and web", () => {
   assert.equal(visualStateForStatus(CHIEF_STATUS.READY), "idle");
   assert.equal(webStateForStatus(CHIEF_STATUS.READY), "standby");
-  assert.equal(visualStateForStatus(CHIEF_STATUS.RESPONDING), "thinking");
-  assert.equal(webStateForStatus(CHIEF_STATUS.RESPONDING), "processing");
-  assert.equal(visualStateForStatus(CHIEF_STATUS.RESPONDING, "speaking"), "speaking");
-  assert.equal(webStateForStatus(CHIEF_STATUS.READY, "listening"), "listening");
-  assert.equal(visualStateForStatus(CHIEF_STATUS.READY, "listening"), "listening");
-  assert.equal(visualStateForStatus(CHIEF_STATUS.READY, "thinking"), "thinking");
-  assert.equal(visualStateForStatus(CHIEF_STATUS.ERROR, "error"), "idle");
   assert.equal(visualStateForStatus(CHIEF_STATUS.WORKING), "thinking");
   assert.equal(webStateForStatus(CHIEF_STATUS.WORKING), "processing");
   assert.equal(visualStateForStatus(CHIEF_STATUS.WEB_SEARCH), "thinking");
@@ -258,6 +253,36 @@ test("the room intelligence maps status onto the APEX orb and web", () => {
   assert.equal(webStateForStatus(CHIEF_STATUS.APPROVAL), "standby");
   assert.equal(visualStateForStatus(CHIEF_STATUS.ERROR), "idle");
   assert.equal(webStateForStatus(CHIEF_STATUS.ERROR), "standby");
+  assert.equal(visualStateForStatus(CHIEF_STATUS.RESPONDING), "thinking");
+  assert.equal(webStateForStatus(CHIEF_STATUS.RESPONDING), "processing");
+  assert.equal(visualStateForStatus(CHIEF_STATUS.RESPONDING, "speaking"), "speaking");
+  assert.equal(webStateForStatus(CHIEF_STATUS.READY, "listening"), "listening");
+  assert.equal(visualStateForStatus(CHIEF_STATUS.READY, "listening"), "listening");
+  assert.equal(visualStateForStatus(CHIEF_STATUS.READY, "thinking"), "thinking");
+  assert.equal(visualStateForStatus(CHIEF_STATUS.ERROR, "error"), "idle");
+  assert.equal(
+    visualStateForInteraction({ status: CHIEF_STATUS.READY, listening: true }),
+    "listening"
+  );
+  assert.equal(
+    webStateForInteraction({ status: CHIEF_STATUS.READY, listening: true }),
+    "listening"
+  );
+  assert.equal(
+    visualStateForInteraction({ status: CHIEF_STATUS.READY, speaking: true }),
+    "speaking"
+  );
+  assert.equal(visualStateForInteraction({ status: CHIEF_STATUS.WORKING }), "thinking");
+  assert.equal(webStateForInteraction({ status: CHIEF_STATUS.WORKING }), "processing");
+  assert.equal(visualStateForInteraction({ status: CHIEF_STATUS.RESPONDING }), "thinking");
+  assert.equal(
+    visualStateForInteraction({ status: CHIEF_STATUS.RESPONDING, speaking: true }),
+    "speaking"
+  );
+  assert.equal(
+    visualStateForInteraction({ status: CHIEF_STATUS.WORKING, listening: true }),
+    "listening"
+  );
 
   const root = process.cwd();
   const page = readFileSync(path.join(root, "src/components/chief/ChiefPage.jsx"), "utf8");
@@ -265,17 +290,11 @@ test("the room intelligence maps status onto the APEX orb and web", () => {
   const hero = readFileSync(path.join(root, "src/third_party/apex-ui/ApexHeroOrb.tsx"), "utf8");
   const core = readFileSync(path.join(root, "src/third_party/apex-ui/ApexCore3D.jsx"), "utf8");
   assert.match(page, /ApexWorld/);
-  assert.match(page, /visualStateForStatus/);
   assert.equal(page.includes("ChiefField"), false);
   assert.equal(page.includes("renderIntelligence"), false);
   assert.match(world, /prefers-reduced-motion/);
-  assert.match(world, /0\.12/);
-  assert.match(world, /staticCore=\{resolvedMotion === "off"\}/);
-  assert.match(world, /state=\{orbState\}/);
-  assert.match(world, /audioLevelRef=\{audioLevelRef\}/);
   assert.match(hero, /listening/);
   assert.match(page, /sendMessage/);
-  assert.match(page, /onCoreTap/);
   assert.match(hero, /variant="frame"/);
   assert.match(hero, /variant="particles"/);
   assert.doesNotMatch(hero, /variant="geodesic"/);
@@ -283,6 +302,21 @@ test("the room intelligence maps status onto the APEX orb and web", () => {
   assert.doesNotMatch(hero, /variant="gyro"/);
   assert.match(core, /const N = 1200/);
   assert.match(core, /dpr=\{\[1, 1\.5\]\}/);
+  assert.match(page, /visualStateForInteraction/);
+  assert.match(page, /ChiefVoiceDock/);
+  assert.match(page, /sendRef\.current = sendMessage/);
+  assert.match(page, /from "\.\/useChiefVoice\.js"/);
+  assert.equal(page.includes('from "./voice/useChiefVoice.js"'), false);
+  assert.equal((page.match(/useChiefVoice\(/g) || []).length, 1);
+  assert.match(page, /<ChiefSettings/);
+  assert.match(page, /setSettingsOpen\(true\)/);
+  assert.match(world, /0\.12/);
+  assert.match(world, /staticCore=\{resolvedMotion === "off"\}/);
+  assert.match(world, /state=\{orbState\}/);
+  assert.match(world, /audioLevelRef=\{audioLevelRef\}/);
+  assert.match(world, /Speak to CHIEF/);
+  assert.match(world, /showStatus \? <OrbStatusBar/);
+  assert.doesNotMatch(page, /onCoreTap/);
 });
 
 test("the room source keeps conversation plain and navigation literal", () => {

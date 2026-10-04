@@ -204,11 +204,51 @@ export async function selectChiefModel({ user, sessionId = null, route }) {
   return { sessionId: nextSessionId, route: selected };
 }
 
+async function readVoiceError(response) {
+  const payload = await response.json().catch(() => ({}));
+  const raw = typeof payload?.error === "string" ? payload.error.trim() : "";
+  return new ApiRequestError(
+    chiefUserMessage(raw || `ElevenLabs request failed (${response.status}).`),
+    { status: response.status }
+  );
+}
+
+export async function fetchChiefVoices(user) {
+  const response = await fetch("/api/chief/voices", {
+    method: "GET",
+    headers: await buildAuthenticatedHeaders({}, { user }),
+  });
+  if (!response.ok) throw await readVoiceError(response);
+  return response.json();
+}
+
+export async function fetchChiefSpeech({ user, text, voiceId, voiceSettings, signal }) {
+  const settings = voiceSettings && typeof voiceSettings === "object" ? voiceSettings : {};
+  const response = await fetch("/api/chief/speak", {
+    method: "POST",
+    headers: await buildAuthenticatedHeaders({ "Content-Type": "application/json" }, { user }),
+    body: JSON.stringify({
+      text,
+      voice_id: voiceId,
+      voice_settings: {
+        speed: settings.speed,
+        stability: settings.stability,
+        similarity_boost: settings.similarityBoost ?? settings.similarity_boost,
+      },
+    }),
+    signal,
+  });
+  if (!response.ok || !response.body) throw await readVoiceError(response);
+  return response;
+}
+
 export function fetchChiefVoiceConfig(user) {
   return chiefJson("/api/chief/voice", { user });
 }
 
-export function fetchChiefVoices(user) {
+// Voice-sheet list. Named apart from fetchChiefVoices, which serves the dock
+// at GET /api/chief/voices. This one stays on GET /api/chief/voice/voices.
+export function fetchChiefVoiceList(user) {
   return chiefJson("/api/chief/voice/voices", { user });
 }
 

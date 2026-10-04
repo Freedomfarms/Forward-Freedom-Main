@@ -1500,12 +1500,33 @@ textarea:focus-visible,
   height: 36px;
   min-height: 36px;
   padding: 0;
-  border: 0;
+  border: 1px solid transparent;
   border-radius: 999px;
   background: transparent;
-  color: var(--chief-muted);
+  color: #9adfff;
   cursor: pointer;
+  opacity: 1;
+}
+
+.chief-composer-row .chief-mic {
+  color: var(--chief-muted);
   opacity: 0.85;
+}
+
+.chief-voice-dock .chief-mic {
+  color: #9adfff;
+  opacity: 1;
+}
+
+.chief-mic:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.chief-mic.is-listening {
+  color: #f5a623;
+  border-color: rgba(245, 166, 35, 0.55);
+  box-shadow: 0 0 16px rgba(245, 166, 35, 0.35);
 }
 
 .chief-mic.is-live {
@@ -1941,6 +1962,159 @@ textarea:focus-visible,
 
   .chief-nav {
     display: none;
+  }
+}
+
+.chief-voice-dock {
+  position: absolute;
+  left: 50%;
+  bottom: max(
+    calc(132px + env(safe-area-inset-bottom, 0px)),
+    calc(8px + var(--chief-keyboard, 0px) + env(safe-area-inset-bottom, 0px))
+  );
+  transform: translateX(-50%);
+  z-index: 24;
+  width: min(640px, calc(100% - 24px));
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px 12px;
+  border: 1px solid rgba(0, 229, 255, 0.16);
+  border-radius: 22px;
+  background: rgba(5, 16, 28, 0.42);
+  backdrop-filter: blur(18px) saturate(1.15);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.28);
+  color: #e7f7ff;
+  pointer-events: auto;
+  user-select: text;
+}
+
+.chief-voice-dock.is-expanded {
+  border-color: rgba(0, 229, 255, 0.34);
+  background: rgba(4, 14, 26, 0.72);
+  box-shadow:
+    0 0 32px rgba(0, 180, 220, 0.12),
+    0 16px 48px rgba(0, 0, 0, 0.35);
+}
+
+.chief-voice-provider {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 28px;
+  color: rgba(232, 196, 122, 0.82);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.chief-voice-provider .chief-voice-note {
+  flex: 1 1 180px;
+  letter-spacing: 0;
+  text-transform: none;
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.chief-voice-dock.is-idle .chief-voice-provider {
+  opacity: 0.72;
+}
+
+.chief-voice-pick {
+  min-width: 0;
+}
+
+.chief-voice-dock select {
+  max-width: min(280px, 52vw);
+  border: 1px solid rgba(0, 229, 255, 0.28);
+  border-radius: 999px;
+  background: rgba(2, 12, 22, 0.55);
+  color: #dff6ff;
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  padding: 4px 10px;
+}
+
+.chief-voice-dock-log {
+  display: none;
+  max-height: min(30vh, 260px);
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.chief-voice-dock.is-expanded .chief-voice-dock-log {
+  display: grid;
+  gap: 8px;
+}
+
+.chief-voice-dock .chief-turn,
+.chief-voice-dock .chief-earlier {
+  margin: 0;
+}
+
+.chief-voice-dock .chief-composer {
+  border-color: rgba(0, 229, 255, 0.22);
+  background: rgba(3, 12, 22, 0.35);
+}
+
+.chief-voice-dock .chief-composer textarea {
+  color: #f3fbff;
+}
+
+.chief-voice-dock .chief-composer textarea::placeholder {
+  color: rgba(176, 214, 230, 0.62);
+}
+
+.chief-voice-dock .chief-action {
+  border-color: rgba(245, 166, 35, 0.5);
+  background: rgba(245, 166, 35, 0.16);
+  color: #ffe7b8;
+}
+
+.chief-voice-note,
+.chief-voice-interim {
+  margin: 0;
+  color: #9adfff;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.chief-voice-note[role="alert"] {
+  color: #ffd0d0;
+}
+
+.chief-voice-interim {
+  color: rgba(245, 166, 35, 0.9);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.chief-core-hit:focus-visible {
+  outline: 2px solid rgba(0, 229, 255, 0.7);
+  outline-offset: 6px;
+}
+
+@media (max-width: 720px), (max-height: 760px) {
+  .chief-voice-dock {
+    width: calc(100% - 16px);
+    bottom: max(
+      calc(104px + env(safe-area-inset-bottom, 0px)),
+      calc(8px + var(--chief-keyboard, 0px) + env(safe-area-inset-bottom, 0px))
+    );
+    border-radius: 18px;
+    padding: 8px 8px 10px;
+  }
+
+  .chief-voice-dock-log {
+    max-height: 24vh;
+  }
+
+  .chief-voice-provider {
+    letter-spacing: 0.06em;
+    font-size: 10px;
   }
 }
 

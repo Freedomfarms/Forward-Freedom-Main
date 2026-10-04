@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { fetchChiefVoiceConfig, fetchChiefVoices } from "../../utils/chiefApi.js";
+import { fetchChiefVoiceConfig, fetchChiefVoiceList } from "../../utils/chiefApi.js";
 import {
   normalizeVoiceSettings,
   readVoiceSettings,
@@ -47,7 +47,7 @@ export function ChiefVoiceSheet({
   useEffect(() => {
     if (!open || !user) return undefined;
     let cancelled = false;
-    Promise.all([fetchChiefVoiceConfig(user), fetchChiefVoices(user)])
+    Promise.all([fetchChiefVoiceConfig(user), fetchChiefVoiceList(user)])
       .then(([config, list]) => {
         if (cancelled) return;
         setConfigured(Boolean(config?.configured && list?.configured));

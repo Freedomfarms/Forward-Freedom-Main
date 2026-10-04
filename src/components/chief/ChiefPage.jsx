@@ -31,7 +31,7 @@ import {
 } from "../../utils/chiefActiveSession.js";
 import ApexClock from "../../third_party/apex-ui/ApexClock.jsx";
 import ApexWorld from "../../third_party/apex-ui/ApexWorld.jsx";
-import { visualStateForStatus, webStateForStatus } from "./apexVisualState.js";
+import { visualStateForInteraction, webStateForInteraction } from "./apexVisualState.js";
 import { CHIEF_NAV_ROSTER } from "./chiefNavRoster.js";
 import { ChiefAccessSheet } from "./ChiefAccessSheet.jsx";
 import { ChiefApprovalCard } from "./ChiefApprovalCard.jsx";
@@ -41,9 +41,13 @@ import { ChiefModelSelect } from "./ChiefModelSelect.jsx";
 import { ChiefStatus } from "./ChiefStatus.jsx";
 import { ChiefEarlierTurns, ChiefTranscript } from "./ChiefTranscript.jsx";
 import { ChiefSettings } from "./ChiefSettings.jsx";
-import { ChiefVoiceSheet } from "./ChiefVoiceSheet.jsx";
-import { useChiefVoice } from "./voice/useChiefVoice.js";
-import { readChiefPreferences, writeChiefPreferences } from "../../utils/chiefPreferences.js";
+import { ChiefVoiceDock } from "./ChiefVoiceDock.jsx";
+import { useChiefVoice } from "./useChiefVoice.js";
+import {
+  readChiefPreferences,
+  shouldSpeakReply,
+  writeChiefPreferences,
+} from "../../utils/chiefPreferences.js";
 
 const NARROW_NAV_QUERY = "(max-width: 1023px)";
 
@@ -64,34 +68,13 @@ function errorText(error) {
   return error?.message || "CHIEF could not complete that request.";
 }
 
-function voiceTurnResult(fields = {}) {
-  return {
-    ok: false,
-    aborted: false,
-    approval: false,
-    error: "",
-    text: "",
-    ...fields,
-  };
-}
-
-function assistantTextFrom(messages, streamText) {
-  let answer = "";
-  if (Array.isArray(messages)) {
-    for (const message of messages) {
-      if (
-        message?.role === "assistant" &&
-        typeof message.text === "string" &&
-        message.text.trim()
-      ) {
-        answer = message.text.trim();
-      }
-    }
-  }
-  return answer || (typeof streamText === "string" ? streamText.trim() : "");
-}
-
-export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgents, onSignOut }) {
+export function ChiefPage({
+  user,
+  embedded = false,
+  onOpenFinancial,
+  onOpenAgents,
+  onSignOut,
+}) {
   const sessionUid = typeof user?.uid === "string" ? user.uid : "";
   const [sessions, setSessions] = useState([]);
   const [archivedSessions, setArchivedSessions] = useState([]);
@@ -130,7 +113,6 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState("voice");
   const [preferences, setPreferences] = useState(() => readChiefPreferences());
-  const speakReplyRef = useRef(async () => {});
   const abortRef = useRef(null);
   const busyRef = useRef(false);
   const generation = useRef(0);
@@ -138,10 +120,12 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
   const lastTextRef = useRef("");
   const answerRef = useRef(null);
   const composerRef = useRef(null);
-  const sendMessageRef = useRef(async () => voiceTurnResult());
-  const abortTurnRef = useRef(() => {});
-  const voiceSilenceRef = useRef(() => {});
-  const [voiceOpen, setVoiceOpen] = useState(false);
+  const sendRef = useRef(() => {});
+  const voice = useChiefVoice({
+    user,
+    sessionUid,
+    onTranscript: (text) => sendRef.current(text),
+  });
 
   const readStoredSessionId = useCallback(() => {
     discardLegacyChiefActiveSessionKey();
@@ -169,11 +153,8 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
   }
 
   function stopActiveTurn() {
-    const controller = abortRef.current;
-    if (controller) controller.superseded = true;
+    abortRef.current?.abort();
     abortRef.current = null;
-    controller?.abort();
-    setBusyState(false);
   }
 
   const refreshSessions = useCallback(async () => {
@@ -364,21 +345,22 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
   }, [navQuery, searchAttempt, user]);
 
   useEffect(() => {
-    if (!drawerOpen && !placesOpen && !accessOpen && !settingsOpen && !voiceOpen) return undefined;
+    if (!drawerOpen && !placesOpen && !accessOpen && !settingsOpen) return undefined;
     function onKeyDown(event) {
       if (event.key !== "Escape") return;
       setDrawerOpen(false);
       setPlacesOpen(false);
       setAccessOpen(false);
       setSettingsOpen(false);
-      setVoiceOpen(false);
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [drawerOpen, placesOpen, accessOpen, settingsOpen, voiceOpen]);
+  }, [drawerOpen, placesOpen, accessOpen, settingsOpen]);
 
   function selectSession(sessionId) {
     stopActiveTurn();
+    voice.stopListening();
+    voice.stopSpeaking();
     generation.current += 1;
     const token = generation.current;
     setActiveSessionId(sessionId);
@@ -395,6 +377,8 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
 
   function startNewConversation() {
     stopActiveTurn();
+    voice.stopListening();
+    voice.stopSpeaking();
     generation.current += 1;
     setActiveSessionId(null);
     writeStoredSessionId(null);
@@ -460,26 +444,27 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
     if (window.matchMedia("(max-width: 1023px)").matches) setDrawerOpen(true);
   }
 
-  // Typed and spoken turns share this function, this session, and /api/chief/chat.
+  // Typed text and speech transcripts both enter here. The session id is the
+  // open conversation, so voice and text share one TurnMachine history.
   async function sendMessage(
     text,
-    { appendUser = true, sessionId = activeSessionIdRef.current, source = "text" } = {}
+    { appendUser = true, sessionId = activeSessionIdRef.current } = {}
   ) {
     const trimmed = typeof text === "string" ? text.trim() : "";
-    if (!trimmed || !user) return voiceTurnResult();
-    if (busyRef.current) return voiceTurnResult({ error: "busy" });
+    const source = voice.consumeVoiceTurn() ? "voice" : "text";
+    if (!trimmed || !user || busyRef.current) return;
+    voice.stopListening();
+    voice.stopSpeaking();
+    voice.ensureAudio();
     if (archivedSessions.some((session) => session.sessionId === sessionId)) {
-      const message = "This conversation is archived. Restore it before sending.";
-      setTurnError(message);
-      return voiceTurnResult({ error: message });
+      setTurnError("This conversation is archived. Restore it before sending.");
+      return;
     }
-    if (source !== "voice") voiceSilenceRef.current();
     lastTextRef.current = trimmed;
     stopActiveTurn();
     const controller = new AbortController();
     abortRef.current = controller;
     generation.current += 1;
-    const turnToken = generation.current;
     setBusyState(true);
     setTurnError("");
     setHistoryError("");
@@ -491,8 +476,6 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
       setMessages((current) => [...current, { role: "user", text: trimmed }]);
     }
     let turn = initialTurnState(sessionId);
-    let result;
-    const stillCurrent = () => !controller.signal.aborted && abortRef.current === controller;
     try {
       await streamChiefChat({
         user,
@@ -500,7 +483,7 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
         text: trimmed,
         signal: controller.signal,
         onEvent: (event) => {
-          if (!stillCurrent()) return;
+          if (controller.signal.aborted) return;
           turn = applyChiefEvent(turn, event);
           setStatus(turn.status);
           setStreamText(turn.streamText);
@@ -513,92 +496,80 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
           if (turn.error) setTurnError(turn.error);
         },
       });
-      if (!stillCurrent()) {
-        result = voiceTurnResult({ aborted: true });
-      } else {
-        let assistantText = typeof turn.streamText === "string" ? turn.streamText.trim() : "";
-        const sessionIdNow = turn.sessionId;
-        if (sessionIdNow && (turn.finished || turn.approval)) {
-          try {
-            const payload = await fetchChiefHistory(user, sessionIdNow);
-            if (stillCurrent()) {
-              const history = Array.isArray(payload?.messages) ? payload.messages : [];
-              setMessages(history);
-              setStreamText("");
-              setNotFound(false);
-              assistantText = assistantTextFrom(history, assistantText);
-            }
-          } catch (error) {
-            if (stillCurrent()) {
-              if (error?.status === 404) {
-                setNotFound(true);
-                setMessages([]);
-              } else {
-                setHistoryError(errorText(error));
-              }
-            }
-          }
-          if (stillCurrent()) {
-            try {
-              await refreshSessions();
-            } catch (error) {
-              if (stillCurrent()) setSessionsError(errorText(error));
-            }
-          }
-        }
-        if (!stillCurrent()) {
-          result = voiceTurnResult({ aborted: true });
-        } else if (turn.approval || turn.turnStatus === "suspended") {
-          setStatus(CHIEF_STATUS.APPROVAL);
-          if (sessionIdNow) {
-            const pending = await fetchChiefPendingApproval(user, sessionIdNow).catch(() => null);
-            if (stillCurrent() && pending) setApproval(pending);
-          }
-          result = voiceTurnResult({ approval: true });
-        } else if (turn.status === CHIEF_STATUS.ERROR || turn.error) {
-          setApproval(null);
-          setStatus(CHIEF_STATUS.ERROR);
-          result = voiceTurnResult({
-            error: turn.error || "CHIEF could not finish that turn.",
-          });
-        } else {
-          setApproval(null);
-          setStatus(CHIEF_STATUS.READY);
-          result = voiceTurnResult({
-            ok: Boolean(assistantText),
-            text: assistantText,
-            error: assistantText ? "" : "CHIEF could not finish that turn.",
-          });
-          if (!assistantText) setTurnError(result.error);
-        }
-      }
     } catch (error) {
-      if (controller.superseded || controller.signal.aborted || error?.name === "AbortError") {
-        result = voiceTurnResult({ aborted: true });
-      } else if (abortRef.current !== controller) {
-        result = voiceTurnResult({ aborted: true });
-      } else {
-        const message = errorText(error);
-        setStatus(CHIEF_STATUS.ERROR);
-        setTurnError(message);
-        result = voiceTurnResult({ error: message });
-      }
-    } finally {
-      if (abortRef.current === controller) {
-        abortRef.current = null;
-        setBusyState(false);
-      }
-      if (generation.current === turnToken) void refreshAccess();
+      if (controller.signal.aborted || error?.name === "AbortError") return;
+      if (abortRef.current !== controller) return;
+      setStatus(CHIEF_STATUS.ERROR);
+      setTurnError(errorText(error));
+      setBusyState(false);
+      return;
     }
-    if (source !== "voice" && result?.ok && result.text) {
-      void speakReplyRef.current(result.text);
+    if (controller.signal.aborted || abortRef.current !== controller) return;
+
+    const sessionIdNow = turn.sessionId;
+    let spoken = "";
+    if (turn.finished && turn.status !== CHIEF_STATUS.ERROR && !turn.error) {
+      spoken = typeof turn.streamText === "string" ? turn.streamText.trim() : "";
     }
-    return result;
+    if (sessionIdNow && (turn.finished || turn.approval)) {
+      try {
+        const payload = await fetchChiefHistory(user, sessionIdNow);
+        if (abortRef.current !== controller) return;
+        const historyMessages = Array.isArray(payload?.messages) ? payload.messages : [];
+        setMessages(historyMessages);
+        setStreamText("");
+        setNotFound(false);
+        if (
+          !spoken &&
+          turn.finished &&
+          turn.status !== CHIEF_STATUS.ERROR &&
+          !turn.error
+        ) {
+          spoken = currentTurn(historyMessages, "").answer.trim();
+        }
+      } catch (error) {
+        if (abortRef.current !== controller) return;
+        if (error?.status === 404) {
+          setNotFound(true);
+          setMessages([]);
+        } else {
+          setHistoryError(errorText(error));
+        }
+      }
+      try {
+        await refreshSessions();
+      } catch (error) {
+        if (abortRef.current === controller) setSessionsError(errorText(error));
+      }
+    }
+    if (abortRef.current !== controller) return;
+    if (turn.approval || turn.turnStatus === "suspended") {
+      setStatus(CHIEF_STATUS.APPROVAL);
+      if (sessionIdNow) {
+        const pending = await fetchChiefPendingApproval(user, sessionIdNow).catch(() => null);
+        if (abortRef.current !== controller) return;
+        if (pending) setApproval(pending);
+      }
+    } else {
+      setApproval(null);
+      setStatus(turn.status === CHIEF_STATUS.ERROR ? CHIEF_STATUS.ERROR : CHIEF_STATUS.READY);
+    }
+    setBusyState(false);
+    void refreshAccess();
+    if (
+      spoken &&
+      shouldSpeakReply({ source, preferences }) &&
+      turn.status !== CHIEF_STATUS.ERROR &&
+      !turn.error &&
+      !controller.signal.aborted &&
+      abortRef.current === controller
+    ) {
+      void voice.speakAnswer(spoken);
+    }
   }
 
   useEffect(() => {
-    sendMessageRef.current = sendMessage;
-    abortTurnRef.current = stopActiveTurn;
+    sendRef.current = sendMessage;
   });
 
   async function resolveApproval(decision) {
@@ -682,7 +653,7 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
   const transcriptError = historyError || turnError;
   const stateDetail = transcriptError || "";
   const canLeave = Boolean(onOpenFinancial);
-  const sheetOpen = drawerOpen || placesOpen || accessOpen || voiceOpen;
+  const sheetOpen = drawerOpen || placesOpen || accessOpen;
   const desktopNav = Boolean(user) && !narrowNav;
   const navExpanded = narrowNav ? drawerOpen : !navCollapsed;
   const navQueryTrimmed = navQuery.trim();
@@ -734,7 +705,6 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
     setDrawerOpen(false);
     setPlacesOpen(false);
     setAccessOpen(false);
-    setVoiceOpen(false);
   }
 
   const conversationList = (
@@ -788,9 +758,6 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
       {user ? (
         <div className="chief-instrument chief-instrument--state">
           <ChiefStatus status={status} detail={stateDetail} />
-          <button type="button" className="chief-text-button" onClick={() => setVoiceOpen(true)}>
-            Voice
-          </button>
           {transcriptError ? (
             <button type="button" className="chief-text-button" onClick={retryTranscript}>
               Retry
@@ -853,20 +820,33 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
     setPreferences(writeChiefPreferences(next));
   }
 
-  const voice = useChiefVoice({
-    user,
-    sessionIdRef: activeSessionIdRef,
-    sendMessageRef,
-    abortTurnRef,
-    silenceRef: voiceSilenceRef,
-    setTurnError,
-    preferences,
-    speakReplyRef,
-  });
+  function applyVoiceSettings(saved) {
+    if (typeof saved?.voiceId === "string" && saved.voiceId) voice.chooseVoice(saved.voiceId);
+  }
+
+  async function testVoice(draft) {
+    if (typeof draft?.voiceId === "string" && draft.voiceId) voice.chooseVoice(draft.voiceId);
+    voice.ensureAudio();
+    await voice.speakAnswer("Hello. I am CHIEF.", draft);
+  }
+
   const fieldStatus = user ? status : CHIEF_STATUS.READY;
-  const orbState = visualStateForStatus(fieldStatus, voice.phase);
-  const webState = webStateForStatus(fieldStatus, voice.phase);
-  const voiceNote = voice.caption || (voice.phase === "error" ? turnError : "");
+  const interaction = {
+    status: fieldStatus,
+    listening: voice.listening,
+    speaking: voice.audioActive,
+  };
+
+  function submitDraft(text) {
+    voice.ensureAudio();
+    return sendMessage(text);
+  }
+
+  function toggleMicrophone() {
+    if (busy || historyLoading || notFound || activeArchived || approval) return;
+    voice.ensureAudio();
+    voice.toggleListening();
+  }
 
   if (room === "home") {
     return (
@@ -883,41 +863,53 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
         }}
       >
         <ApexClock />
-        {user ? (
-          <button type="button" className="chief-voice-open" onClick={() => setVoiceOpen(true)}>
-            Voice
-          </button>
-        ) : null}
         <ApexWorld
-          orbState={orbState}
-          webState={webState}
+          orbState={visualStateForInteraction(interaction)}
+          webState={webStateForInteraction(interaction)}
           roster={CHIEF_NAV_ROSTER}
           onSelect={openNode}
-          onCoreTap={user ? voice.onCoreTap : undefined}
+          coreListening={voice.listening}
+          onCoreActivate={user && !approval && !activeArchived ? toggleMicrophone : null}
           audioLevelRef={voice.audioLevelRef}
           motionPreference={preferences.appearance.reducedMotion}
           animationIntensity={preferences.appearance.animationIntensity}
           showLabels={preferences.appearance.showNavLabels}
           showStatus={preferences.appearance.showTelemetry}
         />
-        {voiceNote ? <p className="chief-voice-caption">{voiceNote}</p> : null}
-        <p className="chief-sr" aria-live="polite">
-          {voice.phase === "listening"
-            ? "Listening"
-            : voice.phase === "speaking"
-              ? "Speaking"
-              : voiceNote}
-        </p>
-        {voiceOpen ? (
-          <div className="chief-sheet-backdrop is-open" onClick={() => setVoiceOpen(false)} />
-        ) : null}
-        <ChiefVoiceSheet
-          open={voiceOpen}
-          user={user}
-          onClose={() => setVoiceOpen(false)}
-          onSettings={voice.updateSettings}
-          onTest={voice.testVoice}
-          disabled={voice.phase !== "idle"}
+        <ChiefVoiceDock
+          signedIn={Boolean(user)}
+          userLine={turnView.userLine}
+          answer={turnView.answer}
+          earlier={turnView.earlier}
+          answerRef={answerRef}
+          historyLoading={historyLoading}
+          notFound={notFound}
+          showEmpty={showEmpty}
+          onBackToList={backToConversations}
+          draft={draft}
+          onDraft={setDraft}
+          onSubmit={() => submitDraft(draft)}
+          disabled={busy || historyLoading || notFound}
+          listening={voice.listening}
+          interim={voice.interim}
+          onMicrophone={toggleMicrophone}
+          composerRef={composerRef}
+          approval={Boolean(approval) && !activeArchived}
+          onApprove={() => resolveApproval("approve")}
+          onDeny={() => resolveApproval("deny")}
+          archived={activeArchived}
+          onRestore={() => {
+            restoreConversation(activeSessionId).catch((error) => setTurnError(errorText(error)));
+          }}
+          voices={voice.voices}
+          voicesLoading={voice.voicesLoading}
+          voicesError={voice.voicesError}
+          voiceId={voice.voiceId}
+          onVoiceId={voice.chooseVoice}
+          onRetryVoices={voice.retryVoices}
+          speechError={voice.speechError}
+          showResponseText={preferences.conversation.showResponseText}
+          enterToSend={preferences.conversation.enterToSend}
         />
         <ChiefSettings
           open={settingsOpen}
@@ -938,15 +930,17 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
           onStartConversation={() => {
             startNewConversation();
             setRoom("convos");
+            setSettingsOpen(false);
           }}
           onClearConversation={(sessionId) => {
             deleteConversation(sessionId).catch((error) => setTurnError(errorText(error)));
           }}
           preferences={preferences}
           onPreferences={applyPreferences}
-          onVoiceSettings={voice.updateSettings}
-          onTestVoice={voice.testVoice}
-          voiceDisabled={voice.phase !== "idle"}
+          activeVoiceId={voice.voiceId}
+          onVoiceSettings={applyVoiceSettings}
+          onTestVoice={testVoice}
+          voiceDisabled={voice.listening || voice.audioActive}
         />
       </section>
     );
@@ -982,11 +976,7 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
                     ) : null}
                   </nav>
                 ) : (
-                  <button
-                    type="button"
-                    className="chief-place chief-place--here"
-                    onClick={returnHome}
-                  >
+                  <button type="button" className="chief-place chief-place--here" onClick={returnHome}>
                     CHIEF
                   </button>
                 )}
@@ -1069,16 +1059,24 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
                   </button>
                 </div>
               ) : (
-                <ChiefComposer
-                  value={draft}
-                  onChange={setDraft}
-                  onSubmit={() => sendMessage(draft)}
-                  onVoice={voice.onCoreTap}
-                  voiceActive={voice.phase === "listening" || voice.phase === "speaking"}
-                  enterToSend={preferences.conversation.enterToSend}
-                  disabled={busy || historyLoading || notFound}
-                  inputRef={composerRef}
-                />
+                <>
+                  <ChiefComposer
+                    value={draft}
+                    onChange={setDraft}
+                    onSubmit={() => submitDraft(draft)}
+                    disabled={busy || historyLoading || notFound}
+                    listening={voice.listening}
+                    onMicrophone={toggleMicrophone}
+                    enterToSend={preferences.conversation.enterToSend}
+                    inputRef={composerRef}
+                  />
+                  {voice.interim ? <p className="chief-voice-interim">{voice.interim}</p> : null}
+                  {voice.speechError ? (
+                    <p className="chief-voice-note" role="alert">
+                      {voice.speechError}
+                    </p>
+                  ) : null}
+                </>
               )}
             </div>
           )
@@ -1120,14 +1118,6 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
         </aside>
       ) : null}
       {accessOpen ? <ChiefAccessSheet open access={access} onClose={closeSheets} /> : null}
-      <ChiefVoiceSheet
-        open={voiceOpen}
-        user={user}
-        onClose={() => setVoiceOpen(false)}
-        onSettings={voice.updateSettings}
-        onTest={voice.testVoice}
-        disabled={voice.phase !== "idle"}
-      />
     </section>
   );
 }

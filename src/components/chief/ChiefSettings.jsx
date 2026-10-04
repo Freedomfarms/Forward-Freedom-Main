@@ -98,6 +98,7 @@ export function ChiefSettings({
   onVoiceSettings,
   onTestVoice,
   voiceDisabled = false,
+  activeVoiceId = "",
 }) {
   const [voiceDraft, setVoiceDraft] = useState(() => readVoiceSettings());
   const [voices, setVoices] = useState([]);
@@ -121,7 +122,13 @@ export function ChiefSettings({
   if (open !== seenOpen) {
     setSeenOpen(open);
     if (open) {
-      setVoiceDraft(readVoiceSettings());
+      const stored = readVoiceSettings();
+      setVoiceDraft(
+        normalizeVoiceSettings({
+          ...stored,
+          voiceId: activeVoiceId || stored.voiceId,
+        })
+      );
       setVoiceNotice("");
       setConfirmClear(false);
     }
@@ -141,7 +148,7 @@ export function ChiefSettings({
         setVoices(Array.isArray(catalog.voices) ? catalog.voices : []);
         setVoiceError("");
         const stored = readVoiceSettings();
-        const voiceId = stored.voiceId || catalog.config?.defaultVoiceId || "";
+        const voiceId = activeVoiceId || stored.voiceId || catalog.config?.defaultVoiceId || "";
         const modelId = stored.modelId || catalog.config?.defaultModelId || "";
         setVoiceDraft(normalizeVoiceSettings({ ...stored, voiceId, modelId }));
       })
@@ -154,7 +161,7 @@ export function ChiefSettings({
     return () => {
       cancelled = true;
     };
-  }, [open, user, section]);
+  }, [open, user, section, activeVoiceId]);
 
   useEffect(() => {
     if (!open || !user || section !== "access") return undefined;
@@ -382,15 +389,18 @@ export function ChiefSettings({
                 onChange={(similarityBoost) => setVoiceDraft({ ...voiceDraft, similarityBoost })}
               />
               <Slider
-                label="Style"
+                label="Style (unavailable)"
                 min={0}
                 max={1}
                 step={0.05}
                 value={voiceDraft.style}
-                onChange={(style) => setVoiceDraft({ ...voiceDraft, style })}
+                disabled
+                onChange={() => {}}
               />
               <p className="chief-sheet-copy">
-                Stability, similarity, and style are sent to ElevenLabs with the selected voice id.
+                The selected voice is the voice CHIEF speaks with. Speed, stability, and similarity
+                are sent on that ElevenLabs speech request. Style is unavailable because CHIEF
+                speaks with eleven_flash_v2_5, which does not support style exaggeration.
               </p>
               {browserSpeech ? (
                 <label className="chief-voice-check">

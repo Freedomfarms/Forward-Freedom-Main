@@ -19,7 +19,8 @@ export default function ApexWorld({
   webState = "standby",
   roster = null,
   onSelect = null,
-  onCoreTap = null,
+  onCoreActivate = null,
+  coreListening = false,
   audioLevelRef = null,
   motionPreference = "system",
   animationIntensity = "full",
@@ -133,33 +134,29 @@ export default function ApexWorld({
         />
       </div>
 
-      <div
-        role="button"
-        tabIndex={0}
-        aria-label="CHIEF voice"
-        onClick={() => onCoreTap?.()}
-        onKeyDown={(event) => {
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            onCoreTap?.();
-          }
-        }}
-        onMouseDown={(event) => event.preventDefault()}
-        style={{
-          position: "absolute",
-          left: "50%",
-          top: "50%",
-          transform: "translate(-50%, -50%)",
-          width: "min(340px, 36vw)",
-          height: "min(340px, 36vw)",
-          borderRadius: "50%",
-          zIndex: 4,
-          cursor: "pointer",
-          background: "transparent",
-          border: "none",
-          userSelect: "none",
-        }}
-      />
+      {onCoreActivate ? (
+        <button
+          type="button"
+          className="chief-core-hit"
+          aria-label={coreListening ? "Stop listening" : "Speak to CHIEF"}
+          aria-pressed={coreListening}
+          onClick={onCoreActivate}
+          style={{
+            position: "absolute",
+            left: "50%",
+            top: "50%",
+            width: "min(240px, 32vw)",
+            height: "min(240px, 32vw)",
+            transform: "translate(-50%, -50%)",
+            zIndex: 4,
+            border: 0,
+            borderRadius: "50%",
+            background: "transparent",
+            cursor: "pointer",
+            pointerEvents: "auto",
+          }}
+        />
+      ) : null}
 
       {showStatus ? <OrbStatusBar state={orbState} /> : null}
     </div>
