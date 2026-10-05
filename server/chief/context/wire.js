@@ -7,6 +7,7 @@ import { rememberExchange } from "../memory/extract.js";
 import { createMemoryAccess } from "../memory/provider.js";
 import { CHIEF_COMPACTION_TOKENS, CHIEF_KEEP_RECENT_TOKENS } from "../runtime/compaction.js";
 import { createContextAssembler, lastTurnUserText } from "./assemble.js";
+import { renderConversationMove } from "./behavior.js";
 import { orchestrateContext, renderContextPackage } from "./orchestrate.js";
 
 export function createChiefTurnServices({
@@ -34,12 +35,14 @@ export function createChiefTurnServices({
   return {
     contextAssembler: async (turn) => {
       const prompt = await assemble(turn);
+      const query = lastTurnUserText(turn?.transcript);
       let pack;
       try {
         pack = await orchestrateContext({
-          query: lastTurnUserText(turn?.transcript),
+          query,
           userId: turn?.userId,
           sessionId: turn?.sessionId ?? null,
+          transcript: turn?.transcript ?? null,
           memory,
           readers: contextReaders,
           availableTools: turn?.availableTools ?? null,
@@ -48,7 +51,8 @@ export function createChiefTurnServices({
         pack = null;
       }
       const section = renderContextPackage(pack);
-      return section ? `${prompt}\n\n${section}` : prompt;
+      const move = renderConversationMove(turn?.transcript, query);
+      return [prompt, section, move].filter(Boolean).join("\n\n");
     },
     compaction: { atTokens, keepRecentTokens },
     memory,

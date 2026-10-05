@@ -6,6 +6,7 @@
 // A missing reader is an unavailable source. It is not a guess.
 // Current live state outranks historical memory for a current-state question.
 
+import { conversationMove, MOVE } from "./behavior.js";
 import { isSnapshotFact } from "../memory/qualify.js";
 import { MEMORY_LAYER, authoritativeDomain, needsEpisodicMemory } from "../memory/retrieve.js";
 
@@ -129,7 +130,12 @@ function hasTool(tools, names) {
   return names.some((name) => tools.has(name));
 }
 
-export function planContext(query) {
+function wantsHoldingValue(text) {
+  if (/\bnet worth\b/i.test(text)) return false;
+  return /\bworth\b/i.test(text);
+}
+
+function classifyQuery(query) {
   const text = String(query ?? "");
   const domain = authoritativeDomain(text);
   const episodic = needsEpisodicMemory(text);
@@ -141,7 +147,7 @@ export function planContext(query) {
   const relationship = RELATION_TEXT.test(text);
   const live = [];
   if (domain === "finance") live.push("finance");
-  if (domain === "web") live.push("web");
+  if (domain === "web" || wantsHoldingValue(text)) live.push("web");
   if (domain === "code") live.push("code");
   if (agents) live.push("agents");
   if (schedule) live.push("schedule");
@@ -171,6 +177,40 @@ export function planContext(query) {
     layers: unique(layers),
     currentState: live.length > 0,
   };
+}
+
+function inheritedLive(priorUserTexts) {
+  for (const text of priorUserTexts ?? []) {
+    const earlier = classifyQuery(text);
+    if (earlier.live.length === 0) continue;
+    if (wantsHoldingValue(text)) return earlier.live.filter((system) => system !== "web");
+    return earlier.live;
+  }
+  return [];
+}
+
+export function planContext(query, options = {}) {
+  const planned = classifyQuery(query);
+  if (!Array.isArray(options?.transcript)) return planned;
+  const move = conversationMove(options.transcript, query);
+  if (move.kind === MOVE.ACKNOWLEDGE) {
+    return {
+      live: [],
+      memory: [CONTEXT_SCOPE.WORKING],
+      layers: [],
+      currentState: false,
+    };
+  }
+  if ((move.kind === MOVE.CONTINUE || move.kind === MOVE.CONFIRM) && planned.live.length === 0) {
+    let live = inheritedLive(move.priorUserTexts);
+    if (move.pullsPublicSource) live = unique([...live, "web"]);
+    return {
+      ...planned,
+      live,
+      currentState: live.length > 0,
+    };
+  }
+  return planned;
 }
 
 function blankItem(fields) {
@@ -360,12 +400,13 @@ export async function orchestrateContext({
   query = "",
   userId = null,
   sessionId = null,
+  transcript = null,
   memory = null,
   readers = {},
   availableTools = null,
   now = new Date(),
 } = {}) {
-  const plan = planContext(query);
+  const plan = planContext(query, { transcript });
   const tools = toolSet(availableTools);
   const beyond = plan.memory.some((scope) => BEYOND_PROMPT.has(scope));
   if (!userId || (plan.live.length === 0 && !beyond)) {
@@ -394,7 +435,9 @@ export async function orchestrateContext({
       sessionId,
       layers: plan.layers,
     });
+    const allowedLayers = new Set(plan.layers);
     for (const hit of hits) {
+      if (hit?.layer && !allowedLayers.has(hit.layer)) continue;
       if (hit?.layer === MEMORY_LAYER.EPISODIC && sessionId && hit.sourceId === sessionId) continue;
       if (hit?.layer === MEMORY_LAYER.WORKING) continue;
       const item = memoryItem(hit);
