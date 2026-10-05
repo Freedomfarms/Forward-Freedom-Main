@@ -2,6 +2,7 @@
 // the scheduler tick share this so a scheduled turn and a user turn recall
 // the same facts. No second runtime.
 
+import { applyMemoryCommands } from "../memory/commands.js";
 import { rememberExchange } from "../memory/extract.js";
 import { CHIEF_COMPACTION_TOKENS, CHIEF_KEEP_RECENT_TOKENS } from "../runtime/compaction.js";
 import { createContextAssembler } from "./assemble.js";
@@ -28,6 +29,9 @@ export function createChiefTurnServices({
       moduleAccess,
     }),
     compaction: { atTokens, keepRecentTokens },
-    onTurnComplete: (exchange) => rememberExchange({ facts, engine, ...exchange }),
+    onTurnComplete: async (exchange) => {
+      await applyMemoryCommands({ facts, ...exchange });
+      return rememberExchange({ facts, engine, ...exchange });
+    },
   };
 }

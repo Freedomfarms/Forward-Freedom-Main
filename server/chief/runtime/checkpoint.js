@@ -310,6 +310,29 @@ export class MemoryCheckpointStore {
     return true;
   }
 
+  async listRecallDocuments(userId, { limit = 40, excludeSessionId = null } = {}) {
+    if (!userId) return [];
+    const cap = Math.max(1, Math.min(50, Number(limit) || 40));
+    return [...this.sessions.values()]
+      .filter(
+        (record) =>
+          record.userId === userId &&
+          record.id !== excludeSessionId &&
+          record.checkpoint?.context?.origin !== "schedule" &&
+          record.recallDocument
+      )
+      .sort((left, right) => new Date(right.updatedAt) - new Date(left.updatedAt))
+      .slice(0, cap)
+      .map((record) => ({
+        id: record.id,
+        userId: record.userId,
+        title: record.title ?? null,
+        content: record.recallDocument,
+        updatedAt: record.updatedAt,
+        importance: record.archivedAt ? 0.4 : 0.6,
+      }));
+  }
+
   async searchConversations(userId, options = {}) {
     const parsed = parseSearchOptions(options);
     if (parsed.error) return { error: parsed.error };
@@ -650,6 +673,40 @@ export class PrismaCheckpointStore {
         data: { recallDocument, updatedAt: session.updatedAt },
       });
       return true;
+    });
+  }
+
+  async listRecallDocuments(userId, { limit = 40, excludeSessionId = null } = {}) {
+    if (!userId) return [];
+    const cap = Math.max(1, Math.min(50, Number(limit) || 40));
+    return this._withUser(userId, async (tx) => {
+      const sessions = await tx.chiefSession.findMany({
+        where: {
+          userId,
+          recallDocument: { not: null },
+          ...(excludeSessionId ? { id: { not: excludeSessionId } } : {}),
+        },
+        select: {
+          id: true,
+          title: true,
+          recallDocument: true,
+          updatedAt: true,
+          archivedAt: true,
+          contextJson: true,
+        },
+        orderBy: { updatedAt: "desc" },
+        take: cap,
+      });
+      return sessions
+        .filter((session) => session.contextJson?.origin !== "schedule" && session.recallDocument)
+        .map((session) => ({
+          id: session.id,
+          userId,
+          title: session.title ?? null,
+          content: session.recallDocument,
+          updatedAt: session.updatedAt,
+          importance: session.archivedAt ? 0.4 : 0.6,
+        }));
     });
   }
 

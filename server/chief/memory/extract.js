@@ -27,6 +27,7 @@
 
 import { fencesOutput, scanInjection } from "../security/injection.js";
 import { trustedForRecall } from "../context/inject.js";
+import { qualifiesForLongTermMemory } from "./qualify.js";
 
 export const EXTRACTION_SYSTEM_PROMPT =
   "You extract durable, long-term facts about the user from a single " +
@@ -142,6 +143,7 @@ export async function rememberExchange({
     const extracted = await extractFacts(engine, { userText, assistantText, userId, sessionId });
     let stored = 0;
     for (const fact of extracted) {
+      if (!qualifiesForLongTermMemory(fact)) continue;
       const trustTier = flagged(scanOrNull(fact)) ? "UNTRUSTED" : "AUTO";
       const row = await facts.write({
         userId,
