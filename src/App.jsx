@@ -2,8 +2,8 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { AuthProvider, useAuth } from "./context/AuthContext.jsx";
 import { ErrorBoundary } from "./components/ErrorBoundary.jsx";
 import { LandingPage } from "./components/LandingPage.jsx";
-import { MadFuturicsBoot } from "./components/entry/MadFuturicsGateway.jsx";
 import { PublicFreedomOsHome } from "./components/FreedomOsLanding.jsx";
+import { FreedomShell } from "./components/freedom/FreedomShell.jsx";
 import { navigateApp, readSignupInitialForm } from "./routing/appLocation.js";
 import { presentationForRoute } from "./routing/appRoutes.js";
 import { clearSignedOutClientState } from "./utils/clientSessionCleanup.js";
@@ -89,42 +89,11 @@ function getWorkspaceRateLimitRetryDelayMs(error) {
   return WORKSPACE_RATE_LIMIT_RETRY_MS;
 }
 
-// The boot progress is tracked at module level so that the meter keeps filling
-// smoothly when the app swaps between sequential loading screens (session
-// restore -> workspace fetch -> lazy chunk) instead of restarting at 0%.
-const BOOT_PROGRESS_RESUME_WINDOW_MS = 1500;
-let bootProgressStartedAt = null;
-let bootProgressLastSeenAt = 0;
-
-function getBootProgress() {
-  const now = Date.now();
-  if (
-    bootProgressStartedAt === null ||
-    now - bootProgressLastSeenAt > BOOT_PROGRESS_RESUME_WINDOW_MS
-  ) {
-    bootProgressStartedAt = now;
-  }
-  bootProgressLastSeenAt = now;
-
-  // Ramps quickly to ~60% then eases toward 97% while the real work finishes;
-  // the screen unmounts when the app is ready, so it never stalls at 100%.
-  const elapsedMs = now - bootProgressStartedAt;
-  return Math.min(97, 97 * (1 - Math.exp(-elapsedMs / 1100)));
-}
-
 function AppLoadingScreen({ message = "Loading secure workspace..." }) {
-  const [progress, setProgress] = useState(() => getBootProgress());
-
-  useEffect(() => {
-    const intervalId = window.setInterval(() => {
-      setProgress(getBootProgress());
-    }, 80);
-    return () => window.clearInterval(intervalId);
-  }, []);
-
   return (
     <div role="status" aria-busy="true">
-      <MadFuturicsBoot message={message} progress={progress} />
+      <span className="chief-sr">{message}</span>
+      <FreedomShell />
     </div>
   );
 }

@@ -1,12 +1,9 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { ErrorBoundary } from "./ErrorBoundary.jsx";
 import { LegalModal } from "./LegalDocuments.jsx";
 import { FreedomButton } from "./freedom/FreedomButton.jsx";
+import { FreedomShell } from "./freedom/FreedomShell.jsx";
 import "./entry/entry.css";
-
-const FreedomShell = lazy(() =>
-  import("./freedom/FreedomShell.jsx").then((module) => ({ default: module.FreedomShell }))
-);
 
 // Shared Freedom OS entry visuals. PublicFreedomOsHome and
 // AuthenticatedFreedomOsShell are separate screens that reuse this frame.
@@ -448,60 +445,47 @@ export function PublicFreedomOsHome({ onSignIn, onCreateAccount, onExploreFreedo
 
   return (
     <ErrorBoundary>
-      <Suspense
-        fallback={
-          <div
-            role="status"
-            aria-live="polite"
-            aria-busy="true"
-            style={{ minHeight: "100dvh", background: "#04080f", color: "#f0ede8" }}
-          >
-            <span className="chief-sr">Opening Freedom OS</span>
+      <FreedomShell>
+        <header className="freedom-brand">
+          <h1>FREEDOM OS</h1>
+          <p className="freedom-mission">
+            Your autonomous operating system for life, work, and wealth.
+          </p>
+        </header>
+        <div className="freedom-actions">
+          <div className="freedom-actions-row">
+            <FreedomButton onClick={onSignIn}>Enter Freedom OS</FreedomButton>
+            <FreedomButton variant="quiet" onClick={onCreateAccount}>
+              Create account
+            </FreedomButton>
           </div>
-        }
-      >
-        <FreedomShell>
-          <header className="freedom-brand">
-            <h1>FREEDOM OS</h1>
-            <p className="freedom-mission">
-              Your autonomous operating system for life, work, and wealth.
-            </p>
-          </header>
-          <div className="freedom-actions">
-            <div className="freedom-actions-row">
-              <FreedomButton onClick={onSignIn}>Enter Freedom OS</FreedomButton>
-              <FreedomButton variant="quiet" onClick={onCreateAccount}>
-                Create account
-              </FreedomButton>
-            </div>
-            <div className="freedom-links">
-              {typeof onExploreFreedomFinancial === "function" ? (
-                <button
-                  type="button"
-                  className="chief-text-button"
-                  onClick={onExploreFreedomFinancial}
-                >
-                  Freedom Financial
-                </button>
-              ) : null}
+          <div className="freedom-links">
+            {typeof onExploreFreedomFinancial === "function" ? (
               <button
                 type="button"
                 className="chief-text-button"
-                onClick={() => setActiveDocument("terms")}
+                onClick={onExploreFreedomFinancial}
               >
-                Terms
+                Freedom Financial
               </button>
-              <button
-                type="button"
-                className="chief-text-button"
-                onClick={() => setActiveDocument("privacy")}
-              >
-                Privacy
-              </button>
-            </div>
+            ) : null}
+            <button
+              type="button"
+              className="chief-text-button"
+              onClick={() => setActiveDocument("terms")}
+            >
+              Terms
+            </button>
+            <button
+              type="button"
+              className="chief-text-button"
+              onClick={() => setActiveDocument("privacy")}
+            >
+              Privacy
+            </button>
           </div>
-        </FreedomShell>
-      </Suspense>
+        </div>
+      </FreedomShell>
       <LegalModal activeDocument={activeDocument} closeDocument={() => setActiveDocument(null)} />
     </ErrorBoundary>
   );
