@@ -9,7 +9,13 @@ import {
   messageSubmission,
   modelSubmission,
 } from "./chiefProtocol.js";
-import { accessWord, emptyRoomAccess, normalizeAccessInventory } from "./chiefRoom.js";
+import {
+  accessWord,
+  emptyRoomAccess,
+  normalizeAccessInventory,
+  normalizeConnectedSystems,
+} from "./chiefRoom.js";
+import { voiceConnectionState } from "./chiefVoiceStatus.js";
 import { sidebarSearchPath } from "./chiefSidebar.js";
 
 export {
@@ -104,6 +110,7 @@ export async function fetchChiefRoomAccess(user) {
     if (payload?.inventory && typeof payload.inventory === "object") {
       next.inventory = normalizeAccessInventory(payload.inventory);
     }
+    next.systems = normalizeConnectedSystems(payload?.systems);
   } catch {
     next.money = "unavailable";
     next.web = "unavailable";
@@ -197,12 +204,113 @@ export async function selectChiefModel({ user, sessionId = null, route }) {
   return { sessionId: nextSessionId, route: selected };
 }
 
+async function readVoiceError(response) {
+  const payload = await response.json().catch(() => ({}));
+  const raw = typeof payload?.error === "string" ? payload.error.trim() : "";
+  return new ApiRequestError(
+    chiefUserMessage(raw || `ElevenLabs request failed (${response.status}).`),
+    { status: response.status }
+  );
+}
+
+export async function fetchChiefVoices(user) {
+  const response = await fetch("/api/chief/voices", {
+    method: "GET",
+    headers: await buildAuthenticatedHeaders({}, { user }),
+  });
+  if (!response.ok) throw await readVoiceError(response);
+  return response.json();
+}
+
+export async function fetchChiefSpeech({ user, text, voiceId, voiceSettings, signal }) {
+  const settings = voiceSettings && typeof voiceSettings === "object" ? voiceSettings : {};
+  const response = await fetch("/api/chief/speak", {
+    method: "POST",
+    headers: await buildAuthenticatedHeaders({ "Content-Type": "application/json" }, { user }),
+    body: JSON.stringify({
+      text,
+      voice_id: voiceId,
+      voice_settings: {
+        speed: settings.speed,
+        stability: settings.stability,
+        similarity_boost: settings.similarityBoost ?? settings.similarity_boost,
+      },
+    }),
+    signal,
+  });
+  if (!response.ok || !response.body) throw await readVoiceError(response);
+  return response;
+}
+
 export function fetchChiefVoiceConfig(user) {
   return chiefJson("/api/chief/voice", { user });
 }
 
-export function fetchChiefVoices(user) {
+// Voice-sheet list. Named apart from fetchChiefVoices, which serves the dock
+// at GET /api/chief/voices. This one stays on GET /api/chief/voice/voices.
+export function fetchChiefVoiceList(user) {
   return chiefJson("/api/chief/voice/voices", { user });
+}
+
+export async function fetchChiefVoiceCatalog(user) {
+  const headers = await buildAuthenticatedHeaders({}, { user });
+  const configResponse = await fetch("/api/chief/voice", { headers });
+  const configPayload = await configResponse.json().catch(() => ({}));
+  if (!configResponse.ok) {
+    return {
+      status: voiceConnectionState({ code: configPayload?.code }),
+      voices: [],
+      config: null,
+    };
+  }
+  const voicesResponse = await fetch("/api/chief/voice/voices", {
+    headers: await buildAuthenticatedHeaders({}, { user }),
+  });
+  const voicesPayload = await voicesResponse.json().catch(() => ({}));
+  if (!voicesResponse.ok) {
+    return {
+      status: voiceConnectionState({
+        configured: configPayload?.configured === true,
+        code: voicesPayload?.code || "provider_error",
+      }),
+      voices: [],
+      config: {
+        provider: "elevenlabs",
+        configured: configPayload?.configured === true,
+        defaultVoiceId:
+          typeof configPayload?.defaultVoiceId === "string" ? configPayload.defaultVoiceId : "",
+        defaultModelId:
+          typeof configPayload?.defaultModelId === "string" ? configPayload.defaultModelId : "",
+        fallbackAvailable: configPayload?.fallbackAvailable === true,
+      },
+    };
+  }
+  const configured = configPayload?.configured === true && voicesPayload?.configured !== false;
+  return {
+    status: voiceConnectionState({
+      configured,
+      code: voicesPayload?.status === "not_configured" ? "not_configured" : "",
+    }),
+    voices: Array.isArray(voicesPayload?.voices) ? voicesPayload.voices : [],
+    config: {
+      provider: "elevenlabs",
+      configured: configPayload?.configured === true,
+      defaultVoiceId:
+        typeof configPayload?.defaultVoiceId === "string" ? configPayload.defaultVoiceId : "",
+      defaultModelId:
+        typeof configPayload?.defaultModelId === "string" ? configPayload.defaultModelId : "",
+      fallbackAvailable: configPayload?.fallbackAvailable === true,
+    },
+  };
+}
+
+export async function fetchChiefWorkforceLink(user) {
+  try {
+    const payload = await chiefJson("/api/chief/workforce/report-key", { user });
+    return { readable: true, active: payload?.active === true };
+  } catch {
+    return { readable: false, active: false };
+  }
 }
 
 export async function requestChiefSpeech(user, body, { signal } = {}) {

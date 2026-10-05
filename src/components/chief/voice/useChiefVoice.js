@@ -12,6 +12,7 @@ import {
   voiceErrorMessage,
 } from "./voiceMachine.js";
 import { readVoiceSettings } from "./voiceSettings.js";
+import { shouldSpeakReply } from "../../../utils/chiefPreferences.js";
 
 const LISTEN_LIMIT_MS = 45000;
 const SPEAK_LIMIT_MS = 120000;
@@ -24,6 +25,8 @@ export function useChiefVoice({
   abortTurnRef,
   silenceRef,
   setTurnError,
+  preferences = null,
+  speakReplyRef = null,
 }) {
   const userRef = useRef(user);
   userRef.current = user;
@@ -35,6 +38,7 @@ export function useChiefVoice({
   const kindRef = useRef("reply");
   const timerRef = useRef(null);
   const settingsRef = useRef(readVoiceSettings());
+  const preferencesRef = useRef(preferences);
   const audioRef = useRef(null);
   const inputRef = useRef(null);
   const outputRef = useRef(null);
@@ -106,7 +110,7 @@ export function useChiefVoice({
         const test = kindRef.current === "test";
         const allowed = test
           ? phaseRef.current === VOICE_PHASE.IDLE || phaseRef.current === VOICE_PHASE.SPEAKING
-          : phaseRef.current === VOICE_PHASE.THINKING;
+          : phaseRef.current === VOICE_PHASE.THINKING || phaseRef.current === VOICE_PHASE.IDLE;
         if (!allowed) {
           outputRef.current?.stop();
           return;
@@ -165,6 +169,11 @@ export function useChiefVoice({
     }
     if (!result?.ok || typeof result.text !== "string" || !result.text.trim()) {
       fail("turn", "turn_failed", result?.error || "");
+      return;
+    }
+    if (!shouldSpeakReply({ source: "voice", preferences: preferencesRef?.current })) {
+      setSubmittedLine("");
+      setPhase(VOICE_PHASE.IDLE);
       return;
     }
     kindRef.current = "reply";
@@ -275,6 +284,19 @@ export function useChiefVoice({
     settingsRef.current = settings;
   }, []);
 
+  async function speakTypedReply(text) {
+    if (!shouldSpeakReply({ source: "text", preferences: preferencesRef?.current })) return;
+    if (phaseRef.current !== VOICE_PHASE.IDLE || !userRef.current) return;
+    kindRef.current = "reply";
+    unlockSpeechPlayback();
+    await ensureOutput().speak(text);
+  }
+
+  useEffect(() => {
+    preferencesRef.current = preferences;
+    if (speakReplyRef) speakReplyRef.current = speakTypedReply;
+  });
+
   useEffect(() => {
     return () => {
       epochRef.current += 1;
@@ -317,5 +339,6 @@ export function useChiefVoice({
     onCoreTap,
     testVoice,
     updateSettings,
+    speakTypedReply,
   };
 }

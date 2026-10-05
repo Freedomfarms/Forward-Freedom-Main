@@ -1,5 +1,6 @@
 // CHIEF turn status → APEX visual state.
-// Speaking means TTS playback. Token streaming stays thinking.
+// Listening overrides the turn. Speaking is ElevenLabs playback only.
+// Token streaming stays thinking.
 
 import { fieldKindForStatus } from "../../utils/chiefRoom.js";
 
@@ -17,5 +18,19 @@ export function webStateForStatus(status, voicePhase = "idle") {
   if (orb === "speaking") return "speaking";
   if (orb === "listening") return "listening";
   if (orb === "thinking") return "processing";
+  return "standby";
+}
+
+export function visualStateForInteraction({ status, listening = false, speaking = false } = {}) {
+  if (listening) return "listening";
+  if (speaking) return "speaking";
+  return visualStateForStatus(status);
+}
+
+export function webStateForInteraction(input) {
+  const orb = visualStateForInteraction(input);
+  if (orb === "listening") return "listening";
+  if (orb === "thinking") return "processing";
+  if (orb === "speaking") return "speaking";
   return "standby";
 }

@@ -7,6 +7,7 @@ import {
   discoverCapabilities,
   projectAccessInventory,
 } from "../../server/chief/capabilities/discover.js";
+import { projectConnectedSystems } from "../../server/chief/capabilities/systems.js";
 import { loadCapabilityPolicy } from "../../server/chief/security/grants.js";
 import { PrismaModuleAccess } from "../../server/chief/security/module-access.js";
 import {
@@ -72,20 +73,22 @@ export async function handleChiefRoomAccess(request, response, deps = {}) {
   }
 
   let inventory;
+  let systems;
   try {
-    inventory = projectAccessInventory(
-      discoverCapabilities({
-        policy,
-        freedomFinancialRead: money === "on",
-        freedomFinancialReadable: money !== "unavailable",
-        webCredentialPresent: credentialPresent,
-      })
-    );
+    const snapshot = discoverCapabilities({
+      policy,
+      freedomFinancialRead: money === "on",
+      freedomFinancialReadable: money !== "unavailable",
+      webCredentialPresent: credentialPresent,
+    });
+    inventory = projectAccessInventory(snapshot);
+    systems = projectConnectedSystems(snapshot);
   } catch {
     inventory = null;
+    systems = null;
   }
 
-  response.status(200).json({ money, web, inventory });
+  response.status(200).json({ money, web, inventory, systems });
 }
 
 export default function handler(request, response) {

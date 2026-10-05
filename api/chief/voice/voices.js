@@ -38,7 +38,7 @@ export async function handleChiefVoices(request, response, deps = {}) {
 
   const env = deps.env ?? process.env;
   if (!elevenLabsConfigured(env)) {
-    response.status(200).json({ configured: false, voices: [] });
+    response.status(200).json({ configured: false, status: "not_configured", voices: [] });
     return;
   }
 
@@ -51,7 +51,7 @@ export async function handleChiefVoices(request, response, deps = {}) {
       reject(response, 502, "Voices could not be loaded.", result.code || "provider_error");
       return;
     }
-    response.status(200).json({ configured: true, voices: result.voices });
+    response.status(200).json({ configured: true, status: "connected", voices: result.voices });
   } catch {
     reject(response, 502, "Voices could not be loaded.", "network");
   }

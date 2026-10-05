@@ -55,11 +55,13 @@ function nodeIdFromHelper(h) {
   return ({ create_visual: 'design', render_visual: 'design', visual: 'design' })[s] || s   // a visual lights Design
 }
 
-export default function ReasoningWeb({ state = 'standby', trace = null, mode = 'full', coreless = false, onSelect = null, light = false, roster = null, anchor = null, viewBox = null, traces = true }) {
+export default function ReasoningWeb({ state = 'standby', trace = null, mode = 'full', coreless = false, onSelect = null, light = false, roster = null, anchor = null, viewBox = null, traces = true, showLabels = true, motion = 'full' }) {
   const svgRef = useRef(null)
   const apiRef = useRef(null)
   const stateRef = useRef(state)
+  const motionRef = useRef(motion)
   stateRef.current = state
+  motionRef.current = motion
   const onSelectRef = useRef(onSelect); onSelectRef.current = onSelect   // click a node → open its cockpit
 
   useEffect(() => {
@@ -180,7 +182,7 @@ export default function ReasoningWeb({ state = 'standby', trace = null, mode = '
           fill: !n.live ? P.labelDorm : (minor ? P.labelMinor : P.label),
           opacity: !n.live ? 0.75 : 1 })
         t.textContent = n.label
-        nodesG.append(t)
+        if (showLabels) nodesG.append(t)
         // Clickable: a generous transparent hit target over the node opens its cockpit. The SVG is
         // pointer-events:none (decorative), but this child re-enables events for itself only.
         const hit = mk('circle', { cx: n.x, cy: n.y, r: Math.max(rr + 13, 17), fill: 'transparent' })
@@ -261,11 +263,12 @@ export default function ReasoningWeb({ state = 'standby', trace = null, mode = '
     let raf = 0, last = performance.now(), phase = 0, nextAmbient = last + 1200
     const loop = (t) => {
       const dt = Math.min(0.05, (t - last) / 1000); last = t
+      const motionScale = motionRef.current === 'off' ? 0 : motionRef.current === 'low' ? 0.35 : 1
       const lvl = LEVEL[stateRef.current] ?? 0.4
-      const awake = stateRef.current !== 'standby'
+      const awake = stateRef.current !== 'standby' && motionScale > 0
       // One phase clock that runs FASTER when Apex is awake — drives all the glow/pulsing, so the
       // whole web visibly quickens the moment Apex wakes (no period jump: we accumulate phase).
-      phase += dt * (0.85 + 1.9 * lvl)
+      phase += dt * (0.85 + 1.9 * lvl) * motionScale
       const k = (Math.sin(phase) + 1) / 2
       if (!coreless) {
         gold.setAttribute('r', (9 + 4 * lvl) + (1.4 + 1.8 * lvl) * k)
@@ -274,15 +277,17 @@ export default function ReasoningWeb({ state = 'standby', trace = null, mode = '
         ring.setAttribute('r', 18 + 2.4 * k); ring.setAttribute('opacity', (0.4 + 0.25 * lvl) + 0.18 * k)
       }
       // Every node breathes on its OWN phase (ordered chaos — never all at once).
-      for (let i = 0; i < allNodes.length; i++) {
-        const n = allNodes[i]; if (!n.halo) continue
-        const kk = (Math.sin(phase * 0.85 + n.phase) + 1) / 2
-        n.halo.setAttribute('opacity', (n.live ? 0.16 : 0.09) + (n.live ? 0.30 : 0.18) * kk)
-        n.halo.setAttribute('r', n.haloR + 2 * kk)
+      if (motionScale > 0) {
+        for (let i = 0; i < allNodes.length; i++) {
+          const n = allNodes[i]; if (!n.halo) continue
+          const kk = (Math.sin(phase * 0.85 + n.phase) + 1) / 2
+          n.halo.setAttribute('opacity', (n.live ? 0.16 : 0.09) + (n.live ? 0.30 : 0.18) * kk * motionScale)
+          n.halo.setAttribute('r', n.haloR + 2 * kk * motionScale)
+        }
       }
       // Ambient "thinking" — a constant gentle drift of faint motes from the core out to ALL parts.
       // Denser + faster when Apex is awake (two at a time), so the whole web feels alive.
-      if (mode === 'full' && t > nextAmbient && live.length < (awake ? 18 : 8)) {
+      if (motionScale > 0 && mode === 'full' && t > nextAmbient && live.length < (awake ? 18 : 8)) {
         const sp = apiRef.current.allSpokes
         if (sp.length) { spawn(sp[(Math.random() * sp.length) | 0], true); if (awake && Math.random() < 0.6) spawn(sp[(Math.random() * sp.length) | 0], true) }
         const base = 470 - 330 * lvl
@@ -299,7 +304,7 @@ export default function ReasoningWeb({ state = 'standby', trace = null, mode = '
     }
     raf = requestAnimationFrame(loop)
     return () => { cancelAnimationFrame(raf); apiRef.current = null; svg.replaceChildren() }
-  }, [mode, coreless, roster, anchor, viewBox, traces])
+  }, [mode, coreless, roster, anchor, viewBox, traces, showLabels])
 
   useEffect(() => {
     if (!trace || !apiRef.current) return

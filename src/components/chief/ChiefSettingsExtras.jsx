@@ -11,7 +11,7 @@ function errorText(error) {
   return error?.message || "Conversation history could not be loaded.";
 }
 
-export function ChiefSettingsExtras({ user, onVoiceSettings }) {
+export function ChiefSettingsExtras({ user, onVoiceSettings, showVoice = true }) {
   const uid = typeof user?.uid === "string" ? user.uid : "";
   const [sessions, setSessions] = useState([]);
   const [sessionId, setSessionId] = useState(null);
@@ -176,14 +176,16 @@ export function ChiefSettingsExtras({ user, onVoiceSettings }) {
           </div>
         ) : null}
       </section>
-      <ChiefVoiceSheet
-        open
-        inline
-        user={user}
-        onClose={() => {}}
-        onSettings={handleSettings}
-        onTest={testVoice}
-      />
+      {showVoice ? (
+        <ChiefVoiceSheet
+          open
+          inline
+          user={user}
+          onClose={() => {}}
+          onSettings={handleSettings}
+          onTest={testVoice}
+        />
+      ) : null}
     </div>
   );
 }

@@ -14,7 +14,19 @@ import ShaderBackground from "./ShaderBackground";
 import OrbStatusBar from "./OrbStatusBar";
 import "./apex-ui.css";
 
-export default function ApexWorld({ orbState = "idle", webState = "standby", roster = null, onSelect = null, onCoreTap = null, audioLevelRef = null, caption = "" }) {
+export default function ApexWorld({
+  orbState = "idle",
+  webState = "standby",
+  roster = null,
+  onSelect = null,
+  onCoreTap = null,
+  coreListening = false,
+  audioLevelRef = null,
+  caption = "",
+  motionPreference = "system",
+  animationIntensity = "full",
+  showLabels = true,
+}) {
   const [reduced, setReduced] = useState(false);
 
   useEffect(() => {
@@ -26,33 +38,62 @@ export default function ApexWorld({ orbState = "idle", webState = "standby", ros
   }, []);
 
   const nodes = Array.isArray(roster) ? roster : [];
+  const motionOff =
+    animationIntensity === "off" ||
+    motionPreference === "reduce" ||
+    (motionPreference === "system" && reduced);
+  const resolvedMotion = motionOff ? "off" : animationIntensity === "low" ? "low" : "full";
 
   return (
-    <div className="apex-ui-root" style={{ position: "absolute", inset: 0, overflow: "hidden", userSelect: "none" }}>
-      <div aria-hidden="true" style={{
-        position: "absolute", inset: 0,
-        background: "radial-gradient(ellipse 95% 88% at 50% 42%, #122c43 0%, #0c1d30 38%, #07111f 72%, #050b14 100%)",
-      }} />
+    <div
+      className="apex-ui-root"
+      style={{ position: "absolute", inset: 0, overflow: "hidden", userSelect: "none" }}
+    >
+      <div
+        aria-hidden="true"
+        style={{
+          position: "absolute",
+          inset: 0,
+          background:
+            "radial-gradient(ellipse 95% 88% at 50% 42%, #122c43 0%, #0c1d30 38%, #07111f 72%, #050b14 100%)",
+        }}
+      />
 
-      {!reduced && (
+      {resolvedMotion !== "off" && (
         <div aria-hidden="true" style={{ position: "absolute", inset: 0, zIndex: 0 }}>
-          <ShaderBackground opacity={0.12} voiceActive={orbState === "speaking"} gold={false} />
+          <ShaderBackground
+            opacity={resolvedMotion === "low" ? 0.04 : 0.12}
+            voiceActive={orbState === "speaking"}
+            gold={false}
+          />
         </div>
       )}
 
-      <div aria-hidden="true" style={{
-        position: "absolute", inset: 0, zIndex: 1, pointerEvents: "none", mixBlendMode: "screen",
-        background: `radial-gradient(circle at 50% 42%, rgba(13,210,255,${orbState === "speaking" ? 0.30 : 0.18}) 0%, rgba(13,170,228,0.08) 30%, rgba(8,17,31,0) 62%)`,
-        transition: "background 0.6s ease",
-      }} />
+      <div
+        aria-hidden="true"
+        style={{
+          position: "absolute",
+          inset: 0,
+          zIndex: 1,
+          pointerEvents: "none",
+          mixBlendMode: "screen",
+          background: `radial-gradient(circle at 50% 42%, rgba(13,210,255,${orbState === "speaking" ? 0.3 : 0.18}) 0%, rgba(13,170,228,0.08) 30%, rgba(8,17,31,0) 62%)`,
+          transition: "background 0.6s ease",
+        }}
+      />
 
-      <div aria-hidden="true" style={{ position: "absolute", inset: 0, zIndex: 2, pointerEvents: "none" }}>
+      <div
+        aria-hidden="true"
+        style={{ position: "absolute", inset: 0, zIndex: 2, pointerEvents: "none" }}
+      >
         <ReasoningWeb
           state={webState}
           mode="full"
           coreless
           roster={roster}
           onSelect={onSelect}
+          showLabels={showLabels}
+          motion={resolvedMotion}
         />
       </div>
 
@@ -61,7 +102,10 @@ export default function ApexWorld({ orbState = "idle", webState = "standby", ros
           <ul>
             {nodes.map((node) => (
               <li key={node[0]}>
-                <button type="button" onClick={() => onSelect?.({ key: node[0], name: node[1], color: "#00e5ff" })}>
+                <button
+                  type="button"
+                  onClick={() => onSelect?.({ key: node[0], name: node[1], color: "#00e5ff" })}
+                >
                   {node[1]}
                 </button>
               </li>
@@ -71,35 +115,35 @@ export default function ApexWorld({ orbState = "idle", webState = "standby", ros
       ) : null}
 
       <div className="apex-core-anchor">
-        <ApexHeroOrb state={orbState} interactive={false} audioLevelRef={audioLevelRef} />
-        <div
-          role="button"
-          tabIndex={0}
-          aria-label="CHIEF voice"
-          onClick={() => onCoreTap?.()}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" || event.key === " ") {
-              event.preventDefault();
-              onCoreTap?.();
-            }
-          }}
-          onMouseDown={(event) => event.preventDefault()}
-          style={{
-            position: "absolute",
-            left: "50%",
-            top: "50%",
-            transform: "translate(-50%, -50%)",
-            width: "min(340px, 36vw)",
-            height: "min(340px, 36vw)",
-            borderRadius: "50%",
-            zIndex: 4,
-            cursor: "pointer",
-            background: "transparent",
-            border: "none",
-            userSelect: "none",
-            pointerEvents: "auto",
-          }}
+        <ApexHeroOrb
+          state={orbState}
+          interactive={false}
+          audioLevelRef={audioLevelRef}
+          staticCore={resolvedMotion === "off"}
         />
+        {onCoreTap ? (
+          <button
+            type="button"
+            className="chief-core-hit"
+            aria-label={coreListening ? "Stop listening" : "Speak to CHIEF"}
+            aria-pressed={coreListening}
+            onClick={onCoreTap}
+            style={{
+              position: "absolute",
+              left: "50%",
+              top: "50%",
+              width: "min(240px, 32vw)",
+              height: "min(240px, 32vw)",
+              transform: "translate(-50%, -50%)",
+              zIndex: 4,
+              border: 0,
+              borderRadius: "50%",
+              background: "transparent",
+              cursor: "pointer",
+              pointerEvents: "auto",
+            }}
+          />
+        ) : null}
         <div className="apex-core-status">
           <OrbStatusBar state={orbState} />
           {caption ? <p className="chief-voice-caption chief-voice-caption--inline">{caption}</p> : null}
