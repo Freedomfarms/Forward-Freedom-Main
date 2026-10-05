@@ -352,7 +352,7 @@ test("the room source keeps conversation plain and navigation literal", () => {
   assert.equal(page.includes("ForwardFreedomDashboard"), false);
 });
 
-test("the home screen keeps the latest exchange in a bottom dock", () => {
+test("the home screen keeps the latest exchange inside the full-bleed scene", () => {
   const root = process.cwd();
   const page = readFileSync(path.join(root, "src/components/chief/ChiefPage.jsx"), "utf8");
   const world = readFileSync(path.join(root, "src/third_party/apex-ui/ApexWorld.jsx"), "utf8");
@@ -372,6 +372,8 @@ test("the home screen keeps the latest exchange in a bottom dock", () => {
 
   assert.match(page, /chief-apex-stage/);
   assert.match(page, /chief-apex-dock/);
+  assert.match(page, /\{homeDock\}\s*<\/div>\s*<\/div>/);
+  assert.doesNotMatch(page, /\{homeDock\}\s*<\/div>\s*<ChiefSettings/);
   assert.doesNotMatch(page, /ChiefVoiceDock/);
   assert.match(page, /labeled/);
   assert.match(page, /turnView\.userLine/);
@@ -389,8 +391,11 @@ test("the home screen keeps the latest exchange in a bottom dock", () => {
   assert.match(world, /apex-core-anchor/);
   assert.match(world, /apex-core-status/);
   assert.match(world, /<OrbStatusBar state=\{orbState\} \/>/);
-  assert.match(css, /\.chief-apex-home \{[^}]*display:\s*flex;/);
-  assert.match(css, /\.chief-apex-dock \{[^}]*position:\s*relative;/);
+  assert.match(css, /\.chief-apex-stage \{[^}]*position:\s*absolute;/);
+  assert.match(css, /\.chief-apex-stage \{[^}]*inset:\s*0;/);
+  assert.match(css, /\.chief-apex-dock \{[^}]*position:\s*absolute;/);
+  assert.doesNotMatch(css, /\.chief-apex-home \{[^}]*flex-direction:\s*column;/);
+  assert.doesNotMatch(css, /\.chief-apex-dock \{[^}]*position:\s*relative;/);
   assert.doesNotMatch(css, /\.chief-apex-dock \{[^}]*position:\s*fixed;/);
   assert.match(settings, /fetchChiefHistory/);
   assert.match(roomSettings, /ChiefSettingsExtras/);

@@ -1587,8 +1587,7 @@ textarea:focus-visible,
 .chief-apex-home {
   --chief-keyboard: 0px;
   position: relative;
-  display: flex;
-  flex-direction: column;
+  display: block;
   height: 100vh;
   height: 100dvh;
   min-height: 0;
@@ -1602,32 +1601,37 @@ textarea:focus-visible,
 }
 
 .chief-apex-stage {
-  position: relative;
-  flex: 1 1 auto;
-  min-height: 0;
+  position: absolute;
+  inset: 0;
   overflow: hidden;
 }
 
 .chief-apex-dock {
-  position: relative;
+  position: absolute;
   z-index: 5;
-  flex: 0 1 auto;
+  left: 50%;
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px) + var(--chief-keyboard));
+  transform: translateX(-50%);
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
   gap: 8px;
-  width: 100%;
-  max-height: min(32vh, 240px);
+  width: min(40rem, calc(100% - 48px));
+  max-height: min(28vh, 210px);
   min-height: 0;
   overflow: hidden;
-  padding: 4px 12vw calc(12px + env(safe-area-inset-bottom, 0px) + var(--chief-keyboard));
-  pointer-events: auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  pointer-events: none;
 }
 
 .chief-apex-dock .chief-turn {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
+  pointer-events: auto;
 }
 
 .chief-apex-dock .chief-composer-row,
@@ -1635,6 +1639,48 @@ textarea:focus-visible,
 .chief-apex-dock .chief-turn-note,
 .chief-apex-dock .chief-archived-note {
   flex: 0 0 auto;
+  pointer-events: auto;
+}
+
+.chief-apex-dock .chief-turn-user,
+.chief-apex-dock .chief-answer,
+.chief-apex-dock .chief-turn-note,
+.chief-apex-dock .chief-turn-empty,
+.chief-apex-dock .chief-turn-who {
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.92),
+    0 0 14px rgba(0, 8, 18, 0.75);
+}
+
+.chief-apex-dock .chief-composer {
+  border: 0;
+  border-bottom: 1px solid rgba(0, 229, 255, 0.32);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  padding: 0 2px;
+}
+
+.chief-apex-dock .chief-composer:focus-within {
+  border-bottom-color: rgba(154, 223, 255, 0.9);
+}
+
+.chief-apex-dock .chief-composer textarea {
+  color: #f3fbff;
+}
+
+.chief-apex-dock .chief-composer textarea::placeholder {
+  color: rgba(176, 214, 230, 0.72);
+}
+
+.chief-apex-dock .chief-composer .chief-action {
+  border: 0;
+  background: transparent;
+  color: #9adfff;
+  box-shadow: none;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
 }
 
 .chief-turn-block {
@@ -2110,9 +2156,8 @@ textarea:focus-visible,
   }
 
   .chief-apex-dock {
-    max-height: min(36vh, 220px);
-    padding-left: 16px;
-    padding-right: 16px;
+    width: min(40rem, calc(100% - 32px));
+    max-height: min(32vh, 200px);
   }
 
   .chief-telemetry {
@@ -2126,9 +2171,7 @@ textarea:focus-visible,
 
 @media (max-height: 820px) {
   .chief-apex-dock {
-    max-height: min(30vh, 200px);
-    padding-left: 16px;
-    padding-right: 16px;
+    max-height: min(26vh, 168px);
   }
 }
 
@@ -2284,7 +2327,6 @@ textarea:focus-visible,
     font-size: 10px;
   }
 }
-
 
 @media (prefers-reduced-motion: reduce) {
   .chief-sheet {

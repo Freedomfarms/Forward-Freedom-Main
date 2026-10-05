@@ -932,9 +932,9 @@ export function ChiefPage({
           <p className="chief-sr" aria-live="polite">
             {voice.listening ? "Listening" : voice.audioActive ? "Speaking" : voiceNote}
           </p>
-        </div>
-        <div className="chief-apex-dock" aria-label="CHIEF conversation">
-          {homeDock}
+          <div className="chief-apex-dock" aria-label="CHIEF conversation">
+            {homeDock}
+          </div>
         </div>
         <ChiefSettings
           open={settingsOpen}
