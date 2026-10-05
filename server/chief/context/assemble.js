@@ -160,8 +160,9 @@ export function freedomFinancialAccessGuidance(
   if (freedomFinancialRead === true) {
     return (
       "Freedom Financial read access is on for this user. " +
-      "Call finance_summary before answering questions about this user's financial position, True Cash, liquid cash, credit card debt, net worth, asset allocation, budget, category spending, current month, or yearly outlook. " +
+      "Call finance_summary before answering questions about this user's financial position, True Cash, liquid cash, credit card debt, net worth, asset allocation, holdings, budget, category spending, current month, or yearly outlook. " +
       "Use only the figures finance_summary returns. trueCash is spendable cash after reserves. allocation True Cash is liquid cash minus credit card debt, which is the dashboard allocation slice. netWorth is the real sum and is not floored. " +
+      "dashboard.holdings lists crypto and precious-metal positions with symbol or metal, quantity, and balance. Use holdings to answer whether the user owns an asset such as a cryptocurrency. " +
       "workspace_plan_summary is a read-only label and count slice. " +
       "If a finance tool says Freedom Financial read access is currently disabled, tell the user and do not invent balances, transactions, budgets, or other financial figures. " +
       FREEDOM_FINANCIAL_WRITE_GUIDANCE
@@ -200,7 +201,8 @@ export function conversationRecallGuidance(availableTools) {
   if (!tools.has("conversation_search") || !tools.has("conversation_retrieve")) return "";
   return (
     "Use conversation_search when the user refers to an earlier conversation, a past decision, or something they previously told you. " +
-    "When they name a time period, pass after and before bounds. " +
+    "When they name a time period or ask to list conversations, omit query and pass after and before bounds. Do not invent a keyword for a date. " +
+    "Pass query only when the request is about a topic. " +
     "After a search hit, call conversation_retrieve before stating what was decided or previously discussed. " +
     "Do not search conversations for ordinary questions, arithmetic, or live financial figures. Use the current live tool for those. " +
     "Name the historical conversation title and date. If the source is archived, say that it is archived. " +

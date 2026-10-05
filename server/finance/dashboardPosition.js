@@ -3,6 +3,8 @@
 // Uses the dashboard's own calculations (True Cash, reserves, monthly spend,
 // yearly plan). The result is a projection: account names, merchants,
 // institutions, tokens, and raw transactions are never copied into it.
+// Holdings keep the asset symbol or metal, quantity, and balance the
+// dashboard already shows.
 
 import { withUserContext } from "../db/prisma.js";
 import { decrypt as decryptField, decryptNumber } from "../security/envelope.js";
@@ -28,6 +30,10 @@ import { loadSanitizedWorkspaceState } from "./workspaceSlice.js";
 const LIQUID_ACCOUNT_TYPES = new Set(["Checking", "Savings", "Manual Cash"]);
 const LABEL_MAX_CHARS = 80;
 const CATEGORY_MAX_ENTRIES = 80;
+const KNOWN_METALS = new Set(["Gold", "Silver", "Platinum", "Palladium"]);
+const METAL_UNITS = new Set(["oz", "ozt", "g", "kg", "lb"]);
+const HOLDING_SYMBOL = /^[A-Za-z0-9]{1,12}$/;
+const HOLDING_ASSET = /^[A-Za-z0-9][A-Za-z0-9 .+-]{0,40}$/;
 
 const POSITION_ACCOUNT_SELECT = Object.freeze({
   type: true,
@@ -146,6 +152,54 @@ function safeTransactions(transactions) {
   }));
 }
 
+function finiteQuantity(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function holdingRow(source, derived) {
+  if (derived?.type === "Crypto") {
+    const rawSymbol = typeof source?.cryptoSymbol === "string" ? source.cryptoSymbol.trim() : "";
+    const symbol = HOLDING_SYMBOL.test(rawSymbol) ? rawSymbol.toUpperCase() : "";
+    const rawAsset = typeof source?.cryptoName === "string" ? source.cryptoName.trim() : "";
+    const asset = HOLDING_ASSET.test(rawAsset) ? rawAsset : "";
+    if (!symbol && !asset) return null;
+    return {
+      type: "Crypto",
+      symbol,
+      asset,
+      quantity: finiteQuantity(source?.quantity),
+      unit: symbol || "units",
+      balance: derived.balance,
+    };
+  }
+  if (derived?.type === "Precious Metals") {
+    const metal = typeof source?.metalType === "string" ? source.metalType.trim() : "";
+    if (!KNOWN_METALS.has(metal)) return null;
+    const unit = typeof source?.metalUnit === "string" ? source.metalUnit.trim() : "";
+    return {
+      type: "Precious Metals",
+      metal,
+      quantity: finiteQuantity(source?.quantity),
+      unit: METAL_UNITS.has(unit) ? unit : "oz",
+      balance: derived.balance,
+    };
+  }
+  return null;
+}
+
+function holdingsOf(accounts, synced) {
+  const source = Array.isArray(accounts) ? accounts : [];
+  const rows = [];
+  for (let index = 0; index < synced.length; index += 1) {
+    const row = holdingRow(source[index], synced[index]);
+    if (!row) continue;
+    rows.push(row);
+    if (rows.length >= CATEGORY_MAX_ENTRIES) break;
+  }
+  return rows;
+}
+
 function balancesByType(accounts) {
   const totals = new Map();
   for (const account of accounts) {
@@ -224,8 +278,9 @@ export function activeWorkspaceUser(state) {
 }
 
 /**
- * Pure dashboard position. `accounts` and `transactions` are already reduced
- * to the fields the calculations need. Nothing else on those objects is read.
+ * Pure dashboard position. Dollar totals use type and balance. Holdings also
+ * read crypto symbol, crypto name, metal, quantity, and unit. Account names,
+ * institutions, addresses, and identifiers are not copied.
  */
 export function buildDashboardPosition({
   accounts = [],
@@ -330,6 +385,7 @@ export function buildDashboardPosition({
       netWorth,
     },
     allocation,
+    holdings: holdingsOf(accounts, syncedAccounts),
     balancesByType: balancesByType(syncedAccounts),
     currentMonth: {
       month: period.month,
