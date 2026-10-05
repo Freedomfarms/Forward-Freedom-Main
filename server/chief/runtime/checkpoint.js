@@ -721,6 +721,7 @@ async function queryRecallDocuments(tx, userId, parsed) {
   `;
   return {
     conversations: rows.map((row) => ({
+      session_id: row.id,
       sessionId: row.id,
       title: typeof row.title === "string" && row.title.trim() ? row.title.trim() : null,
       createdAt: isoRecallTimestamp(row.createdAt),

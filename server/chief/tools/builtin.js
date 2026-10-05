@@ -753,7 +753,7 @@ function conversationSearch(store) {
     spec: {
       name: "conversation_search",
       description:
-        "List or find this user's earlier conversations. Read-only. Omit query to list conversations, and pass after and before when the request is a date or a time period. Pass query only for a topic. Listing returns at most 20 conversations, newest first. Topic search returns at most 5. Does not take a user id. Excludes the current conversation and scheduled sessions. Archived conversations are included unless include_archived is false, and those results set archived to true. Returns titles, dates, and short snippets from the redacted recall document. Does not restore, rename, delete, or continue a conversation.",
+        "List or find this user's earlier conversations. Read-only. Omit query to list conversations, and pass after and before when the request is a date or a time period. Pass query only for a topic. Listing returns at most 20 conversations, newest first. Topic search returns at most 5. Does not take a user id. Excludes the current conversation and scheduled sessions. Archived conversations are included unless include_archived is false, and those results set archived to true. Returns titles, dates, and short snippets from the redacted recall document. Each result includes session_id. Pass that session_id to conversation_retrieve, conversation_rename, conversation_archive, conversation_restore, or conversation_delete. Does not restore, rename, delete, or continue a conversation.",
       category: "conversation",
       requiresConfirmation: false,
       requiredCapabilities: [Capability.CONVERSATION_READ],
@@ -819,10 +819,16 @@ function conversationRetrieve(store) {
       parameters: {
         type: "object",
         properties: {
-          session_id: { type: "string" },
+          session_id: {
+            type: "string",
+            description: "session_id from a conversation_search result.",
+          },
+          sessionId: {
+            type: "string",
+            description: "Same conversation id as session_id.",
+          },
           query: { type: "string" },
         },
-        required: ["session_id"],
       },
     },
     async execute(params, context) {
@@ -841,7 +847,7 @@ function conversationRetrieve(store) {
         agentId: context?.agentId,
         retrieve: () =>
           retrieveOwnedConversation(store, context.userId, {
-            sessionId: params?.session_id,
+            sessionId: requestedSessionId(params),
             query: params?.query,
           }),
       });
@@ -859,14 +865,26 @@ const SESSION_PARAMETERS = {
   properties: {
     session_id: {
       type: "string",
-      description: "Conversation to change. Omit to use the current conversation.",
+      description:
+        "session_id from a conversation_search result. Omit to use the current conversation.",
+    },
+    sessionId: {
+      type: "string",
+      description: "Same conversation id as session_id. conversation_search also returns this name.",
     },
   },
 };
 
-function sessionTarget(params, context) {
+function requestedSessionId(params) {
   const requested = typeof params?.session_id === "string" ? params.session_id.trim() : "";
-  return requested || (typeof context?.sessionId === "string" ? context.sessionId : "");
+  const alias = typeof params?.sessionId === "string" ? params.sessionId.trim() : "";
+  return requested || alias;
+}
+
+function sessionTarget(params, context) {
+  return (
+    requestedSessionId(params) || (typeof context?.sessionId === "string" ? context.sessionId : "")
+  );
 }
 
 function sessionPayload(record) {
@@ -1046,7 +1064,7 @@ function conversationDelete(store) {
     spec: {
       name: "conversation_delete",
       description:
-        "Permanently delete one of this user's conversations. Uses the current conversation when session_id is omitted. Requires explicit confirmation. Does not accept a user id.",
+        "Permanently delete one of this user's conversations. Pass session_id from conversation_search. sessionId is the same id. Uses the current conversation when both are omitted. Requires explicit confirmation. Does not accept a user id.",
       category: "conversation",
       requiresConfirmation: true,
       requiredCapabilities: [Capability.CONVERSATION_DELETE],

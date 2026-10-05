@@ -302,6 +302,32 @@ test("conversation capabilities use the checkpoint store and ignore a model user
   );
 });
 
+test("conversation_delete accepts the sessionId returned by conversation_search", async () => {
+  const store = new MemoryCheckpointStore();
+  const current = await store.createSession({ userId: "user-a", context: {} });
+  const target = await store.createSession({ userId: "user-a", context: {} });
+  store.sessions.get(target.id).recallDocument = "the old decision";
+  const tooling = await createChiefTooling({
+    userId: "user-a",
+    policy: policyWith([Capability.CONVERSATION_READ, Capability.CONVERSATION_DELETE]),
+    audit: new MemoryAuditLog(),
+    stores: { checkpoints: store },
+  });
+  const deleteSpec = tooling.specs.find((spec) => spec.name === "conversation_delete");
+  assert.equal(typeof deleteSpec.parameters.properties.session_id, "object");
+  assert.equal(typeof deleteSpec.parameters.properties.sessionId, "object");
+  const found = await store.searchConversations("user-a", { query: "decision" });
+  const hit = found.conversations.find((row) => row.sessionId === target.id);
+  assert.equal(hit.session_id, target.id);
+  const removed = await tooling.executor.execute(
+    { callId: "d", name: "conversation_delete", arguments: { sessionId: hit.sessionId } },
+    { userId: "user-a", agentId: "chief", sessionId: current.id, mutationApproved: true }
+  );
+  assert.match(removed.output, /"deleted":true/);
+  assert.equal(store.sessions.has(target.id), false);
+  assert.equal(store.sessions.has(current.id), true);
+});
+
 test("Freedom Financial remains a separate switch from the finance grant", async () => {
   const access = new MemoryModuleAccess();
   const tooling = await createChiefTooling({

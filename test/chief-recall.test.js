@@ -102,6 +102,9 @@ test("recall document matches a title and a body keyword that is not in the titl
   const titleHit = await store.searchConversations("user-a", { query: "architecture" });
   assert.equal(titleHit.error, undefined);
   assert.ok(titleHit.conversations.some((row) => row.sessionId === "titled"));
+  assert.ok(
+    titleHit.conversations.every((row) => row.session_id === row.sessionId && row.session_id)
+  );
 
   const bodyHit = await store.searchConversations("user-a", { query: "jarvis" });
   assert.deepEqual(
