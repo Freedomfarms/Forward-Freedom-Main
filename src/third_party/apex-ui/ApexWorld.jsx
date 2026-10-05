@@ -26,6 +26,8 @@ export default function ApexWorld({
   animationIntensity = "full",
   showLabels = true,
   showStatus = true,
+  statusHint,
+  webLabel,
 }) {
   const [reduced, setReduced] = useState(false);
 
@@ -94,6 +96,7 @@ export default function ApexWorld({
           onSelect={onSelect}
           showLabels={showLabels}
           motion={resolvedMotion}
+          label={webLabel}
         />
       </div>
 
@@ -118,7 +121,7 @@ export default function ApexWorld({
         style={{
           position: "absolute",
           left: "50%",
-          top: "50%",
+          top: "var(--freedom-core-y, 50%)",
           width: "min(560px, 58vw)",
           height: "min(500px, 56vw, 70vh)",
           transform: "translate(-50%, -50%)",
@@ -144,7 +147,7 @@ export default function ApexWorld({
           style={{
             position: "absolute",
             left: "50%",
-            top: "50%",
+            top: "var(--freedom-core-y, 50%)",
             width: "min(240px, 32vw)",
             height: "min(240px, 32vw)",
             transform: "translate(-50%, -50%)",
@@ -158,7 +161,7 @@ export default function ApexWorld({
         />
       ) : null}
 
-      {showStatus ? <OrbStatusBar state={orbState} /> : null}
+      {showStatus ? <OrbStatusBar state={orbState} hint={statusHint} /> : null}
     </div>
   );
 }

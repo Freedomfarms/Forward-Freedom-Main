@@ -33,7 +33,10 @@ function Waveform({ active, cx, cy, width = 200 }) {
   )
 }
 
-export default function OrbStatusBar({ state = 'idle' }) {
+export default function OrbStatusBar({ state = 'idle', hint }) {
+  const standbyHint = hint === undefined
+    ? 'TAP THE CORE · CLICK AN AGENT · SCROLL FOR THE STORY'
+    : hint
   const W = 420, H = 130
   const cx = W / 2, cy = 48
   const isActive = state !== 'idle'
@@ -74,10 +77,10 @@ export default function OrbStatusBar({ state = 'idle' }) {
 
         {/* Voice discoverability (UI sweep) — the front page is voice-driven; one whisper-quiet hint on
             standby teaches the commands. Hidden the moment Apex is active. */}
-        {!isActive && (
+        {!isActive && standbyHint ? (
           <text className="sb-hint" x={cx} y={cy + 80} textAnchor="middle" fill={GOLD} fontSize="9" fontFamily="'Share Tech Mono', monospace"
-            letterSpacing="0.14em" opacity="0.32">TAP THE CORE · CLICK AN AGENT · SCROLL FOR THE STORY</text>
-        )}
+            letterSpacing="0.14em" opacity="0.32">{standbyHint}</text>
+        ) : null}
       </svg>
     </div>
   )

@@ -77,7 +77,9 @@ test("home, login, and return visits use the full five second construction", () 
   assert.doesNotMatch(gatewaySource, /variant !== "home"/);
   assert.doesNotMatch(gatewaySource, /elapsedMs:\s*5000/);
   assert.match(gatewaySource, /gatewayEntryClock/);
-  assert.match(authSource, /variant=\{mode === "register" \? "signup" : "login"\}/);
+  assert.match(authSource, /FreedomShell/);
+  assert.match(authSource, /variant="auth"/);
+  assert.doesNotMatch(authSource, /MadFuturicsGateway/);
   assert.match(appSource, /initialMode=\{screen === "signup" \? "register" : "login"\}/);
   assert.match(appSource, /MadFuturicsBoot/);
 });
@@ -224,13 +226,15 @@ test("the gateway keeps authentication behavior and one canvas loop", () => {
   assert.match(gatewaySource, /ENTER THE SYSTEM/);
   assert.match(gatewaySource, /Freedom Diamond/);
   assert.match(authSource, /IDENTIFY YOURSELF/);
+  assert.match(authSource, /FreedomShell/);
   assert.match(authSource, /signInWithGoogle/);
   assert.match(authSource, /signInWithEmail/);
   assert.match(authSource, /signUpWithEmail/);
   assert.match(authSource, /requestPasswordReset/);
   assert.match(authSource, /markPendingLegalConsent/);
   assert.match(authSource, /onModeChange/);
-  assert.match(authSource, /variant=\{mode === "register" \? "signup" : "login"\}/);
+  assert.match(authSource, /variant="auth"/);
+  assert.doesNotMatch(authSource, /MadFuturicsGateway/);
   assert.match(appSource, /MadFuturicsBoot/);
   assert.doesNotMatch(appSource, /Powering Freedom/);
   assert.match(fieldSource, /visibilityState/);
@@ -255,5 +259,8 @@ test("the gateway keeps authentication behavior and one canvas loop", () => {
   assert.match(chiefPageSource, /ApexWorld/);
   assert.doesNotMatch(chiefPageSource, /renderIntelligence/);
   assert.doesNotMatch(chiefPageSource, /ChiefField/);
-  assert.match(readFileSync(new URL("../src/components/chief/chiefField.js", import.meta.url), "utf8"), /formationFrame/);
+  assert.match(
+    readFileSync(new URL("../src/components/chief/chiefField.js", import.meta.url), "utf8"),
+    /formationFrame/
+  );
 });
