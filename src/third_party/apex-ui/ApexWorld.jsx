@@ -26,6 +26,7 @@ export default function ApexWorld({
   motionPreference = "system",
   animationIntensity = "full",
   showLabels = true,
+  webLabel,
 }) {
   const [reduced, setReduced] = useState(false);
 
@@ -94,6 +95,7 @@ export default function ApexWorld({
           onSelect={onSelect}
           showLabels={showLabels}
           motion={resolvedMotion}
+          label={webLabel}
         />
       </div>
 

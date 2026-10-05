@@ -5,8 +5,11 @@ import {
   clearPendingLegalConsent,
   markPendingLegalConsent,
 } from "../utils/legalConsent.js";
-import { MadFuturicsGateway } from "./entry/MadFuturicsGateway.jsx";
 import { LegalModal } from "./LegalDocuments.jsx";
+import { FreedomButton } from "./freedom/FreedomButton.jsx";
+import { FreedomGlass } from "./freedom/FreedomGlass.jsx";
+import { FreedomShell } from "./freedom/FreedomShell.jsx";
+import { FreedomStatus } from "./freedom/FreedomStatus.jsx";
 
 export function AuthScreen({
   initialMode = "login",
@@ -140,162 +143,176 @@ export function AuthScreen({
   };
 
   return (
-    <MadFuturicsGateway variant={mode === "register" ? "signup" : "login"}>
-      {typeof onBackHome === "function" ? (
-        <button type="button" className="mf-back" onClick={onBackHome}>
-          Return
-        </button>
-      ) : null}
-      <form className="mf-auth" onSubmit={handleEmailSubmit}>
-        <p className="mf-kicker">IDENTIFY YOURSELF</p>
-        <div className="mf-modes">
-          {[
-            ["login", "Sign in"],
-            ["register", "Create account"],
-          ].map(([value, label]) => (
-            <button
-              key={value}
-              type="button"
-              aria-pressed={mode === value}
-              onClick={() => {
-                setMode(value);
-                setFormError("");
-                clearError();
-                clearNotice();
-                if (typeof onModeChange === "function") onModeChange(value);
-              }}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+    <>
+      <FreedomShell
+        variant="auth"
+        orbState={isBusy ? "thinking" : "idle"}
+        webState={isBusy ? "processing" : "standby"}
+      >
+        <header className="freedom-brand">
+          <h1>FREEDOM OS</h1>
+        </header>
+        {typeof onBackHome === "function" ? (
+          <button type="button" className="chief-text-button freedom-return" onClick={onBackHome}>
+            Return
+          </button>
+        ) : null}
+        <FreedomGlass className="freedom-auth">
+          <form onSubmit={handleEmailSubmit}>
+            <FreedomStatus>{isBusy ? "Authenticating" : "IDENTIFY YOURSELF"}</FreedomStatus>
+            <div className="freedom-modes">
+              {[
+                ["login", "Sign in"],
+                ["register", "Create account"],
+              ].map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={mode === value}
+                  onClick={() => {
+                    setMode(value);
+                    setFormError("");
+                    clearError();
+                    clearNotice();
+                    if (typeof onModeChange === "function") onModeChange(value);
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
 
-        <label className="mf-label" htmlFor="auth-email">
-          Email
-          <input
-            id="auth-email"
-            className="mf-input"
-            type="email"
-            value={form.email}
-            onChange={(event) => updateForm("email", event.target.value)}
-            placeholder="you@example.com"
-            autoComplete="email"
-            required
-            aria-invalid={hasError && !form.email.trim() ? "true" : undefined}
-            aria-describedby={feedbackId}
-          />
-        </label>
-
-        {credentialsOpen ? (
-          <>
-            {mode === "register" ? (
-              <label className="mf-label" htmlFor="auth-full-name">
-                Full name
-                <input
-                  id="auth-full-name"
-                  className="mf-input"
-                  type="text"
-                  value={form.fullName}
-                  onChange={(event) => updateForm("fullName", event.target.value)}
-                  placeholder="Workspace owner"
-                  autoComplete="name"
-                  required={mode === "register"}
-                  aria-invalid={hasError && !form.fullName.trim() ? "true" : undefined}
-                  aria-describedby={feedbackId}
-                />
-              </label>
-            ) : null}
-            <label className="mf-label" htmlFor="auth-password">
-              Password
+            <label className="freedom-label" htmlFor="auth-email">
+              Email
               <input
-                id="auth-password"
-                className="mf-input"
-                type="password"
-                value={form.password}
-                onChange={(event) => updateForm("password", event.target.value)}
-                placeholder={mode === "register" ? "Choose a secure password" : "Password"}
-                autoComplete={mode === "register" ? "new-password" : "current-password"}
+                id="auth-email"
+                className="freedom-field"
+                type="email"
+                value={form.email}
+                onChange={(event) => updateForm("email", event.target.value)}
+                placeholder="you@example.com"
+                autoComplete="email"
                 required
-                aria-invalid={hasError && !form.password ? "true" : undefined}
+                aria-invalid={hasError && !form.email.trim() ? "true" : undefined}
                 aria-describedby={feedbackId}
               />
             </label>
-          </>
-        ) : null}
 
-        <label className="mf-consent" htmlFor="auth-legal-consent">
-          <input
-            id="auth-legal-consent"
-            type="checkbox"
-            checked={agreedToLegal}
-            onChange={(event) => {
-              setAgreedToLegal(event.target.checked);
-              if (formError) setFormError("");
-            }}
-            required
-            aria-invalid={hasError && !agreedToLegal ? "true" : undefined}
-            aria-describedby={feedbackId}
-          />
-          <span>
-            I agree to the{" "}
-            <button
+            {credentialsOpen ? (
+              <>
+                {mode === "register" ? (
+                  <label className="freedom-label" htmlFor="auth-full-name">
+                    Full name
+                    <input
+                      id="auth-full-name"
+                      className="freedom-field"
+                      type="text"
+                      value={form.fullName}
+                      onChange={(event) => updateForm("fullName", event.target.value)}
+                      placeholder="Workspace owner"
+                      autoComplete="name"
+                      required={mode === "register"}
+                      aria-invalid={hasError && !form.fullName.trim() ? "true" : undefined}
+                      aria-describedby={feedbackId}
+                    />
+                  </label>
+                ) : null}
+                <label className="freedom-label" htmlFor="auth-password">
+                  Password
+                  <input
+                    id="auth-password"
+                    className="freedom-field"
+                    type="password"
+                    value={form.password}
+                    onChange={(event) => updateForm("password", event.target.value)}
+                    placeholder={mode === "register" ? "Choose a secure password" : "Password"}
+                    autoComplete={mode === "register" ? "new-password" : "current-password"}
+                    required
+                    aria-invalid={hasError && !form.password ? "true" : undefined}
+                    aria-describedby={feedbackId}
+                  />
+                </label>
+              </>
+            ) : null}
+
+            <label className="freedom-consent" htmlFor="auth-legal-consent">
+              <input
+                id="auth-legal-consent"
+                type="checkbox"
+                checked={agreedToLegal}
+                onChange={(event) => {
+                  setAgreedToLegal(event.target.checked);
+                  if (formError) setFormError("");
+                }}
+                required
+                aria-invalid={hasError && !agreedToLegal ? "true" : undefined}
+                aria-describedby={feedbackId}
+              />
+              <span>
+                I agree to the{" "}
+                <button
+                  type="button"
+                  className="freedom-inline"
+                  onClick={() => setActiveDocument("terms")}
+                >
+                  Terms of Service
+                </button>{" "}
+                and{" "}
+                <button
+                  type="button"
+                  className="freedom-inline"
+                  onClick={() => setActiveDocument("privacy")}
+                >
+                  Privacy Policy
+                </button>
+                , including connected-account data handling through Plaid.
+              </span>
+            </label>
+
+            {formError || error ? (
+              <div id="auth-feedback" className="freedom-alert" role="alert">
+                {formError || error}
+              </div>
+            ) : null}
+            {notice ? (
+              <div id="auth-notice" className="freedom-notice" role="status" aria-live="polite">
+                {notice}
+              </div>
+            ) : null}
+
+            <FreedomButton
               type="button"
-              className="mf-inline-button"
-              onClick={() => setActiveDocument("terms")}
+              variant="quiet"
+              onClick={handleGoogleSignIn}
+              disabled={isBusy}
             >
-              Terms of Service
-            </button>{" "}
-            and{" "}
-            <button
-              type="button"
-              className="mf-inline-button"
-              onClick={() => setActiveDocument("privacy")}
-            >
-              Privacy Policy
-            </button>
-            , including connected-account data handling through Plaid.
-          </span>
-        </label>
+              Continue with Google
+            </FreedomButton>
 
-        {formError || error ? (
-          <div id="auth-feedback" className="mf-alert" role="alert">
-            {formError || error}
-          </div>
-        ) : null}
-        {notice ? (
-          <div id="auth-notice" className="mf-notice" role="status" aria-live="polite">
-            {notice}
-          </div>
-        ) : null}
+            {credentialsOpen ? (
+              <FreedomButton type="submit" disabled={isBusy}>
+                {isBusy ? "Working..." : mode === "register" ? "Create access" : "Enter"}
+              </FreedomButton>
+            ) : (
+              <FreedomButton type="submit">Continue</FreedomButton>
+            )}
 
-        <button type="button" className="mf-google" onClick={handleGoogleSignIn} disabled={isBusy}>
-          Continue with Google
-        </button>
-
-        {credentialsOpen ? (
-          <button type="submit" className="mf-submit" disabled={isBusy}>
-            {isBusy ? "Working..." : mode === "register" ? "Create access" : "Enter"}
-          </button>
-        ) : (
-          <button type="submit" className="mf-submit">
-            Continue
-          </button>
-        )}
-
-        {credentialsOpen && mode === "login" ? (
-          <button
-            type="button"
-            className="mf-text-button"
-            disabled={isBusy}
-            onClick={() => {
-              void handlePasswordReset();
-            }}
-          >
-            Send password reset
-          </button>
-        ) : null}
-      </form>
+            {credentialsOpen && mode === "login" ? (
+              <button
+                type="button"
+                className="chief-text-button"
+                disabled={isBusy}
+                onClick={() => {
+                  void handlePasswordReset();
+                }}
+              >
+                Send password reset
+              </button>
+            ) : null}
+          </form>
+        </FreedomGlass>
+      </FreedomShell>
       <LegalModal activeDocument={activeDocument} closeDocument={() => setActiveDocument(null)} />
-    </MadFuturicsGateway>
+    </>
   );
 }

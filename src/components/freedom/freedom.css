@@ -1,0 +1,345 @@
+/* Entry rooms share the CHIEF home frame. Glass, gold controls, and mono
+   status values match .chief-voice-dock / .chief-action / OrbStatusBar.
+   CHIEF keeps its own selectors so this file cannot restyle that screen. */
+
+.freedom-shell {
+  position: relative;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 620px;
+  overflow: hidden;
+  background: #04080f;
+  color: #f0ede8;
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
+}
+
+.freedom-shell--auth .freedom-brand {
+  padding: 0 88px;
+}
+
+.freedom-shell--auth .freedom-brand h1 {
+  font-size: clamp(22px, 4vw, 42px);
+}
+
+.freedom-brand {
+  position: absolute;
+  z-index: 24;
+  left: 0;
+  right: 0;
+  top: clamp(78px, 12vh, 108px);
+  padding: 0 24px;
+  text-align: center;
+  pointer-events: none;
+  animation: freedom-in 700ms ease both;
+}
+
+.freedom-brand h1 {
+  margin: 0;
+  font-weight: 500;
+  font-size: clamp(28px, 5.4vw, 64px);
+  letter-spacing: 0.18em;
+  line-height: 0.95;
+  color: #f0ede8;
+  text-shadow:
+    0 0 12px rgba(240, 237, 232, 0.28),
+    0 0 42px rgba(0, 229, 255, 0.35);
+}
+
+.freedom-mission {
+  margin: 14px auto 0;
+  max-width: 34ch;
+  color: rgba(240, 237, 232, 0.72);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.freedom-actions {
+  position: absolute;
+  z-index: 24;
+  left: 50%;
+  /* Below the status that hangs from .apex-core-anchor (top: 100%, ~98px). */
+  top: calc(50% + min(220px, (100% - 210px) / 2) + 104px);
+  bottom: auto;
+  transform: translateX(-50%);
+  width: min(560px, calc(100% - 24px));
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  animation: freedom-in 700ms ease both;
+}
+
+.freedom-actions-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+}
+
+.freedom-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px 16px;
+}
+
+.freedom-links .chief-text-button {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(240, 237, 232, 0.55);
+}
+
+.freedom-glass {
+  display: grid;
+  gap: 14px;
+  padding: 16px 16px 14px;
+  border: 1px solid rgba(0, 229, 255, 0.16);
+  border-radius: 22px;
+  background: rgba(5, 16, 28, 0.42);
+  backdrop-filter: blur(18px) saturate(1.15);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.28);
+  color: #e7f7ff;
+}
+
+.freedom-glass .chief-action,
+.freedom-actions .chief-action {
+  border-color: rgba(245, 166, 35, 0.5);
+  background: rgba(245, 166, 35, 0.16);
+  color: #ffe7b8;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.freedom-glass .chief-action--quiet,
+.freedom-actions .chief-action--quiet {
+  background: transparent;
+  border-color: rgba(0, 229, 255, 0.32);
+  color: #dff6ff;
+}
+
+.freedom-auth {
+  position: absolute;
+  z-index: 24;
+  left: 50%;
+  bottom: max(12px, env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  width: min(420px, calc(100% - 24px));
+  max-height: min(42dvh, 440px);
+  overflow: auto;
+  animation: freedom-in 700ms ease both;
+}
+
+.freedom-return {
+  position: absolute;
+  z-index: 31;
+  top: 18px;
+  right: 18px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-size: 12px;
+}
+
+.freedom-status {
+  margin: 0;
+  text-align: center;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  letter-spacing: 0.22em;
+  line-height: 1.45;
+  text-transform: uppercase;
+  color: #f5a623;
+  opacity: 0.8;
+}
+
+.freedom-auth form {
+  display: grid;
+  gap: 14px;
+}
+
+.freedom-auth .chief-text-button {
+  justify-self: center;
+}
+
+.freedom-modes {
+  display: flex;
+  justify-content: center;
+  gap: 18px;
+}
+
+.freedom-modes button {
+  border: 0;
+  background: transparent;
+  color: rgba(183, 168, 201, 0.92);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  min-height: 36px;
+  padding: 6px 0;
+  cursor: pointer;
+}
+
+.freedom-modes button[aria-pressed="true"] {
+  color: #f6f0ff;
+  box-shadow: inset 0 -1px 0 #c084fc;
+}
+
+.freedom-label {
+  display: grid;
+  gap: 6px;
+  color: rgba(223, 246, 255, 0.62);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.freedom-field {
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid rgba(0, 229, 255, 0.28);
+  border-radius: 0;
+  background: transparent;
+  color: #f3fbff;
+  padding: 10px 2px 12px;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  text-transform: none;
+}
+
+.freedom-field::placeholder {
+  color: rgba(176, 214, 230, 0.45);
+}
+
+.freedom-field:focus,
+.freedom-field:focus-visible {
+  outline: none;
+  border-bottom-color: #c084fc;
+}
+
+.freedom-consent {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  color: rgba(231, 247, 255, 0.78);
+  font-size: 12px;
+  line-height: 1.5;
+  letter-spacing: 0;
+  text-transform: none;
+  font-weight: 500;
+}
+
+.freedom-inline {
+  border: 0;
+  background: transparent;
+  color: #9adfff;
+  font: inherit;
+  font-weight: 600;
+  padding: 0;
+  cursor: pointer;
+}
+
+.freedom-alert,
+.freedom-notice {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.freedom-alert {
+  color: #ffd0d0;
+}
+
+.freedom-notice {
+  color: #9adfff;
+}
+
+.freedom-auth .chief-action {
+  width: 100%;
+}
+
+@keyframes freedom-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (min-width: 1000px) {
+  .freedom-brand {
+    top: clamp(36px, 7vh, 72px);
+  }
+}
+
+@media (min-width: 1280px) {
+  .freedom-auth {
+    left: auto;
+    right: max(28px, 4vw);
+    top: 50%;
+    bottom: auto;
+    transform: translateY(-50%);
+    width: min(360px, 28vw);
+    max-height: calc(100dvh - 80px);
+  }
+}
+
+@media (max-height: 820px) {
+  .freedom-brand {
+    top: max(14px, env(safe-area-inset-top, 0px));
+  }
+
+  .freedom-brand h1 {
+    font-size: clamp(22px, 4vw, 34px);
+  }
+
+  .freedom-mission {
+    margin-top: 8px;
+    font-size: 13px;
+  }
+
+  .freedom-actions {
+    top: 112px;
+    bottom: auto;
+    gap: 8px;
+  }
+}
+
+@media (max-width: 720px) {
+  .freedom-actions {
+    width: calc(100% - 16px);
+  }
+
+  .freedom-actions .chief-action {
+    width: 100%;
+  }
+
+  .freedom-brand h1 {
+    font-size: clamp(26px, 9vw, 40px);
+    letter-spacing: 0.12em;
+  }
+
+  .freedom-auth {
+    width: calc(100% - 16px);
+    max-height: min(46dvh, 420px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .freedom-brand,
+  .freedom-actions,
+  .freedom-auth {
+    animation: none;
+  }
+}

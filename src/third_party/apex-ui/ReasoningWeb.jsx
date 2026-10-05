@@ -55,7 +55,7 @@ function nodeIdFromHelper(h) {
   return ({ create_visual: 'design', render_visual: 'design', visual: 'design' })[s] || s   // a visual lights Design
 }
 
-export default function ReasoningWeb({ state = 'standby', trace = null, mode = 'full', coreless = false, onSelect = null, light = false, roster = null, anchor = null, viewBox = null, traces = true, showLabels = true, motion = 'full' }) {
+export default function ReasoningWeb({ state = 'standby', trace = null, mode = 'full', coreless = false, onSelect = null, light = false, roster = null, anchor = null, viewBox = null, traces = true, showLabels = true, motion = 'full', label = 'CHIEF reasoning web' }) {
   const svgRef = useRef(null)
   const apiRef = useRef(null)
   const stateRef = useRef(state)
@@ -318,7 +318,7 @@ export default function ReasoningWeb({ state = 'standby', trace = null, mode = '
       <svg ref={svgRef} width="100%" height="100%" viewBox={viewBox || "0 0 680 480"}
            preserveAspectRatio="xMidYMid meet"
            style={{ fontFamily: 'inherit', pointerEvents: 'none', overflow: 'visible' }}
-           role="img" aria-label="CHIEF reasoning web" />
+           role="img" aria-label={label} />
     </>
   )
 }
