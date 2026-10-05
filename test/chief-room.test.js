@@ -342,3 +342,22 @@ test("the room source keeps conversation plain and navigation literal", () => {
   assert.equal(page.includes("freedomOs"), false);
   assert.equal(page.includes("ForwardFreedomDashboard"), false);
 });
+
+test("the apex conversation overlays the stage and does not form a panel", () => {
+  const root = process.cwd();
+  const page = readFileSync(path.join(root, "src/components/chief/ChiefPage.jsx"), "utf8");
+  const world = readFileSync(path.join(root, "src/third_party/apex-ui/ApexWorld.jsx"), "utf8");
+  const dock = readFileSync(path.join(root, "src/components/chief/ChiefVoiceDock.jsx"), "utf8");
+  const css = readFileSync(path.join(root, "src/global.css"), "utf8");
+  assert.match(page, /className="chief-apex-home"/);
+  assert.equal(page.includes("minHeight: 620"), false);
+  assert.match(world, /chief-apex-stage/);
+  assert.match(dock, /chief-apex-dock/);
+  assert.match(dock, /ChiefTranscript/);
+  assert.match(css, /\.chief-apex-stage \{\s*position: absolute;\s*inset: 0;/);
+  assert.match(css, /\.chief-voice-dock \{[\s\S]*position: absolute;/);
+  assert.match(css, /\.chief-voice-dock \{[\s\S]*background: transparent;/);
+  assert.match(css, /\.chief-voice-dock \.chief-earlier \{\s*display: none;/);
+  assert.equal(css.includes("rgba(5, 16, 28, 0.42)"), false);
+  assert.equal(css.includes("rgba(4, 14, 26, 0.72)"), false);
+});

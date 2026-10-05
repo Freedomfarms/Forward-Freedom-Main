@@ -850,18 +850,7 @@ export function ChiefPage({
 
   if (room === "home") {
     return (
-      <section
-        className="chief-apex-home"
-        aria-label="CHIEF"
-        style={{
-          position: "relative",
-          height: "100vh",
-          minHeight: 620,
-          overflow: "hidden",
-          background: "#04080f",
-          color: "#f0ede8",
-        }}
-      >
+      <section className="chief-apex-home" aria-label="CHIEF">
         <ApexClock />
         <ApexWorld
           orbState={visualStateForInteraction(interaction)}

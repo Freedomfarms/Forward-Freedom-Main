@@ -46,7 +46,7 @@ export default function ApexWorld({
 
   return (
     <div
-      className="apex-ui-root"
+      className="apex-ui-root chief-apex-stage"
       style={{ position: "absolute", inset: 0, overflow: "hidden", userSelect: "none" }}
     >
       <div
