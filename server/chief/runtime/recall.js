@@ -256,6 +256,7 @@ function isoTimestamp(value) {
 
 function projectConversation(row, query) {
   return {
+    session_id: row.id,
     sessionId: row.id,
     title: typeof row.title === "string" && row.title.trim() ? row.title.trim() : null,
     createdAt: isoTimestamp(row.createdAt),

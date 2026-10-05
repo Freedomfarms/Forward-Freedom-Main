@@ -188,7 +188,7 @@ function conversationOperateGuidance(tools) {
   }
   if (tools.has("conversation_delete")) {
     lines.push(
-      "When the user asks to delete a conversation, call conversation_delete. Deletion waits for explicit confirmation. Do not tell them to delete it in the interface."
+      "When the user asks to delete a conversation, call conversation_search if it is not the current one, then call conversation_delete with that result's session_id. sessionId is the same value. Deletion waits for explicit confirmation. Do not tell them to delete it in the interface."
     );
   }
   if (lines.length === 0) return "";
