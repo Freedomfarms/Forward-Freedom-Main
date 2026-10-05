@@ -42,11 +42,8 @@ import { ChiefStatus } from "./ChiefStatus.jsx";
 import { ChiefEarlierTurns, ChiefTranscript } from "./ChiefTranscript.jsx";
 import { ChiefSettings } from "./ChiefSettings.jsx";
 import { useChiefVoice } from "./useChiefVoice.js";
-import {
-  readChiefPreferences,
-  shouldSpeakReply,
-  writeChiefPreferences,
-} from "../../utils/chiefPreferences.js";
+import { readChiefPreferences, writeChiefPreferences } from "../../utils/chiefPreferences.js";
+import { speakCompletedReply } from "../../utils/chiefReplySpeech.js";
 
 const NARROW_NAV_QUERY = "(max-width: 1023px)";
 
@@ -506,10 +503,7 @@ export function ChiefPage({
     if (controller.signal.aborted || abortRef.current !== controller) return;
 
     const sessionIdNow = turn.sessionId;
-    let spoken = "";
-    if (turn.finished && turn.status !== CHIEF_STATUS.ERROR && !turn.error) {
-      spoken = typeof turn.streamText === "string" ? turn.streamText.trim() : "";
-    }
+    let historyAnswer = "";
     if (sessionIdNow && (turn.finished || turn.approval)) {
       try {
         const payload = await fetchChiefHistory(user, sessionIdNow);
@@ -518,13 +512,8 @@ export function ChiefPage({
         setMessages(historyMessages);
         setStreamText("");
         setNotFound(false);
-        if (
-          !spoken &&
-          turn.finished &&
-          turn.status !== CHIEF_STATUS.ERROR &&
-          !turn.error
-        ) {
-          spoken = currentTurn(historyMessages, "").answer.trim();
+        if (turn.finished && turn.status !== CHIEF_STATUS.ERROR && !turn.error) {
+          historyAnswer = currentTurn(historyMessages, "").answer;
         }
       } catch (error) {
         if (abortRef.current !== controller) return;
@@ -555,16 +544,16 @@ export function ChiefPage({
     }
     setBusyState(false);
     void refreshAccess();
-    if (
-      spoken &&
-      shouldSpeakReply({ source, preferences }) &&
-      turn.status !== CHIEF_STATUS.ERROR &&
-      !turn.error &&
-      !controller.signal.aborted &&
-      abortRef.current === controller
-    ) {
-      void voice.speakAnswer(spoken);
-    }
+    speakCompletedReply(voice, {
+      streamText: turn.streamText,
+      historyAnswer,
+      finished: turn.finished === true,
+      status: turn.status,
+      error: turn.error,
+      aborted: controller.signal.aborted || abortRef.current !== controller,
+      source,
+      preferences,
+    });
   }
 
   useEffect(() => {

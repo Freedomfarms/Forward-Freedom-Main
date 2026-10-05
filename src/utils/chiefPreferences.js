@@ -6,7 +6,8 @@ export const CHIEF_PREFERENCES_KEY = "chief.preferences";
 export const DEFAULT_CHIEF_PREFERENCES = Object.freeze({
   conversation: Object.freeze({
     voiceResponses: true,
-    autoSpeak: false,
+    autoSpeak: true,
+    speechChoice: true,
     showResponseText: true,
     enterToSend: true,
   }),
@@ -40,6 +41,7 @@ export function normalizeChiefPreferences(value) {
         DEFAULT_CHIEF_PREFERENCES.conversation.voiceResponses
       ),
       autoSpeak: bool(conversation.autoSpeak, DEFAULT_CHIEF_PREFERENCES.conversation.autoSpeak),
+      speechChoice: conversation.speechChoice === false ? false : true,
       showResponseText: bool(
         conversation.showResponseText,
         DEFAULT_CHIEF_PREFERENCES.conversation.showResponseText
@@ -86,7 +88,31 @@ export function readChiefPreferences(storage) {
   try {
     const raw = bin.getItem(CHIEF_PREFERENCES_KEY);
     if (!raw) return normalizeChiefPreferences(null);
-    return normalizeChiefPreferences(JSON.parse(raw));
+    const parsed = JSON.parse(raw);
+    const conversation =
+      parsed?.conversation && typeof parsed.conversation === "object" ? parsed.conversation : null;
+    // The first speech preference defaulted typed replies to silent. A saved
+    // autoSpeak:false without an explicit choice is that default, not an opt-out.
+    const legacySilent =
+      conversation?.autoSpeak === false &&
+      conversation.speechChoice !== true &&
+      conversation.speechChoice !== false;
+    const next = normalizeChiefPreferences(
+      legacySilent
+        ? {
+            ...parsed,
+            conversation: { ...conversation, autoSpeak: true, speechChoice: true },
+          }
+        : parsed
+    );
+    if (legacySilent) {
+      try {
+        bin.setItem(CHIEF_PREFERENCES_KEY, JSON.stringify(next));
+      } catch {
+        // The in-memory copy still speaks.
+      }
+    }
+    return next;
   } catch {
     return normalizeChiefPreferences(null);
   }

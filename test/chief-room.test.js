@@ -310,7 +310,12 @@ test("the room intelligence maps status onto the APEX orb and web", () => {
   assert.equal((page.match(/useChiefVoice\(/g) || []).length, 1);
   assert.match(page, /<ChiefSettings/);
   assert.match(page, /setSettingsOpen\(true\)/);
-  assert.match(page, /voice\.speakAnswer\(spoken\)/);
+  assert.match(page, /speakCompletedReply\(voice,/);
+  assert.equal((page.match(/speakCompletedReply\(/g) || []).length, 1);
+  assert.match(
+    readFileSync(path.join(root, "src/utils/chiefReplySpeech.js"), "utf8"),
+    /voice\.speakAnswer\(spoken\)/
+  );
   assert.match(page, /voice\.toggleListening\(\)/);
   assert.match(world, /0\.12/);
   assert.match(world, /staticCore=\{resolvedMotion === "off"\}/);
