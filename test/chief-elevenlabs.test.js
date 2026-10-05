@@ -506,7 +506,8 @@ test("the browser never receives the ElevenLabs key or a second chat path", () =
   assert.match(api, /voice_id: voiceId/);
   assert.match(api, /similarity_boost/);
   assert.match(read("src/components/chief/useChiefVoice.js"), /readVoiceSettings/);
-  assert.match(read("src/components/chief/ChiefPage.jsx"), /voice\.speakAnswer\(spoken\)/);
+  assert.match(read("src/components/chief/ChiefPage.jsx"), /speakCompletedReply\(voice,/);
+  assert.match(read("src/utils/chiefReplySpeech.js"), /voice\.speakAnswer\(spoken\)/);
   assert.match(read("src/components/chief/ChiefSettings.jsx"), /Style \(unavailable\)/);
   assert.match(read("server/chief/voice/elevenlabs.js"), /can_use_style false/);
   const page = read("src/components/chief/ChiefPage.jsx");
