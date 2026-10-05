@@ -391,6 +391,36 @@ test("the home screen keeps the latest exchange inside the full-bleed scene", ()
   assert.match(world, /apex-core-anchor/);
   assert.match(world, /apex-core-status/);
   assert.match(world, /<OrbStatusBar state=\{orbState\} \/>/);
+  assert.equal((page.match(/if \(room === "home"\)/g) || []).length, 1);
+  assert.equal((page.match(/className="chief-apex-stage"/g) || []).length, 1);
+  assert.equal((page.match(/className="chief-apex-dock"/g) || []).length, 1);
+  assert.doesNotMatch(world, /chief-apex-stage/);
+  assert.doesNotMatch(page, /onCoreActivate/);
+  assert.doesNotMatch(world, /onCoreActivate/);
+  assert.doesNotMatch(world, /showStatus/);
+  assert.match(page, /const homeClass/);
+  assert.match(page, /className=\{homeClass\}/);
+  assert.match(page, /caption=\{voiceNote\}/);
+  const homeDock = page.slice(page.indexOf("const homeDock"), page.indexOf('if (room === "home")'));
+  assert.match(homeDock, /<ChiefTranscript/);
+  assert.match(homeDock, /turnView\.userLine/);
+  assert.match(homeDock, /turnView\.answer/);
+  assert.match(homeDock, /retryTranscript/);
+  assert.match(homeDock, /<ChiefApprovalCard/);
+  assert.match(homeDock, /<ChiefComposer/);
+  assert.doesNotMatch(homeDock, /ChiefVoiceDock/);
+  const home = page.slice(page.indexOf('if (room === "home")'), page.indexOf("<ChiefSettings"));
+  const stage = home.slice(
+    home.indexOf('className="chief-apex-stage"'),
+    home.indexOf('className="chief-apex-dock"')
+  );
+  assert.match(stage, /<ApexWorld/);
+  assert.match(stage, /onCoreTap/);
+  assert.doesNotMatch(stage, /ChiefTranscript|ChiefComposer|ChiefApprovalCard/);
+  assert.match(home, /className="chief-apex-dock"[\s\S]*\{homeDock\}/);
+  assert.doesNotMatch(css, /--chief-ring-radius|--chief-below-ring|--chief-orb-scale/);
+  assert.doesNotMatch(css, /\.chief-voice-dock \.chief-earlier \{\s*display:\s*none/);
+  assert.match(css, /@media \(max-height: 820px\) \{\s*\.chief-apex-dock \{/);
   assert.match(css, /\.chief-apex-stage \{[^}]*position:\s*absolute;/);
   assert.match(css, /\.chief-apex-stage \{[^}]*inset:\s*0;/);
   assert.match(css, /\.chief-apex-dock \{[^}]*position:\s*absolute;/);

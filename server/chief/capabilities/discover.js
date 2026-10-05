@@ -2,7 +2,7 @@
 // The model, the system prompt, and the access sheet all read this object.
 // It does not grant, execute, or return credentials.
 
-import { readCodeConfig } from "../codeintel/policy.js";
+import { codeSourceAvailable } from "../resources/localCode.js";
 import { defaultConnectors } from "../connectors/registry.js";
 import { resolveWebSearchCredential } from "../tools/web-search.js";
 import { builtInCapabilities } from "./vocabulary.js";
@@ -185,7 +185,7 @@ export function discoverCapabilities({
       webCredentialPresent === null
         ? Boolean(resolveWebSearchCredential())
         : webCredentialPresent === true,
-    codeEnabled: codeEnabled === null ? readCodeConfig().enabled === true : codeEnabled === true,
+    codeEnabled: codeEnabled === null ? codeSourceAvailable() : codeEnabled === true,
   };
   const exposed = exposedSet(exposedTools);
   const capabilities = [];

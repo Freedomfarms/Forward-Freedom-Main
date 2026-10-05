@@ -21,6 +21,7 @@ import {
   RECALL_CATCH_UP_LIMIT,
   RECALL_DOCUMENT_MAX,
   RECALL_RETRIEVE_TOKENS,
+  RECALL_LIST_LIMIT,
   RECALL_SEARCH_LIMIT,
   RECALL_SNIPPET_MAX,
   buildHistoricalBlock,
@@ -214,6 +215,84 @@ test("date bounds filter, reject invalid bounds, and do not index on an invalid 
   assert.equal(
     before.conversations.some((row) => row.sessionId === "later"),
     false
+  );
+});
+
+test("an empty query lists conversations by date without a keyword", async () => {
+  const store = new MemoryCheckpointStore();
+  await seed(store, "user-a", "early", {
+    title: "Morning",
+    updatedAt: "2026-09-01T12:00:00.000Z",
+    recallDocument: "unrelated orchard notes",
+  });
+  await seed(store, "user-a", "later", {
+    title: "Evening",
+    updatedAt: "2026-09-20T12:00:00.000Z",
+    recallDocument: "greenhouse notes",
+  });
+  await seed(store, "user-a", "sched", {
+    title: "Scheduled",
+    updatedAt: "2026-09-21T12:00:00.000Z",
+    context: { origin: "schedule" },
+    recallDocument: "greenhouse notes",
+  });
+  await seed(store, "user-b", "theirs", {
+    title: "Theirs",
+    updatedAt: "2026-09-20T12:00:00.000Z",
+    recallDocument: "greenhouse notes",
+  });
+  for (let index = 0; index < 6; index += 1) {
+    await seed(store, "user-a", `extra-${index}`, {
+      title: `Extra ${index}`,
+      updatedAt: new Date(Date.UTC(2026, 8, 21, index)).toISOString(),
+      recallDocument: `note ${index}`,
+    });
+  }
+
+  const listed = await store.searchConversations("user-a", {
+    query: "   ",
+    after: "2026-09-15T00:00:00.000Z",
+    before: "2026-09-30T00:00:00.000Z",
+  });
+  assert.equal(listed.error, undefined);
+  assert.equal(
+    listed.conversations.some((row) => row.sessionId === "later"),
+    true
+  );
+  assert.equal(
+    listed.conversations.some((row) => row.sessionId === "early" || row.sessionId === "sched"),
+    false
+  );
+  assert.ok(listed.conversations.length > RECALL_SEARCH_LIMIT);
+  assert.ok(listed.conversations.length <= RECALL_LIST_LIMIT);
+  assert.equal(listed.conversations[0].sessionId, "extra-5");
+
+  const other = await store.searchConversations("user-b", { query: "" });
+  assert.deepEqual(
+    other.conversations.map((row) => row.sessionId),
+    ["theirs"]
+  );
+  const symbols = await store.searchConversations("user-a", { query: "???" });
+  assert.equal(symbols.error, "query is required");
+
+  const { executor } = recallTools(store);
+  const throughTool = await executor.execute(
+    {
+      callId: "list",
+      name: "conversation_search",
+      arguments: { after: "2026-09-15T00:00:00.000Z", before: "2026-09-30T00:00:00.000Z" },
+    },
+    { userId: "user-a", sessionId: "extra-0", agentId: "chief" }
+  );
+  const body = JSON.parse(throughTool.output);
+  assert.equal(throughTool.isError, false);
+  assert.equal(
+    body.conversations.some((row) => row.sessionId === "theirs" || row.sessionId === "extra-0"),
+    false
+  );
+  assert.equal(
+    body.conversations.some((row) => row.sessionId === "later"),
+    true
   );
 });
 

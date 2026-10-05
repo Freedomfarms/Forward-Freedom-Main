@@ -4,6 +4,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
+import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 
 import { Effect } from "../server/chief/capabilities/descriptor.js";
 import { createGithubReader } from "../server/chief/codeintel/github.js";
@@ -480,4 +483,112 @@ test("code intelligence has no write, deploy, or shell surface", () => {
     "search",
     "tree",
   ]);
+});
+
+test("a local checkout is readable when no GitHub token is configured", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "chief-code-"));
+  try {
+    await mkdir(path.join(root, "server"), { recursive: true });
+    await writeFile(
+      path.join(root, "server", "tick.js"),
+      'export const marker = "local-read-marker";\n'
+    );
+    await writeFile(path.join(root, ".env"), "TOKEN=super-secret\n");
+    await symlink(path.join(root, ".env"), path.join(root, "server", "linked.js"));
+    const intel = createCodeIntel({
+      env: {
+        CHIEF_CODE_READ_TOKEN: "",
+        CHIEF_CODE_LOCAL_ROOT: root,
+        CHIEF_CODE_REPOSITORY: "Freedomfarms/Forward-Freedom-Main",
+        CHIEF_CODE_DEFAULT_REF: "main",
+      },
+      fetchImpl: async () => {
+        throw new Error("fetch must not run");
+      },
+    });
+    assert.equal(intel.enabled, true);
+    const ready = await tooling(intel, [Capability.CODE_READ]);
+    const context = { userId: "user-a", agentId: "chief" };
+
+    const tree = await ready.executor.execute(
+      { callId: "t", name: "code_tree", arguments: {} },
+      context
+    );
+    assert.equal(tree.isError, false);
+    const listed = JSON.parse(tree.output);
+    assert.ok(
+      listed.entries.some((entry) => entry.path === "server/tick.js" && entry.type === "file")
+    );
+    assert.equal(tree.output.includes(".env"), false);
+    assert.equal(tree.output.includes("linked.js"), false);
+    assert.equal(tree.output.includes("super-secret"), false);
+
+    const read = await ready.executor.execute(
+      { callId: "r", name: "code_read", arguments: { path: "server/tick.js" } },
+      context
+    );
+    assert.equal(read.isError, false);
+    assert.match(JSON.parse(read.output).content, /local-read-marker/);
+
+    const found = await ready.executor.execute(
+      { callId: "s", name: "code_search", arguments: { query: "local-read-marker" } },
+      context
+    );
+    assert.equal(found.isError, false);
+    assert.ok(JSON.parse(found.output).matches.some((match) => match.path === "server/tick.js"));
+
+    const secret = await ready.executor.execute(
+      { callId: "e", name: "code_read", arguments: { path: ".env" } },
+      context
+    );
+    assert.equal(secret.isError, true);
+    assert.match(secret.output, /not available/);
+    assert.equal(secret.output.includes("super-secret"), false);
+
+    const escape = await ready.executor.execute(
+      { callId: "x", name: "code_read", arguments: { path: "../tick.js" } },
+      context
+    );
+    assert.equal(escape.isError, true);
+
+    const link = await ready.executor.execute(
+      { callId: "l", name: "code_read", arguments: { path: "server/linked.js" } },
+      context
+    );
+    assert.equal(link.isError, true);
+    assert.equal(link.output.includes("super-secret"), false);
+
+    const otherRef = await ready.executor.execute(
+      { callId: "f", name: "code_read", arguments: { path: "server/tick.js", ref: "other" } },
+      context
+    );
+    assert.equal(otherRef.isError, true);
+    assert.match(otherRef.output, /not available from the local checkout/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a configured token still reads GitHub and not the local checkout", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "chief-code-"));
+  try {
+    await writeFile(path.join(root, "server.js"), "export const marker = 'LOCAL_ONLY';\n");
+    const github = githubDouble({ files: { "server/index.js": { content: SOURCE } } });
+    const intel = createCodeIntel({
+      env: { ...codeEnv(), CHIEF_CODE_LOCAL_ROOT: root },
+      fetchImpl: github.fetchImpl,
+    });
+    const ready = await tooling(intel, [Capability.CODE_READ]);
+    const result = await ready.executor.execute(
+      { callId: "r", name: "code_read", arguments: { path: "server/index.js" } },
+      { userId: "user-a", agentId: "chief" }
+    );
+    assert.equal(result.isError, false);
+    assert.match(result.output, /runChiefTick/);
+    assert.equal(result.output.includes("LOCAL_ONLY"), false);
+    assert.equal(github.calls.length, 1);
+    assert.equal(github.calls[0].method, "GET");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });

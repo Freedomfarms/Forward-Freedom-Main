@@ -1,6 +1,7 @@
 // Read-only view of the configured Freedom OS repository.
 // tree, read, and search are the whole API. Nothing here writes or executes.
 
+import { createLocalCodeReader, resolveLocalCodeRoot } from "../resources/localCode.js";
 import { createGithubReader } from "./github.js";
 import {
   CODE_LIMITS,
@@ -19,6 +20,7 @@ const INVALID_REF = "invalid ref";
 
 export function createCodeIntel({ env = process.env, fetchImpl = globalThis.fetch } = {}) {
   const config = readCodeConfig(env);
+  const localRoot = config.enabled ? null : resolveLocalCodeRoot(env);
   const reader = config.enabled
     ? createGithubReader({
         token: config.token,
@@ -26,7 +28,9 @@ export function createCodeIntel({ env = process.env, fetchImpl = globalThis.fetc
         repo: config.repo,
         fetchImpl,
       })
-    : null;
+    : localRoot
+      ? createLocalCodeReader({ root: localRoot, repository: config.repository })
+      : null;
 
   function meta(operation, fields, started, extra = {}) {
     return {
@@ -47,6 +51,15 @@ export function createCodeIntel({ env = process.env, fetchImpl = globalThis.fetc
     };
   }
 
+  function rejectLocalRef(operation, fields, started, safeRef) {
+    if (!reader?.local || safeRef === config.defaultRef) return null;
+    return {
+      isError: true,
+      body: { error: "that ref is not available from the local checkout" },
+      traceMeta: meta(operation, fields, started),
+    };
+  }
+
   async function tree({ path, ref, signal } = {}) {
     const started = Date.now();
     const fields = { path: "", ref: "" };
@@ -60,6 +73,8 @@ export function createCodeIntel({ env = process.env, fetchImpl = globalThis.fetc
       };
     }
     fields.ref = safeRef;
+    const localRef = rejectLocalRef("tree", fields, started, safeRef);
+    if (localRef) return localRef;
     const prefix = normalizeRepoPath(path);
     if (prefix == null) {
       return {
@@ -120,6 +135,8 @@ export function createCodeIntel({ env = process.env, fetchImpl = globalThis.fetc
       };
     }
     fields.ref = safeRef;
+    const localRef = rejectLocalRef("read", fields, started, safeRef);
+    if (localRef) return localRef;
     const safePath = normalizeRepoPath(path, { required: true });
     if (!safePath) {
       return {
@@ -258,6 +275,8 @@ export function createCodeIntel({ env = process.env, fetchImpl = globalThis.fetc
       };
     }
     fields.ref = safeRef;
+    const localRef = rejectLocalRef("search", fields, started, safeRef);
+    if (localRef) return localRef;
     const prefix = normalizeRepoPath(path);
     if (prefix == null || (prefix && isProtectedPath(prefix))) {
       return {
@@ -267,13 +286,17 @@ export function createCodeIntel({ env = process.env, fetchImpl = globalThis.fetc
       };
     }
     fields.path = prefix;
-    if (safeRef !== config.defaultRef) {
+    if (!reader.local && safeRef !== config.defaultRef) {
       return searchPaths({ safeQuery, prefix, safeRef, fields, started, signal });
     }
-    const qualifier = `"${safeQuery.replace(/["\\]/g, " ")}" repo:${config.owner}/${config.repo}${
-      prefix ? ` path:${prefix}` : ""
-    }`;
-    const response = await reader.search(qualifier, { signal });
+    const response = reader.local
+      ? await reader.search(safeQuery, { prefix, signal })
+      : await reader.search(
+          `"${safeQuery.replace(/["\\]/g, " ")}" repo:${config.owner}/${config.repo}${
+            prefix ? ` path:${prefix}` : ""
+          }`,
+          { signal }
+        );
     if (!response.ok) return remoteFailure("search", fields, started, response);
     const items = Array.isArray(response.body?.items) ? response.body.items : [];
     const matches = [];
@@ -369,7 +392,7 @@ export function createCodeIntel({ env = process.env, fetchImpl = globalThis.fetc
   }
 
   return {
-    enabled: config.enabled,
+    enabled: Boolean(reader),
     repository: config.repository,
     defaultRef: config.defaultRef,
     tree,

@@ -2,6 +2,7 @@
 // chooses the repository and the read client.
 
 import { Capability } from "../core/capabilities.js";
+import { readResource } from "../resources/access.js";
 import { BaseTool } from "../tools/spec.js";
 import { createCodeIntel } from "./index.js";
 
@@ -32,6 +33,22 @@ function requireUser(context) {
     output: JSON.stringify({ error: "authenticated user is required" }),
     isError: true,
   };
+}
+
+async function runCodeRead(operation, context, retrieve) {
+  const missing = requireUser(context);
+  if (missing) return missing;
+  const result = await readResource({
+    resource: "code",
+    operation,
+    policy: context?.capabilityPolicy ?? null,
+    agentId: context?.agentId,
+    retrieve,
+  });
+  if (result?.isError === true && result.body == null) {
+    return { output: JSON.stringify({ error: result.error || "unknown read" }), isError: true };
+  }
+  return toolResult(result);
 }
 
 export function createCodeTools(codeintel = createCodeIntel()) {
@@ -65,8 +82,8 @@ function codeTree(codeintel) {
       if (missing) return missing;
       const args = argumentsOf(params, new Set(["path", "ref"]));
       if (args.error) return { output: JSON.stringify({ error: args.error }), isError: true };
-      return toolResult(
-        await codeintel.tree({ path: params?.path, ref: params?.ref, signal: context.signal })
+      return runCodeRead("list", context, () =>
+        codeintel.tree({ path: params?.path, ref: params?.ref, signal: context.signal })
       );
     },
   });
@@ -102,8 +119,8 @@ function codeRead(codeintel) {
       if (missing) return missing;
       const args = argumentsOf(params, new Set(["path", "ref", "start_line", "end_line"]));
       if (args.error) return { output: JSON.stringify({ error: args.error }), isError: true };
-      return toolResult(
-        await codeintel.read({
+      return runCodeRead("get", context, () =>
+        codeintel.read({
           path: params?.path,
           ref: params?.ref,
           startLine: params?.start_line,
@@ -147,8 +164,8 @@ function codeSearch(codeintel) {
       if (missing) return missing;
       const args = argumentsOf(params, new Set(["query", "path", "ref"]));
       if (args.error) return { output: JSON.stringify({ error: args.error }), isError: true };
-      return toolResult(
-        await codeintel.search({
+      return runCodeRead("query", context, () =>
+        codeintel.search({
           query: params?.query,
           path: params?.path,
           ref: params?.ref,

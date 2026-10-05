@@ -14,6 +14,7 @@ import { compactedSummary, isCompactedMessage } from "./compaction.js";
 export const RECALL_DOCUMENT_MAX = 2_000;
 export const RECALL_SNIPPET_MAX = 240;
 export const RECALL_SEARCH_LIMIT = 5;
+export const RECALL_LIST_LIMIT = 20;
 export const RECALL_OFFSET_MAX = 20;
 export const RECALL_CATCH_UP_LIMIT = 20;
 export const RECALL_RETRIEVE_TOKENS = 1_200;
@@ -200,11 +201,11 @@ function parseDateBound(value, label) {
   return { date };
 }
 
-function clampLimit(value) {
-  if (value == null || value === "") return RECALL_SEARCH_LIMIT;
+function clampLimit(value, cap) {
+  if (value == null || value === "") return cap;
   const number = Number(value);
-  if (!Number.isFinite(number)) return RECALL_SEARCH_LIMIT;
-  return Math.min(RECALL_SEARCH_LIMIT, Math.max(1, Math.floor(number)));
+  if (!Number.isFinite(number)) return cap;
+  return Math.min(cap, Math.max(1, Math.floor(number)));
 }
 
 function clampOffset(value) {
@@ -215,8 +216,12 @@ function clampOffset(value) {
 }
 
 export function parseSearchOptions(options = {}) {
+  if (options.query != null && typeof options.query !== "string") {
+    return { error: "query is required" };
+  }
   const query = typeof options.query === "string" ? options.query.trim() : "";
-  if (!query || uniqueTokens(query).length === 0) return { error: "query is required" };
+  const list = query.length === 0;
+  if (!list && uniqueTokens(query).length === 0) return { error: "query is required" };
   const after = parseDateBound(options.after, "after");
   if (after.error) return after;
   const before = parseDateBound(options.before, "before");
@@ -229,16 +234,17 @@ export function parseSearchOptions(options = {}) {
   }
   return {
     query,
+    list,
     after: after.date,
     before: before.date,
     includeArchived: options.includeArchived !== false,
-    limit: clampLimit(options.limit),
+    limit: clampLimit(options.limit, list ? RECALL_LIST_LIMIT : RECALL_SEARCH_LIMIT),
     offset: clampOffset(options.offset),
     excludeSessionId:
       typeof options.excludeSessionId === "string" && options.excludeSessionId
         ? options.excludeSessionId
         : null,
-    useRecency: !after.date && !before.date,
+    useRecency: !list && !after.date && !before.date,
   };
 }
 
@@ -269,9 +275,10 @@ export function rankRecallRows(rows, parsed, now = new Date()) {
     const updated = new Date(row.updatedAt ?? 0);
     if (parsed.after && updated < parsed.after) continue;
     if (parsed.before && updated > parsed.before) continue;
-    const lexical = lexicalRank(parsed.query, row.recallDocument ?? "");
-    if (lexical <= 0) continue;
-    const titleMatch = lexicalRank(parsed.query, row.title ?? "") > 0;
+    const list = parsed.list === true;
+    const lexical = list ? 0 : lexicalRank(parsed.query, row.recallDocument ?? "");
+    if (!list && lexical <= 0) continue;
+    const titleMatch = list ? false : lexicalRank(parsed.query, row.title ?? "") > 0;
     const ageMs = Math.max(0, now.getTime() - updated.getTime());
     matched.push({
       row,
