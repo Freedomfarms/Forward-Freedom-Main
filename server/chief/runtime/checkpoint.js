@@ -682,8 +682,16 @@ async function queryRecallDocuments(tx, userId, parsed) {
     conditions.push(Prisma.sql`"id" <> ${parsed.excludeSessionId}`);
   }
   if (!parsed.includeArchived) conditions.push(Prisma.sql`"archivedAt" IS NULL`);
-  if (parsed.after) conditions.push(Prisma.sql`"updatedAt" >= ${parsed.after}`);
-  if (parsed.before) conditions.push(Prisma.sql`"updatedAt" <= ${parsed.before}`);
+  // The driver binds JavaScript dates as text. Cast them so timestamp
+  // comparison does not depend on an untyped parameter. The 0.0 literals
+  // keep the score parameters numeric: an integer 0 makes Postgres read
+  // 0.5 as an integer and reject every search.
+  if (parsed.after) {
+    conditions.push(Prisma.sql`"updatedAt" >= CAST(${parsed.after} AS timestamp)`);
+  }
+  if (parsed.before) {
+    conditions.push(Prisma.sql`"updatedAt" <= CAST(${parsed.before} AS timestamp)`);
+  }
   const rows = await tx.$queryRaw`
     SELECT
       "id",
@@ -697,7 +705,7 @@ async function queryRecallDocuments(tx, userId, parsed) {
     ORDER BY (
       CASE
         WHEN ${parsed.list === true}
-        THEN 0
+        THEN 0.0
         ELSE ts_rank(
           to_tsvector('simple', coalesce("recallDocument", '')),
           plainto_tsquery('simple', ${parsed.list ? " " : parsed.query})
@@ -705,14 +713,14 @@ async function queryRecallDocuments(tx, userId, parsed) {
           + CASE
               WHEN to_tsvector('simple', coalesce("title", '')) @@ plainto_tsquery('simple', ${parsed.list ? " " : parsed.query})
               THEN ${RECALL_TITLE_BOOST}
-              ELSE 0
+              ELSE 0.0
             END
           + CASE
               WHEN ${parsed.useRecency}
               THEN ${RECALL_RECENCY_MAX} * exp(
                 -ln(2) * EXTRACT(EPOCH FROM (NOW() - "updatedAt")) / ${halfLifeSeconds}
               )
-              ELSE 0
+              ELSE 0.0
             END
       END
     ) DESC, "updatedAt" DESC, "id" ASC

@@ -8,6 +8,7 @@
 // registered.
 
 import { countTokens } from "../context/inject.js";
+import { resolveUserTimeZone } from "../../platform/timezone.js";
 import { fencesOutput, scanInjection } from "../security/injection.js";
 import { compactedSummary, isCompactedMessage } from "./compaction.js";
 
@@ -187,18 +188,255 @@ export function recallSnippet(document, query, max = RECALL_SNIPPET_MAX) {
   return snippet.length > max ? snippet.slice(0, max).trim() : snippet;
 }
 
-function parseDateBound(value, label) {
+function wallClockParts(instant, timeZone) {
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hourCycle: "h23",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+  const bag = {};
+  for (const part of fmt.formatToParts(instant)) {
+    if (part.type !== "literal") bag[part.type] = part.value;
+  }
+  let year = Number(bag.year);
+  let month = Number(bag.month);
+  let day = Number(bag.day);
+  let hour = Number(bag.hour);
+  const minute = Number(bag.minute);
+  const second = Number(bag.second);
+  if (hour === 24) {
+    hour = 0;
+    const next = addCalendarDays(year, month, day, 1);
+    year = next.year;
+    month = next.month;
+    day = next.day;
+  }
+  return { year, month, day, hour, minute, second };
+}
+
+function addCalendarDays(year, month, day, delta) {
+  const utc = new Date(Date.UTC(year, month - 1, day));
+  utc.setUTCDate(utc.getUTCDate() + delta);
+  return { year: utc.getUTCFullYear(), month: utc.getUTCMonth() + 1, day: utc.getUTCDate() };
+}
+
+function isValidYmd(year, month, day) {
+  if (month < 1 || month > 12 || day < 1 || day > 31) return false;
+  const probe = new Date(Date.UTC(year, month - 1, day));
+  return (
+    probe.getUTCFullYear() === year &&
+    probe.getUTCMonth() === month - 1 &&
+    probe.getUTCDate() === day
+  );
+}
+
+function timeZoneOffsetMs(instant, timeZone) {
+  const parts = wallClockParts(instant, timeZone);
+  const millisecond = ((instant.getTime() % 1000) + 1000) % 1000;
+  const asUtc = Date.UTC(
+    parts.year,
+    parts.month - 1,
+    parts.day,
+    parts.hour,
+    parts.minute,
+    parts.second,
+    millisecond
+  );
+  return asUtc - instant.getTime();
+}
+
+function zonedDateTimeToUtc(year, month, day, hour, minute, second, millisecond, timeZone) {
+  const guess = new Date(Date.UTC(year, month - 1, day, hour, minute, second, millisecond));
+  const firstOffset = timeZoneOffsetMs(guess, timeZone);
+  let utc = new Date(guess.getTime() - firstOffset);
+  const secondOffset = timeZoneOffsetMs(utc, timeZone);
+  if (firstOffset !== secondOffset) utc = new Date(guess.getTime() - secondOffset);
+  return utc;
+}
+
+function startOfLocalDay(year, month, day, timeZone) {
+  return zonedDateTimeToUtc(year, month, day, 0, 0, 0, 0, timeZone);
+}
+
+function endOfLocalDay(year, month, day, timeZone) {
+  const next = addCalendarDays(year, month, day, 1);
+  return new Date(startOfLocalDay(next.year, next.month, next.day, timeZone).getTime() - 1);
+}
+
+function localToday(now, timeZone) {
+  const parts = wallClockParts(now, timeZone);
+  return { year: parts.year, month: parts.month, day: parts.day };
+}
+
+function dayWindow(year, month, day, timeZone) {
+  return {
+    start: startOfLocalDay(year, month, day, timeZone),
+    end: endOfLocalDay(year, month, day, timeZone),
+  };
+}
+
+function isoMonday(year, month, day) {
+  const weekday = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+  const delta = weekday === 0 ? -6 : 1 - weekday;
+  return addCalendarDays(year, month, day, delta);
+}
+
+function monthWindow(year, month, timeZone) {
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return {
+    start: startOfLocalDay(year, month, 1, timeZone),
+    end: endOfLocalDay(year, month, lastDay, timeZone),
+  };
+}
+
+function shiftMonth(year, month, delta) {
+  const utc = new Date(Date.UTC(year, month - 1 + delta, 1));
+  return { year: utc.getUTCFullYear(), month: utc.getUTCMonth() + 1 };
+}
+
+function wholeDays(value) {
+  if (!/^\d+$/.test(value)) return null;
+  const number = Number(value);
+  if (!Number.isInteger(number) || number > 36500) return null;
+  return number;
+}
+
+function invalidDate(label) {
+  return { error: `${label} is not a valid date` };
+}
+
+function parseAbsoluteOrCivil(text, label, timeZone) {
+  if (/^\d{4}-\d{2}-\d{2}T/.test(text) && /(?:Z|[+-]\d{2}:?\d{2})$/i.test(text)) {
+    const date = new Date(text);
+    if (Number.isNaN(date.getTime())) return invalidDate(label);
+    return { date };
+  }
+  const dateOnly = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (dateOnly) {
+    const year = Number(dateOnly[1]);
+    const month = Number(dateOnly[2]);
+    const day = Number(dateOnly[3]);
+    if (!isValidYmd(year, month, day)) return invalidDate(label);
+    return {
+      date:
+        label === "before"
+          ? endOfLocalDay(year, month, day, timeZone)
+          : startOfLocalDay(year, month, day, timeZone),
+    };
+  }
+  const local = text.match(
+    /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?$/
+  );
+  if (!local) return null;
+  const year = Number(local[1]);
+  const month = Number(local[2]);
+  const day = Number(local[3]);
+  const hour = Number(local[4]);
+  const minute = Number(local[5]);
+  const second = Number(local[6] ?? "0");
+  const fraction = local[7] ?? "";
+  const millisecond = fraction ? Number(fraction.padEnd(3, "0")) : 0;
+  if (!isValidYmd(year, month, day) || hour > 23 || minute > 59 || second > 59) {
+    return invalidDate(label);
+  }
+  return {
+    date: zonedDateTimeToUtc(year, month, day, hour, minute, second, millisecond, timeZone),
+  };
+}
+
+function parseRelativeBound(text, label, { timeZone, now }) {
+  const phrase = text
+    .trim()
+    .toLowerCase()
+    .replace(/[.?!]+$/g, "")
+    .replace(/\s+/g, " ");
+  const today = localToday(now, timeZone);
+  if (phrase === "today")
+    return edge(dayWindow(today.year, today.month, today.day, timeZone), label);
+  if (phrase === "yesterday") {
+    const day = addCalendarDays(today.year, today.month, today.day, -1);
+    return edge(dayWindow(day.year, day.month, day.day, timeZone), label);
+  }
+  if (phrase === "last week" || phrase === "this week") {
+    const monday = isoMonday(today.year, today.month, today.day);
+    const startDay =
+      phrase === "last week" ? addCalendarDays(monday.year, monday.month, monday.day, -7) : monday;
+    const endDay =
+      phrase === "last week"
+        ? addCalendarDays(monday.year, monday.month, monday.day, -1)
+        : addCalendarDays(monday.year, monday.month, monday.day, 6);
+    return edge(
+      {
+        start: startOfLocalDay(startDay.year, startDay.month, startDay.day, timeZone),
+        end: endOfLocalDay(endDay.year, endDay.month, endDay.day, timeZone),
+      },
+      label
+    );
+  }
+  if (phrase === "last month" || phrase === "this month") {
+    const month = phrase === "last month" ? shiftMonth(today.year, today.month, -1) : today;
+    return edge(monthWindow(month.year, month.month, timeZone), label);
+  }
+  const older = phrase.match(/^(?:older than|more than|over) (\d+) days?(?: ago| old)?$/);
+  if (older) {
+    const days = wholeDays(older[1]);
+    if (days == null) return invalidDate(label);
+    if (label !== "before") return invalidDate(label);
+    const day = addCalendarDays(today.year, today.month, today.day, -days);
+    const start = startOfLocalDay(day.year, day.month, day.day, timeZone);
+    return { date: new Date(start.getTime() - 1) };
+  }
+  const ago = phrase.match(/^(\d+) days? ago$/);
+  if (ago) {
+    const days = wholeDays(ago[1]);
+    if (days == null) return invalidDate(label);
+    const day = addCalendarDays(today.year, today.month, today.day, -days);
+    return edge(dayWindow(day.year, day.month, day.day, timeZone), label);
+  }
+  const recent = phrase.match(/^(?:last|past) (\d+) days?$/);
+  if (recent) {
+    const days = wholeDays(recent[1]);
+    if (days == null || days < 1) return invalidDate(label);
+    const startDay = addCalendarDays(today.year, today.month, today.day, -(days - 1));
+    return edge(
+      {
+        start: startOfLocalDay(startDay.year, startDay.month, startDay.day, timeZone),
+        end: endOfLocalDay(today.year, today.month, today.day, timeZone),
+      },
+      label
+    );
+  }
+  return null;
+}
+
+function edge(range, label) {
+  return { date: label === "before" ? range.end : range.start };
+}
+
+function parseDateBound(value, label, { timeZone, now }) {
   if (value == null || value === "") return { date: null };
   if (value instanceof Date) {
-    if (Number.isNaN(value.getTime())) return { error: `${label} is not a valid date` };
+    if (Number.isNaN(value.getTime())) return invalidDate(label);
     return { date: value };
   }
-  if (typeof value !== "string" && typeof value !== "number") {
-    return { error: `${label} is not a valid date` };
+  if (typeof value === "number") {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return invalidDate(label);
+    return { date };
   }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return { error: `${label} is not a valid date` };
-  return { date };
+  if (typeof value !== "string") return invalidDate(label);
+  const text = value.trim();
+  if (!text) return { date: null };
+  const absolute = parseAbsoluteOrCivil(text, label, timeZone);
+  if (absolute) return absolute;
+  const relative = parseRelativeBound(text, label, { timeZone, now });
+  if (relative) return relative;
+  return invalidDate(label);
 }
 
 function clampLimit(value, cap) {
@@ -222,9 +460,12 @@ export function parseSearchOptions(options = {}) {
   const query = typeof options.query === "string" ? options.query.trim() : "";
   const list = query.length === 0;
   if (!list && uniqueTokens(query).length === 0) return { error: "query is required" };
-  const after = parseDateBound(options.after, "after");
+  const timeZone = resolveUserTimeZone(options.timeZone ?? options.timezone);
+  const now =
+    options.now instanceof Date && !Number.isNaN(options.now.getTime()) ? options.now : new Date();
+  const after = parseDateBound(options.after, "after", { timeZone, now });
   if (after.error) return after;
-  const before = parseDateBound(options.before, "before");
+  const before = parseDateBound(options.before, "before", { timeZone, now });
   if (before.error) return before;
   if (after.date && before.date && after.date.getTime() > before.date.getTime()) {
     return { error: "after must be earlier than or equal to before" };

@@ -180,7 +180,7 @@ test("date bounds filter, reject invalid bounds, and do not index on an invalid 
 
   const invalid = await store.searchConversations("user-a", {
     query: "jarvis",
-    after: "yesterday",
+    after: "not-a-date",
   });
   assert.equal(invalid.error, "after is not a valid date");
   assert.equal(store.sessions.get("stale").recallDocument, null);
@@ -219,6 +219,261 @@ test("date bounds filter, reject invalid bounds, and do not index on an invalid 
     before.conversations.some((row) => row.sessionId === "later"),
     false
   );
+});
+
+test("relative dates, ranges, and timezone boundaries stay owner-scoped", async () => {
+  const store = new MemoryCheckpointStore();
+  const timeZone = "America/New_York";
+  const now = new Date("2026-10-05T20:00:00.000Z");
+  const bounds = { timeZone, now };
+  const rows = [
+    ["ancient", "2026-09-20T15:00:00.000Z"],
+    ["just-old", "2026-10-03T03:59:59.999Z"],
+    ["two-days", "2026-10-03T04:00:00.000Z"],
+    ["oct3-evening", "2026-10-04T03:30:00.000Z"],
+    ["yesterday", "2026-10-04T16:00:00.000Z"],
+    ["today", "2026-10-05T15:00:00.000Z"],
+    ["last-monday", "2026-09-28T14:00:00.000Z"],
+    ["before-last-week", "2026-09-28T03:59:59.999Z"],
+  ];
+  for (const [id, updatedAt] of rows) {
+    await seed(store, "user-a", id, {
+      title: id,
+      updatedAt,
+      recallDocument: `${id} notes`,
+    });
+  }
+  await seed(store, "user-a", "current", {
+    title: "Current",
+    updatedAt: "2026-09-01T12:00:00.000Z",
+    recallDocument: "current notes",
+  });
+  await seed(store, "user-a", "scheduled", {
+    title: "Scheduled",
+    updatedAt: "2026-09-01T12:00:00.000Z",
+    context: { origin: "schedule" },
+    recallDocument: "scheduled notes",
+  });
+  await seed(store, "user-b", "theirs", {
+    title: "Theirs",
+    updatedAt: "2026-09-01T12:00:00.000Z",
+    recallDocument: "their notes",
+  });
+
+  const older = await store.searchConversations("user-a", {
+    ...bounds,
+    before: "older than 2 days",
+    excludeSessionId: "current",
+  });
+  assert.deepEqual(older.conversations.map((row) => row.sessionId).sort(), [
+    "ancient",
+    "before-last-week",
+    "just-old",
+    "last-monday",
+  ]);
+  assert.equal(
+    older.conversations.some((row) => row.sessionId === "theirs" || row.sessionId === "scheduled"),
+    false
+  );
+
+  const olderFive = await store.searchConversations("user-a", {
+    ...bounds,
+    before: "older than 5 days",
+    excludeSessionId: "current",
+  });
+  assert.deepEqual(olderFive.conversations.map((row) => row.sessionId).sort(), [
+    "ancient",
+    "before-last-week",
+    "last-monday",
+  ]);
+
+  const yesterdayOnly = await store.searchConversations("user-a", {
+    ...bounds,
+    after: "yesterday",
+    before: "yesterday",
+  });
+  assert.deepEqual(
+    yesterdayOnly.conversations.map((row) => row.sessionId),
+    ["yesterday"]
+  );
+
+  const lastWeek = await store.searchConversations("user-a", {
+    ...bounds,
+    after: "last week",
+    before: "last week",
+  });
+  assert.deepEqual(lastWeek.conversations.map((row) => row.sessionId).sort(), [
+    "just-old",
+    "last-monday",
+    "oct3-evening",
+    "two-days",
+    "yesterday",
+  ]);
+
+  const calendarDay = await store.searchConversations("user-a", {
+    ...bounds,
+    after: "2026-10-03",
+    before: "2026-10-03",
+  });
+  assert.deepEqual(calendarDay.conversations.map((row) => row.sessionId).sort(), [
+    "oct3-evening",
+    "two-days",
+  ]);
+
+  const empty = await store.searchConversations("user-a", {
+    ...bounds,
+    after: "2026-12-01",
+    before: "2026-12-02",
+  });
+  assert.deepEqual(empty.conversations, []);
+
+  const reversedPhrase = await store.searchConversations("user-a", {
+    ...bounds,
+    query: "notes",
+    after: "older than 2 days",
+  });
+  assert.equal(reversedPhrase.error, "after is not a valid date");
+  assert.equal(store.sessions.get("current").recallDocument, "current notes");
+
+  const dstNow = new Date("2026-11-02T15:00:00.000Z");
+  await seed(store, "user-a", "dst-yesterday", {
+    title: "DST",
+    updatedAt: "2026-11-02T04:30:00.000Z",
+    recallDocument: "dst notes",
+  });
+  await seed(store, "user-a", "dst-too-early", {
+    title: "Before DST day",
+    updatedAt: "2026-11-01T03:59:59.999Z",
+    recallDocument: "early dst notes",
+  });
+  const dst = await store.searchConversations("user-a", {
+    timeZone,
+    now: dstNow,
+    after: "yesterday",
+    before: "yesterday",
+  });
+  assert.deepEqual(
+    dst.conversations.map((row) => row.sessionId),
+    ["dst-yesterday"]
+  );
+});
+
+test("deleting a date match removes only that caller's conversations", async () => {
+  const store = new MemoryCheckpointStore();
+  const timeZone = "America/New_York";
+  const now = new Date("2026-10-05T20:00:00.000Z");
+  await seed(store, "user-a", "old", {
+    title: "Old",
+    updatedAt: "2026-10-01T15:00:00.000Z",
+    recallDocument: "old notes",
+  });
+  await seed(store, "user-a", "keep", {
+    title: "Keep",
+    updatedAt: "2026-10-04T15:00:00.000Z",
+    recallDocument: "keep notes",
+  });
+  await seed(store, "user-b", "other-old", {
+    title: "Other",
+    updatedAt: "2026-10-01T15:00:00.000Z",
+    recallDocument: "other notes",
+  });
+
+  const policy = new CapabilityPolicy({ defaultDeny: true });
+  policy.grant("_default", Capability.CONVERSATION_READ);
+  policy.grant("_default", Capability.CONVERSATION_DELETE);
+  const tools = createChiefTools({ checkpointStore: store });
+  const executor = new ToolExecutor({ tools, policy, inventory: CHIEF_TOOL_INVENTORY });
+  const context = {
+    userId: "user-a",
+    sessionId: "keep",
+    agentId: "chief",
+    timeZone,
+    now,
+    mutationApproved: true,
+  };
+  const searched = await executor.execute(
+    {
+      callId: "search-old",
+      name: "conversation_search",
+      arguments: { before: "older than 2 days" },
+    },
+    context
+  );
+  assert.equal(searched.isError, false);
+  const found = JSON.parse(searched.output).conversations;
+  assert.deepEqual(
+    found.map((row) => row.session_id),
+    ["old"]
+  );
+
+  const deleted = await executor.execute(
+    {
+      callId: "delete-old",
+      name: "conversation_delete",
+      arguments: { session_id: found[0].session_id },
+    },
+    context
+  );
+  assert.equal(deleted.isError, false);
+  assert.equal(JSON.parse(deleted.output).deleted, true);
+  assert.equal(store.sessions.has("old"), false);
+  assert.equal(store.sessions.has("keep"), true);
+  assert.equal(store.sessions.has("other-old"), true);
+
+  const missed = await executor.execute(
+    {
+      callId: "delete-other",
+      name: "conversation_delete",
+      arguments: { session_id: "other-old" },
+    },
+    context
+  );
+  assert.equal(missed.isError, true);
+  assert.equal(store.sessions.has("other-old"), true);
+
+  const empty = await executor.execute(
+    {
+      callId: "search-empty",
+      name: "conversation_search",
+      arguments: { before: "older than 2 days" },
+    },
+    context
+  );
+  assert.deepEqual(JSON.parse(empty.output).conversations, []);
+});
+
+test("a conversation search backend failure does not delete conversations", async () => {
+  const store = new MemoryCheckpointStore();
+  await seed(store, "user-a", "keep", {
+    title: "Keep",
+    updatedAt: "2026-10-01T15:00:00.000Z",
+    recallDocument: "keep notes",
+  });
+  store.searchConversations = async () => {
+    throw new Error('invalid input syntax for type integer: "0.5"');
+  };
+  const policy = new CapabilityPolicy({ defaultDeny: true });
+  policy.grant("_default", Capability.CONVERSATION_READ);
+  policy.grant("_default", Capability.CONVERSATION_DELETE);
+  const tools = createChiefTools({ checkpointStore: store });
+  const executor = new ToolExecutor({ tools, policy, inventory: CHIEF_TOOL_INVENTORY });
+  const failed = await executor.execute(
+    {
+      callId: "search-fail",
+      name: "conversation_search",
+      arguments: { before: "older than 2 days" },
+    },
+    {
+      userId: "user-a",
+      sessionId: "keep",
+      agentId: "chief",
+      timeZone: "America/New_York",
+      now: new Date("2026-10-05T20:00:00.000Z"),
+    }
+  );
+  assert.equal(failed.isError, true);
+  assert.match(JSON.parse(failed.output).error, /conversation search failed/);
+  assert.equal(store.sessions.has("keep"), true);
 });
 
 test("an empty query lists conversations by date without a keyword", async () => {
@@ -725,6 +980,10 @@ test("schema adds only recallDocument and a GIN index on chief_session", () => {
   assert.match(search, /to_tsvector\('simple', coalesce\("recallDocument", ''\)\)/);
   assert.match(search, /plainto_tsquery\('simple'/);
   assert.match(search, /"userId" = \$\{userId\}/);
+  assert.match(search, /CAST\(\$\{parsed\.after\} AS timestamp\)/);
+  assert.match(search, /CAST\(\$\{parsed\.before\} AS timestamp\)/);
+  assert.match(search, /THEN 0\.0/);
+  assert.equal(search.includes("THEN 0\n"), false);
   assert.equal(migration.includes("chief_execution_journal"), false);
   assert.equal(migration.includes("embedding"), false);
 });
