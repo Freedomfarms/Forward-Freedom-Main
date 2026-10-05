@@ -4,6 +4,7 @@
 
 import { applyMemoryCommands } from "../memory/commands.js";
 import { rememberExchange } from "../memory/extract.js";
+import { createMemoryAccess } from "../memory/provider.js";
 import { CHIEF_COMPACTION_TOKENS, CHIEF_KEEP_RECENT_TOKENS } from "../runtime/compaction.js";
 import { createContextAssembler } from "./assemble.js";
 
@@ -20,6 +21,7 @@ export function createChiefTurnServices({
   if (!facts || !engine) {
     throw new TypeError("createChiefTurnServices requires facts and engine");
   }
+  const memory = createMemoryAccess({ facts, checkpointStore });
   return {
     contextAssembler: createContextAssembler({
       facts,
@@ -29,8 +31,9 @@ export function createChiefTurnServices({
       moduleAccess,
     }),
     compaction: { atTokens, keepRecentTokens },
+    memory,
     onTurnComplete: async (exchange) => {
-      await applyMemoryCommands({ facts, ...exchange });
+      await applyMemoryCommands({ facts, ...exchange, provider: memory.provider });
       return rememberExchange({ facts, engine, ...exchange });
     },
   };
