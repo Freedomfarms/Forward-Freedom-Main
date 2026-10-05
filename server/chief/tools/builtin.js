@@ -45,6 +45,7 @@ import { readResource } from "../resources/access.js";
 import { codeSourceAvailable } from "../resources/localCode.js";
 import { createCodeTools } from "../codeintel/tools.js";
 import { withUserContext } from "../../db/prisma.js";
+import { resolveUserTimeZone } from "../../platform/timezone.js";
 import { readUserSettings, updateUserTimezone } from "../../platform/userSettings.js";
 
 function memoryRead(store) {
@@ -760,7 +761,19 @@ function recallDenied(context) {
   return null;
 }
 
-function conversationSearch(store) {
+async function callerTimeZone(context, withUser) {
+  const explicit = context?.timeZone ?? context?.timezone;
+  if (typeof explicit === "string" && explicit.trim()) return resolveUserTimeZone(explicit);
+  if (!context?.userId || typeof withUser !== "function") return resolveUserTimeZone(null);
+  try {
+    const settings = await readUserSettings(context.userId, { withUser });
+    return resolveUserTimeZone(settings?.timezone);
+  } catch {
+    return resolveUserTimeZone(null);
+  }
+}
+
+function conversationSearch(store, withUser = withUserContext) {
   return new BaseTool({
     isLocal: true,
     spec: {
@@ -774,8 +787,16 @@ function conversationSearch(store) {
         type: "object",
         properties: {
           query: { type: "string" },
-          after: { type: "string" },
-          before: { type: "string" },
+          after: {
+            type: "string",
+            description:
+              "Lower bound on updatedAt. An ISO-8601 instant, a YYYY-MM-DD day in the user timezone, or a period such as yesterday, last week, or last N days.",
+          },
+          before: {
+            type: "string",
+            description:
+              "Upper bound on updatedAt. An ISO-8601 instant, a YYYY-MM-DD day in the user timezone, or a cutoff such as yesterday, last week, or older than N days.",
+          },
           include_archived: { type: "boolean" },
           limit: { type: "number" },
         },
@@ -795,21 +816,33 @@ function conversationSearch(store) {
         params?.query == null || (typeof params.query === "string" && query.length === 0)
           ? "list"
           : "query";
-      const result = await readResource({
-        resource: "conversations",
-        operation,
-        policy: context?.capabilityPolicy ?? null,
-        agentId: context?.agentId,
-        retrieve: () =>
-          store.searchConversations(context.userId, {
-            query: params?.query,
-            after: params?.after,
-            before: params?.before,
-            includeArchived: params?.include_archived,
-            limit: params?.limit,
-            excludeSessionId: context.sessionId ?? null,
-          }),
-      });
+      const timeZone = await callerTimeZone(context, withUser);
+      const now = context?.now instanceof Date ? context.now : undefined;
+      let result;
+      try {
+        result = await readResource({
+          resource: "conversations",
+          operation,
+          policy: context?.capabilityPolicy ?? null,
+          agentId: context?.agentId,
+          retrieve: () =>
+            store.searchConversations(context.userId, {
+              query: params?.query,
+              after: params?.after,
+              before: params?.before,
+              includeArchived: params?.include_archived,
+              limit: params?.limit,
+              excludeSessionId: context.sessionId ?? null,
+              timeZone,
+              now,
+            }),
+        });
+      } catch {
+        return {
+          output: JSON.stringify({ error: "conversation search failed" }),
+          isError: true,
+        };
+      }
       if (result?.isError && result.conversations == null) {
         return { output: JSON.stringify({ error: result.error || "unknown read" }), isError: true };
       }
@@ -883,7 +916,8 @@ const SESSION_PARAMETERS = {
     },
     sessionId: {
       type: "string",
-      description: "Same conversation id as session_id. conversation_search also returns this name.",
+      description:
+        "Same conversation id as session_id. conversation_search also returns this name.",
     },
   },
 };
@@ -1181,7 +1215,7 @@ export function createChiefCapabilityRegistry({
     skillView(skills),
     createWebSearchTool(search ?? createWebSearchClient()),
     mcpInvoke(mcpClient),
-    conversationSearch(checkpointStore),
+    conversationSearch(checkpointStore, settingsWithUser),
     conversationRetrieve(checkpointStore),
     conversationRename(checkpointStore),
     conversationArchived(checkpointStore, {
