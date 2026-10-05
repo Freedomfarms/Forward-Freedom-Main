@@ -2,8 +2,7 @@
 
 /**
  * OrbStatusBar — the original orb's center cluster (equalizer + core ball + its
- * ring + STANDBY + 3 dots), relocated to the lower part of the page so the
- * particles can own the centre of the ring.
+ * ring + STANDBY + 3 dots). It sits directly under the intelligence core.
  */
 const GOLD = '#f5a623'
 const GOLD_BRIGHT = '#ffd080'
@@ -33,19 +32,15 @@ function Waveform({ active, cx, cy, width = 200 }) {
   )
 }
 
-export default function OrbStatusBar({ state = 'idle', hint }) {
-  const standbyHint = hint === undefined
-    ? 'TAP THE CORE · CLICK AN AGENT · SCROLL FOR THE STORY'
-    : hint
-  const W = 420, H = 130
-  const cx = W / 2, cy = 48
+export default function OrbStatusBar({ state = 'idle' }) {
+  const W = 420, H = 92
+  const cx = W / 2, cy = 20
   const isActive = state !== 'idle'
   const label = state === 'listening' ? 'LISTENING' : state === 'speaking' ? 'SPEAKING' : state === 'thinking' ? 'PROCESSING' : 'STANDBY'
 
   return (
     <div style={{
-      position: 'absolute', left: 0, right: 0, bottom: 26, display: 'flex',   // site copy: contained in the world section
-      justifyContent: 'center', zIndex: 18, pointerEvents: 'none',
+      display: 'flex', justifyContent: 'center', pointerEvents: 'none',
     }}>
       <style>{`@keyframes sbBar { from { transform: scaleY(0.35); } to { transform: scaleY(1.15); } }`}</style>
       <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} fill="none">
@@ -68,19 +63,12 @@ export default function OrbStatusBar({ state = 'idle', hint }) {
         <circle cx={cx} cy={cy} r={6} fill={GOLD_BRIGHT} opacity="0.95" className="orb-center" style={{ filter: `drop-shadow(0 0 10px ${GOLD})` }} />
 
         {/* label */}
-        <text x={cx} y={cy + 44} textAnchor="middle" fill={GOLD} fontSize="13" fontFamily="'Share Tech Mono', monospace" letterSpacing="0.4em" opacity="0.75">{label}</text>
+        <text x={cx} y={cy + 36} textAnchor="middle" fill={GOLD} fontSize="13" fontFamily="'Share Tech Mono', monospace" letterSpacing="0.4em" opacity="0.75">{label}</text>
 
         {/* three dots */}
         {[0, 1, 2].map(i => (
-          <circle key={i} cx={cx + (i - 1) * 12} cy={cy + 62} r={2.5} fill={GOLD} className={`orb-dot-blink blink-${i}`} />
+          <circle key={i} cx={cx + (i - 1) * 12} cy={cy + 54} r={2.5} fill={GOLD} className={`orb-dot-blink blink-${i}`} />
         ))}
-
-        {/* Voice discoverability (UI sweep) — the front page is voice-driven; one whisper-quiet hint on
-            standby teaches the commands. Hidden the moment Apex is active. */}
-        {!isActive && standbyHint ? (
-          <text className="sb-hint" x={cx} y={cy + 80} textAnchor="middle" fill={GOLD} fontSize="9" fontFamily="'Share Tech Mono', monospace"
-            letterSpacing="0.14em" opacity="0.32">{standbyHint}</text>
-        ) : null}
       </svg>
     </div>
   )

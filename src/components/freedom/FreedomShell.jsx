@@ -7,8 +7,6 @@ export function FreedomShell({
   orbState = "idle",
   webState = "standby",
   showClock = true,
-  showStatus = true,
-  statusHint = false,
 }) {
   const className = variant === "auth" ? "freedom-shell freedom-shell--auth" : "freedom-shell";
   return (
@@ -17,8 +15,6 @@ export function FreedomShell({
         orbState={orbState}
         webState={webState}
         showClock={showClock}
-        showStatus={showStatus}
-        statusHint={statusHint}
       />
       {children}
     </section>

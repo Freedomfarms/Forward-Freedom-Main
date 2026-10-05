@@ -11,8 +11,6 @@ export function ChiefAtmosphere({
   roster = ENTRY_ROSTER,
   showClock = true,
   showLabels = false,
-  showStatus = true,
-  statusHint = false,
   webLabel = "Freedom OS",
 }) {
   return (
@@ -23,8 +21,6 @@ export function ChiefAtmosphere({
         webState={webState}
         roster={roster}
         showLabels={showLabels}
-        showStatus={showStatus}
-        statusHint={statusHint}
         webLabel={webLabel}
       />
     </>

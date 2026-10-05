@@ -303,20 +303,29 @@ test("the room intelligence maps status onto the APEX orb and web", () => {
   assert.match(core, /const N = 1200/);
   assert.match(core, /dpr=\{\[1, 1\.5\]\}/);
   assert.match(page, /visualStateForInteraction/);
-  assert.match(page, /ChiefVoiceDock/);
+  assert.doesNotMatch(page, /ChiefVoiceDock/);
   assert.match(page, /sendRef\.current = sendMessage/);
   assert.match(page, /from "\.\/useChiefVoice\.js"/);
   assert.equal(page.includes('from "./voice/useChiefVoice.js"'), false);
   assert.equal((page.match(/useChiefVoice\(/g) || []).length, 1);
   assert.match(page, /<ChiefSettings/);
   assert.match(page, /setSettingsOpen\(true\)/);
+  assert.match(page, /speakCompletedReply\(voice,/);
+  assert.equal((page.match(/speakCompletedReply\(/g) || []).length, 1);
+  assert.match(
+    readFileSync(path.join(root, "src/utils/chiefReplySpeech.js"), "utf8"),
+    /voice\.speakAnswer\(spoken\)/
+  );
+  assert.match(page, /voice\.toggleListening\(\)/);
   assert.match(world, /0\.12/);
   assert.match(world, /staticCore=\{resolvedMotion === "off"\}/);
   assert.match(world, /state=\{orbState\}/);
   assert.match(world, /audioLevelRef=\{audioLevelRef\}/);
   assert.match(world, /Speak to CHIEF/);
-  assert.match(world, /showStatus \? <OrbStatusBar/);
-  assert.doesNotMatch(page, /onCoreTap/);
+  assert.match(world, /apex-core-anchor/);
+  assert.match(world, /<OrbStatusBar state=\{orbState\} \/>/);
+  assert.doesNotMatch(world, /showStatus \? <OrbStatusBar/);
+  assert.match(page, /onCoreTap/);
 });
 
 test("the room source keeps conversation plain and navigation literal", () => {
@@ -341,4 +350,50 @@ test("the room source keeps conversation plain and navigation literal", () => {
   assert.match(approval, /Don’t allow/);
   assert.equal(page.includes("freedomOs"), false);
   assert.equal(page.includes("ForwardFreedomDashboard"), false);
+});
+
+test("the home screen keeps the latest exchange in a bottom dock", () => {
+  const root = process.cwd();
+  const page = readFileSync(path.join(root, "src/components/chief/ChiefPage.jsx"), "utf8");
+  const world = readFileSync(path.join(root, "src/third_party/apex-ui/ApexWorld.jsx"), "utf8");
+  const status = readFileSync(path.join(root, "src/third_party/apex-ui/OrbStatusBar.jsx"), "utf8");
+  const voice = readFileSync(path.join(root, "src/components/chief/ChiefVoiceSheet.jsx"), "utf8");
+  const css = readFileSync(path.join(root, "src/global.css"), "utf8");
+  const settings = readFileSync(
+    path.join(root, "src/components/chief/ChiefSettingsExtras.jsx"),
+    "utf8"
+  );
+  const dashboard = readFileSync(path.join(root, "src/ForwardFreedomDashboard.jsx"), "utf8");
+
+  const roomSettings = readFileSync(
+    path.join(root, "src/components/chief/ChiefSettings.jsx"),
+    "utf8"
+  );
+
+  assert.match(page, /chief-apex-stage/);
+  assert.match(page, /chief-apex-dock/);
+  assert.doesNotMatch(page, /ChiefVoiceDock/);
+  assert.match(page, /labeled/);
+  assert.match(page, /turnView\.userLine/);
+  assert.match(page, /turnView\.answer/);
+  assert.match(page, /onCoreTap/);
+  assert.match(page, /onMicrophone=\{toggleMicrophone\}/);
+  assert.match(page, /setSettingsOpen\(true\)/);
+  assert.match(page, /setRoom\("convos"\)/);
+  assert.match(page, /onOpenFinancial/);
+  assert.match(page, /onOpenAgents/);
+  assert.doesNotMatch(page, /Provider:/);
+  assert.doesNotMatch(page, /<select/);
+  assert.doesNotMatch(status, /TAP THE CORE/);
+  assert.doesNotMatch(voice, /Provider:/);
+  assert.match(world, /apex-core-anchor/);
+  assert.match(world, /apex-core-status/);
+  assert.match(world, /<OrbStatusBar state=\{orbState\} \/>/);
+  assert.match(css, /\.chief-apex-home \{[^}]*display:\s*flex;/);
+  assert.match(css, /\.chief-apex-dock \{[^}]*position:\s*relative;/);
+  assert.doesNotMatch(css, /\.chief-apex-dock \{[^}]*position:\s*fixed;/);
+  assert.match(settings, /fetchChiefHistory/);
+  assert.match(roomSettings, /ChiefSettingsExtras/);
+  assert.match(roomSettings, /fetchChiefVoiceCatalog/);
+  assert.doesNotMatch(dashboard, /chiefFace === "settings"/);
 });

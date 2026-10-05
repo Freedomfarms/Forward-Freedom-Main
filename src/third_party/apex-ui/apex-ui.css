@@ -44,3 +44,32 @@
 @media (max-width: 700px) {
   .sb-hint { display: none; }
 }
+
+.apex-core-anchor {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(560px, 62vw);
+  height: min(440px, calc(100% - 210px));
+  transform: translate(-50%, -50%);
+  z-index: 3;
+  pointer-events: none;
+}
+
+@media (max-height: 520px) {
+  .apex-core-anchor {
+    height: min(340px, calc(100% - 130px));
+    transform: translate(-50%, calc(-50% - 40px));
+  }
+}
+
+.apex-core-status {
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  width: min(440px, 92vw);
+  transform: translate(-50%, 6px);
+  display: grid;
+  justify-items: center;
+  pointer-events: none;
+}

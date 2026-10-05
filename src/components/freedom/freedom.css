@@ -3,7 +3,6 @@
    CHIEF keeps its own selectors so this file cannot restyle that screen. */
 
 .freedom-shell {
-  --freedom-core-y: 50%;
   position: relative;
   height: 100vh;
   height: 100dvh;
@@ -17,10 +16,6 @@
     "Segoe UI",
     Roboto,
     sans-serif;
-}
-
-.freedom-shell--auth {
-  --freedom-core-y: 36%;
 }
 
 .freedom-shell--auth .freedom-brand {
@@ -67,7 +62,9 @@
   position: absolute;
   z-index: 24;
   left: 50%;
-  bottom: max(168px, calc(140px + env(safe-area-inset-bottom, 0px)));
+  /* Below the status that hangs from .apex-core-anchor (top: 100%, ~98px). */
+  top: calc(50% + min(220px, (100% - 210px) / 2) + 104px);
+  bottom: auto;
   transform: translateX(-50%);
   width: min(560px, calc(100% - 24px));
   display: grid;
@@ -131,10 +128,10 @@
   position: absolute;
   z-index: 24;
   left: 50%;
-  bottom: max(28px, env(safe-area-inset-bottom, 0px));
+  bottom: max(12px, env(safe-area-inset-bottom, 0px));
   transform: translateX(-50%);
   width: min(420px, calc(100% - 24px));
-  max-height: min(58dvh, 560px);
+  max-height: min(42dvh, 440px);
   overflow: auto;
   animation: freedom-in 700ms ease both;
 }
@@ -287,10 +284,6 @@
 }
 
 @media (min-width: 1280px) {
-  .freedom-shell--auth {
-    --freedom-core-y: 50%;
-  }
-
   .freedom-auth {
     left: auto;
     right: max(28px, 4vw);
@@ -302,9 +295,29 @@
   }
 }
 
-@media (max-width: 720px), (max-height: 760px) {
+@media (max-height: 820px) {
+  .freedom-brand {
+    top: max(14px, env(safe-area-inset-top, 0px));
+  }
+
+  .freedom-brand h1 {
+    font-size: clamp(22px, 4vw, 34px);
+  }
+
+  .freedom-mission {
+    margin-top: 8px;
+    font-size: 13px;
+  }
+
   .freedom-actions {
-    bottom: max(168px, calc(140px + env(safe-area-inset-bottom, 0px)));
+    top: 112px;
+    bottom: auto;
+    gap: 8px;
+  }
+}
+
+@media (max-width: 720px) {
+  .freedom-actions {
     width: calc(100% - 16px);
   }
 
@@ -319,7 +332,7 @@
 
   .freedom-auth {
     width: calc(100% - 16px);
-    max-height: min(54dvh, 480px);
+    max-height: min(46dvh, 420px);
   }
 }
 

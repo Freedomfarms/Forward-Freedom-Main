@@ -148,7 +148,6 @@ export function AuthScreen({
         variant="auth"
         orbState={isBusy ? "thinking" : "idle"}
         webState={isBusy ? "processing" : "standby"}
-        showStatus={false}
       >
         <header className="freedom-brand">
           <h1>FREEDOM OS</h1>
