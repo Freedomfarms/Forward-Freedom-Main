@@ -81,7 +81,8 @@ test("home, login, and return visits use the full five second construction", () 
   assert.match(authSource, /variant="auth"/);
   assert.doesNotMatch(authSource, /MadFuturicsGateway/);
   assert.match(appSource, /initialMode=\{screen === "signup" \? "register" : "login"\}/);
-  assert.match(appSource, /MadFuturicsBoot/);
+  assert.match(appSource, /FreedomShell/);
+  assert.doesNotMatch(appSource, /MadFuturicsBoot/);
 });
 
 test("logout and a stored entry flag do not shorten the formation", () => {
@@ -235,7 +236,9 @@ test("the gateway keeps authentication behavior and one canvas loop", () => {
   assert.match(authSource, /onModeChange/);
   assert.match(authSource, /variant="auth"/);
   assert.doesNotMatch(authSource, /MadFuturicsGateway/);
-  assert.match(appSource, /MadFuturicsBoot/);
+  assert.match(appSource, /FreedomShell/);
+  assert.doesNotMatch(appSource, /MadFuturicsBoot/);
+  assert.doesNotMatch(appSource, /MadFuturicsGateway/);
   assert.doesNotMatch(appSource, /Powering Freedom/);
   assert.match(fieldSource, /visibilityState/);
   assert.match(fieldSource, /ResizeObserver/);

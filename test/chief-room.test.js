@@ -352,7 +352,7 @@ test("the room source keeps conversation plain and navigation literal", () => {
   assert.equal(page.includes("ForwardFreedomDashboard"), false);
 });
 
-test("the home screen keeps the latest exchange in a bottom dock", () => {
+test("the home screen keeps the latest exchange inside the full-bleed scene", () => {
   const root = process.cwd();
   const page = readFileSync(path.join(root, "src/components/chief/ChiefPage.jsx"), "utf8");
   const world = readFileSync(path.join(root, "src/third_party/apex-ui/ApexWorld.jsx"), "utf8");
@@ -372,6 +372,8 @@ test("the home screen keeps the latest exchange in a bottom dock", () => {
 
   assert.match(page, /chief-apex-stage/);
   assert.match(page, /chief-apex-dock/);
+  assert.match(page, /\{homeDock\}\s*<\/div>\s*<\/div>/);
+  assert.doesNotMatch(page, /\{homeDock\}\s*<\/div>\s*<ChiefSettings/);
   assert.doesNotMatch(page, /ChiefVoiceDock/);
   assert.match(page, /labeled/);
   assert.match(page, /turnView\.userLine/);
@@ -415,16 +417,24 @@ test("the home screen keeps the latest exchange in a bottom dock", () => {
   assert.match(stage, /<ApexWorld/);
   assert.match(stage, /onCoreTap/);
   assert.doesNotMatch(stage, /ChiefTranscript|ChiefComposer|ChiefApprovalCard/);
-  assert.match(home, /className="chief-apex-dock"[\s\S]*\{homeDock\}/);
-  assert.match(css, /\.chief-apex-home \{[^}]*display:\s*flex;/);
-  assert.match(css, /\.chief-apex-home \{[^}]*flex-direction:\s*column;/);
-  assert.match(css, /\.chief-apex-stage \{[^}]*position:\s*relative;/);
-  assert.doesNotMatch(css, /\.chief-apex-stage \{[^}]*position:\s*absolute;/);
-  assert.match(css, /\.chief-apex-dock \{[^}]*position:\s*relative;/);
-  assert.doesNotMatch(css, /\.chief-apex-dock \{[^}]*position:\s*(?:fixed|absolute);/);
+  const stageTree = home.slice(home.indexOf('className="chief-apex-stage"'));
+  assert.match(stageTree, /className="chief-apex-dock"[\s\S]*\{homeDock\}\s*<\/div>\s*<\/div>/);
+  assert.doesNotMatch(home, /<\/div>\s*<div className="chief-apex-dock"/);
   assert.doesNotMatch(css, /--chief-ring-radius|--chief-below-ring|--chief-orb-scale/);
   assert.doesNotMatch(css, /\.chief-voice-dock \.chief-earlier \{\s*display:\s*none/);
   assert.match(css, /@media \(max-height: 820px\) \{\s*\.chief-apex-dock \{/);
+  assert.match(css, /\.chief-apex-stage \{[^}]*position:\s*absolute;/);
+  assert.match(css, /\.chief-apex-stage \{[^}]*inset:\s*0;/);
+  assert.doesNotMatch(css, /\.chief-apex-stage \{[^}]*position:\s*relative;/);
+  assert.match(css, /\.chief-apex-dock \{[^}]*position:\s*absolute;/);
+  assert.match(css, /\.chief-apex-dock \{[^}]*max-height:/);
+  assert.match(css, /\.chief-apex-dock \{[^}]*overflow:\s*hidden;/);
+  assert.match(css, /\.chief-apex-dock \.chief-turn \{[^}]*overflow:\s*auto;/);
+  assert.match(css, /\.chief-apex-dock \.chief-turn \{[^}]*min-height:\s*0;/);
+  assert.doesNotMatch(css, /\.chief-apex-dock \{[^}]*position:\s*relative;/);
+  assert.doesNotMatch(css, /\.chief-apex-dock \{[^}]*position:\s*fixed;/);
+  assert.doesNotMatch(css, /\.chief-apex-home \{[^}]*display:\s*flex;/);
+  assert.doesNotMatch(css, /\.chief-apex-home \{[^}]*flex-direction:\s*column;/);
   assert.match(settings, /fetchChiefHistory/);
   assert.match(roomSettings, /ChiefSettingsExtras/);
   assert.match(roomSettings, /fetchChiefVoiceCatalog/);
