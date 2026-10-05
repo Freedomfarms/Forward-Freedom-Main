@@ -41,7 +41,8 @@ import {
   createWebSearchTool,
   resolveWebSearchCredential,
 } from "./web-search.js";
-import { readCodeConfig } from "../codeintel/policy.js";
+import { readResource } from "../resources/access.js";
+import { codeSourceAvailable } from "../resources/localCode.js";
 import { createCodeTools } from "../codeintel/tools.js";
 import { withUserContext } from "../../db/prisma.js";
 import { readUserSettings, updateUserTimezone } from "../../platform/userSettings.js";
@@ -501,40 +502,54 @@ function financeSummary(
     spec: {
       name: "finance_summary",
       description:
-        "Read this user's Freedom Financial dashboard and six-month spending aggregates. Read-only. When Freedom Financial read access is on, the dashboard field includes spendable trueCash, liquid cash, credit card debt, reserves, gross True Cash, net worth, asset allocation, current-month budget and category spend, and the yearly outlook. Returns an error when this user's Freedom Financial read access is off and does not enable it. Does not return transactions, merchants, account names, institution names, or credentials. Cannot create or change financial data.",
+        "Read this user's Freedom Financial dashboard and six-month spending aggregates. Read-only. When Freedom Financial read access is on, the dashboard field includes spendable trueCash, liquid cash, credit card debt, reserves, gross True Cash, net worth, asset allocation, holdings, current-month budget and category spend, and the yearly outlook. dashboard.holdings lists crypto and precious-metal positions with symbol or metal, quantity, and balance. Use holdings to answer whether the user owns an asset. Returns an error when this user's Freedom Financial read access is off and does not enable it. Does not return transactions, merchants, account names, institution names, or credentials. Cannot create or change financial data.",
       category: "finance",
       requiresConfirmation: false,
       requiredCapabilities: [Capability.FINANCE_READ],
       parameters: { type: "object", properties: {} },
     },
     async execute(_params, context) {
-      const denied = await denyUnlessFreedomFinancialRead(access, context.userId);
-      if (denied) return denied;
-      try {
-        const summary = await load(context.userId);
-        if (!loadPosition) {
-          return {
-            output: JSON.stringify(summary),
-            sessionTaint: [TaintLabel.USER_PRIVATE],
-          };
-        }
-        let dashboard;
-        try {
-          dashboard = await loadPosition(context.userId);
-        } catch {
-          dashboard = { status: "unavailable", reason: "load_failed", writeAccess: false };
-        }
-        return {
-          output: JSON.stringify({ ...summary, dashboard, writeAccess: false }),
-          sessionTaint: [TaintLabel.USER_PRIVATE],
-        };
-      } catch {
-        return {
-          output: "finance summary is unavailable",
-          isError: true,
-          sessionTaint: [TaintLabel.USER_PRIVATE],
-        };
-      }
+      const result = await readResource({
+        resource: "finance",
+        operation: "get",
+        policy: context?.capabilityPolicy ?? null,
+        agentId: context?.agentId,
+        retrieve: async () => {
+          const denied = await denyUnlessFreedomFinancialRead(access, context.userId);
+          if (denied) return denied;
+          try {
+            const summary = await load(context.userId);
+            if (!loadPosition) {
+              return {
+                output: JSON.stringify(summary),
+                sessionTaint: [TaintLabel.USER_PRIVATE],
+              };
+            }
+            let dashboard;
+            try {
+              dashboard = await loadPosition(context.userId);
+            } catch {
+              dashboard = { status: "unavailable", reason: "load_failed", writeAccess: false };
+            }
+            return {
+              output: JSON.stringify({ ...summary, dashboard, writeAccess: false }),
+              sessionTaint: [TaintLabel.USER_PRIVATE],
+            };
+          } catch {
+            return {
+              output: "finance summary is unavailable",
+              isError: true,
+              sessionTaint: [TaintLabel.USER_PRIVATE],
+            };
+          }
+        },
+      });
+      if (typeof result?.output === "string") return result;
+      return {
+        output: result?.error || "finance summary is unavailable",
+        isError: true,
+        sessionTaint: [TaintLabel.USER_PRIVATE],
+      };
     },
   });
 }
@@ -738,7 +753,7 @@ function conversationSearch(store) {
     spec: {
       name: "conversation_search",
       description:
-        "Find this user's earlier conversations by topic. Read-only. Does not take a user id. Excludes the current conversation and scheduled sessions. Archived conversations are included unless include_archived is false, and those results set archived to true. Returns titles, dates, and short snippets from the redacted recall document. Does not restore, rename, delete, or continue a conversation.",
+        "List or find this user's earlier conversations. Read-only. Omit query to list conversations, and pass after and before when the request is a date or a time period. Pass query only for a topic. Listing returns at most 20 conversations, newest first. Topic search returns at most 5. Does not take a user id. Excludes the current conversation and scheduled sessions. Archived conversations are included unless include_archived is false, and those results set archived to true. Returns titles, dates, and short snippets from the redacted recall document. Does not restore, rename, delete, or continue a conversation.",
       category: "conversation",
       requiresConfirmation: false,
       requiredCapabilities: [Capability.CONVERSATION_READ],
@@ -751,7 +766,6 @@ function conversationSearch(store) {
           include_archived: { type: "boolean" },
           limit: { type: "number" },
         },
-        required: ["query"],
       },
     },
     async execute(params, context) {
@@ -763,14 +777,29 @@ function conversationSearch(store) {
           isError: true,
         };
       }
-      const result = await store.searchConversations(context.userId, {
-        query: params?.query,
-        after: params?.after,
-        before: params?.before,
-        includeArchived: params?.include_archived,
-        limit: params?.limit,
-        excludeSessionId: context.sessionId ?? null,
+      const query = typeof params?.query === "string" ? params.query.trim() : "";
+      const operation =
+        params?.query == null || (typeof params.query === "string" && query.length === 0)
+          ? "list"
+          : "query";
+      const result = await readResource({
+        resource: "conversations",
+        operation,
+        policy: context?.capabilityPolicy ?? null,
+        agentId: context?.agentId,
+        retrieve: () =>
+          store.searchConversations(context.userId, {
+            query: params?.query,
+            after: params?.after,
+            before: params?.before,
+            includeArchived: params?.include_archived,
+            limit: params?.limit,
+            excludeSessionId: context.sessionId ?? null,
+          }),
       });
+      if (result?.isError && result.conversations == null) {
+        return { output: JSON.stringify({ error: result.error || "unknown read" }), isError: true };
+      }
       if (result?.error) return { output: JSON.stringify({ error: result.error }), isError: true };
       return { output: JSON.stringify({ conversations: result.conversations ?? [] }) };
     },
@@ -805,10 +834,20 @@ function conversationRetrieve(store) {
           isError: true,
         };
       }
-      const result = await retrieveOwnedConversation(store, context.userId, {
-        sessionId: params?.session_id,
-        query: params?.query,
+      const result = await readResource({
+        resource: "conversations",
+        operation: "get",
+        policy: context?.capabilityPolicy ?? null,
+        agentId: context?.agentId,
+        retrieve: () =>
+          retrieveOwnedConversation(store, context.userId, {
+            sessionId: params?.session_id,
+            query: params?.query,
+          }),
       });
+      if (result?.isError && result.historical == null) {
+        return { output: JSON.stringify({ error: result.error || "unknown read" }), isError: true };
+      }
       if (result?.error) return { output: JSON.stringify({ error: result.error }), isError: true };
       return { output: JSON.stringify(result) };
     },
@@ -1065,7 +1104,7 @@ function capabilityDiscover({ moduleAccess, connectors }) {
         freedomFinancialRead,
         freedomFinancialReadable,
         webCredentialPresent: Boolean(resolveWebSearchCredential()),
-        codeEnabled: readCodeConfig().enabled === true,
+        codeEnabled: codeSourceAvailable(),
       });
       return { output: JSON.stringify(snapshot) };
     },

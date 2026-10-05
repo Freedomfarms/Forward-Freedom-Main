@@ -167,6 +167,67 @@ test("the dashboard position matches Freedom Financial math and hides private fi
     assert.equal(serialized.includes(secret), false, secret);
   }
   assert.equal(Object.hasOwn(position, "transactions"), false);
+  assert.deepEqual(position.holdings, []);
+});
+
+test("holdings keep crypto and metal identity and drop account names", () => {
+  const position = buildDashboardPosition({
+    now: NOW,
+    accounts: [
+      {
+        type: "Crypto",
+        cryptoSymbol: "xrp",
+        cryptoName: "XRP",
+        quantity: 120,
+        lastPriceUsd: 0.5,
+        balance: 1,
+        name: "SECRET_ACCOUNT_NAME",
+        institution: "SECRET_BANK_NAME",
+        cryptoAssetId: "ripple-secret",
+        cryptoThumb: "https://secret.example/thumb",
+      },
+      {
+        type: "Precious Metals",
+        metalType: "Gold",
+        metalUnit: "oz",
+        quantity: 3,
+        pricePerUnit: 2000,
+        metalCustomName: "SECRET_ACCOUNT_NAME",
+        name: "SECRET_ACCOUNT_NAME",
+      },
+      {
+        type: "Precious Metals",
+        metalType: "Custom",
+        metalCustomName: "SECRET_ACCOUNT_NAME",
+        quantity: 1,
+        pricePerUnit: 10,
+      },
+      { type: "Checking", balance: 10, name: "SECRET_ACCOUNT_NAME" },
+    ],
+  });
+  assert.equal(position.allocation.find((slice) => slice.name === "Crypto").amount, 60);
+  assert.deepEqual(position.holdings, [
+    {
+      type: "Crypto",
+      symbol: "XRP",
+      asset: "XRP",
+      quantity: 120,
+      unit: "XRP",
+      balance: 60,
+    },
+    {
+      type: "Precious Metals",
+      metal: "Gold",
+      quantity: 3,
+      unit: "oz",
+      balance: 6000,
+    },
+  ]);
+  const serialized = JSON.stringify(position);
+  assert.equal(serialized.includes("SECRET_ACCOUNT_NAME"), false);
+  assert.equal(serialized.includes("SECRET_BANK_NAME"), false);
+  assert.equal(serialized.includes("ripple-secret"), false);
+  assert.equal(serialized.includes("secret.example"), false);
 });
 
 test("a positive credit card balance reduces debt and an empty portfolio is not worth one dollar", () => {

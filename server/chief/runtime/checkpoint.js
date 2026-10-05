@@ -672,8 +672,12 @@ async function queryRecallDocuments(tx, userId, parsed) {
   const conditions = [
     Prisma.sql`"userId" = ${userId}`,
     Prisma.sql`COALESCE("contextJson"->>'origin', '') <> 'schedule'`,
-    Prisma.sql`to_tsvector('simple', coalesce("recallDocument", '')) @@ plainto_tsquery('simple', ${parsed.query})`,
   ];
+  if (!parsed.list) {
+    conditions.push(
+      Prisma.sql`to_tsvector('simple', coalesce("recallDocument", '')) @@ plainto_tsquery('simple', ${parsed.query})`
+    );
+  }
   if (parsed.excludeSessionId) {
     conditions.push(Prisma.sql`"id" <> ${parsed.excludeSessionId}`);
   }
@@ -691,22 +695,26 @@ async function queryRecallDocuments(tx, userId, parsed) {
     FROM "chief_session"
     WHERE ${Prisma.join(conditions, " AND ")}
     ORDER BY (
-      ts_rank(
-        to_tsvector('simple', coalesce("recallDocument", '')),
-        plainto_tsquery('simple', ${parsed.query})
-      ) * ${RECALL_LEXICAL_WEIGHT}
-      + CASE
-          WHEN to_tsvector('simple', coalesce("title", '')) @@ plainto_tsquery('simple', ${parsed.query})
-          THEN ${RECALL_TITLE_BOOST}
-          ELSE 0
-        END
-      + CASE
-          WHEN ${parsed.useRecency}
-          THEN ${RECALL_RECENCY_MAX} * exp(
-            -ln(2) * EXTRACT(EPOCH FROM (NOW() - "updatedAt")) / ${halfLifeSeconds}
-          )
-          ELSE 0
-        END
+      CASE
+        WHEN ${parsed.list === true}
+        THEN 0
+        ELSE ts_rank(
+          to_tsvector('simple', coalesce("recallDocument", '')),
+          plainto_tsquery('simple', ${parsed.list ? " " : parsed.query})
+        ) * ${RECALL_LEXICAL_WEIGHT}
+          + CASE
+              WHEN to_tsvector('simple', coalesce("title", '')) @@ plainto_tsquery('simple', ${parsed.list ? " " : parsed.query})
+              THEN ${RECALL_TITLE_BOOST}
+              ELSE 0
+            END
+          + CASE
+              WHEN ${parsed.useRecency}
+              THEN ${RECALL_RECENCY_MAX} * exp(
+                -ln(2) * EXTRACT(EPOCH FROM (NOW() - "updatedAt")) / ${halfLifeSeconds}
+              )
+              ELSE 0
+            END
+      END
     ) DESC, "updatedAt" DESC, "id" ASC
     LIMIT ${parsed.limit}
     OFFSET ${parsed.offset}

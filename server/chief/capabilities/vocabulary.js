@@ -137,7 +137,7 @@ export function builtInCapabilities() {
       tools: ["conversation_search", "conversation_retrieve"],
       confirmation: "none",
       readiness: "read",
-      summary: "Search and read this user's conversations.",
+      summary: "List, search, and read this user's conversations.",
     }),
     entry({
       id: "conversation:write",
