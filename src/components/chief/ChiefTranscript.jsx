@@ -92,6 +92,7 @@ export function ChiefTranscript({
   isLoading = false,
   notFound = false,
   showEmpty = false,
+  labeled = false,
   showResponseText = true,
   onBackToList,
 }) {
@@ -118,10 +119,18 @@ export function ChiefTranscript({
 
   return (
     <div className="chief-turn">
-      {userLine ? <p className="chief-turn-user">{userLine}</p> : null}
+      {userLine ? (
+        <div className="chief-turn-block">
+          {labeled ? <span className="chief-turn-who">You:</span> : null}
+          <p className="chief-turn-user">{userLine}</p>
+        </div>
+      ) : null}
       {answer ? (
-        <div className={showResponseText ? "chief-answer" : "chief-sr"} ref={answerRef}>
-          <ChiefMarkdown text={answer} />
+        <div className="chief-turn-block">
+          {labeled ? <span className="chief-turn-who">CHIEF:</span> : null}
+          <div className={showResponseText ? "chief-answer" : "chief-sr"} ref={answerRef}>
+            <ChiefMarkdown text={answer} />
+          </div>
         </div>
       ) : null}
     </div>

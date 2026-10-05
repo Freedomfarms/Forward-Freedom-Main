@@ -7,6 +7,7 @@ import {
 import { freedomFinancialAccessCopy } from "../../utils/freedomFinancialAccessCopy.js";
 import { writeChiefPreferences } from "../../utils/chiefPreferences.js";
 import { voiceConnectionLabel } from "../../utils/chiefVoiceStatus.js";
+import { ChiefSettingsExtras } from "./ChiefSettingsExtras.jsx";
 import { speechInputSupported } from "./voice/speechInput.js";
 import {
   normalizeVoiceSettings,
@@ -561,6 +562,7 @@ export function ChiefSettings({
                 detail="Shift+Enter adds a new line."
                 onChange={(enterToSend) => patchConversation({ enterToSend })}
               />
+              <ChiefSettingsExtras user={user} showVoice={false} />
             </>
           ) : null}
 

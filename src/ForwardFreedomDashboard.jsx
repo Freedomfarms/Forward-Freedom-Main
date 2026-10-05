@@ -2381,7 +2381,7 @@ function ForwardFreedomDashboard({
               CHIEF
             </button>
           </div>
-          <div style={{ padding: 16 }}>
+          <div style={{ padding: 16, display: "grid", gap: 16 }}>
             <FreedomOsHome
               user={freedomOsAuthUser}
               initialView="home"

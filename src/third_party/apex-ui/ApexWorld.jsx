@@ -19,13 +19,13 @@ export default function ApexWorld({
   webState = "standby",
   roster = null,
   onSelect = null,
-  onCoreActivate = null,
+  onCoreTap = null,
   coreListening = false,
   audioLevelRef = null,
+  caption = "",
   motionPreference = "system",
   animationIntensity = "full",
   showLabels = true,
-  showStatus = true,
 }) {
   const [reduced, setReduced] = useState(false);
 
@@ -114,51 +114,41 @@ export default function ApexWorld({
         </nav>
       ) : null}
 
-      <div
-        style={{
-          position: "absolute",
-          left: "50%",
-          top: "50%",
-          width: "min(560px, 58vw)",
-          height: "min(500px, 56vw, 70vh)",
-          transform: "translate(-50%, -50%)",
-          zIndex: 3,
-          pointerEvents: "none",
-        }}
-      >
+      <div className="apex-core-anchor">
         <ApexHeroOrb
           state={orbState}
           interactive={false}
           audioLevelRef={audioLevelRef}
           staticCore={resolvedMotion === "off"}
         />
+        {onCoreTap ? (
+          <button
+            type="button"
+            className="chief-core-hit"
+            aria-label={coreListening ? "Stop listening" : "Speak to CHIEF"}
+            aria-pressed={coreListening}
+            onClick={onCoreTap}
+            style={{
+              position: "absolute",
+              left: "50%",
+              top: "50%",
+              width: "min(240px, 32vw)",
+              height: "min(240px, 32vw)",
+              transform: "translate(-50%, -50%)",
+              zIndex: 4,
+              border: 0,
+              borderRadius: "50%",
+              background: "transparent",
+              cursor: "pointer",
+              pointerEvents: "auto",
+            }}
+          />
+        ) : null}
+        <div className="apex-core-status">
+          <OrbStatusBar state={orbState} />
+          {caption ? <p className="chief-voice-caption chief-voice-caption--inline">{caption}</p> : null}
+        </div>
       </div>
-
-      {onCoreActivate ? (
-        <button
-          type="button"
-          className="chief-core-hit"
-          aria-label={coreListening ? "Stop listening" : "Speak to CHIEF"}
-          aria-pressed={coreListening}
-          onClick={onCoreActivate}
-          style={{
-            position: "absolute",
-            left: "50%",
-            top: "50%",
-            width: "min(240px, 32vw)",
-            height: "min(240px, 32vw)",
-            transform: "translate(-50%, -50%)",
-            zIndex: 4,
-            border: 0,
-            borderRadius: "50%",
-            background: "transparent",
-            cursor: "pointer",
-            pointerEvents: "auto",
-          }}
-        />
-      ) : null}
-
-      {showStatus ? <OrbStatusBar state={orbState} /> : null}
     </div>
   );
 }
