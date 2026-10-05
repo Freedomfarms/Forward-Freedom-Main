@@ -76,24 +76,31 @@ test("the dashboard position matches Freedom Financial math and hides private fi
     incomeStreams: [{ name: "Salary", amount: 2000, description: "buyer name secret" }],
     accounts: [
       {
+        id: "cash-1",
         type: "Checking",
         balance: 2000,
-        name: "SECRET_ACCOUNT_NAME",
+        name: "Household Checking",
         institution: "SECRET_BANK_NAME",
       },
-      { type: "Credit Card", balance: -500, name: "SECRET_ACCOUNT_NAME" },
-      { type: "Investment", balance: 1000, name: "SECRET_ACCOUNT_NAME" },
-      { type: "Crypto", quantity: 2, lastPriceUsd: 50, balance: 1, name: "SECRET_ACCOUNT_NAME" },
+      { id: "card-1", type: "Credit Card", balance: -500, name: "Everyday Card" },
+      { id: "inv-1", type: "Investment", balance: 1000, name: "Brokerage" },
+      { id: "crypto-1", type: "Crypto", quantity: 2, lastPriceUsd: 50, balance: 1, name: "Unlabeled Coin" },
       {
         id: "re-1",
         type: "Real Estate",
         balance: 999,
         propertyMarketValue: 800,
         linkedLoanId: "loan-1",
-        name: "SECRET_ACCOUNT_NAME",
+        name: "Home",
         propertyAddress: "123 Secret Lane",
       },
-      { id: "loan-1", type: "Mortgages / Loans", balance: -300, name: "SECRET_ACCOUNT_NAME" },
+      {
+        id: "loan-1",
+        type: "Mortgages / Loans",
+        balance: -300,
+        loanCategory: "Mortgage",
+        name: "Home Loan",
+      },
     ],
     transactions: [
       {
@@ -152,20 +159,28 @@ test("the dashboard position matches Freedom Financial math and hides private fi
   );
   assert.equal(position.yearlyOutlook.months.find((month) => month.month === "Jul").spent, 120);
 
+  assert.equal(position.totals.totalDebt, 800);
+  assert.equal(position.totals.loanDebt, 300);
+  assert.equal(position.reconciliation.netWorth.accountIds.includes("re-1"), true);
+  assert.equal(position.reconciliation.netWorth.accountIds.includes("loan-1"), false);
+  assert.equal(position.reconciliation.creditCardDebt.accountIds.includes("card-1"), true);
+  assert.equal(position.loans[0].loanCategory, "Mortgage");
+  assert.equal(position.loans[0].includedInPropertyEquity, true);
+  assert.equal(position.accounts.find((account) => account.id === "inv-1").securityHoldings, false);
+
   const serialized = JSON.stringify(position);
   for (const secret of [
     "PLAN_SECRET",
     "private farm grocery note",
     "buyer name secret",
-    "SECRET_ACCOUNT_NAME",
     "SECRET_BANK_NAME",
     "SECRET_MERCHANT_COFFEE_HUT",
     "123 Secret Lane",
-    "loan-1",
-    "re-1",
   ]) {
     assert.equal(serialized.includes(secret), false, secret);
   }
+  assert.equal(serialized.includes("Household Checking"), true);
+  assert.equal(serialized.includes("loan-1"), true);
   assert.equal(Object.hasOwn(position, "transactions"), false);
   assert.deepEqual(position.holdings, []);
 });
@@ -175,59 +190,78 @@ test("holdings keep crypto and metal identity and drop account names", () => {
     now: NOW,
     accounts: [
       {
+        id: "xrp-1",
         type: "Crypto",
         cryptoSymbol: "xrp",
         cryptoName: "XRP",
         quantity: 120,
         lastPriceUsd: 0.5,
         balance: 1,
-        name: "SECRET_ACCOUNT_NAME",
+        name: "XRP wallet",
         institution: "SECRET_BANK_NAME",
-        cryptoAssetId: "ripple-secret",
+        cryptoAssetId: "ripple",
         cryptoThumb: "https://secret.example/thumb",
       },
       {
+        id: "gold-1",
         type: "Precious Metals",
         metalType: "Gold",
         metalUnit: "oz",
         quantity: 3,
         pricePerUnit: 2000,
-        metalCustomName: "SECRET_ACCOUNT_NAME",
-        name: "SECRET_ACCOUNT_NAME",
+        name: "Gold coins",
       },
       {
+        id: "custom-metal",
         type: "Precious Metals",
         metalType: "Custom",
-        metalCustomName: "SECRET_ACCOUNT_NAME",
+        metalCustomName: "Workshop alloy",
         quantity: 1,
         pricePerUnit: 10,
       },
-      { type: "Checking", balance: 10, name: "SECRET_ACCOUNT_NAME" },
+      { type: "Checking", balance: 10, name: "Cash tin" },
     ],
   });
   assert.equal(position.allocation.find((slice) => slice.name === "Crypto").amount, 60);
   assert.deepEqual(position.holdings, [
     {
+      accountId: "xrp-1",
       type: "Crypto",
+      semanticCategory: "crypto",
       symbol: "XRP",
       asset: "XRP",
+      cryptoAssetId: "ripple",
       quantity: 120,
       unit: "XRP",
       balance: 60,
     },
     {
+      accountId: "gold-1",
       type: "Precious Metals",
+      semanticCategory: "metal",
       metal: "Gold",
+      metalCustomName: "",
       quantity: 3,
       unit: "oz",
+      pricePerUnit: 2000,
       balance: 6000,
+    },
+    {
+      accountId: "custom-metal",
+      type: "Precious Metals",
+      semanticCategory: "metal",
+      metal: "Custom",
+      metalCustomName: "Workshop alloy",
+      quantity: 1,
+      unit: "oz",
+      pricePerUnit: 10,
+      balance: 10,
     },
   ]);
   const serialized = JSON.stringify(position);
-  assert.equal(serialized.includes("SECRET_ACCOUNT_NAME"), false);
   assert.equal(serialized.includes("SECRET_BANK_NAME"), false);
-  assert.equal(serialized.includes("ripple-secret"), false);
   assert.equal(serialized.includes("secret.example"), false);
+  assert.equal(serialized.includes("XRP wallet"), true);
 });
 
 test("a positive credit card balance reduces debt and an empty portfolio is not worth one dollar", () => {
@@ -265,11 +299,11 @@ test("the position loader is user-scoped, profile-scoped, and free of secrets", 
         userId: USER_A,
         workspaceUserId: "profile-1",
         type: "Checking",
-        name: "SECRET_ACCOUNT_NAME",
+        name: "Linked Checking",
         institution: "SECRET_BANK_NAME",
         balance: null,
         balanceCiphertext: encryptNumber(300),
-        plaidAccountId: "plaid-secret-account-id",
+        plaidAccountId: "linked-checking-1",
       },
       {
         userId: USER_A,
@@ -357,7 +391,7 @@ test("the position loader is user-scoped, profile-scoped, and free of secrets", 
               {
                 type: "Checking",
                 balance: 2000,
-                name: "SECRET_ACCOUNT_NAME",
+                name: "Household Checking",
                 institution: "SECRET_BANK_NAME",
                 accountNumber: "ACCT-998877",
               },
@@ -395,9 +429,13 @@ test("the position loader is user-scoped, profile-scoped, and free of secrets", 
   assert.equal(position.currentMonth.spent, 55);
   const dining = position.currentMonth.byCategory.find((row) => row.category === "Dining");
   assert.equal(dining.spent, 55);
-  assert.equal(seen.accountSelect.name, undefined);
+  assert.equal(seen.accountSelect.name, true);
   assert.equal(seen.accountSelect.institution, undefined);
-  assert.equal(seen.accountSelect.plaidAccountId, undefined);
+  assert.equal(seen.accountSelect.plaidAccountId, true);
+  assert.equal(
+    position.reconciliation.liquidCash.accountIds.includes("plaid-linked-checking-1"),
+    true
+  );
   assert.equal(seen.transactionSelect.merchant, undefined);
   assert.equal(seen.transactionSelect.merchantCiphertext, undefined);
   assert.equal(seen.transactionSelect.plaidTransactionId, undefined);
@@ -407,7 +445,6 @@ test("the position loader is user-scoped, profile-scoped, and free of secrets", 
     "SECRET_MERCHANT_COFFEE_HUT",
     "SECRET_ACCOUNT_NAME",
     "SECRET_BANK_NAME",
-    "plaid-secret-account-id",
     "plaid-secret-transaction-id",
     "ACCT-998877",
     "SHOULD_NOT_LEAK_BLOB",
@@ -481,10 +518,10 @@ test("finance_summary returns the position only for the authenticated user when 
   );
   const body = JSON.parse(allowed.output);
   assert.equal(allowed.isError, false);
-  assert.equal(body.cashPosition, "ONLY_A");
-  assert.equal(body.dashboard.position.trueCash, 42);
+  assert.equal(body.activity.cashPosition, "ONLY_A");
+  assert.equal(body.position.position.trueCash, 42);
   assert.equal(body.writeAccess, false);
-  assert.equal(body.dashboard.writeAccess, false);
+  assert.equal(body.position.writeAccess, false);
   assert.equal(allowed.output.includes("ONLY_B"), false);
   assert.equal(allowed.output.includes('"trueCash":7'), false);
   assert.deepEqual(loads, [USER_A]);

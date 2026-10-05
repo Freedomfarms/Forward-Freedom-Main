@@ -1,18 +1,10 @@
-// Read-only Freedom Financial position for CHIEF.
+// Read-only Freedom Financial position.
 //
-// Uses the dashboard's own calculations (True Cash, reserves, monthly spend,
-// yearly plan). The result is a projection: account names, merchants,
-// institutions, tokens, and raw transactions are never copied into it.
-// Holdings keep the asset symbol or metal, quantity, and balance the
-// dashboard already shows.
+// Account identity stays on the normalized records so a total can be opened
+// back into the accounts that produced it. Merchants, institutions, account
+// numbers, and raw transactions are not copied onto those records.
 
 import { withUserContext } from "../db/prisma.js";
-import { decrypt as decryptField, decryptNumber } from "../security/envelope.js";
-import {
-  calculatePreciousMetalsBalance,
-  calculateRealEstateEquity,
-} from "../../src/utils/accounts.js";
-import { calculateCryptoBalance } from "../../src/utils/cryptoPricing.js";
 import { buildMonthlySpendSnapshot } from "../../src/utils/budgetReview.js";
 import {
   budgetMonthNames,
@@ -21,25 +13,45 @@ import {
 } from "../../src/utils/budgetModel.js";
 import { getBudgetPeriodAtOffset, getCurrentBudgetPeriod } from "../../src/utils/date.js";
 import { parseMoney } from "../../src/utils/format.js";
-import { addMoney, roundMoney, subtractMoney, sumMoney } from "../../src/utils/money.js";
+import { roundMoney, subtractMoney, sumMoney } from "../../src/utils/money.js";
 import { buildPlanYearData, buildProjectedTrueCashSeries } from "../../src/utils/planning.js";
-import { buildReserveReadiness, computeTrueCash, isReserveRow } from "../../src/utils/reserves.js";
+import { buildReserveReadiness, isReserveRow } from "../../src/utils/reserves.js";
 import { buildYearlyPlanningMetrics } from "../../src/utils/yearlyPlanningMetrics.js";
+import { deriveFinancialPosition } from "../../src/utils/financialPosition.js";
+import { mapLoanCategory } from "../mappers.js";
+import { decrypt as decryptField, decryptJson, decryptNumber } from "../security/envelope.js";
+import { classifyFinanceReadError, queryWithSchemaFallback } from "./schemaRead.js";
 import { loadSanitizedWorkspaceState } from "./workspaceSlice.js";
 
-const LIQUID_ACCOUNT_TYPES = new Set(["Checking", "Savings", "Manual Cash"]);
 const LABEL_MAX_CHARS = 80;
 const CATEGORY_MAX_ENTRIES = 80;
-const KNOWN_METALS = new Set(["Gold", "Silver", "Platinum", "Palladium"]);
-const METAL_UNITS = new Set(["oz", "ozt", "g", "kg", "lb"]);
-const HOLDING_SYMBOL = /^[A-Za-z0-9]{1,12}$/;
-const HOLDING_ASSET = /^[A-Za-z0-9][A-Za-z0-9 .+-]{0,40}$/;
 
 const POSITION_ACCOUNT_SELECT = Object.freeze({
+  id: true,
   type: true,
+  name: true,
   balance: true,
   balanceCiphertext: true,
   workspaceUserId: true,
+  plaidAccountId: true,
+  plaidType: true,
+  plaidSubtype: true,
+  syncSource: true,
+  metadata: true,
+  metadataCiphertext: true,
+});
+
+const LEGACY_POSITION_ACCOUNT_SELECT = Object.freeze({
+  id: true,
+  type: true,
+  name: true,
+  balance: true,
+  workspaceUserId: true,
+  plaidAccountId: true,
+  plaidType: true,
+  plaidSubtype: true,
+  syncSource: true,
+  metadata: true,
 });
 
 const POSITION_TRANSACTION_SELECT = Object.freeze({
@@ -51,13 +63,12 @@ const POSITION_TRANSACTION_SELECT = Object.freeze({
   workspaceUserId: true,
 });
 
-const ALLOCATION_TYPES = [
-  ["Investments", "Investment"],
-  ["Crypto", "Crypto"],
-  ["Precious Metals", "Precious Metals"],
-  ["Real Estate", "Real Estate"],
-  ["Retirement", "Retirement"],
-];
+const LEGACY_POSITION_TRANSACTION_SELECT = Object.freeze({
+  category: true,
+  amount: true,
+  postedAt: true,
+  workspaceUserId: true,
+});
 
 function labelOf(value) {
   const text = String(value || "").trim();
@@ -75,18 +86,6 @@ function formatBudgetDate(value) {
     year: "numeric",
     timeZone: "UTC",
   });
-}
-
-function shareOf(amount, netWorth) {
-  if (!(netWorth > 0)) return null;
-  return Math.round((amount / netWorth) * 1000) / 10;
-}
-
-function sumType(accounts, type) {
-  return sumMoney(
-    accounts.filter((account) => account.type === type),
-    (account) => account.balance
-  );
 }
 
 // Same anchor the dashboard uses for the plan year: profile creation, else the
@@ -110,111 +109,12 @@ function anchorStartingMonth(profile, fallbackMonth) {
   return fallbackMonth;
 }
 
-function derivedAccounts(accounts) {
-  const prepared = (Array.isArray(accounts) ? accounts : []).map((account, index) => {
-    const type = typeof account?.type === "string" && account.type ? account.type : "Checking";
-    let balance = roundMoney(account?.balance);
-    if (type === "Crypto" && (account?.quantity != null || account?.lastPriceUsd != null)) {
-      balance = calculateCryptoBalance(account.quantity, account.lastPriceUsd);
-    }
-    if (
-      type === "Precious Metals" &&
-      (account?.quantity != null || account?.pricePerUnit != null)
-    ) {
-      balance = calculatePreciousMetalsBalance(account.quantity, account.pricePerUnit);
-    }
-    return {
-      id: typeof account?.id === "string" && account.id ? account.id : `acct-${index}`,
-      type,
-      balance,
-      linkedLoanId: typeof account?.linkedLoanId === "string" ? account.linkedLoanId : "",
-      propertyMarketValue: roundMoney(account?.propertyMarketValue),
-    };
-  });
-
-  return prepared.map((account) => {
-    if (account.type !== "Real Estate") return account;
-    if (!account.linkedLoanId || !account.propertyMarketValue) return account;
-    const linkedLoan = prepared.find((candidate) => candidate.id === account.linkedLoanId);
-    if (!linkedLoan) return account;
-    return {
-      ...account,
-      balance: calculateRealEstateEquity(account.propertyMarketValue, linkedLoan.balance),
-    };
-  });
-}
-
 function safeTransactions(transactions) {
   return (Array.isArray(transactions) ? transactions : []).map((transaction) => ({
     amount: transaction?.amount,
     category: typeof transaction?.category === "string" ? transaction.category : "",
     date: typeof transaction?.date === "string" ? transaction.date : "",
   }));
-}
-
-function finiteQuantity(value) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : null;
-}
-
-function holdingRow(source, derived) {
-  if (derived?.type === "Crypto") {
-    const rawSymbol = typeof source?.cryptoSymbol === "string" ? source.cryptoSymbol.trim() : "";
-    const symbol = HOLDING_SYMBOL.test(rawSymbol) ? rawSymbol.toUpperCase() : "";
-    const rawAsset = typeof source?.cryptoName === "string" ? source.cryptoName.trim() : "";
-    const asset = HOLDING_ASSET.test(rawAsset) ? rawAsset : "";
-    if (!symbol && !asset) return null;
-    return {
-      type: "Crypto",
-      symbol,
-      asset,
-      quantity: finiteQuantity(source?.quantity),
-      unit: symbol || "units",
-      balance: derived.balance,
-    };
-  }
-  if (derived?.type === "Precious Metals") {
-    const metal = typeof source?.metalType === "string" ? source.metalType.trim() : "";
-    if (!KNOWN_METALS.has(metal)) return null;
-    const unit = typeof source?.metalUnit === "string" ? source.metalUnit.trim() : "";
-    return {
-      type: "Precious Metals",
-      metal,
-      quantity: finiteQuantity(source?.quantity),
-      unit: METAL_UNITS.has(unit) ? unit : "oz",
-      balance: derived.balance,
-    };
-  }
-  return null;
-}
-
-function holdingsOf(accounts, synced) {
-  const source = Array.isArray(accounts) ? accounts : [];
-  const rows = [];
-  for (let index = 0; index < synced.length; index += 1) {
-    const row = holdingRow(source[index], synced[index]);
-    if (!row) continue;
-    rows.push(row);
-    if (rows.length >= CATEGORY_MAX_ENTRIES) break;
-  }
-  return rows;
-}
-
-function balancesByType(accounts) {
-  const totals = new Map();
-  for (const account of accounts) {
-    const existing = totals.get(account.type) || { totalBalance: 0, accountCount: 0 };
-    existing.totalBalance = addMoney(existing.totalBalance, account.balance);
-    existing.accountCount += 1;
-    totals.set(account.type, existing);
-  }
-  return [...totals.entries()]
-    .sort((left, right) => left[0].localeCompare(right[0]))
-    .map(([accountType, entry]) => ({
-      accountType,
-      totalBalance: entry.totalBalance,
-      accountCount: entry.accountCount,
-    }));
 }
 
 function categoryRows(snapshot) {
@@ -278,9 +178,8 @@ export function activeWorkspaceUser(state) {
 }
 
 /**
- * Pure dashboard position. Dollar totals use type and balance. Holdings also
- * read crypto symbol, crypto name, metal, quantity, and unit. Account names,
- * institutions, addresses, and identifiers are not copied.
+ * Pure dashboard position. Dollar totals come from deriveFinancialPosition,
+ * the same function the dashboard hero uses. Net worth is the real sum.
  */
 export function buildDashboardPosition({
   accounts = [],
@@ -293,39 +192,18 @@ export function buildDashboardPosition({
   now = new Date(),
 } = {}) {
   const period = getCurrentBudgetPeriod(now);
-  const syncedAccounts = derivedAccounts(accounts);
   const ledger = safeTransactions(transactions);
   const rows = Array.isArray(budgetRows) ? budgetRows : [];
   const streams = Array.isArray(incomeStreams) ? incomeStreams : [];
   const plans = plansByYear && typeof plansByYear === "object" ? plansByYear : {};
-
-  const liquidCash = sumMoney(
-    syncedAccounts.filter((account) => LIQUID_ACCOUNT_TYPES.has(account.type)),
-    (account) => account.balance
-  );
-  const creditCardNetBalance = sumType(syncedAccounts, "Credit Card");
-  const creditCardDebt = Math.max(0, -creditCardNetBalance);
   const reserveReadiness = buildReserveReadiness(rows.filter(isReserveRow), ledger, {
     asOfMonth: period.month,
     asOfYear: period.year,
   });
-  const reservesBalance = reserveReadiness.totalBalance;
-  const grossTrueCash = subtractMoney(liquidCash, creditCardDebt);
-  const trueCash = computeTrueCash({ liquidCash, creditCardDebt, reservesBalance });
-
-  const allocationAmounts = ALLOCATION_TYPES.map(([name, type]) => ({
-    name,
-    amount: sumType(syncedAccounts, type),
-  }));
-  const netWorth = addMoney(grossTrueCash, ...allocationAmounts.map((slice) => slice.amount));
-  const allocation = [
-    { name: "True Cash", amount: grossTrueCash, share: shareOf(grossTrueCash, netWorth) },
-    ...allocationAmounts.map((slice) => ({
-      name: slice.name,
-      amount: slice.amount,
-      share: shareOf(slice.amount, netWorth),
-    })),
-  ];
+  const derived = deriveFinancialPosition(accounts, {
+    reservesBalance: reserveReadiness.totalBalance,
+  });
+  const { trueCash } = derived.position;
 
   const spend = buildMonthlySpendSnapshot(ledger, rows, {
     month: period.month,
@@ -375,18 +253,15 @@ export function buildDashboardPosition({
       year: period.year,
       label: `${budgetMonthNames[period.month]} ${period.year}`,
     },
-    position: {
-      liquidCash,
-      creditCardDebt,
-      reservesBalance,
-      reservesOvercommitted: reservesBalance > liquidCash,
-      grossTrueCash,
-      trueCash,
-      netWorth,
-    },
-    allocation,
-    holdings: holdingsOf(accounts, syncedAccounts),
-    balancesByType: balancesByType(syncedAccounts),
+    position: derived.position,
+    totals: derived.totals,
+    reconciliation: derived.reconciliation,
+    accounts: derived.accounts,
+    loans: derived.loans,
+    debtAllocation: derived.debtAllocation,
+    allocation: derived.allocation,
+    holdings: derived.holdings.slice(0, CATEGORY_MAX_ENTRIES),
+    balancesByType: derived.balancesByType,
     currentMonth: {
       month: period.month,
       year: period.year,
@@ -430,97 +305,283 @@ export function buildDashboardPosition({
   };
 }
 
-function plaidBalance(row) {
-  const balance =
-    row.balanceCiphertext != null ? decryptNumber(row.balanceCiphertext) : Number(row.balance || 0);
-  return Number.isFinite(balance) ? balance : 0;
+function sourceStatus(status, errorClass = null) {
+  return { status, errorClass };
 }
 
-function plaidAmount(row) {
-  const amount =
-    row.amountCiphertext != null ? decryptNumber(row.amountCiphertext) : Number(row.amount || 0);
-  return Number.isFinite(amount) ? amount : 0;
-}
-
-function plaidCategory(row) {
-  const category =
-    row.categoryCiphertext != null ? decryptField(row.categoryCiphertext) : row.category;
-  return category == null ? "" : String(category);
-}
-
-function forProfile(rows, profileId) {
-  if (!profileId) return rows;
-  return rows.filter((row) => row.workspaceUserId === profileId);
-}
-
-export async function loadFreedomFinancialPosition(
-  userId,
-  { now = new Date(), withUser = withUserContext, loadWorkspace = loadSanitizedWorkspaceState } = {}
-) {
-  if (!userId) {
-    return { status: "unavailable", reason: "missing_user", writeAccess: false };
+function readEncryptedNumber(ciphertext, plaintext) {
+  if (ciphertext != null) {
+    try {
+      const value = decryptNumber(ciphertext);
+      if (!Number.isFinite(value)) {
+        return { ok: false, errorClass: "decrypt" };
+      }
+      return { ok: true, value };
+    } catch {
+      return { ok: false, errorClass: "decrypt" };
+    }
   }
+  const value = Number(plaintext || 0);
+  return { ok: true, value: Number.isFinite(value) ? value : 0 };
+}
 
-  try {
-    const loaded = await loadWorkspace(userId, { withUser });
-    const profile = activeWorkspaceUser(loaded?.state);
-    const profileId = profile?.id || null;
-    const { accounts, transactions } = await withUser(userId, async (tx) => {
-      const accountRows = await tx.account.findMany({
-        where: { userId },
-        select: POSITION_ACCOUNT_SELECT,
-      });
-      const transactionRows = await tx.transaction.findMany({
-        where: { userId, pending: false },
-        select: POSITION_TRANSACTION_SELECT,
-      });
-      return { accounts: accountRows, transactions: transactionRows };
-    });
+function readMetadata(row) {
+  if (row.metadataCiphertext != null) {
+    try {
+      const value = decryptJson(row.metadataCiphertext);
+      return { ok: true, value: value && typeof value === "object" ? value : {} };
+    } catch (error) {
+      return { ok: false, errorClass: classifyFinanceReadError(error), value: {} };
+    }
+  }
+  const value = row.metadata && typeof row.metadata === "object" ? row.metadata : {};
+  return { ok: true, value };
+}
 
-    const plaidAccounts = forProfile(accounts, profileId).map((row) => ({
-      type: String(row.type || "Other"),
-      balance: plaidBalance(row),
-    }));
-    const plaidTransactions = forProfile(transactions, profileId).map((row) => ({
-      category: plaidCategory(row),
-      amount: plaidAmount(row),
-      date: formatBudgetDate(row.postedAt),
-    }));
-    const manualAccounts = Array.isArray(profile?.accounts) ? profile.accounts : [];
-    const manualTransactions = (
-      Array.isArray(profile?.transactions) ? profile.transactions : []
-    ).map((transaction) => ({
+function isPlaidDerivedAccount(account) {
+  return Boolean(
+    account && (account.syncSource === "Plaid" || account.plaidAccountId || account.plaidItemId)
+  );
+}
+
+function scopeRows(rows, profileId) {
+  if (profileId) {
+    return { rows: rows.filter((row) => row.workspaceUserId === profileId), mixed: false };
+  }
+  const profileIds = new Set(rows.map((row) => row.workspaceUserId).filter(Boolean));
+  if (profileIds.size > 1) return { rows: [], mixed: true };
+  return { rows, mixed: false };
+}
+
+function accountFromPlaidRow(row) {
+  const balance = readEncryptedNumber(row.balanceCiphertext, row.balance);
+  if (!balance.ok) return { ok: false, errorClass: balance.errorClass };
+  const metadata = readMetadata(row);
+  const type = String(row.type || "Other");
+  const subtype = String(row.plaidSubtype || "");
+  const storedCategory = String(metadata.value.loanCategory || "");
+  const loanCategory =
+    type === "Mortgages / Loans" && !storedCategory && subtype
+      ? mapLoanCategory(subtype)
+      : storedCategory;
+  return {
+    ok: true,
+    metadataFailed: !metadata.ok,
+    errorClass: metadata.ok ? null : metadata.errorClass,
+    account: {
+      id: row.plaidAccountId ? `plaid-${row.plaidAccountId}` : row.id,
+      name: row.name || "",
+      type,
+      balance: balance.value,
+      plaidSubtype: subtype,
+      plaidType: row.plaidType || "",
+      loanCategory,
+      interestRate: metadata.value.interestRate || "",
+      monthlyPayment: metadata.value.monthlyPayment || "",
+      syncSource: row.syncSource || "Plaid",
+      workspaceUserId: row.workspaceUserId,
+    },
+  };
+}
+
+function manualActivity(transactions) {
+  return (Array.isArray(transactions) ? transactions : [])
+    .filter((transaction) => transaction?.source !== "plaid" && transaction?.syncSource !== "Plaid")
+    .map((transaction) => ({
       category: transaction?.category,
       amount: transaction?.amount,
       date: transaction?.date || formatBudgetDate(transaction?.postedAt),
     }));
+}
 
-    const dashboard = buildDashboardPosition({
-      accounts: [...manualAccounts, ...plaidAccounts],
-      transactions: [...manualTransactions, ...plaidTransactions],
-      budgetRows: profile?.budgetRows,
-      incomeStreams: profile?.incomeStreams,
-      plansByYear: profile?.plansByYear,
-      createdAt: profile?.createdAt,
-      metricSnapshots: profile?.metricSnapshots,
-      now,
+async function readPlaidRows(userId, withUser, profileId) {
+  const where = { userId, ...(profileId ? { workspaceUserId: profileId } : {}) };
+  const rows = await queryWithSchemaFallback(userId, withUser, async (tx, encrypted) =>
+    tx.account.findMany({
+      where,
+      select: encrypted ? POSITION_ACCOUNT_SELECT : LEGACY_POSITION_ACCOUNT_SELECT,
+    })
+  );
+  return scopeRows(rows, profileId);
+}
+
+async function readPlaidLedger(userId, withUser, profileId) {
+  const where = { userId, pending: false, ...(profileId ? { workspaceUserId: profileId } : {}) };
+  const rows = await queryWithSchemaFallback(userId, withUser, async (tx, encrypted) =>
+    tx.transaction.findMany({
+      where,
+      select: encrypted ? POSITION_TRANSACTION_SELECT : LEGACY_POSITION_TRANSACTION_SELECT,
+    })
+  );
+  const scoped = scopeRows(rows, profileId);
+  if (scoped.mixed) return { transactions: [], mixed: true, dropped: 0 };
+  const transactions = [];
+  let dropped = 0;
+  for (const row of scoped.rows) {
+    const amount = readEncryptedNumber(row.amountCiphertext, row.amount);
+    if (!amount.ok) {
+      dropped += 1;
+      continue;
+    }
+    let category;
+    if (row.categoryCiphertext != null) {
+      try {
+        category = String(decryptField(row.categoryCiphertext) ?? "");
+      } catch {
+        dropped += 1;
+        continue;
+      }
+    } else {
+      category = row.category == null ? "" : String(row.category);
+    }
+    transactions.push({
+      category,
+      amount: amount.value,
+      date: formatBudgetDate(row.postedAt),
     });
-
-    return {
-      status: loaded?.parseError ? "partial" : "available",
-      writeAccess: false,
-      profileCount: Array.isArray(loaded?.state?.users)
-        ? loaded.state.users.length
-        : profile
-          ? 1
-          : 0,
-      manualAccountCount: manualAccounts.length,
-      plaidAccountCount: plaidAccounts.length,
-      transactionCount: manualTransactions.length + plaidTransactions.length,
-      ...dashboard,
-    };
-  } catch (error) {
-    console.warn("[dashboard-position] position failed:", error?.message || error);
-    return { status: "unavailable", reason: "load_failed", writeAccess: false };
   }
+  return { transactions, mixed: false, dropped };
+}
+
+function unavailablePosition(reason, sources) {
+  return {
+    status: "unavailable",
+    reason,
+    writeAccess: false,
+    sources,
+    accounts: [],
+    holdings: [],
+    loans: [],
+  };
+}
+
+/**
+ * Authoritative current-position read. Workspace manuals and linked accounts
+ * fail independently. A ledger failure does not drop the account position.
+ */
+export async function loadCurrentPosition(
+  userId,
+  { now = new Date(), withUser = withUserContext, loadWorkspace = loadSanitizedWorkspaceState } = {}
+) {
+  const sources = {
+    workspace: sourceStatus("unavailable", "query"),
+    plaid: sourceStatus("unavailable", "query"),
+    ledger: sourceStatus("unavailable", "query"),
+  };
+  if (!userId) {
+    return unavailablePosition("missing_user", sources);
+  }
+
+  let profile = null;
+  let profileCount = 0;
+  try {
+    const loaded = await loadWorkspace(userId, { withUser });
+    profileCount = Array.isArray(loaded?.state?.users) ? loaded.state.users.length : 0;
+    if (loaded?.parseError) {
+      sources.workspace = sourceStatus("unavailable", "decrypt");
+    } else {
+      sources.workspace = sourceStatus("available", null);
+      profile = activeWorkspaceUser(loaded?.state);
+      if (profile) profileCount = Math.max(profileCount, 1);
+    }
+  } catch (error) {
+    sources.workspace = sourceStatus("unavailable", classifyFinanceReadError(error));
+    console.warn("[finance-position] workspace read failed:", error?.message || error);
+  }
+
+  const profileId = profile?.id || null;
+  let plaidAccounts = [];
+  try {
+    const scoped = await readPlaidRows(userId, withUser, profileId);
+    if (scoped.mixed) {
+      sources.plaid = sourceStatus("unavailable", "query");
+    } else {
+      let dropped = 0;
+      let errorClass = null;
+      for (const row of scoped.rows) {
+        const mapped = accountFromPlaidRow(row);
+        if (!mapped.ok) {
+          dropped += 1;
+          errorClass = mapped.errorClass;
+          continue;
+        }
+        if (mapped.metadataFailed) {
+          dropped += 1;
+          errorClass = mapped.errorClass;
+        }
+        plaidAccounts.push(mapped.account);
+      }
+      if (scoped.rows.length > 0 && plaidAccounts.length === 0) {
+        sources.plaid = sourceStatus("unavailable", errorClass || "decrypt");
+      } else if (dropped > 0) {
+        sources.plaid = sourceStatus("partial", errorClass || "decrypt");
+      } else {
+        sources.plaid = sourceStatus("available", null);
+      }
+    }
+  } catch (error) {
+    sources.plaid = sourceStatus("unavailable", classifyFinanceReadError(error));
+    console.warn("[finance-position] linked accounts failed:", error?.message || error);
+  }
+
+  const manualAccounts = (Array.isArray(profile?.accounts) ? profile.accounts : []).filter(
+    (account) => !isPlaidDerivedAccount(account)
+  );
+  const manualTransactions = manualActivity(profile?.transactions);
+
+  let plaidTransactions = [];
+  try {
+    const ledger = await readPlaidLedger(userId, withUser, profileId);
+    if (ledger.mixed) {
+      sources.ledger = sourceStatus("unavailable", "query");
+    } else {
+      plaidTransactions = ledger.transactions;
+      sources.ledger =
+        ledger.dropped > 0
+          ? sourceStatus("partial", "decrypt")
+          : sourceStatus("available", null);
+    }
+  } catch (error) {
+    sources.ledger = sourceStatus("unavailable", classifyFinanceReadError(error));
+    console.warn("[finance-position] linked ledger failed:", error?.message || error);
+  }
+
+  const accountSources = [sources.workspace.status, sources.plaid.status];
+  const positionStatus = accountSources.every((status) => status === "unavailable")
+    ? "unavailable"
+    : accountSources.every((status) => status === "available") && sources.ledger.status === "available"
+      ? "available"
+      : "partial";
+
+  if (positionStatus === "unavailable") {
+    return unavailablePosition("load_failed", sources);
+  }
+
+  const dashboard = buildDashboardPosition({
+    accounts: [...manualAccounts, ...plaidAccounts],
+    transactions: [...manualTransactions, ...plaidTransactions],
+    budgetRows: profile?.budgetRows,
+    incomeStreams: profile?.incomeStreams,
+    plansByYear: profile?.plansByYear,
+    createdAt: profile?.createdAt,
+    metricSnapshots: profile?.metricSnapshots,
+    now,
+  });
+
+  return {
+    status: positionStatus,
+    writeAccess: false,
+    sources,
+    profileId,
+    profileCount,
+    manualAccountCount: manualAccounts.length,
+    plaidAccountCount: plaidAccounts.length,
+    transactionCount: manualTransactions.length + plaidTransactions.length,
+    securityHoldings: false,
+    ...dashboard,
+  };
+}
+
+export async function loadFreedomFinancialPosition(userId, options) {
+  return loadCurrentPosition(userId, options);
 }

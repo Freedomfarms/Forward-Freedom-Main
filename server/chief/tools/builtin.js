@@ -6,8 +6,8 @@
 import { assertControlPlane } from "../control/plane.js";
 import { Capability } from "../core/capabilities.js";
 import { ToolRegistry } from "../core/registry.js";
-import { loadFinanceSummary } from "../../finance/aggregates.js";
-import { loadFreedomFinancialPosition } from "../../finance/dashboardPosition.js";
+import { loadFinancialActivity } from "../../finance/activity.js";
+import { loadCurrentPosition } from "../../finance/dashboardPosition.js";
 import { loadWorkspacePlanSummary } from "../../finance/workspaceSlice.js";
 import {
   denyUnlessFreedomFinancialRead,
@@ -492,8 +492,17 @@ function scheduleRuns(store) {
   });
 }
 
+function unavailableRead() {
+  return {
+    status: "unavailable",
+    errorClass: "query",
+    writeAccess: false,
+    detail: "read_failed",
+  };
+}
+
 function financeSummary(
-  load = loadFinanceSummary,
+  load = loadFinancialActivity,
   access = new MemoryModuleAccess(),
   loadPosition = null
 ) {
@@ -502,7 +511,7 @@ function financeSummary(
     spec: {
       name: "finance_summary",
       description:
-        "Read this user's Freedom Financial dashboard and six-month spending aggregates. Read-only. When Freedom Financial read access is on, the dashboard field includes spendable trueCash, liquid cash, credit card debt, reserves, gross True Cash, net worth, asset allocation, holdings, current-month budget and category spend, and the yearly outlook. dashboard.holdings lists crypto and precious-metal positions with symbol or metal, quantity, and balance. Use holdings to answer whether the user owns an asset. Returns an error when this user's Freedom Financial read access is off and does not enable it. Does not return transactions, merchants, account names, institution names, or credentials. Cannot create or change financial data.",
+        "Read this user's Freedom Financial position and historical activity. Read-only. Calls the current-position reader and the activity reader independently. position is what the user owns and owes now: accounts (id, name, type, semantic category, balance), holdings (crypto symbol or metal, quantity, balance, accountId), loans (loanCategory and balance), and shared aggregates (liquidCash, trueCash, grossTrueCash, creditCardDebt, loanDebt, totalDebt, totalAssets, totalLiabilities, netWorth, allocation, debtAllocation, reconciliation account ids). netWorth is the real sum and is not floored. creditCardDebt is max(0, -sum of Credit Card balances) and is distinct from totalDebt, which adds loan balances owed. Holdings are generic: match the stored symbol or metal; do not assume a specific asset. Investment and retirement accounts are account-level balances only. securityHoldings is false. If the user asks about an individual stock or ETF, say Freedom Financial has the investment-account balance and does not have security-level holdings. activity is historical spending: six-month category totals. Use activity for past spending questions and position for balances, holdings, debt, and net worth. If one side is unavailable, answer from the side that is available. Returns an error when Freedom Financial read access is off and does not enable it. Does not return merchants, institution names, account numbers, or credentials. Cannot create or change financial data.",
       category: "finance",
       requiresConfirmation: false,
       requiredCapabilities: [Capability.FINANCE_READ],
@@ -517,31 +526,35 @@ function financeSummary(
         retrieve: async () => {
           const denied = await denyUnlessFreedomFinancialRead(access, context.userId);
           if (denied) return denied;
+          let activity;
           try {
-            const summary = await load(context.userId);
-            if (!loadPosition) {
-              return {
-                output: JSON.stringify(summary),
-                sessionTaint: [TaintLabel.USER_PRIVATE],
-              };
-            }
-            let dashboard;
-            try {
-              dashboard = await loadPosition(context.userId);
-            } catch {
-              dashboard = { status: "unavailable", reason: "load_failed", writeAccess: false };
-            }
-            return {
-              output: JSON.stringify({ ...summary, dashboard, writeAccess: false }),
-              sessionTaint: [TaintLabel.USER_PRIVATE],
-            };
-          } catch {
-            return {
-              output: "finance summary is unavailable",
-              isError: true,
-              sessionTaint: [TaintLabel.USER_PRIVATE],
-            };
+            activity = await load(context.userId);
+          } catch (error) {
+            console.warn("[finance-summary] activity failed:", error?.message || error);
+            activity = unavailableRead();
           }
+          let position;
+          if (!loadPosition) {
+            position = {
+              status: "unavailable",
+              reason: "not_loaded",
+              writeAccess: false,
+            };
+          } else {
+            try {
+              position = await loadPosition(context.userId);
+            } catch (error) {
+              console.warn("[finance-summary] position failed:", error?.message || error);
+              position = unavailableRead();
+            }
+          }
+          const positionDown = !position || position.status === "unavailable";
+          const activityDown = !activity || activity.status === "unavailable";
+          return {
+            output: JSON.stringify({ writeAccess: false, position, activity }),
+            isError: positionDown && activityDown,
+            sessionTaint: [TaintLabel.USER_PRIVATE],
+          };
         },
       });
       if (typeof result?.output === "string") return result;
@@ -1134,7 +1147,7 @@ export function createChiefCapabilityRegistry({
   graph = new MemoryGraphStore(),
   schedule = new MemoryScheduleStore(),
   mcpClient = null,
-  loadFinance = loadFinanceSummary,
+  loadFinance = loadFinancialActivity,
   loadWorkspace = loadWorkspacePlanSummary,
   loadPosition = null,
   skills = bundledSkills,
@@ -1205,7 +1218,7 @@ export function createChiefTools({
   graph = new MemoryGraphStore(),
   schedule = new MemoryScheduleStore(),
   mcpClient = null,
-  loadFinance = loadFinanceSummary,
+  loadFinance = loadFinancialActivity,
   loadWorkspace = loadWorkspacePlanSummary,
   loadPosition = null,
   skills = bundledSkills,
@@ -1266,7 +1279,7 @@ export async function createChiefTooling({
     schedule: stores?.schedule ?? new PrismaScheduleStore(),
     mcpClient,
     search,
-    loadPosition: loadFreedomFinancialPosition,
+    loadPosition: loadCurrentPosition,
     moduleAccess: moduleAccess ?? stores?.moduleAccess ?? new PrismaModuleAccess(),
     checkpointStore: stores?.checkpoints ?? new PrismaCheckpointStore(),
     settingsWithUser: stores?.settingsWithUser,

@@ -14,7 +14,7 @@ import {
 import { styles } from "./styles.js";
 import { getBudgetPeriodAtOffset, getCurrentTimestamp } from "./utils/date.js";
 import { money, parseMoney } from "./utils/format.js";
-import { addMoney, roundMoney, subtractMoney, sumMoney } from "./utils/money.js";
+import { roundMoney, subtractMoney, sumMoney } from "./utils/money.js";
 import {
   createOnboardingState,
   evaluateOnboardingProgress,
@@ -92,7 +92,8 @@ import {
 } from "./utils/preciousMetalsPricing.js";
 import { AccountsView } from "./components/AccountsView.jsx";
 import { ViewErrorBoundary } from "./components/ErrorBoundary.jsx";
-import { buildReserveReadiness, computeTrueCash, isReserveRow } from "./utils/reserves.js";
+import { buildReserveReadiness, isReserveRow } from "./utils/reserves.js";
+import { deriveFinancialPosition } from "./utils/financialPosition.js";
 import { BudgetCommandCenter } from "./components/BudgetCommandCenter.jsx";
 import { DashboardView } from "./components/DashboardView.jsx";
 import { ForecastLab } from "./components/ForecastLab.jsx";
@@ -121,7 +122,14 @@ function normalizeCryptoPrice(value) {
   return Number((Number(value) || 0).toFixed(8));
 }
 
-const LIQUID_ACCOUNT_TYPES = new Set(["Checking", "Savings", "Manual Cash"]);
+const ALLOCATION_COLORS = {
+  "True Cash": "#8b34ff",
+  Investments: "#168bff",
+  Crypto: "#00d8ff",
+  "Precious Metals": "#f6c453",
+  "Real Estate": "#00f59b",
+  Retirement: "#ff5d7a",
+};
 const CRYPTO_PRICE_SOURCE = "CoinGecko";
 const THIRTY_DAY_WINDOW = 30;
 const SNAPSHOT_RETENTION_DAYS = 400;
@@ -1008,49 +1016,22 @@ function ForwardFreedomDashboard({
     );
   };
 
-  const liquidCash = sumMoney(
-    syncedAccounts.filter((account) => LIQUID_ACCOUNT_TYPES.has(account.type)),
-    (account) => account.balance
-  );
-
-  // Credit card balances are stored as negative when money is owed. Net the
-  // balances and floor at zero instead of Math.abs-ing the sum: a positive
-  // balance (e.g. an overpayment credit or a data glitch) must reduce reported
-  // debt, never be silently counted as more debt.
-  const creditCardNetBalance = sumMoney(
-    syncedAccounts.filter((account) => account.type === "Credit Card"),
-    (account) => account.balance
-  );
-  const creditCardDebt = Math.max(0, -creditCardNetBalance);
-
-  // Reserve (committed) cash: the sum of every reserve category's balance.
-  // This money physically sits in checking but is no longer spendable True Cash.
+  // Reserve cash sits in checking and is removed from spendable True Cash.
+  // The dollar totals below come from the shared position aggregate.
   const reserveReadiness = buildReserveReadiness(
     budgetRows.filter(isReserveRow),
     categorizedTransactions,
     { asOfMonth: currentBudgetPeriod.month, asOfYear: currentBudgetPeriod.year }
   );
   const reservesBalance = reserveReadiness.totalBalance;
-
-  // Gross True Cash keeps the pre-reserves meaning (liquid minus credit cards) and
-  // is what net worth / allocations use, because reserve cash is still real cash.
-  const grossTrueCash = subtractMoney(liquidCash, creditCardDebt);
-  // Spendable True Cash removes committed reserve dollars. Allowed to go negative:
-  // a negative value honestly signals the user has committed more than they hold.
-  const trueCash = computeTrueCash({ liquidCash, creditCardDebt, reservesBalance });
-  const isReservesOvercommitted = reservesBalance > liquidCash;
-
-  const sumAccountTypeBalance = (accountType) =>
-    sumMoney(
-      syncedAccounts.filter((account) => account.type === accountType),
-      (account) => account.balance
-    );
-
-  const investmentTotal = sumAccountTypeBalance("Investment");
-  const cryptoTotal = sumAccountTypeBalance("Crypto");
-  const preciousMetalsTotal = sumAccountTypeBalance("Precious Metals");
-  const realEstateTotal = sumAccountTypeBalance("Real Estate");
-  const retirementTotal = sumAccountTypeBalance("Retirement");
+  const derivedPosition = deriveFinancialPosition(syncedAccounts, { reservesBalance });
+  const {
+    liquidCash,
+    creditCardDebt,
+    trueCash,
+    reservesOvercommitted: isReservesOvercommitted,
+    netWorth: canonicalNetWorth,
+  } = derivedPosition.position;
 
   const currentMonth = currentBudgetPeriod.month;
   const anchorStartingMonth = resolveUserAnchorStartingMonth(activeUser, currentMonth);
@@ -1089,17 +1070,8 @@ function ForwardFreedomDashboard({
     plaidTransactionOverrides
   );
 
-  const totalNetWorth = Math.max(
-    addMoney(
-      grossTrueCash,
-      investmentTotal,
-      cryptoTotal,
-      preciousMetalsTotal,
-      realEstateTotal,
-      retirementTotal
-    ),
-    1
-  );
+  // Display floor only. canonicalNetWorth is the shared unfloored sum.
+  const totalNetWorth = Math.max(canonicalNetWorth, 1);
   const pct = (v) => `${((v / totalNetWorth) * 100).toFixed(1)}%`;
   const trackedMetricSnapshots = ensureTodayMetricSnapshot(
     metricSnapshots,
@@ -1236,50 +1208,13 @@ function ForwardFreedomDashboard({
         }
   );
 
-  const dynamicAllocations = [
-    {
-      name: "True Cash",
-      amount: money(grossTrueCash),
-      percent: pct(grossTrueCash),
-      color: "#8b34ff",
-      valueNumber: grossTrueCash,
-    },
-    {
-      name: "Investments",
-      amount: money(investmentTotal),
-      percent: pct(investmentTotal),
-      color: "#168bff",
-      valueNumber: investmentTotal,
-    },
-    {
-      name: "Crypto",
-      amount: money(cryptoTotal),
-      percent: pct(cryptoTotal),
-      color: "#00d8ff",
-      valueNumber: cryptoTotal,
-    },
-    {
-      name: "Precious Metals",
-      amount: money(preciousMetalsTotal),
-      percent: pct(preciousMetalsTotal),
-      color: "#f6c453",
-      valueNumber: preciousMetalsTotal,
-    },
-    {
-      name: "Real Estate",
-      amount: money(realEstateTotal),
-      percent: pct(realEstateTotal),
-      color: "#00f59b",
-      valueNumber: realEstateTotal,
-    },
-    {
-      name: "Retirement",
-      amount: money(retirementTotal),
-      percent: pct(retirementTotal),
-      color: "#ff5d7a",
-      valueNumber: retirementTotal,
-    },
-  ];
+  const dynamicAllocations = derivedPosition.allocation.map((slice) => ({
+    name: slice.name,
+    amount: money(slice.amount),
+    percent: pct(slice.amount),
+    color: ALLOCATION_COLORS[slice.name],
+    valueNumber: slice.amount,
+  }));
 
   useEffect(() => {
     const nextPersistedState = {

@@ -160,9 +160,14 @@ export function freedomFinancialAccessGuidance(
   if (freedomFinancialRead === true) {
     return (
       "Freedom Financial read access is on for this user. " +
-      "Call finance_summary before answering questions about this user's financial position, True Cash, liquid cash, credit card debt, net worth, asset allocation, holdings, budget, category spending, current month, or yearly outlook. " +
+      "Call finance_summary before answering questions about this user's financial position, True Cash, liquid cash, credit card debt, loans, net worth, asset allocation, holdings, budget, category spending, current month, or yearly outlook. " +
+      "finance_summary.position is the current position. finance_summary.activity is historical spending. " +
       "Use only the figures finance_summary returns. trueCash is spendable cash after reserves. allocation True Cash is liquid cash minus credit card debt, which is the dashboard allocation slice. netWorth is the real sum and is not floored. " +
-      "dashboard.holdings lists crypto and precious-metal positions with symbol or metal, quantity, and balance. Use holdings to answer whether the user owns an asset such as a cryptocurrency. " +
+      "creditCardDebt is credit cards only. totalDebt adds loan balances owed and is a different number. " +
+      "position.holdings lists crypto and precious-metal positions with symbol or metal, quantity, balance, and accountId. Match the stored symbol. " +
+      "position.loans keeps the stored loanCategory. position.reconciliation lists the account ids behind each total. " +
+      "Investment accounts do not include security-level holdings. If asked for a stock or ETF, say the investment-account balance is available and security-level holdings are not. " +
+      "If activity is unavailable, still answer from position. If position is unavailable, still answer historical questions from activity. " +
       "workspace_plan_summary is a read-only label and count slice. " +
       "If a finance tool says Freedom Financial read access is currently disabled, tell the user and do not invent balances, transactions, budgets, or other financial figures. " +
       FREEDOM_FINANCIAL_WRITE_GUIDANCE

@@ -1,11 +1,8 @@
-import { withUserContext } from "../../db/prisma.js";
 import {
   AGGREGATION_MONTHS,
-  aggregationWindowStart,
   computeFinanceAggregates,
-  FINANCE_ACCOUNT_SELECT,
-  FINANCE_TRANSACTION_SELECT,
 } from "../../finance/aggregates.js";
+import { loadFinancialActivity } from "../../finance/activity.js";
 import { generateAgentObject } from "../llm.js";
 import { dataSection, DEFAULT_REPORT_STYLE_RULE, PROMPT_SAFETY_RULES } from "../prompts.js";
 import { jsonSchema } from "ai";
@@ -64,25 +61,15 @@ export function buildFinanceUserMessage({ aggregates, instructions, definitionOf
   ].join("\n\n");
 }
 
-export async function runFinanceAgent({ userId, config }) {
-  const now = new Date();
-  const windowStart = aggregationWindowStart(now);
-
-  const { transactions, accounts } = await withUserContext(userId, async (tx) => {
-    // Deliberately minimal SELECT: merchant columns and any account/Plaid
-    // identifiers are never read by this agent.
-    const transactionRows = await tx.transaction.findMany({
-      where: { userId, postedAt: { gte: windowStart }, pending: false },
-      select: FINANCE_TRANSACTION_SELECT,
-    });
-    const accountRows = await tx.account.findMany({
-      where: { userId },
-      select: FINANCE_ACCOUNT_SELECT,
-    });
-    return { transactions: transactionRows, accounts: accountRows };
-  });
-
-  const aggregates = computeFinanceAggregates({ transactions, accounts, now });
+export async function runFinanceAgent({ userId, config, now = new Date() }) {
+  const activity = await loadFinancialActivity(userId, { now });
+  const aggregates = {
+    months: activity.months,
+    transactionCount: activity.transactionCount,
+    monthlyCategoryTotals: activity.monthlyCategoryTotals,
+    categoryDeltas: activity.categoryDeltas,
+    accountBalancesByType: activity.accountBalancesByType,
+  };
   const { object, usage } = await generateAgentObject({
     model: config.model,
     system: FINANCE_SYSTEM_PROMPT,
@@ -104,11 +91,17 @@ export async function runFinanceAgent({ userId, config }) {
       description:
         "Read the user's transactions and accounts, aggregated server-side; only category/amount/month aggregates and account-type balance totals were sent to the model.",
       transactions: {
-        count: transactions.length,
-        window: { months: AGGREGATION_MONTHS, since: aggregates.months[0] },
+        count: activity.transactionCount,
+        window: { months: AGGREGATION_MONTHS, since: aggregates.months?.[0] },
         fields: ["category", "amount", "postedAt"],
       },
-      accounts: { count: accounts.length, fields: ["type", "balance"] },
+      accounts: {
+        count: (activity.accountBalancesByType || []).reduce(
+          (sum, row) => sum + (row.accountCount || 0),
+          0
+        ),
+        fields: ["type", "balance"],
+      },
     },
   };
 }

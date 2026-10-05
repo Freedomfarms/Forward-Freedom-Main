@@ -396,7 +396,7 @@ test("an enabled user can read only their own Freedom Financial data", async () 
     { userId: USER_A }
   );
   assert.equal(summary.isError, false);
-  assert.equal(JSON.parse(summary.output).cashPosition, ONLY_A);
+  assert.equal(JSON.parse(summary.output).activity.cashPosition, ONLY_A);
   assert.equal(summary.output.includes(ONLY_B), false);
 
   const plan = await ctx.executor.execute(
