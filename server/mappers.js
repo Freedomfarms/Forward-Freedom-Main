@@ -112,7 +112,7 @@ export function mapPlaidAccountType(type, subtype) {
   return null;
 }
 
-function mapLoanCategory(subtype) {
+export function mapLoanCategory(subtype) {
   const normalizedSubtype = String(subtype || "").toLowerCase();
   if (!normalizedSubtype) return "Loan";
   if (normalizedSubtype === "mortgage") return "Mortgage";

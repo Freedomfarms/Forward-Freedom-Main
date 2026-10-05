@@ -3,7 +3,8 @@ import { AccountRemoveConfirmModal } from "./AccountRemoveConfirmModal.jsx";
 import { styles } from "../styles.js";
 import { getCurrentTimestamp } from "../utils/date.js";
 import { money } from "../utils/format.js";
-import { roundMoney, subtractMoney, sumMoney } from "../utils/money.js";
+import { roundMoney } from "../utils/money.js";
+import { signedBalanceTotals } from "../utils/financialPosition.js";
 import {
   ACCOUNT_GROUPS,
   ACCOUNT_TYPES,
@@ -252,17 +253,7 @@ export function AccountsView({
   // Assets and debts are shown separately in the hero card: a single summed
   // "combined balance" hides liabilities (a $400k mortgage plus $10k checking
   // must never read as positive liquid funds).
-  const totalAssets = sumMoney(
-    accounts.filter((account) => (Number(account.balance) || 0) > 0),
-    (account) => account.balance
-  );
-  const totalDebts = Math.abs(
-    sumMoney(
-      accounts.filter((account) => (Number(account.balance) || 0) < 0),
-      (account) => account.balance
-    )
-  );
-  const netBalance = subtractMoney(totalAssets, totalDebts);
+  const { totalAssets, totalLiabilities: totalDebts, netBalance } = signedBalanceTotals(accounts);
   const attentionItems = (plaidIntegration?.items || []).filter(
     (item) => item.status === "requires_attention"
   );

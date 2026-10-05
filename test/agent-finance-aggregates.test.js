@@ -37,6 +37,9 @@ before(async () => {
     mock.module("../server/db/prisma.js", {
       namedExports: {
         withUserContext: async (userId, fn) => fn(currentDb.tx),
+        getPrismaClient: () => null,
+        isDatabaseConfigured: () => false,
+        Prisma: {},
       },
     });
     ({ createFakeDb } = await import("./helpers/fakeAgentDb.js"));
@@ -214,7 +217,7 @@ test("no merchant, account-name, institution or Plaid identifier ever reaches th
     instructions: "Watch my dining spend.",
     definitionOfDone: "A weekly observations report.",
   };
-  const result = await finance.runFinanceAgent({ userId: USER_ID, config });
+  const result = await finance.runFinanceAgent({ userId: USER_ID, config, now: NOW });
 
   assert.ok(captured, "the model should have been called once");
   const payload = JSON.stringify(captured);

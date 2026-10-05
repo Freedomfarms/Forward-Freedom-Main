@@ -4,6 +4,7 @@
 
 import { withUserContext } from "../db/prisma.js";
 import { decrypt as decryptField, decryptNumber } from "../security/envelope.js";
+import { isSchemaMismatch, queryWithSchemaFallback } from "./schemaRead.js";
 
 export const AGGREGATION_MONTHS = 6;
 
@@ -28,6 +29,19 @@ export const FINANCE_PLAID_SELECT = Object.freeze({
   status: true,
   lastSyncAt: true,
   lastSyncError: true,
+});
+
+// Pre-encryption selects. Used only after Prisma reports the ciphertext
+// column is missing (P2022). Ciphertext wins whenever the column exists.
+export const LEGACY_FINANCE_TRANSACTION_SELECT = Object.freeze({
+  category: true,
+  amount: true,
+  postedAt: true,
+});
+
+export const LEGACY_FINANCE_ACCOUNT_SELECT = Object.freeze({
+  type: true,
+  balance: true,
 });
 
 export function aggregationWindowStart(now = new Date()) {
@@ -198,22 +212,38 @@ export function summarizePlaidConnectionHealth(plaidItems = []) {
  * User-scoped read of the proven aggregate plus Plaid connection health.
  * Queries run only on the transaction `withUserContext` provides, so RLS applies.
  */
-export async function loadFinanceSummary(userId, { now = new Date(), withUser = withUserContext } = {}) {
+export async function loadPlaidAggregateInputs(
+  userId,
+  { now = new Date(), withUser = withUserContext } = {}
+) {
   const windowStart = aggregationWindowStart(now);
-  const { transactions, accounts, plaidItems } = await withUser(userId, async (tx) => {
+  return queryWithSchemaFallback(userId, withUser, async (tx, encrypted) => {
     const transactionRows = await tx.transaction.findMany({
       where: { userId, postedAt: { gte: windowStart }, pending: false },
-      select: FINANCE_TRANSACTION_SELECT,
+      select: encrypted ? FINANCE_TRANSACTION_SELECT : LEGACY_FINANCE_TRANSACTION_SELECT,
     });
     const accountRows = await tx.account.findMany({
       where: { userId },
-      select: FINANCE_ACCOUNT_SELECT,
+      select: encrypted ? FINANCE_ACCOUNT_SELECT : LEGACY_FINANCE_ACCOUNT_SELECT,
     });
-    const items = await tx.plaidItem.findMany({
-      where: { userId },
-      select: FINANCE_PLAID_SELECT,
-    });
+    let items;
+    try {
+      items = await tx.plaidItem.findMany({
+        where: { userId },
+        select: FINANCE_PLAID_SELECT,
+      });
+    } catch (error) {
+      if (isSchemaMismatch(error)) throw error;
+      items = [];
+    }
     return { transactions: transactionRows, accounts: accountRows, plaidItems: items };
+  });
+}
+
+export async function loadFinanceSummary(userId, { now = new Date(), withUser = withUserContext } = {}) {
+  const { transactions, accounts, plaidItems } = await loadPlaidAggregateInputs(userId, {
+    now,
+    withUser,
   });
 
   return {

@@ -1,13 +1,13 @@
 import { withUserContext } from "../db/prisma.js";
 import { decryptNumber } from "../security/envelope.js";
 import {
-  aggregationWindowStart,
-  computeFinanceAggregates,
   FINANCE_ACCOUNT_SELECT,
   FINANCE_PLAID_SELECT,
-  FINANCE_TRANSACTION_SELECT,
+  LEGACY_FINANCE_ACCOUNT_SELECT,
   summarizePlaidConnectionHealth,
 } from "../finance/aggregates.js";
+import { loadFinancialActivity } from "../finance/activity.js";
+import { queryWithSchemaFallback } from "../finance/schemaRead.js";
 import { loadWorkspacePlanSummary } from "../finance/workspaceSlice.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -53,11 +53,11 @@ export async function loadLightFinancialHealth(userId) {
   }
 
   try {
-    return await withUserContext(userId, async (tx) => {
+    return await queryWithSchemaFallback(userId, withUserContext, async (tx, encrypted) => {
       const [accounts, plaidItems] = await Promise.all([
         tx.account.findMany({
           where: { userId },
-          select: FINANCE_ACCOUNT_SELECT,
+          select: encrypted ? FINANCE_ACCOUNT_SELECT : LEGACY_FINANCE_ACCOUNT_SELECT,
         }),
         tx.plaidItem.findMany({
           where: { userId },
@@ -106,33 +106,34 @@ export async function loadFinanceAggregatesCached(userId, { now = new Date(), fo
   }
 
   try {
-    const windowStart = aggregationWindowStart(now);
-    const { transactions, accounts } = await withUserContext(userId, async (tx) => {
-      const transactionRows = await tx.transaction.findMany({
-        where: { userId, postedAt: { gte: windowStart }, pending: false },
-        select: FINANCE_TRANSACTION_SELECT,
-      });
-      const accountRows = await tx.account.findMany({
-        where: { userId },
-        select: FINANCE_ACCOUNT_SELECT,
-      });
-      return { transactions: transactionRows, accounts: accountRows };
-    });
-
-    const aggregates = computeFinanceAggregates({ transactions, accounts, now });
+    const activity = await loadFinancialActivity(userId, { now });
+    if (activity.status === "unavailable") {
+      throw new Error("finance activity unavailable");
+    }
+    const aggregates = {
+      months: activity.months,
+      transactionCount: activity.transactionCount,
+      monthlyCategoryTotals: activity.monthlyCategoryTotals,
+      categoryDeltas: activity.categoryDeltas,
+      accountBalancesByType: activity.accountBalancesByType,
+    };
+    const accountCount = (aggregates.accountBalancesByType || []).reduce(
+      (sum, row) => sum + (row.accountCount || 0),
+      0
+    );
     financeAggregatesCache.set(userId, {
       aggregates,
       loadedAt: Date.now(),
-      accountCount: accounts.length,
-      transactionCount: transactions.length,
+      accountCount,
+      transactionCount: aggregates.transactionCount,
     });
 
     return {
       status: "available",
       cache: { hit: false, ageMs: 0, ttlMs: FINANCE_AGGREGATES_CACHE_TTL_MS },
       summary: summarizeAggregatesForCeo(aggregates),
-      accountCount: accounts.length,
-      transactionCount: transactions.length,
+      accountCount,
+      transactionCount: aggregates.transactionCount,
     };
   } catch (error) {
     console.warn("[ceo-world-model] finance aggregates failed:", error?.message || error);
