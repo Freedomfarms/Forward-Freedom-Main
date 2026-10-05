@@ -8,6 +8,7 @@ import { projectConnectedSystems } from "../server/chief/capabilities/systems.js
 import { Capability, CapabilityPolicy } from "../server/chief/core/capabilities.js";
 import { baselineCapabilities } from "../server/chief/control/plane.js";
 import {
+  CHIEF_PREFERENCES_KEY,
   normalizeChiefPreferences,
   readChiefPreferences,
   shouldSpeakReply,
@@ -142,6 +143,8 @@ test("interface preferences persist without credentials", () => {
   assert.deepEqual(readChiefPreferences(storage), saved);
   assert.equal(shouldSpeakReply({ source: "voice", preferences: saved }), true);
   assert.equal(shouldSpeakReply({ source: "text", preferences: saved }), true);
+  assert.equal(shouldSpeakReply({ source: "text" }), true);
+  assert.equal(normalizeChiefPreferences(null).conversation.autoSpeak, true);
   assert.equal(
     shouldSpeakReply({
       source: "voice",
@@ -149,6 +152,26 @@ test("interface preferences persist without credentials", () => {
     }),
     false
   );
+  assert.equal(
+    shouldSpeakReply({
+      source: "text",
+      preferences: normalizeChiefPreferences({
+        conversation: { autoSpeak: false, speechChoice: true },
+      }),
+    }),
+    false
+  );
+
+  const legacy = memoryStorage({
+    [CHIEF_PREFERENCES_KEY]: JSON.stringify({
+      conversation: { autoSpeak: false, voiceResponses: true },
+    }),
+  });
+  const upgraded = readChiefPreferences(legacy);
+  assert.equal(upgraded.conversation.autoSpeak, true);
+  assert.equal(upgraded.conversation.speechChoice, true);
+  assert.equal(shouldSpeakReply({ source: "text", preferences: upgraded }), true);
+  assert.equal(readChiefPreferences(legacy).conversation.autoSpeak, true);
 });
 
 test("CHIEF settings stays inside the room and drops the CEO settings detour", () => {

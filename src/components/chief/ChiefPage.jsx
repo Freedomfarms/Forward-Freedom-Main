@@ -41,13 +41,9 @@ import { ChiefModelSelect } from "./ChiefModelSelect.jsx";
 import { ChiefStatus } from "./ChiefStatus.jsx";
 import { ChiefEarlierTurns, ChiefTranscript } from "./ChiefTranscript.jsx";
 import { ChiefSettings } from "./ChiefSettings.jsx";
-import { ChiefVoiceDock } from "./ChiefVoiceDock.jsx";
 import { useChiefVoice } from "./useChiefVoice.js";
-import {
-  readChiefPreferences,
-  shouldSpeakReply,
-  writeChiefPreferences,
-} from "../../utils/chiefPreferences.js";
+import { readChiefPreferences, writeChiefPreferences } from "../../utils/chiefPreferences.js";
+import { speakCompletedReply } from "../../utils/chiefReplySpeech.js";
 
 const NARROW_NAV_QUERY = "(max-width: 1023px)";
 
@@ -507,10 +503,7 @@ export function ChiefPage({
     if (controller.signal.aborted || abortRef.current !== controller) return;
 
     const sessionIdNow = turn.sessionId;
-    let spoken = "";
-    if (turn.finished && turn.status !== CHIEF_STATUS.ERROR && !turn.error) {
-      spoken = typeof turn.streamText === "string" ? turn.streamText.trim() : "";
-    }
+    let historyAnswer = "";
     if (sessionIdNow && (turn.finished || turn.approval)) {
       try {
         const payload = await fetchChiefHistory(user, sessionIdNow);
@@ -519,13 +512,8 @@ export function ChiefPage({
         setMessages(historyMessages);
         setStreamText("");
         setNotFound(false);
-        if (
-          !spoken &&
-          turn.finished &&
-          turn.status !== CHIEF_STATUS.ERROR &&
-          !turn.error
-        ) {
-          spoken = currentTurn(historyMessages, "").answer.trim();
+        if (turn.finished && turn.status !== CHIEF_STATUS.ERROR && !turn.error) {
+          historyAnswer = currentTurn(historyMessages, "").answer;
         }
       } catch (error) {
         if (abortRef.current !== controller) return;
@@ -556,16 +544,16 @@ export function ChiefPage({
     }
     setBusyState(false);
     void refreshAccess();
-    if (
-      spoken &&
-      shouldSpeakReply({ source, preferences }) &&
-      turn.status !== CHIEF_STATUS.ERROR &&
-      !turn.error &&
-      !controller.signal.aborted &&
-      abortRef.current === controller
-    ) {
-      void voice.speakAnswer(spoken);
-    }
+    speakCompletedReply(voice, {
+      streamText: turn.streamText,
+      historyAnswer,
+      finished: turn.finished === true,
+      status: turn.status,
+      error: turn.error,
+      aborted: controller.signal.aborted || abortRef.current !== controller,
+      source,
+      preferences,
+    });
   }
 
   useEffect(() => {
@@ -836,6 +824,10 @@ export function ChiefPage({
     listening: voice.listening,
     speaking: voice.audioActive,
   };
+  const orbState = visualStateForInteraction(interaction);
+  const webState = webStateForInteraction(interaction);
+  const voiceNote = voice.interim || voice.speechError || "";
+  const homeClass = embedded ? "chief-apex-home chief-apex-home--embedded" : "chief-apex-home";
 
   function submitDraft(text) {
     voice.ensureAudio();
@@ -848,58 +840,102 @@ export function ChiefPage({
     voice.toggleListening();
   }
 
-  if (room === "home") {
-    return (
-      <section className="chief-apex-home" aria-label="CHIEF">
-        <ApexClock />
-        <ApexWorld
-          orbState={visualStateForInteraction(interaction)}
-          webState={webStateForInteraction(interaction)}
-          roster={CHIEF_NAV_ROSTER}
-          onSelect={openNode}
-          coreListening={voice.listening}
-          onCoreActivate={user && !approval && !activeArchived ? toggleMicrophone : null}
-          audioLevelRef={voice.audioLevelRef}
-          motionPreference={preferences.appearance.reducedMotion}
-          animationIntensity={preferences.appearance.animationIntensity}
-          showLabels={preferences.appearance.showNavLabels}
-          showStatus={preferences.appearance.showTelemetry}
-        />
-        <ChiefVoiceDock
-          signedIn={Boolean(user)}
-          userLine={turnView.userLine}
-          answer={turnView.answer}
-          earlier={turnView.earlier}
-          answerRef={answerRef}
-          historyLoading={historyLoading}
-          notFound={notFound}
-          showEmpty={showEmpty}
-          onBackToList={backToConversations}
-          draft={draft}
-          onDraft={setDraft}
-          onSubmit={() => submitDraft(draft)}
-          disabled={busy || historyLoading || notFound}
-          listening={voice.listening}
-          interim={voice.interim}
-          onMicrophone={toggleMicrophone}
-          composerRef={composerRef}
-          approval={Boolean(approval) && !activeArchived}
+  const homeDock = user ? (
+    <>
+      <ChiefTranscript
+        labeled
+        userLine={turnView.userLine}
+        answer={turnView.answer}
+        answerRef={answerRef}
+        isLoading={historyLoading}
+        notFound={notFound}
+        showEmpty={showEmpty}
+        showResponseText={preferences.conversation.showResponseText}
+        onBackToList={backToConversations}
+      />
+      {transcriptError ? (
+        <p className="chief-turn-note">
+          {transcriptError}{" "}
+          <button type="button" className="chief-text-button" onClick={retryTranscript}>
+            Retry
+          </button>
+        </p>
+      ) : null}
+      {approval && !activeArchived ? (
+        <ChiefApprovalCard
+          disabled={busy}
           onApprove={() => resolveApproval("approve")}
           onDeny={() => resolveApproval("deny")}
-          archived={activeArchived}
-          onRestore={() => {
-            restoreConversation(activeSessionId).catch((error) => setTurnError(errorText(error)));
-          }}
-          voices={voice.voices}
-          voicesLoading={voice.voicesLoading}
-          voicesError={voice.voicesError}
-          voiceId={voice.voiceId}
-          onVoiceId={voice.chooseVoice}
-          onRetryVoices={voice.retryVoices}
-          speechError={voice.speechError}
-          showResponseText={preferences.conversation.showResponseText}
-          enterToSend={preferences.conversation.enterToSend}
         />
+      ) : (
+        <div className="chief-composer-row">
+          {activeArchived ? (
+            <div className="chief-archived-note">
+              <p>This conversation is archived. Restore it to continue.</p>
+              <button
+                type="button"
+                className="chief-action"
+                disabled={busy}
+                onClick={() => {
+                  restoreConversation(activeSessionId).catch((error) =>
+                    setTurnError(errorText(error))
+                  );
+                }}
+              >
+                Restore
+              </button>
+            </div>
+          ) : (
+            <ChiefComposer
+              value={draft}
+              onChange={setDraft}
+              onSubmit={() => submitDraft(draft)}
+              onMicrophone={toggleMicrophone}
+              listening={voice.listening}
+              enterToSend={preferences.conversation.enterToSend}
+              disabled={busy || historyLoading || notFound}
+              inputRef={composerRef}
+            />
+          )}
+        </div>
+      )}
+      {voice.speechError ? (
+        <p className="chief-turn-note" role="alert">
+          {voice.speechError}
+        </p>
+      ) : null}
+    </>
+  ) : (
+    <div className="chief-turn">
+      <p className="chief-turn-empty">Sign in to talk with CHIEF.</p>
+    </div>
+  );
+
+  if (room === "home") {
+    return (
+      <section className={homeClass} aria-label="CHIEF">
+        <div className="chief-apex-stage">
+          <ApexClock />
+          <ApexWorld
+            orbState={orbState}
+            webState={webState}
+            roster={CHIEF_NAV_ROSTER}
+            onSelect={openNode}
+            onCoreTap={user && !approval && !activeArchived ? toggleMicrophone : undefined}
+            coreListening={voice.listening}
+            audioLevelRef={voice.audioLevelRef}
+            caption={voiceNote}
+            motionPreference={preferences.appearance.reducedMotion}
+            animationIntensity={preferences.appearance.animationIntensity}
+            showLabels={preferences.appearance.showNavLabels}
+          />
+          <p className="chief-sr" aria-live="polite">
+            {voice.listening ? "Listening" : voice.audioActive ? "Speaking" : voiceNote}
+          </p>
+        </div>
+        <div className="chief-apex-dock" aria-label="CHIEF conversation">
+          {homeDock}
+        </div>
         <ChiefSettings
           open={settingsOpen}
           section={settingsSection}

@@ -1,4 +1,3 @@
-import { useEffect, useRef } from "react";
 import { ChiefApprovalCard } from "./ChiefApprovalCard.jsx";
 import { ChiefComposer } from "./ChiefComposer.jsx";
 import { ChiefEarlierTurns, ChiefTranscript } from "./ChiefTranscript.jsx";
@@ -36,34 +35,24 @@ export function ChiefVoiceDock({
   showResponseText = true,
   enterToSend = true,
 }) {
-  const logRef = useRef(null);
   const expanded = Boolean(
     draft.trim() ||
-    listening ||
-    interim ||
-    userLine ||
-    answer ||
-    historyLoading ||
-    notFound ||
-    voicesError ||
-    speechError ||
-    approval ||
-    archived
+      listening ||
+      interim ||
+      userLine ||
+      answer ||
+      earlier.length ||
+      historyLoading ||
+      notFound ||
+      voicesError ||
+      speechError ||
+      approval ||
+      archived
   );
-
-  useEffect(() => {
-    const node = logRef.current;
-    if (!node) return;
-    node.scrollTop = node.scrollHeight;
-  }, [userLine, answer, interim, speechError, historyLoading, notFound]);
 
   return (
     <section
-      className={
-        expanded
-          ? "chief-apex-dock chief-voice-dock is-expanded"
-          : "chief-apex-dock chief-voice-dock is-idle"
-      }
+      className={expanded ? "chief-voice-dock is-expanded" : "chief-voice-dock is-idle"}
       aria-label="Talk with CHIEF"
     >
       <div className="chief-voice-provider">
@@ -98,7 +87,7 @@ export function ChiefVoiceDock({
       </div>
 
       {signedIn ? (
-        <div className="chief-voice-dock-log" ref={logRef}>
+        <div className="chief-voice-dock-log">
           <ChiefEarlierTurns earlier={earlier} showResponseText={showResponseText} />
           <ChiefTranscript
             userLine={userLine}

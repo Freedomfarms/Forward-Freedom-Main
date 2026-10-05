@@ -303,20 +303,29 @@ test("the room intelligence maps status onto the APEX orb and web", () => {
   assert.match(core, /const N = 1200/);
   assert.match(core, /dpr=\{\[1, 1\.5\]\}/);
   assert.match(page, /visualStateForInteraction/);
-  assert.match(page, /ChiefVoiceDock/);
+  assert.doesNotMatch(page, /ChiefVoiceDock/);
   assert.match(page, /sendRef\.current = sendMessage/);
   assert.match(page, /from "\.\/useChiefVoice\.js"/);
   assert.equal(page.includes('from "./voice/useChiefVoice.js"'), false);
   assert.equal((page.match(/useChiefVoice\(/g) || []).length, 1);
   assert.match(page, /<ChiefSettings/);
   assert.match(page, /setSettingsOpen\(true\)/);
+  assert.match(page, /speakCompletedReply\(voice,/);
+  assert.equal((page.match(/speakCompletedReply\(/g) || []).length, 1);
+  assert.match(
+    readFileSync(path.join(root, "src/utils/chiefReplySpeech.js"), "utf8"),
+    /voice\.speakAnswer\(spoken\)/
+  );
+  assert.match(page, /voice\.toggleListening\(\)/);
   assert.match(world, /0\.12/);
   assert.match(world, /staticCore=\{resolvedMotion === "off"\}/);
   assert.match(world, /state=\{orbState\}/);
   assert.match(world, /audioLevelRef=\{audioLevelRef\}/);
   assert.match(world, /Speak to CHIEF/);
-  assert.match(world, /showStatus \? <OrbStatusBar/);
-  assert.doesNotMatch(page, /onCoreTap/);
+  assert.match(world, /apex-core-anchor/);
+  assert.match(world, /<OrbStatusBar state=\{orbState\} \/>/);
+  assert.doesNotMatch(world, /showStatus \? <OrbStatusBar/);
+  assert.match(page, /onCoreTap/);
 });
 
 test("the room source keeps conversation plain and navigation literal", () => {
@@ -343,21 +352,81 @@ test("the room source keeps conversation plain and navigation literal", () => {
   assert.equal(page.includes("ForwardFreedomDashboard"), false);
 });
 
-test("the apex conversation overlays the stage and does not form a panel", () => {
+test("the home screen keeps the latest exchange in a bottom dock", () => {
   const root = process.cwd();
   const page = readFileSync(path.join(root, "src/components/chief/ChiefPage.jsx"), "utf8");
   const world = readFileSync(path.join(root, "src/third_party/apex-ui/ApexWorld.jsx"), "utf8");
-  const dock = readFileSync(path.join(root, "src/components/chief/ChiefVoiceDock.jsx"), "utf8");
+  const status = readFileSync(path.join(root, "src/third_party/apex-ui/OrbStatusBar.jsx"), "utf8");
+  const voice = readFileSync(path.join(root, "src/components/chief/ChiefVoiceSheet.jsx"), "utf8");
   const css = readFileSync(path.join(root, "src/global.css"), "utf8");
-  assert.match(page, /className="chief-apex-home"/);
-  assert.equal(page.includes("minHeight: 620"), false);
-  assert.match(world, /chief-apex-stage/);
-  assert.match(dock, /chief-apex-dock/);
-  assert.match(dock, /ChiefTranscript/);
-  assert.match(css, /\.chief-apex-stage \{\s*position: absolute;\s*inset: 0;/);
-  assert.match(css, /\.chief-voice-dock \{[\s\S]*position: absolute;/);
-  assert.match(css, /\.chief-voice-dock \{[\s\S]*background: transparent;/);
-  assert.match(css, /\.chief-voice-dock \.chief-earlier \{\s*display: none;/);
-  assert.equal(css.includes("rgba(5, 16, 28, 0.42)"), false);
-  assert.equal(css.includes("rgba(4, 14, 26, 0.72)"), false);
+  const settings = readFileSync(
+    path.join(root, "src/components/chief/ChiefSettingsExtras.jsx"),
+    "utf8"
+  );
+  const dashboard = readFileSync(path.join(root, "src/ForwardFreedomDashboard.jsx"), "utf8");
+
+  const roomSettings = readFileSync(
+    path.join(root, "src/components/chief/ChiefSettings.jsx"),
+    "utf8"
+  );
+
+  assert.match(page, /chief-apex-stage/);
+  assert.match(page, /chief-apex-dock/);
+  assert.doesNotMatch(page, /ChiefVoiceDock/);
+  assert.match(page, /labeled/);
+  assert.match(page, /turnView\.userLine/);
+  assert.match(page, /turnView\.answer/);
+  assert.match(page, /onCoreTap/);
+  assert.match(page, /onMicrophone=\{toggleMicrophone\}/);
+  assert.match(page, /setSettingsOpen\(true\)/);
+  assert.match(page, /setRoom\("convos"\)/);
+  assert.match(page, /onOpenFinancial/);
+  assert.match(page, /onOpenAgents/);
+  assert.doesNotMatch(page, /Provider:/);
+  assert.doesNotMatch(page, /<select/);
+  assert.doesNotMatch(status, /TAP THE CORE/);
+  assert.doesNotMatch(voice, /Provider:/);
+  assert.match(world, /apex-core-anchor/);
+  assert.match(world, /apex-core-status/);
+  assert.match(world, /<OrbStatusBar state=\{orbState\} \/>/);
+  assert.equal((page.match(/if \(room === "home"\)/g) || []).length, 1);
+  assert.equal((page.match(/className="chief-apex-stage"/g) || []).length, 1);
+  assert.equal((page.match(/className="chief-apex-dock"/g) || []).length, 1);
+  assert.doesNotMatch(world, /chief-apex-stage/);
+  assert.doesNotMatch(page, /onCoreActivate/);
+  assert.doesNotMatch(world, /onCoreActivate/);
+  assert.doesNotMatch(world, /showStatus/);
+  assert.match(page, /const homeClass/);
+  assert.match(page, /className=\{homeClass\}/);
+  assert.match(page, /caption=\{voiceNote\}/);
+  const homeDock = page.slice(page.indexOf("const homeDock"), page.indexOf('if (room === "home")'));
+  assert.match(homeDock, /<ChiefTranscript/);
+  assert.match(homeDock, /turnView\.userLine/);
+  assert.match(homeDock, /turnView\.answer/);
+  assert.match(homeDock, /retryTranscript/);
+  assert.match(homeDock, /<ChiefApprovalCard/);
+  assert.match(homeDock, /<ChiefComposer/);
+  assert.doesNotMatch(homeDock, /ChiefVoiceDock/);
+  const home = page.slice(page.indexOf('if (room === "home")'), page.indexOf("<ChiefSettings"));
+  const stage = home.slice(
+    home.indexOf('className="chief-apex-stage"'),
+    home.indexOf('className="chief-apex-dock"')
+  );
+  assert.match(stage, /<ApexWorld/);
+  assert.match(stage, /onCoreTap/);
+  assert.doesNotMatch(stage, /ChiefTranscript|ChiefComposer|ChiefApprovalCard/);
+  assert.match(home, /className="chief-apex-dock"[\s\S]*\{homeDock\}/);
+  assert.match(css, /\.chief-apex-home \{[^}]*display:\s*flex;/);
+  assert.match(css, /\.chief-apex-home \{[^}]*flex-direction:\s*column;/);
+  assert.match(css, /\.chief-apex-stage \{[^}]*position:\s*relative;/);
+  assert.doesNotMatch(css, /\.chief-apex-stage \{[^}]*position:\s*absolute;/);
+  assert.match(css, /\.chief-apex-dock \{[^}]*position:\s*relative;/);
+  assert.doesNotMatch(css, /\.chief-apex-dock \{[^}]*position:\s*(?:fixed|absolute);/);
+  assert.doesNotMatch(css, /--chief-ring-radius|--chief-below-ring|--chief-orb-scale/);
+  assert.doesNotMatch(css, /\.chief-voice-dock \.chief-earlier \{\s*display:\s*none/);
+  assert.match(css, /@media \(max-height: 820px\) \{\s*\.chief-apex-dock \{/);
+  assert.match(settings, /fetchChiefHistory/);
+  assert.match(roomSettings, /ChiefSettingsExtras/);
+  assert.match(roomSettings, /fetchChiefVoiceCatalog/);
+  assert.doesNotMatch(dashboard, /chiefFace === "settings"/);
 });
