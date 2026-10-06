@@ -6,7 +6,7 @@
 // A missing reader is an unavailable source. It is not a guess.
 // Current live state outranks historical memory for a current-state question.
 
-import { conversationMove, MOVE } from "./behavior.js";
+import { conversationMove, historicalQuestion, MOVE } from "./behavior.js";
 import { isSnapshotFact } from "../memory/qualify.js";
 import { MEMORY_LAYER, authoritativeDomain, needsEpisodicMemory } from "../memory/retrieve.js";
 
@@ -150,6 +150,10 @@ function classifyQuery(query) {
   if (domain === "web" || wantsHoldingValue(text) || requestsPublicLookup(text)) live.push("web");
   if (requestsPublicLookup(text) && /\b(?:house|home|property)\b/i.test(text)) live.push("finance");
   if (domain === "code") live.push("code");
+  if (/\b(?:spent|spending|expenses?)\b/i.test(text)) live.push("finance");
+  if (/\b(?:paying attention|pay attention|needs attention)\b/i.test(text)) {
+    live.push("finance", "schedule");
+  }
   if (agents) live.push("agents");
   if (schedule) live.push("schedule");
   if (calendar) live.push("calendar");
@@ -157,7 +161,14 @@ function classifyQuery(query) {
 
   const memory = [CONTEXT_SCOPE.WORKING];
   if (text.trim()) memory.push(CONTEXT_SCOPE.PERSONAL);
-  if (episodic || decision || relationship || agents) memory.push(CONTEXT_SCOPE.EPISODIC);
+  const pastConversation =
+    !/\b(?:spent|spending|spend|expenses?)\b/i.test(text) &&
+    /\b(?:what did i tell you|what did we (?:say|talk|discuss)|told you|talked about)\b/i.test(
+      text
+    );
+  if (episodic || decision || relationship || agents || pastConversation) {
+    memory.push(CONTEXT_SCOPE.EPISODIC);
+  }
   if (decision) memory.push(CONTEXT_SCOPE.DECISION);
   if (agents) memory.push(CONTEXT_SCOPE.AGENT);
   if (PREFERENCE_TEXT.test(text) || domain === "finance") memory.push(CONTEXT_SCOPE.PREFERENCE);
@@ -193,10 +204,13 @@ function financialThread(text) {
 }
 
 function reassessing(text) {
-  return (
-    /\b(?:still|anymore|today|right now|currently)\b/i.test(text) &&
-    /\b(?:make sense|hold up|worth it|good idea)\b/i.test(text)
-  );
+  const raw = String(text ?? "");
+  const review =
+    /\b(?:still|anymore|today|right now|currently|where i am now)\b/i.test(raw) &&
+    /\b(?:make sense|hold up|worth it|good idea)\b/i.test(raw);
+  const compareNow =
+    /\b(?:compare|comparison)\b/i.test(raw) && /\b(?:now|today|current)\b/i.test(raw);
+  return review || compareNow;
 }
 
 function inheritedLive(priorUserTexts, { keepWeb = false } = {}) {
@@ -257,13 +271,28 @@ export function planContext(query, options = {}) {
   if (move.kind === MOVE.ACKNOWLEDGE || move.kind === MOVE.CANCEL) return quietPlan();
   if (move.ambiguous || move.unresolved) return quietPlan();
   let next = planned;
-  if ((move.kind === MOVE.CONTINUE || move.kind === MOVE.CONFIRM) && planned.live.length === 0) {
+  if (historicalQuestion(query)) {
+    next = { ...planned, live: [], currentState: false };
+  } else if (
+    (move.kind === MOVE.CONTINUE || move.kind === MOVE.CONFIRM) &&
+    planned.live.length === 0
+  ) {
     let live = inheritedLive(move.priorUserTexts, { keepWeb: move.repairs === true });
     if (move.pullsPublicSource) live = unique([...live, "web"]);
     next = { ...planned, live, currentState: live.length > 0 };
   }
+  next = joinRelatedSystems(move, next);
   next = withoutHypotheticalWeb(query, next);
   return withCurrentReview(query, move, next);
+}
+
+function joinRelatedSystems(move, planned) {
+  if (move.kind !== MOVE.CONTINUE && move.kind !== MOVE.CONFIRM) return planned;
+  if (!planned.live.includes("schedule") && !planned.live.includes("agents")) return planned;
+  const subject = inheritedLive(move.priorUserTexts).filter((system) => system !== "web");
+  if (subject.length === 0) return planned;
+  const live = unique([...subject, ...planned.live]);
+  return { ...planned, live, currentState: live.length > 0 };
 }
 
 function blankItem(fields) {
@@ -533,8 +562,17 @@ export function shouldRenderContextItem(item) {
 export function renderContextPackage(pack) {
   const lines = (pack?.items ?? []).filter(shouldRenderContextItem).slice(0, 8).map(renderLine);
   if (lines.length === 0) return "";
-  return [
-    "Connected context is read-only reference. Current live readings override historical memory. An unavailable source has no data.",
-    ...lines,
-  ].join("\n");
+  const items = pack?.items ?? [];
+  const hasMemory = items.some((item) => item.origin === "memory" && item.available !== false);
+  const hasLive = items.some((item) => item.origin === "live" && item.available !== false);
+  let header =
+    "Connected context is read-only reference. Current live readings override historical memory. An unavailable source has no data.";
+  if (pack?.plan?.currentState !== true && hasMemory) {
+    header =
+      "Connected context is read-only reference. This question is about what was said or decided. Historical context is the authority. An unavailable source has no data.";
+  } else if (pack?.plan?.currentState === true && hasLive && hasMemory) {
+    header =
+      "Connected context is read-only reference. Current live readings override historical memory. Use both when the question asks whether a past decision still holds. An unavailable source has no data.";
+  }
+  return [header, ...lines].join("\n");
 }
