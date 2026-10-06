@@ -4,7 +4,7 @@ Status: approved direction, with the both-ingress amendment. Phase A and the Pha
 foundation are in place. Phase C connects the self-report ingress only.
 Enterprise OpenTelemetry was checked on 2026-10-02 and is not available here:
 the cloud environment is personal, and there is no OTEL collector credential.
-The OTEL route is not built. CHIEF still has no workforce read tool.
+The OTEL route is not built. CHIEF reads the journal through the read-only workforce_status tool.
 
 Phase C in this change is the self-report ingress. Phases D through H are specified
 here so later work has a place to land. They are not built.

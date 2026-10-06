@@ -8,6 +8,7 @@
 
 import { messageText } from "../runtime/compaction.js";
 import { buildWorkingMemory, isAnaphoric } from "../memory/working.js";
+import { WORKFORCE_UNAVAILABLE_LINE } from "../workforce/read.js";
 
 export const MOVE = Object.freeze({
   ACKNOWLEDGE: "acknowledge",
@@ -339,11 +340,25 @@ function priorTranscriptText(transcript) {
   return messages.map((message) => messageText(message)).join("\n");
 }
 
+function workforceResult(message) {
+  if (!Array.isArray(message?.content)) return null;
+  const part = message.content.find(
+    (item) => item?.type === "tool-result" && item.toolName === "workforce_status"
+  );
+  if (!part) return null;
+  return String(part.output?.value ?? "");
+}
+
 function toolResultAfterLatestUser(transcript) {
   const messages = Array.isArray(transcript) ? transcript : [];
   const start = lastIndex(messages, "user");
   for (let index = start + 1; index < messages.length; index += 1) {
     if (messages[index]?.role !== "tool") continue;
+    const workforce = workforceResult(messages[index]);
+    if (workforce != null) {
+      if (/"connected"\s*:\s*true/.test(workforce)) return true;
+      continue;
+    }
     const raw = messageText(messages[index]);
     if (numbersIn(raw).some((value) => value.length > 1)) return true;
     if (raw.trim() && !/unavailable|not connected|disabled|error|failed/i.test(raw)) return true;
@@ -403,12 +418,20 @@ function polishAnswer(text, transcript) {
   return kept.slice(0, simple ? 3 : kept.length).join(" ");
 }
 
+const UNREAD_AGENT = "I don't have a live agent status for that.";
+
+function agentHonestLine(pack) {
+  const item = (pack?.items ?? []).find((row) => row?.source === "grokbot" && row.available === false);
+  if (item?.trust === "tool") return UNREAD_AGENT;
+  return WORKFORCE_UNAVAILABLE_LINE;
+}
+
 const UNREAD_SYSTEM = [
   [
     "agents",
-    /\b(?:grok\s*bots?|agents?)\b/i,
-    /\b(?:working|running|idle|doing|finished|status)\b/i,
-    "I don't currently have a live agent status for that.",
+    /\b(?:grok\s*bots?|agents?|bots?)\b/i,
+    /\b(?:working|running|idle|doing|finished|status|failing|failed)\b/i,
+    WORKFORCE_UNAVAILABLE_LINE,
   ],
   [
     "schedule",
@@ -442,7 +465,9 @@ function blockUnreadSystem(text, transcript, pack) {
   const unavailable = new Set(pack?.unavailable ?? []);
   for (const [system, topic, claim, honest] of UNREAD_SYSTEM) {
     if (!unavailable.has(system)) continue;
-    if (topic.test(answer) && claim.test(answer)) return honest;
+    if (topic.test(answer) && claim.test(answer)) {
+      return system === "agents" ? agentHonestLine(pack) : honest;
+    }
   }
   return answer;
 }

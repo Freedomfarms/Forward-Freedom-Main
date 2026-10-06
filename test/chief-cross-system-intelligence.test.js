@@ -202,7 +202,7 @@ test("agents and schedules join, and a missing agent is not invented", async () 
     text: "Your Grokbot is currently working on the well.",
     pack: missing,
   });
-  assert.equal(invented.text, "I don't currently have a live agent status for that.");
+  assert.equal(invented.text, "I don't have live agent status connected yet.");
 
   const noSchedule = await orchestrateContext({
     query: "What is scheduled today?",
@@ -334,7 +334,7 @@ test("attention uses finance and schedule, and unconnected systems stay unconnec
   const plan = planContext("What should I be paying attention to?");
   assert.equal(plan.live.includes("finance"), true);
   assert.equal(plan.live.includes("schedule"), true);
-  assert.equal(plan.live.includes("agents"), false);
+  assert.equal(plan.live.includes("agents"), true);
   assert.equal(plan.live.includes("web"), false);
   assert.equal(plan.live.includes("email"), false);
   assert.equal(plan.live.includes("calendar"), false);
@@ -420,6 +420,6 @@ test("the same cross-system plan is given to every provider, and voice speaks it
     source: "voice",
     preferences: normalizeChiefPreferences(null),
   });
-  assert.equal(spoken, "I don't currently have a live agent status for that.");
+  assert.equal(spoken, "I don't have live agent status connected yet.");
   assert.deepEqual(voice.calls, [spoken]);
 });

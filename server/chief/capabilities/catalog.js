@@ -89,6 +89,7 @@ export const CAPABILITY_CATALOG = Object.freeze({
   code_read: entry("code", Effect.READ, Confirmation.NONE, AuditPolicy.DENY_ONLY),
   code_search: entry("code", Effect.READ, Confirmation.NONE, AuditPolicy.DENY_ONLY),
   capability_discover: entry("control", Effect.READ, Confirmation.NONE, AuditPolicy.DENY_ONLY),
+  workforce_status: entry("workforce", Effect.READ, Confirmation.NONE, AuditPolicy.DENY_ONLY),
 });
 
 export function catalogEntry(name) {

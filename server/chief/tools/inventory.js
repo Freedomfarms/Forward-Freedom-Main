@@ -42,6 +42,7 @@ export const CHIEF_TOOL_INVENTORY = Object.freeze({
   code_read: Object.freeze([Capability.CODE_READ]),
   code_search: Object.freeze([Capability.CODE_READ]),
   capability_discover: Object.freeze([Capability.CAPABILITY_READ]),
+  workforce_status: Object.freeze([Capability.WORKFORCE_READ]),
 });
 
 // Scheduled turns do not search or manage the user's conversations.

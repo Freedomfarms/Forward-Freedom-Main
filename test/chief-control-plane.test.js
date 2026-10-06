@@ -325,7 +325,7 @@ test("the catalog matches the live tool inventory", () => {
 test("the empty-grant baseline is the catalog, including code and capability reads", async () => {
   assert.equal(baselineCapabilities().includes(Capability.CAPABILITY_READ), true);
   assert.equal(baselineCapabilities().includes(Capability.CODE_READ), true);
-  assert.equal(baselineCapabilities().includes(Capability.WORKFORCE_READ), false);
+  assert.equal(baselineCapabilities().includes(Capability.WORKFORCE_READ), true);
   assert.equal(baselineCapabilities().includes(Capability.FILE_WRITE), false);
   assert.equal(baselineCapabilities().includes(Capability.CODE_EXECUTE), false);
   assert.equal(baselineCapabilities().includes(Capability.TOOL_INVOKE), false);
@@ -344,7 +344,7 @@ test("the empty-grant baseline is the catalog, including code and capability rea
   });
   assert.equal(stored.check("chief", Capability.CODE_READ), true);
   assert.equal(stored.check("chief", Capability.CAPABILITY_READ), true);
-  assert.equal(stored.check("chief", Capability.WORKFORCE_READ), false);
+  assert.equal(stored.check("chief", Capability.WORKFORCE_READ), true);
   const denied = await loadCapabilityPolicy("user-a", {
     withUser: async (_userId, fn) =>
       fn({
@@ -382,8 +382,9 @@ test("codebase admits read or forbidden, and forbidden rows cannot be granted", 
   }
   const observe = CONTROL_PLANE.find((entry) => entry.id === "workforce.observe");
   assert.equal(observe.capability, Capability.WORKFORCE_READ);
-  assert.equal(observe.tool, null);
-  assert.equal(observe.baseline, false);
+  assert.equal(observe.tool, "workforce_status");
+  assert.equal(observe.effect, ControlEffect.READ);
+  assert.equal(observe.baseline, true);
   const discover = CONTROL_PLANE.find((entry) => entry.id === "control.discover");
   assert.equal(discover.tool, "capability_discover");
   assert.equal(discover.baseline, true);

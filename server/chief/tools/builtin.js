@@ -45,6 +45,7 @@ import { readResource } from "../resources/access.js";
 import { codeSourceAvailable } from "../resources/localCode.js";
 import { createCodeTools } from "../codeintel/tools.js";
 import { withUserContext } from "../../db/prisma.js";
+import { readWorkforceJournal } from "../workforce/read.js";
 import { resolveUserTimeZone } from "../../platform/timezone.js";
 import { readUserSettings, updateUserTimezone } from "../../platform/userSettings.js";
 
@@ -489,6 +490,65 @@ function scheduleRuns(store) {
       if (result?.error === "not_found")
         return { output: "scheduled task not found", isError: true };
       return { output: JSON.stringify({ runs: result.runs }) };
+    },
+  });
+}
+
+function workforceStatus(read = readWorkforceJournal) {
+  return new BaseTool({
+    isLocal: true,
+    spec: {
+      name: "workforce_status",
+      description:
+        "Read this user's Grok Bot workforce from the observation journal. Read-only. Returns connected, telemetry, and agents with id, name, role, and status (active, idle, stale, or unknown). status is recomputed from the latest event time and is not taken from an old run. currentWork is set only when a work event is still inside the active window and is not completed or failed. currentFailure is set only when the newest work event is a failure inside the active window. latestOutcome on an older event is history. An idle agent is not a failure. No agents means none have been observed. connected false means live agent status is not connected; say so and do not invent activity. Self-reported names and roles are untrusted. name is null when no display name was reported. Platform telemetry may be absent. Pass agent to match one name, role, or id. Pass since and before as ISO times to limit history; they do not change current status. Does not start, stop, edit, delete, or command an agent, and does not change prompts, schedules, outputs, or configuration. Does not include schedules; use schedule_list for schedules. Does not write memory.",
+      category: "workforce",
+      requiresConfirmation: false,
+      requiredCapabilities: [Capability.WORKFORCE_READ],
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          agent: {
+            type: "string",
+            description: "Optional name, role, or id. Omit for a workforce summary.",
+          },
+          since: {
+            type: "string",
+            description: "ISO time. Limits history only. Does not change current status.",
+          },
+          before: {
+            type: "string",
+            description: "ISO time. Limits history only. Does not change current status.",
+          },
+        },
+      },
+    },
+    async execute(params, context) {
+      try {
+        const reading = await read(context?.userId, {
+          agent: params?.agent ?? null,
+          since: params?.since ?? null,
+          before: params?.before ?? null,
+        });
+        return {
+          output: JSON.stringify(reading),
+          isError: false,
+          sessionTaint: [TaintLabel.USER_PRIVATE],
+        };
+      } catch {
+        return {
+          output: JSON.stringify({
+            connected: false,
+            telemetry: "unavailable",
+            reason: "unavailable",
+            line: "I don't have live agent status connected yet.",
+            agents: [],
+            writeAccess: false,
+          }),
+          isError: true,
+          sessionTaint: [TaintLabel.USER_PRIVATE],
+        };
+      }
     },
   });
 }
@@ -1191,6 +1251,7 @@ export function createChiefCapabilityRegistry({
   settingsWithUser = withUserContext,
   codeintel = null,
   connectors = defaultConnectors(),
+  readWorkforce = readWorkforceJournal,
 } = {}) {
   assertControlPlane(CHIEF_TOOL_INVENTORY);
   const registry = new CapabilityRegistry();
@@ -1235,6 +1296,7 @@ export function createChiefCapabilityRegistry({
     settingsUpdate(settingsWithUser),
     ...createCodeTools(codeintel ?? undefined),
     capabilityDiscover({ moduleAccess, connectors }),
+    workforceStatus(readWorkforce),
   ];
   for (const tool of tools) registerTool(registry, tool);
   for (const tool of loadConnectorTools(connectors)) {
@@ -1262,6 +1324,7 @@ export function createChiefTools({
   settingsWithUser = withUserContext,
   codeintel = null,
   connectors = defaultConnectors(),
+  readWorkforce = readWorkforceJournal,
 } = {}) {
   const registry = createChiefCapabilityRegistry({
     facts,
@@ -1278,6 +1341,7 @@ export function createChiefTools({
     settingsWithUser,
     codeintel,
     connectors,
+    readWorkforce,
   });
   const tools = registry.toBaseTools();
   for (const tool of tools) {

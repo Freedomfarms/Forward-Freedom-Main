@@ -332,6 +332,13 @@ export const CONTROL_PLANE = Object.freeze([
     remote: true,
     baseline: false,
   }),
+  live({
+    id: "workforce.observe",
+    domain: ControlDomain.WORKFORCE,
+    effect: ControlEffect.READ,
+    capability: Capability.WORKFORCE_READ,
+    tool: "workforce_status",
+  }),
 
   reserved({
     id: "message.read",
@@ -354,13 +361,6 @@ export const CONTROL_PLANE = Object.freeze([
     domain: ControlDomain.SYSTEM,
     effect: ControlEffect.READ,
   }),
-  reserved({
-    id: "workforce.observe",
-    domain: ControlDomain.WORKFORCE,
-    effect: ControlEffect.READ,
-    capability: Capability.WORKFORCE_READ,
-  }),
-
   forbidden({ id: "codebase.write", domain: ControlDomain.CODEBASE, tool: "codebase_write" }),
   forbidden({ id: "codebase.source_write", domain: ControlDomain.CODEBASE, tool: "source_write" }),
   forbidden({

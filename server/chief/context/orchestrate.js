@@ -9,6 +9,7 @@
 import { conversationMove, historicalQuestion, MOVE } from "./behavior.js";
 import { isSnapshotFact } from "../memory/qualify.js";
 import { MEMORY_LAYER, authoritativeDomain, needsEpisodicMemory } from "../memory/retrieve.js";
+import { WORKFORCE_UNAVAILABLE_LINE } from "../workforce/read.js";
 
 export const CONTEXT_SCOPE = Object.freeze({
   WORKING: "working",
@@ -41,7 +42,8 @@ const BEYOND_PROMPT = new Set([
 ]);
 
 const HOLDING = /\b(owns?|owned|holds?|holding|holdings|balance|worth|bitcoin|btc|xrp|eth)\b/i;
-const AGENT_TEXT = /\b(grok\s*bots?|agents?)\b/i;
+const AGENT_TEXT = /\b(?:grok\s*bots?|agents?|bots?)\b/i;
+const PAST_TEXT = /\b(?:yesterday|last (?:night|week|month|year)|earlier|previously|ago)\b/i;
 const DECISION_TEXT = /\b(decid(?:e|ed|ing)|decision|agreed)\b/i;
 const PREFERENCE_TEXT = /\b(prefer|preference)\b/i;
 const RELATION_TEXT = /\b(related to|came from|because of|same issue)\b/i;
@@ -60,9 +62,10 @@ const LIVE = Object.freeze({
     source: "grokbot",
     sourceType: "live_agent_state",
     scope: CONTEXT_SCOPE.AGENT,
-    tools: [],
-    missing: "Agent state is not connected. No current agent status is available.",
-    deferred: "No current agent reading is in this context. Do not invent what an agent is doing.",
+    tools: ["workforce_status"],
+    missing: WORKFORCE_UNAVAILABLE_LINE,
+    deferred:
+      "No current agent reading is in this context. Use workforce_status. Current status is separate from historical activity. Do not invent what an agent is doing.",
   },
   schedule: {
     source: "scheduler",
@@ -135,12 +138,23 @@ function wantsHoldingValue(text) {
   return /\bworth\b/i.test(text);
 }
 
+function workforceQuery(text) {
+  if (AGENT_TEXT.test(text)) return true;
+  if (/\b(?:anything failing|is anything fail(?:ing|ed)?|what(?:'s| is) failing)\b/i.test(text)) {
+    return true;
+  }
+  return (
+    /\bthe [a-z]+ one\b/i.test(text) &&
+    /\b(?:working|doing|finished|status|idle|failing|failed)\b/i.test(text)
+  );
+}
+
 function classifyQuery(query) {
   const text = String(query ?? "");
   const domain = authoritativeDomain(text);
   const episodic = needsEpisodicMemory(text);
   const decision = DECISION_TEXT.test(text);
-  const agents = AGENT_TEXT.test(text);
+  const agents = workforceQuery(text);
   const schedule = /\b(schedul(?:e|ed|ing)|behind schedule|overdue)\b/i.test(text);
   const calendar = /\b(calendar|meeting|appointment)\b/i.test(text);
   const email = /\b(e-?mail|inbox)\b/i.test(text);
@@ -152,7 +166,7 @@ function classifyQuery(query) {
   if (domain === "code") live.push("code");
   if (/\b(?:spent|spending|expenses?)\b/i.test(text)) live.push("finance");
   if (/\b(?:paying attention|pay attention|needs attention)\b/i.test(text)) {
-    live.push("finance", "schedule");
+    live.push("finance", "schedule", "agents");
   }
   if (agents) live.push("agents");
   if (schedule) live.push("schedule");
@@ -266,13 +280,14 @@ const EXPLICIT_PUBLIC_CHECK = /\b(?:check it|look it up|pull it|search the web)\
 
 export function planContext(query, options = {}) {
   const planned = classifyQuery(query);
-  if (!Array.isArray(options?.transcript)) return planned;
+  if (!Array.isArray(options?.transcript)) return applyWorkforceTime(query, planned);
   const move = conversationMove(options.transcript, query);
   if (move.kind === MOVE.ACKNOWLEDGE || move.kind === MOVE.CANCEL) return quietPlan();
   if (move.ambiguous || move.unresolved) return quietPlan();
   let next = planned;
   if (historicalQuestion(query)) {
-    next = { ...planned, live: [], currentState: false };
+    const live = workforceQuery(query) ? planned.live.filter((system) => system === "agents") : [];
+    next = { ...planned, live, currentState: false };
   } else if (
     (move.kind === MOVE.CONTINUE || move.kind === MOVE.CONFIRM) &&
     planned.live.length === 0
@@ -283,7 +298,15 @@ export function planContext(query, options = {}) {
   }
   next = joinRelatedSystems(move, next);
   next = withoutHypotheticalWeb(query, next);
+  next = applyWorkforceTime(query, next);
   return withCurrentReview(query, move, next);
+}
+
+function applyWorkforceTime(query, planned) {
+  if (!planned.live.includes("agents")) return planned;
+  if (!PAST_TEXT.test(query) && !historicalQuestion(query)) return planned;
+  const live = planned.live.filter((system) => system === "agents" || system === "schedule");
+  return { ...planned, live, currentState: false };
 }
 
 function joinRelatedSystems(move, planned) {

@@ -191,6 +191,17 @@ export function builtInCapabilities() {
         "Read the configured Freedom OS repository. This is not a shell and not a user GitHub account.",
     }),
     entry({
+      id: "workforce:read",
+      kind: "read",
+      effect: "read",
+      grant: Capability.WORKFORCE_READ,
+      tools: ["workforce_status"],
+      confirmation: "none",
+      readiness: "read",
+      summary:
+        "Read the workforce observation journal. This does not start, stop, or edit an agent.",
+    }),
+    entry({
       id: "capability:read",
       kind: "read",
       effect: "read",
