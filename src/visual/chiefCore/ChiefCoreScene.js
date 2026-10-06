@@ -10,10 +10,10 @@ import {
   stepMotion,
 } from "./ChiefCoreControls.js";
 import {
-  createBoundaryMaterial,
   createCorePointMaterial,
   createCoreSprite,
   createSharedUniforms,
+  createShellLines,
 } from "./ChiefCoreMaterial.js";
 import { createCoreParticleGeometry, particleBudgetFor } from "./ChiefCoreParticles.js";
 import {
@@ -26,8 +26,6 @@ import {
 
 const CLEAR = 0x04080f;
 const CORE_SCALE = 1;
-const SHELL_RADIUS = 0.88;
-const MODE = Object.freeze({ idle: 0, listening: 1, thinking: 2, responding: 3 });
 
 export class ChiefCoreEngine {
   constructor(canvas, root, options = {}) {
@@ -97,12 +95,8 @@ export class ChiefCoreEngine {
     this.scene.add(this.rig);
     this.rig.add(this.rotor);
 
-    this.shell = new THREE.Mesh(
-      new THREE.SphereGeometry(SHELL_RADIUS, 48, 32),
-      createBoundaryMaterial()
-    );
-    this.shell.frustumCulled = false;
-    this.shell.renderOrder = 2;
+    this.shell = createShellLines();
+    this.shell.renderOrder = 4;
     this.rotor.add(this.shell);
 
     this.sprite = createCoreSprite();
@@ -288,11 +282,12 @@ export class ChiefCoreEngine {
     this.shared.uPace.value = pose.pace;
     this.shared.uBubble.value = pose.bubble;
     this.shared.uWave.value = pose.wave;
-    this.shared.uMode.value = MODE[this.presented] ?? 0;
     this.shared.uSize.value = pose.point;
     this.shared.uHot.value = pose.hot;
     this.shared.uOpacity.value = pose.opacity;
     this.shared.uPointer.value.set(this.motion.pointerX, this.motion.pointerY);
+    const hull = pose.radius + pose.bubble + pose.wave * this.shared.uWaveAmp.value;
+    this.shell.scale.setScalar(hull + 0.04);
   }
 
   fail(error) {

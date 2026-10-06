@@ -13,7 +13,6 @@ export function createSharedUniforms() {
     uBubble: { value: 0.17 },
     uWave: { value: 0 },
     uWaveAmp: { value: 0.5 },
-    uMode: { value: 0 },
     uSize: { value: 0.066 },
     uDpr: { value: 1 },
     uHeight: { value: 900 },
@@ -52,7 +51,6 @@ export function createCorePointMaterial(shared, map) {
       uBubble: shared.uBubble,
       uWave: shared.uWave,
       uWaveAmp: shared.uWaveAmp,
-      uMode: shared.uMode,
       uSize: shared.uSize,
       uDpr: shared.uDpr,
       uHeight: shared.uHeight,
@@ -73,7 +71,6 @@ export function createCorePointMaterial(shared, map) {
       uniform float uBubble;
       uniform float uWave;
       uniform float uWaveAmp;
-      uniform float uMode;
       uniform float uSize;
       uniform float uDpr;
       uniform float uHeight;
@@ -81,10 +78,12 @@ export function createCorePointMaterial(shared, map) {
       varying float vShade;
       varying float vCore;
       void main() {
-        float r = aBallR * uRadius + sin(uTime * aSpeed * uPace + aPhase) * uBubble;
-        if (uMode > 2.5) r += sin(aBallR * 5.5 - uTime * 5.0) * uWaveAmp;
-        else if (uMode > 1.5) r += sin(aBallR * 4.2 - uTime * 3.6) * (uWaveAmp * uWave);
-        else if (uMode > 0.5) r += sin(aBallR * 2.0 - uTime * 0.55) * (uWaveAmp * uWave);
+        float pace = max(uPace, 0.25);
+        float home = aBallR * uRadius;
+        float boil = sin(uTime * 0.34 * pace + aPhase) * uBubble * (0.36 + 0.08 * aSpeed);
+        float field = sin(uTime * 0.15 * pace + aDir.y * 2.1 + aDir.x * 1.3) * uBubble * 0.26;
+        float ripple = sin(aBallR * 2.1 - uTime * (0.45 + pace * 0.22)) * uWaveAmp * uWave;
+        float r = max(home + boil + field + ripple, 0.02);
         vec3 p = aDir * r;
         vec4 mv = modelViewMatrix * vec4(p, 1.0);
         gl_Position = projectionMatrix * mv;
@@ -121,35 +120,58 @@ export function createCorePointMaterial(shared, map) {
   });
 }
 
-export function createBoundaryMaterial() {
+function createShellMaterial() {
   return new THREE.ShaderMaterial({
-    side: THREE.DoubleSide,
     transparent: true,
     depthWrite: false,
     depthTest: true,
     blending: THREE.NormalBlending,
     toneMapped: false,
     vertexShader: `
-      varying vec3 vNormalV;
-      varying vec3 vView;
+      varying float vFacing;
       void main() {
         vec4 mv = modelViewMatrix * vec4(position, 1.0);
-        vNormalV = normalize(normalMatrix * normal);
-        vView = normalize(-mv.xyz);
+        vec3 viewNormal = normalize(mat3(modelViewMatrix) * position);
+        vFacing = clamp(viewNormal.z, 0.0, 1.0);
         gl_Position = projectionMatrix * mv;
       }
     `,
     fragmentShader: `
-      varying vec3 vNormalV;
-      varying vec3 vView;
+      varying float vFacing;
       void main() {
-        float ndv = abs(dot(normalize(vNormalV), normalize(vView)));
-        float rim = smoothstep(0.2, 0.015, ndv);
-        float alpha = rim * 0.42;
-        if (alpha < 0.02) discard;
         vec3 col = vec3(0.62, 0.28, 0.98);
+        float alpha = mix(0.07, 0.32, vFacing);
         gl_FragColor = vec4(pow(col, vec3(0.4545)), alpha);
       }
     `,
   });
+}
+
+// Unit-sphere meridians and latitudes. The scene scales this to sit just
+// outside the particle hull. The lines live on the sphere, so drag rotates them.
+export function createShellLines() {
+  const segments = 80;
+  const positions = [];
+  const addRing = (project) => {
+    for (let i = 0; i < segments; i += 1) {
+      const a0 = (i / segments) * Math.PI * 2;
+      const a1 = ((i + 1) / segments) * Math.PI * 2;
+      positions.push(...project(a0), ...project(a1));
+    }
+  };
+  for (const y of [-0.5, 0, 0.5]) {
+    const radial = Math.sqrt(1 - y * y);
+    addRing((angle) => [Math.cos(angle) * radial, y, Math.sin(angle) * radial]);
+  }
+  for (let meridian = 0; meridian < 4; meridian += 1) {
+    const yaw = (meridian / 4) * Math.PI;
+    const c = Math.cos(yaw);
+    const s = Math.sin(yaw);
+    addRing((angle) => [Math.sin(angle) * c, Math.cos(angle), Math.sin(angle) * s]);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  const lines = new THREE.LineSegments(geometry, createShellMaterial());
+  lines.frustumCulled = false;
+  return lines;
 }
