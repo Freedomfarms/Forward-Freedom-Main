@@ -104,16 +104,16 @@ export function frameForViewport(width, height, layout) {
   const wide = aspect > 1.15;
   const auth = layout === "auth";
   if (auth && wide) {
-    return { fov: 32, position: [0.2, 0.02, 10.4], lookAt: [1.55, 0.05, 0] };
+    return { fov: 50, position: [0.12, 0.02, 5.8], lookAt: [0.95, 0.02, 0] };
   }
   if (portrait) {
     return {
-      fov: auth ? 34 : 36,
-      position: [0, 0.04, auth ? 11.2 : 10.6],
-      lookAt: [0, auth ? -1.85 : -1.22, 0],
+      fov: 50,
+      position: [0, 0.02, auth ? 6.6 : 6.3],
+      lookAt: [0, auth ? -0.55 : -0.22, 0],
     };
   }
-  return { fov: 32, position: [0, 0, 9.8], lookAt: [0, 0.02, 0] };
+  return { fov: 50, position: [0, 0, 5.4], lookAt: [0, 0.08, 0] };
 }
 
 export function isCompactStage(width, coarsePointer) {

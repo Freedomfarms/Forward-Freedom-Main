@@ -10,19 +10,12 @@ import {
   stepMotion,
 } from "./ChiefCoreControls.js";
 import {
-  createGlowTexture,
-  createNebulaMaterial,
-  createParticleMaterial,
+  createBoundaryMaterial,
+  createCorePointMaterial,
+  createCoreSprite,
   createSharedUniforms,
-  createShellMaterial,
-  createVolumeMaterial,
-  createWaveMaterial,
 } from "./ChiefCoreMaterial.js";
-import {
-  createCoreParticleGeometry,
-  createParticleGeometry,
-  particleBudgetFor,
-} from "./ChiefCoreParticles.js";
+import { createCoreParticleGeometry, particleBudgetFor } from "./ChiefCoreParticles.js";
 import {
   PREVIEW_SCRIPT,
   normalizeCoreState,
@@ -31,7 +24,10 @@ import {
   stepPose,
 } from "./ChiefCoreState.js";
 
-const CLEAR = 0x07040f;
+const CLEAR = 0x04080f;
+const CORE_SCALE = 0.55;
+const SHELL_RADIUS = 1.4;
+const MODE = Object.freeze({ idle: 0, listening: 1, thinking: 2, responding: 3 });
 
 export class ChiefCoreEngine {
   constructor(canvas, root, options = {}) {
@@ -66,7 +62,6 @@ export class ChiefCoreEngine {
     this.poseTarget = poseFor(this.presented);
     this.motion = createMotion();
     this.delta = { yawDelta: 0, pitchDelta: 0 };
-    this.camLocal = new THREE.Vector3();
     this.qYaw = new THREE.Quaternion();
     this.qPitch = new THREE.Quaternion();
     this.axisUp = new THREE.Vector3(0, 1, 0);
@@ -82,7 +77,7 @@ export class ChiefCoreEngine {
     this.renderer = new THREE.WebGLRenderer({
       canvas,
       alpha: false,
-      antialias: false,
+      antialias: true,
       powerPreference: "high-performance",
       stencil: false,
       depth: true,
@@ -90,112 +85,34 @@ export class ChiefCoreEngine {
     });
     this.renderer.setClearColor(CLEAR, 1);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.toneMapping = THREE.NoToneMapping;
     this.renderer.setPixelRatio(1);
 
     this.scene = new THREE.Scene();
-    this.camera = new THREE.PerspectiveCamera(30, 1, 0.1, 80);
+    this.camera = new THREE.PerspectiveCamera(50, 1, 0.1, 40);
     this.rig = new THREE.Group();
     this.rotor = new THREE.Group();
+    this.rotor.scale.setScalar(CORE_SCALE);
+    this.rotor.rotation.x = 0.3;
     this.scene.add(this.rig);
     this.rig.add(this.rotor);
 
-    this.nebula = new THREE.Mesh(
-      new THREE.SphereGeometry(42, 32, 20),
-      createNebulaMaterial(this.shared)
-    );
-    this.nebula.frustumCulled = false;
-    this.nebula.renderOrder = 0;
-    this.scene.add(this.nebula);
-
-    this.dust = new THREE.Points(
-      createParticleGeometry(this.budget.dust, 3),
-      createParticleMaterial(this.shared, 0.15)
-    );
-    this.dust.frustumCulled = false;
-    this.dust.renderOrder = 1;
-    this.scene.add(this.dust);
-
-    this.glow = new THREE.Mesh(
-      new THREE.SphereGeometry(1.34, 40, 28),
-      createShellMaterial(this.shared, {
-        power: 3.4,
-        gain: 0.1,
-        colorA: "0.22, 0.08, 0.42",
-        colorB: "0.62, 0.40, 0.95",
-      })
-    );
-    this.glow.frustumCulled = false;
-    this.glow.renderOrder = 2;
-    this.rotor.add(this.glow);
-
-    this.volume = new THREE.Mesh(
-      new THREE.SphereGeometry(1, 64, 48),
-      createVolumeMaterial(this.shared)
-    );
-    this.volume.frustumCulled = false;
-    this.volume.renderOrder = 3;
-    this.rotor.add(this.volume);
-
     this.shell = new THREE.Mesh(
-      new THREE.SphereGeometry(1.16, 64, 48),
-      createShellMaterial(this.shared, {
-        power: 4.4,
-        gain: 0.22,
-        colorA: "0.26, 0.09, 0.48",
-        colorB: "0.88, 0.84, 1.0",
-      })
+      new THREE.SphereGeometry(SHELL_RADIUS, 48, 32),
+      createBoundaryMaterial()
     );
     this.shell.frustumCulled = false;
-    this.shell.renderOrder = 4;
+    this.shell.renderOrder = 2;
     this.rotor.add(this.shell);
 
+    this.sprite = createCoreSprite();
     this.particles = new THREE.Points(
       createCoreParticleGeometry(this.budget),
-      createParticleMaterial(this.shared, 1)
+      createCorePointMaterial(this.shared, this.sprite)
     );
     this.particles.frustumCulled = false;
-    this.particles.renderOrder = 5;
+    this.particles.renderOrder = 3;
     this.rotor.add(this.particles);
-
-    this.waveA = new THREE.Mesh(new THREE.PlaneGeometry(3.15, 3.15), createWaveMaterial());
-    this.waveB = new THREE.Mesh(new THREE.PlaneGeometry(3.15, 3.15), createWaveMaterial());
-    this.waveA.frustumCulled = false;
-    this.waveB.frustumCulled = false;
-    this.waveA.renderOrder = 6;
-    this.waveB.renderOrder = 6;
-    this.rig.add(this.waveA, this.waveB);
-
-    this.coreMat = new THREE.MeshBasicMaterial({
-      color: 0xfff7ff,
-      transparent: true,
-      opacity: 0.8,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      depthTest: false,
-      toneMapped: false,
-    });
-    this.coreMesh = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16), this.coreMat);
-    this.coreMesh.scale.setScalar(0.09);
-    this.coreMesh.frustumCulled = false;
-    this.coreMesh.renderOrder = 7;
-    this.rotor.add(this.coreMesh);
-
-    this.glowTexture = createGlowTexture();
-    this.spriteMat = new THREE.SpriteMaterial({
-      map: this.glowTexture,
-      transparent: true,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      depthTest: false,
-      toneMapped: false,
-      opacity: 0.95,
-    });
-    this.sprite = new THREE.Sprite(this.spriteMat);
-    this.sprite.scale.set(0.46, 0.46, 1);
-    this.sprite.renderOrder = 8;
-    this.rotor.add(this.sprite);
 
     this.detachPointer = attachCorePointer(canvas, this.motion);
     this.onContextLost = (event) => {
@@ -313,7 +230,7 @@ export class ChiefCoreEngine {
     this.renderer.setPixelRatio(dpr);
     this.renderer.setSize(width, height, false);
     this.shared.uDpr.value = dpr;
-    this.shared.uPointScale.value = this.compact ? 0.72 : 1;
+    this.shared.uHeight.value = height;
     const frame = frameForViewport(width, height, this.layout);
     this.camera.fov = frame.fov;
     this.camera.aspect = width / height;
@@ -363,37 +280,19 @@ export class ChiefCoreEngine {
     this.qPitch.setFromAxisAngle(this.axisRight, deltas.pitchDelta);
     this.rotor.quaternion.premultiply(this.qYaw).premultiply(this.qPitch);
 
-    const breath = 1 + Math.sin(this.time * 0.85) * this.pose.breath * (this.reduced ? 0.2 : 1);
-    this.rig.scale.setScalar(this.motion.zoom * this.pose.expand * breath);
+    this.rig.scale.setScalar(this.motion.zoom);
 
     const pose = this.pose;
     this.shared.uTime.value = this.time;
-    this.shared.uInward.value = pose.inward;
-    this.shared.uOutward.value = pose.outward;
+    this.shared.uRadius.value = pose.radius;
+    this.shared.uPace.value = pose.pace;
+    this.shared.uBubble.value = pose.bubble;
+    this.shared.uWave.value = pose.wave;
+    this.shared.uMode.value = MODE[this.presented] ?? 0;
+    this.shared.uSize.value = pose.point;
     this.shared.uHot.value = pose.hot;
-    this.shared.uEnergy.value = pose.energy;
-    this.shared.uOrder.value = pose.order;
-    this.shared.uOpacity.value = 0.28 + pose.energy * 0.32;
+    this.shared.uOpacity.value = pose.opacity;
     this.shared.uPointer.value.set(this.motion.pointerX, this.motion.pointerY);
-
-    this.camLocal.copy(this.camera.position);
-    this.volume.worldToLocal(this.camLocal);
-    this.shared.uCamLocal.value.copy(this.camLocal);
-
-    const pulse =
-      0.2 + pose.hot * 0.14 + Math.sin(this.time * (1.05 + pose.hot)) * (0.018 + pose.hot * 0.012);
-    this.sprite.scale.set(pulse, pulse, 1);
-    this.coreMat.opacity = 0.22 + pose.hot * 0.55;
-    this.coreMesh.scale.setScalar(0.055 + pose.hot * 0.04);
-
-    const cycle = (this.time * 0.11) % 1;
-    this.waveA.material.uniforms.uRadius.value = 0.26 + cycle * 0.92;
-    this.waveA.material.uniforms.uStrength.value = pose.wave * 0.12;
-    const cycleB = (this.time * 0.11 + 0.48) % 1;
-    this.waveB.material.uniforms.uRadius.value = 0.26 + cycleB * 0.92;
-    this.waveB.material.uniforms.uStrength.value = pose.wave * 0.09;
-    this.waveA.quaternion.copy(this.camera.quaternion);
-    this.waveB.quaternion.copy(this.camera.quaternion);
   }
 
   fail(error) {
@@ -425,7 +324,7 @@ export class ChiefCoreEngine {
       if (Array.isArray(material)) material.forEach((entry) => entry.dispose?.());
       else material?.dispose?.();
     });
-    this.glowTexture?.dispose();
+    this.sprite?.dispose();
     this.renderer?.dispose();
   }
 }

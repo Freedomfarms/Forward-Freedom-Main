@@ -100,10 +100,15 @@ test("mobile framing lifts the core and uses fewer particles", () => {
 
   const mobile = particleBudgetFor(390, true);
   const full = particleBudgetFor(1440, false);
-  assert.ok(mobile.field < full.field);
-  assert.ok(mobile.orbit < full.orbit);
+  assert.equal(full.count, 1200);
+  assert.ok(mobile.count < full.count);
   const geometry = createCoreParticleGeometry(full);
-  assert.equal(geometry.getAttribute("aKind").count, full.field + full.orbit + full.traveler);
+  assert.equal(geometry.getAttribute("aDir").count, full.count);
+  assert.equal(geometry.getAttribute("aBallR").count, full.count);
+  const radii = geometry.getAttribute("aBallR").array;
+  let sum = 0;
+  for (let i = 0; i < radii.length; i += 1) sum += radii[i];
+  assert.ok(sum / radii.length > 0.55);
   geometry.dispose();
 });
 

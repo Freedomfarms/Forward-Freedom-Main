@@ -38,26 +38,18 @@
   position: absolute;
   left: 50%;
   top: 42%;
-  width: min(46vw, 280px);
-  height: min(46vw, 280px);
+  width: min(34vw, 220px);
+  height: min(34vw, 220px);
   transform: translate(-50%, -50%);
   border-radius: 50%;
-  background:
-    radial-gradient(
-      circle at 50% 50%,
-      rgba(255, 248, 255, 0.95) 0 6%,
-      rgba(196, 170, 255, 0.35) 14%,
-      transparent 28%
-    ),
-    radial-gradient(
-      circle at 50% 48%,
-      rgba(124, 78, 214, 0.72),
-      rgba(42, 12, 78, 0.2) 62%,
-      transparent 72%
-    );
-  box-shadow:
-    0 0 40px rgba(124, 78, 214, 0.35),
-    0 0 120px rgba(76, 29, 149, 0.28);
+  border: 1px solid rgba(176, 120, 255, 0.45);
+  background: radial-gradient(
+    circle at 50% 50%,
+    rgba(255, 255, 255, 0.95) 0 1.5%,
+    rgba(176, 38, 255, 0.85) 2.5%,
+    rgba(88, 24, 160, 0.28) 16%,
+    transparent 34%
+  );
   animation: chief-core-breathe 7s ease-in-out infinite;
 }
 
