@@ -543,6 +543,26 @@ test("the reply guard enforces the contract when the model ignores it", () => {
   assert.equal(missing.text, "I can't verify that from a current reading.");
   assert.doesNotMatch(missing.text, /84,000/);
 
+  const failedRead = settleReply({
+    transcript: [
+      { role: "user", content: "What is my current balance?" },
+      { role: "tool", content: "Freedom Financial read access is currently disabled" },
+    ],
+    text: "Your balance is $84,000.",
+    pack: { plan: { currentState: true }, authority: [] },
+  });
+  assert.equal(failedRead.text, "I can't verify that from a current reading.");
+
+  const read = settleReply({
+    transcript: [
+      { role: "user", content: "What is my current balance?" },
+      { role: "tool", content: "liquid cash 84000" },
+    ],
+    text: "Your balance is about $84,000.",
+    pack: { plan: { currentState: true }, authority: [] },
+  });
+  assert.match(read.text, /\$84,000/);
+
   const remembered = settleReply({
     transcript: [{ role: "user", content: "What did I decide last month?" }],
     text: "Last month you decided to keep one session record.",

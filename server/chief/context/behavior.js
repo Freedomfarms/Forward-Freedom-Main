@@ -252,7 +252,10 @@ function toolResultAfterLatestUser(transcript) {
   const messages = Array.isArray(transcript) ? transcript : [];
   const start = lastIndex(messages, "user");
   for (let index = start + 1; index < messages.length; index += 1) {
-    if (messages[index]?.role === "tool") return true;
+    if (messages[index]?.role !== "tool") continue;
+    const raw = messageText(messages[index]);
+    if (numbersIn(raw).some((value) => value.length > 1)) return true;
+    if (raw.trim() && !/unavailable|not connected|disabled|error|failed/i.test(raw)) return true;
   }
   return false;
 }
