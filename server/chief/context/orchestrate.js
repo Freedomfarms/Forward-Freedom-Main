@@ -147,7 +147,8 @@ function classifyQuery(query) {
   const relationship = RELATION_TEXT.test(text);
   const live = [];
   if (domain === "finance") live.push("finance");
-  if (domain === "web" || wantsHoldingValue(text)) live.push("web");
+  if (domain === "web" || wantsHoldingValue(text) || requestsPublicLookup(text)) live.push("web");
+  if (requestsPublicLookup(text) && /\b(?:house|home|property)\b/i.test(text)) live.push("finance");
   if (domain === "code") live.push("code");
   if (agents) live.push("agents");
   if (schedule) live.push("schedule");
@@ -179,38 +180,90 @@ function classifyQuery(query) {
   };
 }
 
-function inheritedLive(priorUserTexts) {
+function requestsPublicLookup(text) {
+  return (
+    /\b(?:check|look up|search|pull)\b/i.test(text) && /\b(?:zillow|redfin|listing)\b/i.test(text)
+  );
+}
+
+function financialThread(text) {
+  return /\b(?:refinanc\w*|mortgage|equity|house|home|rental|property|loan|xrp|btc|eth|balance|holding)\b/i.test(
+    text
+  );
+}
+
+function reassessing(text) {
+  return (
+    /\b(?:still|anymore|today|right now|currently)\b/i.test(text) &&
+    /\b(?:make sense|hold up|worth it|good idea)\b/i.test(text)
+  );
+}
+
+function inheritedLive(priorUserTexts, { keepWeb = false } = {}) {
   for (const text of priorUserTexts ?? []) {
     const earlier = classifyQuery(text);
     if (earlier.live.length === 0) continue;
-    if (wantsHoldingValue(text)) return earlier.live.filter((system) => system !== "web");
+    if (!keepWeb && wantsHoldingValue(text)) {
+      const kept = earlier.live.filter((system) => system !== "web");
+      if (kept.length === 0) continue;
+      return kept;
+    }
     return earlier.live;
   }
   return [];
 }
 
+function quietPlan() {
+  return {
+    live: [],
+    memory: [CONTEXT_SCOPE.WORKING],
+    layers: [],
+    currentState: false,
+  };
+}
+
+function withoutHypotheticalWeb(query, planned) {
+  if (!/^what if\b/i.test(String(query ?? "").trim())) return planned;
+  if (EXPLICIT_PUBLIC_CHECK.test(query)) return planned;
+  const live = planned.live.filter((system) => system !== "web");
+  return { ...planned, live, currentState: live.length > 0 };
+}
+
+function withCurrentReview(query, move, planned) {
+  if (move.kind !== MOVE.CONTINUE || !reassessing(query)) return planned;
+  const thread = [query, ...(move.priorUserTexts ?? [])].join("\n");
+  const live = financialThread(thread) ? unique([...planned.live, "finance"]) : planned.live;
+  const memory = [...planned.memory];
+  const layers = [...planned.layers];
+  if (DECISION_TEXT.test(thread)) {
+    memory.push(CONTEXT_SCOPE.DECISION, CONTEXT_SCOPE.EPISODIC);
+    layers.push(MEMORY_LAYER.EPISODIC);
+  }
+  return {
+    ...planned,
+    live,
+    memory: unique(memory),
+    layers: unique(layers),
+    currentState: live.length > 0,
+  };
+}
+
+const EXPLICIT_PUBLIC_CHECK = /\b(?:check it|look it up|pull it|search the web)\b/i;
+
 export function planContext(query, options = {}) {
   const planned = classifyQuery(query);
   if (!Array.isArray(options?.transcript)) return planned;
   const move = conversationMove(options.transcript, query);
-  if (move.kind === MOVE.ACKNOWLEDGE) {
-    return {
-      live: [],
-      memory: [CONTEXT_SCOPE.WORKING],
-      layers: [],
-      currentState: false,
-    };
-  }
+  if (move.kind === MOVE.ACKNOWLEDGE || move.kind === MOVE.CANCEL) return quietPlan();
+  if (move.ambiguous || move.unresolved) return quietPlan();
+  let next = planned;
   if ((move.kind === MOVE.CONTINUE || move.kind === MOVE.CONFIRM) && planned.live.length === 0) {
-    let live = inheritedLive(move.priorUserTexts);
+    let live = inheritedLive(move.priorUserTexts, { keepWeb: move.repairs === true });
     if (move.pullsPublicSource) live = unique([...live, "web"]);
-    return {
-      ...planned,
-      live,
-      currentState: live.length > 0,
-    };
+    next = { ...planned, live, currentState: live.length > 0 };
   }
-  return planned;
+  next = withoutHypotheticalWeb(query, next);
+  return withCurrentReview(query, move, next);
 }
 
 function blankItem(fields) {
