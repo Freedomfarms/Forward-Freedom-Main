@@ -11,6 +11,7 @@ import { buildWorkingMemory, isAnaphoric } from "../memory/working.js";
 
 export const MOVE = Object.freeze({
   ACKNOWLEDGE: "acknowledge",
+  CANCEL: "cancel",
   CONFIRM: "confirm",
   CONTINUE: "continue",
   DIRECT: "direct",
@@ -30,10 +31,19 @@ export const CHIEF_RESPONSE_CONTRACT = [
 ].join(" ");
 
 const REACTION =
-  /^(?:thanks|thank you|ty|great|nice|cool|awesome|perfect|wow|damn|fuck|shit|hell yeah|not bad|that's not bad|that's crazy|that's good|that's great|got it|makes sense|sounds good|alright|all good|nice one|crazy|lol|lmao|haha|yeah that's (?:crazy|wild|a lot|huge|big)|👍)[.!\s]*$/i;
+  /^(?:thanks|thank you|ty|great|nice|cool|awesome|perfect|wow|damn|fuck|shit|hell yeah|not bad|that(?:'s| is)(?: actually)? not bad|that(?:'s| is) crazy|that(?:'s| is) good|that(?:'s| is) great|got it|makes sense|sounds good|alright|all good|nice one|crazy|interesting|that changes things|that(?:'s| is) exactly what i needed|lol|lmao|haha|yeah that(?:'s| is) (?:crazy|wild|a lot|huge|big)|👍)$/i;
 
 const AGREEMENT =
-  /^(?:yes|yeah|yep|yup|sure|ok|okay|do it|go ahead|please|please do|check it|yeah check(?: it)?|pull it|do that|go for it)[.!\s]*$/i;
+  /^(?:yes|yeah|yep|yup|sure|ok|okay|do it|go ahead|please|please do|check it|yeah check(?: it)?|pull it|do that|go for it)$/i;
+
+const REPAIR = /\b(?:i meant|i mean)\b|\binstead\b|^no (?:the|my|that|it)\b/i;
+
+const RETRACTION =
+  /^(?:actually )?(?:never mind|nevermind|forget it|cancel(?: that)?|stop|don'?t bother|nvm|scratch that|leave it|drop it|ignore that)$/i;
+
+const DECLINE = /^(?:no|nope|nah|no thanks|no thank you)$/i;
+
+const VALUE_QUESTION = /\b(?:worth|how much|how many|balance|equity|own|cost)\b/i;
 
 const EXPLICIT_CHECK = /\b(?:check it|look it up|pull it|go ahead and|do that|do it)\b/i;
 
@@ -95,14 +105,26 @@ export function conversationMove(transcript, query = null) {
   const offeredWork = OFFER.test(offered);
   const prior = priorUserTexts(messages, latestIndex);
   const explicitCheck = EXPLICIT_CHECK.test(compact);
+  const repairs = REPAIR.test(compact);
   let kind = MOVE.DIRECT;
-  if ((agreement && offeredWork) || explicitCheck) kind = MOVE.CONFIRM;
+  if (repairs) kind = MOVE.CONTINUE;
+  else if ((agreement && offeredWork) || explicitCheck) kind = MOVE.CONFIRM;
+  else if (RETRACTION.test(compact) || (DECLINE.test(compact) && offeredWork)) kind = MOVE.CANCEL;
   else if (agreement || REACTION.test(compact)) kind = MOVE.ACKNOWLEDGE;
   else if (isAnaphoric(latest) || ELLIPSIS.test(latest)) kind = MOVE.CONTINUE;
   const thread = [offered, ...prior].join("\n");
+  const unresolved =
+    memory.ambiguous !== true &&
+    !memory.referent &&
+    isAnaphoric(latest) &&
+    VALUE_QUESTION.test(latest);
   return {
     kind,
     referent: memory.referent ?? null,
+    ambiguous: memory.ambiguous === true,
+    unresolved,
+    candidates: memory.candidates ?? [],
+    repairs,
     priorUserTexts: prior,
     pullsPublicSource: kind === MOVE.CONFIRM && PUBLIC_SOURCE.test(thread),
   };
@@ -112,6 +134,16 @@ export function renderConversationMove(transcript, query = null) {
   const move = conversationMove(transcript, query);
   if (move.kind === MOVE.ACKNOWLEDGE) {
     return "The latest message is a reaction, not a new task. Answer in a few words, in the same tone. Do not call a tool. Do not offer more work.";
+  }
+  if (move.kind === MOVE.CANCEL) {
+    return "The user is stopping. Acknowledge in a few words. Do not call a tool. Do not continue the task.";
+  }
+  if (move.ambiguous || move.unresolved) {
+    const choices = (move.candidates ?? []).filter(Boolean);
+    if (choices.length >= 2) {
+      return `This could refer to ${choices.join(" or ")}. Ask which one in a few words. Do not guess.`;
+    }
+    return "The subject is not in the conversation. Ask which one in a few words. Do not guess.";
   }
   if (move.kind === MOVE.CONFIRM) {
     return "The user is confirming the check you just offered. Do that work with the necessary tool, then give the result. Do not describe the plan.";
@@ -145,6 +177,21 @@ const CURRENT_FIGURE =
   /(?:\$\s?\d|\b\d[\d,]*(?:\.\d+)?\s*(?:xrp|btc|eth|k|grand)\b|\b(?:own|owns|worth|balance|equity|valued)\b[^.]{0,40}\d)/i;
 
 const UNAVAILABLE_ANSWER = "I can't verify that from a current reading.";
+
+const SIMPLE_FACT =
+  /\b(?:how (?:much|many)|what(?:'s| is)(?: it| that| this)? worth|do i own|what do i own)\b/i;
+
+const FILLER =
+  /\b(?:it is important|it's important|you may want|keep in mind|this represents|meaningful position|consider diversif|in summary|worth noting)\b/i;
+
+const SELF_TALK =
+  /^(?:i (?:analyzed|checked|looked at)(?: [^.]{0,48})?(?:,| and)?|based on my reasoning,?|my tools show)\s+/i;
+
+const SELF_SENTENCE =
+  /\b(?:i (?:analyzed|checked|looked)|based on my reasoning|my tools show|i was able to)\b/i;
+
+const SEARCH_NARRATION =
+  /\b(?:looking (?:that |it |this )?up|searching|i(?:'ll| will) (?:look|search|check|pull)|let me (?:look|search|check|pull))\b/i;
 
 function latestUserText(transcript) {
   const messages = Array.isArray(transcript) ? transcript : [];
@@ -219,21 +266,42 @@ function stripMachinery(text, transcript) {
   );
 }
 
+function leadIn(sentence) {
+  const bare = String(sentence ?? "").trim();
+  if (/^(?:certainly|of course|absolutely)[!,.]?$/i.test(bare)) return "";
+  return bare
+    .replace(/^(?:certainly|of course|absolutely)[!,.]?\s+/i, "")
+    .replace(
+      /^based on (?:my |the )?(?:[\w-]+\s+){0,6}?(?:analysis|records|information)(?:\s+available(?: to me)?)?,?\s*/i,
+      ""
+    )
+    .replace(
+      /^(?:here(?:'s| is) (?:a |an )?(?:comprehensive |detailed |brief )?(?:analysis|summary|overview)[^.]*\.\s*)/i,
+      ""
+    )
+    .trim();
+}
+
 function openWithAnswer(text, transcript) {
   const original = String(text ?? "").trim();
   if (!original || askedForStructure(transcript)) return original;
   const report = REPORT_OPENING.test(original) || /^#{1,3}\s+\S/m.test(original);
   if (!report) return original;
-  let body = original.replace(REPORT_OPENING, "").trim();
-  body = body.replace(REPORT_OPENING, "").trim();
-  const kept = sentenceList(body).filter((sentence) => {
-    if (/\d/.test(sentence)) return true;
-    if (OFFER_LINE.test(sentence)) return false;
-    return !/\b(?:based on|i can provide|let me provide|according to (?:my |the )?(?:records|information|analysis))\b/i.test(
-      sentence
-    );
-  });
-  const lead = kept.slice(0, 3).join(" ").trim();
+  const kept = sentenceList(original)
+    .map(leadIn)
+    .filter((sentence) => {
+      if (!sentence) return false;
+      if (/\d/.test(sentence)) return true;
+      if (OFFER_LINE.test(sentence)) return false;
+      return !/\b(?:based on|i can provide|let me provide|according to (?:my |the )?(?:records|information|analysis)|here(?:'s| is) (?:a |an )?(?:analysis|summary|overview))\b/i.test(
+        sentence
+      );
+    });
+  const lead = kept
+    .slice(0, 3)
+    .map((sentence) => sentence.charAt(0).toUpperCase() + sentence.slice(1))
+    .join(" ")
+    .trim();
   return lead || original;
 }
 
@@ -266,6 +334,52 @@ function liveReadingReady(pack) {
   );
 }
 
+function clarification(candidates) {
+  const names = (candidates ?? []).filter(Boolean).slice(0, 3);
+  if (names.length >= 2) {
+    const last = names[names.length - 1];
+    const rest = names.slice(0, -1).join(", ");
+    return `Which one, ${rest} or ${last}?`;
+  }
+  return "Which one do you mean?";
+}
+
+function alreadyAsking(text) {
+  const clean = String(text ?? "").trim();
+  return /\?\s*$/.test(clean) && clean.length <= 140 && !CURRENT_FIGURE.test(clean);
+}
+
+function polishAnswer(text, transcript) {
+  if (exploring(transcript) || askedForStructure(transcript) || askedArchitecture(transcript)) {
+    return String(text ?? "").trim();
+  }
+  const simple = SIMPLE_FACT.test(latestUserText(transcript));
+  const original = sentenceList(text);
+  const kept = [];
+  let changed = false;
+  for (const sentence of original) {
+    if (simple && FILLER.test(sentence) && !/\d/.test(sentence)) {
+      changed = true;
+      continue;
+    }
+    if (SELF_SENTENCE.test(sentence) && !/\d/.test(sentence)) {
+      changed = true;
+      continue;
+    }
+    const voiced = sentence.replace(SELF_TALK, "");
+    if (voiced !== sentence) changed = true;
+    const next = voiced === sentence ? sentence : voiced.charAt(0).toUpperCase() + voiced.slice(1);
+    if (!next.trim()) {
+      changed = true;
+      continue;
+    }
+    kept.push(next.trim());
+  }
+  if (!changed || kept.length === 0) return String(text ?? "").trim();
+  if (simple && !kept.some((sentence) => /\d/.test(sentence))) return String(text ?? "").trim();
+  return kept.slice(0, simple ? 3 : kept.length).join(" ");
+}
+
 function blockUnsupportedCurrentClaim(text, transcript, pack) {
   const answer = String(text ?? "").trim();
   if (!pack?.plan?.currentState || exploring(transcript)) return answer;
@@ -281,6 +395,8 @@ export function settleReply({ transcript = [], text = "", toolCalls = [], pack =
   const calls = Array.isArray(toolCalls) ? [...toolCalls] : [];
   const move = conversationMove(transcript);
   const userText = latestUserText(transcript);
+  const originalText = String(text ?? "");
+  let droppedSearch = false;
   if (move.kind === MOVE.ACKNOWLEDGE) {
     const modelText = String(text ?? "").trim();
     return {
@@ -288,12 +404,35 @@ export function settleReply({ transcript = [], text = "", toolCalls = [], pack =
       toolCalls: [],
     };
   }
+  if (move.kind === MOVE.CANCEL) {
+    const modelText = String(text ?? "").trim();
+    const keep = reactionIsAlreadyShort(modelText) && !OFFER_LINE.test(modelText);
+    return { text: keep ? modelText : "Okay.", toolCalls: [] };
+  }
+  if (move.ambiguous || move.unresolved) {
+    const modelText = String(text ?? "").trim();
+    return {
+      text: alreadyAsking(modelText) ? modelText : clarification(move.candidates),
+      toolCalls: [],
+    };
+  }
+  if (exploring(transcript)) {
+    const kept = calls.filter((call) => call?.name !== "web_search");
+    droppedSearch = kept.length !== calls.length;
+    calls.length = 0;
+    calls.push(...kept);
+    if (kept.length === 0) {
+      text = withoutDroppedSentences(text, (sentence) => SEARCH_NARRATION.test(sentence));
+    }
+  }
   if (calls.length > 0) return { text: String(text ?? ""), toolCalls: calls };
   let answer = openWithAnswer(text, transcript);
   answer = stripMachinery(answer, transcript);
   answer = stripOffers(answer, transcript);
   answer = blockUnsupportedCurrentClaim(answer, transcript, pack);
+  answer = polishAnswer(answer, transcript);
   answer = answer.trim();
-  if (!answer) answer = String(text ?? "").trim();
+  if (!answer && droppedSearch) answer = "I can check that if you want.";
+  if (!answer) answer = originalText.trim();
   return { text: answer, toolCalls: calls };
 }

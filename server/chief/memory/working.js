@@ -56,6 +56,28 @@ export function isAnaphoric(text) {
   );
 }
 
+export function isSingularReference(text) {
+  const raw = String(text ?? "");
+  return /\b(?:it|that|this)\b/i.test(raw) && !/\b(?:them|those|both|the other one)\b/i.test(raw);
+}
+
+function distinctEntities(text) {
+  const names = [];
+  for (const name of extractEntities(text)) {
+    if (names.some((item) => item.toLowerCase() === name.toLowerCase())) continue;
+    names.push(name);
+  }
+  return names;
+}
+
+function focusedEntities(messages, lastUserIndex) {
+  for (let index = lastUserIndex - 1; index >= 0; index -= 1) {
+    const names = distinctEntities(prose(messages[index]));
+    if (names.length) return names;
+  }
+  return [];
+}
+
 function prose(message) {
   if (isCompactedMessage(message)) return compactedSummary(message) ?? "";
   return messageText(message);
@@ -102,11 +124,16 @@ export function buildWorkingMemory(
   });
 
   const introduced = extractEntities(lastUser);
+  const focused = focusedEntities(messages, lastUserIndex);
+  const needsSubject = /\?|\b(?:how much|how many|what(?:'s| is)|what if|worth)\b/i.test(lastUser);
+  const ambiguous =
+    introduced.length === 0 && isSingularReference(lastUser) && needsSubject && focused.length >= 2;
   const goal = noteLine(notes, "Goal");
   let referent = null;
   if (/\bthe other one\b/i.test(lastUser) && entities.length >= 2) {
     referent = entities[entities.length - 2].name;
   } else if (introduced.length) referent = introduced[introduced.length - 1];
+  else if (ambiguous) referent = null;
   else if (isAnaphoric(lastUser)) referent = priorReferent;
   const currentTask = isAnaphoric(lastUser) && goal ? goal : lastUser;
   const toolResults = [];
@@ -120,6 +147,8 @@ export function buildWorkingMemory(
     recentTurns: kept,
     entities,
     referent: referent ?? null,
+    ambiguous,
+    candidates: ambiguous ? focused : [],
     currentTask,
     decisions: noteLine(notes, "Key Decisions"),
     pending: noteLine(notes, "Next Steps"),
@@ -140,7 +169,11 @@ export function renderWorkingMemory(memory) {
   if (!memory) return "";
   const lines = ["Working context for this conversation only:"];
   if (memory.currentTask) lines.push(`Current request: ${memory.currentTask}`);
-  if (memory.referent) {
+  if (memory.ambiguous && memory.candidates?.length >= 2) {
+    lines.push(
+      `"it" could refer to ${memory.candidates.join(" or ")}. Ask which one. Do not choose.`
+    );
+  } else if (memory.referent) {
     lines.push(`"it", "that", "this", and "them" refer to ${memory.referent}.`);
   }
   if (memory.entities?.length) {
