@@ -120,42 +120,69 @@ export function createCorePointMaterial(shared, map) {
   });
 }
 
-function createShellMaterial() {
+const SHELL_POINTS = 112;
+
+// Fixed points on the unit sphere. They carry no animation of their own.
+// Parenting them to the particle rotor is what rotates the boundary.
+export function createShellGeometry(count = SHELL_POINTS) {
+  const total = Math.max(8, count | 0);
+  const position = new Float32Array(total * 3);
+  const golden = Math.PI * (3 - Math.sqrt(5));
+  for (let i = 0; i < total; i += 1) {
+    const y = 1 - (i / (total - 1)) * 2;
+    const radial = Math.sqrt(Math.max(0, 1 - y * y));
+    const theta = golden * i;
+    const offset = i * 3;
+    position[offset] = Math.cos(theta) * radial;
+    position[offset + 1] = y;
+    position[offset + 2] = Math.sin(theta) * radial;
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(position, 3));
+  geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), 1);
+  return geometry;
+}
+
+function createShellMaterial(shared, map) {
   return new THREE.ShaderMaterial({
+    uniforms: {
+      uDpr: shared.uDpr,
+      uHeight: shared.uHeight,
+      uMap: { value: map },
+    },
     transparent: true,
     depthWrite: false,
     depthTest: true,
-    blending: THREE.NormalBlending,
+    blending: THREE.AdditiveBlending,
     toneMapped: false,
     vertexShader: `
-      varying vec3 vNormalV;
-      varying vec3 vView;
+      uniform float uDpr;
+      uniform float uHeight;
+      varying float vFacing;
       void main() {
         vec4 mv = modelViewMatrix * vec4(position, 1.0);
-        vNormalV = normalize(normalMatrix * normal);
-        vView = normalize(-mv.xyz);
+        vec3 viewDir = normalize(mat3(modelViewMatrix) * position);
+        vFacing = clamp(viewDir.z, 0.0, 1.0);
         gl_Position = projectionMatrix * mv;
+        gl_PointSize = 0.052 * uDpr * (uHeight * 0.5) / max(-mv.z, 0.2);
       }
     `,
     fragmentShader: `
-      varying vec3 vNormalV;
-      varying vec3 vView;
+      uniform sampler2D uMap;
+      varying float vFacing;
       void main() {
-        float ndv = clamp(dot(normalize(vNormalV), normalize(vView)), 0.0, 1.0);
-        float rim = smoothstep(0.46, 0.0, ndv);
-        float alpha = pow(rim, 1.55) * 0.82;
-        if (alpha < 0.03) discard;
-        vec3 col = vec3(0.74, 0.4, 1.0);
-        gl_FragColor = vec4(pow(col, vec3(0.4545)), alpha);
+        vec4 tex = texture2D(uMap, gl_PointCoord);
+        if (tex.a < 0.04) discard;
+        float shade = mix(0.42, 1.0, vFacing);
+        vec3 col = vec3(0.72, 0.36, 1.0) * shade * tex.rgb;
+        gl_FragColor = vec4(pow(col, vec3(0.4545)), tex.a * 0.8);
       }
     `,
   });
 }
 
-// Unit sphere. The scene scales it to the particle hull. Facing falloff
-// keeps the contour on the limb and leaves the interior to the particles.
-export function createShellMesh() {
-  const mesh = new THREE.Mesh(new THREE.SphereGeometry(1, 48, 36), createShellMaterial());
-  mesh.frustumCulled = false;
-  return mesh;
+export function createShellPoints(shared, map) {
+  const points = new THREE.Points(createShellGeometry(), createShellMaterial(shared, map));
+  points.frustumCulled = false;
+  return points;
 }

@@ -19,6 +19,7 @@ import {
   createCoreParticleGeometry,
   particleBudgetFor,
 } from "../src/visual/chiefCore/ChiefCoreParticles.js";
+import { createShellGeometry } from "../src/visual/chiefCore/ChiefCoreMaterial.js";
 import {
   normalizeCoreState,
   poseFor,
@@ -93,6 +94,21 @@ test("drag follows the pointer and release glide dies quickly", () => {
   beginPinch(zoom);
   applyPinch(zoom, 3);
   assert.equal(zoom.zoomTarget, ZOOM_MAX);
+});
+
+test("the outer boundary is fixed on the same unit sphere as the rotor", () => {
+  const geometry = createShellGeometry();
+  const position = geometry.getAttribute("position");
+  assert.ok(position.count >= 64);
+  for (let i = 0; i < position.count; i += 1) {
+    const radius = Math.hypot(position.getX(i), position.getY(i), position.getZ(i));
+    assert.ok(Math.abs(radius - 1) < 1e-4);
+  }
+  const scene = read("src/visual/chiefCore/ChiefCoreScene.js");
+  assert.match(scene, /this\.rotor\.add\(this\.shell\)/);
+  assert.match(scene, /this\.rotor\.add\(this\.particles\)/);
+  assert.doesNotMatch(scene, /SphereGeometry|createShellMesh|fresnel/);
+  geometry.dispose();
 });
 
 test("mobile framing lifts the core and uses fewer particles", () => {

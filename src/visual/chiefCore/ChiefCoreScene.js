@@ -13,7 +13,7 @@ import {
   createCorePointMaterial,
   createCoreSprite,
   createSharedUniforms,
-  createShellMesh,
+  createShellPoints,
 } from "./ChiefCoreMaterial.js";
 import { createCoreParticleGeometry, particleBudgetFor } from "./ChiefCoreParticles.js";
 import {
@@ -95,11 +95,11 @@ export class ChiefCoreEngine {
     this.scene.add(this.rig);
     this.rig.add(this.rotor);
 
-    this.shell = createShellMesh();
+    this.sprite = createCoreSprite();
+    this.shell = createShellPoints(this.shared, this.sprite);
     this.shell.renderOrder = 4;
     this.rotor.add(this.shell);
 
-    this.sprite = createCoreSprite();
     this.particles = new THREE.Points(
       createCoreParticleGeometry(this.budget),
       createCorePointMaterial(this.shared, this.sprite)
@@ -287,7 +287,7 @@ export class ChiefCoreEngine {
     this.shared.uOpacity.value = pose.opacity;
     this.shared.uPointer.value.set(this.motion.pointerX, this.motion.pointerY);
     const hull = pose.radius + pose.bubble + pose.wave * this.shared.uWaveAmp.value;
-    this.shell.scale.setScalar(hull + 0.04);
+    this.shell.scale.setScalar(hull + 0.1);
   }
 
   fail(error) {
