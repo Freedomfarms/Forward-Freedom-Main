@@ -105,8 +105,9 @@ test("connected systems follow the control plane and do not invent a link", () =
   assert.equal(email.access, "not_connected");
   assert.equal(email.status, "Not connected");
   assert.equal(web.access, "not_connected");
-  assert.equal(grokbot.access, "not_connected");
-  assert.match(grokbot.detail, /not a live/);
+  assert.equal(grokbot.access, "read");
+  assert.equal(grokbot.status, "Read only");
+  assert.match(grokbot.detail, /Read-only observation/);
 
   const on = projectConnectedSystems(
     discoverCapabilities({

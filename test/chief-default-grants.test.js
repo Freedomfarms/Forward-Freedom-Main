@@ -44,7 +44,6 @@ const DENIED = [
   Capability.DATA_WRITE,
   Capability.TOOL_INVOKE,
   Capability.SYSTEM_ADMIN,
-  Capability.WORKFORCE_READ,
 ];
 
 function grantLoader(rows, calls = null) {

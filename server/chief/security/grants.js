@@ -6,8 +6,10 @@
 // narrow _default set when no policy file is configured, so default-deny
 // does not leave every tool unreachable. The built-in baseline is
 // baselineCapabilities() in the control-plane catalog. That list includes
-// the ordinary reads, including capability:read and code:read. workforce:read
-// stays off it. network:fetch, file:read, file:write, and code:execute stay
+// the ordinary reads, including capability:read, code:read, and workforce:read.
+// workforce:read lets the observation journal report that no binding or no
+// activity exists. It does not grant agent control. network:fetch, file:read,
+// file:write, and code:execute stay
 // off it. A connected connector adds its own grants on top. A disconnected
 // connector adds none. code:read is the configured repository, not a user
 // GitHub account and not a shell.

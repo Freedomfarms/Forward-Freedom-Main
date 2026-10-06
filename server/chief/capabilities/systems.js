@@ -91,7 +91,16 @@ export function projectConnectedSystems(snapshot) {
     });
   }
   const workforce = CONTROL_PLANE.find((entry) => entry.id === "workforce.observe");
-  if (workforce && workforce.status !== ControlStatus.LIVE) {
+  if (workforce?.status === ControlStatus.LIVE) {
+    systems.push({
+      id: "grokbot",
+      name: "GrokBot",
+      status: "Read only",
+      access: "read",
+      detail:
+        "Read-only observation journal. Live agent status appears only after activity is recorded. CHIEF cannot start, stop, or edit agents.",
+    });
+  } else if (workforce) {
     systems.push({
       id: "grokbot",
       name: "GrokBot",

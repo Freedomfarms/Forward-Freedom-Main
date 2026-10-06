@@ -58,7 +58,7 @@ export function extractEntities(text) {
 }
 
 export function isAnaphoric(text) {
-  return /\b(it|that|this|them|those|there|they|the other one|the thing|what we (?:just|were)|go back)\b/i.test(
+  return /\b(it|that|this|them|those|there|they|the other one|the [a-z]+ one|the thing|what we (?:just|were)|go back)\b/i.test(
     String(text ?? "")
   );
 }
