@@ -15,6 +15,7 @@ import { relevanceFollowup } from "./relevance.js";
 import {
   agentDayQuery,
   attentionQuery,
+  bareWorldQuery,
   failureQuery,
   recentDelta,
   reviewQuery,
@@ -164,7 +165,8 @@ function classifyQuery(query) {
   const text = String(query ?? "");
   const domain = authoritativeDomain(text);
   const episodic = needsEpisodicMemory(text);
-  const decision = DECISION_TEXT.test(text);
+  const pastIntention = /\bwhat was i (?:thinking|planning|going to|about to)\b/i.test(text);
+  const decision = DECISION_TEXT.test(text) || pastIntention;
   const agents = workforceQuery(text);
   const schedule = /\b(schedul(?:e|ed|ing)|behind schedule|overdue)\b/i.test(text);
   const calendar = /\b(calendar|meeting|appointment)\b/i.test(text);
@@ -176,8 +178,11 @@ function classifyQuery(query) {
   if (requestsPublicLookup(text) && /\b(?:house|home|property)\b/i.test(text)) live.push("finance");
   if (domain === "code") live.push("code");
   if (/\b(?:spent|spending|expenses?)\b/i.test(text)) live.push("finance");
-  if (attentionQuery(text) || recentDelta(text)) {
+  if (attentionQuery(text) || recentDelta(text) || bareWorldQuery(text)) {
     live.push("finance", "schedule", "agents");
+  }
+  if (/\b(?:house|home|mortgage|equity|refinanc\w*)\b/i.test(text) && !historicalQuestion(text)) {
+    live.push("finance");
   }
   if (agents) live.push("agents");
   if (failureQuery(text) || agentDayQuery(text)) live.push("schedule");
@@ -312,7 +317,21 @@ export function planContext(query, options = {}) {
   next = withoutHypotheticalWeb(query, next);
   next = applyWorkforceTime(query, next);
   next = withCurrentReview(query, move, next);
+  next = keepSinceThenLocal(query, move, next);
   return keepRelevanceLocal(query, move, next);
+}
+
+function keepSinceThenLocal(query, move, planned) {
+  const raw = String(query ?? "");
+  if (!/\bwhat(?:'s| has)? changed\b/i.test(raw) || !/\bsince then\b/i.test(raw) || recentDelta(raw)) {
+    return planned;
+  }
+  const thread = [raw, ...(move?.priorUserTexts ?? [])].join("\n");
+  if (!financialThread(thread)) return { ...planned, live: [], currentState: false };
+  const memory = planned.memory.includes("decision")
+    ? planned.memory
+    : unique([...planned.memory, "decision"]);
+  return { ...planned, live: ["finance"], memory, currentState: true };
 }
 
 function asksStatedPriorities(query, transcript) {

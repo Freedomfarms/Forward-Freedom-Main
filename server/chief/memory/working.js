@@ -36,6 +36,15 @@ const STOP_ENTITY = new Set([
   "week",
   "today",
   "yesterday",
+  "still",
+  "actually",
+  "really",
+  "just",
+  "even",
+  "exactly",
+  "already",
+  "currently",
+  "scheduled",
 ]);
 
 const TICKERS = /\b(XRP|BTC|ETH|SOL|ADA|DOGE|GOLD|SILVER)\b/g;
@@ -85,6 +94,19 @@ function focusedEntities(messages, lastUserIndex) {
   return [];
 }
 
+function userTopics(messages, lastUserIndex) {
+  const names = [];
+  for (let index = 0; index < lastUserIndex; index += 1) {
+    if (messages[index]?.role !== "user") continue;
+    for (const name of distinctEntities(prose(messages[index]))) {
+      if (!names.some((item) => item.toLowerCase() === name.toLowerCase())) names.push(name);
+    }
+  }
+  return names;
+}
+
+const VALUE_ASK = /\b(?:worth|how much|how many|balance|equity|own|cost)\b/i;
+
 function prose(message) {
   if (isCompactedMessage(message)) return compactedSummary(message) ?? "";
   return messageText(message);
@@ -132,9 +154,13 @@ export function buildWorkingMemory(
 
   const introduced = extractEntities(lastUser);
   const focused = focusedEntities(messages, lastUserIndex);
+  const topics = userTopics(messages, lastUserIndex);
   const needsSubject = /\?|\b(?:how much|how many|what(?:'s| is)|what if|worth)\b/i.test(lastUser);
+  const openValue = VALUE_ASK.test(lastUser) && !/^what if\b/i.test(String(lastUser).trim());
   const ambiguous =
-    introduced.length === 0 && isSingularReference(lastUser) && needsSubject && focused.length >= 2;
+    introduced.length === 0 &&
+    isSingularReference(lastUser) &&
+    ((needsSubject && focused.length >= 2) || (openValue && topics.length >= 2));
   const goal = noteLine(notes, "Goal");
   let referent = null;
   if (/\bthe other one\b/i.test(lastUser) && entities.length >= 2) {
@@ -155,7 +181,7 @@ export function buildWorkingMemory(
     entities,
     referent: referent ?? null,
     ambiguous,
-    candidates: ambiguous ? focused : [],
+    candidates: ambiguous ? (focused.length >= 2 ? focused : topics) : [],
     currentTask,
     decisions: noteLine(notes, "Key Decisions"),
     pending: noteLine(notes, "Next Steps"),

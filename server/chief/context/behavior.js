@@ -56,6 +56,7 @@ export function historicalQuestion(text) {
   const raw = String(text ?? "");
   if (CURRENT_REVIEW.test(raw) && REVIEW_INTENT.test(raw)) return false;
   if (/\b(?:spent|spending|spend|expenses?)\b/i.test(raw)) return false;
+  if (/\bwhat was i (?:thinking|planning|going to|about to)\b/i.test(raw)) return true;
   return /\b(?:what did (?:i|we)|why did i decide|last (?:month|year|week)|earlier|previously|used to|\bago\b|tell you|told you|talked about)\b/i.test(
     raw
   );
@@ -70,6 +71,13 @@ const PUBLIC_SOURCE = /\b(?:zillow|redfin|listing|estimate|look up|search the we
 
 const ELLIPSIS =
   /^(?:what about|how about|and |what if|how much\b|why\b|what changed|what happened|the other one|is that|and the)\b/i;
+
+function bareReaction(text) {
+  const raw = String(text ?? "").trim();
+  if (!/^that(?:'s| is)\b/i.test(raw)) return false;
+  if (/[?]/.test(raw) || /\b(?:what|why|how|when|where|who|which)\b/i.test(raw)) return false;
+  return true;
+}
 
 function spoken(text) {
   return String(text ?? "")
@@ -126,7 +134,7 @@ export function conversationMove(transcript, query = null) {
   if (repairs) kind = MOVE.CONTINUE;
   else if ((agreement && offeredWork) || explicitCheck) kind = MOVE.CONFIRM;
   else if (RETRACTION.test(compact) || (DECLINE.test(compact) && offeredWork)) kind = MOVE.CANCEL;
-  else if (agreement || REACTION.test(compact)) kind = MOVE.ACKNOWLEDGE;
+  else if (agreement || REACTION.test(compact) || bareReaction(latest)) kind = MOVE.ACKNOWLEDGE;
   else if (isAnaphoric(latest) || ELLIPSIS.test(latest)) kind = MOVE.CONTINUE;
   const thread = [offered, ...prior].join("\n");
   const unresolved =
@@ -527,7 +535,10 @@ export function settleReply({ transcript = [], text = "", toolCalls = [], pack =
   }
   if (move.kind === MOVE.CANCEL) {
     const modelText = String(text ?? "").trim();
-    const keep = reactionIsAlreadyShort(modelText) && !OFFER_LINE.test(modelText);
+    const keep =
+      reactionIsAlreadyShort(modelText) &&
+      !OFFER_LINE.test(modelText) &&
+      !/\b(?:check(?:ing)?|search(?:ing)?|look(?:ing)?(?: that| it| this)? up)\b/i.test(modelText);
     return { text: keep ? modelText : "Okay.", toolCalls: [] };
   }
   if (move.ambiguous || move.unresolved) {

@@ -10,7 +10,7 @@ const STATED_PRIORITY =
   /\b(?:i(?:'m| am)|we(?:'re| are)|user is) (?:trying to|working on|focused on)\b|\b(?:my|our|the) (?:goal|priority|objective) is\b|\b(?:is|are) (?:my|our) (?:goal|priority|objective)\b|\b(?:i|we) (?:want|need) to (?:cut|reduce|lower|keep|finish|save|track|increase|protect)\b|\b(?:important|matters) to me\b|\bwants to (?:cut|reduce|lower|keep|finish|save|track)\b/i;
 
 const FOLLOWUP =
-  /^why[.?!]?$|\bwhich (?:one )?matters most\b|\bdoes (?:this|that|it) matter\b|\b(?:should i|i should) worry\b|\bwhat should i do(?: about (?:it|this|that))?\b/i;
+  /^why[.?!]?$|\bwhich (?:one )?matters(?: most)?\b|\bdoes (?:this|that|it) matter\b|\b(?:should i|i should) worry\b|\bwhat should i do(?: about (?:it|this|that))?\b/i;
 
 const STOP = new Set([
   "that",
@@ -69,7 +69,7 @@ export function relevanceFollowup(text) {
 
 export function followupKind(text) {
   const raw = String(text ?? "").trim();
-  if (/\bwhich (?:one )?matters most\b/i.test(raw)) return "most";
+  if (/\bwhich (?:one )?matters(?: most)?\b/i.test(raw)) return "most";
   if (/^why[.?!]?$/i.test(raw)) return "why";
   if (/\b(?:should i|i should) worry\b/i.test(raw)) return "worry";
   if (/\bdoes (?:this|that|it) matter\b/i.test(raw)) return "matter";
@@ -116,9 +116,15 @@ function priorityAim(text) {
   return null;
 }
 
+const ABANDON = /\b(?:forget (?:that|this|it)|never mind|scratch that)\b/i;
+
 export function relateSignal(signalText, priorityText) {
   const signalTokens = new Set(contentTokens(signalText));
   const shared = contentTokens(priorityText).filter((word) => signalTokens.has(word));
+  const spending =
+    /\b(?:spend(?:ing)?|expenses?)\b/i.test(String(priorityText ?? "")) &&
+    /\b(?:up|down) \d/i.test(String(signalText ?? ""));
+  if (spending) shared.push("spend");
   if (shared.length === 0) return { relation: "none", shared };
   const direction = signalDirection(signalText);
   const aim = priorityAim(priorityText);
@@ -148,9 +154,31 @@ export function collectPriorities({ items = [], transcript = [] } = {}) {
     if (item.source === "chief_session") continue;
     push(item.text, "remembered");
   }
-  const users = (Array.isArray(transcript) ? transcript : []).filter((message) => message?.role === "user");
-  for (const message of users) push(messageText(message), "stated");
+  const users = (Array.isArray(transcript) ? transcript : [])
+    .filter((message) => message?.role === "user")
+    .map((message) => messageText(message));
+  const { active, dropped } = statedAfterAbandon(users);
+  const droppedKeys = new Set(dropped.map((text) => text.toLowerCase()));
+  for (let index = found.length - 1; index >= 0; index -= 1) {
+    if (droppedKeys.has(found[index].text.toLowerCase())) found.splice(index, 1);
+  }
+  for (const text of active) push(text, "stated");
   return found.slice(0, 3);
+}
+
+function statedAfterAbandon(users) {
+  const active = [];
+  const dropped = [];
+  for (const text of users) {
+    if (ABANDON.test(text)) {
+      dropped.push(...active.splice(0, active.length));
+      const after = text.split(ABANDON).pop() ?? "";
+      if (isStatedPriority(after)) active.push(after.replace(/^[\s.,;:!-]+/, "").trim());
+      continue;
+    }
+    if (isStatedPriority(text)) active.push(text);
+  }
+  return { active, dropped };
 }
 
 export function rankLinks(signals, priorities) {

@@ -25,11 +25,11 @@ const SPEND_SHIFT_DOLLARS = 100;
 const OVER_BUDGET_DOLLARS = 100;
 
 const ATTENTION_TEXT =
-  /\b(?:paying attention|pay attention|needs attention|biggest thing|should know right now|what matters right now)\b/i;
+  /\b(?:paying attention|pay attention|needs attention|biggest thing|should know right now|what matters right now|what should i care about)\b/i;
 const FAILURE_TEXT = /\b(?:anything failing|is anything fail(?:ing|ed)?|what(?:'s| is) failing)\b/i;
 const DELTA_TEXT =
   /\bwhat(?:'s| has)? changed\b/i;
-const DELTA_WHEN = /\b(?:today|since|yesterday)\b/i;
+const DELTA_WHEN = /\b(?:today|yesterday)\b|\bsince\s+(?:yesterday|today|last|this)\b/i;
 const AGENT_DAY =
   /\b(?:doing|working|going on|up to)\b/i;
 const REVIEW_WHEN = /\b(?:still|anymore|today|right now|currently|where i am now)\b/i;
@@ -57,6 +57,10 @@ export function attentionQuery(text) {
   return ATTENTION_TEXT.test(String(text ?? ""));
 }
 
+export function bareWorldQuery(text) {
+  return /^what(?:'s| is) going on\??$/i.test(String(text ?? "").trim());
+}
+
 export function failureQuery(text) {
   return FAILURE_TEXT.test(String(text ?? ""));
 }
@@ -77,7 +81,7 @@ export function reviewQuery(text) {
 }
 
 export function situationKind(text) {
-  if (attentionQuery(text)) return "attention";
+  if (attentionQuery(text) || bareWorldQuery(text)) return "attention";
   if (failureQuery(text)) return "failures";
   if (recentDelta(text)) return "delta";
   if (/\bwhat(?:'s| is) going on\b/i.test(String(text ?? "")) && /\b(?:grok\s*bots?|agents?|bots?)\b/i.test(text)) {
