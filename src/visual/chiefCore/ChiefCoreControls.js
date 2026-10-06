@@ -11,10 +11,15 @@ export function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
+const DRAG_SENS = 0.0052;
+const RELEASE_SPEED = 1.6;
+
 export function createMotion() {
   return {
-    yawVel: 0.08,
+    yawVel: 0,
     pitchVel: 0,
+    grabYaw: 0,
+    grabPitch: 0,
     pitch: 0,
     zoom: 1,
     zoomTarget: 1,
@@ -34,14 +39,24 @@ export function notePointer(motion, x, y) {
 }
 
 export function noteDrag(motion, dx, dy, dt) {
+  const yaw = dx * DRAG_SENS;
+  const pitch = -dy * DRAG_SENS;
   const safe = Math.max(dt, 0.008);
-  const sens = 0.0052;
-  const yaw = clamp((dx * sens) / safe, -2.8, 2.8);
-  const pitch = clamp((-dy * sens) / safe, -2.8, 2.8);
-  motion.yawVel = motion.yawVel * 0.42 + yaw * 0.58;
-  motion.pitchVel = motion.pitchVel * 0.42 + pitch * 0.58;
+  motion.grabYaw += yaw;
+  motion.grabPitch += pitch;
+  motion.yawVel = clamp(yaw / safe, -RELEASE_SPEED, RELEASE_SPEED);
+  motion.pitchVel = clamp(pitch / safe, -RELEASE_SPEED, RELEASE_SPEED);
   motion.dragging = true;
   motion.dragFresh = true;
+}
+
+export function grabCore(motion) {
+  motion.dragging = true;
+  motion.dragFresh = false;
+  motion.yawVel = 0;
+  motion.pitchVel = 0;
+  motion.grabYaw = 0;
+  motion.grabPitch = 0;
 }
 
 export function endDrag(motion) {
@@ -63,31 +78,32 @@ export function applyWheel(motion, deltaY) {
   motion.zoomTarget = clamp(motion.zoomTarget * factor, ZOOM_MIN, ZOOM_MAX);
 }
 
-export function stepMotion(
-  motion,
-  dt,
-  { dragging = false, reduced = false, idleYaw = 0.08 } = {},
-  out
-) {
+export function stepMotion(motion, dt, { dragging = false, reduced = false } = {}, out) {
   const target = out || { yawDelta: 0, pitchDelta: 0 };
-  const yawDelta = motion.yawVel * dt;
-  const nextPitch = motion.pitch + motion.pitchVel * dt;
+  const held = dragging || motion.dragging;
+  let yawDelta = 0;
+  let pitchDelta = 0;
+  if (motion.dragFresh) {
+    yawDelta = motion.grabYaw;
+    pitchDelta = motion.grabPitch;
+    motion.grabYaw = 0;
+    motion.grabPitch = 0;
+    motion.dragFresh = false;
+  } else if (!held) {
+    yawDelta = motion.yawVel * dt;
+    pitchDelta = motion.pitchVel * dt;
+    const decay = reduced ? 14 : 8;
+    motion.yawVel = damp(motion.yawVel, 0, decay, dt);
+    motion.pitchVel = damp(motion.pitchVel, 0, decay, dt);
+  } else {
+    motion.yawVel = damp(motion.yawVel, 0, 18, dt);
+    motion.pitchVel = damp(motion.pitchVel, 0, 18, dt);
+  }
+  const nextPitch = motion.pitch + pitchDelta;
   const clampedPitch = clamp(nextPitch, -PITCH_LIMIT, PITCH_LIMIT);
-  const pitchDelta = clampedPitch - motion.pitch;
+  pitchDelta = clampedPitch - motion.pitch;
   motion.pitch = clampedPitch;
   if (Math.abs(motion.pitch) >= PITCH_LIMIT - 1e-4) motion.pitchVel = 0;
-
-  const held = dragging || motion.dragging;
-  if (held) {
-    if (!motion.dragFresh) {
-      motion.yawVel = damp(motion.yawVel, 0, 14, dt);
-      motion.pitchVel = damp(motion.pitchVel, 0, 14, dt);
-    }
-    motion.dragFresh = false;
-  } else {
-    motion.yawVel = damp(motion.yawVel, reduced ? 0 : idleYaw, 1.05, dt);
-    motion.pitchVel = damp(motion.pitchVel, 0, 2.6, dt);
-  }
 
   motion.zoomTarget = clamp(motion.zoomTarget, ZOOM_MIN, ZOOM_MAX);
   motion.zoom = damp(motion.zoom, motion.zoomTarget, 7, dt);
@@ -154,7 +170,7 @@ export function attachCorePointer(canvas, motion) {
       lastX = event.clientX;
       lastY = event.clientY;
       lastT = performance.now();
-      motion.dragging = true;
+      grabCore(motion);
       canvas.classList.add("is-dragging");
     } else if (points.size === 2) {
       motion.dragging = false;

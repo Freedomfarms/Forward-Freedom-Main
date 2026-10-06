@@ -59,25 +59,32 @@ test("core states ease and external state wins over the homepage preview", () =>
   assert.ok(pose.hot > 0.9);
 });
 
-test("drag inertia eases back and zoom stays inside a subtle range", () => {
+test("drag follows the pointer and release glide dies quickly", () => {
   const motion = createMotion();
+  assert.equal(motion.yawVel, 0);
   noteDrag(motion, 90, -20, 0.016);
   assert.ok(motion.yawVel > 0.4);
   assert.ok(motion.pitchVel > 0);
-  const flung = Math.abs(motion.yawVel - 0.08);
+  const followed = stepMotion(motion, 0.016, { dragging: true });
+  assert.ok(Math.abs(followed.yawDelta - 90 * 0.0052) < 1e-6);
+  assert.ok(followed.pitchDelta > 0);
+  const heldStill = stepMotion(motion, 0.05, { dragging: true });
+  assert.equal(heldStill.yawDelta, 0);
+
   endDrag(motion);
-  for (let i = 0; i < 80; i += 1) {
-    stepMotion(motion, 0.05, { dragging: false, reduced: false, idleYaw: 0.08 });
+  const flung = Math.abs(motion.yawVel);
+  for (let i = 0; i < 40; i += 1) {
+    stepMotion(motion, 0.05, { dragging: false, reduced: false });
   }
-  assert.ok(Math.abs(motion.yawVel - 0.08) < flung);
-  assert.ok(Math.abs(motion.yawVel - 0.08) < 0.04);
+  assert.ok(Math.abs(motion.yawVel) < flung);
+  assert.ok(Math.abs(motion.yawVel) < 0.02);
   assert.ok(Math.abs(motion.pitchVel) < 0.02);
 
   const held = createMotion();
   noteDrag(held, 50, 0, 0.016);
-  stepMotion(held, 0.016, { dragging: true, idleYaw: 0.08 });
+  stepMotion(held, 0.016, { dragging: true });
   const coast = Math.abs(held.yawVel);
-  stepMotion(held, 0.12, { dragging: true, idleYaw: 0.08 });
+  stepMotion(held, 0.12, { dragging: true });
   assert.ok(Math.abs(held.yawVel) < coast);
 
   const zoom = createMotion();

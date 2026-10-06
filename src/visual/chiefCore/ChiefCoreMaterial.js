@@ -128,50 +128,34 @@ function createShellMaterial() {
     blending: THREE.NormalBlending,
     toneMapped: false,
     vertexShader: `
-      varying float vFacing;
+      varying vec3 vNormalV;
+      varying vec3 vView;
       void main() {
         vec4 mv = modelViewMatrix * vec4(position, 1.0);
-        vec3 viewNormal = normalize(mat3(modelViewMatrix) * position);
-        vFacing = clamp(viewNormal.z, 0.0, 1.0);
+        vNormalV = normalize(normalMatrix * normal);
+        vView = normalize(-mv.xyz);
         gl_Position = projectionMatrix * mv;
       }
     `,
     fragmentShader: `
-      varying float vFacing;
+      varying vec3 vNormalV;
+      varying vec3 vView;
       void main() {
-        vec3 col = vec3(0.62, 0.28, 0.98);
-        float alpha = mix(0.07, 0.32, vFacing);
+        float ndv = clamp(dot(normalize(vNormalV), normalize(vView)), 0.0, 1.0);
+        float rim = smoothstep(0.46, 0.0, ndv);
+        float alpha = pow(rim, 1.55) * 0.82;
+        if (alpha < 0.03) discard;
+        vec3 col = vec3(0.74, 0.4, 1.0);
         gl_FragColor = vec4(pow(col, vec3(0.4545)), alpha);
       }
     `,
   });
 }
 
-// Unit-sphere meridians and latitudes. The scene scales this to sit just
-// outside the particle hull. The lines live on the sphere, so drag rotates them.
-export function createShellLines() {
-  const segments = 80;
-  const positions = [];
-  const addRing = (project) => {
-    for (let i = 0; i < segments; i += 1) {
-      const a0 = (i / segments) * Math.PI * 2;
-      const a1 = ((i + 1) / segments) * Math.PI * 2;
-      positions.push(...project(a0), ...project(a1));
-    }
-  };
-  for (const y of [-0.5, 0, 0.5]) {
-    const radial = Math.sqrt(1 - y * y);
-    addRing((angle) => [Math.cos(angle) * radial, y, Math.sin(angle) * radial]);
-  }
-  for (let meridian = 0; meridian < 4; meridian += 1) {
-    const yaw = (meridian / 4) * Math.PI;
-    const c = Math.cos(yaw);
-    const s = Math.sin(yaw);
-    addRing((angle) => [Math.sin(angle) * c, Math.cos(angle), Math.sin(angle) * s]);
-  }
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-  const lines = new THREE.LineSegments(geometry, createShellMaterial());
-  lines.frustumCulled = false;
-  return lines;
+// Unit sphere. The scene scales it to the particle hull. Facing falloff
+// keeps the contour on the limb and leaves the interior to the particles.
+export function createShellMesh() {
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(1, 48, 36), createShellMaterial());
+  mesh.frustumCulled = false;
+  return mesh;
 }

@@ -13,7 +13,7 @@ import {
   createCorePointMaterial,
   createCoreSprite,
   createSharedUniforms,
-  createShellLines,
+  createShellMesh,
 } from "./ChiefCoreMaterial.js";
 import { createCoreParticleGeometry, particleBudgetFor } from "./ChiefCoreParticles.js";
 import {
@@ -95,7 +95,7 @@ export class ChiefCoreEngine {
     this.scene.add(this.rig);
     this.rig.add(this.rotor);
 
-    this.shell = createShellLines();
+    this.shell = createShellMesh();
     this.shell.renderOrder = 4;
     this.rotor.add(this.shell);
 
@@ -266,7 +266,7 @@ export class ChiefCoreEngine {
     const deltas = stepMotion(
       this.motion,
       dt,
-      { reduced: this.reduced, idleYaw: this.pose.spin },
+      { reduced: this.reduced },
       this.delta
     );
     this.qYaw.setFromAxisAngle(this.axisUp, deltas.yawDelta);
