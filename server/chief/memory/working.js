@@ -51,7 +51,7 @@ export function extractEntities(text) {
 }
 
 export function isAnaphoric(text) {
-  return /\b(it|that|this|those|the thing|what we (?:just|were)|go back)\b/i.test(
+  return /\b(it|that|this|them|those|there|the other one|the thing|what we (?:just|were)|go back)\b/i.test(
     String(text ?? "")
   );
 }
@@ -104,7 +104,9 @@ export function buildWorkingMemory(
   const introduced = extractEntities(lastUser);
   const goal = noteLine(notes, "Goal");
   let referent = null;
-  if (introduced.length) referent = introduced[introduced.length - 1];
+  if (/\bthe other one\b/i.test(lastUser) && entities.length >= 2) {
+    referent = entities[entities.length - 2].name;
+  } else if (introduced.length) referent = introduced[introduced.length - 1];
   else if (isAnaphoric(lastUser)) referent = priorReferent;
   const currentTask = isAnaphoric(lastUser) && goal ? goal : lastUser;
   const toolResults = [];
@@ -138,7 +140,9 @@ export function renderWorkingMemory(memory) {
   if (!memory) return "";
   const lines = ["Working context for this conversation only:"];
   if (memory.currentTask) lines.push(`Current request: ${memory.currentTask}`);
-  if (memory.referent) lines.push(`"it" and "that" refer to ${memory.referent}.`);
+  if (memory.referent) {
+    lines.push(`"it", "that", "this", and "them" refer to ${memory.referent}.`);
+  }
   if (memory.entities?.length) {
     lines.push(`Active entities: ${memory.entities.map((entity) => entity.name).join(", ")}.`);
   }
