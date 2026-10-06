@@ -186,3 +186,55 @@ export function createShellPoints(shared, map) {
   points.frustumCulled = false;
   return points;
 }
+
+function createShellSurfaceMaterial() {
+  return new THREE.ShaderMaterial({
+    side: THREE.DoubleSide,
+    transparent: true,
+    depthWrite: false,
+    depthTest: true,
+    blending: THREE.NormalBlending,
+    toneMapped: false,
+    vertexShader: `
+      varying vec3 vNormalV;
+      varying vec3 vView;
+      varying float vObjectY;
+      void main() {
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        vNormalV = normalize(normalMatrix * normal);
+        vView = normalize(-mv.xyz);
+        vObjectY = position.y;
+        gl_Position = projectionMatrix * mv;
+      }
+    `,
+    fragmentShader: `
+      varying vec3 vNormalV;
+      varying vec3 vView;
+      varying float vObjectY;
+      void main() {
+        float ndv = abs(dot(normalize(vNormalV), normalize(vView)));
+        float rim = smoothstep(0.5, 0.0, ndv);
+        float edge = pow(rim, 1.2);
+        float form = 0.78 + 0.22 * (vObjectY * 0.5 + 0.5);
+        float side = gl_FrontFacing ? 1.0 : 0.4;
+        float alpha = edge * form * side * 0.9;
+        if (alpha < 0.04) discard;
+        vec3 col = mix(vec3(0.42, 0.16, 0.78), vec3(0.78, 0.48, 1.0), edge);
+        gl_FragColor = vec4(pow(col, vec3(0.4545)), alpha);
+      }
+    `,
+  });
+}
+
+// One group: the spherical surface plus the fixed markers. The scene
+// parents this group to the particle rotor and scales it to the hull.
+export function createShell(shared, map) {
+  const group = new THREE.Group();
+  const surface = new THREE.Mesh(new THREE.SphereGeometry(1, 64, 48), createShellSurfaceMaterial());
+  surface.frustumCulled = false;
+  surface.renderOrder = 4;
+  const markers = createShellPoints(shared, map);
+  markers.renderOrder = 5;
+  group.add(surface, markers);
+  return group;
+}
