@@ -10,6 +10,13 @@ import { conversationMove, historicalQuestion, MOVE } from "./behavior.js";
 import { isSnapshotFact } from "../memory/qualify.js";
 import { MEMORY_LAYER, authoritativeDomain, needsEpisodicMemory } from "../memory/retrieve.js";
 import { WORKFORCE_UNAVAILABLE_LINE } from "../workforce/read.js";
+import {
+  agentDayQuery,
+  attentionQuery,
+  failureQuery,
+  recentDelta,
+  situationHint,
+} from "./situation.js";
 
 export const CONTEXT_SCOPE = Object.freeze({
   WORKING: "working",
@@ -165,10 +172,11 @@ function classifyQuery(query) {
   if (requestsPublicLookup(text) && /\b(?:house|home|property)\b/i.test(text)) live.push("finance");
   if (domain === "code") live.push("code");
   if (/\b(?:spent|spending|expenses?)\b/i.test(text)) live.push("finance");
-  if (/\b(?:paying attention|pay attention|needs attention)\b/i.test(text)) {
+  if (attentionQuery(text) || recentDelta(text)) {
     live.push("finance", "schedule", "agents");
   }
   if (agents) live.push("agents");
+  if (failureQuery(text) || agentDayQuery(text)) live.push("schedule");
   if (schedule) live.push("schedule");
   if (calendar) live.push("calendar");
   if (email) live.push("email");
@@ -303,6 +311,7 @@ export function planContext(query, options = {}) {
 }
 
 function applyWorkforceTime(query, planned) {
+  if (recentDelta(query) || attentionQuery(query)) return planned;
   if (!planned.live.includes("agents")) return planned;
   if (!PAST_TEXT.test(query) && !historicalQuestion(query)) return planned;
   const live = planned.live.filter((system) => system === "agents" || system === "schedule");
@@ -557,6 +566,7 @@ export async function orchestrateContext({
     items: merged,
     authority: authorityFor(merged, plan),
     unavailable: unique(unavailable),
+    now,
   };
 }
 
@@ -586,6 +596,7 @@ export function renderContextPackage(pack) {
   const lines = (pack?.items ?? []).filter(shouldRenderContextItem).slice(0, 8).map(renderLine);
   if (lines.length === 0) return "";
   const items = pack?.items ?? [];
+  const hint = situationHint(pack?.query);
   const hasMemory = items.some((item) => item.origin === "memory" && item.available !== false);
   const hasLive = items.some((item) => item.origin === "live" && item.available !== false);
   let header =
@@ -597,5 +608,5 @@ export function renderContextPackage(pack) {
     header =
       "Connected context is read-only reference. Current live readings override historical memory. Use both when the question asks whether a past decision still holds. An unavailable source has no data.";
   }
-  return [header, ...lines].join("\n");
+  return [header, ...lines, hint].filter(Boolean).join("\n");
 }

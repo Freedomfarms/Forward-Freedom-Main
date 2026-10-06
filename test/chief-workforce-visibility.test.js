@@ -345,7 +345,8 @@ test("follow-ups keep the agent subject, including schedule, history, and today"
   assert.equal(todayPlan.currentState, true);
 
   const failing = planContext("Is anything failing?");
-  assert.deepEqual(failing.live, ["agents"]);
+  assert.equal(failing.live.includes("agents"), true);
+  assert.equal(failing.live.includes("schedule"), true);
   assert.equal(failing.live.includes("web"), false);
 
   const attention = planContext("What should I pay attention to?");
