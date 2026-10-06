@@ -178,7 +178,9 @@ export class NativeMemoryProvider {
     const recallable = (rows ?? []).filter(
       (fact) => fact?.source !== "identity" && trustedForRecall(fact)
     );
-    const selected = selectPersonalFacts(query, recallable);
+    const selected = selectPersonalFacts(query, recallable, {
+      statedPriorities: scope?.statedPriorities === true,
+    });
     if (selected.length && typeof this.facts.touch === "function") {
       try {
         await this.facts.touch({

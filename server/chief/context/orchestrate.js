@@ -6,16 +6,20 @@
 // A missing reader is an unavailable source. It is not a guess.
 // Current live state outranks historical memory for a current-state question.
 
+import { messageText } from "../runtime/compaction.js";
 import { conversationMove, historicalQuestion, MOVE } from "./behavior.js";
 import { isSnapshotFact } from "../memory/qualify.js";
 import { MEMORY_LAYER, authoritativeDomain, needsEpisodicMemory } from "../memory/retrieve.js";
 import { WORKFORCE_UNAVAILABLE_LINE } from "../workforce/read.js";
+import { relevanceFollowup } from "./relevance.js";
 import {
   agentDayQuery,
   attentionQuery,
   failureQuery,
   recentDelta,
+  reviewQuery,
   situationHint,
+  situationKind,
 } from "./situation.js";
 
 export const CONTEXT_SCOPE = Object.freeze({
@@ -307,7 +311,27 @@ export function planContext(query, options = {}) {
   next = joinRelatedSystems(move, next);
   next = withoutHypotheticalWeb(query, next);
   next = applyWorkforceTime(query, next);
-  return withCurrentReview(query, move, next);
+  next = withCurrentReview(query, move, next);
+  return keepRelevanceLocal(query, move, next);
+}
+
+function asksStatedPriorities(query, transcript) {
+  if (attentionQuery(query) || reviewQuery(query)) return true;
+  if (!relevanceFollowup(query)) return false;
+  const users = [];
+  for (const message of Array.isArray(transcript) ? transcript : []) {
+    if (message?.role !== "user") continue;
+    const text = messageText(message).trim();
+    if (text) users.push(text);
+  }
+  return users.slice(0, -1).some((text) => situationKind(text) || relevanceFollowup(text));
+}
+
+function keepRelevanceLocal(query, move, planned) {
+  if (!relevanceFollowup(query)) return planned;
+  const prior = move?.priorUserTexts ?? [];
+  if (!prior.some((text) => situationKind(text) || relevanceFollowup(text))) return planned;
+  return { ...planned, live: [], currentState: false };
 }
 
 function applyWorkforceTime(query, planned) {
@@ -548,6 +572,7 @@ export async function orchestrateContext({
       userId,
       sessionId,
       layers: plan.layers,
+      statedPriorities: asksStatedPriorities(query, transcript),
     });
     const allowedLayers = new Set(plan.layers);
     for (const hit of hits) {
