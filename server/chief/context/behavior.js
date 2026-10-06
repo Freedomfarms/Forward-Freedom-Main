@@ -45,6 +45,19 @@ const DECLINE = /^(?:no|nope|nah|no thanks|no thank you)$/i;
 
 const VALUE_QUESTION = /\b(?:worth|how much|how many|balance|equity|own|cost)\b/i;
 
+const CURRENT_REVIEW = /\b(?:still|anymore|today|right now|currently|where i am now)\b/i;
+
+const REVIEW_INTENT = /\b(?:make sense|compare|comparison|changed|worth it|hold up|good idea)\b/i;
+
+export function historicalQuestion(text) {
+  const raw = String(text ?? "");
+  if (CURRENT_REVIEW.test(raw) && REVIEW_INTENT.test(raw)) return false;
+  if (/\b(?:spent|spending|spend|expenses?)\b/i.test(raw)) return false;
+  return /\b(?:what did (?:i|we)|why did i decide|last (?:month|year|week)|earlier|previously|used to|\bago\b|tell you|told you|talked about)\b/i.test(
+    raw
+  );
+}
+
 const EXPLICIT_CHECK = /\b(?:check it|look it up|pull it|go ahead and|do that|do it)\b/i;
 
 const OFFER =
@@ -125,6 +138,7 @@ export function conversationMove(transcript, query = null) {
     unresolved,
     candidates: memory.candidates ?? [],
     repairs,
+    historical: historicalQuestion(latest),
     priorUserTexts: prior,
     pullsPublicSource: kind === MOVE.CONFIRM && PUBLIC_SOURCE.test(thread),
   };
@@ -144,6 +158,15 @@ export function renderConversationMove(transcript, query = null) {
       return `This could refer to ${choices.join(" or ")}. Ask which one in a few words. Do not guess.`;
     }
     return "The subject is not in the conversation. Ask which one in a few words. Do not guess.";
+  }
+  if (move.historical) {
+    const subject = move.referent ? ` The subject is ${move.referent}.` : "";
+    const asked =
+      query != null && String(query).trim() ? String(query) : latestUserText(transcript);
+    if (/\b(?:last (?:month|year|week)|ago)\b/i.test(asked)) {
+      return `This is about an earlier conversation.${subject} Use history for that period. Do not answer from a current balance.`;
+    }
+    return `This is about what was decided or said before.${subject} Do not replace it with today's numbers.`;
   }
   if (move.kind === MOVE.CONFIRM) {
     return "The user is confirming the check you just offered. Do that work with the necessary tool, then give the result. Do not describe the plan.";
@@ -380,6 +403,77 @@ function polishAnswer(text, transcript) {
   return kept.slice(0, simple ? 3 : kept.length).join(" ");
 }
 
+const UNREAD_SYSTEM = [
+  [
+    "agents",
+    /\b(?:grok\s*bots?|agents?)\b/i,
+    /\b(?:working|running|idle|doing|finished|status)\b/i,
+    "I don't currently have a live agent status for that.",
+  ],
+  [
+    "schedule",
+    /\b(?:schedule|scheduled|task)\b/i,
+    /\b(?:today|tomorrow|at \d|due|runs)\b/i,
+    "I don't have a schedule reading for that.",
+  ],
+  [
+    "calendar",
+    /\bcalendar\b/i,
+    /\b(?:shows|meeting|appointment|today)\b/i,
+    "I don't have your calendar connected here.",
+  ],
+  [
+    "email",
+    /\b(?:inbox|e-?mails?)\b/i,
+    /\b(?:shows|unread|received|from)\b/i,
+    "I don't have your email connected here.",
+  ],
+  [
+    "web",
+    /\b(?:zillow|web search|search results)\b/i,
+    /\b(?:says|shows|estimates|lists)\b/i,
+    "I can't check the public web for that right now.",
+  ],
+];
+
+function blockUnreadSystem(text, transcript, pack) {
+  const answer = String(text ?? "").trim();
+  if (exploring(transcript) || toolResultAfterLatestUser(transcript)) return answer;
+  const unavailable = new Set(pack?.unavailable ?? []);
+  for (const [system, topic, claim, honest] of UNREAD_SYSTEM) {
+    if (!unavailable.has(system)) continue;
+    if (topic.test(answer) && claim.test(answer)) return honest;
+  }
+  return answer;
+}
+
+function earlierTranscriptText(transcript) {
+  const messages = Array.isArray(transcript) ? transcript : [];
+  const start = lastIndex(messages, "user");
+  return messages
+    .slice(0, Math.max(0, start))
+    .map((message) => messageText(message))
+    .join("\n");
+}
+
+function blockInventedHistory(text, transcript, pack) {
+  const answer = String(text ?? "").trim();
+  if (!pack || !historicalQuestion(latestUserText(transcript))) return answer;
+  if (toolResultAfterLatestUser(transcript)) return answer;
+  const wanted = pack.plan?.memory ?? [];
+  const askedHistory = wanted.includes("decision") || wanted.includes("episodic");
+  if (!askedHistory) return answer;
+  const remembered = (pack.items ?? []).some(
+    (item) => item?.origin === "memory" && item.available !== false
+  );
+  if (remembered) return answer;
+  if (/\b(?:decided|told me|told you)\b/i.test(earlierTranscriptText(transcript))) return answer;
+  if (/\b(?:you decided|we decided|you told me|last month you)\b/i.test(answer)) {
+    return "I don't have a record of that.";
+  }
+  return answer;
+}
+
 function blockUnsupportedCurrentClaim(text, transcript, pack) {
   const answer = String(text ?? "").trim();
   if (!pack?.plan?.currentState || exploring(transcript)) return answer;
@@ -430,6 +524,8 @@ export function settleReply({ transcript = [], text = "", toolCalls = [], pack =
   answer = stripMachinery(answer, transcript);
   answer = stripOffers(answer, transcript);
   answer = blockUnsupportedCurrentClaim(answer, transcript, pack);
+  answer = blockUnreadSystem(answer, transcript, pack);
+  answer = blockInventedHistory(answer, transcript, pack);
   answer = polishAnswer(answer, transcript);
   answer = answer.trim();
   if (!answer && droppedSearch) answer = "I can check that if you want.";

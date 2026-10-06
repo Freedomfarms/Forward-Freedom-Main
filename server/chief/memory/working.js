@@ -29,6 +29,13 @@ const STOP_ENTITY = new Set([
   "other",
   "current",
   "number",
+  "last",
+  "next",
+  "month",
+  "year",
+  "week",
+  "today",
+  "yesterday",
 ]);
 
 const TICKERS = /\b(XRP|BTC|ETH|SOL|ADA|DOGE|GOLD|SILVER)\b/g;
@@ -51,7 +58,7 @@ export function extractEntities(text) {
 }
 
 export function isAnaphoric(text) {
-  return /\b(it|that|this|them|those|there|the other one|the thing|what we (?:just|were)|go back)\b/i.test(
+  return /\b(it|that|this|them|those|there|they|the other one|the thing|what we (?:just|were)|go back)\b/i.test(
     String(text ?? "")
   );
 }
@@ -174,7 +181,7 @@ export function renderWorkingMemory(memory) {
       `"it" could refer to ${memory.candidates.join(" or ")}. Ask which one. Do not choose.`
     );
   } else if (memory.referent) {
-    lines.push(`"it", "that", "this", and "them" refer to ${memory.referent}.`);
+    lines.push(`"it", "that", "this", "them", and "they" refer to ${memory.referent}.`);
   }
   if (memory.entities?.length) {
     lines.push(`Active entities: ${memory.entities.map((entity) => entity.name).join(", ")}.`);
