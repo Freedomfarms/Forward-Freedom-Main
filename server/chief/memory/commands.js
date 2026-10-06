@@ -9,6 +9,7 @@ import { personalSource, qualifiesForLongTermMemory } from "./qualify.js";
 
 const REMEMBER = /^\s*(?:chief[,:]?\s+)?(?:please\s+)?remember(?:\s+that)?\s+(.+?)\s*[.!?]*\s*$/i;
 const FORGET = /^\s*(?:chief[,:]?\s+)?(?:please\s+)?forget(?:\s+that)?\s+(.+?)\s*[.!?]*\s*$/i;
+const DEICTIC = /^(?:that|this|it|them|those)$/i;
 
 function commandText(pattern, userText) {
   const match = String(userText ?? "")
@@ -21,6 +22,7 @@ export async function applyMemoryCommands({ facts, provider = null, userId, user
   try {
     if ((!facts && !provider) || !userId) return { action: null };
     const forgetText = commandText(FORGET, userText);
+    if (forgetText && DEICTIC.test(forgetText)) return { action: null };
     if (forgetText) {
       if (provider) {
         const result = await provider.forget({ userId, content: forgetText });
