@@ -3,7 +3,17 @@
 // Derived from the live tool payloads and context items already selected.
 // It does not store a world model, write memory, or call a tool.
 
+import { messageText } from "../runtime/compaction.js";
 import { WORKFORCE_UNAVAILABLE_LINE } from "../workforce/read.js";
+import {
+  bestLink,
+  collectPriorities,
+  followupKind,
+  rankLinks,
+  relevanceAnswer,
+  relevanceClause,
+  relevanceFollowup,
+} from "./relevance.js";
 
 export const QUIET_LINE = "Nothing major stands out right now.";
 export const QUIET_FAILURES = "Nothing is failing in the workforce or schedules I can read.";
@@ -26,6 +36,8 @@ const REVIEW_WHEN = /\b(?:still|anymore|today|right now|currently|where i am now
 const REVIEW_INTENT = /\b(?:make sense|compare|comparison|changed|worth it|hold up|good idea)\b/i;
 const URGENCY =
   /\b(?:very concerned|urgent(?:ly)?|alarming|emergency|disaster|immediately|critical)\b/i;
+const FEAR = /\b(?:should be concerned|you should worry|worry about)\b/i;
+const CONSEQUENCE = /\b(?:will be delayed|you should sell|still holds|still makes sense)\b/i;
 const WRITE_CLAIM =
   /\bI (?:restarted|paused|cancelled|canceled|sent|edited|deleted|updated|changed) (?:the|your|that|an)\b/i;
 
@@ -79,6 +91,9 @@ export function situationKind(text) {
 }
 
 export function situationHint(query) {
+  if (relevanceFollowup(query)) {
+    return "Relevance: use the signals already read and any stated priority. A connection is inferred. Do not store the signal as a goal.";
+  }
   const kind = situationKind(query);
   if (kind === "review") {
     return "State the earlier decision and the current reading separately. Do not say the decision still holds unless the current reading supports it.";
@@ -232,12 +247,20 @@ function scheduleSignals(tasksPayload, runsPayload, { kind, now }) {
       : [];
   const runs = Array.isArray(runsPayload?.runs) ? runsPayload.runs : [];
   const checked = Boolean(tasksPayload) || Boolean(runsPayload);
+  const failed = new Map();
   for (const run of runs) {
     const status = String(run?.status ?? "").toUpperCase();
     if (status !== "FAILED") continue;
     if (kind === "delta" && !sameDay(run.completedAt || run.startedAt, now)) continue;
-    const name = taskName(tasks, run.scheduledTaskId) || "A schedule";
-    push(signals, 0, "schedule", `${name} has a failed run`);
+    const key = run?.scheduledTaskId || run?.id || "schedule";
+    const list = failed.get(key) ?? [];
+    list.push(run);
+    failed.set(key, list);
+  }
+  for (const [id, list] of failed) {
+    const name = taskName(tasks, id) || "A schedule";
+    const text = list.length > 1 ? `${name} has ${list.length} failed runs` : `${name} has a failed run`;
+    push(signals, 0, "schedule", text);
   }
   if (kind === "delta") {
     for (const run of runs) {
@@ -308,7 +331,7 @@ function standoutLine(signals, { linkedSchedule, includeNormal }) {
     .filter((signal) => includeNormal || signal.rank < 3)
     .slice(0, includeNormal ? 4 : 3);
   if (shown.length === 0) return "";
-  const parts = shown.map((signal) => signal.text);
+  const parts = shown.map((signal) => String(signal.text).replace(/[.!\s]+$/g, ""));
   let line = parts.length === 1 ? `${parts[0]}.` : `${parts.length === 2 ? "Two" : parts.length === 3 ? "Three" : "Four"} things stand out: ${parts.join(". ")}.`;
   if (
     linkedSchedule &&
@@ -377,11 +400,25 @@ export function synthesizeSituation({ query = "", transcript = null, items = [],
   } else if (!line) {
     line = kind === "failures" ? QUIET_FAILURES : QUIET_LINE;
   }
+  const priorities = collectPriorities({ items, transcript });
+  const link = bestLink(
+    visible.filter((signal) => signal.rank < 3),
+    priorities
+  );
+  const quiet =
+    !line ||
+    line === QUIET_LINE ||
+    line === QUIET_FAILURES ||
+    line === UNCHECKED_LINE ||
+    line === WORKFORCE_UNAVAILABLE_LINE ||
+    line.startsWith("Freedom Financial");
+  const clause = !quiet && link ? relevanceClause(link) : "";
   return {
     kind,
     signals: visible.filter((signal) => signal.rank < 3 || kind === "workforce").slice(0, 4),
     unchecked,
-    line,
+    line: clause ? `${line} ${clause}` : line,
+    relevant: clause ? link.priority.text : null,
     readOnly: true,
   };
 }
@@ -395,7 +432,7 @@ function covers(answer, signal) {
   return words.some((word) => hay.includes(word));
 }
 
-function settleReview(answer, items) {
+function settleReview(answer, items, transcript) {
   const affirms =
     /\b(?:still makes sense|still a good idea|you should still|stick with (?:it|that)|that(?:'s| is) still (?:right|correct))\b/i.test(
       answer
@@ -407,17 +444,76 @@ function settleReview(answer, items) {
   );
   const past = decision ? clip(decision.text) : "I don't have the earlier decision.";
   const current = finance ? clip(finance.text) : "I don't have a current Freedom Financial reading.";
-  return `${past} Today, ${current}.`;
+  const base = `${past} Today, ${current}.`;
+  const reasoned = /\b(?:because|manageable|keep the house|keep it)\b/i.test(past);
+  const changed = /\b(?:increased|higher|went up|is up)\b/i.test(current);
+  if (!reasoned || !changed) return base;
+  const goal = collectPriorities({ items, transcript }).find(
+    (priority) => relateTouches(current, priority.text)
+  );
+  const goalLine = goal ? ` You also said: ${goal.text}.` : "";
+  return `${base} That change touches the reason in the decision.${goalLine} I can't say the decision still holds from that alone.`;
+}
+
+function relateTouches(current, priorityText) {
+  return bestLink([{ text: current, rank: 0 }], [{ text: priorityText, confidence: "remembered" }]) != null;
+}
+
+function priorSituationQuery(transcript) {
+  const users = [];
+  for (const message of Array.isArray(transcript) ? transcript : []) {
+    if (message?.role !== "user") continue;
+    const text = messageText(message).trim();
+    if (text) users.push(text);
+  }
+  for (let index = users.length - 2; index >= 0; index -= 1) {
+    if (situationKind(users[index])) return users[index];
+  }
+  return null;
+}
+
+export function situationReadsPresent(transcript) {
+  return toolPayloads(transcript).some((row) =>
+    ["workforce_status", "finance_summary", "schedule_list", "schedule_runs"].includes(row.name)
+  );
+}
+
+function judgeFollowup({ query, transcript, items, now }) {
+  const kind = followupKind(query);
+  const prior = priorSituationQuery(transcript);
+  const readingQuery = prior || (situationReadsPresent(transcript) ? "What should I be paying attention to?" : null);
+  if (!readingQuery) return { line: UNCHECKED_LINE, relevant: null, chosen: null };
+  const situation = synthesizeSituation({ query: readingQuery, transcript, items, now });
+  const annotated = rankLinks(situation?.signals ?? [], collectPriorities({ items, transcript }));
+  const chosen = annotated.find((row) => row.relation !== "none") ?? annotated[0] ?? null;
+  return {
+    line: relevanceAnswer(kind, annotated) || situation?.line || UNCHECKED_LINE,
+    relevant: chosen?.relation && chosen.relation !== "none" ? chosen.priority?.text ?? null : null,
+    chosen: chosen?.signal ?? null,
+  };
+}
+
+function settleJudged(answer, judged) {
+  const text = String(answer ?? "").trim();
+  if (!judged?.line) return text;
+  if (WRITE_CLAIM.test(text) || URGENCY.test(text) || FEAR.test(text) || CONSEQUENCE.test(text)) return judged.line;
+  if (judged.chosen && !covers(text, judged.chosen)) return judged.line;
+  if (judged.relevant && !covers(text, { text: judged.relevant })) return judged.line;
+  return text;
 }
 
 export function settleSituation(answer, { query = "", transcript = null, items = [], now = new Date() } = {}) {
   const kind = situationKind(query);
+  if (!kind && followupKind(query)) {
+    return settleJudged(answer, judgeFollowup({ query, transcript, items, now }));
+  }
   if (!kind) return String(answer ?? "").trim();
-  if (kind === "review") return settleReview(String(answer ?? "").trim(), items);
+  if (kind === "review") return settleReview(String(answer ?? "").trim(), items, transcript);
   const situation = synthesizeSituation({ query, transcript, items, now });
   const text = String(answer ?? "").trim();
   if (!situation) return text;
-  if (WRITE_CLAIM.test(text) || URGENCY.test(text)) return situation.line;
+  if (WRITE_CLAIM.test(text) || URGENCY.test(text) || FEAR.test(text)) return situation.line;
+  if (situation.relevant && !covers(text, { text: situation.relevant })) return situation.line;
   if (/\bnothing (?:major|is failing|stands out)\b/i.test(text)) {
     if (situation.signals.length || situation.unchecked.length) return situation.line;
     return situation.line;

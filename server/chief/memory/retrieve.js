@@ -5,6 +5,7 @@
 // ChiefSession recall documents. Traces stay the learning record and are not
 // read here.
 
+import { isStatedPriority } from "../context/relevance.js";
 import { lexicalRank } from "../runtime/recall.js";
 import { keywordRank, rankFacts } from "./rrf.js";
 import { isSnapshotFact, isStaleFact } from "./qualify.js";
@@ -51,9 +52,12 @@ export function planMemoryRetrieval(query) {
   };
 }
 
-export function selectPersonalFacts(query, facts, { limit = 5, now = new Date() } = {}) {
+export function selectPersonalFacts(query, facts, { limit = 5, now = new Date(), statedPriorities = false } = {}) {
   const domain = authoritativeDomain(query);
   const usable = (facts ?? []).filter((fact) => fact?.content && !isStaleFact(fact, now));
+  const stated = statedPriorities
+    ? usable.filter((fact) => isStatedPriority(fact.content) && !isSnapshotFact(fact.content)).slice(0, STANDING_LIMIT)
+    : [];
   const standing = usable.filter((fact) => fact.source === "preference").slice(0, STANDING_LIMIT);
   const matched = new Map();
   for (const fact of standing) matched.set(fact.content, fact);
@@ -67,8 +71,15 @@ export function selectPersonalFacts(query, facts, { limit = 5, now = new Date() 
     if (!domain || fact.source === "preference") return true;
     return !isSnapshotFact(fact.content);
   });
-  if (selected.length === 0) return [];
-  return rankFacts(query, selected).slice(0, limit);
+  if (selected.length === 0 && stated.length === 0) return [];
+  const ranked = selected.length ? rankFacts(query, selected) : [];
+  const merged = [];
+  for (const fact of [...stated, ...ranked]) {
+    if (!fact?.content || merged.some((row) => row.content === fact.content)) continue;
+    merged.push(fact);
+    if (merged.length >= limit) break;
+  }
+  return merged;
 }
 
 function episodeText(episode) {

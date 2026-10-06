@@ -9,7 +9,8 @@
 import { messageText } from "../runtime/compaction.js";
 import { buildWorkingMemory, isAnaphoric } from "../memory/working.js";
 import { WORKFORCE_UNAVAILABLE_LINE } from "../workforce/read.js";
-import { keepSituationTools, settleSituation, situationKind } from "./situation.js";
+import { relevanceFollowup } from "./relevance.js";
+import { keepSituationTools, settleSituation, situationKind, situationReadsPresent } from "./situation.js";
 
 export const MOVE = Object.freeze({
   ACKNOWLEDGE: "acknowledge",
@@ -545,7 +546,9 @@ export function settleReply({ transcript = [], text = "", toolCalls = [], pack =
       text = withoutDroppedSentences(text, (sentence) => SEARCH_NARRATION.test(sentence));
     }
   }
-  if (situationKind(userText)) {
+  if (relevanceFollowup(userText) && situationReadsPresent(transcript)) {
+    calls.length = 0;
+  } else if (situationKind(userText) || relevanceFollowup(userText)) {
     const kept = keepSituationTools(calls);
     calls.length = 0;
     calls.push(...kept);
