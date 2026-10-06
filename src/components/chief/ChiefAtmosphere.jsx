@@ -1,28 +1,31 @@
-import ApexClock from "../../third_party/apex-ui/ApexClock.jsx";
-import ApexWorld from "../../third_party/apex-ui/ApexWorld.jsx";
+import { Component, lazy, Suspense } from "react";
 
-// Public entry rooms reuse the CHIEF scene. CHIEF's own home keeps calling
-// ApexWorld directly so this wrapper cannot change that screen.
-const ENTRY_ROSTER = Object.freeze([]);
+// Homepage and login only. The signed-in CHIEF room mounts ApexWorld from
+// ChiefPage and must not import this sandbox.
+const ChiefCore = lazy(() => import("../../visual/chiefCore/ChiefCore.jsx"));
 
-export function ChiefAtmosphere({
-  orbState = "idle",
-  webState = "standby",
-  roster = ENTRY_ROSTER,
-  showClock = true,
-  showLabels = false,
-  webLabel = "Freedom OS",
-}) {
+class CoreBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { failed: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  render() {
+    if (this.state.failed) return <div className="chief-core-boot" aria-hidden="true" />;
+    return this.props.children;
+  }
+}
+
+export function ChiefAtmosphere({ orbState = "idle", layout = "home", preview = false }) {
   return (
-    <>
-      {showClock ? <ApexClock /> : null}
-      <ApexWorld
-        orbState={orbState}
-        webState={webState}
-        roster={roster}
-        showLabels={showLabels}
-        webLabel={webLabel}
-      />
-    </>
+    <CoreBoundary>
+      <Suspense fallback={<div className="chief-core-boot" aria-hidden="true" />}>
+        <ChiefCore state={orbState} layout={layout} preview={preview} />
+      </Suspense>
+    </CoreBoundary>
   );
 }
