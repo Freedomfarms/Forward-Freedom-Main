@@ -5,7 +5,7 @@ import * as THREE from "three";
 
 export const PARTICLE_BUDGET = Object.freeze({
   desktop: Object.freeze({ count: 1200 }),
-  mobile: Object.freeze({ count: 480 }),
+  mobile: Object.freeze({ count: 720 }),
 });
 
 export function particleBudgetFor(width, coarsePointer) {

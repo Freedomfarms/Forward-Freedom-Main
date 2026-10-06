@@ -14,7 +14,7 @@ export function createSharedUniforms() {
     uWave: { value: 0 },
     uWaveAmp: { value: 0.5 },
     uMode: { value: 0 },
-    uSize: { value: 0.026 },
+    uSize: { value: 0.066 },
     uDpr: { value: 1 },
     uHeight: { value: 900 },
     uHot: { value: 0.2 },
@@ -93,7 +93,7 @@ export function createCorePointMaterial(shared, map) {
         vec3 viewNormal = normalize(mat3(modelViewMatrix) * aDir);
         float key = clamp(dot(viewNormal, lightDir), 0.0, 1.0);
         float facing = clamp(viewNormal.z, 0.0, 1.0);
-        vShade = mix(0.58, 1.0, facing) * (0.78 + key * 0.22);
+        vShade = mix(0.74, 1.0, facing) * (0.9 + key * 0.1);
         vCore = smoothstep(0.34, 0.02, r);
       }
     `,

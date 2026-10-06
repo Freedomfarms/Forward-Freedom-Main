@@ -25,8 +25,8 @@ import {
 } from "./ChiefCoreState.js";
 
 const CLEAR = 0x04080f;
-const CORE_SCALE = 0.55;
-const SHELL_RADIUS = 1.4;
+const CORE_SCALE = 1;
+const SHELL_RADIUS = 0.88;
 const MODE = Object.freeze({ idle: 0, listening: 1, thinking: 2, responding: 3 });
 
 export class ChiefCoreEngine {
