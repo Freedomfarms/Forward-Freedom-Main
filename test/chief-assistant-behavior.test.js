@@ -10,10 +10,13 @@ import {
   conversationMove,
   MOVE,
   renderConversationMove,
+  settleReply,
 } from "../server/chief/context/behavior.js";
 import { createChiefTurnServices } from "../server/chief/context/wire.js";
 import { orchestrateContext, planContext } from "../server/chief/context/orchestrate.js";
 import { MemoryFactStore } from "../server/chief/memory/facts.js";
+import { MemoryCheckpointStore } from "../server/chief/runtime/checkpoint.js";
+import { TurnMachine } from "../server/chief/runtime/turn.js";
 import { buildWorkingMemory, resolveReference } from "../server/chief/memory/working.js";
 
 const equityThread = [
@@ -443,4 +446,181 @@ test("the turn prompt carries the contract, the move, and question-scoped contex
   });
   assert.match(quiet, /not a new task/);
   assert.doesNotMatch(quiet, /live_financial_state|XRP quantity/);
+});
+
+test("a clear new question does not inherit the previous subject", () => {
+  const transcript = [
+    { role: "user", content: "How much XRP do I own?" },
+    { role: "assistant", content: "You own 2,500 XRP." },
+    { role: "user", content: "What's the weather?" },
+  ];
+  assert.equal(conversationMove(transcript).kind, MOVE.DIRECT);
+  const plan = planContext("What's the weather?", { transcript });
+  assert.equal(plan.live.includes("finance"), false);
+  assert.equal(plan.live.includes("web"), false);
+
+  const ambiguous = [
+    { role: "user", content: "How much XRP do I own?" },
+    { role: "assistant", content: "You own 2,500 XRP." },
+    { role: "user", content: "what about that?" },
+  ];
+  assert.equal(conversationMove(ambiguous).kind, MOVE.CONTINUE);
+  assert.deepEqual(planContext("what about that?", { transcript: ambiguous }).live, ["finance"]);
+
+  const check = [
+    { role: "user", content: "What if Zillow is lower?" },
+    {
+      role: "assistant",
+      content: "Then your equity would be lower. I can pull Zillow's current estimate if needed.",
+    },
+    { role: "user", content: "Yeah, check it." },
+  ];
+  const confirmed = conversationMove(check);
+  assert.equal(confirmed.kind, MOVE.CONFIRM);
+  assert.equal(confirmed.pullsPublicSource, true);
+  assert.deepEqual(planContext("Yeah, check it.", { transcript: check }).live, ["web"]);
+});
+
+test("the reply guard enforces the contract when the model ignores it", () => {
+  const reaction = settleReply({
+    transcript: [
+      { role: "user", content: "How much XRP do I own?" },
+      { role: "assistant", content: "You own 2,500 XRP." },
+      { role: "user", content: "Thanks." },
+    ],
+    text: "You're welcome. I can also analyze your portfolio. Would you like me to?",
+    toolCalls: [{ callId: "c1", name: "finance_summary", arguments: {} }],
+  });
+  assert.deepEqual(reaction.toolCalls, []);
+  assert.equal(reaction.text, "Anytime.");
+  assert.doesNotMatch(reaction.text, /portfolio|Would you like|tool/i);
+
+  for (const line of ["Great.", "Perfect.", "That's good.", "Got it.", "Makes sense."]) {
+    const settled = settleReply({
+      transcript: [{ role: "user", content: line }],
+      text: "### Summary\nI can also pull a full report.\nWould you like me to?",
+      toolCalls: [{ callId: "c2", name: "web_search", arguments: {} }],
+    });
+    assert.deepEqual(settled.toolCalls, []);
+    assert.equal(settled.text.length < 40, true);
+    assert.doesNotMatch(settled.text, /Would you like|Summary|web_search/);
+  }
+
+  const live = {
+    plan: { currentState: true },
+    authority: [{ origin: "live", available: true, text: "XRP quantity 2500" }],
+  };
+  const verbose = settleReply({
+    transcript: [{ role: "user", content: "How much XRP do I own?" }],
+    text: [
+      "Certainly! Based on the financial information available to me, I can provide an analysis of your XRP position.",
+      "",
+      "### Summary",
+      "You own 2,500 XRP. At the current price, that's about $6,750.",
+      "",
+      "Would you like me to review the rest of your portfolio?",
+    ].join("\n"),
+    pack: live,
+  });
+  assert.match(verbose.text, /2,500 XRP/);
+  assert.match(verbose.text, /\$6,750/);
+  assert.doesNotMatch(verbose.text, /Certainly|Would you like|###|analysis of your XRP/);
+
+  const review = settleReply({
+    transcript: [{ role: "user", content: "Review my finances and explain what needs attention." }],
+    text: "### Summary\nCash is tight this month.\n\n### What needs attention\nThe card balance is the main drag.\n\nWould you like me to keep going?",
+    pack: live,
+  });
+  assert.match(review.text, /### Summary/);
+  assert.match(review.text, /card balance/);
+  assert.doesNotMatch(review.text, /Would you like/);
+
+  const missing = settleReply({
+    transcript: [{ role: "user", content: "What is my current balance?" }],
+    text: "Your balance is $84,000.",
+    pack: { plan: { currentState: true }, authority: [{ origin: "live", available: false }] },
+  });
+  assert.equal(missing.text, "I can't verify that from a current reading.");
+  assert.doesNotMatch(missing.text, /84,000/);
+
+  const remembered = settleReply({
+    transcript: [{ role: "user", content: "What did I decide last month?" }],
+    text: "Last month you decided to keep one session record.",
+    pack: { plan: { currentState: false }, authority: [] },
+  });
+  assert.match(remembered.text, /one session record/);
+
+  const machinery = settleReply({
+    transcript: [{ role: "user", content: "How much XRP do I own?" }],
+    text: "You own 2,500 XRP. I used the context orchestrator and working memory to decide.",
+    pack: live,
+  });
+  assert.match(machinery.text, /2,500 XRP/);
+  assert.doesNotMatch(machinery.text, /orchestrat|working memory/);
+
+  const hypothetical = settleReply({
+    transcript: [{ role: "user", content: "What if Zillow is lower?" }],
+    text: "Then your equity would be lower too. I can pull Zillow's current estimate if needed.",
+    pack: { plan: { currentState: true }, authority: [{ origin: "live", available: true }] },
+  });
+  assert.match(hypothetical.text, /lower too/);
+  assert.match(hypothetical.text, /pull Zillow/);
+});
+
+test("TurnMachine drops a tool call on a reaction and stores the guarded reply", async () => {
+  const executed = [];
+  const engine = {
+    async openStream() {
+      return {
+        fullStream: (async function* stream() {
+          yield {
+            type: "text-delta",
+            text: "You're welcome. I can also analyze your portfolio. Would you like me to?",
+          };
+          yield {
+            type: "tool-call",
+            toolCallId: "c1",
+            toolName: "finance_summary",
+            input: {},
+          };
+        })(),
+        finalize: async () => ({
+          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+        }),
+      };
+    },
+    async generate() {
+      return { content: "[]" };
+    },
+  };
+  const services = createChiefTurnServices({
+    facts: new MemoryFactStore(),
+    engine,
+  });
+  const result = await new TurnMachine({
+    store: new MemoryCheckpointStore(),
+    engine,
+    toolExecutor: {
+      async execute(call) {
+        executed.push(call.name);
+        return { output: "should not run", isError: false };
+      },
+    },
+    contextAssembler: services.contextAssembler,
+    settleModelStep: services.settleModelStep,
+  }).run({
+    userId: "user-a",
+    submission: { id: "sub-1", op: { type: "message", message: { text: "Thanks." } } },
+    toolSpecs: [
+      {
+        name: "finance_summary",
+        description: "read",
+        parameters: { type: "object", properties: {} },
+        requiresConfirmation: false,
+      },
+    ],
+  });
+  assert.deepEqual(executed, []);
+  assert.equal(result.checkpoint.transcript.at(-1).content, "Anytime.");
+  assert.equal(JSON.stringify(result.checkpoint.transcript).includes("finance_summary"), false);
 });

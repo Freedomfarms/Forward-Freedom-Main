@@ -153,6 +153,7 @@ export class TurnMachine {
     contextAssembler = null,
     compaction = null,
     onTurnComplete = null,
+    settleModelStep = null,
     traceStore = null,
     eventBus = null,
   }) {
@@ -167,6 +168,7 @@ export class TurnMachine {
     this._contextAssembler = contextAssembler;
     this._compaction = compaction;
     this._onTurnComplete = onTurnComplete;
+    this._settleModelStep = settleModelStep;
     this._traceStore = traceStore;
     this._eventBus = eventBus;
   }
@@ -444,6 +446,23 @@ export class TurnMachine {
     }
   }
 
+  _settledStep(text, toolCalls) {
+    if (typeof this._settleModelStep !== "function") return { text, toolCalls };
+    try {
+      const settled = this._settleModelStep({
+        transcript: this._checkpoint.transcript,
+        text,
+        toolCalls,
+      });
+      if (typeof settled?.text !== "string" || !Array.isArray(settled.toolCalls)) {
+        return { text, toolCalls };
+      }
+      return settled;
+    } catch {
+      return { text, toolCalls };
+    }
+  }
+
   async _rememberTurn() {
     if (!this._onTurnComplete) return;
     try {
@@ -480,15 +499,6 @@ export class TurnMachine {
       }
       if (part.type === "text-delta" && part.text) {
         text += part.text;
-        this._emit(
-          eventMsg.assistantContentDelta({
-            sessionId: this._sessionId,
-            turnId: execution.turnId,
-            modelStepId,
-            delta: part.text,
-            phase: ModelStepContentPhase.FINAL_ANSWER,
-          })
-        );
       } else if (part.type === "reasoning-delta" && part.text) {
         this._emit(
           eventMsg.assistantContentDelta({
@@ -510,6 +520,22 @@ export class TurnMachine {
       }
     }
     const finalized = await opened.finalize();
+    const settled = this._settledStep(text, toolCalls);
+    text = settled.text;
+    const nextCalls = settled.toolCalls.slice();
+    toolCalls.length = 0;
+    toolCalls.push(...nextCalls);
+    if (text) {
+      this._emit(
+        eventMsg.assistantContentDelta({
+          sessionId: this._sessionId,
+          turnId: execution.turnId,
+          modelStepId,
+          delta: text,
+          phase: ModelStepContentPhase.FINAL_ANSWER,
+        })
+      );
+    }
     const content = [];
     if (text) content.push({ type: "text", text });
     for (const call of toolCalls) {

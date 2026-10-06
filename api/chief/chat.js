@@ -145,6 +145,7 @@ export async function handleChiefChat(request, response, deps = {}) {
     contextAssembler: turnServices.contextAssembler ?? null,
     compaction: turnServices.compaction ?? null,
     onTurnComplete: turnServices.onTurnComplete ?? null,
+    settleModelStep: turnServices.settleModelStep ?? null,
     traceStore,
     eventBus,
     ...caller,
