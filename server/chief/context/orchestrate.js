@@ -373,7 +373,10 @@ function demote(items, plan) {
     (item) => item.origin === "live" && item.available && item.source === LIVE.finance.source
   );
   const liveAgents = items.some(
-    (item) => item.origin === "live" && item.available && item.source === LIVE.agents.source
+    (item) =>
+      item.origin === "live" &&
+      item.available &&
+      (item.sourceType === LIVE.agents.sourceType || item.source === LIVE.agents.source)
   );
   return items.map((item) => {
     if (item.origin !== "memory" || item.scope === CONTEXT_SCOPE.PREFERENCE) return item;
