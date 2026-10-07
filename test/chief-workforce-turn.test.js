@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import { createAgentRuntime } from "../server/chief/agents/index.js";
 import { createGrokBotRuntime } from "../server/chief/agents/grokbot.js";
 import { Capability } from "../server/chief/core/capabilities.js";
+import { settleReply } from "../server/chief/context/behavior.js";
 import { orchestrateContext } from "../server/chief/context/orchestrate.js";
 import { createChiefTurnServices } from "../server/chief/context/wire.js";
 import { baselineCapabilities } from "../server/chief/control/plane.js";
@@ -435,6 +436,7 @@ test("CHIEF answers from self-reports through the real Grok Bot runtime", async 
     },
     capabilityPolicy: granted,
     agentRuntime: provider,
+    now: () => NOW,
   });
   const store = new MemoryCheckpointStore();
   const machine = new TurnMachine({
@@ -487,25 +489,55 @@ test("CHIEF answers from self-reports through the real Grok Bot runtime", async 
   assert.doesNotMatch(firstPrompt, /always the provider/);
   assert.equal(firstPrompt.includes("cursor.grok_bot"), false);
 
+  assert.match(replies[0], /Coder is currently reported as working on the CHIEF UI/);
   assert.match(replies[0], /No completion was observed/);
-  assert.match(replies[0], /No code change was observed/);
-  assert.match(replies[1], /No completion was observed/);
-  assert.match(replies[1], /live observation says that work completed/);
-  assert.match(replies[2], /No failure was observed/);
-  assert.match(replies[3], /A failure was observed/);
-  assert.match(replies[4], /No attention request was observed/);
+  assert.match(replies[0], /Research completed the supplier review/);
+  assert.match(replies[0], /Ops reported a failure/);
+  assert.match(replies[0], /requested attention/);
+  assert.match(replies[0], /Archive is stale, not currently active/);
+  assert.doesNotMatch(replies[0], /finished the CHIEF UI|committed the code/);
+  assert.match(replies[1], /Research completed the supplier review/);
+  assert.match(replies[1], /Archive is stale/);
+  assert.doesNotMatch(replies[1], /Archive completed|Research is still working/);
+  assert.match(replies[2], /Nothing is explicitly reported as stuck/);
+  assert.match(replies[2], /Ops reported a failure/);
+  assert.match(replies[2], /requested attention/);
+  assert.doesNotMatch(replies[2], /Coder is stuck|Archive is stuck/);
+  assert.match(replies[3], /Ops reported a failure/);
+  assert.doesNotMatch(replies[3], /Nothing failed/);
+  assert.match(replies[4], /Ops reported a failure/);
+  assert.match(replies[4], /requested attention/);
+  assert.doesNotMatch(replies[4], /No attention request was observed/);
+  assert.match(replies[5], /Coder is currently reported as working on the CHIEF UI/);
   assert.match(replies[5], /No completion was observed/);
-  assert.match(replies[6], /not currently active/);
+  assert.doesNotMatch(replies[5], /\bfinished\b/);
+  assert.match(replies[6], /idle/);
+  assert.match(replies[6], /Archive is stale, not idle and not currently active/);
+  assert.doesNotMatch(replies[6], /Archive is currently active/);
   assert.match(replies[7], /No tool use was observed/);
   assert.match(replies[7], /No code change was observed/);
+  assert.match(replies[7], /No deployment was observed/);
+  assert.match(replies[7], /unknown, not success/);
+  assert.match(replies[7], /Archive is stale/);
+  assert.doesNotMatch(replies[7], /ran the tests|changed the code/);
+  assert.match(replies[8], /Coder is currently reported as working on the CHIEF UI/);
   assert.match(replies[8], /No completion was observed/);
+  assert.doesNotMatch(replies[8], /\bfinished\b/);
   assert.match(replies[9], /No completion was observed/);
-  assert.match(replies[10], /No finding was observed/);
-  assert.match(replies[11], /No completion was observed/);
+  assert.match(replies[9], /working on the CHIEF UI/);
+  assert.match(replies[10], /No finding was observed for Coder/);
+  assert.doesNotMatch(replies[10], /auth layer|supplier contract/);
+  assert.match(replies[11], /That's not what the workforce observations show/);
+  assert.match(replies[11], /Ops reported a failure/);
+  assert.match(replies[11], /requested attention/);
+  assert.match(replies[11], /Coder is working and is not the concern/);
+  assert.doesNotMatch(replies[11], /Everyone finished/);
   assert.match(prompts[8], /Provider grokbot/);
   assert.match(prompts[11], /Provider grokbot/);
   assert.match(prompts[12], /Provider grokbot/);
-  assert.match(replies[12], /No deploy was observed/);
+  assert.match(replies[12], /No deployment was observed/);
+  assert.match(replies[12], /no earlier workforce snapshot/);
+  assert.doesNotMatch(replies[12], /deploying/);
   assert.equal(replies[13], "Yep.");
   assert.doesNotMatch(prompts[13], /CHIEF UI/);
   assert.equal(reads.includes("user-b"), false);
@@ -537,6 +569,22 @@ test("CHIEF answers from self-reports through the real Grok Bot runtime", async 
     "Agent state is not connected. No current agent status is available."
   );
   assert.equal(reads.includes("user-b"), false);
+
+  const failedPrompts = [];
+  const failedRun = await new TurnMachine({
+    store: new MemoryCheckpointStore(),
+    engine: scripted(["Yes, Coder failed the CHIEF UI."], failedPrompts),
+    contextAssembler: services.contextAssembler,
+    settleModelStep: services.settleModelStep,
+  }).run({
+    userId: "user-a",
+    submission: message("Did the coding agent fail?"),
+  });
+  const failedReply = lastAssistant(failedRun.checkpoint);
+  assert.match(failedReply, /Coder is currently reported as working on the CHIEF UI/);
+  assert.match(failedReply, /No failure was observed/);
+  assert.doesNotMatch(failedReply, /Coder reported a failure|failed the CHIEF UI/);
+  assert.match(failedPrompts[0], /Provider grokbot/);
 });
 
 test("a revoked binding stays historical and live observations outrank memory", async () => {
@@ -587,6 +635,7 @@ test("a revoked binding stays historical and live observations outrank memory", 
     },
     capabilityPolicy: policy,
     agentRuntime: runtime,
+    now: () => NOW,
   });
   const result = await new TurnMachine({
     store: new MemoryCheckpointStore(),
@@ -599,8 +648,11 @@ test("a revoked binding stays historical and live observations outrank memory", 
   });
   assert.match(prompts[0], /Binding revoked/);
   assert.match(prompts[0], /Not currently active/);
-  assert.match(lastAssistant(result.checkpoint), /not currently active/);
-  assert.doesNotMatch(lastAssistant(result.checkpoint), /currently active and/);
+  const scoutReply = lastAssistant(result.checkpoint);
+  assert.match(scoutReply, /Binding revoked|binding is revoked/);
+  assert.match(scoutReply, /not currently active/i);
+  assert.match(scoutReply, /Started the notes/);
+  assert.doesNotMatch(scoutReply, /currently active and|still working/);
 
   await issueAndReport(tx, "user-live", [
     {
@@ -665,6 +717,13 @@ test("a revoked binding stays historical and live observations outrank memory", 
     pack.authority.map((item) => item.text).join(" "),
     /working on the dashboard/
   );
+  const liveReply = settleReply({
+    transcript: [{ role: "user", content: "What are my agents doing?" }],
+    text: "North is still working on the dashboard.",
+    pack,
+  });
+  assert.match(liveReply.text, /North completed the dashboard task/);
+  assert.doesNotMatch(liveReply.text, /still working/);
 
   const empty = await orchestrateContext({
     query: "What are my agents doing?",
@@ -691,6 +750,15 @@ test("a revoked binding stays historical and live observations outrank memory", 
   const remembered = empty.items.find((item) => item.sourceId === "memory-only");
   assert.equal(remembered.temporalState, "historical");
   assert.equal(remembered.superseded, false);
+  const invented = settleReply({
+    transcript: [{ role: "user", content: "What are my agents doing?" }],
+    text: "North finished the migration yesterday.",
+    pack: empty,
+  });
+  assert.equal(
+    invented.text,
+    "Agent state is not connected. No current agent status is available."
+  );
 });
 
 test("the context label comes from the runtime provider", async () => {
@@ -730,6 +798,7 @@ test("the context label comes from the runtime provider", async () => {
     },
     capabilityPolicy: policy,
     agentRuntime: hermesLabel,
+    now: () => NOW,
   });
   const prompt = await services.contextAssembler({
     userId: "user-a",
@@ -739,4 +808,104 @@ test("the context label comes from the runtime provider", async () => {
   assert.match(prompt, /Current \(hermes, live_agent_state/);
   assert.doesNotMatch(prompt, /Provider grokbot/);
   assert.doesNotMatch(prompt, /always the provider/);
+  const settled = services.settleModelStep({
+    transcript: [{ role: "user", content: "What are my agents doing?" }],
+    text: "Coder finished the CHIEF UI.",
+    toolCalls: [],
+  });
+  assert.match(settled.text, /Coder is currently reported as working on the CHIEF UI/);
+  assert.match(settled.text, /No completion was observed/);
+  assert.doesNotMatch(settled.text, /grokbot/i);
+  assert.doesNotMatch(settled.text, /always the provider/);
+  assert.doesNotMatch(settled.text, /\bfinished\b/);
+});
+
+test("follow-ups answer the question instead of repeating the whole roster", async () => {
+  const tx = memoryJournal();
+  await issueAndReport(tx, "user-follow", OBSERVATIONS);
+  const grants = grantStore();
+  await saveCapabilityGrant({ chiefCapabilityGrant: grants }, "user-follow", {
+    capability: Capability.WORKFORCE_READ,
+  });
+  const policy = await loadCapabilityPolicy("user-follow", {
+    withUser: async (_userId, fn) => fn({ chiefCapabilityGrant: grants }),
+    connectors: [],
+  });
+  const runtime = createGrokBotRuntime({
+    now: () => NOW,
+    decrypt: (value) => String(value).slice("sealed:".length),
+    withUser: scoped(tx),
+  });
+  const prompts = [];
+  const services = createChiefTurnServices({
+    facts: new MemoryFactStore(),
+    engine: {
+      async generate() {
+        return { content: "[]" };
+      },
+    },
+    capabilityPolicy: policy,
+    agentRuntime: runtime,
+    now: () => NOW,
+  });
+  const questions = [
+    "What are my agents doing?",
+    "Which one needs me?",
+    "What happened?",
+    "Did it finish?",
+    "Should I be concerned?",
+    "What don't we know?",
+    "Never mind.",
+  ];
+  const answers = [
+    "Everyone finished.",
+    "Nobody needs attention.",
+    "Nothing happened.",
+    "Yes, it finished.",
+    "No.",
+    "Coder ran the tests and changed the code.",
+    "Coder finished anyway.",
+  ];
+  const machine = new TurnMachine({
+    store: new MemoryCheckpointStore(),
+    engine: scripted(answers, prompts),
+    contextAssembler: services.contextAssembler,
+    settleModelStep: services.settleModelStep,
+  });
+  let sessionId = null;
+  const replies = [];
+  for (const question of questions) {
+    const result = await machine.run({
+      userId: "user-follow",
+      sessionId,
+      submission: message(question),
+    });
+    sessionId = result.sessionId;
+    replies.push(lastAssistant(result.checkpoint));
+  }
+
+  assert.match(replies[0], /Coder is currently reported as working/);
+  assert.match(replies[0], /Research completed/);
+  assert.match(replies[0], /Ops reported a failure/);
+  assert.match(replies[0], /Archive is stale/);
+  assert.match(replies[1], /Ops/);
+  assert.match(replies[1], /requested attention/);
+  assert.doesNotMatch(replies[1], /Archive|CHIEF UI|supplier review/);
+  assert.match(replies[2], /Research completed the supplier review/);
+  assert.match(replies[2], /Ops reported a failure/);
+  assert.match(replies[3], /Ops reported a failure/);
+  assert.match(replies[3], /No completion was observed/);
+  assert.doesNotMatch(replies[3], /supplier review|CHIEF UI/);
+  assert.match(replies[4], /Ops reported a failure/);
+  assert.match(replies[4], /requested attention/);
+  assert.match(replies[5], /No tool use was observed/);
+  assert.match(replies[5], /No code change was observed/);
+  assert.match(replies[5], /unknown, not success/);
+  assert.doesNotMatch(replies[5], /CHIEF UI|ran the tests/);
+  assert.equal(replies[6], "Yep.");
+  assert.match(prompts[1], /Provider grokbot/);
+  assert.match(prompts[3], /Provider grokbot/);
+  assert.match(prompts[5], /Provider grokbot/);
+  assert.doesNotMatch(prompts[6], /CHIEF UI/);
+  assert.doesNotMatch(replies.join(" "), /grokbot is always/i);
 });

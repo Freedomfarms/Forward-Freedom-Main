@@ -8,6 +8,11 @@
 
 import { messageText } from "../runtime/compaction.js";
 import { buildWorkingMemory, isAnaphoric } from "../memory/working.js";
+import {
+  answerFromWorkforce,
+  correctWorkforceSentence,
+  parseWorkforceFact,
+} from "./workforceAnswer.js";
 
 export const MOVE = Object.freeze({
   ACKNOWLEDGE: "acknowledge",
@@ -26,7 +31,7 @@ export const CHIEF_RESPONSE_CONTRACT = [
   "Sound natural when read aloud. Say about $321K, not a labeled report line. Use the user's name only when it fits.",
   "Call the minimum tools. A holding needs the finance read. What that holding is worth also needs the current price. Equity needs the mortgage and the current home value. A past decision needs memory, not a live balance. Weather or other public facts need the web only when no closer tool exists. A reaction needs no tool.",
   "Memory is what was said or decided. Live readings are what is true now. For a current question, live data wins. If a live source is missing, say it is unavailable. Do not invent the figure.",
-  "Workforce lines are observations from the named provider. A start is not a completion. Silence is not success. Stale or revoked is not current activity. A missing observation is unknown. Do not invent a tool, a code change, or a result.",
+  "Workforce lines are observations from the named provider. Answer the question from those observations, and name the state that fits: current, completed, failed, attention, idle, stale, revoked, or unknown. A start is not a completion. Silence is not success. Stale or revoked is not current activity. A missing observation is unknown. Do not invent a tool, a code change, or a result. A bare denial does not replace an observed fact.",
   "Never say Certainly, Of course, Based on my records, According to the available information, or I'd be happy to. Do not mention the model, the orchestrator, or the prompt.",
 ].join(" ");
 
@@ -47,7 +52,7 @@ const ELLIPSIS =
   /^(?:what about|how about|and |what if|how much\b|why\b|what changed|what happened|the other one|is that|and the)\b/i;
 
 const THREAD_FOLLOW =
-  /^(?:should i be concerned|what(?:'s| is) changed(?: since)?|what changed since|anything new|is anything(?: currently)? stuck)\b/i;
+  /^(?:should i be concerned|what(?:'s| is) changed(?: since)?|what changed since|anything new|is anything(?: currently)? stuck|which one needs(?: me)?|who needs(?: me)?|what don'?t we know|what do we not know)\b/i;
 
 function spoken(text) {
   return String(text ?? "")
@@ -434,6 +439,20 @@ export function guardWorkforceReply(text, pack, transcript = []) {
       return "Agent state is not connected. No current agent status is available.";
     }
     return answer;
+  }
+  const facts = items.map(parseWorkforceFact).filter(Boolean);
+  if (facts.length) {
+    const synthesized = answerFromWorkforce({
+      question: latestUserText(transcript),
+      modelText: answer,
+      facts,
+      transcript,
+    });
+    if (synthesized) return synthesized;
+    return sentenceList(answer)
+      .map((sentence) => correctWorkforceSentence(sentence, facts, transcript) ?? sentence)
+      .join(" ")
+      .trim();
   }
   const rewritten = sentenceList(answer).map(
     (sentence) => unsupportedClaim(sentence, items, transcript) ?? sentence

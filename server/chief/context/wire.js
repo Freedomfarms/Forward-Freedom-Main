@@ -43,6 +43,7 @@ export function createChiefTurnServices({
   moduleAccess = null,
   contextReaders = {},
   agentRuntime = null,
+  now = null,
   atTokens = CHIEF_COMPACTION_TOKENS,
   keepRecentTokens = CHIEF_KEEP_RECENT_TOKENS,
 } = {}) {
@@ -73,6 +74,7 @@ export function createChiefTurnServices({
           memory,
           readers,
           availableTools: turn?.availableTools ?? null,
+          now: typeof now === "function" ? now() : now instanceof Date ? now : new Date(),
         });
         prepared = pack;
       } catch {
