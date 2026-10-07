@@ -162,9 +162,12 @@ test("the homepage sandbox does not enter the CHIEF room", () => {
   const scene = read("src/visual/chiefCore/ChiefCoreScene.js");
   const shell = read("src/components/freedom/FreedomShell.jsx");
 
-  assert.match(page, /ApexWorld/);
+  assert.match(page, /ChiefWorld/);
+  assert.doesNotMatch(page, /ApexWorld/);
   assert.doesNotMatch(page, /ChiefCore|chiefCore/);
-  assert.match(atmosphere, /visual\/chiefCore\/ChiefCore/);
+  assert.match(atmosphere, /visual\/chiefWorld\/ChiefWorld/);
+  assert.match(atmosphere, /showChrome=\{false\}/);
+  assert.doesNotMatch(atmosphere, /visual\/chiefCore\/ChiefCore/);
   assert.doesNotMatch(atmosphere, /import .*ApexWorld|import .*ApexCore3D|import .*ApexClock/);
   assert.match(home, /<FreedomShell preview>/);
   assert.match(auth, /FreedomShell/);

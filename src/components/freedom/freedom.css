@@ -1,5 +1,5 @@
-/* Homepage and login host the ChiefCore sandbox. CHIEF keeps its own
-   selectors so this file cannot restyle that screen. */
+/* Homepage and login host the spatial world without CHIEF chrome.
+   CHIEF keeps its own selectors so this file cannot restyle that screen. */
 
 .freedom-shell {
   position: relative;
@@ -61,9 +61,7 @@
   position: absolute;
   inset: 0;
   z-index: 0;
-  background:
-    radial-gradient(ellipse at 50% 42%, rgba(88, 28, 135, 0.42), transparent 28%),
-    radial-gradient(ellipse at 50% 42%, rgba(255, 244, 255, 0.14), transparent 10%), #07040f;
+  background: #05060a;
 }
 
 .freedom-actions {

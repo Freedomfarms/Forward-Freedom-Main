@@ -67,7 +67,7 @@ agent workforce.
 | Context | `server/chief/context/` | System prompt from a persona fact, trust-filtered recall, skills index. |
 | Skills | `server/chief/skills/` | Bundled `SKILL.md` documents loaded by `skill_view`. They are procedures for CHIEF's own tools, not a runner. |
 | Auth and isolation | Firebase bearer on `api/chief/*`; Postgres RLS; encryption helpers | Every `chief_*` row is owned by one `userId`. |
-| Room UI | `src/third_party/apex-ui/ApexWorld.jsx`, `src/components/chief/ChiefPage.jsx` | The signed-in CHIEF home mounts the vendored APEX shell. CHIEF turn status drives the orb and reasoning web. Conversation, approvals, and the model picker stay on the Convos surface. |
+| Room UI | `src/visual/chiefWorld/ChiefWorld.jsx`, `src/components/chief/ChiefPage.jsx` | The signed-in CHIEF home mounts the isolated spatial world. Existing CHIEF status and voice drive that presentation. Conversation, approvals, and the model picker stay on the Convos surface. The vendored APEX shell remains in the tree and is not mounted. |
 | Entry diamond | `src/components/chief/chiefField.js`, entry gateway | The Freedom Diamond presentation still exists for the entry gateway. This phase does not touch it. |
 
 `docs/CHIEF_ARCHITECTURE.md` still describes a future Command Center whose primary
