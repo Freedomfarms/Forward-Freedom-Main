@@ -26,11 +26,12 @@ export const CHIEF_RESPONSE_CONTRACT = [
   "Sound natural when read aloud. Say about $321K, not a labeled report line. Use the user's name only when it fits.",
   "Call the minimum tools. A holding needs the finance read. What that holding is worth also needs the current price. Equity needs the mortgage and the current home value. A past decision needs memory, not a live balance. Weather or other public facts need the web only when no closer tool exists. A reaction needs no tool.",
   "Memory is what was said or decided. Live readings are what is true now. For a current question, live data wins. If a live source is missing, say it is unavailable. Do not invent the figure.",
+  "Workforce lines are observations from the named provider. A start is not a completion. Silence is not success. Stale or revoked is not current activity. A missing observation is unknown. Do not invent a tool, a code change, or a result.",
   "Never say Certainly, Of course, Based on my records, According to the available information, or I'd be happy to. Do not mention the model, the orchestrator, or the prompt.",
 ].join(" ");
 
 const REACTION =
-  /^(?:thanks|thank you|ty|great|nice|cool|awesome|perfect|wow|damn|fuck|shit|hell yeah|not bad|that's not bad|that's crazy|that's good|that's great|got it|makes sense|sounds good|alright|all good|nice one|crazy|lol|lmao|haha|yeah that's (?:crazy|wild|a lot|huge|big)|👍)[.!\s]*$/i;
+  /^(?:thanks|thank you|ty|great|nice|cool|awesome|perfect|wow|damn|fuck|shit|hell yeah|not bad|that's not bad|that's crazy|that's good|that's great|got it|makes sense|sounds good|alright|all good|nice one|crazy|lol|lmao|haha|yeah that's (?:crazy|wild|a lot|huge|big)|never mind|nevermind|nvm|forget it|👍)[.!\s]*$/i;
 
 const AGREEMENT =
   /^(?:yes|yeah|yep|yup|sure|ok|okay|do it|go ahead|please|please do|check it|yeah check(?: it)?|pull it|do that|go for it)[.!\s]*$/i;
@@ -44,6 +45,9 @@ const PUBLIC_SOURCE = /\b(?:zillow|redfin|listing|estimate|look up|search the we
 
 const ELLIPSIS =
   /^(?:what about|how about|and |what if|how much\b|why\b|what changed|what happened|the other one|is that|and the)\b/i;
+
+const THREAD_FOLLOW =
+  /^(?:should i be concerned|what(?:'s| is) changed(?: since)?|what changed since|anything new|is anything(?: currently)? stuck)\b/i;
 
 function spoken(text) {
   return String(text ?? "")
@@ -98,7 +102,13 @@ export function conversationMove(transcript, query = null) {
   let kind = MOVE.DIRECT;
   if ((agreement && offeredWork) || explicitCheck) kind = MOVE.CONFIRM;
   else if (agreement || REACTION.test(compact)) kind = MOVE.ACKNOWLEDGE;
-  else if (isAnaphoric(latest) || ELLIPSIS.test(latest)) kind = MOVE.CONTINUE;
+  else if (
+    isAnaphoric(latest) ||
+    ELLIPSIS.test(latest) ||
+    (THREAD_FOLLOW.test(compact) && prior.length > 0)
+  ) {
+    kind = MOVE.CONTINUE;
+  }
   const thread = [offered, ...prior].join("\n");
   return {
     kind,
@@ -266,6 +276,171 @@ function liveReadingReady(pack) {
   );
 }
 
+function deniesClaim(sentence, pattern) {
+  const match = String(sentence).match(pattern);
+  if (!match || match.index == null) return false;
+  const before = sentence
+    .slice(Math.max(0, match.index - 32), match.index)
+    .replace(/\bnever\s*mind\b/gi, "");
+  return /\b(no|not|never|unknown|without|missing|wasn't|weren't|didn't|cannot|can't|don't|dont|nothing|nobody|no one)\b/i.test(
+    before
+  );
+}
+
+function affirms(sentence, pattern) {
+  return pattern.test(sentence) && !deniesClaim(sentence, pattern);
+}
+
+function workforceItems(pack) {
+  return (pack?.items ?? []).filter(
+    (item) =>
+      item?.origin === "live" &&
+      item.available !== false &&
+      item.sourceType === "live_agent_state" &&
+      item.sourceId !== "workforce-coverage"
+  );
+}
+
+function mentionedWorkforce(sentence, items) {
+  const lower = sentence.toLowerCase();
+  const hits = items.filter((item) => {
+    const name = String(item.text ?? "")
+      .split(" (")[0]
+      .trim()
+      .toLowerCase();
+    if (name && lower.includes(name)) return true;
+    const role = String(item.text ?? "").match(/Role ([^.]+)/)?.[1];
+    return Boolean(role && lower.includes(role.trim().toLowerCase()));
+  });
+  if (/\b(everyone|every agent|all agents|all of them)\b/i.test(sentence)) return items;
+  return hits.length ? hits : items;
+}
+
+const WORKFORCE_CLAIMS = [
+  {
+    claim: /\b(completed|finished|accomplished)\b/i,
+    support: /\bObserved status (?:completed|finished|done)\b/i,
+    unknown: "No completion was observed.",
+  },
+  {
+    claim: /\b(failed|failure|stuck|error)\b/i,
+    support: /\bObserved (?:status failed|status blocked|status error|failure)\b/i,
+    unknown: "No failure was observed.",
+  },
+  {
+    claim: /\b(needs? (?:my |your )?attention|attention request)\b/i,
+    support: /\bObserved attention\b/i,
+    unknown: "No attention request was observed.",
+  },
+  {
+    claim: /\b(found|finding)\b/i,
+    support: /\bObserved finding\b/i,
+    unknown: "No finding was observed.",
+  },
+  {
+    claim: /\b(changed (?:the )?code|committed|edited (?:a |the )?files?)\b/i,
+    support: /\bObserved code change\b/i,
+    unknown: "No code change was observed.",
+  },
+  {
+    claim: /\b(ran (?:the )?tests|used (?:a |the )?(?:shell|terminal)|npm test)\b/i,
+    support: /\bObserved tool use\b/i,
+    unknown: "No tool use was observed.",
+  },
+  {
+    claim: /\b(deploy(?:ing|ed)?)\b/i,
+    support: /\bObserved deploy\b/i,
+    unknown: "No deploy was observed.",
+  },
+];
+
+function referentItems(sentence, items, transcript) {
+  const users = (Array.isArray(transcript) ? transcript : [])
+    .filter((message) => message?.role === "user")
+    .map((message) => messageText(message));
+  const hint = users.slice(-3).join(" ").toLowerCase();
+  const hits = items.filter((item) => {
+    const name = String(item.text ?? "")
+      .split(" (")[0]
+      .trim()
+      .toLowerCase();
+    const role = String(item.text ?? "").match(/Role ([^.]+)/)?.[1] ?? "";
+    return (name && hint.includes(name)) || (role && hint.includes(role.trim().toLowerCase()));
+  });
+  return hits.length ? hits : mentionedWorkforce(sentence, items);
+}
+
+function scopeItems(sentence, items, transcript) {
+  if (/\b(it|that|they)\b/i.test(sentence)) return referentItems(sentence, items, transcript);
+  return mentionedWorkforce(sentence, items);
+}
+
+function unsupportedClaim(sentence, items, transcript) {
+  const scope = scopeItems(sentence, items, transcript);
+  const text = scope.map((item) => item.text).join("\n");
+  const all = items.map((item) => item.text).join("\n");
+  if (
+    /\b(nothing failed|no failures|nobody failed|no agent failed)\b/i.test(sentence) &&
+    /\bObserved failure\b/i.test(all)
+  ) {
+    return "A failure was observed.";
+  }
+  if (/\b(everyone|every agent|all agents|all of them)\b/i.test(sentence)) {
+    for (const rule of WORKFORCE_CLAIMS) {
+      if (!affirms(sentence, rule.claim)) continue;
+      if (!scope.every((item) => rule.support.test(item.text))) return rule.unknown;
+    }
+  }
+  for (const rule of WORKFORCE_CLAIMS) {
+    if (affirms(sentence, rule.claim) && !rule.support.test(text)) return rule.unknown;
+  }
+  if (affirms(sentence, /\b(currently active|is active)\b/i) && !/Liveness active/i.test(text)) {
+    return "That agent is not currently active.";
+  }
+  if (affirms(sentence, /\b(working on|working right now|still working)\b/i)) {
+    if (/\bObserved status completed\b/i.test(text) && !/\bObserved status working\b/i.test(text)) {
+      return "The live observation says that work completed. The older working status is not current.";
+    }
+    if (
+      /\bObserved (?:status failed|failure)\b/i.test(text) &&
+      !/\bObserved status working\b/i.test(text)
+    ) {
+      return "The live observation is a failure, not work in progress.";
+    }
+  }
+  return null;
+}
+
+function affirmsWorkforceStatus(text) {
+  return affirms(
+    text,
+    /\b(working|completed|finished|failed|idle|stuck|active|attention|finding)\b/i
+  );
+}
+
+export function guardWorkforceReply(text, pack, transcript = []) {
+  const answer = String(text ?? "").trim();
+  if (!answer || !pack?.plan) return answer;
+  const asking = pack.plan.live?.includes("agents") || pack.plan.currentState === true;
+  const items = workforceItems(pack);
+  if (!asking && items.length === 0) return answer;
+  if (items.length === 0) {
+    if (
+      pack.plan.currentState &&
+      pack.plan.live?.includes("agents") &&
+      affirmsWorkforceStatus(answer) &&
+      !/not connected|unavailable|no current agent/i.test(answer)
+    ) {
+      return "Agent state is not connected. No current agent status is available.";
+    }
+    return answer;
+  }
+  const rewritten = sentenceList(answer).map(
+    (sentence) => unsupportedClaim(sentence, items, transcript) ?? sentence
+  );
+  return rewritten.join(" ").trim();
+}
+
 function blockUnsupportedCurrentClaim(text, transcript, pack) {
   const answer = String(text ?? "").trim();
   if (!pack?.plan?.currentState || exploring(transcript)) return answer;
@@ -283,8 +458,9 @@ export function settleReply({ transcript = [], text = "", toolCalls = [], pack =
   const userText = latestUserText(transcript);
   if (move.kind === MOVE.ACKNOWLEDGE) {
     const modelText = String(text ?? "").trim();
+    const claimsWork = WORKFORCE_CLAIMS.some((rule) => rule.claim.test(modelText));
     return {
-      text: reactionIsAlreadyShort(modelText) ? modelText : shortReaction(userText),
+      text: !claimsWork && reactionIsAlreadyShort(modelText) ? modelText : shortReaction(userText),
       toolCalls: [],
     };
   }
@@ -293,6 +469,7 @@ export function settleReply({ transcript = [], text = "", toolCalls = [], pack =
   answer = stripMachinery(answer, transcript);
   answer = stripOffers(answer, transcript);
   answer = blockUnsupportedCurrentClaim(answer, transcript, pack);
+  answer = guardWorkforceReply(answer, pack, transcript);
   answer = answer.trim();
   if (!answer) answer = String(text ?? "").trim();
   return { text: answer, toolCalls: calls };

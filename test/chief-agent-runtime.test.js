@@ -324,7 +324,9 @@ test("a turn reads the runtime only when workforce:read is granted", async () =>
   });
   assert.equal(reads, 1);
   assert.match(shown, /self-reported activity/);
-  assert.match(shown, /North \(reported name\) is active/);
+  assert.match(shown, /North \(reported name, untrusted\)/);
+  assert.match(shown, /Liveness active/);
+  assert.match(shown, /Provider grokbot/);
   assert.match(shown, /trust untrusted/);
 
   const custom = createChiefTurnServices({
