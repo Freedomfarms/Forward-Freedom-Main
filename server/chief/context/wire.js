@@ -10,6 +10,7 @@ import { createMemoryAccess } from "../memory/provider.js";
 import { CHIEF_COMPACTION_TOKENS, CHIEF_KEEP_RECENT_TOKENS } from "../runtime/compaction.js";
 import { createContextAssembler, lastTurnUserText } from "./assemble.js";
 import { renderConversationMove, settleReply } from "./behavior.js";
+import { isDelegationFollowUp, peekDelegation } from "./delegation.js";
 import { orchestrateContext, renderContextPackage } from "./orchestrate.js";
 
 function workforceReadGranted(policy) {
@@ -18,6 +19,19 @@ function workforceReadGranted(policy) {
     typeof policy.check === "function" &&
     policy.check("_default", Capability.WORKFORCE_READ) === true
   );
+}
+
+async function readWorkforcePicture(agentRuntime, userId, now) {
+  if (typeof userId !== "string" || userId.trim() === "") return null;
+  const clock = typeof now === "function" ? now : () => (now instanceof Date ? now : new Date());
+  try {
+    const runtime =
+      agentRuntime ?? (await import("../agents/index.js")).createAgentRuntime({ now: clock });
+    if (typeof runtime?.picture !== "function") return null;
+    return await runtime.picture(userId, { now: clock() });
+  } catch {
+    return null;
+  }
 }
 
 function readersWithWorkforce(contextReaders, capabilityPolicy, agentRuntime) {
@@ -53,6 +67,7 @@ export function createChiefTurnServices({
   const memory = createMemoryAccess({ facts, checkpointStore });
   const readers = readersWithWorkforce(contextReaders, capabilityPolicy, agentRuntime);
   let prepared = null;
+  let preparedUserId = null;
   const assemble = createContextAssembler({
     facts,
     checkpointStore,
@@ -64,6 +79,7 @@ export function createChiefTurnServices({
     contextAssembler: async (turn) => {
       const prompt = await assemble(turn);
       const query = lastTurnUserText(turn?.transcript);
+      preparedUserId = turn?.userId ?? null;
       let pack;
       try {
         pack = await orchestrateContext({
@@ -87,8 +103,23 @@ export function createChiefTurnServices({
     },
     compaction: { atTokens, keepRecentTokens },
     memory,
-    settleModelStep: ({ transcript, text, toolCalls }) =>
-      settleReply({ transcript, text, toolCalls, pack: prepared }),
+    settleModelStep: async ({ transcript, text, toolCalls }) => {
+      const peeked = peekDelegation(text, toolCalls);
+      const packHasAgents = (prepared?.items ?? []).some(
+        (item) => item?.sourceType === "live_agent_state" && item.sourceId !== "workforce-coverage"
+      );
+      let workforcePicture = null;
+      const latest = lastTurnUserText(transcript);
+      if (
+        !isDelegationFollowUp(transcript, latest) &&
+        peeked.needsPicture &&
+        !packHasAgents &&
+        workforceReadGranted(capabilityPolicy)
+      ) {
+        workforcePicture = await readWorkforcePicture(agentRuntime, preparedUserId, now);
+      }
+      return settleReply({ transcript, text, toolCalls, pack: prepared, workforcePicture });
+    },
     onTurnComplete: async (exchange) => {
       await applyMemoryCommands({ facts, ...exchange, provider: memory.provider });
       return rememberExchange({ facts, engine, ...exchange });

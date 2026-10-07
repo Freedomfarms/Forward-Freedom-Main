@@ -808,7 +808,7 @@ test("the context label comes from the runtime provider", async () => {
   assert.match(prompt, /Current \(hermes, live_agent_state/);
   assert.doesNotMatch(prompt, /Provider grokbot/);
   assert.doesNotMatch(prompt, /always the provider/);
-  const settled = services.settleModelStep({
+  const settled = await services.settleModelStep({
     transcript: [{ role: "user", content: "What are my agents doing?" }],
     text: "Coder finished the CHIEF UI.",
     toolCalls: [],
