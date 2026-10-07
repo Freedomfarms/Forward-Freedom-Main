@@ -445,7 +445,7 @@ export function PublicFreedomOsHome({ onSignIn, onCreateAccount, onExploreFreedo
 
   return (
     <ErrorBoundary>
-      <FreedomShell>
+      <FreedomShell preview>
         <header className="freedom-brand">
           <h1>FREEDOM OS</h1>
           <p className="freedom-mission">
