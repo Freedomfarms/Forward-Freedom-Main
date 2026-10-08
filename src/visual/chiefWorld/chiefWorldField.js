@@ -11,37 +11,79 @@ export const ACTIVITY_LANES = Object.freeze({
   hold: Object.freeze({ position: Object.freeze([0.12, 0.82, -1.15]) }),
 });
 
+// Corridor slabs. Thin in one axis so they read as walls, not posters.
+// `depth` selects the parallax layer: near moves more than far.
 export const GLASS_PANELS = Object.freeze([
   Object.freeze({
-    position: Object.freeze([-2.75, 0.98, -2.15]),
-    rotation: Object.freeze([0, 0.46, 0]),
-    size: Object.freeze([1.15, 1.95]),
-    shift: Object.freeze([0.18, 0.04, -0.28]),
+    position: Object.freeze([-2.85, 1.15, -6.5]),
+    rotation: Object.freeze([0, 0.06, 0]),
+    size: Object.freeze([0.028, 2.55, 1.85]),
+    depth: "far",
+    shift: Object.freeze([0.22, 0.02, -0.4]),
   }),
   Object.freeze({
-    position: Object.freeze([2.95, 1.08, -3.45]),
-    rotation: Object.freeze([0, -0.5, 0]),
-    size: Object.freeze([1.4, 2.35]),
-    shift: Object.freeze([-0.16, 0.06, -0.22]),
+    position: Object.freeze([3.1, 1.22, -6.15]),
+    rotation: Object.freeze([0, -0.08, 0]),
+    size: Object.freeze([0.028, 2.75, 1.65]),
+    depth: "far",
+    shift: Object.freeze([-0.2, 0.03, -0.34]),
   }),
   Object.freeze({
-    position: Object.freeze([-1.62, 0.58, 0.62]),
-    rotation: Object.freeze([0, 0.2, 0]),
-    size: Object.freeze([0.7, 1.12]),
-    shift: Object.freeze([0.1, 0.02, -0.18]),
+    position: Object.freeze([0.05, 2.2, -7.5]),
+    rotation: Object.freeze([0.18, 0, 0]),
+    size: Object.freeze([4.4, 0.02, 0.55]),
+    depth: "far",
+    shift: Object.freeze([0, 0.08, -0.16]),
   }),
   Object.freeze({
-    position: Object.freeze([1.88, 0.74, 1.02]),
-    rotation: Object.freeze([0, -0.24, 0]),
-    size: Object.freeze([0.58, 1.32]),
-    shift: Object.freeze([-0.08, 0.03, -0.16]),
+    position: Object.freeze([-2.15, 1.02, -3.15]),
+    rotation: Object.freeze([0, 0.1, 0]),
+    size: Object.freeze([0.022, 2.2, 1.4]),
+    depth: "mid",
+    shift: Object.freeze([0.16, 0.02, -0.48]),
   }),
   Object.freeze({
-    position: Object.freeze([0.15, 1.92, -6.35]),
-    rotation: Object.freeze([0.12, 0, 0]),
-    size: Object.freeze([3.6, 0.07]),
-    shift: Object.freeze([0, 0.1, -0.12]),
+    position: Object.freeze([2.4, 1.08, -2.85]),
+    rotation: Object.freeze([0, -0.12, 0]),
+    size: Object.freeze([0.022, 2.3, 1.25]),
+    depth: "mid",
+    shift: Object.freeze([-0.14, 0.02, -0.42]),
   }),
+  Object.freeze({
+    position: Object.freeze([-1.05, 1.55, -4.35]),
+    rotation: Object.freeze([0, 0.42, 0]),
+    size: Object.freeze([0.85, 1.05, 0.016]),
+    depth: "mid",
+    shift: Object.freeze([0.1, 0.04, -0.22]),
+  }),
+  Object.freeze({
+    position: Object.freeze([1.2, 0.72, -4.7]),
+    rotation: Object.freeze([0, -0.38, 0]),
+    size: Object.freeze([0.62, 0.82, 0.016]),
+    depth: "mid",
+    shift: Object.freeze([-0.08, 0.03, -0.18]),
+  }),
+  Object.freeze({
+    position: Object.freeze([-1.9, 0.82, 1.2]),
+    rotation: Object.freeze([0, 0.62, 0]),
+    size: Object.freeze([0.018, 1.75, 0.9]),
+    depth: "near",
+    shift: Object.freeze([0.06, 0, -0.16]),
+  }),
+  Object.freeze({
+    position: Object.freeze([2.0, 0.9, 1.4]),
+    rotation: Object.freeze([0, -0.55, 0]),
+    size: Object.freeze([0.018, 1.9, 0.78]),
+    depth: "near",
+    shift: Object.freeze([-0.06, 0, -0.14]),
+  }),
+]);
+
+export const LIGHT_SEAMS = Object.freeze([
+  Object.freeze({ position: Object.freeze([-1.7, 1.15, -1.35]), depth: "mid" }),
+  Object.freeze({ position: Object.freeze([1.95, 1.2, -2.5]), depth: "mid" }),
+  Object.freeze({ position: Object.freeze([-2.65, 1.25, -5.1]), depth: "far" }),
+  Object.freeze({ position: Object.freeze([2.9, 1.3, -5.6]), depth: "far" }),
 ]);
 
 export const FIELD_ANCHORS = Object.freeze([
