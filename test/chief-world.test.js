@@ -102,6 +102,8 @@ test("atmosphere fills a volume and navigation keeps the roster split", () => {
   assert.equal(placeEntity({ position: [1, Number.NaN, 3], lane: "finance" })[0], 1.7);
   assert.equal(placeEntity({ lane: "missing" }), null);
 
+  assert.equal(FIELD_ANCHORS.length, 6);
+  assert.equal(FIELD_LINKS.length, 7);
   for (const [from, to] of FIELD_LINKS) {
     assert.ok(FIELD_ANCHORS[from]);
     assert.ok(FIELD_ANCHORS[to]);
@@ -121,6 +123,7 @@ test("the home world stays a presentation sandbox", () => {
     if (!file.endsWith(".js") && !file.endsWith(".jsx")) continue;
     const source = read(path.join("src/visual/chiefWorld", file));
     assert.doesNotMatch(source, /SphereGeometry|Fresnel|createCoreParticleGeometry/);
+    assert.doesNotMatch(source, /GLASS_PANELS|LIGHT_SEAMS|EdgesGeometry/);
     assert.doesNotMatch(
       source,
       /TurnMachine|useChiefVoice|chiefApi|components\/chief|server\/|AuthContext|ToolExecutor/

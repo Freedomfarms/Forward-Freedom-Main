@@ -29,46 +29,65 @@
 
 .chief-world-fallback-far {
   background:
-    radial-gradient(ellipse 80% 55% at 50% 42%, rgba(28, 26, 36, 0.9), transparent 62%),
-    linear-gradient(#05060a, #05060a);
+    radial-gradient(ellipse 42% 36% at 28% 38%, rgba(42, 40, 52, 0.55), transparent 70%),
+    radial-gradient(ellipse 50% 40% at 78% 58%, rgba(22, 20, 32, 0.45), transparent 72%), #05060a;
 }
 
 .chief-world-fallback-mid {
-  background:
-    linear-gradient(90deg, transparent 8%, rgba(214, 206, 232, 0.05) 8.2%, transparent 8.5%),
-    linear-gradient(90deg, transparent 88%, rgba(214, 206, 232, 0.04) 88.2%, transparent 88.6%),
-    radial-gradient(ellipse 18% 42% at 50% 46%, rgba(168, 150, 196, 0.16), transparent 70%);
+  background: radial-gradient(
+    ellipse 28% 22% at 46% 32%,
+    rgba(186, 184, 196, 0.07),
+    transparent 70%
+  );
 }
 
 .chief-world-fallback-near {
-  background: linear-gradient(to top, rgba(5, 6, 10, 0.72), transparent 34%);
+  background:
+    linear-gradient(to top, rgba(5, 6, 10, 0.88), transparent 42%),
+    linear-gradient(
+      90deg,
+      rgba(5, 6, 10, 0.35),
+      transparent 16%,
+      transparent 84%,
+      rgba(5, 6, 10, 0.35)
+    );
 }
 
 .chief-world-vignette {
   background:
-    radial-gradient(
-      ellipse 78% 68% at 50% 42%,
-      transparent 0%,
-      rgba(5, 6, 10, 0.08) 62%,
-      rgba(5, 6, 10, 0.72) 100%
-    ),
-    linear-gradient(to top, rgba(5, 6, 10, 0.62), transparent 30%);
+    linear-gradient(to top, rgba(5, 6, 10, 0.82), transparent 36%),
+    linear-gradient(
+      90deg,
+      rgba(5, 6, 10, 0.42),
+      transparent 14%,
+      transparent 86%,
+      rgba(5, 6, 10, 0.42)
+    );
   transition: opacity 700ms ease;
 }
 
 .chief-world[data-phase="responding"] .chief-world-vignette {
-  opacity: 1;
+  background:
+    linear-gradient(to top, rgba(5, 6, 10, 0.92), rgba(5, 6, 10, 0.28) 48%, transparent 72%),
+    linear-gradient(
+      90deg,
+      rgba(5, 6, 10, 0.5),
+      transparent 18%,
+      transparent 82%,
+      rgba(5, 6, 10, 0.5)
+    );
 }
 
 .chief-world[data-phase="listening"] .chief-world-vignette {
   background:
-    radial-gradient(
-      ellipse 68% 58% at 50% 40%,
-      transparent 0%,
-      rgba(5, 6, 10, 0.12) 52%,
-      rgba(5, 6, 10, 0.74) 100%
-    ),
-    linear-gradient(to top, rgba(5, 6, 10, 0.55), transparent 30%);
+    linear-gradient(to top, rgba(5, 6, 10, 0.7), transparent 32%),
+    linear-gradient(
+      90deg,
+      rgba(5, 6, 10, 0.28),
+      transparent 12%,
+      transparent 88%,
+      rgba(5, 6, 10, 0.28)
+    );
 }
 
 .chief-world-clock {
@@ -133,9 +152,8 @@
   gap: 18px;
   width: max-content;
   max-width: 9.5rem;
-  padding: 16px 14px;
-  background: linear-gradient(180deg, rgba(244, 241, 234, 0.035), rgba(244, 241, 234, 0.012));
-  backdrop-filter: blur(18px);
+  padding: 2px 0;
+  background: transparent;
   pointer-events: auto;
 }
 

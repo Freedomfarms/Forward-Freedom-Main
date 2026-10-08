@@ -1,72 +1,150 @@
-import { useMemo, useRef } from "react";
+import { useRef } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Bloom, EffectComposer } from "@react-three/postprocessing";
 import * as THREE from "three";
-import {
-  FIELD_ANCHORS,
-  FIELD_LINKS,
-  FIELD_STRATA,
-  GLASS_PANELS,
-  LIGHT_SEAMS,
-  PRESENCE_ORIGIN,
-  createAtmospherePositions,
-  createAtmosphereSeeds,
-  placeEntity,
-} from "./chiefWorldField.js";
+import { FIELD_ANCHORS, PRESENCE_ORIGIN, placeEntity } from "./chiefWorldField.js";
 import { phaseWeights } from "./chiefWorldPhase.js";
 
 const VOID = "#05060a";
-const ATMOSPHERE_COUNT = 120;
-const ENTITY_POOL = 4;
-const LAYER_GAIN = Object.freeze({ far: 0.05, mid: 0.14, near: 0.34 });
 
-const HORIZON_VERTEX = `
-  varying vec2 vUv;
-  void main() {
-    vUv = uv;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-  }
-`;
-
-const HORIZON_FRAGMENT = `
-  precision highp float;
-  varying vec2 vUv;
-  uniform float uEnergy;
-  void main() {
-    float band = exp(-pow((vUv.y - 0.46) * 3.4, 2.0));
-    float lateral = exp(-pow((vUv.x - 0.5) * 1.8, 2.0));
-    float alpha = band * lateral * (0.045 + uEnergy * 0.14);
-    vec3 color = mix(vec3(0.78, 0.76, 0.82), vec3(0.55, 0.46, 0.72), uEnergy);
-    gl_FragColor = vec4(color, alpha);
-  }
-`;
-
-const FLOOR_VERTEX = `
-  varying vec3 vPos;
+const FIELD_VERTEX = `
+  varying vec3 vWorld;
   void main() {
     vec4 world = modelMatrix * vec4(position, 1.0);
-    vPos = world.xyz;
+    vWorld = world.xyz;
     gl_Position = projectionMatrix * viewMatrix * world;
   }
 `;
 
-const FLOOR_FRAGMENT = `
+// A volume of light. No mesh reads as an object.
+// Idle is a dim, uneven field. Listening draws it forward.
+// Thinking reveals the latent links. A real activity adds one pool of light.
+const FIELD_FRAGMENT = `
   precision highp float;
-  varying vec3 vPos;
-  uniform float uEnergy;
+
+  varying vec3 vWorld;
+  uniform float uTime;
+  uniform float uIdle;
+  uniform float uListen;
+  uniform float uThink;
+  uniform float uWork;
+  uniform float uRespond;
+  uniform float uLevel;
+  uniform float uMotion;
+  uniform float uCount;
+  uniform vec3 uActivity[4];
+  uniform vec3 uOrigin;
+  uniform vec3 uAnchors[6];
+
+  float pool(vec3 q, vec3 radius) {
+    vec3 s = q / radius;
+    return exp(-dot(s, s));
+  }
+
+  float thread(vec3 p, vec3 a, vec3 b, float radius) {
+    vec3 pa = p - a;
+    vec3 ba = b - a;
+    float h = clamp(dot(pa, ba) / max(dot(ba, ba), 0.0001), 0.0, 1.0);
+    float dist = length(pa - ba * h);
+    return exp(-pow(dist / radius, 2.0));
+  }
+
+  float workAt(vec3 p, vec3 at) {
+    return pool(p - at, vec3(1.25, 0.7, 1.15)) * 1.2
+      + thread(p, uOrigin, at, 1.05) * 0.48;
+  }
+
   void main() {
-    float dist = length(vPos.xz);
-    float fade = smoothstep(14.0, 1.4, dist);
-    float depth = smoothstep(0.2, 8.0, -vPos.z);
-    float lane = exp(-pow(vPos.x * 0.22, 2.0));
-    float alpha = fade * depth * lane * (0.025 + uEnergy * 0.04);
-    if (alpha < 0.002) discard;
-    vec3 color = mix(vec3(0.62, 0.6, 0.66), vec3(0.48, 0.4, 0.62), uEnergy);
-    gl_FragColor = vec4(color, alpha);
+    vec3 ro = cameraPosition;
+    vec3 rd = normalize(vWorld - ro);
+    float tmax = length(vWorld - ro);
+
+    float motion = clamp(uMotion, 0.0, 1.0);
+    float tt = uTime * motion;
+    float breathe = motion > 0.001 ? 0.97 + 0.03 * sin(tt * 0.28) : 1.0;
+    float state = 0.48 * uIdle + 0.7 * uListen + 0.82 * uThink + 0.58 * uWork + 0.2 * uRespond;
+
+    vec3 gather = vec3(0.1, 1.78, -2.7);
+    vec3 w0 = vec3(-4.1, 2.65, -4.0);
+    vec3 w1 = vec3(4.6, 0.85, -8.8);
+    vec3 w2 = vec3(-1.4, 3.4, -13.5);
+    float drift = motion * (1.0 - uListen * 0.75);
+    w0 += vec3(sin(tt * 0.15), cos(tt * 0.11), sin(tt * 0.09)) * 0.14 * drift;
+    w1 += vec3(cos(tt * 0.1), sin(tt * 0.08), 0.0) * 0.18 * motion;
+    w0 = mix(w0, gather + vec3(-0.7, 0.12, -0.15), uListen * 0.5);
+    w1 = mix(w1, gather + vec3(1.05, -0.2, -1.5), uListen * 0.26);
+
+    vec3 flow = normalize(vec3(0.32, 0.06, -1.0));
+    vec3 lightDir = normalize(vec3(-0.34, 0.88, 0.24));
+    float scatter = 0.7 + 0.3 * dot(rd, lightDir);
+
+    vec3 col = vec3(0.0);
+    float alpha = 0.0;
+
+    for (int i = 0; i < 24; i++) {
+      float t = 0.2 + (tmax - 0.2) * (float(i) + 0.5) / 24.0;
+      vec3 p = ro + rd * t;
+
+      vec3 q0 = p - w0;
+      vec3 q1 = p - w1;
+      q0 += flow * dot(q0, flow) * uThink * 0.42;
+      q1 += flow * dot(q1, flow) * uThink * 0.28;
+
+      float dens = 0.0;
+      dens += pool(q0, vec3(3.1, 1.85, 2.6)) * 0.9;
+      dens += pool(q1, vec3(4.2, 2.2, 3.5)) * 0.42;
+      dens += pool(p - w2, vec3(6.8, 3.1, 4.8)) * 0.14;
+
+      float uneven = sin(p.x * 0.33 + tt * 0.04) * sin(p.y * 0.29 - tt * 0.03) * sin(p.z * 0.21 + 1.4);
+      dens *= 0.88 + 0.12 * uneven;
+      dens *= smoothstep(0.05, 1.25, p.y);
+      float quiet = pool(p - vec3(0.05, 1.2, -1.35), vec3(2.1, 1.45, 2.4));
+      dens *= 1.0 - quiet * (0.82 - uListen * 0.28 - uThink * 0.22);
+
+      float front = dot(p, flow) - tt * 0.28;
+      dens += exp(-pow(front * 0.62, 2.0)) * exp(-abs(p.y - 1.5) * 0.5) * uThink * 0.18;
+      dens += pool(p - gather, vec3(1.45, 1.05, 1.6)) * uListen * (0.14 + uLevel * 0.1);
+
+      float organize = 0.0;
+      organize += thread(p, uAnchors[0], uAnchors[1], 0.78);
+      organize += thread(p, uAnchors[1], uAnchors[4], 0.78);
+      organize += thread(p, uAnchors[1], uAnchors[2], 0.7);
+      organize += thread(p, uAnchors[2], uAnchors[3], 0.7);
+      organize += thread(p, uAnchors[4], uAnchors[5], 0.78);
+      organize += thread(p, uAnchors[5], uAnchors[0], 0.7);
+      organize += thread(p, uAnchors[1], uAnchors[3], 0.64);
+      dens += organize * uThink * 0.07;
+      dens *= mix(1.0, 0.5, uWork);
+
+      if (uCount > 0.5) dens += workAt(p, uActivity[0]) * uWork;
+      if (uCount > 1.5) dens += workAt(p, uActivity[1]) * uWork * 0.85;
+      if (uCount > 2.5) dens += workAt(p, uActivity[2]) * uWork * 0.7;
+      if (uCount > 3.5) dens += workAt(p, uActivity[3]) * uWork * 0.6;
+
+      dens *= state * breathe;
+
+      float depth = clamp(t / 18.0, 0.0, 1.0);
+      float lit = dens * scatter * exp(-t * 0.015);
+      vec3 cool = vec3(0.58, 0.6, 0.64);
+      vec3 deep = vec3(0.16, 0.11, 0.22);
+      vec3 energy = vec3(0.4, 0.2, 0.55);
+      vec3 rgb = mix(cool, deep, depth);
+      float energyMix = smoothstep(0.1, 0.45, dens) * (uThink * 0.5 + uWork * 0.7 + uListen * 0.16);
+      rgb = mix(rgb, energy, clamp(energyMix, 0.0, 0.62));
+
+      float spec = pool(p - w0 - vec3(0.22, 0.04, 0.08), vec3(0.36, 0.12, 0.48));
+      rgb += vec3(0.92, 0.93, 0.95) * spec * dens * (0.05 + uListen * 0.1 + uThink * 0.18) * (1.0 - uRespond);
+
+      float glow = 1.0 - exp(-max(lit, 0.0) * 1.7);
+      col += rgb * glow * 0.28 * (1.0 - alpha);
+      alpha += glow * 0.34 * (1.0 - alpha);
+    }
+
+    gl_FragColor = vec4(col, 1.0);
   }
 `;
 
-const SEAM_VERTEX = `
+const VEIL_VERTEX = `
   varying vec2 vUv;
   void main() {
     vUv = uv;
@@ -74,512 +152,111 @@ const SEAM_VERTEX = `
   }
 `;
 
-const SEAM_FRAGMENT = `
+const VEIL_FRAGMENT = `
   precision highp float;
   varying vec2 vUv;
-  uniform float uPresence;
-  uniform float uTime;
+  uniform float uListen;
+  uniform float uRespond;
   void main() {
-    float x = (vUv.x - 0.5) * 2.0;
-    float y = (vUv.y - 0.5) * 2.0;
-    float breathe = 0.94 + 0.06 * sin(uTime * 0.45);
-    float seam = exp(-pow(x * 9.0, 2.0));
-    float vertical = smoothstep(-1.05, -0.2, y) * (1.0 - smoothstep(0.55, 1.12, y));
-    float hot = exp(-pow(x * 28.0, 2.0)) * smoothstep(-0.2, 0.35, y);
-    float alpha = (seam * 0.34 + hot * 0.7) * vertical * breathe * (0.12 + uPresence * 0.7);
-    vec3 color = mix(vec3(0.86, 0.84, 0.9), vec3(0.62, 0.5, 0.8), uPresence * 0.65);
-    color = mix(color, vec3(0.97, 0.95, 0.92), hot);
+    vec2 p = (vUv - vec2(0.5, 0.62)) * vec2(1.2, 1.0);
+    float edge = smoothstep(0.22, 1.05, length(p));
+    float lower = smoothstep(0.55, 0.0, vUv.y);
+    float alpha = edge * 0.055 + lower * (0.18 + uRespond * 0.22);
+    alpha *= 1.0 - uListen * 0.12;
+    vec3 color = mix(vec3(0.62, 0.64, 0.68), vec3(0.02, 0.022, 0.028), lower);
     gl_FragColor = vec4(color, alpha);
   }
 `;
 
-const DUST_VERTEX = `
-  attribute float aSeed;
-  uniform float uTime;
-  uniform float uDrift;
-  uniform float uDpr;
-  varying float vFade;
-  void main() {
-    vec3 pos = position;
-    pos.y += sin(uTime * 0.11 + aSeed) * 0.06 * uDrift;
-    pos.x += cos(uTime * 0.06 + aSeed) * 0.04 * uDrift;
-    vec4 mv = modelViewMatrix * vec4(pos, 1.0);
-    gl_Position = projectionMatrix * mv;
-    float depth = clamp((-mv.z - 1.5) / 14.0, 0.0, 1.0);
-    vFade = 1.0 - depth;
-    gl_PointSize = uDpr * 1.7 * vFade * (7.0 / max(-mv.z, 0.001));
-  }
-`;
-
-const DUST_FRAGMENT = `
-  precision highp float;
-  varying float vFade;
-  void main() {
-    float d = length(gl_PointCoord - 0.5);
-    if (d > 0.5) discard;
-    float alpha = smoothstep(0.5, 0.12, d) * 0.32 * vFade;
-    gl_FragColor = vec4(vec3(0.9, 0.88, 0.94), alpha);
-  }
-`;
-
-function damp(current, target, lambda, dt) {
-  return current + (target - current) * (1 - Math.exp(-lambda * dt));
+function anchorVectors() {
+  return FIELD_ANCHORS.map((point) => new THREE.Vector3(point[0], point[1], point[2]));
 }
 
-function pointOn(a, b, t) {
-  return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+function activityVectors() {
+  return [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
 }
 
-function WorldRig({ phaseRef, entitiesRef, levelRef, motionRef, parallaxRef }) {
-  const layers = useRef({ far: null, mid: null, near: null });
-  const panels = useRef([]);
-  const filament = useRef(null);
-  const strata = useRef(null);
-  const horizon = useRef(null);
-  const floor = useRef(null);
-  const dust = useRef(null);
-  const courier = useRef(null);
-  const courierMaterial = useRef(null);
-  const linkMaterial = useRef(null);
-  const linkGeom = useRef(null);
-  const entityGroups = useRef([]);
-  const weights = useRef({ idle: 1, listen: 0, think: 0, work: 0, respond: 0 });
-  const clock = useRef(0);
+function IntelligenceField({ presenceRef, timeRef, signalRef }) {
+  const materialRef = useRef(null);
 
-  const dustPositions = useMemo(() => createAtmospherePositions(ATMOSPHERE_COUNT), []);
-  const dustSeeds = useMemo(() => createAtmosphereSeeds(ATMOSPHERE_COUNT), []);
-  const strataPositions = useMemo(() => {
-    const positions = new Float32Array(FIELD_STRATA.length * 6);
-    FIELD_STRATA.forEach((line, index) => {
-      const offset = index * 6;
-      positions[offset] = -line.width / 2;
-      positions[offset + 1] = line.y;
-      positions[offset + 2] = line.z;
-      positions[offset + 3] = line.width / 2;
-      positions[offset + 4] = line.y;
-      positions[offset + 5] = line.z;
-    });
-    return positions;
-  }, []);
-  const linkPositions = useMemo(() => {
-    const positions = new Float32Array(ENTITY_POOL * 6);
-    for (let index = 0; index < ENTITY_POOL; index += 1) {
-      positions[index * 6 + 1] = -10;
-      positions[index * 6 + 4] = -10;
-    }
-    return positions;
-  }, []);
-  const filamentPositions = useMemo(() => {
-    const positions = new Float32Array(FIELD_LINKS.length * 6);
-    FIELD_LINKS.forEach(([from, to], index) => {
-      const start = FIELD_ANCHORS[from];
-      const end = FIELD_ANCHORS[to];
-      const offset = index * 6;
-      positions[offset] = start[0];
-      positions[offset + 1] = start[1];
-      positions[offset + 2] = start[2];
-      positions[offset + 3] = end[0];
-      positions[offset + 4] = end[1];
-      positions[offset + 5] = end[2];
-    });
-    return positions;
-  }, []);
-  const stationGeometry = useMemo(() => new THREE.BoxGeometry(0.02, 0.92, 0.26), []);
-  const stationEdges = useMemo(() => new THREE.EdgesGeometry(stationGeometry), [stationGeometry]);
-  const presenceRef = useRef(0.22);
-  const timeRef = useRef(0);
-
-  useFrame((_, dt) => {
-    const step = Math.min(dt, 0.05);
-    const motion = motionRef.current;
-    const moving = motion !== "off";
-    if (moving) clock.current += step * (motion === "low" ? 0.45 : 1);
-    const time = clock.current;
-    const target = phaseWeights(phaseRef.current);
-    const current = weights.current;
-    const pace = moving ? 2.1 : 18;
-    current.idle = damp(current.idle, target.idle, pace, step);
-    current.listen = damp(current.listen, target.listen, pace, step);
-    current.think = damp(current.think, target.think, pace, step);
-    current.work = damp(current.work, target.work, pace, step);
-    current.respond = damp(current.respond, target.respond, pace, step);
-
-    const level = listeningLevel(levelRef);
-    const presence =
-      current.idle * 0.22 +
-      current.listen * (0.86 + level * 0.16) +
-      current.think * 0.58 +
-      current.work * 0.7 +
-      current.respond * 0.12;
-    const energy =
-      current.idle * 0.16 +
-      current.listen * 0.62 +
-      current.think * 0.4 +
-      current.work * 0.48 +
-      current.respond * 0.08;
-    const filaments =
-      current.idle * 0.03 +
-      current.listen * 0.1 +
-      current.think * 0.48 +
-      current.work * 0.28 +
-      current.respond * 0.02;
-
-    presenceRef.current = presence;
-    timeRef.current = moving ? time : 0;
-    if (horizon.current) horizon.current.uniforms.uEnergy.value = energy;
-    if (floor.current) floor.current.uniforms.uEnergy.value = energy;
-    if (dust.current) {
-      dust.current.uniforms.uTime.value = moving ? time : 0;
-      dust.current.uniforms.uDrift.value = motion === "off" ? 0 : motion === "low" ? 0.35 : 1;
-    }
-    if (filament.current) filament.current.opacity = filaments;
-    if (strata.current)
-      strata.current.opacity = 0.06 + current.listen * 0.04 + current.think * 0.05;
-
-    const parallax = parallaxRef.current;
-    const sway = current.respond > 0.55 ? 0.22 : 1;
-    const drift = moving ? Math.sin(time * 0.1) * (motion === "low" ? 0.01 : 0.022) : 0;
-    for (const key of Object.keys(LAYER_GAIN)) {
-      const group = layers.current[key];
-      if (!group) continue;
-      const gain = LAYER_GAIN[key];
-      group.position.x = damp(
-        group.position.x,
-        (parallax.x * gain + drift * gain) * sway,
-        1.8,
-        step
-      );
-      group.position.y = damp(group.position.y, -parallax.y * gain * 0.4 * sway, 1.8, step);
-    }
-
-    const breathe = moving ? Math.sin(time * 0.18) * (motion === "low" ? 0.004 : 0.01) : 0;
-    const gather = current.listen * 0.12 + current.think * 0.55;
-    GLASS_PANELS.forEach((panel, index) => {
-      const group = panels.current[index];
-      if (!group) return;
-      group.position.x = damp(
-        group.position.x,
-        panel.position[0] + panel.shift[0] * gather,
-        1.4,
-        step
-      );
-      group.position.y = damp(
-        group.position.y,
-        panel.position[1] + panel.shift[1] * gather + breathe,
-        1.4,
-        step
-      );
-      group.position.z = damp(
-        group.position.z,
-        panel.position[2] + panel.shift[2] * current.think,
-        1.4,
-        step
-      );
-      group.rotation.y = damp(
-        group.rotation.y,
-        panel.rotation[1] * (1 - current.listen * 0.28),
-        1.3,
-        step
-      );
-    });
-
-    const entities = Array.isArray(entitiesRef.current) ? entitiesRef.current : [];
-    const positions = linkGeom.current?.getAttribute("position");
-    let primary = null;
-    for (let index = 0; index < ENTITY_POOL; index += 1) {
-      const placed = index < entities.length ? placeEntity(entities[index]) : null;
-      const group = entityGroups.current[index];
-      const visible = Boolean(placed) && current.work > 0.06;
-      if (group) {
-        group.visible = visible;
-        if (placed) group.position.set(placed[0], placed[1], placed[2]);
-        const slab = group.children[0];
-        const edge = group.children[1];
-        if (slab?.material) slab.material.opacity = Math.min(0.34, current.work * 0.4);
-        if (edge?.material) edge.material.opacity = Math.min(0.85, current.work);
-      }
-      if (positions) {
-        if (visible && placed) {
-          positions.setXYZ(index * 2, PRESENCE_ORIGIN[0], PRESENCE_ORIGIN[1], PRESENCE_ORIGIN[2]);
-          positions.setXYZ(index * 2 + 1, placed[0], placed[1] + 0.35, placed[2]);
-          if (!primary) primary = placed;
-        } else {
-          positions.setXYZ(index * 2, 0, -10, 0);
-          positions.setXYZ(index * 2 + 1, 0, -10, 0);
-        }
-      }
-    }
-    if (positions) positions.needsUpdate = true;
-    if (linkMaterial.current) linkMaterial.current.opacity = current.work * 0.62;
-
-    if (courier.current && courierMaterial.current) {
-      const travel = moving ? (time * (current.work > current.think ? 0.26 : 0.16)) % 1 : 0.5;
-      let from = FIELD_ANCHORS[1];
-      let to = FIELD_ANCHORS[4];
-      if (current.work > current.think && primary) {
-        from = PRESENCE_ORIGIN;
-        to = [primary[0], primary[1] + 0.35, primary[2]];
-      } else if (current.think > 0.2) {
-        const link = FIELD_LINKS[Math.floor(time * 0.12) % FIELD_LINKS.length];
-        from = FIELD_ANCHORS[link[0]];
-        to = FIELD_ANCHORS[link[1]];
-      }
-      const at = pointOn(from, to, travel);
-      courier.current.position.set(at[0], at[1], at[2]);
-      courier.current.lookAt(to[0], to[1], to[2]);
-      const signal = Math.max(current.think, current.work);
-      courier.current.visible = moving && signal > 0.2;
-      courierMaterial.current.opacity = signal * 0.9;
-    }
-  });
-
-  const panelsByDepth = { far: [], mid: [], near: [] };
-  GLASS_PANELS.forEach((panel, index) => {
-    panelsByDepth[panel.depth].push({ panel, index });
-  });
-
-  return (
-    <>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.04, -1]}>
-        <planeGeometry args={[36, 36, 1, 1]} />
-        <shaderMaterial
-          ref={floor}
-          transparent
-          depthWrite={false}
-          toneMapped={false}
-          uniforms={{ uEnergy: { value: 0.16 } }}
-          vertexShader={FLOOR_VERTEX}
-          fragmentShader={FLOOR_FRAGMENT}
-        />
-      </mesh>
-
-      <group
-        ref={(node) => {
-          layers.current.far = node;
-        }}
-      >
-        <mesh position={[0, 1.35, -8.2]}>
-          <planeGeometry args={[16, 5]} />
-          <shaderMaterial
-            ref={horizon}
-            transparent
-            depthWrite={false}
-            toneMapped={false}
-            blending={THREE.AdditiveBlending}
-            uniforms={{ uEnergy: { value: 0.16 } }}
-            vertexShader={HORIZON_VERTEX}
-            fragmentShader={HORIZON_FRAGMENT}
-          />
-        </mesh>
-        {panelsByDepth.far.map(({ panel, index }) => (
-          <GlassPanel
-            key={panel.position.join(":")}
-            panel={panel}
-            register={(node) => {
-              panels.current[index] = node;
-            }}
-          />
-        ))}
-        <Seams depth="far" presenceRef={presenceRef} timeRef={timeRef} />
-        <lineSegments>
-          <bufferGeometry>
-            <bufferAttribute attach="attributes-position" args={[strataPositions, 3]} />
-          </bufferGeometry>
-          <lineBasicMaterial
-            ref={strata}
-            transparent
-            depthWrite={false}
-            color="#cfc8dc"
-            opacity={0.06}
-          />
-        </lineSegments>
-      </group>
-
-      <group
-        ref={(node) => {
-          layers.current.mid = node;
-        }}
-      >
-        {panelsByDepth.mid.map(({ panel, index }) => (
-          <GlassPanel
-            key={panel.position.join(":")}
-            panel={panel}
-            register={(node) => {
-              panels.current[index] = node;
-            }}
-          />
-        ))}
-        <Seams depth="mid" presenceRef={presenceRef} timeRef={timeRef} />
-        <lineSegments>
-          <bufferGeometry>
-            <bufferAttribute attach="attributes-position" args={[filamentPositions, 3]} />
-          </bufferGeometry>
-          <lineBasicMaterial
-            ref={filament}
-            transparent
-            depthWrite={false}
-            color="#d9d3e4"
-            opacity={0.03}
-          />
-        </lineSegments>
-        <lineSegments>
-          <bufferGeometry ref={linkGeom}>
-            <bufferAttribute attach="attributes-position" args={[linkPositions, 3]} />
-          </bufferGeometry>
-          <lineBasicMaterial
-            ref={linkMaterial}
-            transparent
-            depthWrite={false}
-            color="#f4f1ea"
-            opacity={0}
-          />
-        </lineSegments>
-        <points>
-          <bufferGeometry>
-            <bufferAttribute attach="attributes-position" args={[dustPositions, 3]} />
-            <bufferAttribute attach="attributes-aSeed" args={[dustSeeds, 1]} />
-          </bufferGeometry>
-          <shaderMaterial
-            ref={dust}
-            transparent
-            depthWrite={false}
-            toneMapped={false}
-            blending={THREE.AdditiveBlending}
-            uniforms={{
-              uTime: { value: 0 },
-              uDrift: { value: 1 },
-              uDpr: {
-                value: Math.min(
-                  1.5,
-                  typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1
-                ),
-              },
-            }}
-            vertexShader={DUST_VERTEX}
-            fragmentShader={DUST_FRAGMENT}
-          />
-        </points>
-        {Array.from({ length: ENTITY_POOL }, (_, index) => (
-          <group
-            key={index}
-            ref={(node) => {
-              entityGroups.current[index] = node;
-            }}
-            visible={false}
-          >
-            <mesh geometry={stationGeometry} position={[0, 0.46, 0]}>
-              <meshStandardMaterial
-                transparent
-                depthWrite={false}
-                color="#16141c"
-                roughness={0.3}
-                metalness={0.06}
-                opacity={0}
-              />
-            </mesh>
-            <lineSegments geometry={stationEdges} position={[0, 0.46, 0]}>
-              <lineBasicMaterial transparent depthWrite={false} color="#f4f1ea" opacity={0} />
-            </lineSegments>
-          </group>
-        ))}
-        <mesh ref={courier} visible={false}>
-          <boxGeometry args={[0.008, 0.008, 0.18]} />
-          <meshBasicMaterial
-            ref={courierMaterial}
-            transparent
-            depthWrite={false}
-            color="#f7f4ef"
-            opacity={0}
-          />
-        </mesh>
-      </group>
-
-      <group
-        ref={(node) => {
-          layers.current.near = node;
-        }}
-      >
-        {panelsByDepth.near.map(({ panel, index }) => (
-          <GlassPanel
-            key={panel.position.join(":")}
-            panel={panel}
-            register={(node) => {
-              panels.current[index] = node;
-            }}
-          />
-        ))}
-      </group>
-
-      <ambientLight intensity={0.4} />
-      <directionalLight position={[3, 5, 4]} intensity={0.5} color="#f4f1ea" />
-      <pointLight position={[-1.4, 1.6, -1.5]} intensity={0.22} distance={8} color="#b7a6d6" />
-      <pointLight position={[1.8, 1.4, -2.4]} intensity={0.16} distance={7} color="#d9d3e4" />
-    </>
-  );
-}
-
-function Seams({ depth, presenceRef, timeRef }) {
-  return LIGHT_SEAMS.filter((seam) => seam.depth === depth).map((seam) => (
-    <Seam
-      key={seam.position.join(":")}
-      position={seam.position}
-      presenceRef={presenceRef}
-      timeRef={timeRef}
-    />
-  ));
-}
-
-function Seam({ position, presenceRef, timeRef }) {
-  const material = useRef(null);
   useFrame(() => {
-    const current = material.current;
-    if (!current) return;
-    current.uniforms.uPresence.value = presenceRef.current;
-    current.uniforms.uTime.value = timeRef.current;
+    const material = materialRef.current;
+    if (!material) return;
+    const presence = presenceRef.current;
+    const signal = signalRef.current;
+    const uniforms = material.uniforms;
+    uniforms.uTime.value = timeRef.current;
+    uniforms.uIdle.value = presence.idle;
+    uniforms.uListen.value = presence.listen;
+    uniforms.uThink.value = presence.think;
+    uniforms.uWork.value = presence.work;
+    uniforms.uRespond.value = presence.respond;
+    uniforms.uLevel.value = signal.level;
+    uniforms.uMotion.value = signal.motion;
+    uniforms.uCount.value = signal.count;
+    for (let index = 0; index < 4; index += 1) {
+      uniforms.uActivity.value[index].copy(signal.points[index]);
+    }
   });
+
   return (
-    <mesh position={position}>
-      <planeGeometry args={[0.42, 2.6]} />
+    <mesh position={[0.15, 1.7, -5]} scale={[24, 13, 24]} frustumCulled={false}>
+      <boxGeometry args={[1, 1, 1]} />
       <shaderMaterial
-        ref={material}
+        ref={materialRef}
+        side={THREE.BackSide}
         transparent
         depthWrite={false}
-        toneMapped={false}
         blending={THREE.AdditiveBlending}
+        toneMapped={false}
         uniforms={{
-          uPresence: { value: 0.22 },
           uTime: { value: 0 },
+          uIdle: { value: 1 },
+          uListen: { value: 0 },
+          uThink: { value: 0 },
+          uWork: { value: 0 },
+          uRespond: { value: 0 },
+          uLevel: { value: 0 },
+          uMotion: { value: 1 },
+          uCount: { value: 0 },
+          uActivity: { value: activityVectors() },
+          uOrigin: { value: new THREE.Vector3(...PRESENCE_ORIGIN) },
+          uAnchors: { value: anchorVectors() },
         }}
-        vertexShader={SEAM_VERTEX}
-        fragmentShader={SEAM_FRAGMENT}
+        vertexShader={FIELD_VERTEX}
+        fragmentShader={FIELD_FRAGMENT}
       />
     </mesh>
   );
 }
 
-function GlassPanel({ panel, register }) {
-  const depth = panel.size[2] || 0.016;
-  const geometry = useMemo(
-    () => new THREE.BoxGeometry(panel.size[0], panel.size[1], depth),
-    [panel.size, depth]
-  );
-  const edges = useMemo(() => new THREE.EdgesGeometry(geometry), [geometry]);
+function NearVeil({ presenceRef }) {
+  const materialRef = useRef(null);
+
+  useFrame(() => {
+    const material = materialRef.current;
+    if (!material) return;
+    material.uniforms.uListen.value = presenceRef.current.listen;
+    material.uniforms.uRespond.value = presenceRef.current.respond;
+  });
+
   return (
-    <group ref={register} position={panel.position} rotation={panel.rotation}>
-      <mesh geometry={geometry}>
-        <meshStandardMaterial
-          transparent
-          depthWrite={false}
-          color="#121118"
-          roughness={0.24}
-          metalness={0.08}
-          opacity={0.22}
-        />
-      </mesh>
-      <lineSegments geometry={edges}>
-        <lineBasicMaterial transparent depthWrite={false} color="#f3efe8" opacity={0.32} />
-      </lineSegments>
-    </group>
+    <mesh frustumCulled={false} renderOrder={2}>
+      <planeGeometry args={[1, 1]} />
+      <shaderMaterial
+        ref={materialRef}
+        transparent
+        depthWrite={false}
+        depthTest={false}
+        toneMapped={false}
+        uniforms={{
+          uListen: { value: 0 },
+          uRespond: { value: 0 },
+        }}
+        vertexShader={VEIL_VERTEX}
+        fragmentShader={VEIL_FRAGMENT}
+      />
+    </mesh>
   );
 }
 
@@ -589,23 +266,108 @@ function listeningLevel(levelRef) {
   return Math.max(0, Math.min(1, value));
 }
 
+function motionScale(motion) {
+  if (motion === "off") return 0;
+  if (motion === "low") return 0.4;
+  return 1;
+}
+
+function WorldRig({ phaseRef, entitiesRef, levelRef, motionRef, parallaxRef }) {
+  const presenceRef = useRef({ idle: 1, listen: 0, think: 0, work: 0, respond: 0 });
+  const timeRef = useRef(0);
+  const signalRef = useRef({
+    level: 0,
+    motion: 1,
+    count: 0,
+    points: activityVectors(),
+  });
+  const veilRef = useRef(null);
+  const sway = useRef({ x: 0, y: 0 });
+
+  useFrame(({ camera }, delta) => {
+    const weights = phaseWeights(phaseRef.current);
+    const presence = presenceRef.current;
+    const damp = 1 - Math.exp(-delta * 1.35);
+    presence.idle += (weights.idle - presence.idle) * damp;
+    presence.listen += (weights.listen - presence.listen) * damp;
+    presence.think += (weights.think - presence.think) * damp;
+    presence.work += (weights.work - presence.work) * damp;
+    presence.respond += (weights.respond - presence.respond) * damp;
+
+    const motion = motionScale(motionRef.current);
+    if (motion > 0) timeRef.current += delta;
+
+    const levelTarget = presence.listen > 0.04 ? listeningLevel(levelRef) : 0;
+    const signal = signalRef.current;
+    signal.level += (levelTarget - signal.level) * (1 - Math.exp(-delta * 5));
+    signal.motion = motion;
+
+    const entities = entitiesRef.current || [];
+    let count = 0;
+    for (let index = 0; index < entities.length && count < 4; index += 1) {
+      const at = placeEntity(entities[index]);
+      if (!at) continue;
+      signal.points[count].set(at[0], at[1], at[2]);
+      count += 1;
+    }
+    if (count > 0) signal.count = count;
+    else if (presence.work < 0.02) signal.count = 0;
+
+    const pointer = parallaxRef.current || { x: 0, y: 0 };
+    const follow = 1 - Math.exp(-delta * 1.5);
+    sway.current.x += (pointer.x * motion - sway.current.x) * follow;
+    sway.current.y += (pointer.y * motion - sway.current.y) * follow;
+    const calm = (1 - presence.respond * 0.8) * motion;
+    const breath = Math.sin(timeRef.current * 0.2) * 0.03 * presence.idle * motion;
+
+    camera.position.set(
+      sway.current.x * 0.2 * calm + breath,
+      0.78 - sway.current.y * 0.05 * calm,
+      4.15
+    );
+    camera.lookAt(0.12 + breath * 0.35, 1.7, -12);
+
+    const veil = veilRef.current;
+    if (!veil) return;
+    const distance = 1.12;
+    const height = 2 * Math.tan((camera.fov * Math.PI) / 360) * distance;
+    veil.position.copy(camera.position);
+    veil.quaternion.copy(camera.quaternion);
+    veil.translateZ(-distance);
+    veil.translateX(sway.current.x * 0.14 * calm);
+    veil.translateY(sway.current.y * -0.07 * calm);
+    veil.scale.set(height * camera.aspect * 1.15, height * 1.15, 1);
+  });
+
+  return (
+    <>
+      <IntelligenceField presenceRef={presenceRef} timeRef={timeRef} signalRef={signalRef} />
+      <group ref={veilRef}>
+        <NearVeil presenceRef={presenceRef} />
+      </group>
+    </>
+  );
+}
+
 export function ChiefWorldScene({ phaseRef, entitiesRef, levelRef, motionRef, parallaxRef }) {
   return (
     <Canvas
       className="chief-world-canvas"
       dpr={[1, 1.5]}
-      camera={{ position: [0, 1.08, 5.7], fov: 42, near: 0.1, far: 40 }}
+      camera={{ position: [0, 0.78, 4.15], fov: 48, near: 0.1, far: 40 }}
       gl={{
         antialias: true,
         alpha: false,
+        premultipliedAlpha: false,
         powerPreference: "high-performance",
-        toneMapping: THREE.ACESFilmicToneMapping,
-        toneMappingExposure: 1.04,
+        toneMapping: THREE.NoToneMapping,
       }}
-      onCreated={({ camera }) => camera.lookAt(0, 0.95, -2.2)}
+      onCreated={({ camera, gl }) => {
+        camera.lookAt(0.12, 1.7, -12);
+        gl.setClearColor(VOID, 1);
+      }}
     >
       <color attach="background" args={[VOID]} />
-      <fog attach="fog" args={[VOID, 6.5, 16]} />
       <WorldRig
         phaseRef={phaseRef}
         entitiesRef={entitiesRef}
@@ -614,7 +376,7 @@ export function ChiefWorldScene({ phaseRef, entitiesRef, levelRef, motionRef, pa
         parallaxRef={parallaxRef}
       />
       <EffectComposer multisampling={0}>
-        <Bloom intensity={0.18} luminanceThreshold={0.82} luminanceSmoothing={0.3} mipmapBlur />
+        <Bloom intensity={0.14} luminanceThreshold={0.9} luminanceSmoothing={0.28} mipmapBlur />
       </EffectComposer>
     </Canvas>
   );
