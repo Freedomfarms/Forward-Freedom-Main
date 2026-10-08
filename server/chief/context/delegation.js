@@ -1,5 +1,6 @@
-// Phase 1 delegation is a statement of intent.
-// It does not submit work, open an approval, or call a workforce command.
+// Delegation is a statement of intent carried on the turn checkpoint.
+// Accepting, revising, or clearing it does not submit work, open an approval,
+// or call a workforce command.
 
 import { messageText } from "../runtime/compaction.js";
 import { isForbiddenControlTool } from "../control/plane.js";
@@ -16,15 +17,24 @@ const OUTCOME = Object.freeze({
 });
 
 const ACCEPT_TEXT =
-  "Understood. The delegation is approved in principle, but this phase does not submit work to the workforce yet.";
+  "Understood. The delegation is accepted in principle. Execution isn't connected yet, so nothing has been submitted.";
 const DECLINE_TEXT = "Understood. I will not delegate that. Nothing was submitted.";
+const ACCEPT_UTTERANCE =
+  /^(?:yes|yeah|yep|yup|sure|ok|okay|do it|go ahead|please|please do|proceed|that(?:'s| is) fine|have the agent do it|send it|ok(?:ay)?, do that)$/i;
+const DECLINE_UTTERANCE =
+  /^(?:no|nope|nah|don't|dont|do not|stop|never mind|nevermind|nvm|forget it|don't do it|dont do it|do not do it|cancel that|i changed my mind)$/i;
 
 function spoken(text) {
   return String(text ?? "")
     .trim()
+    .replace(/[’‘]/g, "'")
     .replace(/[!?.,]+$/g, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function normalizeObjective(value) {
+  return spoken(value).toLowerCase();
 }
 
 function parseRecord(text) {
@@ -35,10 +45,17 @@ function parseRecord(text) {
     if (!value || typeof value !== "object") return null;
     const effect = EFFECTS.has(value.effect) ? value.effect : null;
     if (!effect) return null;
+    const constraints = Array.isArray(value.constraints)
+      ? value.constraints
+          .filter((item) => typeof item === "string" && item.trim())
+          .map((item) => item.trim())
+          .slice(0, 4)
+      : [];
     return {
       effect,
       objective: typeof value.objective === "string" ? value.objective.trim() : "",
       outcome: typeof value.outcome === "string" ? value.outcome.trim() : "",
+      constraints,
     };
   } catch {
     return null;
@@ -62,6 +79,7 @@ export function peekDelegation(text, toolCalls = []) {
     effect,
     objective: record?.objective ?? "",
     outcome: record?.outcome ?? "",
+    constraints: record?.constraints ?? [],
     text: String(text ?? "")
       .replace(RECORD, "")
       .trim(),
@@ -179,14 +197,97 @@ export function buildDelegationDecision({ proposal, userText, pack, workforcePic
   return {
     disposition: "delegate",
     objective,
-    constraints: constraintsFrom(pack),
+    constraints: mergeConstraints(constraintsFrom(pack), proposal.constraints),
     outcome: safeOutcome(proposal.effect, proposal.outcome),
     provider: seen.provider,
     agentId: agent?.id ?? "",
     effect: proposal.effect,
     confirm: true,
+    status: "pending",
     agentName: agent?.name ?? "",
   };
+}
+
+function mergeConstraints(existing, extra) {
+  const next = Array.isArray(existing) ? [...existing] : [];
+  for (const item of extra ?? []) {
+    const text = String(item ?? "").trim();
+    if (!text) continue;
+    if (next.some((current) => current.toLowerCase() === text.toLowerCase())) continue;
+    next.push(text);
+  }
+  return next;
+}
+
+function isDelegationIntent(intent) {
+  return (
+    intent?.disposition === "delegate" && (intent.effect === "change" || intent.effect === "deploy")
+  );
+}
+
+function isPending(intent) {
+  return isDelegationIntent(intent) && intent.status !== "accepted";
+}
+
+function copyIntent(pending, status) {
+  return {
+    disposition: "delegate",
+    objective: pending.objective,
+    constraints: Array.isArray(pending.constraints) ? [...pending.constraints] : [],
+    outcome: pending.outcome,
+    provider: typeof pending.provider === "string" ? pending.provider : "",
+    agentId: typeof pending.agentId === "string" ? pending.agentId : "",
+    effect: pending.effect,
+    confirm: pending.confirm === true,
+    status,
+  };
+}
+
+function sameWork(pending, peeked) {
+  if (!isDelegationIntent(pending) || !peeked?.delegate) return false;
+  if (peeked.effect !== pending.effect) return false;
+  if (!peeked.objective) return true;
+  return normalizeObjective(peeked.objective) === normalizeObjective(pending.objective);
+}
+
+export function shouldLoadWorkforcePicture(peeked, pending, userText = "") {
+  if (!peeked?.needsPicture) return false;
+  if (utteranceKind(userText)) return false;
+  return !sameWork(pending, peeked);
+}
+
+function addedConstraints(pending, peeked) {
+  const current = new Set((pending.constraints ?? []).map((item) => item.toLowerCase()));
+  return (peeked.constraints ?? []).filter((item) => !current.has(item.toLowerCase()));
+}
+
+function constraintSpeech(decision, added) {
+  return `Updated. I'd still delegate: ${decision.objective}. Added limit: ${added.join("; ")}. Nothing has been submitted.`;
+}
+
+function observedNow(pack, workforcePicture) {
+  if (workforcePicture && typeof workforcePicture === "object")
+    return fromPicture(workforcePicture);
+  if (workforceItems(pack).length > 0) return fromPack(pack);
+  return null;
+}
+
+function refreshCandidate(intent, pack, workforcePicture) {
+  if (!isDelegationIntent(intent) || !intent.agentId) return null;
+  const seen = observedNow(pack, workforcePicture);
+  if (!seen) return null;
+  const match = seen.agents.find((agent) => agent.id === intent.agentId);
+  if (match && eligible(match)) return null;
+  return copyIntent(
+    { ...intent, agentId: "" },
+    intent.status === "accepted" ? "accepted" : "pending"
+  );
+}
+
+export function isDelegationConversationReply(text) {
+  return /I'd delegate:|I'd still delegate:|I would delegate to the technical workforce|accepted in principle|I will not delegate that|Added limit:/i.test(
+    String(text ?? "")
+  );
 }
 
 export function delegationSpeech(decision) {
@@ -218,23 +319,35 @@ function previousAssistant(transcript) {
   return "";
 }
 
-export function isDelegationFollowUp(transcript, userText) {
-  return followUp(userText, transcript) != null;
+function utteranceKind(userText) {
+  const compact = spoken(userText);
+  if (ACCEPT_UTTERANCE.test(compact)) return "accept";
+  if (DECLINE_UTTERANCE.test(compact)) return "decline";
+  return null;
 }
 
-function followUp(userText, transcript) {
+function proposalOpen(transcript) {
   const prior = previousAssistant(transcript);
-  if (!PROPOSAL.test(prior) || /does not submit work/i.test(prior)) return null;
-  const compact = spoken(userText);
-  if (/^(?:yes|yeah|yep|yup|sure|ok|okay|do it|go ahead|please|please do)$/i.test(compact)) {
-    return "accept";
-  }
-  if (
-    /^(?:no|nope|nah|don't|dont|do not|stop|never mind|nevermind|nvm|forget it)$/i.test(compact)
-  ) {
-    return "decline";
-  }
-  return null;
+  if (!PROPOSAL.test(prior)) return false;
+  if (/does not submit work|isn't connected yet|accepted in principle/i.test(prior)) return false;
+  return true;
+}
+
+export function isDelegationFollowUp(transcript, userText, pending = null) {
+  return followUp(userText, transcript, pending) != null;
+}
+
+function followUp(userText, transcript, pending = null) {
+  const kind = utteranceKind(userText);
+  if (!kind) return null;
+  const open = isPending(pending) || pending?.status === "accepted" || proposalOpen(transcript);
+  if (!open) return null;
+  if (kind === "accept" && !isPending(pending)) return null;
+  return kind;
+}
+
+function keptToolCalls(toolCalls) {
+  return (toolCalls ?? []).filter((call) => !isForbiddenControlTool(call?.name));
 }
 
 export function settleDelegation({
@@ -244,18 +357,20 @@ export function settleDelegation({
   pack = null,
   workforcePicture = null,
   userText = "",
+  pending = null,
 } = {}) {
-  const follow = followUp(userText, transcript);
-  if (follow === "accept") {
+  const peeked = peekDelegation(text, toolCalls);
+  const follow = followUp(userText, transcript, pending);
+  if (follow === "accept" && isPending(pending)) {
     return {
       handled: true,
       text: ACCEPT_TEXT,
       toolCalls: [],
-      delegation: null,
+      delegation: copyIntent(pending, "accepted"),
       clearDelegation: false,
     };
   }
-  if (follow === "decline") {
+  if (follow === "decline" && (isDelegationIntent(pending) || proposalOpen(transcript))) {
     return {
       handled: true,
       text: DECLINE_TEXT,
@@ -264,7 +379,38 @@ export function settleDelegation({
       clearDelegation: true,
     };
   }
-  const peeked = peekDelegation(text, toolCalls);
+  if (utteranceKind(userText) === "accept" || utteranceKind(userText) === "decline") {
+    return {
+      handled: false,
+      effect: peeked.effect === "change" || peeked.effect === "deploy" ? null : peeked.effect,
+      text: peeked.text,
+      toolCalls: keptToolCalls(toolCalls),
+      delegation: null,
+      clearDelegation: false,
+    };
+  }
+  if (sameWork(pending, peeked)) {
+    const added = addedConstraints(pending, peeked);
+    if (added.length > 0) {
+      const next = copyIntent(pending, "pending");
+      next.constraints = mergeConstraints(pending.constraints, added);
+      return {
+        handled: true,
+        text: constraintSpeech(next, added),
+        toolCalls: [],
+        delegation: next,
+        clearDelegation: false,
+      };
+    }
+    return {
+      handled: false,
+      effect: null,
+      text: peeked.text,
+      toolCalls: [],
+      delegation: refreshCandidate(pending, pack, workforcePicture),
+      clearDelegation: false,
+    };
+  }
   if (peeked.delegate) {
     const decision = buildDelegationDecision({
       proposal: peeked,
@@ -286,8 +432,8 @@ export function settleDelegation({
     handled: false,
     effect: peeked.effect,
     text: peeked.text,
-    toolCalls: (toolCalls ?? []).filter((call) => !isForbiddenControlTool(call?.name)),
-    delegation: null,
+    toolCalls: keptToolCalls(toolCalls),
+    delegation: refreshCandidate(pending, pack, workforcePicture),
     clearDelegation: false,
   };
 }

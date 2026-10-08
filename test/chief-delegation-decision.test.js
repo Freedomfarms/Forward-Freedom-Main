@@ -196,7 +196,9 @@ test("delegation source does not special-case a provider or add a command", () =
   assert.equal(source.includes('provider === "grokbot"'), false);
   assert.equal(source.includes("submitTask"), false);
   assert.equal(source.includes("assignTask"), false);
+  assert.equal(source.includes("cancelTask"), false);
   assert.equal(source.includes("executeAgent"), false);
+  assert.equal(source.includes("ApprovalCoordinator"), false);
   assert.equal(baselineCapabilities().includes(Capability.WORKFORCE_READ), false);
 });
 
@@ -456,9 +458,15 @@ test("yes and no do not submit, approve, or execute", async () => {
       toolCalls: [{ callId: "git-1", name: "git_commit", arguments: { message: "fix" } }],
     },
   ]);
-  assert.match(accepted.replies[1], /approved in principle/);
-  assert.match(accepted.replies[1], /does not submit work/);
+  assert.match(accepted.replies[1], /accepted in principle/);
+  assert.match(accepted.replies[1], /nothing has been submitted/i);
   assert.doesNotMatch(accepted.replies[1], /Task submitted|Starting Coder/);
+  assert.equal(accepted.checkpoint.context.delegationIntent.status, "accepted");
+  assert.equal(accepted.checkpoint.context.delegationIntent.objective, "Debug this repository");
+  assert.equal(accepted.checkpoint.context.delegationIntent.agentId, "coder");
+  assert.equal(accepted.checkpoint.context.delegationIntent.provider, "grokbot");
+  assert.equal(accepted.checkpoint.context.delegationIntent.effect, "change");
+  assert.equal(accepted.checkpoint.context.delegationIntent.confirm, true);
   assert.equal(accepted.checkpoint.pendingApproval, null);
   assert.equal(accepted.exec.count, 0);
   assert.deepEqual(calls, ["picture"]);

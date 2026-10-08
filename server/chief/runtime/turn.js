@@ -453,6 +453,7 @@ export class TurnMachine {
         transcript: this._checkpoint.transcript,
         text,
         toolCalls,
+        delegationIntent: this._checkpoint.context?.delegationIntent ?? null,
       });
       if (typeof settled?.text !== "string" || !Array.isArray(settled.toolCalls)) {
         return { text, toolCalls };

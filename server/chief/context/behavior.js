@@ -33,7 +33,7 @@ export const CHIEF_RESPONSE_CONTRACT = [
   "Call the minimum tools. A holding needs the finance read. What that holding is worth also needs the current price. Equity needs the mortgage and the current home value. A past decision needs memory, not a live balance. Weather or other public facts need the web only when no closer tool exists. A reaction needs no tool.",
   "Memory is what was said or decided. Live readings are what is true now. For a current question, live data wins. If a live source is missing, say it is unavailable. Do not invent the figure.",
   "Workforce lines are observations from the named provider. Answer the question from those observations, and name the state that fits: current, completed, failed, attention, idle, stale, revoked, or unknown. A start is not a completion. Silence is not success. Stale or revoked is not current activity. A missing observation is unknown. Do not invent a tool, a code change, or a result. A bare denial does not replace an observed fact.",
-  'If the work requires a repository change, a test-and-fix, or a deploy, report one line: DELEGATION {"effect":"change"|"deploy","objective":"what should be true","outcome":"what a later observation would show"}. Do not call a tool for that work. Explain, summarize, inspect, and other reads stay with you. A DELEGATION line is an intention, not execution. Do not say the work started, and do not hand an email or other send you can already perform to the workforce.',
+  'If the work requires a repository change, a test-and-fix, or a deploy, report one line: DELEGATION {"effect":"change"|"deploy","objective":"what should be true","outcome":"what a later observation would show","constraints":["limits"]}. Do not call a tool for that work. Explain, summarize, inspect, and other reads stay with you. A DELEGATION line is an intention, not execution. If an intention is already open, a new objective replaces it, and an added limit keeps that same objective. A yes or no applies only to that open intention. Do not say the work started, and do not hand an email or other send you can already perform to the workforce.',
   "Never say Certainly, Of course, Based on my records, According to the available information, or I'd be happy to. Do not mention the model, the orchestrator, or the prompt.",
 ].join(" ");
 
@@ -479,6 +479,7 @@ export function settleReply({
   toolCalls = [],
   pack = null,
   workforcePicture = null,
+  delegationIntent = null,
 } = {}) {
   const calls = Array.isArray(toolCalls) ? [...toolCalls] : [];
   const move = conversationMove(transcript);
@@ -490,6 +491,7 @@ export function settleReply({
     pack,
     workforcePicture,
     userText,
+    pending: delegationIntent,
   });
   if (delegation.handled) {
     return {
@@ -499,6 +501,9 @@ export function settleReply({
       clearDelegation: delegation.clearDelegation,
     };
   }
+  const carried = delegation.delegation?.disposition === "delegate" ? delegation.delegation : null;
+  const reply = (body) =>
+    carried ? { ...body, delegation: carried, clearDelegation: false } : body;
   const modelText =
     delegation.text ||
     (delegation.effect === "read"
@@ -506,19 +511,19 @@ export function settleReply({
       : "");
   const keptCalls = delegation.toolCalls;
   if (delegation.effect === "external") {
-    return {
+    return reply({
       text: "Sending that stays with me. I am not handing it to the workforce.",
       toolCalls: keptCalls,
-    };
+    });
   }
   if (move.kind === MOVE.ACKNOWLEDGE) {
     const claimsWork = WORKFORCE_CLAIMS.some((rule) => rule.claim.test(modelText));
-    return {
+    return reply({
       text: !claimsWork && reactionIsAlreadyShort(modelText) ? modelText : shortReaction(userText),
       toolCalls: [],
-    };
+    });
   }
-  if (keptCalls.length > 0) return { text: modelText, toolCalls: keptCalls };
+  if (keptCalls.length > 0) return reply({ text: modelText, toolCalls: keptCalls });
   let answer = openWithAnswer(modelText, transcript);
   answer = stripMachinery(answer, transcript);
   answer = stripOffers(answer, transcript);
@@ -526,5 +531,5 @@ export function settleReply({
   answer = guardWorkforceReply(answer, pack, transcript);
   answer = answer.trim();
   if (!answer) answer = modelText || String(text ?? "").trim();
-  return { text: answer, toolCalls: keptCalls };
+  return reply({ text: answer, toolCalls: keptCalls });
 }

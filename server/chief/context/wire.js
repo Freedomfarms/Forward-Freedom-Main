@@ -10,7 +10,12 @@ import { createMemoryAccess } from "../memory/provider.js";
 import { CHIEF_COMPACTION_TOKENS, CHIEF_KEEP_RECENT_TOKENS } from "../runtime/compaction.js";
 import { createContextAssembler, lastTurnUserText } from "./assemble.js";
 import { renderConversationMove, settleReply } from "./behavior.js";
-import { isDelegationFollowUp, peekDelegation } from "./delegation.js";
+import {
+  isDelegationConversationReply,
+  isDelegationFollowUp,
+  peekDelegation,
+  shouldLoadWorkforcePicture,
+} from "./delegation.js";
 import { orchestrateContext, renderContextPackage } from "./orchestrate.js";
 
 function workforceReadGranted(policy) {
@@ -103,7 +108,7 @@ export function createChiefTurnServices({
     },
     compaction: { atTokens, keepRecentTokens },
     memory,
-    settleModelStep: async ({ transcript, text, toolCalls }) => {
+    settleModelStep: async ({ transcript, text, toolCalls, delegationIntent = null }) => {
       const peeked = peekDelegation(text, toolCalls);
       const packHasAgents = (prepared?.items ?? []).some(
         (item) => item?.sourceType === "live_agent_state" && item.sourceId !== "workforce-coverage"
@@ -111,17 +116,27 @@ export function createChiefTurnServices({
       let workforcePicture = null;
       const latest = lastTurnUserText(transcript);
       if (
-        !isDelegationFollowUp(transcript, latest) &&
-        peeked.needsPicture &&
+        !isDelegationFollowUp(transcript, latest, delegationIntent) &&
+        shouldLoadWorkforcePicture(peeked, delegationIntent, latest) &&
         !packHasAgents &&
         workforceReadGranted(capabilityPolicy)
       ) {
         workforcePicture = await readWorkforcePicture(agentRuntime, preparedUserId, now);
       }
-      return settleReply({ transcript, text, toolCalls, pack: prepared, workforcePicture });
+      return settleReply({
+        transcript,
+        text,
+        toolCalls,
+        pack: prepared,
+        workforcePicture,
+        delegationIntent,
+      });
     },
     onTurnComplete: async (exchange) => {
       await applyMemoryCommands({ facts, ...exchange, provider: memory.provider });
+      if (isDelegationConversationReply(exchange.assistantText)) {
+        return { stored: 0, skipped: "delegation" };
+      }
       return rememberExchange({ facts, engine, ...exchange });
     },
   };
