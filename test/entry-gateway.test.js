@@ -259,7 +259,8 @@ test("the gateway keeps authentication behavior and one canvas loop", () => {
     new URL("../src/components/chief/ChiefPage.jsx", import.meta.url),
     "utf8"
   );
-  assert.match(chiefPageSource, /ApexWorld/);
+  assert.match(chiefPageSource, /ChiefWorld/);
+  assert.doesNotMatch(chiefPageSource, /ApexWorld/);
   assert.doesNotMatch(chiefPageSource, /renderIntelligence/);
   assert.doesNotMatch(chiefPageSource, /ChiefField/);
   assert.match(

@@ -29,9 +29,7 @@ import {
   readChiefActiveSessionId,
   writeChiefActiveSessionId,
 } from "../../utils/chiefActiveSession.js";
-import ApexClock from "../../third_party/apex-ui/ApexClock.jsx";
-import ApexWorld from "../../third_party/apex-ui/ApexWorld.jsx";
-import { visualStateForInteraction, webStateForInteraction } from "./apexVisualState.js";
+import { ChiefWorld } from "../../visual/chiefWorld/ChiefWorld.jsx";
 import { CHIEF_NAV_ROSTER } from "./chiefNavRoster.js";
 import { ChiefAccessSheet } from "./ChiefAccessSheet.jsx";
 import { ChiefApprovalCard } from "./ChiefApprovalCard.jsx";
@@ -64,13 +62,7 @@ function errorText(error) {
   return error?.message || "CHIEF could not complete that request.";
 }
 
-export function ChiefPage({
-  user,
-  embedded = false,
-  onOpenFinancial,
-  onOpenAgents,
-  onSignOut,
-}) {
+export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgents, onSignOut }) {
   const sessionUid = typeof user?.uid === "string" ? user.uid : "";
   const [sessions, setSessions] = useState([]);
   const [archivedSessions, setArchivedSessions] = useState([]);
@@ -819,13 +811,6 @@ export function ChiefPage({
   }
 
   const fieldStatus = user ? status : CHIEF_STATUS.READY;
-  const interaction = {
-    status: fieldStatus,
-    listening: voice.listening,
-    speaking: voice.audioActive,
-  };
-  const orbState = visualStateForInteraction(interaction);
-  const webState = webStateForInteraction(interaction);
   const voiceNote = voice.interim || voice.speechError || "";
   const homeClass = embedded ? "chief-apex-home chief-apex-home--embedded" : "chief-apex-home";
 
@@ -915,10 +900,10 @@ export function ChiefPage({
     return (
       <section className={homeClass} aria-label="CHIEF">
         <div className="chief-apex-stage">
-          <ApexClock />
-          <ApexWorld
-            orbState={orbState}
-            webState={webState}
+          <ChiefWorld
+            status={fieldStatus}
+            listening={voice.listening}
+            speaking={voice.audioActive}
             roster={CHIEF_NAV_ROSTER}
             onSelect={openNode}
             onCoreTap={user && !approval && !activeArchived ? toggleMicrophone : undefined}
@@ -1001,7 +986,11 @@ export function ChiefPage({
                     ) : null}
                   </nav>
                 ) : (
-                  <button type="button" className="chief-place chief-place--here" onClick={returnHome}>
+                  <button
+                    type="button"
+                    className="chief-place chief-place--here"
+                    onClick={returnHome}
+                  >
                     CHIEF
                   </button>
                 )}

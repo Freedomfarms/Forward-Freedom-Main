@@ -1592,8 +1592,8 @@ textarea:focus-visible,
   height: 100dvh;
   min-height: 0;
   overflow: hidden;
-  background: #04080f;
-  color: #f0ede8;
+  background: #05060a;
+  color: #f4f1ea;
 }
 
 .chief-apex-home--embedded {
@@ -1626,8 +1626,8 @@ textarea:focus-visible,
   background-color: transparent;
   background-image: radial-gradient(
     ellipse 72% 100% at 50% 100%,
-    rgba(0, 229, 255, 0.05) 0%,
-    rgba(7, 17, 31, 0.1) 34%,
+    rgba(168, 150, 196, 0.07) 0%,
+    rgba(8, 8, 12, 0.16) 34%,
     transparent 70%
   );
   box-shadow: none;
@@ -1664,13 +1664,12 @@ textarea:focus-visible,
 .chief-apex-dock .chief-answer,
 .chief-apex-dock .chief-turn-note,
 .chief-apex-dock .chief-turn-empty {
-  text-shadow:
-    0 0 16px rgba(0, 229, 255, 0.16),
-    0 1px 2px rgba(0, 8, 18, 0.8);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.72);
 }
 
 .chief-apex-dock .chief-turn-who {
-  text-shadow: 0 0 12px rgba(245, 166, 35, 0.45);
+  color: rgba(214, 206, 232, 0.72);
+  text-shadow: none;
 }
 
 .chief-apex-dock .chief-turn-user {
@@ -1680,7 +1679,7 @@ textarea:focus-visible,
 }
 
 .chief-apex-dock .chief-answer {
-  color: #e8f6fb;
+  color: #f4f1ea;
   line-height: 1.55;
   padding: 2px 10px 0;
   scrollbar-width: none;
@@ -1699,9 +1698,9 @@ textarea:focus-visible,
   background-image: linear-gradient(
     90deg,
     transparent 0%,
-    rgba(0, 229, 255, 0.1) 14%,
-    rgba(0, 229, 255, 0.55) 50%,
-    rgba(0, 229, 255, 0.1) 86%,
+    rgba(232, 226, 240, 0.08) 14%,
+    rgba(244, 241, 234, 0.55) 50%,
+    rgba(232, 226, 240, 0.08) 86%,
     transparent 100%
   );
   background-repeat: no-repeat;
@@ -1717,12 +1716,12 @@ textarea:focus-visible,
   background-image: linear-gradient(
     90deg,
     transparent 0%,
-    rgba(0, 229, 255, 0.22) 10%,
-    rgba(127, 241, 255, 0.95) 50%,
-    rgba(0, 229, 255, 0.22) 90%,
+    rgba(214, 206, 232, 0.2) 10%,
+    rgba(244, 241, 234, 0.92) 50%,
+    rgba(214, 206, 232, 0.2) 90%,
     transparent 100%
   );
-  filter: drop-shadow(0 7px 8px rgba(0, 229, 255, 0.2));
+  filter: drop-shadow(0 6px 8px rgba(168, 150, 196, 0.16));
 }
 
 .chief-apex-dock .chief-composer textarea {
@@ -1732,7 +1731,7 @@ textarea:focus-visible,
   font-size: 14px;
   line-height: 1.45;
   text-align: center;
-  text-shadow: 0 0 12px rgba(0, 229, 255, 0.16);
+  text-shadow: none;
 }
 
 .chief-apex-dock .chief-composer textarea::placeholder {
@@ -1746,7 +1745,7 @@ textarea:focus-visible,
   width: 28px;
   height: 28px;
   min-height: 28px;
-  color: rgba(0, 229, 255, 0.78);
+  color: rgba(214, 206, 232, 0.82);
   opacity: 1;
 }
 
@@ -1757,7 +1756,7 @@ textarea:focus-visible,
   border-radius: 0;
   background: transparent;
   box-shadow: none;
-  color: #9adfff;
+  color: #d9d0ea;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.16em;

@@ -242,7 +242,7 @@ test("view rotation turns the diamond without moving field-space corners", () =>
   }
 });
 
-test("the room intelligence maps status onto the APEX orb and web", () => {
+test("the room intelligence maps status and the home world consumes it", () => {
   assert.equal(visualStateForStatus(CHIEF_STATUS.READY), "idle");
   assert.equal(webStateForStatus(CHIEF_STATUS.READY), "standby");
   assert.equal(visualStateForStatus(CHIEF_STATUS.WORKING), "thinking");
@@ -286,23 +286,20 @@ test("the room intelligence maps status onto the APEX orb and web", () => {
 
   const root = process.cwd();
   const page = readFileSync(path.join(root, "src/components/chief/ChiefPage.jsx"), "utf8");
-  const world = readFileSync(path.join(root, "src/third_party/apex-ui/ApexWorld.jsx"), "utf8");
-  const hero = readFileSync(path.join(root, "src/third_party/apex-ui/ApexHeroOrb.tsx"), "utf8");
-  const core = readFileSync(path.join(root, "src/third_party/apex-ui/ApexCore3D.jsx"), "utf8");
-  assert.match(page, /ApexWorld/);
+  const world = readFileSync(path.join(root, "src/visual/chiefWorld/ChiefWorld.jsx"), "utf8");
+  const scene = readFileSync(path.join(root, "src/visual/chiefWorld/ChiefWorldScene.jsx"), "utf8");
+  assert.match(page, /ChiefWorld/);
+  assert.doesNotMatch(page, /ApexWorld/);
   assert.equal(page.includes("ChiefField"), false);
   assert.equal(page.includes("renderIntelligence"), false);
   assert.match(world, /prefers-reduced-motion/);
-  assert.match(hero, /listening/);
   assert.match(page, /sendMessage/);
-  assert.match(hero, /variant="frame"/);
-  assert.match(hero, /variant="particles"/);
-  assert.doesNotMatch(hero, /variant="geodesic"/);
-  assert.doesNotMatch(hero, /variant="meridian"/);
-  assert.doesNotMatch(hero, /variant="gyro"/);
-  assert.match(core, /const N = 1200/);
-  assert.match(core, /dpr=\{\[1, 1\.5\]\}/);
-  assert.match(page, /visualStateForInteraction/);
+  assert.doesNotMatch(scene, /SphereGeometry/);
+  assert.doesNotMatch(scene, /const N = 1200/);
+  assert.match(scene, /dpr=\{\[1, 1\.5\]\}/);
+  assert.match(page, /status=\{fieldStatus\}/);
+  assert.match(page, /listening=\{voice\.listening\}/);
+  assert.match(page, /speaking=\{voice\.audioActive\}/);
   assert.doesNotMatch(page, /ChiefVoiceDock/);
   assert.match(page, /sendRef\.current = sendMessage/);
   assert.match(page, /from "\.\/useChiefVoice\.js"/);
@@ -317,14 +314,11 @@ test("the room intelligence maps status onto the APEX orb and web", () => {
     /voice\.speakAnswer\(spoken\)/
   );
   assert.match(page, /voice\.toggleListening\(\)/);
-  assert.match(world, /0\.12/);
-  assert.match(world, /staticCore=\{resolvedMotion === "off"\}/);
-  assert.match(world, /state=\{orbState\}/);
-  assert.match(world, /audioLevelRef=\{audioLevelRef\}/);
+  assert.match(world, /audioLevelRef/);
   assert.match(world, /Speak to CHIEF/);
-  assert.match(world, /apex-core-anchor/);
-  assert.match(world, /<OrbStatusBar state=\{orbState\} \/>/);
-  assert.doesNotMatch(world, /showStatus \? <OrbStatusBar/);
+  assert.doesNotMatch(world, /apex-core-anchor/);
+  assert.doesNotMatch(world, /OrbStatusBar/);
+  assert.doesNotMatch(scene, /SphereGeometry|Fresnel/);
   assert.match(page, /onCoreTap/);
 });
 
@@ -355,8 +349,7 @@ test("the room source keeps conversation plain and navigation literal", () => {
 test("the home screen keeps the latest exchange inside the full-bleed scene", () => {
   const root = process.cwd();
   const page = readFileSync(path.join(root, "src/components/chief/ChiefPage.jsx"), "utf8");
-  const world = readFileSync(path.join(root, "src/third_party/apex-ui/ApexWorld.jsx"), "utf8");
-  const status = readFileSync(path.join(root, "src/third_party/apex-ui/OrbStatusBar.jsx"), "utf8");
+  const world = readFileSync(path.join(root, "src/visual/chiefWorld/ChiefWorld.jsx"), "utf8");
   const voice = readFileSync(path.join(root, "src/components/chief/ChiefVoiceSheet.jsx"), "utf8");
   const css = readFileSync(path.join(root, "src/global.css"), "utf8");
   const settings = readFileSync(
@@ -386,11 +379,10 @@ test("the home screen keeps the latest exchange inside the full-bleed scene", ()
   assert.match(page, /onOpenAgents/);
   assert.doesNotMatch(page, /Provider:/);
   assert.doesNotMatch(page, /<select/);
-  assert.doesNotMatch(status, /TAP THE CORE/);
   assert.doesNotMatch(voice, /Provider:/);
-  assert.match(world, /apex-core-anchor/);
-  assert.match(world, /apex-core-status/);
-  assert.match(world, /<OrbStatusBar state=\{orbState\} \/>/);
+  assert.doesNotMatch(world, /apex-core-anchor/);
+  assert.doesNotMatch(world, /OrbStatusBar/);
+  assert.match(world, /Speak to CHIEF/);
   assert.equal((page.match(/if \(room === "home"\)/g) || []).length, 1);
   assert.equal((page.match(/className="chief-apex-stage"/g) || []).length, 1);
   assert.equal((page.match(/className="chief-apex-dock"/g) || []).length, 1);
@@ -414,7 +406,7 @@ test("the home screen keeps the latest exchange inside the full-bleed scene", ()
     home.indexOf('className="chief-apex-stage"'),
     home.indexOf('className="chief-apex-dock"')
   );
-  assert.match(stage, /<ApexWorld/);
+  assert.match(stage, /<ChiefWorld/);
   assert.match(stage, /onCoreTap/);
   assert.doesNotMatch(stage, /ChiefTranscript|ChiefComposer|ChiefApprovalCard/);
   const stageTree = home.slice(home.indexOf('className="chief-apex-stage"'));
