@@ -41,7 +41,9 @@ const BEYOND_PROMPT = new Set([
 ]);
 
 const HOLDING = /\b(owns?|owned|holds?|holding|holdings|balance|worth|bitcoin|btc|xrp|eth)\b/i;
-const AGENT_TEXT = /\b(grok\s*bots?|agents?)\b/i;
+const AGENT_TEXT = /\b(grok\s*bots?|agents?|workforce)\b/i;
+const WORKFORCE_DIRECT =
+  /\b(?:is anything(?: currently)? stuck|which one needs(?: me)?|who needs(?: me)?|needs my attention)\b/i;
 const DECISION_TEXT = /\b(decid(?:e|ed|ing)|decision|agreed)\b/i;
 const PREFERENCE_TEXT = /\b(prefer|preference)\b/i;
 const RELATION_TEXT = /\b(related to|came from|because of|same issue)\b/i;
@@ -140,7 +142,7 @@ function classifyQuery(query) {
   const domain = authoritativeDomain(text);
   const episodic = needsEpisodicMemory(text);
   const decision = DECISION_TEXT.test(text);
-  const agents = AGENT_TEXT.test(text);
+  const agents = AGENT_TEXT.test(text) || WORKFORCE_DIRECT.test(text);
   const schedule = /\b(schedul(?:e|ed|ing)|behind schedule|overdue)\b/i.test(text);
   const calendar = /\b(calendar|meeting|appointment)\b/i.test(text);
   const email = /\b(e-?mail|inbox)\b/i.test(text);
@@ -373,7 +375,10 @@ function demote(items, plan) {
     (item) => item.origin === "live" && item.available && item.source === LIVE.finance.source
   );
   const liveAgents = items.some(
-    (item) => item.origin === "live" && item.available && item.source === LIVE.agents.source
+    (item) =>
+      item.origin === "live" &&
+      item.available &&
+      (item.sourceType === LIVE.agents.sourceType || item.source === LIVE.agents.source)
   );
   return items.map((item) => {
     if (item.origin !== "memory" || item.scope === CONTEXT_SCOPE.PREFERENCE) return item;

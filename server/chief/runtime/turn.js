@@ -446,13 +446,14 @@ export class TurnMachine {
     }
   }
 
-  _settledStep(text, toolCalls) {
+  async _settledStep(text, toolCalls) {
     if (typeof this._settleModelStep !== "function") return { text, toolCalls };
     try {
-      const settled = this._settleModelStep({
+      const settled = await this._settleModelStep({
         transcript: this._checkpoint.transcript,
         text,
         toolCalls,
+        delegationIntent: this._checkpoint.context?.delegationIntent ?? null,
       });
       if (typeof settled?.text !== "string" || !Array.isArray(settled.toolCalls)) {
         return { text, toolCalls };
@@ -520,9 +521,17 @@ export class TurnMachine {
       }
     }
     const finalized = await opened.finalize();
-    const settled = this._settledStep(text, toolCalls);
+    const settled = await this._settledStep(text, toolCalls);
     text = settled.text;
     const nextCalls = settled.toolCalls.slice();
+    if (settled.clearDelegation && this._checkpoint.context) {
+      delete this._checkpoint.context.delegationIntent;
+    } else if (settled.delegation?.disposition === "delegate") {
+      this._checkpoint.context = {
+        ...(this._checkpoint.context ?? {}),
+        delegationIntent: settled.delegation,
+      };
+    }
     toolCalls.length = 0;
     toolCalls.push(...nextCalls);
     if (text) {
