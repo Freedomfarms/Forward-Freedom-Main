@@ -20,6 +20,7 @@ import {
   rotateView,
 } from "../src/components/chief/chiefField.js";
 import {
+  scenePhaseForInteraction,
   visualStateForInteraction,
   visualStateForStatus,
   webStateForInteraction,
@@ -284,6 +285,28 @@ test("the room intelligence maps status onto the APEX orb and web", () => {
     "listening"
   );
 
+  assert.equal(scenePhaseForInteraction({ status: CHIEF_STATUS.READY }), "idle");
+  assert.equal(scenePhaseForInteraction({ status: CHIEF_STATUS.WORKING }), "thinking");
+  assert.equal(scenePhaseForInteraction({ status: CHIEF_STATUS.WEB_SEARCH }), "thinking");
+  assert.equal(scenePhaseForInteraction({ status: CHIEF_STATUS.TOOL }), "thinking");
+  assert.equal(scenePhaseForInteraction({ status: CHIEF_STATUS.RESPONDING }), "responding");
+  assert.equal(scenePhaseForInteraction({ status: CHIEF_STATUS.APPROVAL }), "idle");
+  assert.equal(scenePhaseForInteraction({ status: CHIEF_STATUS.ERROR }), "idle");
+  assert.equal(
+    scenePhaseForInteraction({ status: CHIEF_STATUS.READY, playback: "preparing" }),
+    "responding"
+  );
+  assert.equal(
+    scenePhaseForInteraction({ status: CHIEF_STATUS.READY, playback: "playing" }),
+    "responding"
+  );
+  assert.equal(
+    scenePhaseForInteraction({ status: CHIEF_STATUS.WORKING, playback: "playing" }),
+    "responding"
+  );
+  assert.equal(scenePhaseForInteraction({ status: CHIEF_STATUS.ERROR, playback: "idle" }), "idle");
+  assert.equal(scenePhaseForInteraction(), "idle");
+
   const root = process.cwd();
   const page = readFileSync(path.join(root, "src/components/chief/ChiefPage.jsx"), "utf8");
   const world = readFileSync(path.join(root, "src/third_party/apex-ui/ApexWorld.jsx"), "utf8");
@@ -305,6 +328,8 @@ test("the room intelligence maps status onto the APEX orb and web", () => {
   assert.match(core, /const N = 1200/);
   assert.match(core, /dpr=\{\[1, 1\.5\]\}/);
   assert.match(page, /visualStateForInteraction/);
+  assert.match(page, /scenePhaseForInteraction/);
+  assert.match(page, /playback: voice\.playback/);
   assert.doesNotMatch(page, /ChiefVoiceDock/);
   assert.match(page, /sendRef\.current = sendMessage/);
   assert.match(page, /from "\.\/useChiefVoice\.js"/);

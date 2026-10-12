@@ -34,3 +34,13 @@ export function webStateForInteraction(input) {
   if (orb === "speaking") return "speaking";
   return "standby";
 }
+
+// Scene core for the CHIEF home. Tool work pulses blue. Answer text and
+// speech hold a steady violet core until that delivery actually ends.
+export function scenePhaseForInteraction({ status, playback = "idle" } = {}) {
+  if (playback === "preparing" || playback === "playing") return "responding";
+  const kind = fieldKindForStatus(status);
+  if (kind === "responding") return "responding";
+  if (kind === "working" && status) return "thinking";
+  return "idle";
+}

@@ -42,5 +42,18 @@ test("CHIEF home mounts the supplied interface on the existing conversation path
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
   assert.match(css, /\.chief-interface \.chief-composer \{/);
   assert.doesNotMatch(css, /^\.chief-composer \{/m);
+  assert.match(css, /\.chief-stage \{\s*display: flex;\s*flex-direction: column;/);
+  assert.match(css, /grid-area:\s*nav/);
+  assert.match(css, /grid-area:\s*stage/);
+  assert.match(css, /grid-area:\s*rail/);
+  assert.match(css, /chief-core-pulse/);
+  assert.match(css, /\.chief-interface\.phase-responding/);
+  assert.match(css, /\.chief-interface\.phase-thinking/);
+  assert.doesNotMatch(css, /margin-top:\s*-/);
+  assert.match(face, /data-tone="violet"/);
+  assert.match(face, /phase-\$\{phase\}/);
+  assert.match(read("src/components/chief/useChiefVoice.js"), /setPlayback\("preparing"\)/);
+  assert.match(read("src/components/chief/useChiefVoice.js"), /setPlayback\("playing"\)/);
+  assert.match(read("src/components/chief/useChiefVoice.js"), /setPlayback\("idle"\)/);
   assert.match(read("src/third_party/apex-ui/ApexWorld.jsx"), /ApexWorld/);
 });
