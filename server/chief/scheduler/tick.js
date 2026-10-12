@@ -11,6 +11,13 @@
 // (budget, pause flag, Grok default routing) and every tool call goes through
 // ToolExecutor. A scheduled turn has no sticky approvals: its session is new,
 // so any requiresConfirmation tool suspends the turn for the user.
+//
+// Workforce execution polling is not activated here. The integration point is
+// this tick, before due tasks run: list nonterminal WorkforceExecution rows
+// (SUBMITTING, SUBMITTED, AMBIGUOUS, RUNNING) with the service client, then
+// read each one inside withUserContext. AMBIGUOUS and SUBMITTING rows are
+// reconciled with GET /v1/agents/{id}. They are never retried with POST.
+// Polling stays off until CURSOR_API_KEY and the repository allowlist exist.
 
 import { EventBus } from "../core/events.js";
 import { ApprovalCoordinator } from "../runtime/approvals.js";

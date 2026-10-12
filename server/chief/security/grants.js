@@ -19,7 +19,7 @@
 
 import { withUserContext } from "../../db/prisma.js";
 import { defaultConnectors } from "../connectors/registry.js";
-import { CapabilityPolicy } from "../core/capabilities.js";
+import { CapabilityPolicy, isCapability } from "../core/capabilities.js";
 import { baselineCapabilities } from "../control/plane.js";
 
 const BASELINE_CAPABILITIES = Object.freeze(baselineCapabilities());
@@ -99,6 +99,32 @@ function mergeStoredGrants(policy, rows) {
 
 export function closedPolicy() {
   return new CapabilityPolicy({ defaultDeny: true });
+}
+
+// Writes one row in chief_capability_grant. It does not change the baseline.
+// A later load merges this row onto that baseline. deny true removes it.
+export async function saveCapabilityGrant(
+  tx,
+  userId,
+  { agentId = "_default", capability, pattern = "*", deny = false } = {}
+) {
+  if (typeof userId !== "string" || userId.trim() === "") {
+    throw new Error("capability grant requires a user");
+  }
+  if (!isCapability(capability)) throw new Error("unknown capability");
+  if (typeof agentId !== "string" || agentId.trim() === "") {
+    throw new Error("capability grant agentId must be a nonempty string");
+  }
+  if (typeof pattern !== "string" || pattern.trim() === "") {
+    throw new Error("capability grant pattern must be a nonempty string");
+  }
+  const where = { userId, agentId, capability };
+  const existing = await tx.chiefCapabilityGrant.findFirst({ where });
+  const data = { pattern, deny: deny === true };
+  if (existing) {
+    return tx.chiefCapabilityGrant.update({ where: { id: existing.id }, data });
+  }
+  return tx.chiefCapabilityGrant.create({ data: { ...where, ...data } });
 }
 
 export async function loadCapabilityPolicy(
