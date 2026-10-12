@@ -29,11 +29,10 @@ import {
   readChiefActiveSessionId,
   writeChiefActiveSessionId,
 } from "../../utils/chiefActiveSession.js";
-import ApexClock from "../../third_party/apex-ui/ApexClock.jsx";
-import ApexWorld from "../../third_party/apex-ui/ApexWorld.jsx";
-import { visualStateForInteraction, webStateForInteraction } from "./apexVisualState.js";
-import { CHIEF_NAV_ROSTER } from "./chiefNavRoster.js";
+import { conversationLabel, formatChiefTime } from "../../utils/chiefProtocol.js";
+import { visualStateForInteraction } from "./apexVisualState.js";
 import { ChiefAccessSheet } from "./ChiefAccessSheet.jsx";
+import { ChiefInterface } from "./ChiefInterface.jsx";
 import { ChiefApprovalCard } from "./ChiefApprovalCard.jsx";
 import { ChiefComposer } from "./ChiefComposer.jsx";
 import { ChiefConversationList } from "./ChiefConversationList.jsx";
@@ -64,13 +63,22 @@ function errorText(error) {
   return error?.message || "CHIEF could not complete that request.";
 }
 
-export function ChiefPage({
-  user,
-  embedded = false,
-  onOpenFinancial,
-  onOpenAgents,
-  onSignOut,
-}) {
+function profileInitial(user) {
+  const source =
+    (typeof user?.displayName === "string" && user.displayName.trim()) ||
+    (typeof user?.email === "string" && user.email.trim()) ||
+    "";
+  return source ? source.slice(0, 1).toUpperCase() : "";
+}
+
+function recentWhen(session, now) {
+  const raw = formatChiefTime(session?.updatedAt || session?.createdAt, now);
+  if (!raw) return "";
+  if (raw === "now") return "now";
+  return /^\d+[mhd]$/.test(raw) ? `${raw} ago` : raw;
+}
+
+export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgents, onSignOut }) {
   const sessionUid = typeof user?.uid === "string" ? user.uid : "";
   const [sessions, setSessions] = useState([]);
   const [archivedSessions, setArchivedSessions] = useState([]);
@@ -109,6 +117,7 @@ export function ChiefPage({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState("voice");
   const [preferences, setPreferences] = useState(() => readChiefPreferences());
+  const [focusConversationSearch, setFocusConversationSearch] = useState(false);
   const abortRef = useRef(null);
   const busyRef = useRef(false);
   const generation = useRef(0);
@@ -663,6 +672,12 @@ export function ChiefPage({
     composerRef.current?.focus();
   }, [showEmpty, busy, approval, sheetOpen]);
 
+  useEffect(() => {
+    if (room !== "convos" || !focusConversationSearch) return undefined;
+    const id = window.setTimeout(() => setFocusConversationSearch(false), 0);
+    return () => window.clearTimeout(id);
+  }, [room, focusConversationSearch]);
+
   function toggleNavigation() {
     if (narrowNav) {
       setPlacesOpen(false);
@@ -715,6 +730,7 @@ export function ChiefPage({
       onRestore={restoreConversation}
       onDelete={deleteConversation}
       onSearchRetry={refreshSearch}
+      searchAutoFocus={focusConversationSearch}
       onRetry={() => {
         setSessionsResolved(false);
         setSessionsError("");
@@ -825,9 +841,29 @@ export function ChiefPage({
     speaking: voice.audioActive,
   };
   const orbState = visualStateForInteraction(interaction);
-  const webState = webStateForInteraction(interaction);
   const voiceNote = voice.interim || voice.speechError || "";
   const homeClass = embedded ? "chief-apex-home chief-apex-home--embedded" : "chief-apex-home";
+  const homeStatus = user ? fieldStatus : "Sign in";
+  const homeStatusTone = !user
+    ? "signed-out"
+    : fieldStatus === CHIEF_STATUS.ERROR
+      ? "error"
+      : fieldStatus === CHIEF_STATUS.APPROVAL
+        ? "wait"
+        : fieldStatus === CHIEF_STATUS.READY
+          ? "ready"
+          : "active";
+  const toolActions = access?.inventory?.actions;
+  const homeSystemStatus = {
+    cpu: null,
+    memory: null,
+    agents: null,
+    tools: Array.isArray(toolActions) ? `${toolActions.length} ready` : null,
+    network: access?.web === "on" ? "ON" : access?.web === "off" ? "OFF" : null,
+  };
+  const motionReduced =
+    preferences.appearance.reducedMotion === "reduce" ||
+    preferences.appearance.animationIntensity === "off";
 
   function submitDraft(text) {
     voice.ensureAudio();
@@ -840,7 +876,37 @@ export function ChiefPage({
     voice.toggleListening();
   }
 
-  const homeDock = user ? (
+  function openConversations({ focusSearch = false, query } = {}) {
+    if (typeof query === "string") setNavQuery(query);
+    setFocusConversationSearch(focusSearch);
+    if (narrowNav) {
+      setPlacesOpen(false);
+      setAccessOpen(false);
+      setDrawerOpen(true);
+    } else {
+      setNavCollapsed(false);
+      writeSidebarCollapsed(sidebarStorage(), false);
+    }
+    setRoom("convos");
+  }
+
+  const showHomeExchange =
+    !user ||
+    historyLoading ||
+    notFound ||
+    Boolean(turnView.userLine) ||
+    Boolean(turnView.answer) ||
+    Boolean(transcriptError) ||
+    Boolean(approval) ||
+    activeArchived ||
+    Boolean(voice.interim) ||
+    Boolean(voice.speechError);
+
+  const homeExchange = !user ? (
+    <div className="chief-turn">
+      <p className="chief-turn-empty">Sign in to talk with CHIEF.</p>
+    </div>
+  ) : (
     <>
       <ChiefTranscript
         labeled
@@ -867,75 +933,168 @@ export function ChiefPage({
           onApprove={() => resolveApproval("approve")}
           onDeny={() => resolveApproval("deny")}
         />
-      ) : (
-        <div className="chief-composer-row">
-          {activeArchived ? (
-            <div className="chief-archived-note">
-              <p>This conversation is archived. Restore it to continue.</p>
-              <button
-                type="button"
-                className="chief-action"
-                disabled={busy}
-                onClick={() => {
-                  restoreConversation(activeSessionId).catch((error) =>
-                    setTurnError(errorText(error))
-                  );
-                }}
-              >
-                Restore
-              </button>
-            </div>
-          ) : (
-            <ChiefComposer
-              value={draft}
-              onChange={setDraft}
-              onSubmit={() => submitDraft(draft)}
-              onMicrophone={toggleMicrophone}
-              listening={voice.listening}
-              enterToSend={preferences.conversation.enterToSend}
-              disabled={busy || historyLoading || notFound}
-              inputRef={composerRef}
-            />
-          )}
+      ) : null}
+      {activeArchived ? (
+        <div className="chief-archived-note">
+          <p>This conversation is archived. Restore it to continue.</p>
+          <button
+            type="button"
+            className="chief-action"
+            disabled={busy}
+            onClick={() => {
+              restoreConversation(activeSessionId).catch((error) => setTurnError(errorText(error)));
+            }}
+          >
+            Restore
+          </button>
         </div>
-      )}
+      ) : null}
+      {voice.interim ? <p className="chief-voice-interim">{voice.interim}</p> : null}
       {voice.speechError ? (
         <p className="chief-turn-note" role="alert">
           {voice.speechError}
         </p>
       ) : null}
     </>
-  ) : (
-    <div className="chief-turn">
-      <p className="chief-turn-empty">Sign in to talk with CHIEF.</p>
-    </div>
   );
+
+  const homeNavItems = [
+    {
+      id: "chief",
+      label: "CHIEF",
+      detail: "Intelligence & Execution",
+      icon: "core",
+      onSelect: returnHome,
+    },
+    {
+      id: "conversations",
+      label: "Conversations",
+      detail: "Sessions",
+      icon: "chat",
+      onSelect: () => openConversations(),
+    },
+  ];
+  if (onOpenFinancial) {
+    homeNavItems.push({
+      id: "finance",
+      label: "Finance",
+      detail: "Freedom Financial",
+      icon: "chart",
+      onSelect: () => openNode({ key: "finance" }),
+    });
+  }
+  if (onOpenAgents) {
+    homeNavItems.push({
+      id: "agents",
+      label: "Agents",
+      detail: "GrokBot",
+      icon: "network",
+      onSelect: () => openNode({ key: "agents" }),
+    });
+  }
+  homeNavItems.push({
+    id: "settings",
+    label: "Settings",
+    detail: "System configuration",
+    icon: "settings",
+    onSelect: () => openNode({ key: "settings" }),
+  });
+
+  const homeSuggestions =
+    user && !approval && !activeArchived
+      ? [
+          ["plan", "Help me plan…", "Help me plan my day."],
+          ["finances", "Analyze my finances…", "Analyze my finances."],
+          ["research", "Research this topic…", "Research this topic."],
+          ["projects", "Work on my projects…", "Work on my projects."],
+        ].map(([id, label, text]) => ({
+          id,
+          label,
+          onSelect: () => setDraft(text),
+        }))
+      : [];
+
+  const homeQuickActions = user
+    ? [
+        {
+          id: "new-conversation",
+          label: "New conversation",
+          icon: "chat",
+          onSelect: startNewConversation,
+        },
+        {
+          id: "voice",
+          label: voice.listening ? "Listening" : "Voice",
+          icon: "mic",
+          pressed: voice.listening,
+          disabled: busy || historyLoading || notFound || Boolean(approval) || activeArchived,
+          onSelect: toggleMicrophone,
+        },
+      ]
+    : [];
+
+  const recentConversations = user
+    ? {
+        loading: !sessionsResolved && !sessionsError,
+        error: sessionsError || "",
+        onViewAll: () => openConversations(),
+        items: sessions.slice(0, 4).flatMap((session) => {
+          if (!session?.sessionId) return [];
+          return [
+            {
+              id: session.sessionId,
+              label: conversationLabel(session),
+              time: recentWhen(session, now.getTime()),
+              onSelect: () => selectSession(session.sessionId),
+            },
+          ];
+        }),
+      }
+    : null;
 
   if (room === "home") {
     return (
       <section className={homeClass} aria-label="CHIEF">
-        <div className="chief-apex-stage">
-          <ApexClock />
-          <ApexWorld
-            orbState={orbState}
-            webState={webState}
-            roster={CHIEF_NAV_ROSTER}
-            onSelect={openNode}
-            onCoreTap={user && !approval && !activeArchived ? toggleMicrophone : undefined}
-            coreListening={voice.listening}
-            audioLevelRef={voice.audioLevelRef}
-            caption={voiceNote}
-            motionPreference={preferences.appearance.reducedMotion}
-            animationIntensity={preferences.appearance.animationIntensity}
-            showLabels={preferences.appearance.showNavLabels}
-          />
-          <p className="chief-sr" aria-live="polite">
-            {voice.listening ? "Listening" : voice.audioActive ? "Speaking" : voiceNote}
-          </p>
-          <div className="chief-apex-dock" aria-label="CHIEF conversation">
-            {homeDock}
-          </div>
-        </div>
+        <ChiefInterface
+          activeSection="chief"
+          navItems={homeNavItems}
+          showNavLabels={preferences.appearance.showNavLabels}
+          onHome={returnHome}
+          onSearch={(query) =>
+            openConversations({
+              focusSearch: true,
+              query: typeof query === "string" ? query : "",
+            })
+          }
+          onNotifications={() => {
+            setSettingsSection("notifications");
+            setSettingsOpen(true);
+          }}
+          onProfile={() => setSettingsOpen(true)}
+          profileMark={profileInitial(user)}
+          quickActions={homeQuickActions}
+          recent={recentConversations}
+          suggestions={homeSuggestions}
+          status={homeStatus}
+          statusTone={homeStatusTone}
+          assistantState={orbState}
+          message={draft}
+          onMessageChange={setDraft}
+          onSend={submitDraft}
+          onMic={toggleMicrophone}
+          listening={voice.listening}
+          composerDisabled={busy || historyLoading || notFound}
+          enterToSend={preferences.conversation.enterToSend}
+          showComposer={Boolean(user) && !approval && !activeArchived}
+          reducedMotion={motionReduced}
+          showSystemStatus={preferences.appearance.showTelemetry}
+          systemStatus={homeSystemStatus}
+          conversation={showHomeExchange ? homeExchange : null}
+          inputRef={composerRef}
+        />
+        <p className="chief-sr" aria-live="polite">
+          {voice.listening ? "Listening" : voice.audioActive ? "Speaking" : voiceNote}
+        </p>
         <ChiefSettings
           open={settingsOpen}
           section={settingsSection}
@@ -1001,7 +1160,11 @@ export function ChiefPage({
                     ) : null}
                   </nav>
                 ) : (
-                  <button type="button" className="chief-place chief-place--here" onClick={returnHome}>
+                  <button
+                    type="button"
+                    className="chief-place chief-place--here"
+                    onClick={returnHome}
+                  >
                     CHIEF
                   </button>
                 )}

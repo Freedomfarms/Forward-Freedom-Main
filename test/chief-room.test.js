@@ -289,7 +289,9 @@ test("the room intelligence maps status onto the APEX orb and web", () => {
   const world = readFileSync(path.join(root, "src/third_party/apex-ui/ApexWorld.jsx"), "utf8");
   const hero = readFileSync(path.join(root, "src/third_party/apex-ui/ApexHeroOrb.tsx"), "utf8");
   const core = readFileSync(path.join(root, "src/third_party/apex-ui/ApexCore3D.jsx"), "utf8");
-  assert.match(page, /ApexWorld/);
+  assert.match(page, /ChiefInterface/);
+  assert.doesNotMatch(page, /<ApexWorld/);
+  assert.doesNotMatch(page, /<ApexClock/);
   assert.equal(page.includes("ChiefField"), false);
   assert.equal(page.includes("renderIntelligence"), false);
   assert.match(world, /prefers-reduced-motion/);
@@ -325,7 +327,9 @@ test("the room intelligence maps status onto the APEX orb and web", () => {
   assert.match(world, /apex-core-anchor/);
   assert.match(world, /<OrbStatusBar state=\{orbState\} \/>/);
   assert.doesNotMatch(world, /showStatus \? <OrbStatusBar/);
-  assert.match(page, /onCoreTap/);
+  assert.match(page, /onMic=\{toggleMicrophone\}/);
+  assert.match(page, /onSend=\{submitDraft\}/);
+  assert.doesNotMatch(page, /onCoreTap/);
 });
 
 test("the room source keeps conversation plain and navigation literal", () => {
@@ -370,15 +374,14 @@ test("the home screen keeps the latest exchange inside the full-bleed scene", ()
     "utf8"
   );
 
-  assert.match(page, /chief-apex-stage/);
-  assert.match(page, /chief-apex-dock/);
-  assert.match(page, /\{homeDock\}\s*<\/div>\s*<\/div>/);
-  assert.doesNotMatch(page, /\{homeDock\}\s*<\/div>\s*<ChiefSettings/);
+  assert.match(page, /<ChiefInterface/);
+  assert.match(page, /conversation=\{showHomeExchange \? homeExchange : null\}/);
+  assert.doesNotMatch(page, /\{homeExchange\}\s*<\/div>\s*<ChiefSettings/);
   assert.doesNotMatch(page, /ChiefVoiceDock/);
   assert.match(page, /labeled/);
   assert.match(page, /turnView\.userLine/);
   assert.match(page, /turnView\.answer/);
-  assert.match(page, /onCoreTap/);
+  assert.match(page, /onMic=\{toggleMicrophone\}/);
   assert.match(page, /onMicrophone=\{toggleMicrophone\}/);
   assert.match(page, /setSettingsOpen\(true\)/);
   assert.match(page, /setRoom\("convos"\)/);
@@ -392,34 +395,30 @@ test("the home screen keeps the latest exchange inside the full-bleed scene", ()
   assert.match(world, /apex-core-status/);
   assert.match(world, /<OrbStatusBar state=\{orbState\} \/>/);
   assert.equal((page.match(/if \(room === "home"\)/g) || []).length, 1);
-  assert.equal((page.match(/className="chief-apex-stage"/g) || []).length, 1);
-  assert.equal((page.match(/className="chief-apex-dock"/g) || []).length, 1);
+  assert.equal((page.match(/<ChiefInterface/g) || []).length, 1);
   assert.doesNotMatch(world, /chief-apex-stage/);
   assert.doesNotMatch(page, /onCoreActivate/);
   assert.doesNotMatch(world, /onCoreActivate/);
   assert.doesNotMatch(world, /showStatus/);
   assert.match(page, /const homeClass/);
   assert.match(page, /className=\{homeClass\}/);
-  assert.match(page, /caption=\{voiceNote\}/);
-  const homeDock = page.slice(page.indexOf("const homeDock"), page.indexOf('if (room === "home")'));
-  assert.match(homeDock, /<ChiefTranscript/);
-  assert.match(homeDock, /turnView\.userLine/);
-  assert.match(homeDock, /turnView\.answer/);
-  assert.match(homeDock, /retryTranscript/);
-  assert.match(homeDock, /<ChiefApprovalCard/);
-  assert.match(homeDock, /<ChiefComposer/);
-  assert.doesNotMatch(homeDock, /ChiefVoiceDock/);
-  const home = page.slice(page.indexOf('if (room === "home")'), page.indexOf("<ChiefSettings"));
-  const stage = home.slice(
-    home.indexOf('className="chief-apex-stage"'),
-    home.indexOf('className="chief-apex-dock"')
+  assert.match(page, /voice\.audioActive \? "Speaking" : voiceNote/);
+  const homeExchange = page.slice(
+    page.indexOf("const homeExchange"),
+    page.indexOf('if (room === "home")')
   );
-  assert.match(stage, /<ApexWorld/);
-  assert.match(stage, /onCoreTap/);
-  assert.doesNotMatch(stage, /ChiefTranscript|ChiefComposer|ChiefApprovalCard/);
-  const stageTree = home.slice(home.indexOf('className="chief-apex-stage"'));
-  assert.match(stageTree, /className="chief-apex-dock"[\s\S]*\{homeDock\}\s*<\/div>\s*<\/div>/);
-  assert.doesNotMatch(home, /<\/div>\s*<div className="chief-apex-dock"/);
+  assert.match(homeExchange, /<ChiefTranscript/);
+  assert.match(homeExchange, /turnView\.userLine/);
+  assert.match(homeExchange, /turnView\.answer/);
+  assert.match(homeExchange, /retryTranscript/);
+  assert.match(homeExchange, /<ChiefApprovalCard/);
+  assert.doesNotMatch(homeExchange, /<ChiefComposer/);
+  assert.doesNotMatch(homeExchange, /ChiefVoiceDock/);
+  const home = page.slice(page.indexOf('if (room === "home")'), page.indexOf("<ChiefSettings"));
+  assert.match(home, /<ChiefInterface/);
+  assert.match(home, /onSend=\{submitDraft\}/);
+  assert.match(home, /conversation=\{showHomeExchange \? homeExchange : null\}/);
+  assert.doesNotMatch(home, /<ApexWorld|<ChiefComposer|<ChiefTranscript/);
   assert.doesNotMatch(css, /--chief-ring-radius|--chief-below-ring|--chief-orb-scale/);
   assert.doesNotMatch(css, /\.chief-voice-dock \.chief-earlier \{\s*display:\s*none/);
   assert.match(css, /@media \(max-height: 820px\) \{\s*\.chief-apex-dock \{/);

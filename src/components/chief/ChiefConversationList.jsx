@@ -172,6 +172,7 @@ export function ChiefConversationList({
   onArchive,
   onRestore,
   onDelete,
+  searchAutoFocus = false,
 }) {
   const view = partitionSidebarConversations({
     sessions,
@@ -194,6 +195,7 @@ export function ChiefConversationList({
           maxLength={200}
           placeholder="Search conversations..."
           aria-label="Search conversations"
+          autoFocus={searchAutoFocus}
           onChange={(event) => onQueryChange?.(event.target.value)}
         />
       </label>
