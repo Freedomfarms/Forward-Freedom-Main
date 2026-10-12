@@ -29,6 +29,7 @@ import {
   readChiefActiveSessionId,
   writeChiefActiveSessionId,
 } from "../../utils/chiefActiveSession.js";
+import { conversationLabel, formatChiefTime } from "../../utils/chiefProtocol.js";
 import { visualStateForInteraction } from "./apexVisualState.js";
 import { ChiefAccessSheet } from "./ChiefAccessSheet.jsx";
 import { ChiefInterface } from "./ChiefInterface.jsx";
@@ -60,6 +61,21 @@ function sidebarStorage() {
 
 function errorText(error) {
   return error?.message || "CHIEF could not complete that request.";
+}
+
+function profileInitial(user) {
+  const source =
+    (typeof user?.displayName === "string" && user.displayName.trim()) ||
+    (typeof user?.email === "string" && user.email.trim()) ||
+    "";
+  return source ? source.slice(0, 1).toUpperCase() : "";
+}
+
+function recentWhen(session, now) {
+  const raw = formatChiefTime(session?.updatedAt || session?.createdAt, now);
+  if (!raw) return "";
+  if (raw === "now") return "now";
+  return /^\d+[mhd]$/.test(raw) ? `${raw} ago` : raw;
 }
 
 export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgents, onSignOut }) {
@@ -860,7 +876,8 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
     voice.toggleListening();
   }
 
-  function openConversations({ focusSearch = false } = {}) {
+  function openConversations({ focusSearch = false, query } = {}) {
+    if (typeof query === "string") setNavQuery(query);
     setFocusConversationSearch(focusSearch);
     if (narrowNav) {
       setPlacesOpen(false);
@@ -943,8 +960,16 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
 
   const homeNavItems = [
     {
-      id: "conversation",
-      label: "CONVERSATION",
+      id: "chief",
+      label: "CHIEF",
+      detail: "Intelligence & Execution",
+      icon: "core",
+      onSelect: returnHome,
+    },
+    {
+      id: "conversations",
+      label: "Conversations",
+      detail: "Sessions",
       icon: "chat",
       onSelect: () => openConversations(),
     },
@@ -952,7 +977,8 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
   if (onOpenFinancial) {
     homeNavItems.push({
       id: "finance",
-      label: "FINANCE",
+      label: "Finance",
+      detail: "Freedom Financial",
       icon: "chart",
       onSelect: () => openNode({ key: "finance" }),
     });
@@ -960,50 +986,95 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
   if (onOpenAgents) {
     homeNavItems.push({
       id: "agents",
-      label: "GROKBOT",
+      label: "Agents",
+      detail: "GrokBot",
       icon: "network",
       onSelect: () => openNode({ key: "agents" }),
     });
   }
   homeNavItems.push({
     id: "settings",
-    label: "SETTINGS",
-    icon: "sliders",
+    label: "Settings",
+    detail: "System configuration",
+    icon: "settings",
     onSelect: () => openNode({ key: "settings" }),
   });
 
-  const homeShortcuts = [
-    {
-      id: "search",
-      label: "SEARCH",
-      icon: "search",
-      onSelect: () => openConversations({ focusSearch: true }),
-    },
-  ];
-  if (onOpenFinancial) {
-    homeShortcuts.push({
-      id: "finance",
-      label: "FINANCE",
-      icon: "chart",
-      onSelect: () => openNode({ key: "finance" }),
-    });
-  }
+  const homeSuggestions =
+    user && !approval && !activeArchived
+      ? [
+          ["plan", "Help me plan…", "Help me plan my day."],
+          ["finances", "Analyze my finances…", "Analyze my finances."],
+          ["research", "Research this topic…", "Research this topic."],
+          ["projects", "Work on my projects…", "Work on my projects."],
+        ].map(([id, label, text]) => ({
+          id,
+          label,
+          onSelect: () => setDraft(text),
+        }))
+      : [];
+
+  const homeQuickActions = user
+    ? [
+        {
+          id: "new-conversation",
+          label: "New conversation",
+          icon: "chat",
+          onSelect: startNewConversation,
+        },
+        {
+          id: "voice",
+          label: voice.listening ? "Listening" : "Voice",
+          icon: "mic",
+          pressed: voice.listening,
+          disabled: busy || historyLoading || notFound || Boolean(approval) || activeArchived,
+          onSelect: toggleMicrophone,
+        },
+      ]
+    : [];
+
+  const recentConversations = user
+    ? {
+        loading: !sessionsResolved && !sessionsError,
+        error: sessionsError || "",
+        onViewAll: () => openConversations(),
+        items: sessions.slice(0, 4).flatMap((session) => {
+          if (!session?.sessionId) return [];
+          return [
+            {
+              id: session.sessionId,
+              label: conversationLabel(session),
+              time: recentWhen(session, now.getTime()),
+              onSelect: () => selectSession(session.sessionId),
+            },
+          ];
+        }),
+      }
+    : null;
 
   if (room === "home") {
     return (
       <section className={homeClass} aria-label="CHIEF">
         <ChiefInterface
-          activeSection="conversation"
+          activeSection="chief"
           navItems={homeNavItems}
-          shortcuts={homeShortcuts}
           showNavLabels={preferences.appearance.showNavLabels}
           onHome={returnHome}
-          onSearch={() => openConversations({ focusSearch: true })}
+          onSearch={(query) =>
+            openConversations({
+              focusSearch: true,
+              query: typeof query === "string" ? query : "",
+            })
+          }
           onNotifications={() => {
             setSettingsSection("notifications");
             setSettingsOpen(true);
           }}
           onProfile={() => setSettingsOpen(true)}
+          profileMark={profileInitial(user)}
+          quickActions={homeQuickActions}
+          recent={recentConversations}
+          suggestions={homeSuggestions}
           status={homeStatus}
           statusTone={homeStatusTone}
           assistantState={orbState}

@@ -24,8 +24,20 @@ test("CHIEF home mounts the supplied interface on the existing conversation path
   assert.doesNotMatch(page, /<ApexWorld|<ApexClock/);
 
   assert.equal(face.includes("SYSTEM ONLINE"), false);
+  assert.equal(face.includes("24%"), false);
+  assert.equal(face.includes("8/8"), false);
+  assert.equal(face.includes("-12ms"), false);
+  assert.equal(face.includes("Research market opportunity"), false);
+  assert.equal(face.includes("Search Web"), false);
+  assert.equal(face.includes("Open Workspace"), false);
+  assert.match(face, /chief-scene\.webp/);
   assert.match(face, /allowAttach \?/);
   assert.equal((face.match(/fetch\(/g) || []).length, 0);
+  assert.match(page, /conversationLabel/);
+  assert.match(page, /formatChiefTime/);
+  assert.match(page, /quickActions=\{homeQuickActions\}/);
+  assert.match(page, /setDraft\(text\)/);
+  assert.doesNotMatch(page, /24%|8\/8|-12ms|Research market opportunity/);
   assert.match(face, /prefers-reduced-motion|is-reduced-motion/);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
   assert.match(css, /\.chief-interface \.chief-composer \{/);

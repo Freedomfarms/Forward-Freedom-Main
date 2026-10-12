@@ -1,5 +1,29 @@
-import { useId } from "react";
+import footerUrl from "./chief-footer.webp";
+import sceneUrl from "./chief-scene.webp";
 import "./ChiefInterface.css";
+
+const FEATURES = [
+  {
+    icon: "brain",
+    title: "Deep Understanding",
+    text: "Context across your world",
+  },
+  {
+    icon: "pulse",
+    title: "Strategic Reasoning",
+    text: "Multi-step replies",
+  },
+  {
+    icon: "bolt",
+    title: "Real Execution",
+    text: "Approval before action",
+  },
+  {
+    icon: "chart",
+    title: "Compounding Value",
+    text: "Continues across conversations",
+  },
+];
 
 function Icon({ name, size = 22 }) {
   const common = {
@@ -17,58 +41,41 @@ function Icon({ name, size = 22 }) {
   const paths = {
     chat: (
       <>
-        <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-5 4v-4.5a2 2 0 0 1-1-2z" />
-        <path d="M8 8h8M8 11.5h5" />
+        <path d="M5 6.5A2.5 2.5 0 0 1 7.5 4h9A2.5 2.5 0 0 1 19 6.5v7a2.5 2.5 0 0 1-2.5 2.5H10l-4 3v-3.2" />
+        <path d="M8 9h8M8 12h5" />
       </>
     ),
-    database: (
+    core: (
       <>
-        <ellipse cx="12" cy="5" rx="8" ry="3" />
-        <path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3" />
+        <circle cx="12" cy="12" r="2.2" fill="currentColor" stroke="none" />
+        <circle cx="12" cy="12" r="5.5" />
+        <circle cx="12" cy="12" r="9" />
       </>
     ),
     settings: (
       <>
         <circle cx="12" cy="12" r="3" />
-        <path
-          d="m19.4 15 .1.1 1.4 1.1-1.4 2.4-1.7-.6a8 8 0 0 1-1.8 1l-.3 1.8h-2.8l-.3-1.8a8 8 0 0 1-1.8-1l-1.7.6-1.4-2.4 1.4-1.1a7 7 0 0 1 0-2l-1.4-1.1 1.4-2.4 1.7.6a8 8 0 0 1 1.8-1l.3-1.8h2.8l.3 1.8a8 8 0 0 1 1.8 1l1.7-.6 1.4 2.4-1.4 1.1a7 7 0 0 1 0 2Z"
-          transform="translate(-1 -1) scale(1.08)"
-        />
+        <path d="M12 3.2v1.8M12 19v1.8M4.9 6.5l1.4 1.1M17.7 16.4l1.4 1.1M4.9 17.5l1.4-1.1M17.7 7.6l1.4-1.1M3.2 12h1.8M19 12h1.8" />
       </>
     ),
     sliders: (
       <>
-        <path d="M4 6h5m4 0h7M4 12h9m4 0h3M4 18h2m4 0h10" />
-        <circle cx="11" cy="6" r="2" />
-        <circle cx="15" cy="12" r="2" />
-        <circle cx="8" cy="18" r="2" />
+        <path d="M4 7h16M4 12h16M4 17h16" />
+        <circle cx="8" cy="7" r="2" fill="#03101f" />
+        <circle cx="15" cy="12" r="2" fill="#03101f" />
+        <circle cx="10" cy="17" r="2" fill="#03101f" />
       </>
     ),
     search: (
       <>
-        <circle cx="10.8" cy="10.8" r="6.8" />
-        <path d="m16 16 4.5 4.5" />
-      </>
-    ),
-    file: (
-      <>
-        <path d="M6 2.8h8l5 5V21H6z" />
-        <path d="M14 3v5h5M9 13h6M9 16.5h6" />
-      </>
-    ),
-    chart: <path d="M4 20V11M10 20V5M16 20v-8M22 20V2" />,
-    grid: (
-      <>
-        <rect x="3" y="3" width="7" height="7" rx="1" />
-        <rect x="14" y="3" width="7" height="7" rx="1" />
-        <rect x="3" y="14" width="7" height="7" rx="1" />
-        <rect x="14" y="14" width="7" height="7" rx="1" />
+        <circle cx="11" cy="11" r="6.5" />
+        <path d="m16 16 4 4" />
       </>
     ),
     mic: (
       <>
-        <rect x="9" y="3" width="6" height="12" rx="3" />
-        <path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3M9 21h6" />
+        <rect x="9" y="3" width="6" height="11" rx="3" />
+        <path d="M6 11a6 6 0 0 0 12 0M12 17v3" />
       </>
     ),
     paperclip: (
@@ -76,239 +83,47 @@ function Icon({ name, size = 22 }) {
     ),
     send: (
       <>
-        <path d="m21 3-7.2 18-3.8-7-7-3.8Z" />
-        <path d="M21 3 10 14" />
+        <path d="M4 12h12" />
+        <path d="m12 6 6 6-6 6" />
       </>
     ),
-    bell: <path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" />,
+    bell: (
+      <>
+        <path d="M6 16V10a6 6 0 1 1 12 0v6" />
+        <path d="M4.5 16.5h15M10 19a2 2 0 0 0 4 0" />
+      </>
+    ),
     user: (
       <>
-        <circle cx="12" cy="8" r="4" />
-        <path d="M4 21a8 8 0 0 1 16 0" />
+        <circle cx="12" cy="8" r="3.2" />
+        <path d="M5.5 19.5a6.5 6.5 0 0 1 13 0" />
       </>
     ),
     brain: (
       <>
-        <path d="M12 4a3 3 0 0 0-5.7 1.2A3.5 3.5 0 0 0 4 11a3.5 3.5 0 0 0 2.3 5.8A3.5 3.5 0 0 0 12 19z" />
-        <path d="M12 4a3 3 0 0 1 5.7 1.2A3.5 3.5 0 0 1 20 11a3.5 3.5 0 0 1-2.3 5.8A3.5 3.5 0 0 1 12 19M8 8h4M7 13h5m4-5h-4m4 5h-4" />
+        <path d="M9 6.5A2.5 2.5 0 0 1 12 5a2.5 2.5 0 0 1 3 1.6 2.4 2.4 0 0 1 2.2 3.2A2.6 2.6 0 0 1 16 15a2.7 2.7 0 0 1-4 2 2.7 2.7 0 0 1-4-2 2.6 2.6 0 0 1-1.2-5.2A2.4 2.4 0 0 1 9 6.5Z" />
+        <path d="M12 5v12" />
       </>
     ),
     network: (
       <>
-        <circle cx="12" cy="5" r="2" />
-        <circle cx="5" cy="18" r="2" />
-        <circle cx="19" cy="18" r="2" />
-        <path d="m11 7-5 9m7-9 5 9M7 18h10" />
+        <circle cx="7" cy="8" r="2" />
+        <circle cx="17" cy="8" r="2" />
+        <circle cx="12" cy="16" r="2" />
+        <path d="m8.6 9.4 2.2 4.4M15.4 9.4l-2.2 4.4M9 8h6" />
       </>
     ),
-    sparkle: (
+    chart: (
       <>
-        <path d="m12 2 1.9 6.1L20 10l-6.1 1.9L12 18l-1.9-6.1L4 10l6.1-1.9Z" />
-        <path d="m19 16 .9 2.1L22 19l-2.1.9L19 22l-.9-2.1L16 19l2.1-.9Z" />
+        <path d="M4 19h16" />
+        <path d="M7 16v-4M12 16V8M17 16v-6" />
       </>
     ),
-    layers: <path d="m12 3 9 5-9 5-9-5zM3 12l9 5 9-5M3 16l9 5 9-5" />,
+    pulse: <path d="M3 12h4l2.2-5 3.6 10L15 12h6" />,
+    bolt: <path d="M13 3 5 13h6l-1 8 8-10h-6l1-8Z" />,
   };
 
-  return <svg {...common}>{paths[name] || paths.sparkle}</svg>;
-}
-
-function IntelligenceCore() {
-  const ticks = Array.from({ length: 72 }, (_, i) => i);
-  const rawId = useId().replace(/:/g, "");
-  const fillId = `chiefCoreFill-${rawId}`;
-  const ringId = `chiefRing-${rawId}`;
-  const glowId = `chiefGlow-${rawId}`;
-  const clipId = `chiefCoreClip-${rawId}`;
-
-  return (
-    <div className="chief-core" aria-hidden="true">
-      <div className="core-aura" />
-      <div className="core-stream core-stream-a" />
-      <div className="core-stream core-stream-b" />
-
-      <svg className="core-svg" viewBox="0 0 600 600">
-        <defs>
-          <radialGradient id={fillId}>
-            <stop offset="0%" stopColor="#e8ffff" />
-            <stop offset="17%" stopColor="#50eaff" />
-            <stop offset="48%" stopColor="#087eff" />
-            <stop offset="78%" stopColor="#092e9c" />
-            <stop offset="100%" stopColor="#020a22" />
-          </radialGradient>
-          <linearGradient id={ringId} x1="0" y1="0" x2="1" y2="1">
-            <stop stopColor="#75faff" />
-            <stop offset=".48" stopColor="#1478ff" />
-            <stop offset="1" stopColor="#9d5dff" />
-          </linearGradient>
-          <filter id={glowId}>
-            <feGaussianBlur stdDeviation="4" result="blur" />
-            <feMerge>
-              <feMergeNode in="blur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-          <clipPath id={clipId}>
-            <circle cx="300" cy="300" r="119" />
-          </clipPath>
-        </defs>
-
-        {[146, 158, 174, 191, 209, 229, 250].map((r, i) => (
-          <circle
-            key={r}
-            cx="300"
-            cy="300"
-            r={r}
-            fill="none"
-            stroke={i % 2 ? "#258cff" : "#6cefff"}
-            strokeOpacity={i % 3 === 0 ? ".72" : ".25"}
-            strokeWidth={i % 3 === 0 ? "1.7" : "1"}
-          />
-        ))}
-
-        <circle
-          cx="300"
-          cy="300"
-          r="136"
-          fill="none"
-          stroke={`url(#${ringId})`}
-          strokeWidth="7"
-          strokeDasharray="140 24 62 16 22 19"
-          filter={`url(#${glowId})`}
-          className="core-ring-rotate"
-        />
-
-        <circle
-          cx="300"
-          cy="300"
-          r="201"
-          fill="none"
-          stroke="#36b9ff"
-          strokeOpacity=".85"
-          strokeWidth="4"
-          strokeDasharray="86 34 8 30 42 14 16 50"
-          className="core-ring-reverse"
-        />
-
-        <circle
-          cx="300"
-          cy="300"
-          r="218"
-          fill="none"
-          stroke="#8ddcff"
-          strokeOpacity=".5"
-          strokeWidth="1.5"
-          strokeDasharray="2 8"
-        />
-
-        <circle
-          cx="300"
-          cy="300"
-          r="239"
-          fill="none"
-          stroke="#1878ff"
-          strokeOpacity=".6"
-          strokeWidth="1"
-          strokeDasharray="1 7"
-        />
-
-        {ticks.map((i) => {
-          const a = (i / 72) * Math.PI * 2;
-          const r1 = i % 6 === 0 ? 224 : 231;
-          const r2 = i % 6 === 0 ? 241 : 235;
-
-          return (
-            <line
-              key={i}
-              x1={300 + Math.cos(a) * r1}
-              y1={300 + Math.sin(a) * r1}
-              x2={300 + Math.cos(a) * r2}
-              y2={300 + Math.sin(a) * r2}
-              stroke={i % 6 === 0 ? "#7ceeff" : "#2688ff"}
-              strokeOpacity={i % 6 === 0 ? ".95" : ".42"}
-              strokeWidth={i % 6 === 0 ? "2" : "1"}
-            />
-          );
-        })}
-
-        <circle
-          cx="300"
-          cy="300"
-          r="123"
-          fill={`url(#${fillId})`}
-          stroke="#9efbff"
-          strokeWidth="2"
-          filter={`url(#${glowId})`}
-        />
-
-        <g clipPath={`url(#${clipId})`}>
-          <path
-            className="core-wave core-wave-one"
-            d="M160 335 C215 240 255 390 319 298 S420 224 452 280"
-            fill="none"
-            stroke="#a8ffff"
-            strokeWidth="5"
-            filter={`url(#${glowId})`}
-          />
-
-          <path
-            className="core-wave core-wave-two"
-            d="M170 370 C235 290 258 340 313 320 S392 260 442 235"
-            fill="none"
-            stroke="#5f9bff"
-            strokeWidth="12"
-            strokeOpacity=".75"
-          />
-
-          <path
-            d="M170 265 C220 205 270 238 300 276 S370 385 435 327"
-            fill="none"
-            stroke="#ffffff"
-            strokeOpacity=".65"
-            strokeWidth="2"
-          />
-
-          {Array.from({ length: 48 }, (_, i) => (
-            <circle
-              key={i}
-              cx={178 + ((i * 47) % 245)}
-              cy={188 + ((i * 71) % 220)}
-              r={i % 5 === 0 ? 1.8 : 0.8}
-              fill="#d7ffff"
-              opacity={i % 4 === 0 ? ".85" : ".38"}
-            />
-          ))}
-        </g>
-
-        {[0, 90, 180, 270].map((deg) => (
-          <g key={deg} transform={`rotate(${deg} 300 300)`}>
-            <line x1="300" y1="36" x2="300" y2="64" stroke="#69eaff" strokeWidth="1.5" />
-            <circle cx="300" cy="30" r="5" fill="#04152f" stroke="#59efff" strokeWidth="2" />
-            <circle cx="300" cy="64" r="3" fill="#b7ffff" />
-          </g>
-        ))}
-      </svg>
-
-      <div className="core-label core-label-left">
-        <span>NLP</span>
-        <span>VISION</span>
-        <span>PLANNING</span>
-        <span>TOOLS</span>
-        <span>AGENTS</span>
-      </div>
-      <div className="core-label core-label-right">
-        <span>ANALYZE</span>
-        <span>REASON</span>
-        <span>CREATE</span>
-        <span>EXECUTE</span>
-        <span>ASSIST</span>
-      </div>
-    </div>
-  );
-}
-
-function Panel({ className = "", children }) {
-  return <section className={`chief-panel ${className}`}>{children}</section>;
+  return <svg {...common}>{paths[name] || paths.core}</svg>;
 }
 
 function metricValue(value) {
@@ -316,7 +131,11 @@ function metricValue(value) {
     return { kind: "percent", text: Math.max(0, Math.min(100, value)) };
   }
   if (typeof value === "string" && value.trim()) return { kind: "text", text: value.trim() };
-  return { kind: "empty", text: "—" };
+  return { kind: "empty", text: "" };
+}
+
+function Panel({ className = "", children }) {
+  return <section className={`chief-panel ${className}`}>{children}</section>;
 }
 
 export function ChiefInterface({
@@ -328,6 +147,7 @@ export function ChiefInterface({
   onSearch,
   onNotifications,
   onProfile,
+  profileMark = "",
   status = "Ready",
   statusTone = "ready",
   assistantState = "idle",
@@ -350,18 +170,23 @@ export function ChiefInterface({
     tools: null,
     network: null,
   },
+  quickActions = [],
+  recent = null,
+  suggestions = [],
   conversation = null,
   inputRef = null,
 }) {
   const state = String(assistantState || "idle").toLowerCase();
-  const stateLabel = String(assistantState || "idle").toUpperCase();
   const metricRows = [
     ["CPU", systemStatus.cpu],
-    ["MEMORY", systemStatus.memory],
-    ["AGENTS", systemStatus.agents],
-    ["TOOLS", systemStatus.tools],
-    ["NETWORK", systemStatus.network],
-  ];
+    ["Memory", systemStatus.memory],
+    ["Agents", systemStatus.agents],
+    ["Tools", systemStatus.tools],
+    ["Network", systemStatus.network],
+  ].flatMap(([label, value]) => {
+    const metric = metricValue(value);
+    return metric.kind === "empty" ? [] : [[label, metric]];
+  });
   const rootClass = [
     "chief-interface",
     `state-${state}`,
@@ -369,6 +194,7 @@ export function ChiefInterface({
     reducedMotion ? "is-reduced-motion" : "",
     conversation ? "has-exchange" : "",
     showSystemStatus ? "" : "is-telemetry-off",
+    showNavLabels ? "" : "is-nav-compact",
   ]
     .filter(Boolean)
     .join(" ");
@@ -380,12 +206,14 @@ export function ChiefInterface({
     onSend?.(trimmed);
   }
 
+  function submitSearch(event) {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    onSearch?.(String(data.get("q") || ""));
+  }
+
   return (
     <main className={rootClass}>
-      <div className="chief-starfield" />
-      <div className="chief-nebula chief-nebula-a" />
-      <div className="chief-nebula chief-nebula-b" />
-
       <header className="chief-topbar">
         <button
           type="button"
@@ -393,22 +221,27 @@ export function ChiefInterface({
           onClick={() => onHome?.()}
           aria-label="CHIEF home"
         >
-          <span className="chief-brand-mark">A</span>
-          <span className="chief-brand-name">CHIEF</span>
-          <span className="chief-brand-divider" />
-          <span className="chief-brand-subtitle">PERSONAL INTELLIGENCE</span>
+          <span className="chief-brand-mark" aria-hidden="true" />
+          <span className="chief-brand-name">FREEDOM OS</span>
         </button>
+
+        <div className="chief-top-title">
+          <strong>CHIEF</strong>
+          <span>Central human intelligence & execution fabric</span>
+        </div>
 
         <div className="chief-top-actions">
           {onSearch ? (
-            <button
-              type="button"
-              className="chief-icon-button"
-              onClick={onSearch}
-              aria-label="Search"
-            >
-              <Icon name="search" />
-            </button>
+            <form className="chief-search" role="search" onSubmit={submitSearch}>
+              <Icon name="search" size={16} />
+              <input
+                name="q"
+                type="search"
+                placeholder="Search conversations"
+                aria-label="Search conversations"
+                enterKeyHint="search"
+              />
+            </form>
           ) : null}
           {onNotifications ? (
             <button
@@ -417,12 +250,9 @@ export function ChiefInterface({
               onClick={onNotifications}
               aria-label="Notifications"
             >
-              <Icon name="bell" />
+              <Icon name="bell" size={18} />
             </button>
           ) : null}
-          <div className={`chief-online is-${statusTone}`}>
-            <i /> {status}
-          </div>
           {onProfile ? (
             <button
               type="button"
@@ -430,149 +260,90 @@ export function ChiefInterface({
               onClick={onProfile}
               aria-label="Settings"
             >
-              <Icon name="user" size={27} />
+              {profileMark ? profileMark.slice(0, 2) : <Icon name="user" size={18} />}
             </button>
           ) : null}
         </div>
       </header>
 
       <nav className="chief-left-rail" aria-label="Primary navigation">
-        {navItems.map((item) => {
-          const active = activeSection === item.id;
-          const interactive = typeof item.onSelect === "function";
-          const content = (
-            <>
-              <Icon name={item.icon} size={28} />
-              {showNavLabels ? (
-                <span>{item.label}</span>
-              ) : (
-                <span className="chief-sr">{item.label}</span>
-              )}
-              <b aria-hidden="true">›</b>
-            </>
-          );
-          if (!interactive) {
-            return (
-              <div key={item.id} className="chief-nav-item is-inert" aria-disabled="true">
-                {content}
-              </div>
+        <div className="chief-nav-list">
+          {navItems.map((item) => {
+            const active = activeSection === item.id;
+            const interactive = typeof item.onSelect === "function";
+            const content = (
+              <>
+                <span className="chief-nav-icon">
+                  <Icon name={item.icon} size={18} />
+                </span>
+                {showNavLabels ? (
+                  <span className="chief-nav-copy">
+                    <strong>{item.label}</strong>
+                    {item.detail ? <small>{item.detail}</small> : null}
+                  </span>
+                ) : (
+                  <span className="chief-sr">{item.label}</span>
+                )}
+              </>
             );
-          }
-          return (
-            <button
-              key={item.id}
-              type="button"
-              className={active ? "chief-nav-item is-active" : "chief-nav-item"}
-              aria-current={active ? "page" : undefined}
-              onClick={item.onSelect}
-            >
-              {content}
-            </button>
-          );
-        })}
-      </nav>
-
-      <section className="chief-stage" aria-label="CHIEF intelligence visualization">
-        <IntelligenceCore />
-      </section>
-
-      <aside className="chief-right-rail">
-        <Panel className="chief-assistant-panel">
-          <div className="chief-assistant-head">
-            <div>
-              <h2>CHIEF</h2>
-              <p>AI ASSISTANT</p>
-              <div className={`chief-ready is-${statusTone}`}>
-                <i />
-                {status}
-              </div>
-            </div>
-            <div className="chief-mini-wave" aria-hidden="true">
-              <i />
-              <i />
-              <i />
-              <i />
-              <i />
-              <i />
-              <i />
-            </div>
-          </div>
-
-          <div className="chief-capability">
-            <Icon name="brain" size={29} />
-            <div>
-              <strong>UNDERSTAND</strong>
-              <span>Context across your world</span>
-            </div>
-          </div>
-          <div className="chief-capability">
-            <Icon name="network" size={29} />
-            <div>
-              <strong>REASON</strong>
-              <span>Find insights and solutions</span>
-            </div>
-          </div>
-          <div className="chief-capability">
-            <Icon name="sparkle" size={29} />
-            <div>
-              <strong>CREATE</strong>
-              <span>Turn ideas into action</span>
-            </div>
-          </div>
-          <div className="chief-capability">
-            <Icon name="layers" size={29} />
-            <div>
-              <strong>ASSIST</strong>
-              <span>Across work, life, and wealth</span>
-            </div>
-          </div>
-        </Panel>
-
-        {showSystemStatus ? (
-          <Panel className="chief-system-panel">
-            <div className="chief-system-title">
-              <strong>SYSTEM STATUS</strong>
-              <span className="chief-signal" aria-hidden="true">
-                <i />
-                <i />
-                <i />
-                <i />
-              </span>
-            </div>
-
-            {metricRows.map(([label, value]) => {
-              const metric = metricValue(value);
+            if (!interactive) {
               return (
-                <div className="chief-metric" key={label}>
-                  <span>{label}</span>
-                  {metric.kind === "percent" ? (
-                    <>
-                      <div className="chief-meter">
-                        <i style={{ width: `${metric.text}%` }} />
-                      </div>
-                      <b>{metric.text}%</b>
-                    </>
-                  ) : (
-                    <>
-                      <div className="chief-meter chief-meter-empty">
-                        <i />
-                      </div>
-                      <b>{metric.text}</b>
-                    </>
-                  )}
+                <div key={item.id} className="chief-nav-item is-inert" aria-disabled="true">
+                  {content}
                 </div>
               );
-            })}
-          </Panel>
+            }
+            return (
+              <button
+                key={item.id}
+                type="button"
+                className={active ? "chief-nav-item is-active" : "chief-nav-item"}
+                aria-current={active ? "page" : undefined}
+                onClick={item.onSelect}
+              >
+                {content}
+              </button>
+            );
+          })}
+        </div>
+        {onHome ? (
+          <button type="button" className="chief-rail-foot" onClick={() => onHome()}>
+            <img src={footerUrl} alt="" />
+            <span>
+              <strong>Freedom OS</strong>
+              <small>Live the Future You Own</small>
+            </span>
+          </button>
         ) : null}
-      </aside>
+      </nav>
 
-      <div className="chief-bottom-stack">
-        {conversation ? <div className="chief-interface-conversation">{conversation}</div> : null}
-        <div className="chief-bottom-area">
-          <div className="chief-bottom-mark" aria-hidden="true">
-            ▤
+      <section className="chief-stage" aria-label="CHIEF">
+        <div className="chief-scene-frame">
+          <img className="chief-scene" src={sceneUrl} alt="" draggable="false" />
+        </div>
+
+        <div className="chief-stage-dock">
+          <div className="chief-stage-copy">
+            <p className="chief-wordmark">CHIEF</p>
+            <p className="chief-mantra">Understand · Reason · Plan · Execute</p>
+            <p className="chief-tagline">
+              Your personal intelligence layer for a more free, sovereign, and abundant life.
+            </p>
           </div>
+
+          <div className="chief-features">
+            {FEATURES.map((feature) => (
+              <div key={feature.title} className="chief-feature">
+                <span>
+                  <Icon name={feature.icon} size={16} />
+                </span>
+                <strong>{feature.title}</strong>
+                <small>{feature.text}</small>
+              </div>
+            ))}
+          </div>
+
+          {conversation ? <div className="chief-interface-conversation">{conversation}</div> : null}
 
           {showComposer ? (
             <div className="chief-composer">
@@ -584,9 +355,8 @@ export function ChiefInterface({
                 aria-pressed={listening}
                 aria-label={listening ? "Stop listening" : "Voice input"}
               >
-                <Icon name="mic" size={30} />
+                <Icon name="mic" size={18} />
               </button>
-
               <form className="chief-message-form" onSubmit={submitMessage}>
                 <input
                   ref={inputRef}
@@ -599,7 +369,6 @@ export function ChiefInterface({
                   aria-label="Ask CHIEF anything"
                   disabled={composerDisabled}
                 />
-
                 {allowAttach ? (
                   <button
                     type="button"
@@ -608,52 +377,151 @@ export function ChiefInterface({
                     aria-label="Attach file"
                     disabled={composerDisabled}
                   >
-                    <Icon name="paperclip" size={22} />
+                    <Icon name="paperclip" size={18} />
                   </button>
                 ) : null}
-
                 <button
                   type="submit"
                   className="chief-send-button"
                   aria-label="Send message"
                   disabled={composerDisabled || !String(message || "").trim()}
                 >
-                  <Icon name="send" size={25} />
+                  <Icon name="send" size={18} />
                 </button>
               </form>
             </div>
-          ) : (
-            <div className="chief-composer chief-composer--quiet" />
-          )}
+          ) : null}
 
-          <div className="chief-shortcuts">
-            {shortcuts.map((item) =>
-              typeof item.onSelect === "function" ? (
+          {showComposer && suggestions.length ? (
+            <div className="chief-suggestions">
+              {suggestions.map((item) =>
+                typeof item.onSelect === "function" ? (
+                  <button key={item.id} type="button" onClick={item.onSelect}>
+                    {item.label}
+                  </button>
+                ) : null
+              )}
+            </div>
+          ) : null}
+
+          {shortcuts.length ? (
+            <div className="chief-shortcuts">
+              {shortcuts.map((item) =>
+                typeof item.onSelect === "function" ? (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className="chief-shortcut"
+                    onClick={item.onSelect}
+                  >
+                    <Icon name={item.icon} size={16} />
+                    <span>{item.label}</span>
+                  </button>
+                ) : null
+              )}
+            </div>
+          ) : null}
+        </div>
+      </section>
+
+      <aside className="chief-right-rail">
+        <Panel className="chief-identity">
+          <span className="chief-identity-mark" aria-hidden="true" />
+          <div>
+            <h2>CHIEF</h2>
+            <p className={`chief-ready is-${statusTone}`}>
+              <i />
+              {status}
+            </p>
+            <p className="chief-identity-line">Personal intelligence for this account.</p>
+          </div>
+        </Panel>
+
+        {showSystemStatus && metricRows.length ? (
+          <Panel className="chief-system-panel">
+            <div className="chief-system-title">
+              <strong>System status</strong>
+              <span className={`chief-ready is-${statusTone}`}>
+                <i />
+                {status}
+              </span>
+            </div>
+            {metricRows.map(([label, metric]) => (
+              <div
+                className={
+                  metric.kind === "percent" ? "chief-metric" : "chief-metric chief-metric-text"
+                }
+                key={label}
+              >
+                <span>{label}</span>
+                {metric.kind === "percent" ? (
+                  <div className="chief-meter" aria-hidden="true">
+                    <i style={{ width: `${metric.text}%` }} />
+                  </div>
+                ) : null}
+                <b>{metric.kind === "percent" ? `${metric.text}%` : metric.text}</b>
+              </div>
+            ))}
+          </Panel>
+        ) : null}
+
+        {quickActions.length ? (
+          <Panel className="chief-actions-panel">
+            <div className="chief-system-title">
+              <strong>Quick actions</strong>
+            </div>
+            <div className="chief-actions">
+              {quickActions.map((item) => (
                 <button
                   key={item.id}
                   type="button"
-                  className="chief-shortcut"
                   onClick={item.onSelect}
+                  disabled={item.disabled}
+                  aria-pressed={item.pressed || undefined}
                 >
-                  <span>
-                    <Icon name={item.icon} size={25} />
-                  </span>
-                  <small>{item.label}</small>
+                  <Icon name={item.icon} size={18} />
+                  <span>{item.label}</span>
                 </button>
-              ) : (
-                <div key={item.id} className="chief-shortcut is-inert" aria-disabled="true">
-                  <span>
-                    <Icon name={item.icon} size={25} />
-                  </span>
-                  <small>{item.label}</small>
-                </div>
-              )
-            )}
-          </div>
-        </div>
-      </div>
+              ))}
+            </div>
+          </Panel>
+        ) : null}
 
-      <div className="chief-state-caption">{stateLabel}</div>
+        {recent ? (
+          <Panel className="chief-recent-panel">
+            <div className="chief-system-title">
+              <strong>Recent conversations</strong>
+              {typeof recent.onViewAll === "function" ? (
+                <button type="button" className="chief-text-link" onClick={recent.onViewAll}>
+                  View all
+                </button>
+              ) : null}
+            </div>
+            {recent.loading ? <p className="chief-panel-note">Loading</p> : null}
+            {!recent.loading && recent.error ? (
+              <p className="chief-panel-note">Unavailable</p>
+            ) : null}
+            {!recent.loading && !recent.error && recent.items?.length ? (
+              <div className="chief-recent-list">
+                {recent.items.map((item) => (
+                  <button key={item.id} type="button" onClick={item.onSelect}>
+                    <Icon name="chat" size={15} />
+                    <span>{item.label}</span>
+                    {item.time ? <time>{item.time}</time> : null}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            {!recent.loading && !recent.error && !recent.items?.length ? (
+              <p className="chief-panel-note">No recent conversations</p>
+            ) : null}
+          </Panel>
+        ) : null}
+      </aside>
+
+      <p className="chief-sr" aria-live="polite">
+        {String(assistantState || "idle")}
+      </p>
     </main>
   );
 }
