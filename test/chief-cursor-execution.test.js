@@ -34,6 +34,7 @@ function approval(overrides = {}) {
   return {
     id: "approval-1",
     decision: "approved",
+    expiresAt: "2099-01-01T00:00:00.000Z",
     userId: "user-a",
     provider: "cursor-cloud",
     objective: "Ship the patch",
@@ -252,6 +253,15 @@ test("missing configuration and unsafe commands never reach the API", async () =
   assert.equal(calls.length, 0);
 });
 
+test("an approval without an expiry does not submit", async () => {
+  const { execution, calls } = runtime();
+  await expectCode(
+    execution.submit(command({ approval: { expiresAt: null } }), ACTOR),
+    "approval_mismatch"
+  );
+  assert.equal(calls.length, 0);
+});
+
 test("an expired approval does not submit", async () => {
   const { execution, calls } = runtime(undefined, {
     now: () => new Date("2026-10-11T00:00:00.000Z"),
@@ -309,6 +319,17 @@ test("authentication, rate limit, and agent busy failures stay definite", async 
 
   const busy = runtime(async () => jsonResponse(409, { error: { code: "agent_busy" } }));
   await expectCode(busy.execution.submit(command(), ACTOR), "agent_busy");
+});
+
+test("agent id conflict keeps the submission ambiguous and does not post again", async () => {
+  const { execution, calls } = runtime(async () =>
+    jsonResponse(409, { error: { code: "agent_id_conflict" } })
+  );
+  await expectCode(execution.submit(command(), ACTOR), "reconciliation_required");
+  await expectCode(execution.submit(command(), ACTOR), "reconciliation_required");
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].method, "POST");
+  assert.equal(calls[0].url, "https://api.cursor.com/v1/agents");
 });
 
 test("an ambiguous create timeout is recorded and not retried", async () => {

@@ -1,9 +1,13 @@
 // Cursor Cloud Agents API v1 execution provider.
 //
-// One approved scope becomes one create call: POST /v1/agents. Status is
-// read with GET /v1/agents/{id}/runs/{runId}. Cancel is POST on that run.
-// This module does not poll, stream, or call the API while it is constructed.
-// The turn loop does not import it.
+// One approved scope becomes one create call: POST /v1/agents. The body
+// may carry a client-supplied bc- agentId. Cursor treats a repeat of that
+// id as 409 agent_id_conflict rather than a second agent. This module
+// records that conflict as ambiguous and does not POST again.
+// Status is read with GET /v1/agents/{id}/runs/{runId}. Cancel is POST on
+// that run. GET /v1/agents/{id} returning 404 does not prove the create
+// never landed. This module does not poll, stream, or call the API while
+// it is constructed. The turn loop does not import it.
 
 import {
   EXECUTION_EFFECTS,
@@ -102,10 +106,8 @@ function approvalCurrent(approval, now) {
   if (!approval || typeof approval !== "object" || Array.isArray(approval)) return false;
   if (approval.decision !== "approved" || approval.revokedAt != null) return false;
   if (typeof approval.id !== "string" || !APPROVAL_ID.test(approval.id)) return false;
-  if (approval.expiresAt != null) {
-    const time = new Date(approval.expiresAt).getTime();
-    if (!Number.isFinite(time) || time <= now.getTime()) return false;
-  }
+  const time = new Date(approval.expiresAt).getTime();
+  if (approval.expiresAt == null || !Number.isFinite(time) || time <= now.getTime()) return false;
   const scope = approval.scope;
   if (!scope || typeof scope !== "object" || Array.isArray(scope)) return false;
   const keys = Object.keys(scope);
@@ -392,7 +394,12 @@ export function createCursorCloudRuntime(options = {}) {
       if (begun.action === "unauthorized") {
         fail("unauthorized", "Execution requires the authorized user");
       }
-      if (begun.action === "invalidated" || begun.action === "absent") {
+      if (
+        begun.action === "invalidated" ||
+        begun.action === "absent" ||
+        begun.action === "expired" ||
+        begun.action === "closed"
+      ) {
         fail("approval_mismatch", "Approval does not cover this execution scope");
       }
       if (begun.action === "blocked") {
@@ -447,6 +454,19 @@ export function createCursorCloudRuntime(options = {}) {
 
       if (!response.ok) {
         const code = await responseCode(response);
+        if (response.status === 409 && code === "agent_id_conflict") {
+          await ledger.finish(approved.approvalId, "pending", {
+            state: "ambiguous",
+            agentId: reservedId,
+            runId: null,
+            status: null,
+            code: "agent_id_conflict",
+          });
+          fail(
+            "reconciliation_required",
+            "Cursor submission outcome is ambiguous and needs reconciliation"
+          );
+        }
         await ledger.finish(approved.approvalId, "pending", {
           state: "rejected",
           agentId: reservedId,
@@ -540,7 +560,7 @@ export function createCursorCloudRuntime(options = {}) {
       } catch {
         fail("network_error", "Cursor API request failed");
       }
-      if (response.status === 404) return { found: false, agentId };
+      if (response.status === 404) return { found: false, agentId, absenceProven: false };
       if (response.status === 401 || response.status === 403) {
         fail("authentication_failed", "Cursor API authentication failed");
       }
