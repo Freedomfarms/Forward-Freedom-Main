@@ -23,6 +23,7 @@ export function useChiefVoice({ user, sessionUid, onTranscript }) {
   const [listening, setListening] = useState(false);
   const [interim, setInterim] = useState("");
   const [audioActive, setAudioActive] = useState(false);
+  const [playback, setPlayback] = useState("idle");
   const [speechError, setSpeechError] = useState("");
   const [voiceAttempt, setVoiceAttempt] = useState(0);
 
@@ -95,6 +96,14 @@ export function useChiefVoice({ user, sessionUid, onTranscript }) {
   }, [sessionUid, loadVoices, voiceAttempt]);
 
   useEffect(() => {
+    return () => {
+      const controller = speakAbortRef.current;
+      speakAbortRef.current = null;
+      controller?.abort();
+    };
+  }, []);
+
+  useEffect(() => {
     const input = createChiefSpeechInput({
       onStart: () => setListening(true),
       onEnd: () => {
@@ -132,6 +141,7 @@ export function useChiefVoice({ user, sessionUid, onTranscript }) {
     speakAbortRef.current?.abort();
     speakAbortRef.current = null;
     setAudioActive(false);
+    setPlayback("idle");
   }, []);
 
   const stopListening = useCallback(() => {
@@ -148,10 +158,12 @@ export function useChiefVoice({ user, sessionUid, onTranscript }) {
       const currentUser = userRef.current;
       if (!spoken || !currentUser) {
         setAudioActive(false);
+        setPlayback("idle");
         return;
       }
       if (!selected) {
         setAudioActive(false);
+        setPlayback("idle");
         setSpeechError("Select an ElevenLabs voice before CHIEF can speak.");
         return;
       }
@@ -159,9 +171,11 @@ export function useChiefVoice({ user, sessionUid, onTranscript }) {
       const voiceSettings = settingsOverride
         ? normalizeVoiceSettings({ ...saved, ...settingsOverride })
         : saved;
-      speakAbortRef.current?.abort();
       const controller = new AbortController();
+      const previous = speakAbortRef.current;
       speakAbortRef.current = controller;
+      previous?.abort();
+      setPlayback("preparing");
       setAudioActive(false);
       setSpeechError("");
       try {
@@ -178,6 +192,7 @@ export function useChiefVoice({ user, sessionUid, onTranscript }) {
           signal: controller.signal,
           onPlaybackStart: () => {
             if (!controller.signal.aborted && speakAbortRef.current === controller) {
+              setPlayback("playing");
               setAudioActive(true);
             }
           },
@@ -188,6 +203,7 @@ export function useChiefVoice({ user, sessionUid, onTranscript }) {
       } finally {
         if (speakAbortRef.current === controller) {
           speakAbortRef.current = null;
+          setPlayback("idle");
           setAudioActive(false);
         }
       }
@@ -207,6 +223,7 @@ export function useChiefVoice({ user, sessionUid, onTranscript }) {
     speakAbortRef.current?.abort();
     speakAbortRef.current = null;
     setAudioActive(false);
+    setPlayback("idle");
     setSpeechError("");
     ensureAudio();
     void meterRef.current?.start();
@@ -242,6 +259,7 @@ export function useChiefVoice({ user, sessionUid, onTranscript }) {
     listening,
     interim,
     audioActive,
+    playback,
     speechError,
     toggleListening,
     stopListening,

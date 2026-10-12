@@ -30,7 +30,7 @@ import {
   writeChiefActiveSessionId,
 } from "../../utils/chiefActiveSession.js";
 import { conversationLabel, formatChiefTime } from "../../utils/chiefProtocol.js";
-import { visualStateForInteraction } from "./apexVisualState.js";
+import { scenePhaseForInteraction, visualStateForInteraction } from "./apexVisualState.js";
 import { ChiefAccessSheet } from "./ChiefAccessSheet.jsx";
 import { ChiefInterface } from "./ChiefInterface.jsx";
 import { ChiefApprovalCard } from "./ChiefApprovalCard.jsx";
@@ -841,6 +841,10 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
     speaking: voice.audioActive,
   };
   const orbState = visualStateForInteraction(interaction);
+  const scenePhase = scenePhaseForInteraction({
+    status: fieldStatus,
+    playback: voice.playback,
+  });
   const voiceNote = voice.interim || voice.speechError || "";
   const homeClass = embedded ? "chief-apex-home chief-apex-home--embedded" : "chief-apex-home";
   const homeStatus = user ? fieldStatus : "Sign in";
@@ -1078,6 +1082,7 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
           status={homeStatus}
           statusTone={homeStatusTone}
           assistantState={orbState}
+          scenePhase={scenePhase}
           message={draft}
           onMessageChange={setDraft}
           onSend={submitDraft}

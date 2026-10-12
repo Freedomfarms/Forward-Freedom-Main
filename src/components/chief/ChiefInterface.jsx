@@ -151,6 +151,7 @@ export function ChiefInterface({
   status = "Ready",
   statusTone = "ready",
   assistantState = "idle",
+  scenePhase = "idle",
   message = "",
   onMessageChange,
   onSend,
@@ -177,6 +178,7 @@ export function ChiefInterface({
   inputRef = null,
 }) {
   const state = String(assistantState || "idle").toLowerCase();
+  const phase = ["idle", "thinking", "responding"].includes(scenePhase) ? scenePhase : "idle";
   const metricRows = [
     ["CPU", systemStatus.cpu],
     ["Memory", systemStatus.memory],
@@ -190,6 +192,7 @@ export function ChiefInterface({
   const rootClass = [
     "chief-interface",
     `state-${state}`,
+    `phase-${phase}`,
     `is-${statusTone}`,
     reducedMotion ? "is-reduced-motion" : "",
     conversation ? "has-exchange" : "",
@@ -320,6 +323,10 @@ export function ChiefInterface({
       <section className="chief-stage" aria-label="CHIEF">
         <div className="chief-scene-frame">
           <img className="chief-scene" src={sceneUrl} alt="" draggable="false" />
+          <div className="chief-orb" aria-hidden="true">
+            <i data-tone="cyan" />
+            <i data-tone="violet" />
+          </div>
         </div>
 
         <div className="chief-stage-dock">
