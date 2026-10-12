@@ -5,6 +5,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
+import { createMemoryExecutionLedger } from "../server/chief/agents/execution.js";
 import {
   assertExecutionRuntime,
   assertReadRuntime,
@@ -90,6 +91,7 @@ function runtime(fetch, options = {}) {
   const execution = createExecutionRuntime({
     apiKey: pick(options, "apiKey", KEY),
     allowlist: pick(options, "allowlist", [REPO]),
+    ledger: options.ledger ?? createMemoryExecutionLedger(),
     now: options.now,
     fetch: async (url, init) => {
       calls.push({

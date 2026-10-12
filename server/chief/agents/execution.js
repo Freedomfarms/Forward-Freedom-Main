@@ -100,8 +100,8 @@ function copy(record) {
   return record ? structuredClone(record) : null;
 }
 
-// Process-local idempotency. No current table can store a Cursor run
-// reference without overloading the observation journal or a tool approval.
+// Process-local stand-in for adapter tests. WorkforceExecution is the
+// source of truth. Do not use this map for a granted execution.
 export function createMemoryExecutionLedger() {
   const records = new Map();
 

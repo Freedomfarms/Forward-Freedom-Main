@@ -8,7 +8,6 @@
 import {
   EXECUTION_EFFECTS,
   ExecutionError,
-  createMemoryExecutionLedger,
   isExactRepositoryUrl,
   isProtectedRepository,
   isRunStatus,
@@ -118,7 +117,35 @@ function approvalCurrent(approval, now) {
   );
 }
 
+function constraintsOf(value) {
+  if (value == null) return [];
+  if (!Array.isArray(value) || value.length > 20) return null;
+  const items = [];
+  for (const item of value) {
+    if (
+      typeof item !== "string" ||
+      item !== item.trim() ||
+      item.length === 0 ||
+      item.length > 500
+    ) {
+      return null;
+    }
+    if (hasControlChar(item)) return null;
+    items.push(item);
+  }
+  return items;
+}
+
 function sameGrant(approval, command) {
+  const approvedConstraints = constraintsOf(approval.constraints);
+  const requestedConstraints = constraintsOf(command.constraints);
+  if (!approvedConstraints || !requestedConstraints) return false;
+  if (
+    approvedConstraints.length !== requestedConstraints.length ||
+    approvedConstraints.some((item, index) => item !== requestedConstraints[index])
+  ) {
+    return false;
+  }
   return (
     approval.userId === command.userId &&
     approval.provider === PROVIDER &&
@@ -185,9 +212,15 @@ function validateCommand(command, actor, allowlist, now) {
     approvalId: command.approval.id,
     userId: command.userId,
     objective: command.objective,
+    constraints: constraintsOf(command.constraints) ?? [],
     repositoryUrl: command.repositoryUrl,
     startingRef: command.startingRef,
     provider: PROVIDER,
+    scope: {
+      effect: "execute",
+      workOnCurrentBranch: false,
+      autoCreatePR: false,
+    },
   };
 }
 
@@ -211,13 +244,15 @@ function submissionView(record, duplicate) {
   };
 }
 
-function createBody(command) {
-  return {
+function createBody(command, agentId) {
+  const body = {
     prompt: { text: command.objective },
     repos: [{ url: command.repositoryUrl, startingRef: command.startingRef }],
     workOnCurrentBranch: false,
     autoCreatePR: false,
   };
+  if (typeof agentId === "string" && agentId) body.agentId = agentId;
+  return body;
 }
 
 function platformGit(run) {
@@ -251,7 +286,10 @@ async function responseCode(response) {
 export function createCursorCloudRuntime(options = {}) {
   const allowlist = normalizeAllowlist(options.allowlist);
   const timeoutMs = resolveTimeout(options.timeoutMs);
-  const ledger = options.ledger ?? createMemoryExecutionLedger();
+  if (!options.ledger || typeof options.ledger.begin !== "function") {
+    fail("ledger_required", "Cursor execution requires a durable ledger");
+  }
+  const ledger = options.ledger;
   const fetchImpl = options.fetch ?? globalThis.fetch;
   const now = options.now ?? (() => new Date());
   const configuredKey = Object.prototype.hasOwnProperty.call(options, "apiKey")
@@ -312,7 +350,7 @@ export function createCursorCloudRuntime(options = {}) {
       fail("response_invalid", "Cursor run response did not match the stored reference");
     }
     if (!isRunStatus(body.status)) fail("unknown_status", "Cursor returned an unknown run status");
-    await ledger.markStatus(record.approvalId, body.status);
+    await ledger.markStatus(record.approvalId, body.status, body);
     return body;
   }
 
@@ -351,6 +389,12 @@ export function createCursorCloudRuntime(options = {}) {
         status: null,
       });
       if (begun.action === "duplicate") return submissionView(begun.record, true);
+      if (begun.action === "unauthorized") {
+        fail("unauthorized", "Execution requires the authorized user");
+      }
+      if (begun.action === "invalidated" || begun.action === "absent") {
+        fail("approval_mismatch", "Approval does not cover this execution scope");
+      }
       if (begun.action === "blocked") {
         const ambiguous = begun.record?.state === "ambiguous";
         fail(
@@ -360,14 +404,25 @@ export function createCursorCloudRuntime(options = {}) {
             : "Cursor submission is already in progress"
         );
       }
+      if (begun.action !== "start") {
+        fail(
+          "reconciliation_required",
+          "Cursor submission outcome is ambiguous and needs reconciliation"
+        );
+      }
+      const reservedId = begun.record?.agentId ?? null;
 
       let response;
       try {
-        response = await send("/v1/agents", { method: "POST", body: createBody(approved), key });
+        response = await send("/v1/agents", {
+          method: "POST",
+          body: createBody(approved, reservedId),
+          key,
+        });
       } catch {
         await ledger.finish(approved.approvalId, "pending", {
           state: "ambiguous",
-          agentId: null,
+          agentId: reservedId,
           runId: null,
           status: null,
         });
@@ -380,7 +435,7 @@ export function createCursorCloudRuntime(options = {}) {
       if (response.status >= 500 || response.status === 408) {
         await ledger.finish(approved.approvalId, "pending", {
           state: "ambiguous",
-          agentId: null,
+          agentId: reservedId,
           runId: null,
           status: null,
         });
@@ -394,7 +449,7 @@ export function createCursorCloudRuntime(options = {}) {
         const code = await responseCode(response);
         await ledger.finish(approved.approvalId, "pending", {
           state: "rejected",
-          agentId: null,
+          agentId: reservedId,
           runId: null,
           status: null,
         });
@@ -422,11 +477,12 @@ export function createCursorCloudRuntime(options = {}) {
         AGENT_ID.test(agentId) &&
         RUN_ID.test(runId) &&
         (latest == null || latest === runId) &&
+        (reservedId == null || agentId === reservedId) &&
         isRunStatus(status);
       if (!addressed) {
         await ledger.finish(approved.approvalId, "pending", {
           state: "ambiguous",
-          agentId: null,
+          agentId: reservedId,
           runId: null,
           status: null,
         });
@@ -465,6 +521,45 @@ export function createCursorCloudRuntime(options = {}) {
     async getResult(reference, actor) {
       const record = await owned(reference, actor);
       return resultView(record, await readRun(record));
+    },
+
+    async lookupPlatformAgent(agentId, actor) {
+      if (typeof ledger.findAgent !== "function" || !AGENT_ID.test(agentId ?? "")) {
+        fail("unknown_run", "Cursor run reference is not a stored execution");
+      }
+      const record = await ledger.findAgent(agentId);
+      if (!record) fail("unknown_run", "Cursor run reference is not a stored execution");
+      if (!userIdOf(actor?.userId) || actor.userId !== record.userId) {
+        fail("unauthorized", "Execution requires the authorized user");
+      }
+      const key = apiKey();
+      if (!key) fail("api_key_missing", "Cursor execution API key is not configured");
+      let response;
+      try {
+        response = await send(`/v1/agents/${encodeURIComponent(agentId)}`, { method: "GET", key });
+      } catch {
+        fail("network_error", "Cursor API request failed");
+      }
+      if (response.status === 404) return { found: false, agentId };
+      if (response.status === 401 || response.status === 403) {
+        fail("authentication_failed", "Cursor API authentication failed");
+      }
+      if (response.status === 429) fail("rate_limited", "Cursor API rate limit exceeded");
+      if (!response.ok) fail("request_rejected", "Cursor run request was rejected");
+      let body;
+      try {
+        body = await response.json();
+      } catch {
+        fail("response_invalid", "Cursor run response was incomplete");
+      }
+      if (body?.id !== agentId) {
+        fail("response_invalid", "Cursor run response did not match the stored reference");
+      }
+      const runId = typeof body.latestRunId === "string" ? body.latestRunId : null;
+      if (runId && RUN_ID.test(runId) && typeof ledger.attachRun === "function") {
+        await ledger.attachRun(record.approvalId, { agentId, runId });
+      }
+      return { found: true, agentId, runId: RUN_ID.test(runId ?? "") ? runId : null };
     },
 
     async cancel(reference, actor) {

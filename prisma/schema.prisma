@@ -155,6 +155,7 @@ model User {
   workforceBindings       WorkforceBinding[]
   observedAgents          ObservedAgent[]
   activityEvents          ActivityEvent[]
+  workforceExecutions     WorkforceExecution[]
 }
 
 model PlaidItem {
@@ -746,6 +747,20 @@ enum WorkforceBindingStatus {
   REVOKED
 }
 
+// Lifecycle of one explicit execution approval. COMPLETED means Cursor
+// reported FINISHED. It does not mean the objective was verified.
+enum WorkforceExecutionState {
+  APPROVED
+  SUBMITTING
+  SUBMITTED
+  AMBIGUOUS
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+  EXPIRED
+}
+
 // One durable CHIEF conversation/checkpoint root (möbius `sessions`).
 // PENDING_APPROVAL is the suspended-turn state: any serverless instance can
 // resume the turn from the journals below after an ExecApproval Op arrives.
@@ -1252,6 +1267,42 @@ model ActivityEvent {
   @@index([userId, occurredAt])
   @@index([userId, agentExternalId, occurredAt])
   @@map("activity_event")
+}
+
+// One explicit execution approval and its Cursor run. This is not a tool
+// approval and not an observation. objective, constraints, and the worker
+// statement are sealed. verified cannot mean the objective succeeded.
+model WorkforceExecution {
+  id                     String                   @id @default(cuid())
+  userId                 String
+  approvalId             String                   @unique
+  intentionId            String?
+  provider               String
+  objectiveCiphertext    String
+  constraintsCiphertext  String
+  repositoryUrl          String
+  startingRef            String
+  scopeJson              Json
+  scopeHash              String
+  state                  WorkforceExecutionState  @default(APPROVED)
+  platformStatus         String?
+  platformCode           String?
+  agentId                String?                  @unique
+  runId                  String?
+  attempt                Int                      @default(0)
+  ambiguousAt            DateTime?
+  submittedAt            DateTime?
+  terminalAt             DateTime?
+  statementCiphertext    String?
+  verified               Boolean                  @default(false)
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime                 @updatedAt
+  user                   User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, state])
+  @@index([state, updatedAt])
+  @@index([agentId, runId])
+  @@map("workforce_execution")
 }
 
 // Self-notification only: agents may notify the user (in-app or via the
