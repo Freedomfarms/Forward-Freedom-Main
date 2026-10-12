@@ -47,10 +47,15 @@ test("CHIEF home mounts the supplied interface on the existing conversation path
   assert.match(css, /grid-area:\s*stage/);
   assert.match(css, /grid-area:\s*rail/);
   assert.match(css, /chief-core-pulse/);
+  assert.match(css, /chief-ring-flow/);
+  assert.match(css, /mix-blend-mode:\s*color/);
+  assert.match(css, /--chief-ring-angle/);
+  assert.match(css, /mask-image/);
   assert.match(css, /\.chief-interface\.phase-responding/);
   assert.match(css, /\.chief-interface\.phase-thinking/);
   assert.doesNotMatch(css, /margin-top:\s*-/);
-  assert.match(face, /data-tone="violet"/);
+  assert.match(face, /chief-ring-field/);
+  assert.match(face, /chief-core-field/);
   assert.match(face, /phase-\$\{phase\}/);
   assert.match(read("src/components/chief/useChiefVoice.js"), /setPlayback\("preparing"\)/);
   assert.match(read("src/components/chief/useChiefVoice.js"), /setPlayback\("playing"\)/);

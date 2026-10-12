@@ -322,10 +322,12 @@ export function ChiefInterface({
 
       <section className="chief-stage" aria-label="CHIEF">
         <div className="chief-scene-frame">
-          <img className="chief-scene" src={sceneUrl} alt="" draggable="false" />
-          <div className="chief-orb" aria-hidden="true">
-            <i data-tone="cyan" />
-            <i data-tone="violet" />
+          <div className="chief-scene-plate">
+            <img className="chief-scene" src={sceneUrl} alt="" draggable="false" />
+            <i className="chief-core-field" />
+            <i className="chief-core-wash" />
+            <img className="chief-ring-field" src={sceneUrl} alt="" draggable="false" />
+            <i className="chief-ring-flow" />
           </div>
         </div>
 
