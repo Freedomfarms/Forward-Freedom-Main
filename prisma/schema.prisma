@@ -1272,6 +1272,9 @@ model ActivityEvent {
 // One explicit execution approval and its Cursor run. This is not a tool
 // approval and not an observation. objective, constraints, and the worker
 // statement are sealed. verified cannot mean the objective succeeded.
+// expiresAt is the server-assigned submission deadline. The partial unique
+// index workforce_execution_active_scope_key (userId, scopeHash) for open
+// states lives in SQL; Prisma cannot express that predicate.
 model WorkforceExecution {
   id                     String                   @id @default(cuid())
   userId                 String
@@ -1284,6 +1287,7 @@ model WorkforceExecution {
   startingRef            String
   scopeJson              Json
   scopeHash              String
+  expiresAt              DateTime
   state                  WorkforceExecutionState  @default(APPROVED)
   platformStatus         String?
   platformCode           String?
