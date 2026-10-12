@@ -2,14 +2,22 @@
 //
 // ChiefApproval records a paused tool batch. It cannot name an objective,
 // repository, ref, and execution scope, so this table is the execution
-// approval. A conversational yes does not write a row.
+// approval. A conversational yes does not write a row. workforce:read does
+// not authorize submission. ToolExecutor confirmation does not either.
+//
+// submitGranted is the only submission entry. It requires an explicit
+// approve_execution grant for the authenticated owner, this row, and this
+// scope hash. The grant is consumed by the same APPROVED → SUBMITTING claim
+// that reserves the Cursor id. A second claim does not POST again.
 //
 // COMPLETED means Cursor returned FINISHED. verified stays false.
 //
-// Ambiguous recovery uses the reserved bc- id. GET /v1/agents/{id} either
-// finds the agent Cursor accepted or reports that it was never created.
-// That path does not call POST /v1/agents. A lost response cannot mint a
-// second agent. A new explicit approval is required after a confirmed miss.
+// Cursor documents a client-supplied agent id on POST /v1/agents. Re-POSTing
+// that id returns 409 agent_id_conflict and does not return the original
+// agent or run. GET /v1/agents/{id} loads the agent and latestRunId when the
+// agent exists. The create reference does not define a missing-agent status.
+// This ledger treats a lost create as AMBIGUOUS and reconciles with GET. It
+// does not POST again, and it does not claim exactly-once execution.
 //
 // Polling is not started here. runChiefTick is the host: listNonterminal
 // with the service client, then withUserContext for each owner. It stays
@@ -110,8 +118,36 @@ export function executionScopeHash(scope) {
     .digest("hex");
 }
 
+export const EXECUTION_APPROVAL_ACTION = "approve_execution";
+
 export function mintPlatformAgentId() {
   return `bc-${randomUUID()}`;
+}
+
+function sameInstant(left, right) {
+  const first = new Date(left).getTime();
+  const second = new Date(right).getTime();
+  return Number.isFinite(first) && first === second;
+}
+
+function expiryOf(value, now) {
+  if (value == null) fail("approval_required", "Execution approval requires an explicit expiry");
+  const time = new Date(value).getTime();
+  if (!Number.isFinite(time)) fail("approval_mismatch", "Execution approval expiry is invalid");
+  if (time <= now.getTime()) fail("approval_expired", "Execution approval has expired");
+  return new Date(time);
+}
+
+function isToolBatchApproval(value) {
+  if (!value || typeof value !== "object") return false;
+  return (
+    value.calls != null ||
+    value.sessionId != null ||
+    value.session_id != null ||
+    value.stickyKey != null ||
+    value.turnId != null ||
+    value.submission != null
+  );
 }
 
 function constraintsOf(value) {
@@ -133,7 +169,7 @@ function constraintsOf(value) {
   return items;
 }
 
-function grantInput(input) {
+function grantInput(input, now) {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     fail("objective_invalid", "Execution objective is malformed");
   }
@@ -208,6 +244,7 @@ function grantInput(input) {
     constraints,
     repositoryUrl: input.repositoryUrl,
     startingRef: input.startingRef,
+    expiresAt: expiryOf(input.expiresAt, now),
     scope: {
       effect: EXECUTION_SCOPE.effect,
       workOnCurrentBranch: false,
@@ -228,15 +265,112 @@ function hashFromSnapshot(snapshot) {
   });
 }
 
-export function classifyExecutionClaim(row, snapshot) {
+export function classifyExecutionClaim(row, snapshot, now = new Date()) {
   if (!row) return { action: "absent" };
   if (row.userId !== snapshot.userId) return { action: "unauthorized" };
   if (row.scopeHash !== hashFromSnapshot(snapshot)) return { action: "invalidated" };
+  if (row.revokedAt != null) return { action: "revoked" };
+  if (row.state === ExecutionState.EXPIRED) return { action: "expired" };
+  if (row.expiresAt == null || new Date(row.expiresAt).getTime() <= now.getTime()) {
+    return { action: "expired" };
+  }
   if (row.state === ExecutionState.APPROVED) return { action: "start" };
   if (row.state === ExecutionState.SUBMITTING || row.state === ExecutionState.AMBIGUOUS) {
     return { action: "blocked" };
   }
   return { action: "duplicate" };
+}
+
+function grantFieldsMatch(record, grant) {
+  const constraints = constraintsOf(grant.constraints);
+  if (!constraints) return false;
+  if (
+    constraints.length !== record.constraints.length ||
+    constraints.some((item, index) => item !== record.constraints[index])
+  ) {
+    return false;
+  }
+  const scope = grant.scope;
+  const keys = scope && typeof scope === "object" && !Array.isArray(scope) ? Object.keys(scope) : [];
+  if (
+    keys.length !== 3 ||
+    scope.effect !== EXECUTION_SCOPE.effect ||
+    scope.workOnCurrentBranch !== false ||
+    scope.autoCreatePR !== false
+  ) {
+    return false;
+  }
+  const presented = executionScopeHash({
+    userId: grant.userId,
+    provider: grant.provider,
+    objective: grant.objective,
+    constraints,
+    repositoryUrl: grant.repositoryUrl,
+    startingRef: grant.startingRef,
+    scope: {
+      effect: EXECUTION_SCOPE.effect,
+      workOnCurrentBranch: false,
+      autoCreatePR: false,
+    },
+  });
+  return (
+    grant.approvalId === record.approvalId &&
+    grant.executionId === record.id &&
+    grant.userId === record.userId &&
+    grant.provider === record.provider &&
+    grant.objective === record.objective &&
+    grant.repositoryUrl === record.repositoryUrl &&
+    grant.startingRef === record.startingRef &&
+    grant.scopeHash === record.scopeHash &&
+    presented === record.scopeHash &&
+    sameInstant(grant.expiresAt, record.expiresAt) &&
+    record.scope?.effect === EXECUTION_SCOPE.effect &&
+    record.scope?.workOnCurrentBranch === false &&
+    record.scope?.autoCreatePR === false
+  );
+}
+
+// The grant must name this owner, this ledger row, and this scope hash.
+// A chat utterance or a ChiefApproval tool batch does not match.
+export function assessExplicitGrant(record, grant, userId, now = new Date()) {
+  if (typeof userId !== "string" || userId.trim() === "" || userId !== record?.userId) {
+    return { ok: false, code: "unauthorized", message: "Execution requires the authorized user" };
+  }
+  if (
+    typeof grant === "string" ||
+    grant == null ||
+    typeof grant !== "object" ||
+    Array.isArray(grant) ||
+    isToolBatchApproval(grant) ||
+    grant.action !== EXECUTION_APPROVAL_ACTION ||
+    grant.decision !== "approved"
+  ) {
+    return {
+      ok: false,
+      code: "approval_required",
+      message: "Execution requires an explicit approval of this scope",
+    };
+  }
+  if (grant.userId !== userId) {
+    return { ok: false, code: "unauthorized", message: "Execution requires the authorized user" };
+  }
+  if (!grantFieldsMatch(record, grant)) {
+    return {
+      ok: false,
+      code: "approval_mismatch",
+      message: "Approval does not cover this execution scope",
+    };
+  }
+  if (record.revokedAt != null) {
+    return { ok: false, code: "approval_revoked", message: "Execution approval has been revoked" };
+  }
+  if (record.state === ExecutionState.EXPIRED || !sameInstant(record.expiresAt, grant.expiresAt)) {
+    return { ok: false, code: "approval_expired", message: "Execution approval has expired" };
+  }
+  if (new Date(record.expiresAt).getTime() <= now.getTime()) {
+    return { ok: false, code: "approval_expired", message: "Execution approval has expired" };
+  }
+  return { ok: true };
 }
 
 export function stateForPlatformStatus(status) {
@@ -276,6 +410,9 @@ export function createMemoryExecutionStore({ encrypt, decrypt, now = () => new D
       repositoryUrl: row.repositoryUrl,
       startingRef: row.startingRef,
       scope: structuredClone(row.scopeJson),
+      scopeHash: row.scopeHash,
+      expiresAt: row.expiresAt,
+      revokedAt: row.revokedAt,
       state: row.state,
       platformStatus: row.platformStatus,
       platformCode: row.platformCode,
@@ -322,7 +459,7 @@ export function createMemoryExecutionStore({ encrypt, decrypt, now = () => new D
     },
 
     async grant(input) {
-      const scope = grantInput(input);
+      const scope = grantInput(input, now());
       const at = now();
       const row = {
         id: `exec-${randomUUID()}`,
@@ -336,6 +473,8 @@ export function createMemoryExecutionStore({ encrypt, decrypt, now = () => new D
         startingRef: scope.startingRef,
         scopeJson: scope.scope,
         scopeHash: executionScopeHash(scope),
+        expiresAt: scope.expiresAt,
+        revokedAt: null,
         state: ExecutionState.APPROVED,
         platformStatus: null,
         platformCode: null,
@@ -379,13 +518,41 @@ export function createMemoryExecutionStore({ encrypt, decrypt, now = () => new D
       return view(row);
     },
 
+    async expire(userId, id) {
+      const row = rows.get(id);
+      if (!row || row.userId !== userId) return null;
+      if (row.state === ExecutionState.APPROVED) {
+        row.state = ExecutionState.EXPIRED;
+        row.terminalAt = row.terminalAt ?? now();
+        row.updatedAt = now();
+        write(row);
+      }
+      return view(row);
+    },
+
+    async revoke(userId, id) {
+      const row = rows.get(id);
+      if (!row || row.userId !== userId) return null;
+      if (row.state !== ExecutionState.APPROVED || row.revokedAt != null) return view(row);
+      row.revokedAt = now();
+      row.updatedAt = now();
+      write(row);
+      return view(row);
+    },
+
     adapter() {
       return {
         async begin(approvalId, snapshot) {
           const row = byApproval(approvalId);
-          const decision = classifyExecutionClaim(row, snapshot);
+          const decision = classifyExecutionClaim(row, snapshot, now());
           if (decision.action === "absent" || decision.action === "unauthorized") {
             return { action: decision.action };
+          }
+          if (decision.action === "expired" && row.state === ExecutionState.APPROVED) {
+            row.state = ExecutionState.EXPIRED;
+            row.terminalAt = row.terminalAt ?? now();
+            row.updatedAt = now();
+            write(row);
           }
           if (decision.action === "start") {
             row.state = ExecutionState.SUBMITTING;
@@ -507,15 +674,71 @@ export function commandForGrant(record) {
       constraints: record.constraints,
       repositoryUrl: record.repositoryUrl,
       startingRef: record.startingRef,
+      expiresAt: record.expiresAt,
+      revokedAt: record.revokedAt,
       scope,
     },
   };
 }
 
-export async function submitGranted({ store, runtime, userId, executionId }) {
+async function safeAudit(audit, entry) {
+  try {
+    await audit?.write(entry);
+  } catch {
+    // An audit outage must not submit or hide a rejected grant.
+  }
+}
+
+export async function submitGranted({
+  store,
+  runtime,
+  userId,
+  executionId,
+  grant,
+  audit = null,
+  now = () => new Date(),
+}) {
   const record = await store.get(userId, executionId);
   if (!record) fail("unknown_run", "Cursor run reference is not a stored execution");
-  return runtime.submit(commandForGrant(record), { userId });
+  const decision = assessExplicitGrant(record, grant, userId, now());
+  if (!decision.ok) {
+    if (decision.code === "approval_expired" && typeof store.expire === "function") {
+      await store.expire(userId, executionId);
+    }
+    await safeAudit(audit, {
+      userId,
+      actor: "chief:execution",
+      action: "execution.submit_rejected",
+      resource: executionId,
+      approval: record.approvalId,
+      summary: decision.code,
+    });
+    fail(decision.code, decision.message);
+  }
+  try {
+    const submitted = await runtime.submit(commandForGrant(record), { userId });
+    await safeAudit(audit, {
+      userId,
+      actor: "chief:execution",
+      action: submitted.duplicate ? "execution.submit_replayed" : "execution.submit",
+      resource: executionId,
+      approval: record.approvalId,
+      summary: submitted.duplicate
+        ? "explicit execution approval was already submitted"
+        : "explicit execution approval submitted",
+    });
+    return submitted;
+  } catch (error) {
+    await safeAudit(audit, {
+      userId,
+      actor: "chief:execution",
+      action: "execution.submit_rejected",
+      resource: executionId,
+      approval: record.approvalId,
+      summary: error?.code || "execution_submit_failed",
+    });
+    throw error;
+  }
 }
 
 export async function reconcileGranted({ store, runtime, userId, executionId }) {
@@ -588,6 +811,9 @@ export class PrismaExecutionStore {
       repositoryUrl: row.repositoryUrl,
       startingRef: row.startingRef,
       scope: row.scopeJson,
+      scopeHash: row.scopeHash,
+      expiresAt: row.expiresAt,
+      revokedAt: row.revokedAt,
       state: row.state,
       platformStatus: row.platformStatus,
       platformCode: row.platformCode,
@@ -605,7 +831,7 @@ export class PrismaExecutionStore {
   }
 
   async grant(input) {
-    const scope = grantInput(input);
+    const scope = grantInput(input, this._now());
     return this._withUser(scope.userId, async (tx) => {
       const created = await tx.workforceExecution.create({
         data: {
@@ -620,6 +846,8 @@ export class PrismaExecutionStore {
           startingRef: scope.startingRef,
           scopeJson: scope.scope,
           scopeHash: executionScopeHash(scope),
+          expiresAt: scope.expiresAt,
+          revokedAt: null,
           state: ExecutionState.APPROVED,
           verified: false,
         },
@@ -658,6 +886,33 @@ export class PrismaExecutionStore {
     });
   }
 
+  async expire(userId, id) {
+    return this._withUser(userId, async (tx) => {
+      const at = this._now();
+      await tx.workforceExecution.updateMany({
+        where: { id, userId, state: ExecutionState.APPROVED },
+        data: { state: ExecutionState.EXPIRED, terminalAt: at },
+      });
+      const row = await tx.workforceExecution.findFirst({ where: { id, userId } });
+      return this._view(row);
+    });
+  }
+
+  async revoke(userId, id) {
+    return this._withUser(userId, async (tx) => {
+      const current = await tx.workforceExecution.findFirst({ where: { id, userId } });
+      if (!current) return null;
+      if (current.state === ExecutionState.APPROVED && current.revokedAt == null) {
+        await tx.workforceExecution.updateMany({
+          where: { id, userId, state: ExecutionState.APPROVED, revokedAt: null },
+          data: { revokedAt: this._now() },
+        });
+      }
+      const row = await tx.workforceExecution.findFirst({ where: { id, userId } });
+      return this._view(row);
+    });
+  }
+
   async _owned(where) {
     const client = this._service?.();
     if (!client) return null;
@@ -676,9 +931,20 @@ export class PrismaExecutionStore {
           const row = await tx.workforceExecution.findFirst({
             where: { approvalId, userId: snapshot.userId },
           });
-          const decision = classifyExecutionClaim(row, snapshot);
+          const at = store._now();
+          const decision = classifyExecutionClaim(row, snapshot, at);
           if (decision.action === "absent" || decision.action === "unauthorized") {
             return { action: decision.action };
+          }
+          if (decision.action === "expired" && row.state === ExecutionState.APPROVED) {
+            await tx.workforceExecution.updateMany({
+              where: { id: row.id, userId: snapshot.userId, state: ExecutionState.APPROVED },
+              data: { state: ExecutionState.EXPIRED, terminalAt: at },
+            });
+            const expired = await tx.workforceExecution.findFirst({
+              where: { id: row.id, userId: snapshot.userId },
+            });
+            return { action: "expired", record: store._adapterRecord(expired) };
           }
           if (decision.action !== "start") {
             return { action: decision.action, record: store._adapterRecord(row) };
@@ -690,6 +956,8 @@ export class PrismaExecutionStore {
               userId: snapshot.userId,
               state: ExecutionState.APPROVED,
               scopeHash: row.scopeHash,
+              revokedAt: null,
+              expiresAt: { gt: at },
             },
             data: { state: ExecutionState.SUBMITTING, attempt: { increment: 1 }, agentId },
           });
@@ -697,7 +965,7 @@ export class PrismaExecutionStore {
             where: { id: row.id, userId: snapshot.userId },
           });
           if (count !== 1) {
-            const again = classifyExecutionClaim(current, snapshot);
+            const again = classifyExecutionClaim(current, snapshot, store._now());
             const action = again.action === "start" ? "blocked" : again.action;
             return { action, record: store._adapterRecord(current) };
           }

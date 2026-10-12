@@ -73,6 +73,29 @@ function newStore() {
   return createMemoryExecutionStore({ encrypt: seal, decrypt: open });
 }
 
+function futureExpiry() {
+  return new Date(Date.now() + 60 * 60 * 1000);
+}
+
+function explicitGrant(record, overrides = {}) {
+  return {
+    action: "approve_execution",
+    decision: "approved",
+    approvalId: record.approvalId,
+    executionId: record.id,
+    userId: record.userId,
+    provider: record.provider,
+    objective: record.objective,
+    constraints: record.constraints,
+    repositoryUrl: record.repositoryUrl,
+    startingRef: record.startingRef,
+    scope: record.scope,
+    scopeHash: record.scopeHash,
+    expiresAt: record.expiresAt,
+    ...overrides,
+  };
+}
+
 async function granted(executionStore, overrides = {}) {
   return executionStore.grant({
     userId: "user-a",
@@ -83,8 +106,20 @@ async function granted(executionStore, overrides = {}) {
     repositoryUrl: REPO,
     startingRef: "main",
     scope: { effect: "execute", workOnCurrentBranch: false, autoCreatePR: false },
+    expiresAt: futureExpiry(),
     apiKey: KEY,
     ...overrides,
+  });
+}
+
+async function submitOwned({ store, runtime, userId, executionId }) {
+  const record = await store.get(userId, executionId);
+  return submitGranted({
+    store,
+    runtime,
+    userId,
+    executionId,
+    grant: explicitGrant(record),
   });
 }
 
@@ -101,7 +136,7 @@ test("a granted execution survives a new runtime and does not submit twice", asy
   const executionStore = newStore();
   const first = executionFor(executionStore, async (request) => createdFrom(request));
   const approval = await granted(executionStore);
-  const submitted = await submitGranted({
+  const submitted = await submitOwned({
     store: executionStore,
     runtime: first.runtime,
     userId: "user-a",
@@ -132,7 +167,7 @@ test("a granted execution survives a new runtime and does not submit twice", asy
   const second = executionFor(executionStore, async () => {
     throw new Error("Cursor API was called");
   });
-  const resumed = await submitGranted({
+  const resumed = await submitOwned({
     store: executionStore,
     runtime: second.runtime,
     userId: "user-a",
@@ -149,7 +184,7 @@ test("one user cannot read or cancel another user's execution", async () => {
   const executionStore = newStore();
   const { runtime, calls } = executionFor(executionStore, async (request) => createdFrom(request));
   const approval = await granted(executionStore);
-  await submitGranted({
+  await submitOwned({
     store: executionStore,
     runtime,
     userId: "user-a",
@@ -229,7 +264,7 @@ test("an ambiguous submission keeps its reserved agent and is not retried", asyn
   });
   const approval = await granted(executionStore);
   const error = await rejection(
-    submitGranted({
+    submitOwned({
       store: executionStore,
       runtime: first.runtime,
       userId: "user-a",
@@ -249,7 +284,7 @@ test("an ambiguous submission keeps its reserved agent and is not retried", asyn
     throw new Error("Cursor API was called");
   });
   const again = await rejection(
-    submitGranted({
+    submitOwned({
       store: executionStore,
       runtime: second.runtime,
       userId: "user-a",
@@ -285,7 +320,7 @@ test("reconciling a lost create response stores the platform run without posting
   });
   const approval = await granted(executionStore);
   await rejection(
-    submitGranted({
+    submitOwned({
       store: executionStore,
       runtime: first.runtime,
       userId: "user-a",
@@ -331,7 +366,7 @@ test("terminal platform status is durable and is not objective success", async (
     });
   });
   const approval = await granted(executionStore);
-  const submitted = await submitGranted({
+  const submitted = await submitOwned({
     store: executionStore,
     runtime,
     userId: "user-a",
@@ -360,7 +395,7 @@ test("cancel uses the stored run and a terminal race reconciles the platform sta
   const executionStore = newStore();
   const approval = await granted(executionStore);
   const created = executionFor(executionStore, async (request) => createdFrom(request));
-  const submitted = await submitGranted({
+  const submitted = await submitOwned({
     store: executionStore,
     runtime: created.runtime,
     userId: "user-a",
@@ -388,7 +423,7 @@ test("cancel uses the stored run and a terminal race reconciles the platform sta
   const racedStore = newStore();
   const racedApproval = await granted(racedStore);
   const racedCreate = executionFor(racedStore, async (request) => createdFrom(request));
-  const racedSubmitted = await submitGranted({
+  const racedSubmitted = await submitOwned({
     store: racedStore,
     runtime: racedCreate.runtime,
     userId: "user-a",
@@ -433,7 +468,7 @@ test("nonterminal rows are queryable and a protected repository cannot be grante
       status: "RUNNING",
     });
   });
-  const submitted = await submitGranted({
+  const submitted = await submitOwned({
     store: executionStore,
     runtime: running.runtime,
     userId: "user-a",
@@ -519,6 +554,9 @@ test("a database claim updates only an approved row for that owner", async () =>
         return value.in.includes(row[key]);
       if (value && typeof value === "object" && Array.isArray(value.notIn))
         return !value.notIn.includes(row[key]);
+      if (value && typeof value === "object" && value.gt instanceof Date) {
+        return row[key] instanceof Date && row[key].getTime() > value.gt.getTime();
+      }
       return row[key] === value;
     });
   }
@@ -561,6 +599,7 @@ test("a database claim updates only an approved row for that owner", async () =>
     repositoryUrl: REPO,
     startingRef: "main",
     scope: { effect: "execute", workOnCurrentBranch: false, autoCreatePR: false },
+    expiresAt: futureExpiry(),
   });
   assert.equal(approval.objective, "Ship the patch");
   assert.equal(rows[0].objectiveCiphertext.includes("Ship the patch"), false);
@@ -569,6 +608,8 @@ test("a database claim updates only an approved row for that owner", async () =>
   assert.equal(updates[0].where.state, ExecutionState.APPROVED);
   assert.equal(updates[0].where.userId, "user-a");
   assert.equal(updates[0].where.scopeHash, rows[0].scopeHash);
+  assert.equal(updates[0].where.revokedAt, null);
+  assert.ok(updates[0].where.expiresAt.gt instanceof Date);
   const again = await database.adapter().begin(approval.approvalId, commandForGrant(approval));
   assert.equal(again.action, "blocked");
   assert.equal(rows[0].state, ExecutionState.SUBMITTING);

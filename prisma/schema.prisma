@@ -1284,6 +1284,12 @@ model WorkforceExecution {
   startingRef            String
   scopeJson              Json
   scopeHash              String
+  // The explicit grant expires at this instant. A missing or past instant
+  // cannot authorize submission.
+  expiresAt              DateTime?
+  // Set only while the row is still APPROVED. Submission checks this before
+  // it claims the row.
+  revokedAt              DateTime?
   state                  WorkforceExecutionState  @default(APPROVED)
   platformStatus         String?
   platformCode           String?

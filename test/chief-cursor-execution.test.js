@@ -451,6 +451,21 @@ test("cancel requires the authorized user and the stored run", async () => {
   );
 });
 
+test("a client-supplied id conflict does not create another agent", async () => {
+  const ledger = createMemoryExecutionLedger();
+  const { execution, calls } = runtime(
+    async () => jsonResponse(409, { code: "agent_id_conflict" }),
+    { ledger }
+  );
+  await expectCode(execution.submit(command(), ACTOR), "reconciliation_required");
+  await expectCode(execution.submit(command(), ACTOR), "reconciliation_required");
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].method, "POST");
+  assert.equal(calls[0].body.workOnCurrentBranch, false);
+  assert.equal(calls[0].body.autoCreatePR, false);
+  assert.equal(calls[0].body.env, undefined);
+});
+
 test("delegation and the turn path stay provider neutral", () => {
   const files = [
     "server/chief/runtime/turn.js",

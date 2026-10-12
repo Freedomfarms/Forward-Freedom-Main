@@ -4,6 +4,15 @@
 // read with GET /v1/agents/{id}/runs/{runId}. Cancel is POST on that run.
 // This module does not poll, stream, or call the API while it is constructed.
 // The turn loop does not import it.
+//
+// Cursor documents an optional client-supplied agentId (`bc-<uuid>`).
+// Re-POSTing that id returns 409 agent_id_conflict and does not return the
+// original agent or run, so the id prevents a second create and is not an
+// idempotent replay. GET /v1/agents/{id} returns the agent and latestRunId
+// when that agent exists. The create reference does not define the
+// missing-agent status; HTTP 404 is treated here as not created. A lost
+// response, a 408, a 5xx, or agent_id_conflict stays ambiguous and is not
+// posted again. This client does not claim exactly-once execution.
 
 import {
   EXECUTION_EFFECTS,
@@ -251,6 +260,8 @@ function createBody(command, agentId) {
     workOnCurrentBranch: false,
     autoCreatePR: false,
   };
+  // Client-supplied id. Cursor may answer a repeat with 409 agent_id_conflict
+  // instead of the original run, so a conflict is reconciled with GET.
   if (typeof agentId === "string" && agentId) body.agentId = agentId;
   return body;
 }
@@ -395,6 +406,12 @@ export function createCursorCloudRuntime(options = {}) {
       if (begun.action === "invalidated" || begun.action === "absent") {
         fail("approval_mismatch", "Approval does not cover this execution scope");
       }
+      if (begun.action === "expired") {
+        fail("approval_expired", "Execution approval has expired");
+      }
+      if (begun.action === "revoked") {
+        fail("approval_revoked", "Execution approval has been revoked");
+      }
       if (begun.action === "blocked") {
         const ambiguous = begun.record?.state === "ambiguous";
         fail(
@@ -447,6 +464,18 @@ export function createCursorCloudRuntime(options = {}) {
 
       if (!response.ok) {
         const code = await responseCode(response);
+        if (response.status === 409 && code === "agent_id_conflict") {
+          await ledger.finish(approved.approvalId, "pending", {
+            state: "ambiguous",
+            agentId: reservedId,
+            runId: null,
+            status: null,
+          });
+          fail(
+            "reconciliation_required",
+            "Cursor submission outcome is ambiguous and needs reconciliation"
+          );
+        }
         await ledger.finish(approved.approvalId, "pending", {
           state: "rejected",
           agentId: reservedId,
