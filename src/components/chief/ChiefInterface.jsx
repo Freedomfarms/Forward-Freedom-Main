@@ -175,6 +175,7 @@ export function ChiefInterface({
   recent = null,
   suggestions = [],
   conversation = null,
+  workspace = null,
   inputRef = null,
 }) {
   const state = String(assistantState || "idle").toLowerCase();
@@ -196,6 +197,7 @@ export function ChiefInterface({
     `is-${statusTone}`,
     reducedMotion ? "is-reduced-motion" : "",
     conversation ? "has-exchange" : "",
+    workspace ? "has-workspace" : "",
     showSystemStatus ? "" : "is-telemetry-off",
     showNavLabels ? "" : "is-nav-compact",
   ]
@@ -329,26 +331,32 @@ export function ChiefInterface({
           </div>
         </div>
 
-        <div className="chief-stage-dock">
-          <div className="chief-stage-copy">
-            <p className="chief-wordmark">CHIEF</p>
-            <p className="chief-mantra">Understand · Reason · Plan · Execute</p>
-            <p className="chief-tagline">
-              Your personal intelligence layer for a more free, sovereign, and abundant life.
-            </p>
-          </div>
+        {workspace ? <div className="chief-workspace-slot">{workspace}</div> : null}
 
-          <div className="chief-features">
-            {FEATURES.map((feature) => (
-              <div key={feature.title} className="chief-feature">
-                <span>
-                  <Icon name={feature.icon} size={16} />
-                </span>
-                <strong>{feature.title}</strong>
-                <small>{feature.text}</small>
+        <div className="chief-stage-dock">
+          {workspace ? null : (
+            <>
+              <div className="chief-stage-copy">
+                <p className="chief-wordmark">CHIEF</p>
+                <p className="chief-mantra">Understand · Reason · Plan · Execute</p>
+                <p className="chief-tagline">
+                  Your personal intelligence layer for a more free, sovereign, and abundant life.
+                </p>
               </div>
-            ))}
-          </div>
+
+              <div className="chief-features">
+                {FEATURES.map((feature) => (
+                  <div key={feature.title} className="chief-feature">
+                    <span>
+                      <Icon name={feature.icon} size={16} />
+                    </span>
+                    <strong>{feature.title}</strong>
+                    <small>{feature.text}</small>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
 
           {conversation ? <div className="chief-interface-conversation">{conversation}</div> : null}
 
@@ -399,7 +407,7 @@ export function ChiefInterface({
             </div>
           ) : null}
 
-          {showComposer && suggestions.length ? (
+          {showComposer && !workspace && suggestions.length ? (
             <div className="chief-suggestions">
               {suggestions.map((item) =>
                 typeof item.onSelect === "function" ? (

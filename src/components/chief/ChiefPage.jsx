@@ -16,14 +16,7 @@ import {
   setChiefSessionArchived,
   streamChiefChat,
 } from "../../utils/chiefApi.js";
-import {
-  currentTurn,
-  emptyRoomAccess,
-  formatRoomTime,
-  modelLabel,
-  moneyWebLine,
-} from "../../utils/chiefRoom.js";
-import { readSidebarCollapsed, writeSidebarCollapsed } from "../../utils/chiefSidebar.js";
+import { currentTurn, emptyRoomAccess, moneyWebLine } from "../../utils/chiefRoom.js";
 import {
   discardLegacyChiefActiveSessionKey,
   readChiefActiveSessionId,
@@ -34,30 +27,12 @@ import { scenePhaseForInteraction, visualStateForInteraction } from "./apexVisua
 import { ChiefAccessSheet } from "./ChiefAccessSheet.jsx";
 import { ChiefInterface } from "./ChiefInterface.jsx";
 import { ChiefApprovalCard } from "./ChiefApprovalCard.jsx";
-import { ChiefComposer } from "./ChiefComposer.jsx";
 import { ChiefConversationList } from "./ChiefConversationList.jsx";
-import { ChiefModelSelect } from "./ChiefModelSelect.jsx";
-import { ChiefStatus } from "./ChiefStatus.jsx";
 import { ChiefEarlierTurns, ChiefTranscript } from "./ChiefTranscript.jsx";
 import { ChiefSettings } from "./ChiefSettings.jsx";
 import { useChiefVoice } from "./useChiefVoice.js";
 import { readChiefPreferences, writeChiefPreferences } from "../../utils/chiefPreferences.js";
 import { speakCompletedReply } from "../../utils/chiefReplySpeech.js";
-
-const NARROW_NAV_QUERY = "(max-width: 1023px)";
-
-function readNarrowNav() {
-  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
-  return window.matchMedia(NARROW_NAV_QUERY).matches;
-}
-
-function sidebarStorage() {
-  try {
-    return globalThis.localStorage ?? null;
-  } catch {
-    return null;
-  }
-}
 
 function errorText(error) {
   return error?.message || "CHIEF could not complete that request.";
@@ -95,9 +70,6 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
   const [turnError, setTurnError] = useState("");
   const [approval, setApproval] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [navCollapsed, setNavCollapsed] = useState(() => readSidebarCollapsed(sidebarStorage()));
-  const [narrowNav, setNarrowNav] = useState(readNarrowNav);
   const [navQuery, setNavQuery] = useState("");
   const [searchState, setSearchState] = useState({
     query: "",
@@ -107,7 +79,6 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
   });
   const [searchAttempt, setSearchAttempt] = useState(0);
   const [room, setRoom] = useState("home");
-  const [placesOpen, setPlacesOpen] = useState(false);
   const [accessOpen, setAccessOpen] = useState(false);
   const [access, setAccess] = useState(emptyRoomAccess);
   const [now, setNow] = useState(() => new Date());
@@ -305,19 +276,6 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
   }, []);
 
   useEffect(() => {
-    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return undefined;
-    const media = window.matchMedia(NARROW_NAV_QUERY);
-    function apply() {
-      const next = media.matches;
-      setNarrowNav(next);
-      if (!next) setDrawerOpen(false);
-    }
-    apply();
-    media.addEventListener("change", apply);
-    return () => media.removeEventListener("change", apply);
-  }, []);
-
-  useEffect(() => {
     const query = navQuery.trim();
     if (!user || !query) return undefined;
     let cancelled = false;
@@ -350,17 +308,15 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
   }, [navQuery, searchAttempt, user]);
 
   useEffect(() => {
-    if (!drawerOpen && !placesOpen && !accessOpen && !settingsOpen) return undefined;
+    if (!accessOpen && !settingsOpen) return undefined;
     function onKeyDown(event) {
       if (event.key !== "Escape") return;
-      setDrawerOpen(false);
-      setPlacesOpen(false);
       setAccessOpen(false);
       setSettingsOpen(false);
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [drawerOpen, placesOpen, accessOpen, settingsOpen]);
+  }, [accessOpen, settingsOpen]);
 
   function selectSession(sessionId) {
     stopActiveTurn();
@@ -370,7 +326,6 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
     const token = generation.current;
     setActiveSessionId(sessionId);
     writeStoredSessionId(sessionId);
-    setDrawerOpen(false);
     setStreamText("");
     setTurnError("");
     setDraft("");
@@ -398,7 +353,7 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
     setStatus(CHIEF_STATUS.READY);
     setBusyState(false);
     setDraft("");
-    if (window.matchMedia(NARROW_NAV_QUERY).matches) setDrawerOpen(false);
+    window.setTimeout(() => composerRef.current?.focus(), 0);
   }
 
   function refreshSearch() {
@@ -446,7 +401,7 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
     setApproval(null);
     setStatus(CHIEF_STATUS.READY);
     writeStoredSessionId(null);
-    if (window.matchMedia("(max-width: 1023px)").matches) setDrawerOpen(true);
+    setRoom("convos");
   }
 
   // Typed text and speech transcripts both enter here. The session id is the
@@ -648,29 +603,16 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
   const showEmpty =
     Boolean(user) && !historyLoading && !notFound && !turnView.userLine && !turnView.answer;
   const transcriptError = historyError || turnError;
-  const stateDetail = transcriptError || "";
-  const canLeave = Boolean(onOpenFinancial);
-  const sheetOpen = drawerOpen || placesOpen || accessOpen;
-  const desktopNav = Boolean(user) && !narrowNav;
-  const navExpanded = narrowNav ? drawerOpen : !navCollapsed;
   const navQueryTrimmed = navQuery.trim();
   const searchMatches = Boolean(navQueryTrimmed) && searchState.query === navQueryTrimmed;
   const searchResults = searchMatches ? searchState.hits : [];
   const searchLoading = Boolean(navQueryTrimmed) && (!searchMatches || searchState.loading);
   const searchError = searchMatches ? searchState.error : "";
-  const roomClass = [
-    "chief-room",
-    embedded ? "chief-room--embedded" : "",
-    desktopNav ? "has-nav" : "",
-    desktopNav && navCollapsed ? "is-nav-collapsed" : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
 
   useEffect(() => {
-    if (!showEmpty || busy || approval || sheetOpen) return;
+    if (room === "convos" || !showEmpty || busy || approval || accessOpen || settingsOpen) return;
     composerRef.current?.focus();
-  }, [showEmpty, busy, approval, sheetOpen]);
+  }, [room, showEmpty, busy, approval, accessOpen, settingsOpen]);
 
   useEffect(() => {
     if (room !== "convos" || !focusConversationSearch) return undefined;
@@ -678,124 +620,12 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
     return () => window.clearTimeout(id);
   }, [room, focusConversationSearch]);
 
-  function toggleNavigation() {
-    if (narrowNav) {
-      setPlacesOpen(false);
-      setAccessOpen(false);
-      setDrawerOpen((open) => !open);
-      return;
-    }
-    setNavCollapsed((collapsed) => {
-      const next = !collapsed;
-      writeSidebarCollapsed(sidebarStorage(), next);
-      return next;
-    });
-  }
-
-  function openPlaces() {
-    setDrawerOpen(false);
-    setAccessOpen(false);
-    setPlacesOpen(true);
-  }
-
   function openAccess() {
-    setDrawerOpen(false);
-    setPlacesOpen(false);
     setAccessOpen(true);
   }
 
-  function closeSheets() {
-    setDrawerOpen(false);
-    setPlacesOpen(false);
-    setAccessOpen(false);
-  }
-
-  const conversationList = (
-    <ChiefConversationList
-      sessions={sessions}
-      archivedSessions={archivedSessions}
-      activeSessionId={activeSessionId}
-      isLoading={!sessionsResolved}
-      error={sessionsError}
-      disabled={busy}
-      query={navQuery}
-      onQueryChange={setNavQuery}
-      searchResults={searchResults}
-      searchLoading={searchLoading}
-      searchError={searchError}
-      onNewConversation={startNewConversation}
-      onSelect={selectSession}
-      onRename={renameConversation}
-      onArchive={archiveConversation}
-      onRestore={restoreConversation}
-      onDelete={deleteConversation}
-      onSearchRetry={refreshSearch}
-      searchAutoFocus={focusConversationSearch}
-      onRetry={() => {
-        setSessionsResolved(false);
-        setSessionsError("");
-        refreshSessions()
-          .catch((error) => setSessionsError(errorText(error)))
-          .finally(() => setSessionsResolved(true));
-      }}
-    />
-  );
-
-  function navToggle(className) {
-    return (
-      <button
-        type="button"
-        className={className}
-        aria-expanded={navExpanded}
-        aria-controls="chief-conversation-nav"
-        aria-label={navExpanded ? "Hide conversations" : "Show conversations"}
-        onClick={toggleNavigation}
-      >
-        <span aria-hidden="true">☰</span>
-      </button>
-    );
-  }
-
-  const instruments = (
-    <div className="chief-instruments">
-      <div className="chief-instrument">{formatRoomTime(now)}</div>
-      {user ? (
-        <div className="chief-instrument chief-instrument--state">
-          <ChiefStatus status={status} detail={stateDetail} />
-          {transcriptError ? (
-            <button type="button" className="chief-text-button" onClick={retryTranscript}>
-              Retry
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-      {user ? (
-        models.length > 0 ? (
-          <ChiefModelSelect
-            models={models}
-            value={modelRoute}
-            disabled={busy || historyLoading || notFound || Boolean(approval)}
-            onChange={chooseModel}
-          />
-        ) : (
-          <div className="chief-instrument">{modelLabel(models, modelRoute)}</div>
-        )
-      ) : null}
-      {user ? (
-        <button
-          type="button"
-          className="chief-instrument chief-access"
-          aria-expanded={accessOpen}
-          onClick={openAccess}
-        >
-          {moneyWebLine(access.money, access.web)}
-        </button>
-      ) : null}
-    </div>
-  );
-
   function returnHome() {
-    closeSheets();
+    setAccessOpen(false);
     setRoom("home");
   }
 
@@ -883,14 +713,7 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
   function openConversations({ focusSearch = false, query } = {}) {
     if (typeof query === "string") setNavQuery(query);
     setFocusConversationSearch(focusSearch);
-    if (narrowNav) {
-      setPlacesOpen(false);
-      setAccessOpen(false);
-      setDrawerOpen(true);
-    } else {
-      setNavCollapsed(false);
-      writeSidebarCollapsed(sidebarStorage(), false);
-    }
+    setAccessOpen(false);
     setRoom("convos");
   }
 
@@ -960,6 +783,63 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
         </p>
       ) : null}
     </>
+  );
+
+  const threadDetail = (
+    <>
+      {showHomeExchange ? (
+        homeExchange
+      ) : (
+        <p className="chief-workspace-status">
+          {activeSessionId
+            ? "This conversation is empty."
+            : "Select a conversation, or start a new one. The thread stays on this session."}
+        </p>
+      )}
+      {user ? (
+        <ChiefEarlierTurns
+          earlier={turnView.earlier}
+          showResponseText={preferences.conversation.showResponseText}
+        />
+      ) : null}
+    </>
+  );
+
+  const conversationList = (
+    <ChiefConversationList
+      sessions={sessions}
+      archivedSessions={archivedSessions}
+      activeSessionId={activeSessionId}
+      isLoading={!sessionsResolved}
+      error={sessionsError}
+      disabled={busy}
+      signedIn={Boolean(user)}
+      query={navQuery}
+      onQueryChange={setNavQuery}
+      searchResults={searchResults}
+      searchLoading={searchLoading}
+      searchError={searchError}
+      onNewConversation={startNewConversation}
+      onSelect={selectSession}
+      onRename={renameConversation}
+      onArchive={archiveConversation}
+      onRestore={restoreConversation}
+      onDelete={deleteConversation}
+      onSearchRetry={refreshSearch}
+      searchAutoFocus={focusConversationSearch}
+      now={now.getTime()}
+      detail={threadDetail}
+      accessLabel={user ? moneyWebLine(access.money, access.web) : ""}
+      onOpenAccess={user ? openAccess : undefined}
+      onSignOut={onSignOut}
+      onRetry={() => {
+        setSessionsResolved(false);
+        setSessionsError("");
+        refreshSessions()
+          .catch((error) => setSessionsError(errorText(error)))
+          .finally(() => setSessionsResolved(true));
+      }}
+    />
   );
 
   const homeNavItems = [
@@ -1056,11 +936,11 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
       }
     : null;
 
-  if (room === "home") {
+  if (room === "home" || room === "convos") {
     return (
       <section className={homeClass} aria-label="CHIEF">
         <ChiefInterface
-          activeSection="chief"
+          activeSection={room === "convos" ? "conversations" : "chief"}
           navItems={homeNavItems}
           showNavLabels={preferences.appearance.showNavLabels}
           onHome={returnHome}
@@ -1078,7 +958,7 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
           profileMark={profileInitial(user)}
           quickActions={homeQuickActions}
           recent={recentConversations}
-          suggestions={homeSuggestions}
+          suggestions={room === "convos" ? [] : homeSuggestions}
           status={homeStatus}
           statusTone={homeStatusTone}
           assistantState={orbState}
@@ -1094,7 +974,8 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
           reducedMotion={motionReduced}
           showSystemStatus={preferences.appearance.showTelemetry}
           systemStatus={homeSystemStatus}
-          conversation={showHomeExchange ? homeExchange : null}
+          conversation={room === "convos" ? null : showHomeExchange ? homeExchange : null}
+          workspace={room === "convos" ? conversationList : null}
           inputRef={composerRef}
         />
         <p className="chief-sr" aria-live="polite">
@@ -1131,186 +1012,15 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
           onTestVoice={testVoice}
           voiceDisabled={voice.listening || voice.audioActive}
         />
+        {accessOpen ? (
+          <div className="chief-sheet-backdrop is-open" onClick={() => setAccessOpen(false)} />
+        ) : null}
+        {accessOpen ? (
+          <ChiefAccessSheet open access={access} onClose={() => setAccessOpen(false)} />
+        ) : null}
       </section>
     );
   }
 
-  return (
-    <section className={roomClass} aria-label="CHIEF">
-      {sheetOpen ? <div className="chief-sheet-backdrop is-open" onClick={closeSheets} /> : null}
-      <div className={sheetOpen ? "chief-room-stage is-dim" : "chief-room-stage"}>
-        {desktopNav ? (
-          <aside
-            id="chief-conversation-nav"
-            className={navCollapsed ? "chief-nav is-collapsed" : "chief-nav"}
-            aria-label="Conversations"
-          >
-            {navToggle("chief-nav-toggle")}
-            {navCollapsed ? null : (
-              <>
-                {canLeave ? (
-                  <nav className="chief-places" aria-label="Places">
-                    <button
-                      type="button"
-                      className="chief-place chief-place--here"
-                      aria-current="page"
-                      onClick={returnHome}
-                    >
-                      CHIEF
-                    </button>
-                    {onOpenFinancial ? (
-                      <button type="button" className="chief-place" onClick={onOpenFinancial}>
-                        Freedom Financial
-                      </button>
-                    ) : null}
-                  </nav>
-                ) : (
-                  <button
-                    type="button"
-                    className="chief-place chief-place--here"
-                    onClick={returnHome}
-                  >
-                    CHIEF
-                  </button>
-                )}
-                {conversationList}
-                <ChiefEarlierTurns
-                  earlier={turnView.earlier}
-                  showResponseText={preferences.conversation.showResponseText}
-                />
-              </>
-            )}
-          </aside>
-        ) : null}
-        {narrowNav ? (
-          <div className="chief-stage-tools">
-            {user ? navToggle("chief-nav-toggle") : null}
-            {canLeave ? (
-              <button
-                type="button"
-                className="chief-places-button"
-                aria-expanded={placesOpen}
-                onClick={openPlaces}
-              >
-                CHIEF
-              </button>
-            ) : (
-              <button type="button" className="chief-place chief-place--here" onClick={returnHome}>
-                CHIEF
-              </button>
-            )}
-          </div>
-        ) : preferences.appearance.showTelemetry ? (
-          <aside className="chief-telemetry" aria-label="CHIEF status">
-            {instruments}
-          </aside>
-        ) : null}
-      </div>
-      <div className="chief-room-bottom">
-        {narrowNav && preferences.appearance.showTelemetry ? (
-          <div className="chief-dock-meta">{instruments}</div>
-        ) : null}
-        {user ? (
-          <ChiefTranscript
-            userLine={turnView.userLine}
-            answer={turnView.answer}
-            answerRef={answerRef}
-            isLoading={historyLoading}
-            notFound={notFound}
-            showEmpty={showEmpty}
-            showResponseText={preferences.conversation.showResponseText}
-            onBackToList={backToConversations}
-          />
-        ) : (
-          <div className="chief-turn">
-            <p className="chief-turn-empty">Sign in to talk with CHIEF.</p>
-          </div>
-        )}
-        {user ? (
-          approval && !activeArchived ? (
-            <ChiefApprovalCard
-              disabled={busy}
-              onApprove={() => resolveApproval("approve")}
-              onDeny={() => resolveApproval("deny")}
-            />
-          ) : (
-            <div className="chief-composer-row">
-              {activeArchived ? (
-                <div className="chief-archived-note">
-                  <p>This conversation is archived. Restore it to continue.</p>
-                  <button
-                    type="button"
-                    className="chief-action"
-                    disabled={busy}
-                    onClick={() => {
-                      restoreConversation(activeSessionId).catch((error) =>
-                        setTurnError(errorText(error))
-                      );
-                    }}
-                  >
-                    Restore
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <ChiefComposer
-                    value={draft}
-                    onChange={setDraft}
-                    onSubmit={() => submitDraft(draft)}
-                    disabled={busy || historyLoading || notFound}
-                    listening={voice.listening}
-                    onMicrophone={toggleMicrophone}
-                    enterToSend={preferences.conversation.enterToSend}
-                    inputRef={composerRef}
-                  />
-                  {voice.interim ? <p className="chief-voice-interim">{voice.interim}</p> : null}
-                  {voice.speechError ? (
-                    <p className="chief-voice-note" role="alert">
-                      {voice.speechError}
-                    </p>
-                  ) : null}
-                </>
-              )}
-            </div>
-          )
-        ) : null}
-      </div>
-      {narrowNav && drawerOpen ? (
-        <aside
-          id="chief-conversation-nav"
-          className="chief-sheet is-open"
-          aria-label="Conversations"
-        >
-          {conversationList}
-          <ChiefEarlierTurns
-            earlier={turnView.earlier}
-            showResponseText={preferences.conversation.showResponseText}
-          />
-          <button type="button" className="chief-action chief-action--quiet" onClick={closeSheets}>
-            Close
-          </button>
-        </aside>
-      ) : null}
-      {placesOpen ? (
-        <aside className="chief-sheet is-open" aria-label="Places">
-          <nav className="chief-place-list">
-            <button type="button" className="chief-place chief-place--here" onClick={returnHome}>
-              CHIEF
-            </button>
-            {onOpenFinancial ? (
-              <button type="button" className="chief-place" onClick={onOpenFinancial}>
-                Freedom Financial
-              </button>
-            ) : null}
-            {onSignOut ? (
-              <button type="button" className="chief-place" onClick={onSignOut}>
-                Sign out
-              </button>
-            ) : null}
-          </nav>
-        </aside>
-      ) : null}
-      {accessOpen ? <ChiefAccessSheet open access={access} onClose={closeSheets} /> : null}
-    </section>
-  );
+  return null;
 }

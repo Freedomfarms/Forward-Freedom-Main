@@ -400,14 +400,17 @@ test("the home screen keeps the latest exchange inside the full-bleed scene", ()
   );
 
   assert.match(page, /<ChiefInterface/);
-  assert.match(page, /conversation=\{showHomeExchange \? homeExchange : null\}/);
+  assert.match(
+    page,
+    /conversation=\{room === "convos" \? null : showHomeExchange \? homeExchange : null\}/
+  );
   assert.doesNotMatch(page, /\{homeExchange\}\s*<\/div>\s*<ChiefSettings/);
   assert.doesNotMatch(page, /ChiefVoiceDock/);
   assert.match(page, /labeled/);
   assert.match(page, /turnView\.userLine/);
   assert.match(page, /turnView\.answer/);
   assert.match(page, /onMic=\{toggleMicrophone\}/);
-  assert.match(page, /onMicrophone=\{toggleMicrophone\}/);
+  assert.doesNotMatch(page, /onMicrophone=\{toggleMicrophone\}/);
   assert.match(page, /setSettingsOpen\(true\)/);
   assert.match(page, /setRoom\("convos"\)/);
   assert.match(page, /onOpenFinancial/);
@@ -419,7 +422,7 @@ test("the home screen keeps the latest exchange inside the full-bleed scene", ()
   assert.match(world, /apex-core-anchor/);
   assert.match(world, /apex-core-status/);
   assert.match(world, /<OrbStatusBar state=\{orbState\} \/>/);
-  assert.equal((page.match(/if \(room === "home"\)/g) || []).length, 1);
+  assert.equal((page.match(/if \(room === "home" \|\| room === "convos"\)/g) || []).length, 1);
   assert.equal((page.match(/<ChiefInterface/g) || []).length, 1);
   assert.doesNotMatch(world, /chief-apex-stage/);
   assert.doesNotMatch(page, /onCoreActivate/);
@@ -430,7 +433,7 @@ test("the home screen keeps the latest exchange inside the full-bleed scene", ()
   assert.match(page, /voice\.audioActive \? "Speaking" : voiceNote/);
   const homeExchange = page.slice(
     page.indexOf("const homeExchange"),
-    page.indexOf('if (room === "home")')
+    page.indexOf('if (room === "home" || room === "convos")')
   );
   assert.match(homeExchange, /<ChiefTranscript/);
   assert.match(homeExchange, /turnView\.userLine/);
@@ -439,10 +442,17 @@ test("the home screen keeps the latest exchange inside the full-bleed scene", ()
   assert.match(homeExchange, /<ChiefApprovalCard/);
   assert.doesNotMatch(homeExchange, /<ChiefComposer/);
   assert.doesNotMatch(homeExchange, /ChiefVoiceDock/);
-  const home = page.slice(page.indexOf('if (room === "home")'), page.indexOf("<ChiefSettings"));
+  const home = page.slice(
+    page.indexOf('if (room === "home" || room === "convos")'),
+    page.indexOf("<ChiefSettings")
+  );
   assert.match(home, /<ChiefInterface/);
   assert.match(home, /onSend=\{submitDraft\}/);
-  assert.match(home, /conversation=\{showHomeExchange \? homeExchange : null\}/);
+  assert.match(
+    home,
+    /conversation=\{room === "convos" \? null : showHomeExchange \? homeExchange : null\}/
+  );
+  assert.match(home, /workspace=\{room === "convos" \? conversationList : null\}/);
   assert.doesNotMatch(home, /<ApexWorld|<ChiefComposer|<ChiefTranscript/);
   assert.doesNotMatch(css, /--chief-ring-radius|--chief-below-ring|--chief-orb-scale/);
   assert.doesNotMatch(css, /\.chief-voice-dock \.chief-earlier \{\s*display:\s*none/);
