@@ -2,11 +2,30 @@
 -- and they do not store a TurnMachine checkpoint. Message bodies and titles
 -- are envelope ciphertext. recallDocument is a redacted projection for later
 -- search. A missing conversation in a later export is not a delete.
+--
+-- Provider and role are Prisma enums. The runtime client casts to those
+-- types, so TEXT columns would fail on insert.
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'ExternalProvider') THEN
+    CREATE TYPE "ExternalProvider" AS ENUM ('claude', 'chatgpt');
+  END IF;
+END
+$$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'ExternalMessageRole') THEN
+    CREATE TYPE "ExternalMessageRole" AS ENUM ('user', 'assistant', 'system', 'tool', 'unknown');
+  END IF;
+END
+$$;
 
 CREATE TABLE IF NOT EXISTS "external_conversation" (
     "id" TEXT NOT NULL,
     "userId" TEXT NOT NULL,
-    "provider" TEXT NOT NULL,
+    "provider" "ExternalProvider" NOT NULL,
     "externalId" TEXT NOT NULL,
     "titleCiphertext" TEXT NOT NULL,
     "sourceUrl" TEXT,
@@ -21,8 +40,7 @@ CREATE TABLE IF NOT EXISTS "external_conversation" (
     "importedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
-    CONSTRAINT "external_conversation_pkey" PRIMARY KEY ("id"),
-    CONSTRAINT "external_conversation_provider_check" CHECK ("provider" IN ('claude', 'chatgpt'))
+    CONSTRAINT "external_conversation_pkey" PRIMARY KEY ("id")
 );
 
 CREATE TABLE IF NOT EXISTS "external_message" (
@@ -31,7 +49,7 @@ CREATE TABLE IF NOT EXISTS "external_message" (
     "conversationId" TEXT NOT NULL,
     "ordinal" INTEGER NOT NULL,
     "externalId" TEXT,
-    "role" TEXT NOT NULL,
+    "role" "ExternalMessageRole" NOT NULL,
     "model" TEXT,
     "parentExternalId" TEXT,
     "sourceCreatedAt" TIMESTAMP(3),
@@ -39,8 +57,7 @@ CREATE TABLE IF NOT EXISTS "external_message" (
     "hasUnsupported" BOOLEAN NOT NULL DEFAULT false,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    CONSTRAINT "external_message_pkey" PRIMARY KEY ("id"),
-    CONSTRAINT "external_message_role_check" CHECK ("role" IN ('user', 'assistant', 'system', 'tool', 'unknown'))
+    CONSTRAINT "external_message_pkey" PRIMARY KEY ("id")
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS "external_conversation_userId_provider_externalId_key"
@@ -103,3 +120,16 @@ CREATE POLICY "user_isolation" ON "external_message"
   FOR ALL
   USING ("userId" = current_setting('app.current_user_id', true))
   WITH CHECK ("userId" = current_setting('app.current_user_id', true));
+
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'freedom_app') THEN
+    GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE "external_conversation" TO freedom_app;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE "external_message" TO freedom_app;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'freedom_service') THEN
+    GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE "external_conversation" TO freedom_service;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE "external_message" TO freedom_service;
+  END IF;
+END
+$$;

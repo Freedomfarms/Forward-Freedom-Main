@@ -34,6 +34,7 @@ export function sourceInstant(value) {
 }
 
 export function providerUrl(provider, externalId) {
+  if (typeof externalId !== "string" || externalId.startsWith("derived:")) return null;
   if (!/^[A-Za-z0-9:_-]{8,80}$/.test(externalId)) return null;
   if (provider === "claude") return `https://claude.ai/chat/${externalId}`;
   if (provider === "chatgpt") return `https://chatgpt.com/c/${externalId}`;

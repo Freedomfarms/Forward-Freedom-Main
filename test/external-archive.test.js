@@ -225,6 +225,7 @@ test("missing ids are stable, duplicate message ids are kept, and timestamps may
   const second = parseClaudeExport([claude]).conversations[0];
   assert.equal(first.externalId, second.externalId);
   assert.match(first.externalId, /^derived:/);
+  assert.equal(first.sourceUrl, null);
   assert.equal(first.warnings.includes("derived conversation id"), true);
   assert.equal(first.warnings.includes("duplicate message id"), true);
   assert.equal(first.messages[0].role, "user");
@@ -477,7 +478,22 @@ test("the archive migration forces owner isolation and the UI exposes import and
         `CREATE POLICY "user_isolation" ON "${table}"\\s+FOR ALL\\s+USING \\("userId" = current_setting\\('app\\.current_user_id', true\\)\\)\\s+WITH CHECK \\("userId" = current_setting\\('app\\.current_user_id', true\\)\\);`
       )
     );
+    assert.match(
+      sql,
+      new RegExp(`GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE "${table}" TO freedom_app;`)
+    );
+    assert.match(
+      sql,
+      new RegExp(`GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE "${table}" TO freedom_service;`)
+    );
   }
+  assert.match(sql, /CREATE TYPE "ExternalProvider" AS ENUM \('claude', 'chatgpt'\)/);
+  assert.match(
+    sql,
+    /CREATE TYPE "ExternalMessageRole" AS ENUM \('user', 'assistant', 'system', 'tool', 'unknown'\)/
+  );
+  assert.match(sql, /"provider" "ExternalProvider" NOT NULL/);
+  assert.match(sql, /"role" "ExternalMessageRole" NOT NULL/);
   const schema = readFileSync(new URL("../prisma/schema.prisma", import.meta.url), "utf8");
   assert.match(schema, /model ExternalConversation/);
   assert.match(schema, /titleCiphertext/);
