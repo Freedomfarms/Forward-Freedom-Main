@@ -240,6 +240,95 @@ test("missing ids are stable, duplicate message ids are kept, and timestamps may
   assert.equal(imported.messages[0].sourceCreatedAt, null);
 });
 
+function claudeWithoutProviderId(name, texts) {
+  return {
+    name,
+    chat_messages: texts.map((text, index) => ({
+      sender: index % 2 === 0 ? "human" : "assistant",
+      index,
+      content: [{ type: "text", text }],
+    })),
+  };
+}
+
+test("prose credentials stay in the transcript and leave the recall projection", () => {
+  const parsed = parseClaudeExport([
+    claudeRecord({
+      chat_messages: [
+        {
+          uuid: "m-human",
+          sender: "human",
+          index: 0,
+          content: [
+            {
+              type: "text",
+              text: "My password is hunter2. We decided to archive the Grokbot integration.",
+            },
+          ],
+        },
+        {
+          uuid: "m-assistant",
+          sender: "assistant",
+          index: 1,
+          content: [
+            { type: "text", text: "The api key is sk-live-archive and the token was hunter2." },
+            { type: "text", text: "The passphrase is correct-horse. Ship the archive." },
+          ],
+        },
+      ],
+    }),
+  ]);
+  const conversation = parsed.conversations[0];
+  assert.equal(conversation.messages[0].blocks[0].text.includes("hunter2"), true);
+  assert.equal(conversation.messages[1].blocks[0].text.includes("sk-live-archive"), true);
+  assert.equal(conversation.messages[1].blocks[1].text.includes("correct-horse"), true);
+  assert.equal(conversation.recallDocument.includes("hunter2"), false);
+  assert.equal(conversation.recallDocument.includes("sk-live-archive"), false);
+  assert.equal(conversation.recallDocument.includes("correct-horse"), false);
+  assert.equal(conversation.recallDocument.includes("archive the Grokbot integration"), true);
+  assert.equal(conversation.recallDocument.includes("Ship the archive"), true);
+});
+
+test("derived ids reimport once and do not collide when only the opening matches", async () => {
+  useKeys();
+  const store = new MemoryExternalArchive();
+  const opening = ["Keep the archive", "Agreed", "Use Claude", "Noted"];
+  const first = claudeWithoutProviderId("Bridge", [...opening, "Ship the bridge"]);
+  const second = claudeWithoutProviderId("Ledger", [...opening, "Ship the ledger"]);
+  const titled = claudeWithoutProviderId("Other title", [...opening, "Ship the bridge"]);
+  const file = (records) => ({
+    provider: "claude",
+    filename: "conversations.json",
+    dataBase64: b64(JSON.stringify(records)),
+  });
+  const imported = await importExport(file([first, second, titled]), {
+    userId: "user-a",
+    store,
+    audit: new MemoryAuditLog(),
+  });
+  assert.equal(imported.counts.imported, 3);
+  assert.equal(imported.counts.updated, 0);
+  assert.equal(store.conversations.size, 3);
+  const again = await importExport(file([first]), {
+    userId: "user-a",
+    store,
+    audit: new MemoryAuditLog(),
+  });
+  assert.equal(again.counts.duplicate, 1);
+  assert.equal(again.counts.imported, 0);
+  assert.equal(store.conversations.size, 3);
+  const rows = await store.list("user-a");
+  assert.equal(new Set(rows.map((row) => row.externalId)).size, 3);
+  const details = await Promise.all(rows.map((row) => store.get("user-a", row.id)));
+  const bodies = details.flatMap((detail) =>
+    detail.messages.flatMap((message) => message.blocks.map((block) => block.text))
+  );
+  assert.equal(bodies.includes("Ship the bridge"), true);
+  assert.equal(bodies.includes("Ship the ledger"), true);
+  const bridge = details.find((detail) => detail.title === "Bridge");
+  assert.equal(bridge.messages.at(-1).blocks[0].text, "Ship the bridge");
+});
+
 test("a malformed record fails alone and a provider mismatch fails the file", async () => {
   const mixed = parseClaudeExport([claudeRecord(), { name: "not a chat" }, null]);
   assert.equal(mixed.conversations.length, 1);

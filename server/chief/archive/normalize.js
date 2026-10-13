@@ -124,12 +124,30 @@ function safeJson(text) {
   }
 }
 
-export function derivedConversationId(provider, messages) {
-  const seed = messages
-    .slice(0, 4)
-    .map((message) => `${message.role}\n${textOf(message.blocks)}`)
-    .join("\n---\n");
-  return `derived:${sha256(`${provider}\n${seed}`).slice(0, 32)}`;
+const CREDENTIAL_PROSE =
+  /\b(?:password|passphrase|secret|token|api[\s_-]*key|credential)s?\b\s+(?:is|was|are|equals)\s+\S+/gi;
+
+// Archive recall only. The shared redactor keeps CHIEF search unchanged.
+// Prose such as "password is hunter2" has to be removed first: the shared
+// pattern consumes the keyword and the word "is", and would leave the value.
+// This is not universal secret detection. Original message blocks are untouched.
+function redactArchiveRecall(value) {
+  const prepared = String(value ?? "").replace(CREDENTIAL_PROSE, " ");
+  return redactSensitiveSpans(prepared);
+}
+
+export function derivedConversationId(provider, title, messages) {
+  const seed = JSON.stringify({
+    provider,
+    title,
+    messages: messages.map((message) => ({
+      role: message.role,
+      externalId: message.externalId,
+      at: message.sourceCreatedAt,
+      text: textOf(message.blocks),
+    })),
+  });
+  return `derived:${sha256(seed).slice(0, 32)}`;
 }
 
 function messageKey(message, ordinal) {
@@ -171,20 +189,20 @@ export function finalizeConversation(provider, draft) {
     });
   });
 
+  const title = clipText(draft.title || "Untitled", MAX_TITLE_CHARS).text || "Untitled";
   const externalId =
     typeof draft.externalId === "string" && draft.externalId.trim()
       ? draft.externalId.trim().slice(0, 120)
-      : derivedConversationId(provider, messages);
+      : derivedConversationId(provider, title, messages);
   if (!draft.externalId) warnings.push("derived conversation id");
 
-  const title = clipText(draft.title || "Untitled", MAX_TITLE_CHARS).text || "Untitled";
   const canonical = messages.map((message) => ({
     role: message.role,
     externalId: message.externalId,
     at: message.sourceCreatedAt,
     blocks: message.blocks,
   }));
-  const recall = redactSensitiveSpans(
+  const recall = redactArchiveRecall(
     [title, ...messages.map((message) => textOf(message.blocks))].filter(Boolean).join("\n")
   ).slice(0, RECALL_DOCUMENT_MAX);
 
