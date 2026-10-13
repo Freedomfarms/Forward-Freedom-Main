@@ -380,6 +380,22 @@ export function retainImportedMemories(user, id) {
   });
 }
 
+export function proposeSharedContext(user, query) {
+  return chiefJson("/api/chief/context-share", {
+    user,
+    method: "POST",
+    body: { action: "propose", query },
+  });
+}
+
+export function handoffSharedContext(user, body) {
+  return chiefJson("/api/chief/context-share", {
+    user,
+    method: "POST",
+    body,
+  });
+}
+
 export function fetchCaptureStatus(user) {
   return chiefJson("/api/chief/capture-token", { user });
 }
