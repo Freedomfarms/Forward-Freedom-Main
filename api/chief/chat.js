@@ -15,7 +15,10 @@ import {
   makeEvent,
 } from "../../server/chief/protocol/index.js";
 import { ApprovalCoordinator } from "../../server/chief/runtime/approvals.js";
-import { createChiefTurnServices } from "../../server/chief/context/wire.js";
+import {
+  archiveAlongsideCheckpoint,
+  createChiefTurnServices,
+} from "../../server/chief/context/wire.js";
 import { PrismaModuleAccess } from "../../server/chief/security/module-access.js";
 import { PrismaFactStore } from "../../server/chief/memory/facts.js";
 import { PrismaCheckpointStore } from "../../server/chief/runtime/checkpoint.js";
@@ -127,6 +130,9 @@ export async function handleChiefChat(request, response, deps = {}) {
           facts,
           engine,
           checkpointStore: store,
+          archiveStore: Object.hasOwn(deps, "archiveStore")
+            ? deps.archiveStore
+            : archiveAlongsideCheckpoint(store),
           capabilityPolicy,
           eventBus,
           moduleAccess: deps.moduleAccess ?? new PrismaModuleAccess(),

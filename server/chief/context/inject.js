@@ -28,6 +28,7 @@
 //     the query string.
 
 import { EventType } from "../core/events.js";
+import { parseProvenance } from "../memory/provenance.js";
 
 export const RECALLABLE_TRUST_TIERS = new Set(["", "auto", "trusted"]);
 
@@ -78,7 +79,7 @@ export function buildContextMessage(results, facts = []) {
   const safeResults = results.filter(resultTrustedForRecall);
   const sections = [];
   if (safeFacts.length) {
-    const factText = safeFacts.map((fact) => `- ${fact.content ?? fact.text}`).join("\n");
+    const factText = safeFacts.map((fact) => factBullet(fact)).join("\n");
     sections.push(
       "The following durable facts were remembered from prior conversations. Use them when relevant to the user's request:\n\n" +
         factText
@@ -95,6 +96,23 @@ export function buildContextMessage(results, facts = []) {
     content: sections.join("\n\n"),
     metadata: { memory_context: true },
   };
+}
+
+function factBullet(fact) {
+  const text = String(fact.content ?? fact.text ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const parsed = parseProvenance(fact.source);
+  if (!parsed) return `- ${text}`;
+  const label =
+    parsed.kind === "preference"
+      ? `durable preference from ${parsed.provider}`
+      : parsed.kind === "decision"
+        ? `recorded decision from ${parsed.provider}`
+        : parsed.kind === "temporary"
+          ? `temporary, not established truth, from ${parsed.provider}`
+          : `historical statement from ${parsed.provider}`;
+  return `- ${label}: ${text}`;
 }
 
 function mergeContextMessage(messages, contextMessage) {

@@ -372,6 +372,22 @@ export function deleteImportedConversation(user, id) {
   });
 }
 
+export function retainImportedMemories(user, id) {
+  return chiefJson("/api/chief/external-conversations", {
+    user,
+    method: "POST",
+    body: { retain: true, confirm: true, id },
+  });
+}
+
+export function forgetImportedMemory(user, memoryId) {
+  return chiefJson("/api/chief/external-conversations", {
+    user,
+    method: "POST",
+    body: { forgetMemory: true, confirm: true, memoryId },
+  });
+}
+
 export function decideChiefApproval({ user, sessionId, approvalId, decision }) {
   return chiefJson("/api/chief/approvals", {
     user,

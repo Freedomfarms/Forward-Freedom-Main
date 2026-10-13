@@ -6,6 +6,7 @@
 
 import { trustedForRecall } from "../context/inject.js";
 import { fencesOutput, scanInjection } from "../security/injection.js";
+import { parseProvenance } from "./provenance.js";
 import { qualifiesForLongTermMemory, personalSource } from "./qualify.js";
 import {
   MEMORY_LAYER,
@@ -88,11 +89,22 @@ function finiteScore(value) {
   return Number.isFinite(value) ? value : 0;
 }
 
+async function recallDocuments(reader, userId, options) {
+  if (typeof reader !== "function" || !userId) return [];
+  try {
+    const rows = await reader(userId, options);
+    return Array.isArray(rows) ? rows : [];
+  } catch {
+    return [];
+  }
+}
+
 export class NativeMemoryProvider {
-  constructor({ facts = null, episodes = null } = {}) {
+  constructor({ facts = null, episodes = null, archive = null } = {}) {
     this.name = "native";
     this.facts = facts;
     this.episodes = episodes;
+    this.archive = archive;
   }
 
   isAvailable() {
@@ -189,25 +201,45 @@ export class NativeMemoryProvider {
         // Recall still returns if last-use cannot be recorded.
       }
     }
-    return selected.map((fact) => ({
-      layer: MEMORY_LAYER.PERSONAL,
-      text: fact.content,
-      score: finiteScore(semanticSimilarity(query, fact.content)),
-      sourceId: fact.id ?? null,
-    }));
+    return selected.map((fact) => {
+      const parsed = parseProvenance(fact.source);
+      return {
+        layer: MEMORY_LAYER.PERSONAL,
+        text: fact.content,
+        score: finiteScore(semanticSimilarity(query, fact.content)),
+        sourceId: fact.id ?? null,
+        provider: parsed?.provider ?? null,
+        memoryKind: parsed?.kind ?? null,
+      };
+    });
   }
 
   async _episodicHits(query, scope) {
-    if (typeof this.episodes?.listRecallDocuments !== "function") return [];
-    const documents = await this.episodes.listRecallDocuments(scope.userId, {
-      limit: 40,
-      excludeSessionId: scope.sessionId ?? null,
-    });
+    const chief = await recallDocuments(
+      this.episodes?.listRecallDocuments?.bind(this.episodes),
+      scope.userId,
+      {
+        limit: 40,
+        excludeSessionId: scope.sessionId ?? null,
+      }
+    );
+    const archived = await recallDocuments(
+      this.archive?.listRecallDocuments?.bind(this.archive),
+      scope.userId,
+      {
+        limit: 40,
+      }
+    );
+    const documents = [
+      ...chief.map((episode) => ({ ...episode, provider: episode.provider || "chief" })),
+      ...archived,
+    ];
     return rankEpisodes(query, documents, { userId: scope.userId }).map((hit) => ({
       layer: MEMORY_LAYER.EPISODIC,
       text: String(hit.episode.content ?? ""),
       score: finiteScore(hit.score),
       sourceId: hit.episode.id ?? null,
+      provider: hit.episode.provider || "chief",
     }));
   }
 }

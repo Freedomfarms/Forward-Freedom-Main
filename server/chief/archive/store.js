@@ -252,6 +252,30 @@ export class MemoryExternalArchive {
     return true;
   }
 
+  async ownership(userId, id) {
+    const row = this.conversations.get(id);
+    if (!row || row.userId !== userId) return null;
+    return { id: row.id, provider: row.provider, externalId: row.externalId ?? null };
+  }
+
+  async listRecallDocuments(userId, { limit = 40 } = {}) {
+    if (!userId) return [];
+    const cap = Math.max(1, Math.min(50, Number(limit) || 40));
+    return [...this.conversations.values()]
+      .filter((row) => row.userId === userId && row.recallDocument)
+      .sort((left, right) => new Date(right.updatedAt) - new Date(left.updatedAt))
+      .slice(0, cap)
+      .map((row) => ({
+        id: row.id,
+        userId: row.userId,
+        title: plainTitle(row.titleCiphertext),
+        content: row.recallDocument,
+        updatedAt: row.updatedAt,
+        importance: 0.45,
+        provider: row.provider,
+      }));
+  }
+
   async searchConversations(userId, options = {}) {
     const parsed = parseSearchOptions(options);
     if (parsed.error) return { error: parsed.error };
@@ -348,6 +372,48 @@ export class PrismaExternalArchive {
       await tx.externalConversation.delete({ where: { id } });
       return true;
     });
+  }
+
+  async ownership(userId, id) {
+    if (!userId || !id) return null;
+    return this._withUser(userId, async (tx) => {
+      const row = await tx.externalConversation.findFirst({
+        where: { id, userId },
+        select: { id: true, provider: true, externalId: true },
+      });
+      if (!row) return null;
+      return { id: row.id, provider: row.provider, externalId: row.externalId ?? null };
+    });
+  }
+
+  async listRecallDocuments(userId, { limit = 40 } = {}) {
+    if (!userId) return [];
+    const cap = Math.max(1, Math.min(50, Number(limit) || 40));
+    const rows = await this._withUser(userId, (tx) =>
+      tx.externalConversation.findMany({
+        where: { userId, recallDocument: { not: null } },
+        orderBy: { updatedAt: "desc" },
+        take: cap,
+        select: {
+          id: true,
+          titleCiphertext: true,
+          recallDocument: true,
+          updatedAt: true,
+          provider: true,
+        },
+      })
+    );
+    return rows
+      .filter((row) => row.recallDocument)
+      .map((row) => ({
+        id: row.id,
+        userId,
+        title: plainTitle(row.titleCiphertext),
+        content: row.recallDocument,
+        updatedAt: row.updatedAt,
+        importance: 0.45,
+        provider: row.provider,
+      }));
   }
 
   async searchConversations(userId, options = {}) {

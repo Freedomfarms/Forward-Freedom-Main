@@ -61,6 +61,7 @@ export function createMemoryAccess({
   facts = null,
   episodes = null,
   checkpointStore = null,
+  archiveStore = null,
   provider = "native",
   providers = null,
   backends = null,
@@ -72,6 +73,7 @@ export function createMemoryAccess({
     new NativeMemoryProvider({
       facts,
       episodes: episodes ?? checkpointStore,
+      archive: archiveStore,
     })
   );
 }
