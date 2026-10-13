@@ -176,6 +176,7 @@ export function ChiefInterface({
   suggestions = [],
   conversation = null,
   workspace = null,
+  modelControl = null,
   inputRef = null,
 }) {
   const state = String(assistantState || "idle").toLowerCase();
@@ -359,6 +360,13 @@ export function ChiefInterface({
           )}
 
           {conversation ? <div className="chief-interface-conversation">{conversation}</div> : null}
+
+          {modelControl ? (
+            <div className="chief-model-line">
+              <span className="chief-model-label">Model</span>
+              {modelControl}
+            </div>
+          ) : null}
 
           {showComposer ? (
             <div className="chief-composer">

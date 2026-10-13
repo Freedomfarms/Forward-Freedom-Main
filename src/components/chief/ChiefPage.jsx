@@ -28,6 +28,7 @@ import { ChiefAccessSheet } from "./ChiefAccessSheet.jsx";
 import { ChiefInterface } from "./ChiefInterface.jsx";
 import { ChiefApprovalCard } from "./ChiefApprovalCard.jsx";
 import { ChiefConversationList } from "./ChiefConversationList.jsx";
+import { ChiefModelSelect } from "./ChiefModelSelect.jsx";
 import { ChiefEarlierTurns, ChiefTranscript } from "./ChiefTranscript.jsx";
 import { ChiefSettings } from "./ChiefSettings.jsx";
 import { useChiefVoice } from "./useChiefVoice.js";
@@ -976,6 +977,16 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
           systemStatus={homeSystemStatus}
           conversation={room === "convos" ? null : showHomeExchange ? homeExchange : null}
           workspace={room === "convos" ? conversationList : null}
+          modelControl={
+            user && models.length ? (
+              <ChiefModelSelect
+                models={models}
+                value={modelRoute || defaultModel}
+                disabled={busy || historyLoading || notFound || Boolean(approval) || activeArchived}
+                onChange={chooseModel}
+              />
+            ) : null
+          }
           inputRef={composerRef}
         />
         <p className="chief-sr" aria-live="polite">

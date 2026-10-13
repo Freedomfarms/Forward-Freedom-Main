@@ -502,6 +502,39 @@
   background: rgba(4, 12, 28, 0.78);
 }
 
+.chief-interface .chief-model-line {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.chief-interface .chief-model-label {
+  color: #b7a8c9;
+  font-size: 11px;
+  font-weight: 680;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.chief-interface .chief-model-select {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.chief-interface .chief-model-select select {
+  min-height: 32px;
+  max-width: min(280px, 100%);
+  padding: 0 28px 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(196, 160, 255, 0.38);
+  background: rgba(8, 4, 16, 0.72);
+  color: #f6f0ff;
+  font-size: 12px;
+  font-weight: 620;
+}
+
 .chief-interface .chief-composer {
   display: flex;
   align-items: center;
@@ -1006,8 +1039,7 @@
 
 .chief-interface .chief-workspace-kicker,
 .chief-interface .chief-workspace-count,
-.chief-interface .chief-workspace-group h3,
-.chief-interface .chief-workspace-detail-head time {
+.chief-interface .chief-workspace-group h3 {
   margin: 0;
   color: var(--ws-muted);
   font-size: 11px;
@@ -1036,7 +1068,6 @@
 
 .chief-interface .chief-workspace-access,
 .chief-interface .chief-workspace-quiet,
-.chief-interface .chief-workspace-rename button,
 .chief-interface .chief-workspace-menu button {
   min-height: 36px;
   border: 0;
@@ -1044,6 +1075,24 @@
   color: var(--ws-muted);
   font: inherit;
   cursor: pointer;
+}
+
+.chief-interface .chief-workspace-rename button {
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(196, 160, 255, 0.4);
+  background: rgba(18, 8, 32, 0.82);
+  color: #f6f0ff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.chief-interface .chief-workspace-rename button[type="submit"] {
+  border-color: rgba(216, 186, 255, 0.6);
+  background: linear-gradient(180deg, rgba(154, 92, 230, 0.86), rgba(92, 42, 168, 0.86));
 }
 
 .chief-interface .chief-workspace-access {
@@ -1124,7 +1173,7 @@
   min-height: 0;
   min-width: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(240px, 0.8fr);
+  grid-template-columns: minmax(0, 1.85fr) minmax(200px, 0.62fr);
   gap: 12px;
 }
 
@@ -1138,7 +1187,7 @@
 .chief-interface .chief-workspace-scroll {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
   padding-right: 4px;
 }
 
@@ -1157,9 +1206,10 @@
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 4px 8px;
   align-items: start;
-  padding: 10px 8px 10px 12px;
+  padding: 8px 8px 8px 12px;
   border-radius: 14px;
-  border: 1px solid transparent;
+  border: 1px solid rgba(196, 160, 255, 0.1);
+  background: rgba(7, 3, 14, 0.62);
   transition:
     background 160ms ease,
     border-color 160ms ease;
@@ -1190,10 +1240,12 @@
 
 .chief-interface .chief-workspace-title {
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   font-size: 15px;
   font-weight: 650;
+  line-height: 1.35;
 }
 
 .chief-interface .chief-workspace-meta {
@@ -1231,7 +1283,9 @@
   height: 36px;
   margin-top: 2px;
   border-radius: 10px;
-  color: var(--ws-muted);
+  color: #efe6ff;
+  border: 1px solid rgba(196, 160, 255, 0.28);
+  background: rgba(18, 8, 32, 0.55);
 }
 
 .chief-interface .chief-workspace-row:hover .chief-workspace-more,
@@ -1291,24 +1345,34 @@
   padding: 14px 14px 12px;
   border-radius: 16px;
   border: 1px solid rgba(196, 160, 255, 0.16);
-  background: rgba(8, 4, 16, 0.28);
+  background: rgba(8, 4, 16, 0.58);
 }
 
 .chief-interface .chief-workspace-detail-head {
   display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  align-items: baseline;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
   min-width: 0;
+}
+
+.chief-interface .chief-workspace-detail-head time {
+  margin: 0;
+  color: var(--ws-muted);
+  font-size: 12px;
+  font-weight: 560;
+  white-space: nowrap;
 }
 
 .chief-interface .chief-workspace-detail-head p {
   margin: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 14px;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  font-size: 15px;
   font-weight: 650;
+  line-height: 1.35;
 }
 
 .chief-interface .chief-workspace-detail-body {
@@ -1407,29 +1471,62 @@
 }
 
 @media (max-width: 980px) {
-  .chief-interface.has-workspace .chief-scene-frame {
+  .chief-interface.has-workspace {
+    height: 100dvh;
+    overflow: hidden;
+  }
+
+  .chief-interface.has-workspace .chief-stage {
     position: relative;
-    inset: auto;
-    height: min(28vh, 220px);
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .chief-interface.has-workspace .chief-scene-frame {
+    position: absolute;
+    inset: 0;
+    height: 100%;
+    min-height: 0;
   }
 
   .chief-interface.has-workspace .chief-workspace-slot {
-    flex: none;
-    min-height: 70vh;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
     padding: 10px 10px 0;
   }
 
   .chief-interface .chief-workspace {
-    min-height: 70vh;
+    height: 100%;
+    min-height: 0;
     padding: 14px 12px 12px;
+  }
+
+  .chief-interface.has-workspace .chief-stage-dock {
+    position: relative;
+    flex: none;
+    z-index: 4;
+    background: linear-gradient(180deg, rgba(8, 4, 16, 0.2), rgba(6, 3, 12, 0.94) 16px);
+  }
+
+  .chief-interface.has-workspace .chief-right-rail {
+    display: none;
+  }
+
+  .chief-interface .chief-workspace {
+    gap: 10px;
   }
 
   .chief-interface .chief-workspace-body {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(96px, 180px);
+    gap: 8px;
   }
 
   .chief-interface .chief-workspace-detail {
-    max-height: 240px;
+    max-height: none;
+    height: 100%;
   }
 }
 
@@ -1438,7 +1535,14 @@
     align-items: stretch;
   }
 
-  .chief-interface .chief-workspace-head-actions,
+  .chief-interface .chief-workspace-body {
+    grid-template-rows: minmax(0, 1fr) 116px;
+  }
+
+  .chief-interface .chief-workspace-head-actions {
+    width: auto;
+  }
+
   .chief-interface .chief-workspace-new {
     width: 100%;
   }

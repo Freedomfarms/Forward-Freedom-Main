@@ -362,6 +362,6 @@ test("sidebar UI navigates with the existing session flow", () => {
   assert.match(css, /max-width: 1023px/);
   assert.match(css, /\.chief-nav \{\s*display: none;/);
   assert.match(face, /\.chief-workspace \{/);
-  assert.match(face, /minmax\(0, 1\.4fr\)/);
+  assert.match(face, /minmax\(0, 1\.85fr\)/);
   assert.match(read("server/index.js"), /\/api\/chief\/session-search/);
 });
