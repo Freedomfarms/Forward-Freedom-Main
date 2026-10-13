@@ -323,6 +323,22 @@ Conventions used in this repository:
   app. `@react-three/fiber@9.7.0` accepts React `>=19 <19.3`, and `latest`
   currently resolves to 19.3.0.
 
+## OpenChat and Engram (historical export parsers)
+
+Phase 1 adapts two parser algorithms. The applications, browser extensions, and MCP
+servers are not vendored and are not runtime dependencies.
+
+- OpenChat, https://github.com/P0u4a/openchat, Apache-2.0. Adapted file:
+  `packages/extension/src/lib/parsers/claude.ts` (`parseClaudeConversation`) into
+  `server/chief/archive/parsers/claude.js`. License text: `licenses/OpenChat-Apache-2.0.txt`.
+  Default-branch tree inspected 13 Oct 2026. No OpenChat npm package is installed.
+- Engram, https://github.com/Sufian-Abu/engram, MIT, Copyright (c) 2026 Sufian Abu.
+  Adapted file: `packages/core/src/parsers/chatgpt.ts` (`parseChatGPTExport`) into
+  `server/chief/archive/parsers/chatgpt.js`. License text: `licenses/Engram-MIT.txt`.
+  Default-branch tree inspected 13 Oct 2026. No Engram npm package is installed.
+- ZIP reading uses `jszip`, already a Freedom OS dependency (MIT). No new package
+  was added for this archive.
+
 ## npm dependencies used by CHIEF
 
 Installed through npm with licenses shipped in `node_modules`; listed here so the reuse
