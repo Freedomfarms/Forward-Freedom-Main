@@ -80,6 +80,9 @@ const laterRlsModels = {
   WorkforceBinding: "20261002150000_workforce_observation_journal",
   ObservedAgent: "20261002150000_workforce_observation_journal",
   ActivityEvent: "20261002150000_workforce_observation_journal",
+  WorkforceExecution: "20261012160000_workforce_execution_ledger",
+  ExternalConversation: "20261013180000_external_conversation_archive",
+  ExternalMessage: "20261013180000_external_conversation_archive",
 };
 
 // CHIEF models map to snake_case physical tables via @@map; the RLS

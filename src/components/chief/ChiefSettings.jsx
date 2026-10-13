@@ -7,6 +7,7 @@ import {
 import { freedomFinancialAccessCopy } from "../../utils/freedomFinancialAccessCopy.js";
 import { writeChiefPreferences } from "../../utils/chiefPreferences.js";
 import { voiceConnectionLabel } from "../../utils/chiefVoiceStatus.js";
+import { ChiefExternalArchive } from "./ChiefExternalArchive.jsx";
 import { ChiefSettingsExtras } from "./ChiefSettingsExtras.jsx";
 import { speechInputSupported } from "./voice/speechInput.js";
 import {
@@ -19,6 +20,7 @@ const CHIEF_SETTINGS_SECTIONS = Object.freeze([
   Object.freeze(["voice", "Voice"]),
   Object.freeze(["brain", "AI / Brain"]),
   Object.freeze(["conversation", "Conversation"]),
+  Object.freeze(["archive", "Imported chats"]),
   Object.freeze(["input", "Voice Input"]),
   Object.freeze(["access", "Access & Permissions"]),
   Object.freeze(["systems", "Connected Systems"]),
@@ -486,6 +488,8 @@ export function ChiefSettings({
               )}
             </>
           ) : null}
+
+          {section === "archive" ? <ChiefExternalArchive user={user} /> : null}
 
           {section === "conversation" ? (
             <>

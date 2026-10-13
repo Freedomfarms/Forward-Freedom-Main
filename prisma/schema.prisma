@@ -151,6 +151,8 @@ model User {
   chiefCapabilityGrants   ChiefCapabilityGrant[]
   chiefAuditLogs          ChiefAuditLog[]
   chiefBudgets            ChiefBudget[]
+  externalConversations   ExternalConversation[]
+  externalMessages        ExternalMessage[]
   chiefModuleAccess       ChiefModuleAccess?
   workforceBindings       WorkforceBinding[]
   observedAgents          ObservedAgent[]
@@ -723,6 +725,20 @@ enum ChiefRelationOrigin {
   SEMANTIC
 }
 
+// External consumer-app transcripts. These are not CHIEF sessions.
+enum ExternalProvider {
+  claude
+  chatgpt
+}
+
+enum ExternalMessageRole {
+  user
+  assistant
+  system
+  tool
+  unknown
+}
+
 // Workforce observation. OTEL is platform telemetry. SELF_REPORT is untrusted
 // context. The pair is also a SQL check constraint.
 enum WorkforceSource {
@@ -1193,6 +1209,58 @@ model ChiefBudget {
 
   @@unique([userId, scope, periodType])
   @@map("chief_budget")
+}
+
+// Original transcript imported from a native Claude or ChatGPT export.
+// This is not a ChiefSession and it does not create a TurnMachine checkpoint.
+// Message bodies and titles are envelope-encrypted. recallDocument is a
+// redacted plaintext projection for a later search phase.
+model ExternalConversation {
+  id                 String           @id @default(cuid())
+  userId             String
+  provider           ExternalProvider
+  externalId         String
+  titleCiphertext    String
+  sourceUrl          String?
+  model              String?
+  sourceCreatedAt    DateTime?
+  sourceUpdatedAt    DateTime?
+  contentHash        String
+  messageCount       Int
+  unsupportedCount   Int              @default(0)
+  omittedBranchCount Int              @default(0)
+  recallDocument     String?
+  importedAt         DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  user               User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages           ExternalMessage[]
+
+  @@unique([userId, provider, externalId])
+  @@index([userId, updatedAt])
+  @@map("external_conversation")
+}
+
+// One imported message. ordinal is the visible-thread order. externalId is
+// the provider message id when the export has one.
+model ExternalMessage {
+  id               String              @id @default(cuid())
+  userId           String
+  conversationId   String
+  ordinal          Int
+  externalId       String?
+  role             ExternalMessageRole
+  model            String?
+  parentExternalId String?
+  sourceCreatedAt  DateTime?
+  contentCiphertext String
+  hasUnsupported   Boolean             @default(false)
+  createdAt        DateTime            @default(now())
+  user             User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversation     ExternalConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, ordinal])
+  @@index([userId, conversationId])
+  @@map("external_message")
 }
 
 // One Freedom OS user linked to the Grok Bot member CHIEF may observe.

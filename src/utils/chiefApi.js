@@ -343,6 +343,35 @@ export function recordChiefVoiceTrace(user, body) {
   });
 }
 
+export function fetchImportedConversations(user) {
+  return chiefJson("/api/chief/external-conversations", { user });
+}
+
+export function fetchImportedConversation(user, id) {
+  const query = new URLSearchParams({ id });
+  return chiefJson(`/api/chief/external-conversations?${query.toString()}`, { user });
+}
+
+export function previewConversationExport(user, body) {
+  return chiefJson("/api/chief/external-conversations", { user, method: "POST", body });
+}
+
+export function importConversationExport(user, body) {
+  return chiefJson("/api/chief/external-conversations", {
+    user,
+    method: "POST",
+    body: { ...body, confirm: true },
+  });
+}
+
+export function deleteImportedConversation(user, id) {
+  return chiefJson("/api/chief/external-conversations", {
+    user,
+    method: "DELETE",
+    body: { id, confirm: true },
+  });
+}
+
 export function decideChiefApproval({ user, sessionId, approvalId, decision }) {
   return chiefJson("/api/chief/approvals", {
     user,

@@ -35,6 +35,7 @@ import notificationByIdHandler from "../api/notifications/[id].js";
 import adminUsageHandler from "../api/admin/usage.js";
 import cronAgentDispatchHandler from "../api/cron/agent-dispatch.js";
 import chiefSessionsHandler from "../api/chief/sessions.js";
+import chiefExternalConversationsHandler from "../api/chief/external-conversations.js";
 import chiefSessionSearchHandler from "../api/chief/session-search.js";
 import chiefHistoryHandler from "../api/chief/history.js";
 import chiefModelsHandler from "../api/chief/models.js";
@@ -71,11 +72,15 @@ app.use("/api", expressServerBackstopRateLimit);
 app.post("/api/plaid/webhook", express.raw({ type: "*/*", limit: "256kb" }), plaidWebhookHandler);
 
 // Document/onboarding uploads can carry up to 10 files at 500,000 KB each
-// (size still enforced in the documents module). Other API routes stay at 1mb.
+// (size still enforced in the documents module). Historical conversation
+// imports accept a 4.5mb JSON body so a 3 MB export can be base64-encoded.
+// Other API routes stay at 1mb.
 const largeJsonParser = express.json({ limit: "5500mb" });
+const archiveJsonParser = express.json({ limit: "4.5mb" });
 const defaultJsonParser = express.json({ limit: "1mb" });
 app.use("/api/agents/ceo/documents", largeJsonParser);
 app.use("/api/agents/onboarding", largeJsonParser);
+app.use("/api/chief/external-conversations", archiveJsonParser);
 app.use(defaultJsonParser);
 
 // Mirror the Vercel route modules in local Express so development and deployment
@@ -144,6 +149,11 @@ app
   .delete(chiefSessionsHandler);
 app.get("/api/chief/session-search", chiefSessionSearchHandler);
 app.get("/api/chief/history", chiefHistoryHandler);
+app
+  .route("/api/chief/external-conversations")
+  .get(chiefExternalConversationsHandler)
+  .post(chiefExternalConversationsHandler)
+  .delete(chiefExternalConversationsHandler);
 app.get("/api/chief/models", chiefModelsHandler);
 app.get("/api/chief/voices", chiefVoicesHandler);
 app.post("/api/chief/speak", chiefSpeakHandler);
