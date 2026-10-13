@@ -153,6 +153,7 @@ model User {
   chiefBudgets            ChiefBudget[]
   externalConversations   ExternalConversation[]
   externalMessages        ExternalMessage[]
+  externalCaptureCredential ExternalCaptureCredential?
   chiefModuleAccess       ChiefModuleAccess?
   workforceBindings       WorkforceBinding[]
   observedAgents          ObservedAgent[]
@@ -1261,6 +1262,27 @@ model ExternalMessage {
   @@unique([conversationId, ordinal])
   @@index([userId, conversationId])
   @@map("external_message")
+}
+
+// One capture credential per user. The plaintext token is shown once.
+// The row stores only its hash. Provider switches default off.
+model ExternalCaptureCredential {
+  userId         String    @id
+  tokenHash      String?   @unique
+  issuedAt       DateTime?
+  revokedAt      DateTime?
+  claudeEnabled  Boolean   @default(false)
+  chatgptEnabled Boolean   @default(false)
+  paused         Boolean   @default(false)
+  lastSuccessAt  DateTime?
+  lastErrorAt    DateTime?
+  lastErrorCode  String?
+  lastProvider   String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("external_capture_credential")
 }
 
 // One Freedom OS user linked to the Grok Bot member CHIEF may observe.

@@ -83,6 +83,7 @@ const laterRlsModels = {
   WorkforceExecution: "20261012160000_workforce_execution_ledger",
   ExternalConversation: "20261013180000_external_conversation_archive",
   ExternalMessage: "20261013180000_external_conversation_archive",
+  ExternalCaptureCredential: "20261013210000_external_capture_credential",
 };
 
 // CHIEF models map to snake_case physical tables via @@map; the RLS

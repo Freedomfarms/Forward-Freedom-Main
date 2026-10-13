@@ -211,6 +211,14 @@ export default [
     },
   },
   {
+    files: ["extension/**/*.js"],
+    languageOptions: {
+      globals: {
+        chrome: "readonly",
+      },
+    },
+  },
+  {
     files: ["**/*.mjs"],
     languageOptions: {
       ecmaVersion: "latest",

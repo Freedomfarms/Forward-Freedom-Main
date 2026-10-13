@@ -258,6 +258,15 @@ export class MemoryExternalArchive {
     return { id: row.id, provider: row.provider, externalId: row.externalId ?? null };
   }
 
+  async findByExternalId(userId, provider, externalId) {
+    const row = [...this.conversations.values()].find(
+      (item) =>
+        item.userId === userId && item.provider === provider && item.externalId === externalId
+    );
+    if (!row) return null;
+    return { id: row.id, messageCount: row.messageCount, contentHash: row.contentHash };
+  }
+
   async listRecallDocuments(userId, { limit = 40 } = {}) {
     if (!userId) return [];
     const cap = Math.max(1, Math.min(50, Number(limit) || 40));
@@ -383,6 +392,19 @@ export class PrismaExternalArchive {
       });
       if (!row) return null;
       return { id: row.id, provider: row.provider, externalId: row.externalId ?? null };
+    });
+  }
+
+  async findByExternalId(userId, provider, externalId) {
+    if (!userId || !provider || !externalId) return null;
+    return this._withUser(userId, async (tx) => {
+      const row = await tx.externalConversation.findUnique({
+        where: {
+          userId_provider_externalId: { userId, provider, externalId },
+        },
+        select: { id: true, messageCount: true, contentHash: true },
+      });
+      return row ?? null;
     });
   }
 
