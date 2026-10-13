@@ -28,6 +28,21 @@ function shiftLocalDay(time, days) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days).getTime();
 }
 
+export function conversationProviderLabel(provider) {
+  if (provider === "claude") return "Claude";
+  if (provider === "chatgpt") return "ChatGPT";
+  if (provider === "chief") return "CHIEF";
+  return "";
+}
+
+export function conversationSearchTarget(session) {
+  const sessionId = typeof session?.sessionId === "string" ? session.sessionId : "";
+  const provider =
+    session?.provider === "claude" || session?.provider === "chatgpt" ? session.provider : "chief";
+  if (provider === "chief") return { kind: "chief", sessionId, provider };
+  return { kind: "archive", sessionId, provider };
+}
+
 export function conversationUpdatedAt(session) {
   const raw = session?.updatedAt || session?.createdAt || "";
   const time = new Date(raw).getTime();

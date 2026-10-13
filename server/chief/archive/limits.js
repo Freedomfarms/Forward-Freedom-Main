@@ -13,3 +13,5 @@ export const MAX_BLOCK_CHARS = 100_000;
 export const MAX_TITLE_CHARS = 300;
 export const RECALL_DOCUMENT_MAX = 2_000;
 export const MAX_LIST = 100;
+// Retrieval decrypts this many messages. Search never decrypts transcripts.
+export const ARCHIVE_EXCERPT_MESSAGES = 40;

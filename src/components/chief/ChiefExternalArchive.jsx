@@ -32,7 +32,7 @@ function formatWhen(value) {
   return date.toLocaleString();
 }
 
-export function ChiefExternalArchive({ user }) {
+export function ChiefExternalArchive({ user, focusId = "" }) {
   const [provider, setProvider] = useState("claude");
   const [file, setFile] = useState(null);
   const [phase, setPhase] = useState("idle");
@@ -42,12 +42,40 @@ export function ChiefExternalArchive({ user }) {
   const [conversations, setConversations] = useState([]);
   const [detail, setDetail] = useState(null);
   const [pendingDelete, setPendingDelete] = useState(null);
+  const [focusMiss, setFocusMiss] = useState({ id: "", kind: "" });
 
   const refresh = useCallback(async () => {
     if (!user) return;
     const payload = await fetchImportedConversations(user);
     setConversations(Array.isArray(payload.conversations) ? payload.conversations : []);
   }, [user]);
+
+  useEffect(() => {
+    if (!user || !focusId) return undefined;
+    let cancelled = false;
+    fetchImportedConversation(user, focusId)
+      .then((payload) => {
+        if (cancelled) return;
+        const conversation = payload?.conversation ?? null;
+        setError("");
+        setDetail(conversation);
+        setFocusMiss(conversation ? { id: "", kind: "" } : { id: focusId, kind: "deleted" });
+      })
+      .catch((cause) => {
+        if (cancelled) return;
+        setDetail(null);
+        if (cause?.status === 404) {
+          setError("");
+          setFocusMiss({ id: focusId, kind: "deleted" });
+          return;
+        }
+        setFocusMiss({ id: focusId, kind: "error" });
+        setError(cause.message || "That conversation could not be opened.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user, focusId]);
 
   useEffect(() => {
     if (!user) return undefined;
@@ -238,6 +266,12 @@ export function ChiefExternalArchive({ user }) {
         </div>
       ) : null}
       <div className="chief-sheet-title">Archive</div>
+      {focusId && detail?.id !== focusId && focusMiss.id !== focusId ? (
+        <p className="chief-sheet-copy">Opening imported conversation...</p>
+      ) : null}
+      {focusMiss.id === focusId && focusMiss.kind === "deleted" ? (
+        <p className="chief-sheet-copy">This imported conversation was deleted.</p>
+      ) : null}
       {conversations.length ? (
         <ul>
           {conversations.map((conversation) => (

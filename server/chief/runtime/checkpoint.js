@@ -793,6 +793,11 @@ async function queryRecallDocuments(tx, userId, parsed) {
       updatedAt: isoRecallTimestamp(row.updatedAt),
       archived: Boolean(row.archivedAt),
       snippet: recallSnippet(row.recallDocument, parsed.query),
+      provider: "chief",
+      externalId: null,
+      sourceUrl: null,
+      snippetKind: "projection",
+      messageRefs: [],
     })),
   };
 }

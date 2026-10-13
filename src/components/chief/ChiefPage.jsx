@@ -23,6 +23,7 @@ import {
   writeChiefActiveSessionId,
 } from "../../utils/chiefActiveSession.js";
 import { conversationLabel, formatChiefTime } from "../../utils/chiefProtocol.js";
+import { conversationSearchTarget } from "../../utils/chiefConversationWorkspace.js";
 import { scenePhaseForInteraction, visualStateForInteraction } from "./apexVisualState.js";
 import { ChiefAccessSheet } from "./ChiefAccessSheet.jsx";
 import { ChiefInterface } from "./ChiefInterface.jsx";
@@ -88,6 +89,7 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
   const [modelRoute, setModelRoute] = useState(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState("voice");
+  const [archiveFocusId, setArchiveFocusId] = useState("");
   const [preferences, setPreferences] = useState(() => readChiefPreferences());
   const [focusConversationSearch, setFocusConversationSearch] = useState(false);
   const abortRef = useRef(null);
@@ -806,6 +808,18 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
     </>
   );
 
+  function openListedConversation(sessionId) {
+    const hit = searchResults.find((row) => row.sessionId === sessionId);
+    const target = conversationSearchTarget(hit ?? { sessionId });
+    if (target.kind === "archive") {
+      setArchiveFocusId(target.sessionId);
+      setSettingsSection("archive");
+      setSettingsOpen(true);
+      return;
+    }
+    selectSession(sessionId);
+  }
+
   const conversationList = (
     <ChiefConversationList
       sessions={sessions}
@@ -821,7 +835,7 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
       searchLoading={searchLoading}
       searchError={searchError}
       onNewConversation={startNewConversation}
-      onSelect={selectSession}
+      onSelect={openListedConversation}
       onRename={renameConversation}
       onArchive={archiveConversation}
       onRestore={restoreConversation}
@@ -995,6 +1009,7 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
         <ChiefSettings
           open={settingsOpen}
           section={settingsSection}
+          archiveFocusId={archiveFocusId}
           onSection={setSettingsSection}
           onClose={() => setSettingsOpen(false)}
           user={user}

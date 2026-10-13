@@ -83,6 +83,7 @@ function Toggle({ label, checked, onChange, detail }) {
 export function ChiefSettings({
   open = false,
   section = "voice",
+  archiveFocusId = "",
   onSection,
   onClose,
   user,
@@ -489,7 +490,9 @@ export function ChiefSettings({
             </>
           ) : null}
 
-          {section === "archive" ? <ChiefExternalArchive user={user} /> : null}
+          {section === "archive" ? (
+            <ChiefExternalArchive user={user} focusId={archiveFocusId} />
+          ) : null}
 
           {section === "conversation" ? (
             <>
