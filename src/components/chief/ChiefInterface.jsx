@@ -324,7 +324,7 @@ export function ChiefInterface({
         <div className="chief-scene-frame">
           <div className="chief-scene-plate">
             <img className="chief-scene" src={sceneUrl} alt="" draggable="false" />
-            <i className="chief-core-field" />
+            <img className="chief-core-field" src={sceneUrl} alt="" draggable="false" />
             <i className="chief-core-wash" />
             <img className="chief-ring-field" src={sceneUrl} alt="" draggable="false" />
             <i className="chief-ring-flow" />

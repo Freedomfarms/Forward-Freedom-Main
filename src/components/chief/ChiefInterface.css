@@ -303,41 +303,33 @@
   position: relative;
   min-width: 0;
   min-height: 0;
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
   overflow: hidden;
   border-radius: 22px;
   border: 1px solid rgba(86, 164, 255, 0.32);
-  background:
-    radial-gradient(ellipse 86% 24% at 50% 78%, rgba(22, 100, 200, 0.38), transparent 72%),
-    radial-gradient(ellipse 62% 12% at 50% 66%, rgba(80, 190, 255, 0.2), transparent 70%),
-    linear-gradient(180deg, #020818 0%, #06142e 68%, #07182f 100%);
+  background: #020814;
   box-shadow:
     inset 0 0 0 1px rgba(140, 210, 255, 0.05),
     0 0 40px rgba(20, 80, 180, 0.18);
 }
 
 .chief-interface .chief-scene-frame {
-  grid-row: 1 / -1;
-  grid-column: 1;
   position: relative;
   z-index: 0;
+  flex: 0 1 auto;
+  width: 100%;
   min-width: 0;
   min-height: 0;
-  height: 100%;
   overflow: hidden;
-  container-type: size;
   pointer-events: none;
-  mask-image: linear-gradient(#000 0%, #000 92%, transparent 100%);
 }
 
 .chief-interface .chief-scene-plate {
-  position: absolute;
+  position: relative;
+  width: 100%;
   aspect-ratio: 864 / 510;
-  width: calc(76cqh * 864 / 510);
-  left: 50%;
-  top: 0;
-  transform: translate(-50%, 16%);
   pointer-events: none;
 }
 
@@ -362,15 +354,8 @@
 }
 
 .chief-interface .chief-core-field {
-  background: radial-gradient(
-    circle at 54.17% 57.25%,
-    #f6f0ff 0%,
-    #d4b4ff 24%,
-    #8b46f0 55%,
-    #6d28d9 100%
-  );
-  mix-blend-mode: color;
-  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 864 510'%3E%3Cdefs%3E%3CradialGradient id='g' cx='468' cy='292' r='112' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='0' stop-color='white'/%3E%3Cstop offset='0.84' stop-color='white'/%3E%3Cstop offset='1' stop-color='black'/%3E%3C/radialGradient%3E%3C/defs%3E%3Crect width='864' height='510' fill='url(%23g)'/%3E%3C/svg%3E");
+  filter: hue-rotate(26deg) saturate(1.75) brightness(1.1);
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 864 510'%3E%3Cdefs%3E%3CradialGradient id='g' cx='468' cy='292' r='108' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='0' stop-color='white'/%3E%3Cstop offset='0.86' stop-color='white'/%3E%3Cstop offset='1' stop-color='black'/%3E%3C/radialGradient%3E%3C/defs%3E%3Crect width='864' height='510' fill='url(%23g)'/%3E%3C/svg%3E");
   mask-size: 100% 100%;
   mask-repeat: no-repeat;
   mask-mode: luminance;
@@ -381,13 +366,14 @@
   inset: 0;
   background: radial-gradient(
     circle at 54.17% 57.25%,
-    rgba(214, 176, 255, 0.72) 0%,
-    rgba(168, 110, 255, 0.34) 1.5%,
-    transparent 3.1%
+    rgba(232, 244, 255, 0.72) 0%,
+    rgba(126, 168, 255, 0.42) 2.2%,
+    rgba(62, 84, 220, 0.16) 5.5%,
+    transparent 9%
   );
-  mix-blend-mode: multiply;
+  mix-blend-mode: screen;
   pointer-events: none;
-  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 864 510'%3E%3Cdefs%3E%3CradialGradient id='g' cx='468' cy='292' r='112' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='0' stop-color='white'/%3E%3Cstop offset='0.84' stop-color='white'/%3E%3Cstop offset='1' stop-color='black'/%3E%3C/radialGradient%3E%3C/defs%3E%3Crect width='864' height='510' fill='url(%23g)'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 864 510'%3E%3Cdefs%3E%3CradialGradient id='g' cx='468' cy='292' r='108' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='0' stop-color='white'/%3E%3Cstop offset='0.86' stop-color='white'/%3E%3Cstop offset='1' stop-color='black'/%3E%3C/radialGradient%3E%3C/defs%3E%3Crect width='864' height='510' fill='url(%23g)'/%3E%3C/svg%3E");
   mask-size: 100% 100%;
   mask-repeat: no-repeat;
   mask-mode: luminance;
@@ -395,8 +381,7 @@
 
 .chief-interface .chief-ring-field {
   transform-origin: 54.17% 57.25%;
-  mix-blend-mode: screen;
-  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 864 510'%3E%3Cdefs%3E%3CradialGradient id='g' cx='468' cy='292' r='146' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='0.58' stop-color='black'/%3E%3Cstop offset='0.68' stop-color='white'/%3E%3Cstop offset='0.82' stop-color='white'/%3E%3Cstop offset='0.94' stop-color='black'/%3E%3C/radialGradient%3E%3C/defs%3E%3Crect width='864' height='510' fill='url(%23g)'/%3E%3C/svg%3E");
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 864 510'%3E%3Cdefs%3E%3CradialGradient id='g' cx='468' cy='292' r='168' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='0.52' stop-color='black'/%3E%3Cstop offset='0.58' stop-color='white'/%3E%3Cstop offset='0.84' stop-color='white'/%3E%3Cstop offset='0.92' stop-color='black'/%3E%3C/radialGradient%3E%3C/defs%3E%3Crect width='864' height='510' fill='url(%23g)'/%3E%3C/svg%3E");
   mask-size: 100% 100%;
   mask-repeat: no-repeat;
   mask-mode: luminance;
@@ -405,6 +390,7 @@
 .chief-interface .chief-ring-flow {
   position: absolute;
   inset: 0;
+  transform-origin: 54.17% 57.25%;
   background: conic-gradient(
     from var(--chief-ring-angle) at 54.17% 57.25%,
     transparent 0deg 236deg,
@@ -423,12 +409,14 @@
 
 .chief-interface.phase-thinking .chief-ring-field {
   opacity: 1;
-  animation: chief-core-pulse 2.5s ease-in-out infinite;
+  animation: chief-core-pulse 2.6s ease-in-out infinite;
 }
 
 .chief-interface.phase-thinking .chief-ring-flow {
-  opacity: 0.95;
-  animation: chief-ring-flow 2.8s linear infinite;
+  opacity: 1;
+  animation:
+    chief-core-pulse 2.6s ease-in-out infinite,
+    chief-ring-flow 2.8s linear infinite;
 }
 
 .chief-interface.phase-responding .chief-core-field {
@@ -436,7 +424,7 @@
 }
 
 .chief-interface.phase-responding .chief-core-wash {
-  opacity: 0.8;
+  opacity: 0.55;
 }
 
 .chief-interface.phase-responding .chief-ring-field,
@@ -459,11 +447,11 @@
 @keyframes chief-core-pulse {
   0%,
   100% {
-    transform: scale(0.9);
+    transform: scale(0.86);
   }
 
   50% {
-    transform: scale(1.13);
+    transform: scale(1.14);
   }
 }
 
@@ -474,18 +462,16 @@
 }
 
 .chief-interface .chief-stage-dock {
-  grid-row: 2;
-  grid-column: 1;
   position: relative;
   z-index: 1;
-  align-self: end;
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   gap: 6px;
   min-height: 0;
-  padding: 0 14px 8px;
+  padding: 8px 12px 10px;
   overflow: visible;
-  background: linear-gradient(180deg, rgba(2, 8, 20, 0) 0%, rgba(2, 8, 22, 0.18) 100%);
+  background: transparent;
 }
 
 .chief-interface .chief-stage-copy {
@@ -531,11 +517,11 @@
   column-gap: 8px;
   align-items: center;
   min-width: 0;
-  padding: 6px 8px;
+  padding: 5px 8px;
   border-radius: 14px;
-  border: 1px solid rgba(140, 196, 255, 0.28);
-  background: rgba(6, 16, 38, 0.28);
-  backdrop-filter: blur(8px);
+  border: 1px solid rgba(140, 196, 255, 0.24);
+  background: rgba(6, 16, 38, 0.16);
+  backdrop-filter: blur(10px);
 }
 
 .chief-interface .chief-feature span {
@@ -583,15 +569,13 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 44px;
-  padding: 3px 4px 3px 6px;
+  min-height: 42px;
+  padding: 2px 4px 2px 6px;
   border-radius: 999px;
-  border: 1px solid rgba(160, 214, 255, 0.42);
-  background: rgba(5, 14, 32, 0.34);
-  backdrop-filter: blur(14px);
-  box-shadow:
-    0 0 18px rgba(40, 130, 230, 0.2),
-    inset 0 0 12px rgba(90, 180, 255, 0.06);
+  border: 1px solid rgba(160, 214, 255, 0.38);
+  background: rgba(5, 14, 32, 0.22);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 0 16px rgba(40, 130, 230, 0.16);
 }
 
 .chief-interface .chief-message-form {
@@ -663,7 +647,7 @@
   padding: 6px 12px;
   border-radius: 999px;
   border: 1px solid rgba(140, 196, 255, 0.32);
-  background: rgba(6, 16, 36, 0.28);
+  background: rgba(6, 16, 36, 0.16);
   backdrop-filter: blur(8px);
   color: #d5e7ff;
   font-size: 12px;
@@ -961,15 +945,8 @@
   .chief-interface .chief-scene-frame {
     flex: none;
     width: 100%;
-    height: min(38vh, 300px);
-    min-height: 180px;
-    mask-image: linear-gradient(#000 0%, #000 88%, transparent 100%);
-  }
-
-  .chief-interface .chief-scene-plate {
-    width: max(100cqw, calc(100cqh * 864 / 510));
-    top: 46%;
-    transform: translate(-50%, -46%);
+    height: auto;
+    min-height: 0;
   }
 
   .chief-interface .chief-stage-dock {

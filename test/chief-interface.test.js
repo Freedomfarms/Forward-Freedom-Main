@@ -48,7 +48,9 @@ test("CHIEF home mounts the supplied interface on the existing conversation path
   assert.match(css, /grid-area:\s*rail/);
   assert.match(css, /chief-core-pulse/);
   assert.match(css, /chief-ring-flow/);
-  assert.match(css, /mix-blend-mode:\s*color/);
+  assert.match(css, /hue-rotate\(26deg\)/);
+  assert.match(css, /aspect-ratio:\s*864\s*\/\s*510/);
+  assert.doesNotMatch(css, /translate\(-50%,\s*16%\)/);
   assert.match(css, /--chief-ring-angle/);
   assert.match(css, /mask-image/);
   assert.match(css, /\.chief-interface\.phase-responding/);
