@@ -11,7 +11,10 @@
 import crypto from "node:crypto";
 
 import { readBearerToken } from "../../server/auth/verifyAuth.js";
-import { createChiefTurnServices } from "../../server/chief/context/wire.js";
+import {
+  archiveAlongsideCheckpoint,
+  createChiefTurnServices,
+} from "../../server/chief/context/wire.js";
 import { PrismaBudgetStore } from "../../server/chief/models/budget.js";
 import { createModelEngine } from "../../server/chief/models/engine.js";
 import { PrismaFactStore } from "../../server/chief/memory/facts.js";
@@ -47,6 +50,7 @@ function defaultDeps() {
         facts,
         engine,
         checkpointStore,
+        archiveStore: archiveAlongsideCheckpoint(checkpointStore),
         capabilityPolicy: policy ?? null,
         eventBus,
         moduleAccess: new PrismaModuleAccess(),

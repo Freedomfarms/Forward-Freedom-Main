@@ -77,11 +77,26 @@ export async function importExport(input, { userId, store, audit } = {}) {
   return { counts, failures, conversations, audit: auditStatus };
 }
 
-export async function removeImportedConversation(userId, id, { store, audit } = {}) {
+export async function removeImportedConversation(userId, id, { store, audit, facts = null } = {}) {
   const archive = store ?? new MemoryExternalArchive();
   const log = audit ?? new MemoryAuditLog();
+  const owned =
+    typeof archive.ownership === "function" ? await archive.ownership(userId, id) : null;
   const deleted = await archive.delete(userId, id);
   if (!deleted) return { deleted: false };
+  let memoriesRemoved = 0;
+  if (owned && typeof facts?.forgetDerived === "function") {
+    try {
+      const removed = await facts.forgetDerived({
+        userId,
+        provider: owned.provider,
+        conversationId: owned.id,
+      });
+      memoriesRemoved = removed?.deleted ?? 0;
+    } catch {
+      memoriesRemoved = 0;
+    }
+  }
   let auditStatus = "recorded";
   try {
     await log.write({
@@ -94,5 +109,5 @@ export async function removeImportedConversation(userId, id, { store, audit } = 
   } catch {
     auditStatus = "unavailable";
   }
-  return { deleted: true, id, audit: auditStatus };
+  return { deleted: true, id, audit: auditStatus, memoriesRemoved };
 }

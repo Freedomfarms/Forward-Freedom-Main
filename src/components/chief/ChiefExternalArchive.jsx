@@ -3,8 +3,10 @@ import {
   deleteImportedConversation,
   fetchImportedConversation,
   fetchImportedConversations,
+  forgetImportedMemory,
   importConversationExport,
   previewConversationExport,
+  retainImportedMemories,
 } from "../../utils/chiefApi.js";
 
 const PROVIDERS = Object.freeze([
@@ -41,6 +43,8 @@ export function ChiefExternalArchive({ user, focusId = "" }) {
   const [result, setResult] = useState(null);
   const [conversations, setConversations] = useState([]);
   const [detail, setDetail] = useState(null);
+  const [memories, setMemories] = useState([]);
+  const [notePhase, setNotePhase] = useState("idle");
   const [pendingDelete, setPendingDelete] = useState(null);
   const [focusMiss, setFocusMiss] = useState({ id: "", kind: "" });
 
@@ -59,11 +63,13 @@ export function ChiefExternalArchive({ user, focusId = "" }) {
         const conversation = payload?.conversation ?? null;
         setError("");
         setDetail(conversation);
+        setMemories(Array.isArray(payload?.memories) ? payload.memories : []);
         setFocusMiss(conversation ? { id: "", kind: "" } : { id: focusId, kind: "deleted" });
       })
       .catch((cause) => {
         if (cancelled) return;
         setDetail(null);
+        setMemories([]);
         if (cause?.status === 404) {
           setError("");
           setFocusMiss({ id: focusId, kind: "deleted" });
@@ -138,8 +144,33 @@ export function ChiefExternalArchive({ user, focusId = "" }) {
     try {
       const payload = await fetchImportedConversation(user, id);
       setDetail(payload.conversation ?? null);
+      setMemories(Array.isArray(payload.memories) ? payload.memories : []);
     } catch (cause) {
       setError(cause.message || "That conversation could not be opened.");
+    }
+  }
+
+  async function keepNotes() {
+    if (!detail?.id) return;
+    setError("");
+    setNotePhase("saving");
+    try {
+      const payload = await retainImportedMemories(user, detail.id);
+      setMemories(Array.isArray(payload.memories) ? payload.memories : []);
+      setNotePhase("idle");
+    } catch (cause) {
+      setNotePhase("idle");
+      setError(cause.message || "Durable notes could not be saved.");
+    }
+  }
+
+  async function removeNote(memoryId) {
+    setError("");
+    try {
+      await forgetImportedMemory(user, memoryId);
+      setMemories((current) => current.filter((memory) => memory.id !== memoryId));
+    } catch (cause) {
+      setError(cause.message || "That note could not be removed.");
     }
   }
 
@@ -148,7 +179,10 @@ export function ChiefExternalArchive({ user, focusId = "" }) {
     setError("");
     try {
       await deleteImportedConversation(user, pendingDelete.id);
-      if (detail?.id === pendingDelete.id) setDetail(null);
+      if (detail?.id === pendingDelete.id) {
+        setDetail(null);
+        setMemories([]);
+      }
       setPendingDelete(null);
       await refresh();
     } catch (cause) {
@@ -163,8 +197,8 @@ export function ChiefExternalArchive({ user, focusId = "" }) {
       <div className="chief-sheet-title">Imported chats</div>
       <p className="chief-sheet-copy">
         Upload a Claude or ChatGPT export. Freedom OS keeps the original transcript in your archive.
-        This does not change CHIEF conversations, and a later export does not delete anything
-        already imported.
+        Durable notes are a separate memory you can keep or remove. This does not change CHIEF
+        conversations, and a later export does not delete anything already imported.
       </p>
       <form onSubmit={review}>
         <div className="chief-approval" role="group" aria-label="Export source">
@@ -334,6 +368,36 @@ export function ChiefExternalArchive({ user, focusId = "" }) {
               </li>
             ))}
           </ol>
+          <div className="chief-approval">
+            <button
+              type="button"
+              className="chief-action"
+              disabled={notePhase === "saving"}
+              onClick={keepNotes}
+            >
+              {notePhase === "saving" ? "Saving durable notes" : "Keep durable notes"}
+            </button>
+          </div>
+          {memories.length ? (
+            <ul>
+              {memories.map((memory) => (
+                <li key={memory.id}>
+                  <p className="chief-sheet-copy">
+                    {memory.kind} · {memory.provider} · {memory.content}
+                  </p>
+                  <button
+                    type="button"
+                    className="chief-action chief-action--quiet"
+                    onClick={() => removeNote(memory.id)}
+                  >
+                    Remove note
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="chief-sheet-copy">No durable notes from this conversation.</p>
+          )}
         </div>
       ) : null}
     </section>

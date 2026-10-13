@@ -318,22 +318,31 @@ function memoryScope(hit) {
   return CONTEXT_SCOPE.PERSONAL;
 }
 
-function memorySource(scope, layer) {
+function archivedSource(hit) {
+  if (hit?.provider === "claude" || hit?.provider === "chatgpt") return `${hit.provider}_archive`;
+  return "";
+}
+
+function memorySource(scope, layer, hit) {
+  const archived = archivedSource(hit);
   if (layer === MEMORY_LAYER.EPISODIC) {
+    if (archived) return { source: archived, sourceType: "archived_statement" };
     return { source: "chief_session", sourceType: "episodic_memory" };
   }
-  if (scope === CONTEXT_SCOPE.PREFERENCE) return { source: "chief_fact", sourceType: "preference" };
-  if (scope === CONTEXT_SCOPE.DECISION) return { source: "chief_fact", sourceType: "decision" };
-  return { source: "chief_fact", sourceType: "personal_memory" };
+  const source = archived || "chief_fact";
+  if (scope === CONTEXT_SCOPE.PREFERENCE) return { source, sourceType: "preference" };
+  if (scope === CONTEXT_SCOPE.DECISION) return { source, sourceType: "decision" };
+  return { source, sourceType: "personal_memory" };
 }
 
 function memoryItem(hit) {
-  const text = String(hit?.text ?? "")
+  const raw = String(hit?.text ?? "")
     .trim()
     .slice(0, 500);
-  if (!text) return null;
+  if (!raw) return null;
+  const text = hit?.memoryKind === "temporary" ? `temporary, not established truth: ${raw}` : raw;
   const scope = memoryScope(hit);
-  const named = memorySource(scope, hit?.layer);
+  const named = memorySource(scope, hit?.layer, hit);
   return blankItem({
     source: named.source,
     sourceType: named.sourceType,

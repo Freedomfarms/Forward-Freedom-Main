@@ -9,6 +9,7 @@ import { createHash, randomUUID } from "node:crypto";
 
 import { withUserContext } from "../../db/prisma.js";
 import { decryptJson, encryptJson } from "../../security/envelope.js";
+import { parseProvenance, projectDerivedMemory, provenancePrefix } from "./provenance.js";
 
 export const MAX_FACTS_PER_USER = 500;
 
@@ -149,6 +150,32 @@ export class MemoryFactStore {
     row.trustTier = trustTier;
     return { ...row };
   }
+
+  async listDerived({ userId, provider = null, conversationId = null, now = new Date() }) {
+    const rows = await this.read({ userId, query: "", limit: MAX_FACTS_PER_USER, now });
+    return rows
+      .map((fact) => projectDerivedMemory(fact))
+      .filter(Boolean)
+      .filter((fact) => !provider || fact.provider === provider)
+      .filter((fact) => !conversationId || fact.conversationId === conversationId);
+  }
+
+  async forgetDerived({ userId, provider, conversationId }) {
+    const prefix = provenancePrefix(provider, conversationId);
+    if (!userId || !prefix) return { deleted: 0 };
+    const before = this.rows.length;
+    this.rows = this.rows.filter((row) => {
+      if (row.userId !== userId || row.source === "identity") return true;
+      return !String(row.source ?? "").startsWith(prefix);
+    });
+    return { deleted: before - this.rows.length };
+  }
+
+  async forgetDerivedById({ userId, id }) {
+    const row = this.rows.find((item) => item.id === id && item.userId === userId);
+    if (!row || !parseProvenance(row.source)) return { deleted: 0 };
+    return this.forget({ userId, id });
+  }
 }
 
 export class PrismaFactStore {
@@ -280,6 +307,35 @@ export class PrismaFactStore {
       if (!existing) return null;
       const updated = await tx.chiefFact.update({ where: { id }, data: { trustTier } });
       return { id: updated.id, userId, trustTier: updated.trustTier };
+    });
+  }
+
+  async listDerived({ userId, provider = null, conversationId = null, now = new Date() }) {
+    const rows = await this.read({ userId, query: "", limit: MAX_FACTS_PER_USER, now });
+    return rows
+      .map((fact) => projectDerivedMemory(fact))
+      .filter(Boolean)
+      .filter((fact) => !provider || fact.provider === provider)
+      .filter((fact) => !conversationId || fact.conversationId === conversationId);
+  }
+
+  async forgetDerived({ userId, provider, conversationId }) {
+    const prefix = provenancePrefix(provider, conversationId);
+    if (!userId || !prefix) return { deleted: 0 };
+    return this._withUser(userId, async (tx) => {
+      const result = await tx.chiefFact.deleteMany({
+        where: { userId, source: { startsWith: prefix } },
+      });
+      return { deleted: result.count };
+    });
+  }
+
+  async forgetDerivedById({ userId, id }) {
+    return this._withUser(userId, async (tx) => {
+      const existing = await tx.chiefFact.findFirst({ where: { id, userId } });
+      if (!existing || !parseProvenance(existing.source)) return { deleted: 0 };
+      await tx.chiefFact.delete({ where: { id } });
+      return { deleted: 1 };
     });
   }
 }

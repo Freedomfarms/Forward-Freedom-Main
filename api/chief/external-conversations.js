@@ -12,6 +12,8 @@ import {
   removeImportedConversation,
 } from "../../server/chief/archive/import.js";
 import { PrismaExternalArchive } from "../../server/chief/archive/store.js";
+import { retainConversationMemories } from "../../server/chief/memory/derive.js";
+import { PrismaFactStore } from "../../server/chief/memory/facts.js";
 import { PrismaAuditLog } from "../../server/chief/security/audit.js";
 import { applySecurityHeaders } from "../../server/http/responseHelpers.js";
 import { enforceRateLimit, generalApiRateLimit } from "../../server/http/rateLimit.js";
@@ -54,6 +56,11 @@ export async function handleExternalConversations(request, response, deps = {}) 
 
   const store = deps.store ?? new PrismaExternalArchive();
   const audit = deps.audit ?? new PrismaAuditLog();
+  const facts = Object.hasOwn(deps, "facts")
+    ? deps.facts
+    : deps.store
+      ? null
+      : new PrismaFactStore();
 
   if (method === "GET") {
     const id = textField(request.query?.id, 80);
@@ -66,7 +73,19 @@ export async function handleExternalConversations(request, response, deps = {}) 
       response.status(404).json({ error: "imported conversation not found" });
       return;
     }
-    response.status(200).json({ conversation });
+    let memories = [];
+    if (facts && typeof facts.listDerived === "function") {
+      try {
+        memories = await facts.listDerived({
+          userId,
+          provider: conversation.provider,
+          conversationId: conversation.id,
+        });
+      } catch {
+        memories = [];
+      }
+    }
+    response.status(200).json({ conversation, memories });
     return;
   }
 
@@ -84,12 +103,83 @@ export async function handleExternalConversations(request, response, deps = {}) 
       response.status(400).json({ error: "id is required" });
       return;
     }
-    const result = await removeImportedConversation(userId, id, { store, audit });
+    const result = await removeImportedConversation(userId, id, { store, audit, facts });
     if (!result.deleted) {
       response.status(404).json({ error: "imported conversation not found" });
       return;
     }
     response.status(200).json(result);
+    return;
+  }
+
+  if (body.forgetMemory === true) {
+    if (body.confirm !== true) {
+      response.status(400).json({ error: "confirm must be true to remove a durable note" });
+      return;
+    }
+    const memoryId = textField(body.memoryId, 80);
+    if (!memoryId) {
+      response.status(400).json({ error: "memoryId is required" });
+      return;
+    }
+    if (!facts || typeof facts.forgetDerivedById !== "function") {
+      response.status(503).json({ error: "durable notes are unavailable" });
+      return;
+    }
+    const removed = await facts.forgetDerivedById({ userId, id: memoryId });
+    if (!removed?.deleted) {
+      response.status(404).json({ error: "durable note not found" });
+      return;
+    }
+    response.status(200).json({ deleted: removed.deleted });
+    return;
+  }
+
+  if (body.retain === true) {
+    if (body.confirm !== true) {
+      response.status(400).json({ error: "confirm must be true to keep durable notes" });
+      return;
+    }
+    const id = textField(body.id, 80);
+    if (!id) {
+      response.status(400).json({ error: "id is required" });
+      return;
+    }
+    if (!facts || typeof store.ownership !== "function") {
+      response.status(503).json({ error: "durable notes are unavailable" });
+      return;
+    }
+    const owned = await store.ownership(userId, id);
+    if (!owned) {
+      response.status(404).json({ error: "imported conversation not found" });
+      return;
+    }
+    const detail = await store.get(userId, owned.id);
+    if (!detail) {
+      response.status(404).json({ error: "imported conversation not found" });
+      return;
+    }
+    const counts = await retainConversationMemories({
+      facts,
+      userId,
+      provider: owned.provider,
+      conversationId: owned.id,
+      externalId: owned.externalId,
+      messages: detail.messages ?? [],
+    });
+    const memories = await facts.listDerived({
+      userId,
+      provider: owned.provider,
+      conversationId: owned.id,
+    });
+    response.status(200).json({
+      retained: counts.retained,
+      temporary: counts.temporary,
+      unverified: counts.unverified,
+      duplicate: counts.duplicate,
+      conflicting: counts.conflicting,
+      memories,
+    });
     return;
   }
 

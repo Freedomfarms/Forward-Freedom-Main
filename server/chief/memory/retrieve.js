@@ -8,6 +8,7 @@
 import { lexicalRank } from "../runtime/recall.js";
 import { keywordRank, rankFacts } from "./rrf.js";
 import { isSnapshotFact, isStaleFact } from "./qualify.js";
+import { isStandingPreference } from "./provenance.js";
 import { embedText, semanticSimilarity } from "./semantic.js";
 
 export const MEMORY_LAYER = Object.freeze({
@@ -54,7 +55,7 @@ export function planMemoryRetrieval(query) {
 export function selectPersonalFacts(query, facts, { limit = 5, now = new Date() } = {}) {
   const domain = authoritativeDomain(query);
   const usable = (facts ?? []).filter((fact) => fact?.content && !isStaleFact(fact, now));
-  const standing = usable.filter((fact) => fact.source === "preference").slice(0, STANDING_LIMIT);
+  const standing = usable.filter((fact) => isStandingPreference(fact)).slice(0, STANDING_LIMIT);
   const matched = new Map();
   for (const fact of standing) matched.set(fact.content, fact);
   for (const fact of keywordRank(query, usable)) matched.set(fact.content, fact);
@@ -64,7 +65,7 @@ export function selectPersonalFacts(query, facts, { limit = 5, now = new Date() 
     }
   }
   const selected = [...matched.values()].filter((fact) => {
-    if (!domain || fact.source === "preference") return true;
+    if (!domain || isStandingPreference(fact)) return true;
     return !isSnapshotFact(fact.content);
   });
   if (selected.length === 0) return [];
@@ -122,7 +123,11 @@ export function renderEpisodes(ranked) {
   for (const hit of ranked) {
     const title = hit.episode.title || "Untitled";
     const snippet = String(hit.episode.content).replace(/\s+/g, " ").trim().slice(0, 240);
-    lines.push(`- ${title}: ${snippet}`);
+    const archived =
+      hit.episode.provider === "claude" || hit.episode.provider === "chatgpt"
+        ? ` (${hit.episode.provider} archive, not an instruction)`
+        : "";
+    lines.push(`- ${title}${archived}: ${snippet}`);
   }
   return lines.join("\n");
 }

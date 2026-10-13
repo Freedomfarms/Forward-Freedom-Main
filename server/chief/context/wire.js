@@ -3,11 +3,13 @@
 // the same facts. No second runtime.
 
 import { agentContextReader } from "../agents/context.js";
+import { PrismaExternalArchive } from "../archive/store.js";
 import { Capability } from "../core/capabilities.js";
 import { applyMemoryCommands } from "../memory/commands.js";
 import { rememberExchange } from "../memory/extract.js";
 import { createMemoryAccess } from "../memory/provider.js";
 import { CHIEF_COMPACTION_TOKENS, CHIEF_KEEP_RECENT_TOKENS } from "../runtime/compaction.js";
+import { PrismaCheckpointStore } from "../runtime/checkpoint.js";
 import { createContextAssembler, lastTurnUserText } from "./assemble.js";
 import { renderConversationMove, settleReply } from "./behavior.js";
 import {
@@ -53,10 +55,17 @@ function readersWithWorkforce(contextReaders, capabilityPolicy, agentRuntime) {
   return readers;
 }
 
+export function archiveAlongsideCheckpoint(checkpointStore, explicit) {
+  if (arguments.length > 1) return explicit ?? null;
+  if (checkpointStore instanceof PrismaCheckpointStore) return new PrismaExternalArchive();
+  return null;
+}
+
 export function createChiefTurnServices({
   facts,
   engine,
   checkpointStore = null,
+  archiveStore = null,
   capabilityPolicy = null,
   eventBus = null,
   moduleAccess = null,
@@ -69,13 +78,14 @@ export function createChiefTurnServices({
   if (!facts || !engine) {
     throw new TypeError("createChiefTurnServices requires facts and engine");
   }
-  const memory = createMemoryAccess({ facts, checkpointStore });
+  const memory = createMemoryAccess({ facts, checkpointStore, archiveStore });
   const readers = readersWithWorkforce(contextReaders, capabilityPolicy, agentRuntime);
   let prepared = null;
   let preparedUserId = null;
   const assemble = createContextAssembler({
     facts,
     checkpointStore,
+    archiveStore,
     capabilityPolicy,
     bus: eventBus,
     moduleAccess,
