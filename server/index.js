@@ -36,6 +36,8 @@ import adminUsageHandler from "../api/admin/usage.js";
 import cronAgentDispatchHandler from "../api/cron/agent-dispatch.js";
 import chiefSessionsHandler from "../api/chief/sessions.js";
 import chiefExternalConversationsHandler from "../api/chief/external-conversations.js";
+import chiefExternalCaptureHandler from "../api/chief/external-capture.js";
+import chiefCaptureTokenHandler from "../api/chief/capture-token.js";
 import chiefSessionSearchHandler from "../api/chief/session-search.js";
 import chiefHistoryHandler from "../api/chief/history.js";
 import chiefModelsHandler from "../api/chief/models.js";
@@ -154,6 +156,11 @@ app
   .get(chiefExternalConversationsHandler)
   .post(chiefExternalConversationsHandler)
   .delete(chiefExternalConversationsHandler);
+app
+  .route("/api/chief/external-capture")
+  .get(chiefExternalCaptureHandler)
+  .post(chiefExternalCaptureHandler);
+app.route("/api/chief/capture-token").get(chiefCaptureTokenHandler).post(chiefCaptureTokenHandler);
 app.get("/api/chief/models", chiefModelsHandler);
 app.get("/api/chief/voices", chiefVoicesHandler);
 app.post("/api/chief/speak", chiefSpeakHandler);
