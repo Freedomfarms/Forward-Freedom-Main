@@ -18,7 +18,7 @@
 
 - Phase 2: search CHIEF, Claude, and ChatGPT with source attribution. `recallDocument` and its GIN index exist so that phase does not need a new transcript table.
 - Phase 3: durable facts through the existing `ChiefFact` path. This slice does not extract facts.
-- Phase 4: user-controlled live capture.
+- Phase 4: user-controlled live capture. See [ADR-0031](0031-live-conversation-capture.md).
 - Phase 5: authorized retrieval for native Claude and ChatGPT integrations.
 - Phase 6: capture health, reindexing, and memory maintenance.
 

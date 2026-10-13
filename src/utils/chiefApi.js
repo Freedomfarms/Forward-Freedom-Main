@@ -380,6 +380,34 @@ export function retainImportedMemories(user, id) {
   });
 }
 
+export function fetchCaptureStatus(user) {
+  return chiefJson("/api/chief/capture-token", { user });
+}
+
+export function issueCaptureToken(user) {
+  return chiefJson("/api/chief/capture-token", {
+    user,
+    method: "POST",
+    body: { action: "issue" },
+  });
+}
+
+export function revokeCaptureToken(user) {
+  return chiefJson("/api/chief/capture-token", {
+    user,
+    method: "POST",
+    body: { action: "revoke" },
+  });
+}
+
+export function updateCaptureControls(user, controls) {
+  return chiefJson("/api/chief/capture-token", {
+    user,
+    method: "POST",
+    body: { action: "update", ...controls },
+  });
+}
+
 export function forgetImportedMemory(user, memoryId) {
   return chiefJson("/api/chief/external-conversations", {
     user,

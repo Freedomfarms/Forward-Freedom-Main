@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Freedom OS capture</title>
+  </head>
+  <body>
+    <h1>Freedom OS capture</h1>
+    <p>
+      Paste a capture token from Freedom OS settings. Enter the Freedom OS site origin. Capture
+      stays off until you enable Claude or ChatGPT here and in Freedom OS. This extension does not
+      read provider cookies. A page whose structure is not recognized is not uploaded.
+    </p>
+    <form id="settings">
+      <p>
+        <label>
+          Freedom OS origin
+          <input id="origin" type="url" name="origin" autocomplete="off" required />
+        </label>
+      </p>
+      <p>
+        <label>
+          Capture token
+          <input id="token" type="password" name="token" autocomplete="off" />
+        </label>
+      </p>
+      <p>
+        <label><input id="claude" type="checkbox" /> Enable Claude</label>
+      </p>
+      <p>
+        <label><input id="chatgpt" type="checkbox" /> Enable ChatGPT</label>
+      </p>
+      <p>
+        <label><input id="paused" type="checkbox" /> Pause capture</label>
+      </p>
+      <p>
+        <button type="submit">Save</button>
+        <button id="retry" type="button">Retry failed captures</button>
+      </p>
+    </form>
+    <p id="status"></p>
+    <p id="notice"></p>
+    <script type="module" src="options.js"></script>
+  </body>
+</html>

@@ -8,6 +8,7 @@ import {
   previewConversationExport,
   retainImportedMemories,
 } from "../../utils/chiefApi.js";
+import { ChiefCapturePanel } from "./ChiefCapturePanel.jsx";
 
 const PROVIDERS = Object.freeze([
   Object.freeze(["claude", "Claude"]),
@@ -200,6 +201,7 @@ export function ChiefExternalArchive({ user, focusId = "" }) {
         Durable notes are a separate memory you can keep or remove. This does not change CHIEF
         conversations, and a later export does not delete anything already imported.
       </p>
+      <ChiefCapturePanel user={user} />
       <form onSubmit={review}>
         <div className="chief-approval" role="group" aria-label="Export source">
           {PROVIDERS.map(([id, label]) => (
