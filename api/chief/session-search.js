@@ -5,11 +5,13 @@
 // user id. Scheduled sessions stay out of the result.
 
 import { authenticateRequest } from "../../server/auth/verifyAuth.js";
+import { PrismaExternalArchive } from "../../server/chief/archive/store.js";
 import { PrismaCheckpointStore } from "../../server/chief/runtime/checkpoint.js";
+import { SEARCH_QUERY_MAX, searchOwnedHistories } from "../../server/chief/runtime/recall.js";
 import { applySecurityHeaders } from "../../server/http/responseHelpers.js";
 import { enforceRateLimit, generalApiRateLimit } from "../../server/http/rateLimit.js";
 
-const QUERY_MAX = 200;
+const QUERY_MAX = SEARCH_QUERY_MAX;
 
 function searchQuery(request) {
   const value = request.query?.q;
@@ -18,6 +20,10 @@ function searchQuery(request) {
 }
 
 function publicConversation(row) {
+  const provider =
+    row.provider === "claude" || row.provider === "chatgpt" || row.provider === "chief"
+      ? row.provider
+      : "chief";
   return {
     sessionId: row.sessionId,
     title: typeof row.title === "string" && row.title.trim() ? row.title.trim() : null,
@@ -25,6 +31,11 @@ function publicConversation(row) {
     updatedAt: row.updatedAt ?? null,
     archived: Boolean(row.archived),
     snippet: typeof row.snippet === "string" ? row.snippet : "",
+    provider,
+    externalId: typeof row.externalId === "string" ? row.externalId : null,
+    sourceUrl: typeof row.sourceUrl === "string" && row.sourceUrl ? row.sourceUrl : null,
+    snippetKind: "projection",
+    messageRefs: [],
   };
 }
 
@@ -47,7 +58,14 @@ export async function handleChiefSessionSearch(request, response, deps = {}) {
 
   const query = searchQuery(request);
   const store = deps.store ?? new PrismaCheckpointStore();
-  const result = await store.searchConversations(userId, { query });
+  const archive = Object.prototype.hasOwnProperty.call(deps, "archive")
+    ? deps.archive
+    : deps.store
+      ? null
+      : new PrismaExternalArchive();
+  const result = archive
+    ? await searchOwnedHistories(store, archive, userId, { query })
+    : await store.searchConversations(userId, { query });
   if (result?.error) {
     response.status(400).json({ error: result.error });
     return;

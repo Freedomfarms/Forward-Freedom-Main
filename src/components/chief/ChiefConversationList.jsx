@@ -4,6 +4,7 @@ import { conversationLabel } from "../../utils/chiefProtocol.js";
 import {
   CONVERSATION_FILTERS,
   buildConversationView,
+  conversationProviderLabel,
   conversationWhen,
 } from "../../utils/chiefConversationWorkspace.js";
 
@@ -127,6 +128,8 @@ function ConversationRow({
   const [error, setError] = useState("");
   const title = conversationLabel(session);
   const when = conversationWhen(session, now);
+  const imported = session.provider === "claude" || session.provider === "chatgpt";
+  const providerLabel = conversationProviderLabel(session.provider);
 
   async function run(action) {
     setBusy(true);
@@ -264,17 +267,21 @@ function ConversationRow({
         >
           <span className="chief-workspace-title">{title}</span>
           <span className="chief-workspace-meta">
+            {providerLabel ? <span className="chief-workspace-flag">{providerLabel}</span> : null}
             {when ? (
               <time dateTime={session.updatedAt || session.createdAt || undefined}>{when}</time>
             ) : null}
             {archived ? <span className="chief-workspace-flag">Archived</span> : null}
           </span>
           {typeof session.snippet === "string" && session.snippet ? (
-            <span className="chief-workspace-snippet">{session.snippet}</span>
+            <span className="chief-workspace-snippet">
+              {session.snippetKind === "projection" ? "Search match. " : ""}
+              {session.snippet}
+            </span>
           ) : null}
         </button>
       )}
-      {renaming ? null : (
+      {renaming || imported ? null : (
         <button
           ref={buttonRef}
           type="button"

@@ -17,6 +17,7 @@ export const RECALL_SNIPPET_MAX = 240;
 export const RECALL_SEARCH_LIMIT = 5;
 export const RECALL_LIST_LIMIT = 20;
 export const RECALL_OFFSET_MAX = 20;
+export const SEARCH_QUERY_MAX = 200;
 export const RECALL_CATCH_UP_LIMIT = 20;
 export const RECALL_RETRIEVE_TOKENS = 1_200;
 export const RECALL_SUMMARY_TOKENS = 600;
@@ -473,13 +474,22 @@ export function parseSearchOptions(options = {}) {
   if (options.includeArchived != null && typeof options.includeArchived !== "boolean") {
     return { error: "include_archived must be a boolean" };
   }
+  const defaultCap = list ? RECALL_LIST_LIMIT : RECALL_SEARCH_LIMIT;
+  const requestedWindow = Number(options.recallWindow);
+  const cap =
+    Number.isFinite(requestedWindow) && requestedWindow > 0
+      ? Math.min(
+          RECALL_OFFSET_MAX + RECALL_LIST_LIMIT,
+          Math.max(defaultCap, Math.floor(requestedWindow))
+        )
+      : defaultCap;
   return {
     query,
     list,
     after: after.date,
     before: before.date,
     includeArchived: options.includeArchived !== false,
-    limit: clampLimit(options.limit, list ? RECALL_LIST_LIMIT : RECALL_SEARCH_LIMIT),
+    limit: clampLimit(options.limit, cap),
     offset: clampOffset(options.offset),
     excludeSessionId:
       typeof options.excludeSessionId === "string" && options.excludeSessionId
@@ -496,6 +506,10 @@ function isoTimestamp(value) {
 }
 
 function projectConversation(row, query) {
+  const provider =
+    row.provider === "claude" || row.provider === "chatgpt" || row.provider === "chief"
+      ? row.provider
+      : "chief";
   return {
     session_id: row.id,
     sessionId: row.id,
@@ -504,6 +518,11 @@ function projectConversation(row, query) {
     updatedAt: isoTimestamp(row.updatedAt),
     archived: Boolean(row.archivedAt),
     snippet: recallSnippet(row.recallDocument, query),
+    provider,
+    externalId: typeof row.externalId === "string" ? row.externalId : null,
+    sourceUrl: typeof row.sourceUrl === "string" && row.sourceUrl ? row.sourceUrl : null,
+    snippetKind: "projection",
+    messageRefs: [],
   };
 }
 
@@ -668,4 +687,129 @@ export async function retrieveOwnedConversation(store, userId, { sessionId, quer
   if (!record?.id || !record.checkpoint) return { error: "session not found" };
   if (record.checkpoint.context?.origin === "schedule") return { error: "session not found" };
   return buildHistoricalBlock({ record, query });
+}
+
+function boundSearchQuery(query) {
+  if (typeof query !== "string") return query;
+  return query.trim().slice(0, SEARCH_QUERY_MAX);
+}
+
+function labelProjected(hit, fallbackProvider) {
+  const provider =
+    hit?.provider === "claude" || hit?.provider === "chatgpt" || hit?.provider === "chief"
+      ? hit.provider
+      : fallbackProvider === "claude" || fallbackProvider === "chatgpt"
+        ? fallbackProvider
+        : "chief";
+  return {
+    session_id: hit?.session_id ?? hit?.sessionId ?? null,
+    sessionId: hit?.sessionId ?? hit?.session_id ?? null,
+    title: hit?.title ?? null,
+    createdAt: hit?.createdAt ?? null,
+    updatedAt: hit?.updatedAt ?? null,
+    archived: Boolean(hit?.archived),
+    snippet: typeof hit?.snippet === "string" ? hit.snippet : "",
+    provider,
+    externalId: typeof hit?.externalId === "string" ? hit.externalId : null,
+    sourceUrl: typeof hit?.sourceUrl === "string" && hit.sourceUrl ? hit.sourceUrl : null,
+    snippetKind: "projection",
+    messageRefs: [],
+  };
+}
+
+function mergeProjected(hits, parsed, now) {
+  const unique = [];
+  const seen = new Set();
+  for (const hit of hits) {
+    if (!hit?.sessionId) continue;
+    const key = `${hit.provider}:${hit.sessionId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(hit);
+  }
+  const ranked = unique.map((hit) => {
+    const updated = new Date(hit.updatedAt ?? 0).getTime();
+    const stamp = Number.isNaN(updated) ? 0 : updated;
+    const lexical = parsed.list
+      ? 0
+      : lexicalRank(parsed.query, `${hit.title ?? ""}\n${hit.snippet ?? ""}`);
+    const titleMatch = parsed.list ? false : lexicalRank(parsed.query, hit.title ?? "") > 0;
+    const base = recallScore({
+      lexical,
+      titleMatch,
+      ageMs: Math.max(0, now.getTime() - stamp),
+      useRecency: parsed.useRecency,
+    });
+    return { hit, score: parsed.list ? 0 : Math.max(base, 1e-6), updated: stamp };
+  });
+  ranked.sort((left, right) => {
+    if (left.score !== right.score) return right.score - left.score;
+    if (left.updated !== right.updated) return right.updated - left.updated;
+    const leftId = String(left.hit.sessionId);
+    const rightId = String(right.hit.sessionId);
+    if (leftId === rightId) return 0;
+    return leftId < rightId ? -1 : 1;
+  });
+  return ranked.slice(parsed.offset, parsed.offset + parsed.limit).map((item) => item.hit);
+}
+
+// Owner comes from the caller. Each store applies its own owner filter.
+// recallWindow asks each store for the page window before this merge slices it.
+export async function searchOwnedHistories(checkpointStore, archiveStore, userId, options = {}) {
+  const query = boundSearchQuery(options.query);
+  const parsed = parseSearchOptions({ ...options, query });
+  if (parsed.error) return { error: parsed.error };
+  if (!userId || typeof checkpointStore?.searchConversations !== "function") {
+    return { error: "conversation store is not available" };
+  }
+  const window = parsed.offset + parsed.limit;
+  const widened = {
+    query: parsed.list ? "" : parsed.query,
+    after: options.after,
+    before: options.before,
+    includeArchived: parsed.includeArchived,
+    limit: window,
+    offset: 0,
+    excludeSessionId: parsed.excludeSessionId,
+    timeZone: options.timeZone ?? options.timezone,
+    now: options.now,
+    recallWindow: window,
+  };
+  const chief = await checkpointStore.searchConversations(userId, widened);
+  if (chief?.error) return { error: chief.error };
+  const hits = (Array.isArray(chief?.conversations) ? chief.conversations : []).map((hit) =>
+    labelProjected(hit, "chief")
+  );
+  if (typeof archiveStore?.searchConversations === "function") {
+    const archived = await archiveStore.searchConversations(userId, widened);
+    if (archived?.error) return { error: archived.error };
+    for (const hit of archived?.conversations ?? []) {
+      hits.push(labelProjected(hit, hit?.provider));
+    }
+  }
+  const now =
+    options.now instanceof Date && !Number.isNaN(options.now.getTime()) ? options.now : new Date();
+  return { conversations: mergeProjected(hits, parsed, now) };
+}
+
+export async function retrieveOwnedHistory(
+  checkpointStore,
+  archiveStore,
+  userId,
+  { sessionId, provider, query } = {}
+) {
+  const requested = typeof provider === "string" ? provider.trim().toLowerCase() : "";
+  if (requested && requested !== "chief" && requested !== "claude" && requested !== "chatgpt") {
+    return { error: "session not found" };
+  }
+  if (requested === "claude" || requested === "chatgpt") {
+    if (typeof archiveStore?.excerpt !== "function") return { error: "session not found" };
+    return archiveStore.excerpt(userId, sessionId, { query });
+  }
+  const chief = await retrieveOwnedConversation(checkpointStore, userId, { sessionId, query });
+  if (!chief?.error) return { ...chief, provider: "chief", messageKind: "original" };
+  if (requested === "chief" || typeof archiveStore?.excerpt !== "function") return chief;
+  const archived = await archiveStore.excerpt(userId, sessionId, { query });
+  if (!archived?.error) return archived;
+  return chief;
 }
