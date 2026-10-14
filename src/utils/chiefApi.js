@@ -17,6 +17,7 @@ import {
 } from "./chiefRoom.js";
 import { voiceConnectionState } from "./chiefVoiceStatus.js";
 import { sidebarSearchPath } from "./chiefSidebar.js";
+import { contextShareHandoffBody } from "./contextShareRequest.js";
 
 export {
   CHIEF_STATUS,
@@ -392,7 +393,7 @@ export function handoffSharedContext(user, body) {
   return chiefJson("/api/chief/context-share", {
     user,
     method: "POST",
-    body,
+    body: contextShareHandoffBody(body),
   });
 }
 

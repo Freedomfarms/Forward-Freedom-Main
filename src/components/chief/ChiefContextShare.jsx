@@ -65,8 +65,9 @@ export function ChiefContextShare({ user }) {
       const result = await handoffSharedContext(user, {
         query,
         destination,
-        itemIds: selected,
         confirm: true,
+        querySeal: proposed?.querySeal,
+        selections: items.filter((item) => selected.includes(item.id)),
       });
       const text = typeof result?.payload === "string" ? result.payload : "";
       if (!text) {

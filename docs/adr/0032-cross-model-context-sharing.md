@@ -19,8 +19,10 @@ Phases 1–3 keep Claude and ChatGPT transcripts in the encrypted archive, searc
 
 1. Share context is a CHIEF settings action. It is off until the user searches, selects items, chooses Claude or ChatGPT, and confirms the copy.
 2. A proposal may contain at most eight items: stored facts, historical statements, and uncertain notes. Each item names its provider, title, time, and message references when the archive has them. Items start unselected. The user can remove one before copying.
-3. The server rebuilds the package from owned records. A body `userId` or a client-supplied excerpt is ignored. Instruction-like lines and secret-like lines are left out. The payload is capped.
-4. Freedom OS does not send the package to Claude or ChatGPT. The user pastes it. Native histories are not imported by this action, and the package is not saved as a durable note.
+3. The server rebuilds the package from owned records. A body `userId` or a client-supplied excerpt is ignored. Archive excerpts come from the query-ranked historical block. Instruction-like lines and secret-like lines are left out, and a dropped secret stays marked even when other lines remain. Credential-shaped message and conversation ids are omitted; ordinary ids are not run through the recall redactor. The payload is capped.
+4. Copy sends `action: "handoff"` plus the server-issued query seal and per-item content hashes. The server recomputes those hashes from current owned records. A changed record or a changed question returns a stale error and no package. The client hash is not the exported text.
+5. A successful copy writes a counts-only `chief_audit_log` row. The row does not contain the package or the question.
+6. Freedom OS does not send the package to Claude or ChatGPT. The user pastes it. Native histories are not imported by this action, and the package is not saved as a durable note.
 
 ## Consequences
 

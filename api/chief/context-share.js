@@ -6,6 +6,7 @@ import { PrismaExternalArchive } from "../../server/chief/archive/store.js";
 import { handoffContextPackage, proposeContextPackage } from "../../server/chief/context/share.js";
 import { PrismaFactStore } from "../../server/chief/memory/facts.js";
 import { PrismaCheckpointStore } from "../../server/chief/runtime/checkpoint.js";
+import { PrismaAuditLog } from "../../server/chief/security/audit.js";
 import { applySecurityHeaders } from "../../server/http/responseHelpers.js";
 import { enforceRateLimit, generalApiRateLimit } from "../../server/http/rateLimit.js";
 
@@ -18,7 +19,11 @@ export const config = {
 };
 
 function fail(response, status, code) {
-  response.status(status).json({ error: "Context was not shared.", code });
+  const error =
+    code === "STALE"
+      ? "The context changed. Find context again before copying."
+      : "Context was not shared.";
+  response.status(status).json({ error, code });
 }
 
 export async function handleContextShare(request, response, deps = {}) {
@@ -48,6 +53,7 @@ export async function handleContextShare(request, response, deps = {}) {
     facts: deps.facts ?? new PrismaFactStore(),
     checkpoints: deps.checkpoints ?? new PrismaCheckpointStore(),
     archive: deps.archive ?? new PrismaExternalArchive(),
+    audit: deps.audit ?? new PrismaAuditLog(),
   };
   try {
     if (body.action === "propose") {

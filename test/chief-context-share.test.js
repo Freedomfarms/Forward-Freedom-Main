@@ -10,7 +10,9 @@ import { renderHandoff, SHARE_PACKAGE_CHARS } from "../server/chief/context/shar
 import { MemoryFactStore } from "../server/chief/memory/facts.js";
 import { provenanceSource } from "../server/chief/memory/provenance.js";
 import { searchOwnedHistories } from "../server/chief/runtime/recall.js";
+import { MemoryAuditLog } from "../server/chief/security/audit.js";
 import { resetKeyProviderCache } from "../server/security/keyProvider.js";
+import { contextShareHandoffBody } from "../src/utils/contextShareRequest.js";
 
 const previousKeys = process.env.FFF_ENCRYPTION_KEYS;
 const QUERY = "Where is the lighthouse?";
@@ -175,8 +177,30 @@ async function seed() {
     facts,
     archive,
     checkpoints: checkpointsFor("user-a"),
+    audit: new MemoryAuditLog(),
     keptId: kept.id,
   };
+}
+
+function quietCheckpoints() {
+  return {
+    async searchConversations() {
+      return { conversations: [] };
+    },
+    async load() {
+      return null;
+    },
+  };
+}
+
+function reviewedHandoff(proposed, { destination, ids, query = QUERY, confirm = true } = {}) {
+  return contextShareHandoffBody({
+    query,
+    destination,
+    confirm,
+    querySeal: proposed.querySeal,
+    selections: ids.map((id) => proposed.items.find((item) => item.id === id)),
+  });
 }
 
 async function post(stores, body, uid = "user-a") {
@@ -249,41 +273,51 @@ test("handoff copies only the confirmed selection and fences historical text", a
   assert.ok(fact);
   assert.ok(historical);
   assert.ok(chief);
-  const denied = await post(stores, {
-    action: "handoff",
-    query: QUERY,
-    destination: "claude",
-    itemIds: [fact.id],
-    confirm: false,
-  });
+  const denied = await post(
+    stores,
+    reviewedHandoff(proposed.body, { destination: "claude", ids: [fact.id], confirm: false })
+  );
   assert.equal(denied.statusCode, 400);
   assert.equal(denied.body.code, "CONSENT");
   assert.equal(denied.body.payload, undefined);
+  assert.equal(stores.audit.entries.length, 0);
 
-  const missing = await post(stores, {
-    action: "handoff",
-    query: QUERY,
-    destination: "slack",
-    itemIds: [fact.id],
-    confirm: true,
-  });
+  const missing = await post(
+    stores,
+    reviewedHandoff(proposed.body, { destination: "slack", ids: [fact.id] })
+  );
   assert.equal(missing.body.code, "DESTINATION");
 
-  const empty = await post(stores, {
-    action: "handoff",
-    query: QUERY,
-    destination: "chatgpt",
-    itemIds: [],
-    confirm: true,
-  });
+  const empty = await post(
+    stores,
+    reviewedHandoff(proposed.body, { destination: "chatgpt", ids: [] })
+  );
   assert.equal(empty.body.code, "SELECTION");
 
-  const copied = await post(stores, {
+  const staleIds = await post(stores, {
     action: "handoff",
     query: QUERY,
     destination: "claude",
     itemIds: [fact.id, historical.id],
     confirm: true,
+  });
+  assert.equal(staleIds.body.code, "SELECTION");
+  assert.equal(staleIds.body.payload, undefined);
+
+  const wire = reviewedHandoff(proposed.body, {
+    destination: "claude",
+    ids: [fact.id, historical.id],
+  });
+  assert.equal(wire.action, "handoff");
+  assert.equal(Object.hasOwn(wire, "excerpt"), false);
+  assert.equal(Object.hasOwn(wire, "userId"), false);
+  assert.equal(Object.hasOwn(wire, "itemIds"), false);
+  assert.deepEqual(
+    wire.selections.map((item) => item.id),
+    [fact.id, historical.id]
+  );
+  const copied = await post(stores, {
+    ...wire,
     userId: "user-b",
     excerpt: "LEAKED EXCERPT",
   });
@@ -302,6 +336,11 @@ test("handoff copies only the confirmed selection and fences historical text", a
   assert.equal(copied.body.payload.includes("user-b private"), false);
   assert.equal(copied.body.payload.includes("$1,200"), false);
   assert.equal(chief.selectable, true);
+  assert.equal(stores.audit.entries.length, 1);
+  assert.equal(stores.audit.entries[0].action, "context_handoff");
+  assert.equal(stores.audit.entries[0].summary, "items=2");
+  assert.equal(stores.audit.entries[0].summary.includes("lighthouse"), false);
+  assert.equal(JSON.stringify(stores.audit.entries).includes("east of the archive"), false);
 
   const found = await searchOwnedHistories(stores.checkpoints, stores.archive, "user-a", {
     query: "lighthouse",
@@ -350,4 +389,351 @@ test("unsigned requests and oversized packages fail closed", async () => {
   assert.equal(rendered.payload.length < SHARE_PACKAGE_CHARS + 400, true);
   assert.match(rendered.payload, /ChatGPT/);
   assert.equal(rendered.persisted, false);
+});
+
+test("the settings copy body reaches handoff and returns a fenced package", async () => {
+  const stores = await seed();
+  const proposed = await post(stores, { action: "propose", query: QUERY });
+  const fact = proposed.body.items.find((item) => item.excerpt?.includes("east of the archive"));
+  const ui = readFileSync(
+    new URL("../src/components/chief/ChiefContextShare.jsx", import.meta.url),
+    "utf8"
+  );
+  const client = readFileSync(new URL("../src/utils/chiefApi.js", import.meta.url), "utf8");
+  assert.match(ui, /querySeal: proposed\?\.querySeal/);
+  assert.match(ui, /selections: items\.filter/);
+  assert.equal(ui.includes("itemIds: selected"), false);
+  assert.match(client, /contextShareHandoffBody\(body\)/);
+  const wire = contextShareHandoffBody({
+    query: QUERY,
+    destination: "chatgpt",
+    confirm: true,
+    querySeal: proposed.body.querySeal,
+    selections: [fact],
+  });
+  assert.equal(wire.action, "handoff");
+  assert.deepEqual(wire.selections, [{ id: fact.id, contentHash: fact.contentHash }]);
+  const copied = await post(stores, wire);
+  assert.equal(copied.statusCode, 200);
+  assert.match(copied.body.payload, /UNTRUSTED EXTERNAL CONTENT/);
+  assert.match(copied.body.payload, /east of the archive/);
+  assert.equal(copied.body.persisted, false);
+
+  const oldShape = await post(stores, {
+    query: QUERY,
+    destination: "chatgpt",
+    itemIds: [fact.id],
+    confirm: true,
+  });
+  assert.equal(oldShape.statusCode, 400);
+  assert.equal(oldShape.body.code, "REJECTED");
+  assert.equal(oldShape.body.payload, undefined);
+});
+
+function harborStores(archive, audit = new MemoryAuditLog()) {
+  return {
+    facts: new MemoryFactStore(),
+    archive,
+    checkpoints: quietCheckpoints(),
+    audit,
+  };
+}
+
+async function harborArchive(late = "The beacon sits on the north spit.") {
+  const archive = new MemoryExternalArchive();
+  const filler = "The harbor wall continues past the dock. ".repeat(20);
+  await archive.upsert(
+    "user-a",
+    finalizeConversation("claude", {
+      externalId: "4444444444444444",
+      title: "Harbor notes",
+      messages: [
+        {
+          role: "user",
+          externalId: "m-open",
+          sourceCreatedAt: "2026-04-01T00:00:00.000Z",
+          blocks: [{ type: "text", text: filler }],
+        },
+        {
+          role: "assistant",
+          externalId: "m-late",
+          sourceCreatedAt: "2026-04-01T00:05:00.000Z",
+          blocks: [{ type: "text", text: late }],
+        },
+      ],
+    })
+  );
+  return archive;
+}
+
+test("a long archive exports the query match and its message reference", async () => {
+  const stores = harborStores(await harborArchive());
+  const proposed = await post(stores, { action: "propose", query: "beacon" });
+  assert.equal(proposed.statusCode, 200);
+  const item = proposed.body.items.find((entry) => entry.provider === "claude");
+  assert.ok(item);
+  assert.equal(item.excerpt.includes("north spit"), true);
+  assert.equal(item.excerpt.indexOf("north spit") < item.excerpt.indexOf("harbor wall"), true);
+  assert.equal(
+    item.messageRefs.some((ref) => ref.id === "m-late"),
+    true
+  );
+  const copied = await post(
+    stores,
+    reviewedHandoff(proposed.body, { destination: "claude", ids: [item.id], query: "beacon" })
+  );
+  assert.equal(copied.statusCode, 200);
+  assert.match(copied.body.payload, /north spit/);
+  assert.match(copied.body.payload, /m-late/);
+  assert.match(copied.body.payload, /UNTRUSTED EXTERNAL CONTENT/);
+  if (item.messageRefs.some((ref) => ref.id === "m-open")) {
+    assert.equal(item.excerpt.includes("harbor wall"), true);
+  }
+});
+
+test("handoff rejects a changed archive and a changed question", async () => {
+  const stores = harborStores(await harborArchive());
+  const proposed = await post(stores, { action: "propose", query: "beacon" });
+  const item = proposed.body.items.find((entry) => entry.provider === "claude");
+  const reviewed = reviewedHandoff(proposed.body, {
+    destination: "claude",
+    ids: [item.id],
+    query: "beacon",
+  });
+
+  const editedQuestion = await post(stores, { ...reviewed, query: "harbor wall" });
+  assert.equal(editedQuestion.statusCode, 409);
+  assert.equal(editedQuestion.body.code, "STALE");
+  assert.equal(
+    editedQuestion.body.error,
+    "The context changed. Find context again before copying."
+  );
+  assert.equal(editedQuestion.body.payload, undefined);
+  assert.equal(stores.audit.entries.length, 0);
+
+  await stores.archive.upsert(
+    "user-a",
+    finalizeConversation("claude", {
+      externalId: "4444444444444444",
+      title: "Harbor notes",
+      messages: [
+        {
+          role: "assistant",
+          externalId: "m-late",
+          blocks: [{ type: "text", text: "UNREVIEWED REPLACEMENT about the beacon." }],
+        },
+      ],
+    })
+  );
+  const editedArchive = await post(stores, reviewed);
+  assert.equal(editedArchive.statusCode, 409);
+  assert.equal(editedArchive.body.code, "STALE");
+  assert.equal(editedArchive.body.payload, undefined);
+  assert.equal(JSON.stringify(editedArchive.body).includes("UNREVIEWED"), false);
+
+  const fresh = await post(stores, { action: "propose", query: "beacon" });
+  const replacement = fresh.body.items.find((entry) => entry.provider === "claude");
+  assert.equal(replacement.excerpt.includes("UNREVIEWED REPLACEMENT"), true);
+  const recovered = await post(
+    stores,
+    reviewedHandoff(fresh.body, {
+      destination: "chatgpt",
+      ids: [replacement.id],
+      query: "beacon",
+    })
+  );
+  assert.equal(recovered.statusCode, 200);
+  assert.match(recovered.body.payload, /UNREVIEWED REPLACEMENT/);
+  assert.equal(recovered.body.audit, "recorded");
+  assert.equal(stores.audit.entries.length, 1);
+  assert.equal(stores.audit.entries[0].summary, "items=1");
+  assert.equal(stores.audit.entries[0].summary.includes("UNREVIEWED"), false);
+  assert.equal(JSON.stringify(stores.audit.entries).includes("beacon"), false);
+});
+
+test("credential-shaped identifiers are omitted and ordinary ids are copied", async () => {
+  const uuid = "11111111-2222-3333-4444-555555555555";
+  const rendered = renderHandoff({
+    destination: "claude",
+    query: "harbor",
+    itemIds: [`history:claude:${uuid}`],
+    items: [
+      {
+        id: `history:claude:${uuid}`,
+        kind: "historical",
+        label: "Historical statement",
+        provider: "claude",
+        title: "Harbor notes",
+        excerpt: "The harbor is calm.",
+        selectable: true,
+        updatedAt: "2026-04-01T00:00:00.000Z",
+        conversationId: "password: hunter2",
+        messageRefs: [
+          { id: uuid, role: "user", at: "2026-04-01T00:00:00.000Z" },
+          { id: "api key: sk-live-secret", role: "assistant", at: "2026-04-01T00:01:00.000Z" },
+          { id: "88421", role: "user", at: "2026-04-01T00:02:00.000Z" },
+        ],
+      },
+    ],
+  });
+  assert.match(rendered.payload, new RegExp(uuid));
+  assert.match(rendered.payload, /88421/);
+  assert.equal(rendered.payload.includes("hunter2"), false);
+  assert.equal(rendered.payload.includes("sk-live-secret"), false);
+
+  const archive = new MemoryExternalArchive();
+  await archive.upsert(
+    "user-a",
+    finalizeConversation("chatgpt", {
+      externalId: "5555555555555555",
+      title: "Marked beacon",
+      messages: [
+        {
+          role: "user",
+          externalId: "api key: sk-live-secret",
+          blocks: [{ type: "text", text: "The beacon is marked." }],
+        },
+        {
+          role: "assistant",
+          externalId: "m-clean",
+          blocks: [{ type: "text", text: "The mark is recorded." }],
+        },
+      ],
+    })
+  );
+  const stores = harborStores(archive);
+  const proposed = await post(stores, { action: "propose", query: "beacon" });
+  const item = proposed.body.items.find((entry) => entry.provider === "chatgpt");
+  assert.equal(JSON.stringify(proposed.body).includes("sk-live-secret"), false);
+  assert.equal(item.excerpt.includes("beacon is marked"), true);
+  assert.equal(
+    item.messageRefs.some((ref) => ref.id === "m-clean"),
+    true
+  );
+  assert.equal(
+    item.messageRefs.some((ref) => ref.id && ref.id.includes("sk-")),
+    false
+  );
+});
+
+test("fact ranking sees past the newest forty rows and requires an owner", async () => {
+  const older = {
+    id: "fact-old",
+    userId: "user-a",
+    content: "The beacon preference is the matching durable fact.",
+    trustTier: "AUTO",
+    source: "user",
+    createdAt: new Date("2020-01-01T00:00:00.000Z"),
+    updatedAt: new Date("2020-01-01T00:00:00.000Z"),
+  };
+  const newer = Array.from({ length: 40 }, (_, index) => ({
+    id: `fact-new-${index}`,
+    userId: "user-a",
+    content: `Unrelated dock note ${index}.`,
+    trustTier: "AUTO",
+    source: "user",
+    createdAt: new Date(Date.UTC(2024, 0, index + 1)),
+    updatedAt: new Date(Date.UTC(2024, 0, index + 1)),
+  }));
+  const rows = [
+    older,
+    ...newer,
+    {
+      id: "fact-open",
+      content: "The beacon preference has no owner.",
+      trustTier: "AUTO",
+      source: "user",
+      createdAt: new Date("2025-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2025-01-01T00:00:00.000Z"),
+    },
+    {
+      id: "fact-b",
+      userId: "user-b",
+      content: "The beacon preference belongs to user-b.",
+      trustTier: "AUTO",
+      source: "user",
+      createdAt: new Date("2025-02-01T00:00:00.000Z"),
+      updatedAt: new Date("2025-02-01T00:00:00.000Z"),
+    },
+  ];
+  let seen = null;
+  const facts = {
+    async read(options) {
+      seen = options;
+      return [...rows]
+        .sort((left, right) => new Date(right.createdAt) - new Date(left.createdAt))
+        .slice(0, options.limit);
+    },
+  };
+  const proposed = await post(
+    {
+      facts,
+      archive: new MemoryExternalArchive(),
+      checkpoints: quietCheckpoints(),
+      audit: new MemoryAuditLog(),
+    },
+    { action: "propose", query: "beacon preference" }
+  );
+  assert.equal(proposed.statusCode, 200);
+  assert.ok(seen.limit >= 41);
+  assert.equal(seen.query, "");
+  assert.equal(JSON.stringify(proposed.body).includes("matching durable fact"), true);
+  assert.equal(JSON.stringify(proposed.body).includes("no owner"), false);
+  assert.equal(JSON.stringify(proposed.body).includes("user-b"), false);
+});
+
+test("omitted secrets stay marked and the proposal query is redacted", async () => {
+  const archive = new MemoryExternalArchive();
+  await archive.upsert(
+    "user-a",
+    finalizeConversation("chatgpt", {
+      externalId: "5555555555555555",
+      title: "Calm harbor",
+      messages: [
+        {
+          role: "user",
+          externalId: "m-clean",
+          blocks: [{ type: "text", text: "The harbor is calm." }],
+        },
+        {
+          role: "assistant",
+          externalId: "m-secret",
+          blocks: [{ type: "text", text: "api key: sk-test-secret" }],
+        },
+      ],
+    })
+  );
+  const proposed = await post(harborStores(archive), { action: "propose", query: "harbor" });
+  const item = proposed.body.items.find((entry) => entry.provider === "chatgpt");
+  assert.equal(item.omitted, "sensitive");
+  assert.equal(item.excerpt.includes("harbor is calm"), true);
+  assert.equal(item.excerpt.includes("sk-test-secret"), false);
+
+  const secretQuery = await post(harborStores(new MemoryExternalArchive()), {
+    action: "propose",
+    query: "beacon api key: sk-query-secret",
+  });
+  assert.equal(secretQuery.statusCode, 200);
+  assert.equal(secretQuery.body.query.includes("sk-query-secret"), false);
+  assert.equal(secretQuery.body.summary.includes("sk-query-secret"), false);
+  assert.notEqual(secretQuery.body.query, "beacon api key: sk-query-secret");
+});
+
+test("a failed audit write still returns the copied package", async () => {
+  const stores = await seed();
+  stores.audit = {
+    async write() {
+      throw new Error("database unavailable");
+    },
+  };
+  const proposed = await post(stores, { action: "propose", query: QUERY });
+  const fact = proposed.body.items.find((item) => item.excerpt?.includes("east of the archive"));
+  const copied = await post(
+    stores,
+    reviewedHandoff(proposed.body, { destination: "claude", ids: [fact.id] })
+  );
+  assert.equal(copied.statusCode, 200);
+  assert.equal(copied.body.audit, "unavailable");
+  assert.match(copied.body.payload, /east of the archive/);
+  assert.equal(JSON.stringify(copied.body).includes("database unavailable"), false);
 });
