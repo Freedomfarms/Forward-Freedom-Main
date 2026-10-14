@@ -17,6 +17,7 @@ import {
 } from "./chiefRoom.js";
 import { voiceConnectionState } from "./chiefVoiceStatus.js";
 import { sidebarSearchPath } from "./chiefSidebar.js";
+import { contextShareHandoffBody } from "./contextShareRequest.js";
 
 export {
   CHIEF_STATUS,
@@ -377,6 +378,22 @@ export function retainImportedMemories(user, id) {
     user,
     method: "POST",
     body: { retain: true, confirm: true, id },
+  });
+}
+
+export function proposeSharedContext(user, query) {
+  return chiefJson("/api/chief/context-share", {
+    user,
+    method: "POST",
+    body: { action: "propose", query },
+  });
+}
+
+export function handoffSharedContext(user, body) {
+  return chiefJson("/api/chief/context-share", {
+    user,
+    method: "POST",
+    body: contextShareHandoffBody(body),
   });
 }
 

@@ -38,6 +38,7 @@ import chiefSessionsHandler from "../api/chief/sessions.js";
 import chiefExternalConversationsHandler from "../api/chief/external-conversations.js";
 import chiefExternalCaptureHandler from "../api/chief/external-capture.js";
 import chiefCaptureTokenHandler from "../api/chief/capture-token.js";
+import chiefContextShareHandler from "../api/chief/context-share.js";
 import chiefSessionSearchHandler from "../api/chief/session-search.js";
 import chiefHistoryHandler from "../api/chief/history.js";
 import chiefModelsHandler from "../api/chief/models.js";
@@ -161,6 +162,7 @@ app
   .get(chiefExternalCaptureHandler)
   .post(chiefExternalCaptureHandler);
 app.route("/api/chief/capture-token").get(chiefCaptureTokenHandler).post(chiefCaptureTokenHandler);
+app.post("/api/chief/context-share", chiefContextShareHandler);
 app.get("/api/chief/models", chiefModelsHandler);
 app.get("/api/chief/voices", chiefVoicesHandler);
 app.post("/api/chief/speak", chiefSpeakHandler);
