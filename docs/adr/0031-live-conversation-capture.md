@@ -18,7 +18,7 @@ Phase 1 stores historical Claude and ChatGPT exports in the encrypted external a
 
 ## Decision
 
-1. A Manifest V3 extension, off until the user enables Claude and ChatGPT separately, reads only `https://claude.ai/*` and `https://chatgpt.com/*`. It uploads a snapshot only when the URL contains a conversation id and the page exposes message nodes the extractor recognizes. Otherwise it does not upload.
+1. A Manifest V3 extension, off until the user enables Claude and ChatGPT separately, reads only `https://claude.ai/*` and `https://chatgpt.com/*`. It uploads a snapshot only when the URL contains a conversation id and the page exposes message nodes the extractor recognizes. Otherwise it does not upload. Chrome parses content scripts as classic scripts, so the page entry is the bundled file `extension/dist/content.js` from `npm run build:extension`, not `extension/content.js`. The service worker remains a module.
 2. The extension stores a user-minted `ffc` token in `chrome.storage.local`. Freedom OS shows the plaintext once and stores only the hash. The extension requests permission for the Freedom OS origin the user enters. Service secrets and provider cookies are not part of the extension.
 3. `POST /api/chief/external-capture` authenticates that token, ignores a body `userId`, and calls `finalizeConversation` plus the existing archive upsert. A snapshot with fewer messages than the stored conversation is rejected and does not write. The same content hash is a duplicate. A longer or edited snapshot updates that conversation.
 4. Capture does not call durable-note derivation. Pausing, disabling a provider, or revoking the token stops new writes. Transient failures retry with backoff and remain visible. The client records success only after the server returns `imported`, `updated`, or `duplicate`.
@@ -35,4 +35,4 @@ The extension was not run against claude.ai or chatgpt.com.
 
 ## Consequences
 
-The user installs the unpacked extension, creates a token in Imported chats, pastes the token and Freedom OS origin, and enables each provider in both places. The first snapshot can contain only the messages the page rendered. Later longer snapshots can grow the archive. A shorter snapshot cannot replace a longer one. Live database RLS was not executed in this slice. The migration enables and forces `user_isolation` on `external_capture_credential`.
+The user installs the unpacked `extension/` directory after `npm run build:extension` has refreshed `extension/dist/content.js`, creates a token in Imported chats, pastes the token and Freedom OS origin, and enables each provider in both places. The first snapshot can contain only the messages the page rendered. Later longer snapshots can grow the archive. A shorter snapshot cannot replace a longer one. Live database RLS was not executed in this slice. The migration enables and forces `user_isolation` on `external_capture_credential`.

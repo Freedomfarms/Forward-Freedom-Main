@@ -17,8 +17,7 @@
   "content_scripts": [
     {
       "matches": ["https://claude.ai/*", "https://chatgpt.com/*"],
-      "js": ["content.js"],
-      "type": "module",
+      "js": ["dist/content.js"],
       "run_at": "document_idle"
     }
   ]
