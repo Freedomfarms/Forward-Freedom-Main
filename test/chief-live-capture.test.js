@@ -28,7 +28,12 @@ import {
   settingsView,
   visibleStatus,
 } from "../extension/src/queue.js";
-import { interpretResponse, normalizeOrigin, payloadTooLarge } from "../extension/src/transport.js";
+import {
+  captureBody,
+  interpretResponse,
+  normalizeOrigin,
+  payloadTooLarge,
+} from "../extension/src/transport.js";
 
 const previousKeys = process.env.FFF_ENCRYPTION_KEYS;
 
@@ -552,6 +557,87 @@ test("capture responses do not keep transcript text and origins stay explicit", 
   assert.equal(payloadTooLarge(state.items[0]), true);
   assert.equal(state.items[0].lastCode, "OVERSIZED");
   assert.equal(dueItems(state, 10).length, 0);
+});
+
+test("extracted snapshots queue for the enabled provider and post to capture", async () => {
+  const claude = extractSnapshot(
+    fakeDocument({
+      lists: {
+        "[data-testid='user-message'], [data-testid='assistant-message']": [
+          node(
+            { "data-testid": "user-message", "data-message-id": "m-user" },
+            "Where is the lighthouse?"
+          ),
+          node(
+            { "data-testid": "assistant-message", "data-message-id": "m-assistant" },
+            "Use the archive."
+          ),
+        ],
+      },
+    }),
+    "https://claude.ai/chat/2222222222222222"
+  );
+  const chatgpt = extractSnapshot(
+    fakeDocument({
+      lists: {
+        "[data-message-author-role]": [
+          node({ "data-message-author-role": "user", "data-message-id": "u1" }, "Hello archive"),
+          node({ "data-message-author-role": "assistant", "data-message-id": "a1" }, "Hello back"),
+        ],
+      },
+    }),
+    "https://chatgpt.com/c/3333333333333333"
+  );
+  assert.equal(claude.provider, "claude");
+  assert.deepEqual(
+    claude.messages.map((message) => message.role),
+    ["user", "assistant"]
+  );
+  assert.equal(chatgpt.provider, "chatgpt");
+  assert.equal(chatgpt.externalId, "3333333333333333");
+  assert.equal(chatgpt.messages[1].externalId, "a1");
+  assert.equal(shouldCapture(claude).ok, true);
+  assert.equal(shouldCapture(chatgpt).ok, true);
+
+  const ctx = await arm("claude");
+  let state = setProviderEnabled(
+    setToken(setOrigin(emptyState(), "https://freedom.example"), ctx.token),
+    "claude",
+    true
+  );
+  state = enqueue(state, { ...claude, title: "Bridge" }, 20);
+  state = enqueue(state, { ...chatgpt, title: "Other" }, 20);
+  assert.equal(state.items.length, 1);
+  assert.equal(state.items[0].provider, "claude");
+  assert.equal(state.items[0].messages.length, 2);
+
+  const sent = await postCapture(ctx, captureBody(state.items[0]));
+  assert.equal(sent.statusCode, 200);
+  assert.equal(sent.body.status, "imported");
+  assert.equal(ctx.store.messages.length, 2);
+  assert.equal(JSON.stringify(sent.body).includes("lighthouse"), false);
+
+  const disabled = await postCapture(ctx, {
+    ...captureBody(state.items[0]),
+    provider: "chatgpt",
+    externalId: chatgpt.externalId,
+  });
+  assert.equal(disabled.statusCode, 403);
+  assert.equal(disabled.body.code, "DISABLED");
+
+  const failed = applyResult(state, state.items[0], interpretResponse(503, {}), 20);
+  assert.equal(failed.items[0].lastCode, "TRANSIENT");
+  assert.equal(failed.items[0].stopped, false);
+  assert.equal(dueItems(failed, failed.items[0].nextAttemptAt).length, 1);
+
+  await postToken(ctx.credentials, { action: "revoke" });
+  const revoked = await postCapture(ctx, captureBody(state.items[0]));
+  assert.equal(revoked.statusCode, 401);
+  assert.equal(revoked.body.code, "AUTH");
+  const stopped = applyResult(failed, failed.items[0], interpretResponse(401, revoked.body), 30);
+  assert.equal(stopped.authExpired, true);
+  assert.equal(dueItems(stopped, 999_999).length, 0);
+  assert.equal(ctx.store.conversations.size, 1);
 });
 
 test("extension files do not embed service secrets or provider session calls", () => {

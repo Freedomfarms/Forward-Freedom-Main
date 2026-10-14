@@ -1,4 +1,6 @@
-// Reads the open Claude or ChatGPT page only. Unrecognized pages are not uploaded.
+// Source for the page script. Chrome loads extension/dist/content.js, the classic
+// bundle from `npm run build:extension`. A Manifest V3 content script cannot use
+// this file's static import. Unrecognized pages are not uploaded.
 
 import { extractSnapshot } from "./src/extract.js";
 

@@ -11,6 +11,7 @@
     "dev:client": "vite --host 0.0.0.0",
     "dev:server": "node --watch server/index.js",
     "build": "npm run prisma:generate && npm run prisma:migrate:deploy && vite build",
+    "build:extension": "node scripts/build-extension.mjs",
     "prisma:generate": "node scripts/prisma-generate.mjs",
     "prisma:migrate:deploy": "node scripts/prisma-migrate-deploy.mjs",
     "prisma:validate": "prisma validate",
