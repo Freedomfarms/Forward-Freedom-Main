@@ -1,5 +1,7 @@
 import footerUrl from "./chief-footer.webp";
 import sceneUrl from "./chief-scene.webp";
+import { ChiefLivingScene } from "./ChiefLivingScene.jsx";
+import { livingMotion } from "./chiefLivingMotion.js";
 import "./ChiefInterface.css";
 
 const FEATURES = [
@@ -138,6 +140,22 @@ function Panel({ className = "", children }) {
   return <section className={`chief-panel ${className}`}>{children}</section>;
 }
 
+const SYSTEM_ROWS = [
+  ["listening", "Listening"],
+  ["processing", "Processing"],
+  ["reasoning", "Reasoning"],
+  ["searching", "Searching"],
+  ["connecting", "Connecting"],
+  ["responding", "Responding"],
+];
+
+const SUGGESTION_ICONS = {
+  plan: "bolt",
+  finances: "chart",
+  research: "search",
+  projects: "network",
+};
+
 export function ChiefInterface({
   activeSection = "",
   navItems = [],
@@ -178,9 +196,18 @@ export function ChiefInterface({
   workspace = null,
   modelControl = null,
   inputRef = null,
+  audioLevelRef = null,
 }) {
   const state = String(assistantState || "idle").toLowerCase();
   const phase = ["idle", "thinking", "responding"].includes(scenePhase) ? scenePhase : "idle";
+  const sceneMotion = livingMotion({
+    scenePhase: phase,
+    assistantState: state,
+    status,
+    statusTone,
+  });
+  const linkLabel =
+    statusTone === "signed-out" ? "Offline" : statusTone === "error" ? "Error" : "Online";
   const metricRows = [
     ["CPU", systemStatus.cpu],
     ["Memory", systemStatus.memory],
@@ -220,6 +247,23 @@ export function ChiefInterface({
 
   return (
     <main className={rootClass}>
+      <div className="chief-scene-frame">
+        <div className="chief-scene-plate">
+          <img className="chief-scene" src={sceneUrl} alt="" draggable="false" />
+          <img className="chief-core-field" src={sceneUrl} alt="" draggable="false" />
+          <i className="chief-core-wash" />
+          <img className="chief-ring-field" src={sceneUrl} alt="" draggable="false" />
+          <i className="chief-ring-flow" />
+          <ChiefLivingScene
+            scenePhase={phase}
+            assistantState={state}
+            status={status}
+            statusTone={statusTone}
+            reducedMotion={reducedMotion}
+            audioLevelRef={audioLevelRef}
+          />
+        </div>
+      </div>
       <header className="chief-topbar">
         <button
           type="button"
@@ -237,6 +281,11 @@ export function ChiefInterface({
         </div>
 
         <div className="chief-top-actions">
+          <span className={`chief-online is-${statusTone}`}>
+            <i />
+            {linkLabel}
+          </span>
+          {modelControl}
           {onSearch ? (
             <form className="chief-search" role="search" onSubmit={submitSearch}>
               <Icon name="search" size={16} />
@@ -324,16 +373,6 @@ export function ChiefInterface({
       </nav>
 
       <section className="chief-stage" aria-label="CHIEF">
-        <div className="chief-scene-frame">
-          <div className="chief-scene-plate">
-            <img className="chief-scene" src={sceneUrl} alt="" draggable="false" />
-            <img className="chief-core-field" src={sceneUrl} alt="" draggable="false" />
-            <i className="chief-core-wash" />
-            <img className="chief-ring-field" src={sceneUrl} alt="" draggable="false" />
-            <i className="chief-ring-flow" />
-          </div>
-        </div>
-
         {workspace ? <div className="chief-workspace-slot">{workspace}</div> : null}
 
         <div className="chief-stage-dock">
@@ -363,13 +402,6 @@ export function ChiefInterface({
 
           {conversation ? <div className="chief-interface-conversation">{conversation}</div> : null}
 
-          {modelControl ? (
-            <div className="chief-model-line">
-              <span className="chief-model-label">Model</span>
-              {modelControl}
-            </div>
-          ) : null}
-
           {showComposer ? (
             <div className="chief-composer">
               <button
@@ -390,8 +422,8 @@ export function ChiefInterface({
                   onKeyDown={(event) => {
                     if (event.key === "Enter" && !enterToSend) event.preventDefault();
                   }}
-                  placeholder="Ask CHIEF anything..."
-                  aria-label="Ask CHIEF anything"
+                  placeholder="Talk to CHIEF..."
+                  aria-label="Talk to CHIEF"
                   disabled={composerDisabled}
                 />
                 {allowAttach ? (
@@ -422,6 +454,7 @@ export function ChiefInterface({
               {suggestions.map((item) =>
                 typeof item.onSelect === "function" ? (
                   <button key={item.id} type="button" onClick={item.onSelect}>
+                    <Icon name={SUGGESTION_ICONS[item.id] || "pulse"} size={14} />
                     {item.label}
                   </button>
                 ) : null
@@ -450,6 +483,25 @@ export function ChiefInterface({
       </section>
 
       <aside className="chief-right-rail">
+        <Panel className="chief-system-live">
+          <div className="chief-system-title">
+            <strong>CHIEF SYSTEM</strong>
+          </div>
+          {status && status !== "Ready" ? <p className="chief-system-detail">{status}</p> : null}
+          <ul className="chief-system-rows">
+            {SYSTEM_ROWS.map(([key, label]) => (
+              <li key={key} className={sceneMotion.activity[key] ? "is-active" : undefined}>
+                <span className="chief-system-glyph" aria-hidden="true" />
+                <span>{label}</span>
+                <span className="chief-system-eq" aria-hidden="true">
+                  <i />
+                  <i />
+                  <i />
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Panel>
         <Panel className="chief-identity">
           <span className="chief-identity-mark" aria-hidden="true" />
           <div>
