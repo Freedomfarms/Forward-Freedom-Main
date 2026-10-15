@@ -11,7 +11,7 @@ const CALLOUTS = [
 ];
 
 function calloutLive(activity, id) {
-  if (id === "analyzing") return activity.processing || activity.reasoning;
+  if (id === "analyzing") return activity.processing;
   if (id === "reasoning") return activity.reasoning;
   if (id === "searching") return activity.searching;
   if (id === "connecting") return activity.connecting;
