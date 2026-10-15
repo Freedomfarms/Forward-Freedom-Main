@@ -204,10 +204,22 @@
   height: 100%;
 }
 
+/* The package fallback keeps cyan ring strokes. Tint those to the CHIEF violet. */
+.chief-interface .chief-jarvis-orb > div {
+  box-shadow:
+    0 0 42px rgba(168, 85, 247, 0.38),
+    inset 0 0 38px rgba(255, 255, 255, 0.18) !important;
+}
+
+.chief-interface .chief-jarvis-orb > div > div {
+  border-color: rgba(233, 213, 255, 0.62) !important;
+  box-shadow: 0 0 18px rgba(168, 85, 247, 0.38) !important;
+}
+
 .chief-interface .chief-orb-status {
   position: relative;
   z-index: 1;
-  margin: 2px 0 0;
+  margin: 28px 0 0;
   color: rgba(214, 196, 255, 0.72);
   font-size: 11px;
   font-weight: 560;
