@@ -860,17 +860,9 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
   const homeNavItems = [
     {
       id: "chief",
-      label: "CHIEF",
-      detail: "Intelligence & Execution",
+      label: "Chief",
       icon: "core",
       onSelect: returnHome,
-    },
-    {
-      id: "conversations",
-      label: "Conversations",
-      detail: "Sessions",
-      icon: "chat",
-      onSelect: () => openConversations(),
     },
   ];
   if (onOpenFinancial) {
@@ -886,31 +878,65 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
     homeNavItems.push({
       id: "agents",
       label: "Agents",
-      detail: "GrokBot",
-      icon: "network",
+      icon: "users",
       onSelect: () => openNode({ key: "agents" }),
     });
   }
-  homeNavItems.push({
-    id: "settings",
-    label: "Settings",
-    detail: "System configuration",
-    icon: "settings",
-    onSelect: () => openNode({ key: "settings" }),
-  });
+  homeNavItems.push(
+    {
+      id: "conversations",
+      label: "Chats",
+      icon: "chat",
+      onSelect: () => openConversations(),
+    },
+    {
+      id: "settings",
+      label: "Settings",
+      icon: "settings",
+      onSelect: () => openNode({ key: "settings" }),
+    }
+  );
 
   const homeSuggestions =
     user && !approval && !activeArchived
       ? [
-          ["plan", "Help me plan…", "Help me plan my day."],
-          ["finances", "Analyze my finances…", "Analyze my finances."],
-          ["research", "Research this topic…", "Research this topic."],
-          ["projects", "Work on my projects…", "Work on my projects."],
-        ].map(([id, label, text]) => ({
-          id,
-          label,
-          onSelect: () => setDraft(text),
-        }))
+          {
+            id: "analyze",
+            label: "Analyze",
+            icon: "bolt",
+            onSelect: () => setDraft("Analyze this."),
+          },
+          {
+            id: "search",
+            label: "Search",
+            icon: "search",
+            onSelect: () => openConversations({ focusSearch: true }),
+          },
+          {
+            id: "summarize",
+            label: "Summarize",
+            icon: "list",
+            onSelect: () => setDraft("Summarize this."),
+          },
+          {
+            id: "plan",
+            label: "Plan",
+            icon: "pulse",
+            onSelect: () => setDraft("Help me plan my day."),
+          },
+          {
+            id: "status",
+            label: "Check Status",
+            icon: "chart",
+            onSelect: () => setDraft("Check status."),
+          },
+          {
+            id: "more",
+            label: "…",
+            icon: "more",
+            onSelect: () => openConversations(),
+          },
+        ]
       : [];
 
   const homeQuickActions = user
@@ -978,6 +1004,7 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
           statusTone={homeStatusTone}
           assistantState={orbState}
           scenePhase={scenePhase}
+          audioLevelRef={voice.audioLevelRef}
           message={draft}
           onMessageChange={setDraft}
           onSend={submitDraft}
