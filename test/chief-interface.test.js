@@ -30,9 +30,23 @@ test("CHIEF home mounts the supplied interface on the existing conversation path
   assert.equal(face.includes("Research market opportunity"), false);
   assert.equal(face.includes("Search Web"), false);
   assert.equal(face.includes("Open Workspace"), false);
-  assert.match(face, /chief-scene\.webp/);
+  assert.match(face, /from "jarvis-ai-web-animation"/);
+  assert.match(face, /jarvis-ai-web-animation\/LICENSE\?raw/);
+  assert.match(face, /data-third-party-license=\{jarvisLicense\}/);
+  assert.match(face, /<JarvisOrb/);
+  assert.match(face, /palette=\{CHIEF_ORB_PALETTE\}/);
+  assert.match(face, /state=\{motion\}/);
+  assert.match(face, /breathing=\{!reducedMotion\}/);
+  assert.match(face, /paused=\{reducedMotion\}/);
+  assert.match(face, /0xc084fc/);
+  assert.match(face, /0x7c3aed/);
+  assert.doesNotMatch(face, /chief-scene\.webp/);
   assert.match(face, /allowAttach \?/);
   assert.equal((face.match(/fetch\(/g) || []).length, 0);
+  assert.match(
+    face,
+    /workspace \? <div className="chief-workspace-slot">\{workspace\}<\/div> : null/
+  );
   assert.match(page, /conversationLabel/);
   assert.match(page, /formatChiefTime/);
   assert.match(page, /quickActions=\{homeQuickActions\}/);
@@ -42,23 +56,14 @@ test("CHIEF home mounts the supplied interface on the existing conversation path
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
   assert.match(css, /\.chief-interface \.chief-composer \{/);
   assert.doesNotMatch(css, /^\.chief-composer \{/m);
-  assert.match(css, /\.chief-stage \{\s*display: flex;\s*flex-direction: column;/);
-  assert.match(css, /grid-area:\s*nav/);
-  assert.match(css, /grid-area:\s*stage/);
-  assert.match(css, /grid-area:\s*rail/);
-  assert.match(css, /chief-core-pulse/);
-  assert.match(css, /chief-ring-flow/);
-  assert.match(css, /hue-rotate\(26deg\)/);
-  assert.match(css, /aspect-ratio:\s*864\s*\/\s*510/);
-  assert.doesNotMatch(css, /translate\(-50%,\s*16%\)/);
-  assert.match(css, /--chief-ring-angle/);
-  assert.match(css, /mask-image/);
+  assert.match(css, /\.chief-stage \{\s*position: relative;\s*flex: 1 1 auto;\s*display: flex;\s*flex-direction: column;/);
+  assert.match(css, /\.chief-orb-frame \{/);
   assert.match(css, /\.chief-interface\.phase-responding/);
   assert.match(css, /\.chief-interface\.phase-thinking/);
   assert.doesNotMatch(css, /margin-top:\s*-/);
-  assert.match(face, /chief-ring-field/);
-  assert.match(face, /chief-core-field/);
   assert.match(face, /phase-\$\{phase\}/);
+  assert.match(read("src/third_party/jarvis-ai-web-animation/LICENSE"), /Copyright \(c\) 2026 cyber1443/);
+  assert.match(read("src/third_party/jarvis-ai-web-animation/LICENSE"), /MIT License/);
   assert.match(read("src/components/chief/useChiefVoice.js"), /setPlayback\("preparing"\)/);
   assert.match(read("src/components/chief/useChiefVoice.js"), /setPlayback\("playing"\)/);
   assert.match(read("src/components/chief/useChiefVoice.js"), /setPlayback\("idle"\)/);
