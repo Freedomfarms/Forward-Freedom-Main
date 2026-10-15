@@ -31,6 +31,14 @@ test("CHIEF home mounts the supplied interface on the existing conversation path
   assert.equal(face.includes("Search Web"), false);
   assert.equal(face.includes("Open Workspace"), false);
   assert.match(face, /chief-scene\.webp/);
+  assert.match(face, /from "jarvis-ai-web-animation"/);
+  assert.match(
+    face,
+    /<JarvisOrb[\s\S]*size="hero"[\s\S]*palette="cyan"[\s\S]*state="thinking"[\s\S]*interactive[\s\S]*draggableSpin/
+  );
+  assert.doesNotMatch(face, /0xa855f7|breathing=\{|quality="/);
+  assert.match(css, /#050913/);
+  assert.match(css, /560px/);
   assert.match(face, /allowAttach \?/);
   assert.equal((face.match(/fetch\(/g) || []).length, 0);
   assert.match(page, /conversationLabel/);
