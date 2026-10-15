@@ -1,5 +1,6 @@
 import footerUrl from "./chief-footer.webp";
 import sceneUrl from "./chief-scene.webp";
+import { ChiefOrbitField } from "./ChiefOrbitField.jsx";
 import "./ChiefInterface.css";
 
 const FEATURES = [
@@ -327,6 +328,7 @@ export function ChiefInterface({
         <div className="chief-scene-frame">
           <div className="chief-scene-plate">
             <img className="chief-scene" src={sceneUrl} alt="" draggable="false" />
+            <ChiefOrbitField src={sceneUrl} />
             <img className="chief-core-field" src={sceneUrl} alt="" draggable="false" />
             <i className="chief-core-wash" />
             <img className="chief-ring-field" src={sceneUrl} alt="" draggable="false" />

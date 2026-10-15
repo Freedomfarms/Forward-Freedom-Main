@@ -409,15 +409,17 @@
 }
 
 .chief-interface.phase-thinking .chief-ring-field {
-  opacity: 1;
-  animation: chief-core-pulse 2.6s ease-in-out infinite;
+  opacity: 0;
+  animation: none;
 }
 
 .chief-interface.phase-thinking .chief-ring-flow {
-  opacity: 1;
-  animation:
-    chief-core-pulse 2.6s ease-in-out infinite,
-    chief-ring-flow 2.8s linear infinite;
+  opacity: 0;
+  animation: chief-ring-flow 2.8s linear infinite;
+}
+
+.chief-interface.phase-thinking .chief-orbit-layer canvas {
+  filter: brightness(1.08);
 }
 
 .chief-interface.phase-responding .chief-core-field {
@@ -435,8 +437,205 @@
 }
 
 .chief-interface.is-reduced-motion .chief-ring-field,
-.chief-interface.is-reduced-motion .chief-ring-flow {
+.chief-interface.is-reduced-motion .chief-ring-flow,
+.chief-interface.is-reduced-motion .chief-orbit-layer,
+.chief-interface.is-reduced-motion .chief-orbit-layer canvas,
+.chief-interface.is-reduced-motion .chief-orbit-pulse,
+.chief-interface.is-reduced-motion .chief-orbit-node,
+.chief-interface.is-reduced-motion .chief-core-shimmer {
   animation: none;
+}
+
+.chief-interface .chief-orbit-field {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.chief-interface .chief-orbit-field.is-live {
+  opacity: 1;
+}
+
+.chief-interface .chief-scene-plate:has(.chief-orbit-field.is-live) .chief-scene {
+  opacity: 0;
+}
+
+.chief-interface .chief-scene-base,
+.chief-interface .chief-orbit-layer,
+.chief-interface .chief-orbit-layer canvas,
+.chief-interface .chief-orbit-pulse,
+.chief-interface .chief-orbit-beam,
+.chief-interface .chief-core-shimmer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.chief-interface .chief-orbit-layer {
+  transform-origin: 53.4722% 56.6667%;
+  will-change: transform;
+}
+
+.chief-interface .chief-orbit-outer {
+  animation: chief-orbit-cw linear infinite;
+}
+
+.chief-interface .chief-orbit-inner {
+  animation: chief-orbit-ccw linear infinite;
+}
+
+.chief-interface .chief-orbit-layer canvas {
+  animation: chief-orbit-breathe 11s ease-in-out infinite;
+}
+
+.chief-interface .chief-orbit-inner canvas {
+  animation-duration: 8.5s;
+  animation-direction: reverse;
+}
+
+.chief-interface .chief-orbit-node {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  margin: -2px 0 0 -2px;
+  border-radius: 50%;
+  background: #f7fcff;
+  box-shadow:
+    0 0 6px 1px rgba(214, 246, 255, 0.95),
+    0 0 12px 3px rgba(92, 168, 255, 0.55);
+  animation: chief-orbit-breathe 6.5s ease-in-out infinite;
+}
+
+.chief-interface .chief-orbit-pulse {
+  mix-blend-mode: screen;
+  opacity: 0.55;
+}
+
+.chief-interface .chief-orbit-pulse-outer {
+  background: conic-gradient(
+    from var(--chief-orbit-outer-pulse) at 53.4722% 56.6667%,
+    transparent 0deg 268deg,
+    rgba(170, 236, 255, 0.02) 292deg,
+    rgba(244, 252, 255, 0.42) 322deg,
+    rgba(126, 186, 255, 0.05) 344deg,
+    transparent 360deg
+  );
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 864 510'%3E%3Cdefs%3E%3CradialGradient id='g' cx='462' cy='289' r='232' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='0.66' stop-color='black'/%3E%3Cstop offset='0.70' stop-color='white'/%3E%3Cstop offset='0.98' stop-color='white'/%3E%3Cstop offset='1' stop-color='black'/%3E%3C/radialGradient%3E%3C/defs%3E%3Crect width='864' height='510' fill='url(%23g)'/%3E%3C/svg%3E");
+  mask-size: 100% 100%;
+  mask-repeat: no-repeat;
+  mask-mode: luminance;
+  animation: chief-orbit-pulse-cw 26s linear infinite;
+}
+
+.chief-interface .chief-orbit-pulse-inner {
+  background: conic-gradient(
+    from var(--chief-orbit-inner-pulse) at 53.4722% 56.6667%,
+    transparent 0deg 248deg,
+    rgba(186, 214, 255, 0.04) 286deg,
+    rgba(255, 255, 255, 0.38) 318deg,
+    rgba(150, 120, 255, 0.08) 342deg,
+    transparent 360deg
+  );
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 864 510'%3E%3Cdefs%3E%3CradialGradient id='g' cx='462' cy='289' r='148' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='0.7' stop-color='black'/%3E%3Cstop offset='0.78' stop-color='white'/%3E%3Cstop offset='0.94' stop-color='white'/%3E%3Cstop offset='1' stop-color='black'/%3E%3C/radialGradient%3E%3C/defs%3E%3Crect width='864' height='510' fill='url(%23g)'/%3E%3C/svg%3E");
+  mask-size: 100% 100%;
+  mask-repeat: no-repeat;
+  mask-mode: luminance;
+  animation: chief-orbit-pulse-ccw 18s linear infinite;
+}
+
+.chief-interface .chief-core-shimmer {
+  mix-blend-mode: screen;
+  background:
+    radial-gradient(circle at 46% 42%, rgba(255, 255, 255, 0.28), transparent 16%),
+    radial-gradient(circle at 60% 62%, rgba(148, 186, 255, 0.22), transparent 18%);
+  background-size: 86% 86%;
+  background-repeat: no-repeat;
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 864 510'%3E%3Cdefs%3E%3CradialGradient id='g' cx='462' cy='289' r='96' gradientUnits='userSpaceOnUse'%3E%3Cstop offset='0' stop-color='black'/%3E%3Cstop offset='0.08' stop-color='black'/%3E%3Cstop offset='0.16' stop-color='white'/%3E%3Cstop offset='0.82' stop-color='white'/%3E%3Cstop offset='1' stop-color='black'/%3E%3C/radialGradient%3E%3C/defs%3E%3Crect width='864' height='510' fill='url(%23g)'/%3E%3C/svg%3E");
+  mask-size: 100% 100%;
+  mask-repeat: no-repeat;
+  mask-mode: luminance;
+  animation: chief-core-shimmer 9s ease-in-out infinite;
+}
+
+.chief-interface.phase-thinking .chief-core-shimmer {
+  animation:
+    chief-core-shimmer 9s ease-in-out infinite,
+    chief-core-pulse 2.6s ease-in-out infinite;
+}
+
+.chief-interface.has-workspace .chief-orbit-field {
+  display: none;
+}
+
+.chief-interface.has-workspace .chief-scene-plate:has(.chief-orbit-field.is-live) .chief-scene {
+  opacity: 1;
+}
+
+@property --chief-orbit-outer-pulse {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@property --chief-orbit-inner-pulse {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@keyframes chief-orbit-cw {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes chief-orbit-ccw {
+  to {
+    transform: rotate(-360deg);
+  }
+}
+
+@keyframes chief-orbit-pulse-cw {
+  to {
+    --chief-orbit-outer-pulse: 360deg;
+  }
+}
+
+@keyframes chief-orbit-pulse-ccw {
+  to {
+    --chief-orbit-inner-pulse: -360deg;
+  }
+}
+
+@keyframes chief-orbit-breathe {
+  0%,
+  100% {
+    opacity: 0.9;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes chief-core-shimmer {
+  0%,
+  100% {
+    opacity: 0.28;
+    background-position:
+      40% 36%,
+      62% 66%;
+  }
+
+  50% {
+    opacity: 0.48;
+    background-position:
+      56% 48%,
+      42% 54%;
+  }
 }
 
 @property --chief-ring-angle {
@@ -448,11 +647,11 @@
 @keyframes chief-core-pulse {
   0%,
   100% {
-    transform: scale(0.86);
+    opacity: 0.45;
   }
 
   50% {
-    transform: scale(1.14);
+    opacity: 0.85;
   }
 }
 
@@ -1064,7 +1263,8 @@
 .chief-interface.has-workspace .chief-core-field,
 .chief-interface.has-workspace .chief-ring-field,
 .chief-interface.has-workspace .chief-core-wash,
-.chief-interface.has-workspace .chief-ring-flow {
+.chief-interface.has-workspace .chief-ring-flow,
+.chief-interface.has-workspace .chief-orbit-field {
   display: none;
 }
 
