@@ -4,7 +4,13 @@
 import * as THREE from "three";
 import { damp, normalizeCoreState, poseFor, stepPose } from "../chiefCore/ChiefCoreState.js";
 import { FILAMENT_ANCHOR_Y, FILAMENT_COLORS, createFilamentCore } from "./filamentCore.js";
-import { createQualityState, observeFrame, probeWebGLRenderer } from "./filamentQuality.js";
+import {
+  createQualityState,
+  drawingBufferSize,
+  measureFrame,
+  observeFrame,
+  probeWebGLRenderer,
+} from "./filamentQuality.js";
 
 const IDLE_RADIUS = 0.58;
 const BASE_RADIUS = 0.96;
@@ -142,14 +148,20 @@ export class ChiefIntelligenceEngine {
     const width = Math.round(this.root.clientWidth || window.innerWidth || 1);
     const height = Math.round(this.root.clientHeight || window.innerHeight || 1);
     if (width < 2 || height < 2) return;
-    const dpr = Math.min(window.devicePixelRatio || 1, this.quality.dprCap);
-    if (width === this.viewWidth && height === this.viewHeight && dpr === this.viewDpr) return;
+    const buffer = drawingBufferSize(
+      width,
+      height,
+      window.devicePixelRatio || 1,
+      this.quality.dprCap
+    );
+    if (width === this.viewWidth && height === this.viewHeight && buffer.dpr === this.viewDpr)
+      return;
     this.viewWidth = width;
     this.viewHeight = height;
-    this.viewDpr = dpr;
-    this.renderer.setPixelRatio(dpr);
+    this.viewDpr = buffer.dpr;
+    this.renderer.setPixelRatio(buffer.dpr);
     this.renderer.setSize(width, height, false);
-    this.uniforms.uResolution.value.set(width * dpr, height * dpr);
+    this.renderer.getDrawingBufferSize(this.uniforms.uResolution.value);
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
     const distance = this.camera.position.z;
@@ -182,9 +194,11 @@ export class ChiefIntelligenceEngine {
     const raw = this.last ? now - this.last : 0;
     const dt = raw ? Math.min(raw / 1000, 0.05) : 0.016;
     this.last = now;
-    const gpu = this.takeGpuSample();
-    const sample = Math.max(raw, gpu || 0);
-    if (raw > 0 && observeFrame(this.quality, sample, window.devicePixelRatio || 1, gpu != null)) {
+    const measured = measureFrame(raw, this.takeGpuSample(), Boolean(this.gpuTimer));
+    if (
+      measured &&
+      observeFrame(this.quality, measured.sample, window.devicePixelRatio || 1, measured.confirmed)
+    ) {
       this.resize();
     }
     try {
