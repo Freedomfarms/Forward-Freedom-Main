@@ -266,10 +266,10 @@ export function createFilamentMaterial(uniforms) {
         vec3 inner = mix(uViolet, uMagenta, smoothstep(0.18, 0.82, dye));
         inner *= 1.12;
         vec3 strand = mix(shell, inner, vLayer);
-        float reach = smoothstep(0.28, 0.0, vRadius);
+        float reach = smoothstep(0.14, 0.0, vRadius);
         float hot = smoothstep(0.065, 0.0, vRadius);
         vec3 coreTint = mix(uCyan, vec3(1.0), hot);
-        strand = mix(strand, coreTint, mix(reach * 0.38, 0.72, hot));
+        strand = mix(strand, coreTint, mix(reach * 0.2, 0.5, hot));
         strand *= (0.5 + spine * 0.95) * (0.8 + travel * 0.24);
         float alpha = (0.1 + spine * 0.68) * (0.8 + travel * 0.18);
         alpha *= mix(1.22, 0.78, vLayer);
@@ -280,6 +280,44 @@ export function createFilamentMaterial(uniforms) {
     depthWrite: false,
     depthTest: false,
     side: THREE.DoubleSide,
+    blending: THREE.CustomBlending,
+    blendEquation: THREE.AddEquation,
+    blendSrc: THREE.SrcAlphaFactor,
+    blendDst: THREE.OneFactor,
+    blendEquationAlpha: THREE.AddEquation,
+    blendSrcAlpha: THREE.OneFactor,
+    blendDstAlpha: THREE.OneMinusSrcAlphaFactor,
+    toneMapped: false,
+  });
+}
+
+function createHaloMaterial(uniforms) {
+  return new THREE.ShaderMaterial({
+    uniforms,
+    vertexShader: `
+      varying vec3 vNormal;
+      varying vec3 vView;
+      void main() {
+        vec4 viewPosition = modelViewMatrix * vec4(position, 1.0);
+        vNormal = normalize(normalMatrix * normal);
+        vView = normalize(-viewPosition.xyz);
+        gl_Position = projectionMatrix * viewPosition;
+      }
+    `,
+    fragmentShader: `
+      uniform vec3 uCyan;
+      varying vec3 vNormal;
+      varying vec3 vView;
+      void main() {
+        float ndot = clamp(dot(normalize(vNormal), normalize(vView)), 0.0, 1.0);
+        float glow = pow(smoothstep(0.35, 0.96, ndot), 1.25);
+        vec3 color = mix(uCyan, vec3(1.0), smoothstep(0.45, 0.92, ndot));
+        gl_FragColor = vec4(color, glow * 0.36);
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+    depthTest: false,
     blending: THREE.CustomBlending,
     blendEquation: THREE.AddEquation,
     blendSrc: THREE.SrcAlphaFactor,
@@ -341,16 +379,25 @@ export function createFilamentCore(uniforms) {
   lattice.renderOrder = 2;
   root.add(lattice);
 
+  const haloGeometry = new THREE.SphereGeometry(0.135, 32, 24);
+  const halo = new THREE.Mesh(haloGeometry, createHaloMaterial(uniforms));
+  halo.name = "filament-halo";
+  halo.frustumCulled = false;
+  halo.renderOrder = 3;
+  root.add(halo);
+
   const heartGeometry = new THREE.SphereGeometry(0.045, 24, 16);
   const heart = new THREE.Mesh(heartGeometry, createHeartMaterial(uniforms));
   heart.name = "filament-heart";
   heart.frustumCulled = false;
-  heart.renderOrder = 3;
+  heart.renderOrder = 4;
   root.add(heart);
 
   root.userData.disposeCore = () => {
     geometry.dispose();
     material.dispose();
+    haloGeometry.dispose();
+    halo.material.dispose();
     heartGeometry.dispose();
     heart.material.dispose();
   };

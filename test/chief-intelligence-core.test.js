@@ -52,7 +52,7 @@ test("the homepage core is one purple filament ball outside the login scene", as
     uViolet: { value: { set() {} } },
   });
   const names = core.children.map((child) => child.name);
-  assert.deepEqual(names, ["filament-volume", "filament-heart"]);
+  assert.deepEqual(names, ["filament-volume", "filament-halo", "filament-heart"]);
   const lattice = core.getObjectByName("filament-volume");
   assert.equal(lattice.geometry.index, null);
   const count = lattice.geometry.attributes.position.count;
