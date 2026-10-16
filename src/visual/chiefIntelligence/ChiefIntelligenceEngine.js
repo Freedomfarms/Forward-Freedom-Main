@@ -73,9 +73,10 @@ export class ChiefIntelligenceEngine {
       uTime: { value: 0 },
       uPace: { value: this.pose.pace },
       uHot: { value: this.pose.hot },
-      uThickness: { value: 1.7 },
+      uThickness: { value: 1.15 },
       uResolution: { value: new THREE.Vector2(1, 1) },
       uBlue: { value: new THREE.Color(FILAMENT_COLORS.blue) },
+      uCyan: { value: new THREE.Color(FILAMENT_COLORS.cyan) },
       uMagenta: { value: new THREE.Color(FILAMENT_COLORS.magenta) },
       uViolet: { value: new THREE.Color(FILAMENT_COLORS.violet) },
     };

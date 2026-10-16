@@ -1,9 +1,8 @@
-// Independent spherical arcs, not a shared curl field. A shared flow
-// bunches every strand onto the same lanes, so raising the count only
-// thickens a few ropes and leaves the sphere empty. Each arc here has
-// its own direction and a small private turn, then splits into a branch
-// that drifts inward. Ribbons collapse when a segment points at the
-// camera, which is what was stamping the white horizontal bars.
+// Two layers, not a filled tangle. The shell is a few dozen long blue
+// and cyan paths. The interior is a smaller set of violet and magenta
+// paths with open space between them. A shared random field was filling
+// every direction, so the sphere read as spaghetti and the dark pockets
+// disappeared.
 
 import * as THREE from "three";
 
@@ -12,13 +11,18 @@ export const FILAMENT_COLORS = Object.freeze({
   magenta: 0xff4ad8,
   violet: 0x9b4dff,
   blue: 0x4da3ff,
+  cyan: 0x5ce8ff,
 });
 
-const FAMILIES = Object.freeze([
-  Object.freeze({ count: 1680, min: 0.9, max: 1, steps: 9, step: 0.1, drift: 0, seed: 5, dive: 0.28, branch: 0.42 }),
-  Object.freeze({ count: 980, min: 0.55, max: 0.86, steps: 8, step: 0.105, drift: -0.002, seed: 19, dive: 0.4, branch: 0.36 }),
-  Object.freeze({ count: 520, min: 0.24, max: 0.52, steps: 7, step: 0.1, drift: 0, seed: 37, dive: 0.2, branch: 0.2 }),
-  Object.freeze({ count: 240, min: 0.07, max: 0.22, steps: 5, step: 0.09, drift: 0, seed: 101, dive: 0, branch: 0 }),
+const SHELL_FLOWS = Object.freeze([
+  Object.freeze({ count: 32, radius: 0.99, steps: 42, step: 0.042, tilt: 0.12, turn: 0.012, seed: 3 }),
+  Object.freeze({ count: 22, radius: 0.95, steps: 36, step: 0.046, tilt: 0.62, turn: 0.016, seed: 11 }),
+  Object.freeze({ count: 14, radius: 0.91, steps: 30, step: 0.05, tilt: -0.4, turn: 0.018, seed: 17 }),
+]);
+
+const INNER_CLUSTERS = Object.freeze([
+  Object.freeze({ count: 16, axis: Object.freeze([0.2, 0.25, 0.9]), spread: 0.7, min: 0.52, max: 0.68, steps: 34, step: 0.05, tilt: 0.35, turn: 0.07, seed: 29, branch: 0.45 }),
+  Object.freeze({ count: 12, axis: Object.freeze([-0.55, -0.15, 0.75]), spread: 0.55, min: 0.34, max: 0.5, steps: 30, step: 0.048, tilt: -0.25, turn: 0.1, seed: 43, branch: 0.8 }),
 ]);
 
 function mulberry32(seed) {
@@ -36,29 +40,40 @@ function normalize(v) {
   return [v[0] / length, v[1] / length, v[2] / length];
 }
 
-function fibonacciDirection(index, count, rand) {
-  const y = 1 - (2 * (index + 0.5)) / count;
-  const ring = Math.sqrt(Math.max(0, 1 - y * y));
-  const theta = Math.PI * (3 - Math.sqrt(5)) * index + (rand() - 0.5) * 0.35;
-  return [Math.cos(theta) * ring, y, Math.sin(theta) * ring];
+function clusterStart(axis, spread, radius, tilt, rand) {
+  const aim = normalize(axis);
+  const up = Math.abs(aim[1]) > 0.85 ? [1, 0, 0] : [0, 1, 0];
+  const tangent = normalize([
+    aim[1] * up[2] - aim[2] * up[1],
+    aim[2] * up[0] - aim[0] * up[2],
+    aim[0] * up[1] - aim[1] * up[0],
+  ]);
+  const bitangent = normalize([
+    aim[1] * tangent[2] - aim[2] * tangent[1],
+    aim[2] * tangent[0] - aim[0] * tangent[2],
+    aim[0] * tangent[1] - aim[1] * tangent[0],
+  ]);
+  const dir = normalize([
+    aim[0] + tangent[0] * (rand() - 0.5) * spread + bitangent[0] * (rand() - 0.5) * spread,
+    aim[1] + tangent[1] * (rand() - 0.5) * spread + bitangent[1] * (rand() - 0.5) * spread,
+    aim[2] + tangent[2] * (rand() - 0.5) * spread + bitangent[2] * (rand() - 0.5) * spread,
+  ]);
+  return {
+    dir,
+    tangent: normalize(rotateAround(tangent, dir, tilt)),
+    radius,
+  };
 }
 
-function tangentFrame(dir, rand) {
-  const up = Math.abs(dir[1]) > 0.85 ? [1, 0, 0] : [0, 1, 0];
-  let tx = dir[1] * up[2] - dir[2] * up[1];
-  let ty = dir[2] * up[0] - dir[0] * up[2];
-  let tz = dir[0] * up[1] - dir[1] * up[0];
-  const length = Math.hypot(tx, ty, tz) || 1;
-  tx /= length;
-  ty /= length;
-  tz /= length;
-  const bx = dir[1] * tz - dir[2] * ty;
-  const by = dir[2] * tx - dir[0] * tz;
-  const bz = dir[0] * ty - dir[1] * tx;
-  const angle = rand() * Math.PI * 2;
-  const cos = Math.cos(angle);
-  const sin = Math.sin(angle);
-  return [tx * cos + bx * sin, ty * cos + by * sin, tz * cos + bz * sin];
+function shellStart(index, count, radius, tilt, rand) {
+  const height = Math.cos(((index + 0.5) / count) * Math.PI) * 0.8;
+  const ring = Math.sqrt(Math.max(0, 1 - height * height));
+  const theta = index * 2.399963 + (rand() - 0.5) * 0.35;
+  const dir = normalize([Math.cos(theta) * ring, height, Math.sin(theta) * ring]);
+  let tangent = normalize([-Math.sin(theta), 0, Math.cos(theta)]);
+  const lean = tilt * (index % 2 === 0 ? 1 : -1);
+  tangent = normalize(rotateAround(tangent, dir, lean));
+  return { dir, tangent, radius: radius * (0.985 + rand() * 0.015) };
 }
 
 function rotateAround(vector, axis, angle) {
@@ -75,7 +90,7 @@ function rotateAround(vector, axis, angle) {
   ];
 }
 
-function traceArc(dir, tangent, radius, steps, stepAngle, drift, phase, rand) {
+function traceArc(dir, tangent, radius, steps, stepAngle, drift, phase, turn, floor, ceiling) {
   const points = [];
   let heading = dir;
   let forward = tangent;
@@ -88,7 +103,7 @@ function traceArc(dir, tangent, radius, steps, stepAngle, drift, phase, rand) {
       heading[2] * forward[0] - heading[0] * forward[2],
       heading[0] * forward[1] - heading[1] * forward[0],
     ]);
-    const wobble = Math.sin(step * 0.85 + phase) * 0.012;
+    const wobble = Math.sin(step * 0.65 + phase) * 0.008;
     points.push([
       heading[0] * reach + binormal[0] * wobble,
       heading[1] * reach + binormal[1] * wobble,
@@ -107,18 +122,18 @@ function traceArc(dir, tangent, radius, steps, stepAngle, drift, phase, rand) {
       -heading[2] * sin + forward[2] * cos,
     ]);
     if (step === midStep) {
-      mid.heading = heading;
-      mid.forward = forward;
+      mid.heading = heading.slice();
+      mid.forward = forward.slice();
       mid.reach = reach;
     }
     heading = nextHeading;
-    forward = normalize(rotateAround(nextForward, heading, (rand() - 0.5) * 0.16));
-    reach = Math.min(1, Math.max(0.05, reach + drift));
+    forward = normalize(rotateAround(nextForward, heading, Math.sin(step * 0.55 + phase) * turn));
+    reach = Math.min(ceiling, Math.max(floor, reach + drift + Math.sin(step * 0.4 + phase) * 0.004));
   }
   return { points, heading: mid.heading, forward: mid.forward, reach: mid.reach };
 }
 
-function pushStrand(buffers, points, seed) {
+function pushStrand(buffers, points, seed, layer) {
   const last = points.length - 1;
   for (let index = 0; index < last; index += 1) {
     const start = points[index];
@@ -143,38 +158,47 @@ function pushStrand(buffers, points, seed) {
       buffers.side.push(side);
       buffers.along.push(along);
       buffers.seed.push(seed);
+      buffers.layer.push(layer);
     }
   }
 }
 
 function createLatticeGeometry() {
-  const buffers = { position: [], next: [], side: [], along: [], seed: [] };
-  for (const family of FAMILIES) {
+  const buffers = { position: [], next: [], side: [], along: [], seed: [], layer: [] };
+  for (const family of SHELL_FLOWS) {
     const rand = mulberry32(family.seed);
     for (let index = 0; index < family.count; index += 1) {
-      const dir = fibonacciDirection(index, family.count, rand);
-      const tangent = tangentFrame(dir, rand);
-      const radius = family.min + rand() * (family.max - family.min);
-      const diving = rand() < family.dive;
-      const drift = diving ? -0.012 - rand() * 0.018 : family.drift;
+      const start = shellStart(index, family.count, family.radius, family.tilt, rand);
       const phase = rand() * Math.PI * 2;
-      const arc = traceArc(dir, tangent, radius, family.steps, family.step, drift, phase, rand);
-      const seed = rand() * Math.PI * 2;
-      pushStrand(buffers, arc.points, seed);
+      const arc = traceArc(start.dir, start.tangent, start.radius, family.steps, family.step, 0, phase, family.turn, 0.88, 1);
+      pushStrand(buffers, arc.points, phase, 0);
+    }
+  }
+  for (const family of INNER_CLUSTERS) {
+    const rand = mulberry32(family.seed);
+    for (let index = 0; index < family.count; index += 1) {
+      const radius = family.min + rand() * (family.max - family.min);
+      const start = clusterStart(family.axis, family.spread, radius, family.tilt, rand);
+      const phase = rand() * Math.PI * 2;
+      const drift = (index % 2 === 0 ? -1 : 1) * 0.004;
+      const arc = traceArc(start.dir, start.tangent, radius, family.steps, family.step, drift, phase, family.turn, 0.24, 0.72);
+      pushStrand(buffers, arc.points, phase + 1.4, 1);
       if (rand() < family.branch) {
-        const turn = (rand() < 0.5 ? -1 : 1) * (0.65 + rand() * 0.45);
+        const turn = (rand() < 0.5 ? -1 : 1) * (0.7 + rand() * 0.35);
         const branchTangent = normalize(rotateAround(arc.forward, arc.heading, turn));
         const branch = traceArc(
           arc.heading,
           branchTangent,
           arc.reach,
-          6,
-          family.step,
-          -0.02,
-          phase + 1.7,
-          rand
+          12,
+          family.step * 0.85,
+          -0.012,
+          phase + 2.1,
+          0.06,
+          0.2,
+          0.72
         );
-        pushStrand(buffers, branch.points, seed + 0.35);
+        pushStrand(buffers, branch.points, phase + 2.4, 1);
       }
     }
   }
@@ -185,6 +209,7 @@ function createLatticeGeometry() {
   geometry.setAttribute("aSide", new THREE.Float32BufferAttribute(buffers.side, 1));
   geometry.setAttribute("aAlong", new THREE.Float32BufferAttribute(buffers.along, 1));
   geometry.setAttribute("aSeed", new THREE.Float32BufferAttribute(buffers.seed, 1));
+  geometry.setAttribute("aLayer", new THREE.Float32BufferAttribute(buffers.layer, 1));
   geometry.computeBoundingSphere();
   return geometry;
 }
@@ -197,6 +222,7 @@ export function createFilamentMaterial(uniforms) {
       attribute float aSide;
       attribute float aAlong;
       attribute float aSeed;
+      attribute float aLayer;
       uniform vec2 uResolution;
       uniform float uThickness;
       uniform float uTime;
@@ -204,11 +230,16 @@ export function createFilamentMaterial(uniforms) {
       varying float vAlong;
       varying float vSeed;
       varying float vRadius;
+      varying float vLayer;
       void main() {
-        float breath = 1.0 + sin(uTime * 0.5 + aSeed) * 0.012;
-        vec3 shaped = position * breath;
+        float sway = sin(uTime * 0.28 + aSeed) * 0.028;
+        float cs = cos(sway);
+        float sn = sin(sway);
+        float breath = 1.0 + sin(uTime * 0.42 + aSeed * 1.7) * 0.01;
+        vec3 shaped = vec3(position.x * cs - position.z * sn, position.y, position.x * sn + position.z * cs) * breath;
+        vec3 next = vec3(aNext.x * cs - aNext.z * sn, aNext.y, aNext.x * sn + aNext.z * cs) * breath;
         vec4 clip = projectionMatrix * modelViewMatrix * vec4(shaped, 1.0);
-        vec4 clipNext = projectionMatrix * modelViewMatrix * vec4(aNext * breath, 1.0);
+        vec4 clipNext = projectionMatrix * modelViewMatrix * vec4(next, 1.0);
         vec2 dir = clipNext.xy / max(clipNext.w, 0.0001) - clip.xy / max(clip.w, 0.0001);
         float span = length(dir);
         dir = span < 0.00001 ? vec2(1.0, 0.0) : dir / span;
@@ -220,6 +251,7 @@ export function createFilamentMaterial(uniforms) {
         vAlong = aAlong;
         vSeed = aSeed;
         vRadius = length(position);
+        vLayer = aLayer;
       }
     `,
     fragmentShader: `
@@ -227,27 +259,28 @@ export function createFilamentMaterial(uniforms) {
       uniform float uPace;
       uniform float uHot;
       uniform vec3 uBlue;
+      uniform vec3 uCyan;
       uniform vec3 uViolet;
       uniform vec3 uMagenta;
       varying float vSide;
       varying float vAlong;
       varying float vSeed;
       varying float vRadius;
+      varying float vLayer;
       void main() {
         float pace = max(uPace, 0.4);
-        float spine = pow(clamp(1.0 - abs(vSide), 0.0, 1.0), 1.15);
-        float travel = 0.55 + 0.45 * sin(vAlong * 34.0 - uTime * (0.32 + pace * 0.2) + vSeed);
+        float spine = pow(clamp(1.0 - abs(vSide), 0.0, 1.0), 1.45);
+        float travel = 0.62 + 0.38 * sin(vAlong * 22.0 - uTime * (0.24 + pace * 0.16) + vSeed);
         float dye = fract(sin(vSeed * 12.9898) * 43758.5453);
-        float shell = smoothstep(0.5, 0.94, vRadius);
-        vec3 outer = mix(uBlue, uViolet, smoothstep(0.58, 0.86, dye));
-        outer = mix(outer, uMagenta, smoothstep(0.9, 0.99, dye));
-        vec3 inner = mix(uViolet, uMagenta, smoothstep(0.18, 0.72, dye));
-        vec3 strand = mix(inner, outer, shell);
-        float heart = smoothstep(0.07, 0.0, vRadius);
-        strand = mix(strand, vec3(1.0), heart * (0.35 + spine * 0.65) + spine * spine * 0.14);
-        strand *= 0.7 + spine * 0.4;
-        strand *= 0.8 + travel * 0.25;
-        float alpha = (0.14 + spine * 0.4) * (0.78 + travel * 0.22) * mix(0.9, 1.2, shell);
+        vec3 shell = mix(uBlue, uCyan, smoothstep(0.32, 0.78, dye));
+        vec3 inner = mix(uViolet, uMagenta, smoothstep(0.2, 0.75, dye));
+        inner = mix(inner, uMagenta, smoothstep(0.52, 0.28, vRadius) * 0.55);
+        vec3 strand = mix(shell, inner, vLayer);
+        float point = smoothstep(0.035, 0.0, vRadius);
+        strand = mix(strand, vec3(0.86, 0.95, 1.0), point * spine);
+        strand *= (0.72 + spine * 0.4) * (0.84 + travel * 0.16);
+        float alpha = (0.42 + spine * 0.5) * (0.86 + travel * 0.14);
+        alpha *= mix(1.0, 0.86, vLayer);
         gl_FragColor = vec4(strand, alpha);
       }
     `,
@@ -280,13 +313,12 @@ function createHeartMaterial(uniforms) {
       }
     `,
     fragmentShader: `
-      uniform float uHot;
-      uniform vec3 uMagenta;
+      uniform vec3 uCyan;
       varying vec3 vNormal;
       varying vec3 vView;
       void main() {
-        float facing = pow(clamp(dot(normalize(vNormal), normalize(vView)), 0.0, 1.0), 2.4);
-        vec3 color = mix(uMagenta, vec3(1.0), 0.15 + facing * 0.85);
+        float facing = pow(clamp(dot(normalize(vNormal), normalize(vView)), 0.0, 1.0), 3.2);
+        vec3 color = mix(uCyan, vec3(1.0), 0.2 + facing * 0.8);
         gl_FragColor = vec4(color, facing);
       }
     `,
@@ -315,7 +347,7 @@ export function createFilamentCore(uniforms) {
   lattice.renderOrder = 2;
   root.add(lattice);
 
-  const heartGeometry = new THREE.SphereGeometry(0.028, 24, 16);
+  const heartGeometry = new THREE.SphereGeometry(0.02, 24, 16);
   const heart = new THREE.Mesh(heartGeometry, createHeartMaterial(uniforms));
   heart.name = "filament-heart";
   heart.frustumCulled = false;
