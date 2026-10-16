@@ -213,6 +213,7 @@ export function createFilamentMaterial(uniforms) {
       uniform vec2 uResolution;
       uniform float uThickness;
       uniform float uTime;
+      uniform float uIdle;
       varying float vSide;
       varying float vAlong;
       varying float vSeed;
@@ -225,6 +226,20 @@ export function createFilamentMaterial(uniforms) {
         float breath = 1.0 + sin(uTime * 0.42 + aSeed * 1.7) * 0.01;
         vec3 shaped = vec3(position.x * cs - position.z * sn, position.y, position.x * sn + position.z * cs) * breath;
         vec3 next = vec3(aNext.x * cs - aNext.z * sn, aNext.y, aNext.x * sn + aNext.z * cs) * breath;
+        float idle = clamp(uIdle, 0.0, 1.0);
+        float rate = mix(0.21, 0.31, aLayer);
+        float weave = sin(uTime * rate + aSeed * 2.3);
+        float crosswise = cos(uTime * rate * 0.73 + aSeed * 1.4);
+        vec3 radial = normalize(shaped);
+        vec3 heading = next - shaped;
+        float headingLength = length(heading);
+        heading = headingLength > 0.0001 ? heading / headingLength : vec3(0.0, 1.0, 0.0);
+        vec3 side = cross(radial, heading);
+        float sideLength = length(side);
+        side = sideLength > 0.0001 ? side / sideLength : vec3(1.0, 0.0, 0.0);
+        vec3 drift = (side * weave + cross(radial, side) * crosswise) * idle * mix(0.008, 0.014, aLayer);
+        shaped += drift;
+        next += drift;
         vec4 clip = projectionMatrix * modelViewMatrix * vec4(shaped, 1.0);
         vec4 clipNext = projectionMatrix * modelViewMatrix * vec4(next, 1.0);
         vec2 dir = clipNext.xy / max(clipNext.w, 0.0001) - clip.xy / max(clip.w, 0.0001);
@@ -245,6 +260,7 @@ export function createFilamentMaterial(uniforms) {
       uniform float uTime;
       uniform float uPace;
       uniform float uHot;
+      uniform float uIdle;
       uniform vec3 uBlue;
       uniform vec3 uCyan;
       uniform vec3 uViolet;
@@ -273,6 +289,14 @@ export function createFilamentMaterial(uniforms) {
         strand *= (0.5 + spine * 0.95) * (0.8 + travel * 0.24);
         float alpha = (0.1 + spine * 0.68) * (0.8 + travel * 0.18);
         alpha *= mix(1.22, 0.78, vLayer);
+        float traveler = fract(sin(vSeed * 91.7) * 43758.5453);
+        float chosen = smoothstep(0.988, 0.997, traveler);
+        float sparkAt = fract(uTime * 0.055 + traveler);
+        float span = abs(vAlong - sparkAt);
+        span = min(span, 1.0 - span);
+        float spark = smoothstep(0.035, 0.0, span) * chosen * clamp(uIdle, 0.0, 1.0) * spine;
+        strand = mix(strand, mix(uCyan, vec3(1.0), 0.7), spark);
+        alpha += spark * 0.28;
         gl_FragColor = vec4(strand, alpha);
       }
     `,
@@ -306,13 +330,14 @@ function createHaloMaterial(uniforms) {
     `,
     fragmentShader: `
       uniform vec3 uCyan;
+      uniform float uPulse;
       varying vec3 vNormal;
       varying vec3 vView;
       void main() {
         float ndot = clamp(dot(normalize(vNormal), normalize(vView)), 0.0, 1.0);
         float glow = pow(smoothstep(0.35, 0.96, ndot), 1.25);
         vec3 color = mix(uCyan, vec3(1.0), smoothstep(0.45, 0.92, ndot));
-        gl_FragColor = vec4(color, glow * 0.36);
+        gl_FragColor = vec4(color, glow * 0.36 * (1.0 + uPulse * 0.14));
       }
     `,
     transparent: true,
@@ -344,6 +369,7 @@ function createHeartMaterial(uniforms) {
     `,
     fragmentShader: `
       uniform vec3 uCyan;
+      uniform float uPulse;
       varying vec3 vNormal;
       varying vec3 vView;
       void main() {
@@ -351,7 +377,7 @@ function createHeartMaterial(uniforms) {
         float core = pow(ndot, 3.2);
         float halo = pow(ndot, 1.05);
         vec3 color = mix(uCyan, vec3(1.0), core);
-        gl_FragColor = vec4(color, mix(halo * 0.38, 0.92, core));
+        gl_FragColor = vec4(color, mix(halo * 0.38, 0.92, core) * (1.0 + uPulse * 0.1));
       }
     `,
     transparent: true,

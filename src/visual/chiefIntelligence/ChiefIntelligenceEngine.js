@@ -2,7 +2,7 @@
 // Pose easing comes from the shared core table. The login scene is not mounted.
 
 import * as THREE from "three";
-import { normalizeCoreState, poseFor, stepPose } from "../chiefCore/ChiefCoreState.js";
+import { damp, normalizeCoreState, poseFor, stepPose } from "../chiefCore/ChiefCoreState.js";
 import {
   FILAMENT_ANCHOR_Y,
   FILAMENT_COLORS,
@@ -69,10 +69,13 @@ export class ChiefIntelligenceEngine {
     this.rig = new THREE.Group();
     this.scene.add(this.rig);
 
+    this.idleMix = this.presented === "idle" ? 1 : 0;
     this.uniforms = {
       uTime: { value: 0 },
       uPace: { value: this.pose.pace },
       uHot: { value: this.pose.hot },
+      uIdle: { value: this.idleMix },
+      uPulse: { value: 0 },
       uThickness: { value: 1.22 },
       uResolution: { value: new THREE.Vector2(1, 1) },
       uBlue: { value: new THREE.Color(FILAMENT_COLORS.blue) },
@@ -81,6 +84,8 @@ export class ChiefIntelligenceEngine {
       uViolet: { value: new THREE.Color(FILAMENT_COLORS.violet) },
     };
     this.core = createFilamentCore(this.uniforms);
+    this.heart = this.core.getObjectByName("filament-heart");
+    this.halo = this.core.getObjectByName("filament-halo");
     this.rig.add(this.core);
 
     this.onContextLost = (event) => {
@@ -174,6 +179,14 @@ export class ChiefIntelligenceEngine {
     this.uniforms.uTime.value = this.time;
     this.uniforms.uPace.value = this.pose.pace;
     this.uniforms.uHot.value = this.pose.hot;
+    const idleTarget = this.presented === "idle" ? 1 : 0;
+    this.idleMix = damp(this.idleMix, idleTarget, 1.8, dt);
+    this.uniforms.uIdle.value = this.idleMix;
+    const cycle = Math.sin(this.time * ((Math.PI * 2) / 5));
+    this.uniforms.uPulse.value = cycle * this.idleMix;
+    const beat = 1 + cycle * 0.03 * this.idleMix;
+    this.heart?.scale.setScalar(beat);
+    this.halo?.scale.setScalar(1 + (beat - 1) * 0.5);
     const breath = 1 + Math.sin(this.time * 0.55) * this.pose.breath;
     this.core.scale.setScalar((this.pose.radius / IDLE_RADIUS) * BASE_RADIUS * breath);
     const spin = 0.05 + this.pose.spin;
