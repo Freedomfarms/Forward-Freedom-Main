@@ -396,13 +396,13 @@ function wastefulInvestigation() {
   };
 }
 
-// Locked after the first offline run on 16 Oct 2026. Update this only when the
-// scored functions change and the new outcomes have been reviewed.
+// Locked after the Phase 1 run on 16 Oct 2026. Phase 2 updated the intent rows
+// (ambiguous follow-up and generic rewrite) after those functions changed.
 export const INTELLIGENCE_BASELINE = Object.freeze([
   {
     id: "ambiguous-follow-up",
     pass: false,
-    failed: ["referent-is-cabin-or-unresolved", "oak-fact-excluded", "finance-waits-for-subject"],
+    failed: ["oak-fact-excluded"],
   },
   {
     id: "earlier-conversation",
@@ -441,8 +441,8 @@ export const INTELLIGENCE_BASELINE = Object.freeze([
   },
   {
     id: "generic-rewrite",
-    pass: false,
-    failed: ["supported-figure-preserved"],
+    pass: true,
+    failed: [],
   },
   {
     id: "wasteful-investigation",
@@ -470,6 +470,6 @@ test("phase 1 failure list is the locked gap record", () => {
     failures,
     INTELLIGENCE_BASELINE.filter((row) => row.pass === false)
   );
-  assert.equal(failures.length, 8);
-  assert.equal(INTELLIGENCE_BASELINE.filter((row) => row.pass).length, 2);
+  assert.equal(failures.length, 7);
+  assert.equal(INTELLIGENCE_BASELINE.filter((row) => row.pass).length, 3);
 });

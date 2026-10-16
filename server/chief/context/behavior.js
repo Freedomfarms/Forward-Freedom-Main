@@ -122,6 +122,7 @@ export function conversationMove(transcript, query = null) {
     referent: memory.referent ?? null,
     priorUserTexts: prior,
     pullsPublicSource: kind === MOVE.CONFIRM && PUBLIC_SOURCE.test(thread),
+    unresolvedOther: memory.unresolvedOther === true,
   };
 }
 
@@ -132,6 +133,9 @@ export function renderConversationMove(transcript, query = null) {
   }
   if (move.kind === MOVE.CONFIRM) {
     return "The user is confirming the check you just offered. Do that work with the necessary tool, then give the result. Do not describe the plan.";
+  }
+  if (move.kind === MOVE.CONTINUE && move.unresolvedOther) {
+    return "The user is asking about the other one. This conversation does not name it. Do not treat the previous subject as that referent, and do not carry over its live readings. Ask which one they mean.";
   }
   if (move.kind === MOVE.CONTINUE) {
     const referent = move.referent ? ` ${move.referent} is the active referent.` : "";
@@ -518,6 +522,13 @@ export function settleReply({
   }
   if (move.kind === MOVE.ACKNOWLEDGE) {
     const claimsWork = WORKFORCE_CLAIMS.some((rule) => rule.claim.test(modelText));
+    if (!claimsWork) {
+      const kept = stripOffers(stripMachinery(modelText, transcript), transcript).trim();
+      if (CURRENT_FIGURE.test(kept)) {
+        const guarded = blockUnsupportedCurrentClaim(kept, transcript, pack).trim();
+        return reply({ text: guarded || shortReaction(userText), toolCalls: [] });
+      }
+    }
     return reply({
       text: !claimsWork && reactionIsAlreadyShort(modelText) ? modelText : shortReaction(userText),
       toolCalls: [],

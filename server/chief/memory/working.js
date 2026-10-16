@@ -103,9 +103,11 @@ export function buildWorkingMemory(
 
   const introduced = extractEntities(lastUser);
   const goal = noteLine(notes, "Goal");
+  const asksForOther = /\bthe other one\b/i.test(lastUser);
   let referent = null;
-  if (/\bthe other one\b/i.test(lastUser) && entities.length >= 2) {
-    referent = entities[entities.length - 2].name;
+  if (asksForOther) {
+    const subjects = userSubjectsBefore(messages, lastUserIndex);
+    referent = subjects.length >= 2 ? subjects[subjects.length - 2].name : null;
   } else if (introduced.length) referent = introduced[introduced.length - 1];
   else if (isAnaphoric(lastUser)) referent = priorReferent;
   const currentTask = isAnaphoric(lastUser) && goal ? goal : lastUser;
@@ -125,7 +127,17 @@ export function buildWorkingMemory(
     pending: noteLine(notes, "Next Steps"),
     toolResults: toolResults.slice(-2),
     tokens: used,
+    unresolvedOther: asksForOther && referent == null,
   };
+}
+
+function userSubjectsBefore(messages, lastUserIndex) {
+  const subjects = [];
+  messages.forEach((message, index) => {
+    if (index >= lastUserIndex || message?.role !== "user") return;
+    for (const name of extractEntities(prose(message))) pushEntity(subjects, name);
+  });
+  return subjects;
 }
 
 export function resolveReference(memory, text) {
@@ -140,7 +152,11 @@ export function renderWorkingMemory(memory) {
   if (!memory) return "";
   const lines = ["Working context for this conversation only:"];
   if (memory.currentTask) lines.push(`Current request: ${memory.currentTask}`);
-  if (memory.referent) {
+  if (memory.unresolvedOther) {
+    lines.push(
+      "The other one is not named in this conversation. Do not use the previous subject as that referent."
+    );
+  } else if (memory.referent) {
     lines.push(`"it", "that", "this", and "them" refer to ${memory.referent}.`);
   }
   if (memory.entities?.length) {

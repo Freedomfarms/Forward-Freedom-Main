@@ -204,6 +204,13 @@ export function planContext(query, options = {}) {
     };
   }
   if ((move.kind === MOVE.CONTINUE || move.kind === MOVE.CONFIRM) && planned.live.length === 0) {
+    if (move.unresolvedOther) {
+      return {
+        ...planned,
+        live: [],
+        currentState: false,
+      };
+    }
     let live = inheritedLive(move.priorUserTexts);
     if (move.pullsPublicSource) live = unique([...live, "web"]);
     return {
