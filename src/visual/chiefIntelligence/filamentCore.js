@@ -263,16 +263,16 @@ export function createFilamentMaterial(uniforms) {
         float cyanAlong = smoothstep(0.48, 0.94, dye);
         vec3 shell = mix(royal, uCyan, cyanAlong * (0.35 + spine * 0.65));
         shell = mix(shell, uViolet, smoothstep(0.92, 1.0, dye) * 0.15);
-        vec3 inner = mix(uBlue, uViolet, smoothstep(0.0, 0.42, dye));
-        inner = mix(inner, uMagenta, smoothstep(0.48, 0.9, dye));
+        vec3 inner = mix(uViolet, uMagenta, smoothstep(0.18, 0.82, dye));
+        inner *= 1.12;
         vec3 strand = mix(shell, inner, vLayer);
-        float point = smoothstep(0.18, 0.0, vRadius);
-        float hot = smoothstep(0.07, 0.0, vRadius);
+        float reach = smoothstep(0.28, 0.0, vRadius);
+        float hot = smoothstep(0.065, 0.0, vRadius);
         vec3 coreTint = mix(uCyan, vec3(1.0), hot);
-        strand = mix(strand, coreTint, point * 0.65);
+        strand = mix(strand, coreTint, mix(reach * 0.38, 0.72, hot));
         strand *= (0.5 + spine * 0.95) * (0.8 + travel * 0.24);
         float alpha = (0.1 + spine * 0.68) * (0.8 + travel * 0.18);
-        alpha *= mix(1.22, 0.58, vLayer);
+        alpha *= mix(1.22, 0.78, vLayer);
         gl_FragColor = vec4(strand, alpha);
       }
     `,
@@ -310,10 +310,10 @@ function createHeartMaterial(uniforms) {
       varying vec3 vView;
       void main() {
         float ndot = clamp(dot(normalize(vNormal), normalize(vView)), 0.0, 1.0);
-        float core = pow(ndot, 2.8);
-        float halo = pow(ndot, 1.35);
+        float core = pow(ndot, 3.2);
+        float halo = pow(ndot, 1.05);
         vec3 color = mix(uCyan, vec3(1.0), core);
-        gl_FragColor = vec4(color, mix(halo * 0.45, 1.0, core));
+        gl_FragColor = vec4(color, mix(halo * 0.38, 0.92, core));
       }
     `,
     transparent: true,
