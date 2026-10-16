@@ -9,6 +9,7 @@ import { writeChiefPreferences } from "../../utils/chiefPreferences.js";
 import { voiceConnectionLabel } from "../../utils/chiefVoiceStatus.js";
 import { ChiefContextShare } from "./ChiefContextShare.jsx";
 import { ChiefExternalArchive } from "./ChiefExternalArchive.jsx";
+import { ChiefResponseMode } from "./ChiefResponseMode.jsx";
 import { ChiefSettingsExtras } from "./ChiefSettingsExtras.jsx";
 import { speechInputSupported } from "./voice/speechInput.js";
 import {
@@ -553,19 +554,12 @@ export function ChiefSettings({
               <Toggle
                 label="Voice responses"
                 checked={preferences.conversation.voiceResponses}
-                detail="Spoken turns are read aloud through the existing voice path."
+                detail="When off, CHIEF does not speak. The selected response mode stays unchanged."
                 onChange={(voiceResponses) => patchConversation({ voiceResponses })}
               />
-              <Toggle
-                label="Automatically speak CHIEF responses"
-                checked={preferences.conversation.autoSpeak}
-                detail="Typed replies are spoken when voice responses are on."
-                onChange={(autoSpeak) => patchConversation({ autoSpeak })}
-              />
-              <Toggle
-                label="Show CHIEF response text"
-                checked={preferences.conversation.showResponseText}
-                onChange={(showResponseText) => patchConversation({ showResponseText })}
+              <ChiefResponseMode
+                mode={preferences.conversation.responseMode}
+                onChange={(responseMode) => patchConversation({ responseMode })}
               />
               <Toggle
                 label="Enter to send"

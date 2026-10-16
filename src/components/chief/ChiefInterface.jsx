@@ -1,5 +1,6 @@
 import environmentUrl from "./chief-environment.webp";
 import { ChiefIntelligenceCore } from "../../visual/chiefIntelligence/ChiefIntelligenceCore.jsx";
+import { ChiefResponseMode } from "./ChiefResponseMode.jsx";
 import "./ChiefInterface.css";
 
 const SYSTEM_ROWS = [
@@ -17,7 +18,8 @@ function activeSystemRow({ listening, state, phase, status }) {
   if (state === "speaking" || phase === "responding" || text === "responding") return "responding";
   if (text.includes("search")) return "searching";
   if (text.includes("access")) return "connecting";
-  if (text.includes("financial") || text.includes("tool") || text === "working") return "processing";
+  if (text.includes("financial") || text.includes("tool") || text === "working")
+    return "processing";
   if (phase === "thinking") return "reasoning";
   if (state === "thinking") return "processing";
   return "";
@@ -176,6 +178,10 @@ export function ChiefInterface({
   workspace = null,
   modelControl = null,
   inputRef = null,
+  responseMode = "both",
+  onResponseMode,
+  speechActive = false,
+  onStopSpeech,
 }) {
   const state = String(assistantState || "idle").toLowerCase();
   const phase = ["idle", "thinking", "responding"].includes(scenePhase) ? scenePhase : "idle";
@@ -337,6 +343,21 @@ export function ChiefInterface({
 
         <div className="chief-stage-dock">
           {conversation ? <div className="chief-interface-conversation">{conversation}</div> : null}
+
+          {onResponseMode ? (
+            <div className="chief-response-bar">
+              <ChiefResponseMode mode={responseMode} onChange={onResponseMode} />
+              {speechActive ? (
+                <button
+                  type="button"
+                  className="chief-stop-speech"
+                  onClick={() => onStopSpeech?.()}
+                >
+                  Stop
+                </button>
+              ) : null}
+            </div>
+          ) : null}
 
           {showComposer ? (
             <div className="chief-composer">

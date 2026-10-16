@@ -2502,6 +2502,41 @@ textarea:focus-visible,
   background: rgba(18, 8, 32, 0.4);
 }
 
+.chief-settings .chief-response-mode {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.chief-settings .chief-response-mode legend {
+  padding: 0;
+  color: #f6f0ff;
+  font-size: 14px;
+}
+
+.chief-settings .chief-response-mode-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chief-settings .chief-response-mode-options button {
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(192, 132, 252, 0.35);
+  background: rgba(18, 8, 32, 0.4);
+  color: #f6f0ff;
+  font-size: 13px;
+}
+
+.chief-settings .chief-response-mode-options button.is-selected {
+  border-color: rgba(216, 180, 254, 0.85);
+  background: rgba(88, 28, 135, 0.55);
+}
+
 .chief-settings-toggle {
   display: flex;
   justify-content: space-between;

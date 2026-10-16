@@ -34,6 +34,7 @@ export function useChiefVoice({ user, sessionUid, onTranscript }) {
 
   const voiceIdRef = useRef(voiceId);
   const speakAbortRef = useRef(null);
+  const speakGenerationRef = useRef(0);
   const audioCtxRef = useRef(null);
   const speechRef = useRef(null);
   const userRef = useRef(user);
@@ -138,10 +139,15 @@ export function useChiefVoice({ user, sessionUid, onTranscript }) {
   }, []);
 
   const stopSpeaking = useCallback(() => {
+    speakGenerationRef.current += 1;
     speakAbortRef.current?.abort();
     speakAbortRef.current = null;
     setAudioActive(false);
     setPlayback("idle");
+  }, []);
+
+  const clearSpeechError = useCallback(() => {
+    setSpeechError("");
   }, []);
 
   const stopListening = useCallback(() => {
@@ -153,19 +159,26 @@ export function useChiefVoice({ user, sessionUid, onTranscript }) {
 
   const speakAnswer = useCallback(
     async (text, settingsOverride) => {
+      const generation = ++speakGenerationRef.current;
+      const stale = () => speakGenerationRef.current !== generation;
       const spoken = typeof text === "string" ? text.trim() : "";
       const selected = voiceIdRef.current;
       const currentUser = userRef.current;
       if (!spoken || !currentUser) {
+        speakAbortRef.current?.abort();
+        speakAbortRef.current = null;
         setAudioActive(false);
         setPlayback("idle");
-        return;
+        return { ok: false, reason: "empty" };
       }
       if (!selected) {
+        speakAbortRef.current?.abort();
+        speakAbortRef.current = null;
         setAudioActive(false);
         setPlayback("idle");
-        setSpeechError("Select an ElevenLabs voice before CHIEF can speak.");
-        return;
+        const message = "Select an ElevenLabs voice before CHIEF can speak.";
+        setSpeechError(message);
+        return { ok: false, reason: "error", error: message };
       }
       const saved = readVoiceSettings();
       const voiceSettings = settingsOverride
@@ -175,6 +188,10 @@ export function useChiefVoice({ user, sessionUid, onTranscript }) {
       const previous = speakAbortRef.current;
       speakAbortRef.current = controller;
       previous?.abort();
+      if (stale()) {
+        controller.abort();
+        return { ok: false, reason: "aborted" };
+      }
       setPlayback("preparing");
       setAudioActive(false);
       setSpeechError("");
@@ -186,20 +203,31 @@ export function useChiefVoice({ user, sessionUid, onTranscript }) {
           voiceSettings,
           signal: controller.signal,
         });
-        if (controller.signal.aborted) return;
+        if (stale() || controller.signal.aborted) {
+          return { ok: false, reason: "aborted" };
+        }
         await playChiefSpeech(response, {
           audioContext: ensureAudio(),
           signal: controller.signal,
           onPlaybackStart: () => {
-            if (!controller.signal.aborted && speakAbortRef.current === controller) {
-              setPlayback("playing");
-              setAudioActive(true);
+            if (stale() || controller.signal.aborted || speakAbortRef.current !== controller) {
+              return;
             }
+            setPlayback("playing");
+            setAudioActive(true);
           },
         });
+        if (stale() || controller.signal.aborted) {
+          return { ok: false, reason: "aborted" };
+        }
+        return { ok: true };
       } catch (error) {
-        if (controller.signal.aborted || error?.name === "AbortError") return;
-        setSpeechError(error?.message || "CHIEF could not speak that response.");
+        if (stale() || controller.signal.aborted || error?.name === "AbortError") {
+          return { ok: false, reason: "aborted" };
+        }
+        const message = error?.message || "CHIEF could not speak that response.";
+        setSpeechError(message);
+        return { ok: false, reason: "error", error: message };
       } finally {
         if (speakAbortRef.current === controller) {
           speakAbortRef.current = null;
@@ -220,10 +248,7 @@ export function useChiefVoice({ user, sessionUid, onTranscript }) {
       setInterim("");
       return;
     }
-    speakAbortRef.current?.abort();
-    speakAbortRef.current = null;
-    setAudioActive(false);
-    setPlayback("idle");
+    stopSpeaking();
     setSpeechError("");
     ensureAudio();
     void meterRef.current?.start();
@@ -232,7 +257,7 @@ export function useChiefVoice({ user, sessionUid, onTranscript }) {
     } catch (error) {
       setSpeechError(error?.message || "Speech recognition could not start.");
     }
-  }, [ensureAudio, listening]);
+  }, [ensureAudio, listening, stopSpeaking]);
 
   const consumeVoiceTurn = useCallback(() => {
     const armed = voiceTurnRef.current;
@@ -264,6 +289,7 @@ export function useChiefVoice({ user, sessionUid, onTranscript }) {
     toggleListening,
     stopListening,
     stopSpeaking,
+    clearSpeechError,
     speakAnswer,
     ensureAudio,
     audioLevelRef,

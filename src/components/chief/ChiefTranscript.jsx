@@ -137,8 +137,9 @@ export function ChiefTranscript({
   );
 }
 
-export function ChiefEarlierTurns({ earlier = [], showResponseText = true }) {
+export function ChiefEarlierTurns({ earlier = [], showResponseText = true, revealedTexts = [] }) {
   if (!earlier.length) return null;
+  const revealed = new Set(revealedTexts.map((text) => text.trim()));
   return (
     <div className="chief-earlier">
       <div className="chief-sheet-title">Earlier in this conversation</div>
@@ -147,7 +148,7 @@ export function ChiefEarlierTurns({ earlier = [], showResponseText = true }) {
           <p key={message.id} className="chief-earlier-user">
             {message.text}
           </p>
-        ) : showResponseText ? (
+        ) : showResponseText || revealed.has(message.text.trim()) ? (
           <div key={message.id} className="chief-earlier-chief">
             <ChiefMarkdown text={message.text} />
           </div>

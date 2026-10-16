@@ -33,7 +33,11 @@ import { ChiefModelSelect } from "./ChiefModelSelect.jsx";
 import { ChiefEarlierTurns, ChiefTranscript } from "./ChiefTranscript.jsx";
 import { ChiefSettings } from "./ChiefSettings.jsx";
 import { useChiefVoice } from "./useChiefVoice.js";
-import { readChiefPreferences, writeChiefPreferences } from "../../utils/chiefPreferences.js";
+import {
+  readChiefPreferences,
+  shouldShowAssistantText,
+  writeChiefPreferences,
+} from "../../utils/chiefPreferences.js";
 import { speakCompletedReply } from "../../utils/chiefReplySpeech.js";
 
 function errorText(error) {
@@ -91,6 +95,8 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
   const [settingsSection, setSettingsSection] = useState("voice");
   const [archiveFocusId, setArchiveFocusId] = useState("");
   const [preferences, setPreferences] = useState(() => readChiefPreferences());
+  const [speechStopped, setSpeechStopped] = useState(false);
+  const [revealedAnswers, setRevealedAnswers] = useState([]);
   const [focusConversationSearch, setFocusConversationSearch] = useState(false);
   const abortRef = useRef(null);
   const busyRef = useRef(false);
@@ -100,6 +106,9 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
   const answerRef = useRef(null);
   const composerRef = useRef(null);
   const sendRef = useRef(() => {});
+  const speechEpoch = useRef(0);
+  const answerTextRef = useRef("");
+  const preferencesRef = useRef(preferences);
   const voice = useChiefVoice({
     user,
     sessionUid,
@@ -124,6 +133,11 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
   }, [activeSessionId]);
 
   const turnView = useMemo(() => currentTurn(messages, streamText), [messages, streamText]);
+
+  useEffect(() => {
+    preferencesRef.current = preferences;
+    answerTextRef.current = turnView.answer;
+  });
   const activeArchived = archivedSessions.some((session) => session.sessionId === activeSessionId);
 
   function setBusyState(value) {
@@ -322,9 +336,13 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
   }, [accessOpen, settingsOpen]);
 
   function selectSession(sessionId) {
+    speechEpoch.current += 1;
+    setSpeechStopped(false);
+    setRevealedAnswers([]);
     stopActiveTurn();
     voice.stopListening();
     voice.stopSpeaking();
+    voice.clearSpeechError();
     generation.current += 1;
     const token = generation.current;
     setActiveSessionId(sessionId);
@@ -339,9 +357,13 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
   }
 
   function startNewConversation() {
+    speechEpoch.current += 1;
+    setSpeechStopped(false);
+    setRevealedAnswers([]);
     stopActiveTurn();
     voice.stopListening();
     voice.stopSpeaking();
+    voice.clearSpeechError();
     generation.current += 1;
     setActiveSessionId(null);
     writeStoredSessionId(null);
@@ -398,6 +420,10 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
   }
 
   function backToConversations() {
+    speechEpoch.current += 1;
+    setSpeechStopped(false);
+    voice.stopSpeaking();
+    voice.clearSpeechError();
     setNotFound(false);
     setActiveSessionId(null);
     setMessages([]);
@@ -416,6 +442,10 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
     const trimmed = typeof text === "string" ? text.trim() : "";
     const source = voice.consumeVoiceTurn() ? "voice" : "text";
     if (!trimmed || !user || busyRef.current) return;
+    speechEpoch.current += 1;
+    const epoch = speechEpoch.current;
+    setSpeechStopped(false);
+    voice.clearSpeechError();
     voice.stopListening();
     voice.stopSpeaking();
     voice.ensureAudio();
@@ -511,7 +541,8 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
     }
     setBusyState(false);
     void refreshAccess();
-    speakCompletedReply(voice, {
+    const answerForReveal = (historyAnswer || turn.streamText || "").trim();
+    const delivery = speakCompletedReply(voice, {
       streamText: turn.streamText,
       historyAnswer,
       finished: turn.finished === true,
@@ -519,8 +550,18 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
       error: turn.error,
       aborted: controller.signal.aborted || abortRef.current !== controller,
       source,
-      preferences,
+      preferences: preferencesRef.current,
     });
+    if (!delivery?.pending) return;
+    const result = await delivery.pending;
+    if (speechEpoch.current !== epoch) return;
+    if (result?.ok) return;
+    if (answerForReveal) {
+      setRevealedAnswers((current) =>
+        current.includes(answerForReveal) ? current : [...current, answerForReveal]
+      );
+    }
+    if (result?.reason === "aborted") setSpeechStopped(true);
   }
 
   useEffect(() => {
@@ -657,6 +698,22 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
     setPreferences(writeChiefPreferences(next));
   }
 
+  function changeResponseMode(responseMode) {
+    applyPreferences({
+      ...preferences,
+      conversation: { ...preferences.conversation, responseMode },
+    });
+  }
+
+  function stopSpeech() {
+    voice.stopSpeaking();
+    const answer = typeof answerTextRef.current === "string" ? answerTextRef.current.trim() : "";
+    if (answer) {
+      setRevealedAnswers((current) => (current.includes(answer) ? current : [...current, answer]));
+    }
+    setSpeechStopped(true);
+  }
+
   function applyVoiceSettings(saved) {
     if (typeof saved?.voiceId === "string" && saved.voiceId) voice.chooseVoice(saved.voiceId);
   }
@@ -678,7 +735,8 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
     status: fieldStatus,
     playback: voice.playback,
   });
-  const voiceNote = voice.interim || voice.speechError || "";
+  const voiceNote = voice.interim || voice.speechError || (speechStopped ? "Speech stopped." : "");
+  const showAssistantText = shouldShowAssistantText({ preferences });
   const homeClass = embedded ? "chief-apex-home chief-apex-home--embedded" : "chief-apex-home";
   const homeStatus = user ? fieldStatus : "Sign in";
   const homeStatusTone = !user
@@ -730,7 +788,8 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
     Boolean(approval) ||
     activeArchived ||
     Boolean(voice.interim) ||
-    Boolean(voice.speechError);
+    Boolean(voice.speechError) ||
+    speechStopped;
 
   const homeExchange = !user ? (
     <div className="chief-turn">
@@ -746,7 +805,9 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
         isLoading={historyLoading}
         notFound={notFound}
         showEmpty={showEmpty}
-        showResponseText={preferences.conversation.showResponseText}
+        showResponseText={
+          showAssistantText || revealedAnswers.includes((turnView.answer || "").trim())
+        }
         onBackToList={backToConversations}
       />
       {transcriptError ? (
@@ -780,9 +841,9 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
         </div>
       ) : null}
       {voice.interim ? <p className="chief-voice-interim">{voice.interim}</p> : null}
-      {voice.speechError ? (
+      {voice.speechError || speechStopped ? (
         <p className="chief-turn-note" role="alert">
-          {voice.speechError}
+          {voice.speechError || "Speech stopped."}
         </p>
       ) : null}
     </>
@@ -802,7 +863,8 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
       {user ? (
         <ChiefEarlierTurns
           earlier={turnView.earlier}
-          showResponseText={preferences.conversation.showResponseText}
+          showResponseText={showAssistantText}
+          revealedTexts={revealedAnswers}
         />
       ) : null}
     </>
@@ -1002,9 +1064,19 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
             ) : null
           }
           inputRef={composerRef}
+          responseMode={preferences.conversation.responseMode}
+          onResponseMode={user ? changeResponseMode : undefined}
+          speechActive={voice.playback === "preparing" || voice.playback === "playing"}
+          onStopSpeech={stopSpeech}
         />
         <p className="chief-sr" aria-live="polite">
-          {voice.listening ? "Listening" : voice.audioActive ? "Speaking" : voiceNote}
+          {voice.listening
+            ? "Listening"
+            : voice.playback === "preparing"
+              ? "Generating audio"
+              : voice.audioActive
+                ? "Speaking"
+                : voiceNote}
         </p>
         <ChiefSettings
           open={settingsOpen}
