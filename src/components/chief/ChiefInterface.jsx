@@ -1,30 +1,27 @@
-import { JarvisOrb } from "jarvis-ai-web-animation";
-import footerUrl from "./chief-footer.webp";
-import sceneUrl from "./chief-scene.webp";
+import environmentUrl from "./chief-environment.webp";
+import { ChiefIntelligenceCore } from "../../visual/chiefIntelligence/ChiefIntelligenceCore.jsx";
 import "./ChiefInterface.css";
 
-const FEATURES = [
-  {
-    icon: "brain",
-    title: "Deep Understanding",
-    text: "Context across your world",
-  },
-  {
-    icon: "pulse",
-    title: "Strategic Reasoning",
-    text: "Multi-step replies",
-  },
-  {
-    icon: "bolt",
-    title: "Real Execution",
-    text: "Approval before action",
-  },
-  {
-    icon: "chart",
-    title: "Compounding Value",
-    text: "Continues across conversations",
-  },
+const SYSTEM_ROWS = [
+  ["listening", "Listening", "mic"],
+  ["processing", "Processing", "pulse"],
+  ["reasoning", "Reasoning", "brain"],
+  ["searching", "Searching", "search"],
+  ["connecting", "Connecting", "network"],
+  ["responding", "Responding", "bolt"],
 ];
+
+function activeSystemRow({ listening, state, phase, status }) {
+  const text = String(status || "").toLowerCase();
+  if (listening || state === "listening") return "listening";
+  if (state === "speaking" || phase === "responding" || text === "responding") return "responding";
+  if (text.includes("search")) return "searching";
+  if (text.includes("access")) return "connecting";
+  if (text.includes("financial") || text.includes("tool") || text === "working") return "processing";
+  if (phase === "thinking") return "reasoning";
+  if (state === "thinking") return "processing";
+  return "";
+}
 
 function Icon({ name, size = 22 }) {
   const common = {
@@ -192,6 +189,7 @@ export function ChiefInterface({
     const metric = metricValue(value);
     return metric.kind === "empty" ? [] : [[label, metric]];
   });
+  const systemRow = activeSystemRow({ listening, state, phase, status });
   const rootClass = [
     "chief-interface",
     `state-${state}`,
@@ -220,7 +218,12 @@ export function ChiefInterface({
   }
 
   return (
-    <main className={rootClass}>
+    <main className={rootClass} style={{ "--chief-environment": `url("${environmentUrl}")` }}>
+      {workspace || reducedMotion ? null : (
+        <div className="chief-core-slot">
+          <ChiefIntelligenceCore state={state} />
+        </div>
+      )}
       <header className="chief-topbar">
         <button
           type="button"
@@ -238,38 +241,47 @@ export function ChiefInterface({
         </div>
 
         <div className="chief-top-actions">
-          {onSearch ? (
-            <form className="chief-search" role="search" onSubmit={submitSearch}>
-              <Icon name="search" size={16} />
-              <input
-                name="q"
-                type="search"
-                placeholder="Search conversations"
-                aria-label="Search conversations"
-                enterKeyHint="search"
-              />
-            </form>
-          ) : null}
-          {onNotifications ? (
-            <button
-              type="button"
-              className="chief-icon-button"
-              onClick={onNotifications}
-              aria-label="Notifications"
-            >
-              <Icon name="bell" size={18} />
-            </button>
-          ) : null}
-          {onProfile ? (
-            <button
-              type="button"
-              className="chief-profile"
-              onClick={onProfile}
-              aria-label="Settings"
-            >
-              {profileMark ? profileMark.slice(0, 2) : <Icon name="user" size={18} />}
-            </button>
-          ) : null}
+          <div className="chief-header-cluster">
+            <p className={`chief-header-status is-${statusTone}`}>
+              <i />
+              <span>{status}</span>
+            </p>
+            {modelControl ? <div className="chief-header-model">{modelControl}</div> : null}
+          </div>
+          <div className="chief-header-tools">
+            {onSearch ? (
+              <form className="chief-search" role="search" onSubmit={submitSearch}>
+                <Icon name="search" size={16} />
+                <input
+                  name="q"
+                  type="search"
+                  placeholder="Search conversations"
+                  aria-label="Search conversations"
+                  enterKeyHint="search"
+                />
+              </form>
+            ) : null}
+            {onNotifications ? (
+              <button
+                type="button"
+                className="chief-icon-button"
+                onClick={onNotifications}
+                aria-label="Notifications"
+              >
+                <Icon name="bell" size={18} />
+              </button>
+            ) : null}
+            {onProfile ? (
+              <button
+                type="button"
+                className="chief-profile"
+                onClick={onProfile}
+                aria-label="Settings"
+              >
+                {profileMark ? profileMark.slice(0, 2) : <Icon name="user" size={18} />}
+              </button>
+            ) : null}
+          </div>
         </div>
       </header>
 
@@ -315,70 +327,16 @@ export function ChiefInterface({
         </div>
         {onHome ? (
           <button type="button" className="chief-rail-foot" onClick={() => onHome()}>
-            <img src={footerUrl} alt="" />
-            <span>
-              <strong>Freedom OS</strong>
-              <small>Live the Future You Own</small>
-            </span>
+            <strong>Home</strong>
           </button>
         ) : null}
       </nav>
 
       <section className="chief-stage" aria-label="CHIEF">
-        {workspace ? (
-          <div className="chief-scene-frame">
-            <div className="chief-scene-plate">
-              <img className="chief-scene" src={sceneUrl} alt="" draggable="false" />
-              <img className="chief-core-field" src={sceneUrl} alt="" draggable="false" />
-              <i className="chief-core-wash" />
-              <img className="chief-ring-field" src={sceneUrl} alt="" draggable="false" />
-              <i className="chief-ring-flow" />
-            </div>
-          </div>
-        ) : (
-          <div className="chief-jarvis-frame">
-            {/* examples/basic hero view (?hero=1): 560px, cyan, thinking, interactive, draggableSpin. */}
-            <div className="chief-jarvis-orb">
-              <JarvisOrb size="hero" palette="cyan" state="thinking" interactive draggableSpin />
-            </div>
-          </div>
-        )}
-
         {workspace ? <div className="chief-workspace-slot">{workspace}</div> : null}
 
         <div className="chief-stage-dock">
-          {workspace ? null : (
-            <>
-              <div className="chief-stage-copy">
-                <p className="chief-wordmark">CHIEF</p>
-                <p className="chief-mantra">Understand · Reason · Plan · Execute</p>
-                <p className="chief-tagline">
-                  Your personal intelligence layer for a more free, sovereign, and abundant life.
-                </p>
-              </div>
-
-              <div className="chief-features">
-                {FEATURES.map((feature) => (
-                  <div key={feature.title} className="chief-feature">
-                    <span>
-                      <Icon name={feature.icon} size={16} />
-                    </span>
-                    <strong>{feature.title}</strong>
-                    <small>{feature.text}</small>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-
           {conversation ? <div className="chief-interface-conversation">{conversation}</div> : null}
-
-          {modelControl ? (
-            <div className="chief-model-line">
-              <span className="chief-model-label">Model</span>
-              {modelControl}
-            </div>
-          ) : null}
 
           {showComposer ? (
             <div className="chief-composer">
@@ -400,7 +358,7 @@ export function ChiefInterface({
                   onKeyDown={(event) => {
                     if (event.key === "Enter" && !enterToSend) event.preventDefault();
                   }}
-                  placeholder="Ask CHIEF anything..."
+                  placeholder="Talk to CHIEF..."
                   aria-label="Ask CHIEF anything"
                   disabled={composerDisabled}
                 />
@@ -460,43 +418,34 @@ export function ChiefInterface({
       </section>
 
       <aside className="chief-right-rail">
-        <Panel className="chief-identity">
-          <span className="chief-identity-mark" aria-hidden="true" />
-          <div>
-            <h2>CHIEF</h2>
-            <p className={`chief-ready is-${statusTone}`}>
-              <i />
-              {status}
-            </p>
-            <p className="chief-identity-line">Personal intelligence for this account.</p>
-          </div>
-        </Panel>
-
-        {showSystemStatus && metricRows.length ? (
+        {showSystemStatus ? (
           <Panel className="chief-system-panel">
             <div className="chief-system-title">
-              <strong>System status</strong>
-              <span className={`chief-ready is-${statusTone}`}>
-                <i />
-                {status}
-              </span>
+              <strong>CHIEF SYSTEM</strong>
             </div>
-            {metricRows.map(([label, metric]) => (
-              <div
-                className={
-                  metric.kind === "percent" ? "chief-metric" : "chief-metric chief-metric-text"
-                }
-                key={label}
-              >
-                <span>{label}</span>
-                {metric.kind === "percent" ? (
-                  <div className="chief-meter" aria-hidden="true">
-                    <i style={{ width: `${metric.text}%` }} />
-                  </div>
-                ) : null}
-                <b>{metric.kind === "percent" ? `${metric.text}%` : metric.text}</b>
+            <ul className="chief-system-rows">
+              {SYSTEM_ROWS.map(([id, label, icon]) => (
+                <li key={id} className={systemRow === id ? "is-active" : undefined}>
+                  <Icon name={icon} size={15} />
+                  <span>{label}</span>
+                  <span className="chief-system-wave" aria-hidden="true">
+                    <i />
+                    <i />
+                    <i />
+                  </span>
+                </li>
+              ))}
+            </ul>
+            {metricRows.length ? (
+              <div className="chief-system-metrics">
+                {metricRows.map(([label, metric]) => (
+                  <p key={label}>
+                    <span>{label}</span>
+                    <b>{metric.kind === "percent" ? `${metric.text}%` : metric.text}</b>
+                  </p>
+                ))}
               </div>
-            ))}
+            ) : null}
           </Panel>
         ) : null}
 

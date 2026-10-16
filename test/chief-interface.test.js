@@ -30,15 +30,13 @@ test("CHIEF home mounts the supplied interface on the existing conversation path
   assert.equal(face.includes("Research market opportunity"), false);
   assert.equal(face.includes("Search Web"), false);
   assert.equal(face.includes("Open Workspace"), false);
-  assert.match(face, /chief-scene\.webp/);
-  assert.match(face, /from "jarvis-ai-web-animation"/);
-  assert.match(
-    face,
-    /<JarvisOrb[\s\S]*size="hero"[\s\S]*palette="cyan"[\s\S]*state="thinking"[\s\S]*interactive[\s\S]*draggableSpin/
-  );
+  assert.match(face, /chief-environment\.webp/);
+  assert.match(face, /CHIEF SYSTEM/);
+  assert.match(face, /Talk to CHIEF\.\.\./);
+  assert.doesNotMatch(face, /jarvis-ai-web-animation|JarvisOrb/);
   assert.doesNotMatch(face, /0xa855f7|breathing=\{|quality="/);
-  assert.match(css, /#050913/);
-  assert.match(css, /560px/);
+  assert.match(css, /--chief-environment/);
+  assert.match(css, /center 42%/);
   assert.match(face, /allowAttach \?/);
   assert.equal((face.match(/fetch\(/g) || []).length, 0);
   assert.match(page, /conversationLabel/);
@@ -54,19 +52,14 @@ test("CHIEF home mounts the supplied interface on the existing conversation path
   assert.match(css, /grid-area:\s*nav/);
   assert.match(css, /grid-area:\s*stage/);
   assert.match(css, /grid-area:\s*rail/);
-  assert.match(css, /chief-core-pulse/);
-  assert.match(css, /chief-ring-flow/);
-  assert.match(css, /hue-rotate\(26deg\)/);
-  assert.match(css, /aspect-ratio:\s*864\s*\/\s*510/);
-  assert.doesNotMatch(css, /translate\(-50%,\s*16%\)/);
-  assert.match(css, /--chief-ring-angle/);
-  assert.match(css, /mask-image/);
   assert.match(css, /\.chief-interface\.phase-responding/);
   assert.match(css, /\.chief-interface\.phase-thinking/);
   assert.doesNotMatch(css, /margin-top:\s*-/);
-  assert.match(face, /chief-ring-field/);
-  assert.match(face, /chief-core-field/);
   assert.match(face, /phase-\$\{phase\}/);
+  assert.doesNotMatch(face, /chief-ring-field|chief-core-field|JarvisOrb/);
+  assert.match(face, /ChiefIntelligenceCore/);
+  assert.doesNotMatch(face, /ApexWorld|ApexCore3D/);
+  assert.doesNotMatch(page, /ChiefIntelligenceCore|chiefIntelligence/);
   assert.match(read("src/components/chief/useChiefVoice.js"), /setPlayback\("preparing"\)/);
   assert.match(read("src/components/chief/useChiefVoice.js"), /setPlayback\("playing"\)/);
   assert.match(read("src/components/chief/useChiefVoice.js"), /setPlayback\("idle"\)/);
