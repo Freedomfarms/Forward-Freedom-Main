@@ -3,11 +3,8 @@
 
 import * as THREE from "three";
 import { damp, normalizeCoreState, poseFor, stepPose } from "../chiefCore/ChiefCoreState.js";
-import {
-  FILAMENT_ANCHOR_Y,
-  FILAMENT_COLORS,
-  createFilamentCore,
-} from "./filamentCore.js";
+import { FILAMENT_ANCHOR_Y, FILAMENT_COLORS, createFilamentCore } from "./filamentCore.js";
+import { createQualityState, observeFrame, probeWebGLRenderer } from "./filamentQuality.js";
 
 const IDLE_RADIUS = 0.58;
 const BASE_RADIUS = 0.96;
@@ -38,7 +35,7 @@ export class ChiefIntelligenceEngine {
     }
   }
 
-  assemble(canvas, root, { state = "idle", onFatal } = {}) {
+  assemble(canvas, root, { state = "idle", onFatal, rendererName } = {}) {
     this.canvas = canvas;
     this.root = root;
     this.onFatal = onFatal;
@@ -49,11 +46,17 @@ export class ChiefIntelligenceEngine {
     this.poseTarget = poseFor(this.presented);
     this.pointer = new THREE.Vector2();
     this.pointerTarget = new THREE.Vector2();
+    this.viewWidth = 0;
+    this.viewHeight = 0;
+    this.viewDpr = 0;
+    const named =
+      typeof rendererName === "string" ? rendererName : probeWebGLRenderer(canvas.ownerDocument);
+    this.quality = createQualityState(named);
 
     this.renderer = new THREE.WebGLRenderer({
       canvas,
       alpha: true,
-      antialias: true,
+      antialias: this.quality.antialias,
       powerPreference: "high-performance",
       stencil: false,
       depth: false,
@@ -62,6 +65,10 @@ export class ChiefIntelligenceEngine {
     this.renderer.setClearColor(0x000000, 0);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.NoToneMapping;
+    const gl = this.renderer.getContext();
+    this.gpuTimer = gl.getExtension("EXT_disjoint_timer_query_webgl2");
+    this.gpuQuery = null;
+    this.gpuOpened = false;
 
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(30, 1, 0.1, 20);
@@ -101,16 +108,16 @@ export class ChiefIntelligenceEngine {
     canvas.addEventListener("webglcontextrestored", this.onContextRestored);
 
     this.onVisibility = () => {
-      if (document.hidden) {
-        this.running = false;
-        if (this.raf) cancelAnimationFrame(this.raf);
-        this.raf = 0;
-        this.last = 0;
-        return;
-      }
-      this.start();
+      if (document.hidden) this.pause();
+      else this.start();
+    };
+    this.onPageHide = () => this.pause();
+    this.onPageShow = () => {
+      if (!document.hidden) this.start();
     };
     document.addEventListener("visibilitychange", this.onVisibility);
+    window.addEventListener("pagehide", this.onPageHide);
+    window.addEventListener("pageshow", this.onPageShow);
 
     this.onPointer = (event) => {
       const width = window.innerWidth || 1;
@@ -132,10 +139,14 @@ export class ChiefIntelligenceEngine {
 
   resize() {
     if (this.disposed) return;
-    const width = this.root.clientWidth || window.innerWidth || 1;
-    const height = this.root.clientHeight || window.innerHeight || 1;
+    const width = Math.round(this.root.clientWidth || window.innerWidth || 1);
+    const height = Math.round(this.root.clientHeight || window.innerHeight || 1);
     if (width < 2 || height < 2) return;
-    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+    const dpr = Math.min(window.devicePixelRatio || 1, this.quality.dprCap);
+    if (width === this.viewWidth && height === this.viewHeight && dpr === this.viewDpr) return;
+    this.viewWidth = width;
+    this.viewHeight = height;
+    this.viewDpr = dpr;
     this.renderer.setPixelRatio(dpr);
     this.renderer.setSize(width, height, false);
     this.uniforms.uResolution.value.set(width * dpr, height * dpr);
@@ -145,6 +156,13 @@ export class ChiefIntelligenceEngine {
     const visibleHeight = 2 * Math.tan((this.camera.fov * Math.PI) / 360) * distance;
     const ndcY = 1 - 2 * FILAMENT_ANCHOR_Y;
     this.rig.position.y = (ndcY * visibleHeight) / 2;
+  }
+
+  pause() {
+    this.running = false;
+    if (this.raf) cancelAnimationFrame(this.raf);
+    this.raf = 0;
+    this.last = 0;
   }
 
   start() {
@@ -161,16 +179,56 @@ export class ChiefIntelligenceEngine {
 
   renderFrame(now) {
     if (!this.running || this.disposed) return;
-    const dt = this.last ? Math.min((now - this.last) / 1000, 0.05) : 0.016;
+    const raw = this.last ? now - this.last : 0;
+    const dt = raw ? Math.min(raw / 1000, 0.05) : 0.016;
     this.last = now;
+    const gpu = this.takeGpuSample();
+    const sample = Math.max(raw, gpu || 0);
+    if (raw > 0 && observeFrame(this.quality, sample, window.devicePixelRatio || 1, gpu != null)) {
+      this.resize();
+    }
     try {
       this.advance(dt);
+      this.beginGpuQuery();
       this.renderer.render(this.scene, this.camera);
+      this.endGpuQuery();
     } catch (error) {
       this.fail(error);
       return;
     }
     this.queueFrame();
+  }
+
+  takeGpuSample() {
+    const timer = this.gpuTimer;
+    const query = this.gpuQuery;
+    if (!timer || !query) return null;
+    const gl = this.renderer.getContext();
+    if (!gl.getQueryParameter(query, gl.QUERY_RESULT_AVAILABLE)) return null;
+    this.gpuQuery = null;
+    let sample = null;
+    if (!gl.getParameter(timer.GPU_DISJOINT_EXT)) {
+      sample = gl.getQueryParameter(query, gl.QUERY_RESULT) / 1e6;
+    }
+    gl.deleteQuery(query);
+    return sample;
+  }
+
+  beginGpuQuery() {
+    this.gpuOpened = false;
+    if (!this.gpuTimer || this.gpuQuery) return;
+    const gl = this.renderer.getContext();
+    const query = gl.createQuery();
+    if (!query) return;
+    this.gpuQuery = query;
+    this.gpuOpened = true;
+    gl.beginQuery(this.gpuTimer.TIME_ELAPSED_EXT, query);
+  }
+
+  endGpuQuery() {
+    if (!this.gpuOpened) return;
+    this.gpuOpened = false;
+    this.renderer.getContext().endQuery(this.gpuTimer.TIME_ELAPSED_EXT);
   }
 
   advance(dt) {
@@ -214,8 +272,21 @@ export class ChiefIntelligenceEngine {
     this.canvas?.removeEventListener("webglcontextlost", this.onContextLost);
     this.canvas?.removeEventListener("webglcontextrestored", this.onContextRestored);
     document.removeEventListener("visibilitychange", this.onVisibility);
+    window.removeEventListener("pagehide", this.onPageHide);
+    window.removeEventListener("pageshow", this.onPageShow);
     window.removeEventListener("pointermove", this.onPointer);
     this.observer?.disconnect();
+    if (this.renderer) {
+      try {
+        const gl = this.renderer.getContext();
+        if (this.gpuOpened && this.gpuTimer) gl.endQuery(this.gpuTimer.TIME_ELAPSED_EXT);
+        if (this.gpuQuery) gl.deleteQuery(this.gpuQuery);
+      } catch {
+        // The context may already be lost.
+      }
+      this.gpuOpened = false;
+      this.gpuQuery = null;
+    }
     this.core?.userData.disposeCore?.();
     this.renderer?.dispose();
     this.scene = null;
