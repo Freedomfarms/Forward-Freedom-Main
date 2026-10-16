@@ -10,7 +10,7 @@ import {
 } from "./filamentCore.js";
 
 const IDLE_RADIUS = 0.58;
-const BASE_RADIUS = 0.78;
+const BASE_RADIUS = 0.96;
 
 export class ChiefIntelligenceEngine {
   constructor(canvas, root, options = {}) {
@@ -73,13 +73,13 @@ export class ChiefIntelligenceEngine {
       uTime: { value: 0 },
       uPace: { value: this.pose.pace },
       uHot: { value: this.pose.hot },
-      uCamLocal: { value: new THREE.Vector3(0, 0, 5.2) },
+      uThickness: { value: 1.7 },
+      uResolution: { value: new THREE.Vector2(1, 1) },
+      uBlue: { value: new THREE.Color(FILAMENT_COLORS.blue) },
       uMagenta: { value: new THREE.Color(FILAMENT_COLORS.magenta) },
       uViolet: { value: new THREE.Color(FILAMENT_COLORS.violet) },
     };
-    this.cameraLocal = new THREE.Vector3();
     this.core = createFilamentCore(this.uniforms);
-    this.volume = this.core.getObjectByName("filament-volume");
     this.rig.add(this.core);
 
     this.onContextLost = (event) => {
@@ -132,6 +132,7 @@ export class ChiefIntelligenceEngine {
     const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
     this.renderer.setPixelRatio(dpr);
     this.renderer.setSize(width, height, false);
+    this.uniforms.uResolution.value.set(width * dpr, height * dpr);
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
     const distance = this.camera.position.z;
@@ -175,14 +176,8 @@ export class ChiefIntelligenceEngine {
     const breath = 1 + Math.sin(this.time * 0.55) * this.pose.breath;
     this.core.scale.setScalar((this.pose.radius / IDLE_RADIUS) * BASE_RADIUS * breath);
     const spin = 0.05 + this.pose.spin;
-    if (this.volume) {
-      this.volume.rotation.y += dt * spin;
-      this.volume.rotation.z += dt * spin * 0.35;
-      this.volume.updateMatrixWorld(true);
-      this.cameraLocal.copy(this.camera.position);
-      this.volume.worldToLocal(this.cameraLocal);
-      this.uniforms.uCamLocal.value.copy(this.cameraLocal);
-    }
+    this.core.rotation.y += dt * spin;
+    this.core.rotation.z += dt * spin * 0.22;
     this.pointer.lerp(this.pointerTarget, 1 - Math.exp(-2.2 * dt));
     this.rig.rotation.y = this.pointer.x * 0.06;
     this.rig.rotation.x = this.pointer.y * -0.04;

@@ -20,6 +20,7 @@ test("the homepage core is one purple filament ball outside the login scene", as
   assert.equal(engine.split("requestAnimationFrame").length - 1, 1);
   assert.match(filaments, /0xff4ad8/);
   assert.match(filaments, /0x9b4dff/);
+  assert.match(filaments, /0x4da3ff/);
   assert.match(filaments, /FILAMENT_ANCHOR_Y = 0\.426/);
   assert.doesNotMatch(`${engine}\n${filaments}`, /ApexWorld|ApexCore3D|0x67f1ff|0x22d3ee/);
   assert.doesNotMatch(login, /chiefIntelligence|filamentCore/);
@@ -50,8 +51,10 @@ test("the homepage core is one purple filament ball outside the login scene", as
     uViolet: { value: { set() {} } },
   });
   const names = core.children.map((child) => child.name);
-  assert.deepEqual(names, ["filament-volume", "filament-glow"]);
-  assert.equal(core.children.length, 2);
-  assert.doesNotMatch(filaments, /TubeGeometry|Points\(/);
+  assert.deepEqual(names, ["filament-volume", "filament-heart"]);
+  const lattice = core.getObjectByName("filament-volume");
+  assert.equal(lattice.geometry.index, null);
+  assert.ok(lattice.geometry.attributes.position.count > 60000);
+  assert.doesNotMatch(filaments, /TubeGeometry|Points\(|Sprite|uCamLocal/);
   core.userData.disposeCore();
 });
