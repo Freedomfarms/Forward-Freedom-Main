@@ -122,6 +122,7 @@ export function conversationMove(transcript, query = null) {
     referent: memory.referent ?? null,
     priorUserTexts: prior,
     pullsPublicSource: kind === MOVE.CONFIRM && PUBLIC_SOURCE.test(thread),
+    unresolvedOther: memory.unresolvedOther === true,
   };
 }
 
@@ -132,6 +133,9 @@ export function renderConversationMove(transcript, query = null) {
   }
   if (move.kind === MOVE.CONFIRM) {
     return "The user is confirming the check you just offered. Do that work with the necessary tool, then give the result. Do not describe the plan.";
+  }
+  if (move.kind === MOVE.CONTINUE && move.unresolvedOther) {
+    return "The user is asking about the other one. This conversation does not name it. Do not treat the previous subject as that referent, and do not carry over its live readings. Ask which one they mean.";
   }
   if (move.kind === MOVE.CONTINUE) {
     const referent = move.referent ? ` ${move.referent} is the active referent.` : "";
@@ -462,15 +466,51 @@ export function guardWorkforceReply(text, pack, transcript = []) {
   return rewritten.join(" ").trim();
 }
 
+const LIVE_TOOL_DOMAIN = Object.freeze({
+  finance_summary: "finance",
+  schedule_list: "schedule",
+  schedule_runs: "schedule",
+  calendar_list: "calendar",
+  email_search: "email",
+  web_search: "web",
+  code_read: "code",
+  code_search: "code",
+  code_tree: "code",
+});
+
+function callsJustifiedByPlan(calls, pack) {
+  const live = pack?.plan?.live;
+  if (!Array.isArray(live)) return calls;
+  const allowed = new Set(live);
+  return calls.filter((call) => {
+    const domain = LIVE_TOOL_DOMAIN[call?.name];
+    if (!domain) return true;
+    return allowed.has(domain);
+  });
+}
+
 function blockUnsupportedCurrentClaim(text, transcript, pack) {
   const answer = String(text ?? "").trim();
   if (!pack?.plan?.currentState || exploring(transcript)) return answer;
   if (liveReadingReady(pack) || toolResultAfterLatestUser(transcript)) return answer;
-  if (!CURRENT_FIGURE.test(answer)) return answer;
   const known = new Set(numbersIn(priorTranscriptText(transcript)));
-  const novel = numbersIn(answer).some((value) => value.length > 1 && !known.has(value));
-  if (!novel) return answer;
-  return UNAVAILABLE_ANSWER;
+  const sentences = sentenceList(answer);
+  const kept = [];
+  let blocked = false;
+  for (const sentence of sentences) {
+    if (!CURRENT_FIGURE.test(sentence)) {
+      kept.push(sentence);
+      continue;
+    }
+    const novel = numbersIn(sentence).some((value) => value.length > 1 && !known.has(value));
+    if (!novel) {
+      kept.push(sentence);
+      continue;
+    }
+    blocked = true;
+  }
+  if (!blocked) return answer;
+  return kept.join(" ").trim() || UNAVAILABLE_ANSWER;
 }
 
 export function settleReply({
@@ -518,12 +558,20 @@ export function settleReply({
   }
   if (move.kind === MOVE.ACKNOWLEDGE) {
     const claimsWork = WORKFORCE_CLAIMS.some((rule) => rule.claim.test(modelText));
+    if (!claimsWork) {
+      const kept = stripOffers(stripMachinery(modelText, transcript), transcript).trim();
+      if (CURRENT_FIGURE.test(kept)) {
+        const guarded = blockUnsupportedCurrentClaim(kept, transcript, pack).trim();
+        return reply({ text: guarded || shortReaction(userText), toolCalls: [] });
+      }
+    }
     return reply({
       text: !claimsWork && reactionIsAlreadyShort(modelText) ? modelText : shortReaction(userText),
       toolCalls: [],
     });
   }
-  if (keptCalls.length > 0) return reply({ text: modelText, toolCalls: keptCalls });
+  const justified = callsJustifiedByPlan(keptCalls, pack);
+  if (justified.length > 0) return reply({ text: modelText, toolCalls: justified });
   let answer = openWithAnswer(modelText, transcript);
   answer = stripMachinery(answer, transcript);
   answer = stripOffers(answer, transcript);
@@ -531,5 +579,5 @@ export function settleReply({
   answer = guardWorkforceReply(answer, pack, transcript);
   answer = answer.trim();
   if (!answer) answer = modelText || String(text ?? "").trim();
-  return reply({ text: answer, toolCalls: keptCalls });
+  return reply({ text: answer, toolCalls: justified });
 }
