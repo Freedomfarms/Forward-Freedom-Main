@@ -398,6 +398,39 @@
   font-size: 11px;
 }
 
+.chief-interface .chief-core-slot {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  grid-column: 1 / -1;
+  grid-row: 1 / -1;
+  pointer-events: none;
+}
+
+.chief-interface .chief-intelligence-core,
+.chief-interface .chief-intelligence-core canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.chief-interface .chief-topbar,
+.chief-interface .chief-left-rail,
+.chief-interface .chief-right-rail,
+.chief-interface .chief-stage {
+  z-index: 2;
+}
+
+.chief-interface .chief-left-rail,
+.chief-interface .chief-right-rail {
+  position: relative;
+}
+
+.chief-interface.has-workspace .chief-core-slot,
+.chief-interface.is-reduced-motion .chief-core-slot {
+  display: none;
+}
+
 .chief-interface .chief-stage {
   grid-area: stage;
   position: relative;

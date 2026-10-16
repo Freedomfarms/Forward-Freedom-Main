@@ -1,4 +1,5 @@
 import environmentUrl from "./chief-environment.webp";
+import { ChiefIntelligenceCore } from "../../visual/chiefIntelligence/ChiefIntelligenceCore.jsx";
 import "./ChiefInterface.css";
 
 const SYSTEM_ROWS = [
@@ -218,6 +219,11 @@ export function ChiefInterface({
 
   return (
     <main className={rootClass} style={{ "--chief-environment": `url("${environmentUrl}")` }}>
+      {workspace || reducedMotion ? null : (
+        <div className="chief-core-slot">
+          <ChiefIntelligenceCore state={state} />
+        </div>
+      )}
       <header className="chief-topbar">
         <button
           type="button"

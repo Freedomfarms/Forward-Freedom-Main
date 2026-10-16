@@ -57,6 +57,9 @@ test("CHIEF home mounts the supplied interface on the existing conversation path
   assert.doesNotMatch(css, /margin-top:\s*-/);
   assert.match(face, /phase-\$\{phase\}/);
   assert.doesNotMatch(face, /chief-ring-field|chief-core-field|JarvisOrb/);
+  assert.match(face, /ChiefIntelligenceCore/);
+  assert.doesNotMatch(face, /ApexWorld|ApexCore3D/);
+  assert.doesNotMatch(page, /ChiefIntelligenceCore|chiefIntelligence/);
   assert.match(read("src/components/chief/useChiefVoice.js"), /setPlayback\("preparing"\)/);
   assert.match(read("src/components/chief/useChiefVoice.js"), /setPlayback\("playing"\)/);
   assert.match(read("src/components/chief/useChiefVoice.js"), /setPlayback\("idle"\)/);
