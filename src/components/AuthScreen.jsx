@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext.jsx";
 import {
   bindPendingLegalConsentEmail,
@@ -38,6 +38,7 @@ export function AuthScreen({
   const [activeDocument, setActiveDocument] = useState(null);
   const [formError, setFormError] = useState("");
   const [credentialsOpen, setCredentialsOpen] = useState(() => Boolean(initialForm?.email));
+  const authDetailsRef = useRef(null);
   const hasError = Boolean(formError || error);
   const feedbackId = hasError ? "auth-feedback" : notice ? "auth-notice" : undefined;
 
@@ -47,6 +48,16 @@ export function AuthScreen({
     if (error) clearError();
     if (notice) clearNotice();
   };
+
+  useEffect(() => {
+    if (!credentialsOpen) return;
+    const scroller = authDetailsRef.current;
+    const field = document.getElementById("auth-password");
+    if (!scroller || !field) return;
+    const top =
+      field.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
+    scroller.scrollTop = Math.max(0, top - 4);
+  }, [credentialsOpen]);
 
   const revealCredentials = () => {
     if (!form.email.trim() || !form.email.includes("@")) {
@@ -144,11 +155,7 @@ export function AuthScreen({
 
   return (
     <>
-      <FreedomShell
-        variant="auth"
-        orbState={isBusy ? "thinking" : "idle"}
-        webState={isBusy ? "processing" : "standby"}
-      >
+      <FreedomShell variant="auth" orbState={isBusy ? "thinking" : "idle"}>
         <header className="freedom-brand">
           <h1>FREEDOM OS</h1>
         </header>
@@ -158,157 +165,161 @@ export function AuthScreen({
           </button>
         ) : null}
         <FreedomGlass className="freedom-auth">
-          <form onSubmit={handleEmailSubmit}>
-            <FreedomStatus>{isBusy ? "Authenticating" : "IDENTIFY YOURSELF"}</FreedomStatus>
-            <div className="freedom-modes">
-              {[
-                ["login", "Sign in"],
-                ["register", "Create account"],
-              ].map(([value, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  aria-pressed={mode === value}
-                  onClick={() => {
-                    setMode(value);
-                    setFormError("");
-                    clearError();
-                    clearNotice();
-                    if (typeof onModeChange === "function") onModeChange(value);
-                  }}
-                >
-                  {label}
-                </button>
-              ))}
+          <form className="freedom-auth-form" onSubmit={handleEmailSubmit}>
+            <div className="freedom-auth-body">
+              <FreedomStatus>{isBusy ? "Authenticating" : "IDENTIFY YOURSELF"}</FreedomStatus>
+              <div className="freedom-modes">
+                {[
+                  ["login", "Sign in"],
+                  ["register", "Create account"],
+                ].map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    aria-pressed={mode === value}
+                    onClick={() => {
+                      setMode(value);
+                      setFormError("");
+                      clearError();
+                      clearNotice();
+                      if (typeof onModeChange === "function") onModeChange(value);
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
 
-            <label className="freedom-label" htmlFor="auth-email">
-              Email
-              <input
-                id="auth-email"
-                className="freedom-field"
-                type="email"
-                value={form.email}
-                onChange={(event) => updateForm("email", event.target.value)}
-                placeholder="you@example.com"
-                autoComplete="email"
-                required
-                aria-invalid={hasError && !form.email.trim() ? "true" : undefined}
-                aria-describedby={feedbackId}
-              />
-            </label>
-
-            {credentialsOpen ? (
-              <>
-                {mode === "register" ? (
-                  <label className="freedom-label" htmlFor="auth-full-name">
-                    Full name
+            <div className="freedom-auth-body" ref={authDetailsRef}>
+              <label className="freedom-label" htmlFor="auth-email">
+                Email
+                <input
+                  id="auth-email"
+                  className="freedom-field"
+                  type="email"
+                  value={form.email}
+                  onChange={(event) => updateForm("email", event.target.value)}
+                  placeholder="you@example.com"
+                  autoComplete="email"
+                  required
+                  aria-invalid={hasError && !form.email.trim() ? "true" : undefined}
+                  aria-describedby={feedbackId}
+                />
+              </label>
+              {credentialsOpen ? (
+                <>
+                  {mode === "register" ? (
+                    <label className="freedom-label" htmlFor="auth-full-name">
+                      Full name
+                      <input
+                        id="auth-full-name"
+                        className="freedom-field"
+                        type="text"
+                        value={form.fullName}
+                        onChange={(event) => updateForm("fullName", event.target.value)}
+                        placeholder="Workspace owner"
+                        autoComplete="name"
+                        required={mode === "register"}
+                        aria-invalid={hasError && !form.fullName.trim() ? "true" : undefined}
+                        aria-describedby={feedbackId}
+                      />
+                    </label>
+                  ) : null}
+                  <label className="freedom-label" htmlFor="auth-password">
+                    Password
                     <input
-                      id="auth-full-name"
+                      id="auth-password"
                       className="freedom-field"
-                      type="text"
-                      value={form.fullName}
-                      onChange={(event) => updateForm("fullName", event.target.value)}
-                      placeholder="Workspace owner"
-                      autoComplete="name"
-                      required={mode === "register"}
-                      aria-invalid={hasError && !form.fullName.trim() ? "true" : undefined}
+                      type="password"
+                      value={form.password}
+                      onChange={(event) => updateForm("password", event.target.value)}
+                      placeholder={mode === "register" ? "Choose a secure password" : "Password"}
+                      autoComplete={mode === "register" ? "new-password" : "current-password"}
+                      required
+                      aria-invalid={hasError && !form.password ? "true" : undefined}
                       aria-describedby={feedbackId}
                     />
                   </label>
-                ) : null}
-                <label className="freedom-label" htmlFor="auth-password">
-                  Password
-                  <input
-                    id="auth-password"
-                    className="freedom-field"
-                    type="password"
-                    value={form.password}
-                    onChange={(event) => updateForm("password", event.target.value)}
-                    placeholder={mode === "register" ? "Choose a secure password" : "Password"}
-                    autoComplete={mode === "register" ? "new-password" : "current-password"}
-                    required
-                    aria-invalid={hasError && !form.password ? "true" : undefined}
-                    aria-describedby={feedbackId}
-                  />
-                </label>
-              </>
-            ) : null}
+                </>
+              ) : null}
 
-            <label className="freedom-consent" htmlFor="auth-legal-consent">
-              <input
-                id="auth-legal-consent"
-                type="checkbox"
-                checked={agreedToLegal}
-                onChange={(event) => {
-                  setAgreedToLegal(event.target.checked);
-                  if (formError) setFormError("");
-                }}
-                required
-                aria-invalid={hasError && !agreedToLegal ? "true" : undefined}
-                aria-describedby={feedbackId}
-              />
-              <span>
-                I agree to the{" "}
+              <label className="freedom-consent" htmlFor="auth-legal-consent">
+                <input
+                  id="auth-legal-consent"
+                  type="checkbox"
+                  checked={agreedToLegal}
+                  onChange={(event) => {
+                    setAgreedToLegal(event.target.checked);
+                    if (formError) setFormError("");
+                  }}
+                  required
+                  aria-invalid={hasError && !agreedToLegal ? "true" : undefined}
+                  aria-describedby={feedbackId}
+                />
+                <span>
+                  I agree to the{" "}
+                  <button
+                    type="button"
+                    className="freedom-inline"
+                    onClick={() => setActiveDocument("terms")}
+                  >
+                    Terms of Service
+                  </button>{" "}
+                  and{" "}
+                  <button
+                    type="button"
+                    className="freedom-inline"
+                    onClick={() => setActiveDocument("privacy")}
+                  >
+                    Privacy Policy
+                  </button>
+                  , including connected-account data handling through Plaid.
+                </span>
+              </label>
+
+              {formError || error ? (
+                <div id="auth-feedback" className="freedom-alert" role="alert">
+                  {formError || error}
+                </div>
+              ) : null}
+              {notice ? (
+                <div id="auth-notice" className="freedom-notice" role="status" aria-live="polite">
+                  {notice}
+                </div>
+              ) : null}
+              {credentialsOpen && mode === "login" ? (
                 <button
                   type="button"
-                  className="freedom-inline"
-                  onClick={() => setActiveDocument("terms")}
+                  className="chief-text-button freedom-auth-reset"
+                  disabled={isBusy}
+                  onClick={() => {
+                    void handlePasswordReset();
+                  }}
                 >
-                  Terms of Service
-                </button>{" "}
-                and{" "}
-                <button
-                  type="button"
-                  className="freedom-inline"
-                  onClick={() => setActiveDocument("privacy")}
-                >
-                  Privacy Policy
+                  Send password reset
                 </button>
-                , including connected-account data handling through Plaid.
-              </span>
-            </label>
+              ) : null}
+            </div>
 
-            {formError || error ? (
-              <div id="auth-feedback" className="freedom-alert" role="alert">
-                {formError || error}
-              </div>
-            ) : null}
-            {notice ? (
-              <div id="auth-notice" className="freedom-notice" role="status" aria-live="polite">
-                {notice}
-              </div>
-            ) : null}
-
-            <FreedomButton
-              type="button"
-              variant="quiet"
-              onClick={handleGoogleSignIn}
-              disabled={isBusy}
-            >
-              Continue with Google
-            </FreedomButton>
-
-            {credentialsOpen ? (
-              <FreedomButton type="submit" disabled={isBusy}>
-                {isBusy ? "Working..." : mode === "register" ? "Create access" : "Enter"}
-              </FreedomButton>
-            ) : (
-              <FreedomButton type="submit">Continue</FreedomButton>
-            )}
-
-            {credentialsOpen && mode === "login" ? (
-              <button
+            <div className="freedom-auth-actions">
+              <FreedomButton
                 type="button"
-                className="chief-text-button"
+                variant="quiet"
+                onClick={handleGoogleSignIn}
                 disabled={isBusy}
-                onClick={() => {
-                  void handlePasswordReset();
-                }}
               >
-                Send password reset
-              </button>
-            ) : null}
+                Continue with Google
+              </FreedomButton>
+
+              {credentialsOpen ? (
+                <FreedomButton type="submit" disabled={isBusy}>
+                  {isBusy ? "Working..." : mode === "register" ? "Create access" : "Enter"}
+                </FreedomButton>
+              ) : (
+                <FreedomButton type="submit">Continue</FreedomButton>
+              )}
+            </div>
           </form>
         </FreedomGlass>
       </FreedomShell>

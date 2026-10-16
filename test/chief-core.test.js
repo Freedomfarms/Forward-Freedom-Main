@@ -167,10 +167,21 @@ test("the homepage sandbox does not enter the CHIEF room", () => {
   assert.doesNotMatch(page, /ChiefCore|chiefCore/);
   assert.match(atmosphere, /visual\/chiefCore\/ChiefCore/);
   assert.doesNotMatch(atmosphere, /import .*ApexWorld|import .*ApexCore3D|import .*ApexClock/);
-  assert.match(home, /<FreedomShell preview>/);
+  assert.match(home, /<FreedomShell>/);
+  assert.doesNotMatch(home, /ChiefAtmosphere|ChiefCore/);
   assert.match(auth, /FreedomShell/);
   assert.match(auth, /signInWithEmail/);
-  assert.match(shell, /layout=\{variant === "auth" \? "auth" : "home"\}/);
+  assert.match(shell, /ChiefIntelligenceCore/);
+  assert.match(shell, /showCore && !reducedMotion/);
+  assert.match(shell, /prefers-reduced-motion: reduce/);
+  assert.doesNotMatch(shell, /ChiefAtmosphere|chiefCore\/ChiefCore/);
+  const app = read("src/App.jsx");
+  assert.match(app, /<FreedomShell showCore=\{false\} \/>/);
+  const css = read("src/components/freedom/freedom.css");
+  assert.match(css, /\.freedom-core-slot\s*\{[^}]*inset:\s*0;/);
+  assert.match(css, /chief-intelligence-core canvas[\s\S]*width:\s*100%/);
+  assert.match(css, /chief-intelligence-core canvas[\s\S]*height:\s*100%/);
+  assert.doesNotMatch(css, /@media \(min-width: 1280px\)/);
   assert.doesNotMatch(scene, /@react-three|useFrame|supabase|plaid|TurnMachine|firebase/i);
   assert.equal(scene.split("requestAnimationFrame").length - 1, 1);
 

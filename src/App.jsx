@@ -93,7 +93,7 @@ function AppLoadingScreen({ message = "Loading secure workspace..." }) {
   return (
     <div role="status" aria-busy="true">
       <span className="chief-sr">{message}</span>
-      <FreedomShell />
+      <FreedomShell showCore={false} />
     </div>
   );
 }

@@ -38,8 +38,8 @@ test("signed-out / is the public homepage", () => {
   assert.equal(resolveAppRoute("/").kind, "public-home");
   assert.match(homeSource, /export function PublicFreedomOsHome/);
   assert.match(homeSource, /FreedomShell/);
-  assert.match(homeSource, /Enter Freedom OS/);
-  assert.match(homeSource, /Create account/);
+  assert.match(homeSource, /Sign In/);
+  assert.match(homeSource, /Create Account/);
   assert.match(appSource, /navigateApp\("\/login"\)/);
   assert.match(appSource, /navigateApp\("\/signup"\)/);
 });
