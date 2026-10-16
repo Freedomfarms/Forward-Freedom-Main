@@ -256,18 +256,19 @@ export function createFilamentMaterial(uniforms) {
       varying float vLayer;
       void main() {
         float pace = max(uPace, 0.4);
-        float spine = pow(clamp(1.0 - abs(vSide), 0.0, 1.0), 1.2);
+        float spine = pow(clamp(1.0 - abs(vSide), 0.0, 1.0), 1.7);
         float travel = 0.58 + 0.42 * sin(vAlong * 28.0 - uTime * (0.28 + pace * 0.16) + vSeed);
         float dye = fract(sin(vSeed * 12.9898) * 43758.5453);
-        vec3 shell = mix(uBlue, uCyan, smoothstep(0.2, 0.62, dye));
-        shell = mix(shell, uViolet, smoothstep(0.58, 0.92, dye));
-        vec3 inner = mix(uViolet, uMagenta, smoothstep(0.18, 0.78, dye));
+        vec3 shell = mix(uBlue, uCyan, smoothstep(0.1, 0.75, dye));
+        shell = mix(shell, uViolet, smoothstep(0.88, 1.0, dye) * 0.35);
+        vec3 inner = mix(uBlue, uViolet, smoothstep(0.0, 0.42, dye));
+        inner = mix(inner, uMagenta, smoothstep(0.48, 0.9, dye));
         vec3 strand = mix(shell, inner, vLayer);
-        float point = smoothstep(0.055, 0.0, vRadius);
-        strand = mix(strand, vec3(0.9, 0.96, 1.0), point * (0.4 + spine * 0.6));
-        strand *= (0.7 + spine * 0.45) * (0.82 + travel * 0.2);
-        float alpha = (0.18 + spine * 0.46) * (0.78 + travel * 0.22);
-        alpha *= mix(1.12, 0.92, vLayer);
+        float point = smoothstep(0.06, 0.0, vRadius);
+        strand = mix(strand, vec3(0.96, 0.98, 1.0), point);
+        strand *= (0.5 + spine * 0.95) * (0.8 + travel * 0.24);
+        float alpha = (0.1 + spine * 0.68) * (0.8 + travel * 0.18);
+        alpha *= mix(1.22, 0.58, vLayer);
         gl_FragColor = vec4(strand, alpha);
       }
     `,
@@ -304,8 +305,8 @@ function createHeartMaterial(uniforms) {
       varying vec3 vNormal;
       varying vec3 vView;
       void main() {
-        float facing = pow(clamp(dot(normalize(vNormal), normalize(vView)), 0.0, 1.0), 2.6);
-        vec3 color = mix(uCyan, vec3(1.0), 0.2 + facing * 0.8);
+        float facing = pow(clamp(dot(normalize(vNormal), normalize(vView)), 0.0, 1.0), 2.2);
+        vec3 color = mix(uCyan, vec3(1.0), facing);
         gl_FragColor = vec4(color, facing);
       }
     `,
@@ -334,7 +335,7 @@ export function createFilamentCore(uniforms) {
   lattice.renderOrder = 2;
   root.add(lattice);
 
-  const heartGeometry = new THREE.SphereGeometry(0.026, 24, 16);
+  const heartGeometry = new THREE.SphereGeometry(0.045, 24, 16);
   const heart = new THREE.Mesh(heartGeometry, createHeartMaterial(uniforms));
   heart.name = "filament-heart";
   heart.frustumCulled = false;
