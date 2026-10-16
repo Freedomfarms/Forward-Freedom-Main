@@ -10,10 +10,12 @@ import {
   SUSPENDED_FRAME_MS,
   createQualityState,
   drawingBufferSize,
+  gpuTimerMilliseconds,
   isSoftwareRenderer,
   measureFrame,
   nextEffectiveCap,
   observeFrame,
+  recordFrame,
 } from "../src/visual/chiefIntelligence/filamentQuality.js";
 
 test("hardware and unknown renderers keep the approved desktop quality", () => {
@@ -111,6 +113,12 @@ test("drawing buffers use the css size once at desktop, phone, and after rotatio
   assert.equal(fractional.bufferWidth, Math.floor(390 * 0.75));
   assert.equal(fractional.bufferHeight, Math.floor(845 * 0.75));
   assert.notEqual(fractional.bufferWidth, Math.floor(fractional.bufferWidth * 0.75));
+  for (const size of [desktop, retina, phone, turned, fractional]) {
+    assert.equal(Math.floor(size.cssWidth * size.dpr), Math.round(size.cssWidth * size.dpr));
+    assert.equal(Math.floor(size.cssHeight * size.dpr), Math.round(size.cssHeight * size.dpr));
+    assert.equal(size.bufferWidth, Math.floor(size.cssWidth * size.dpr));
+    assert.equal(size.bufferHeight, Math.floor(size.cssHeight * size.dpr));
+  }
 });
 
 test("an approved hardware name still steps down to the floor and does not recover", () => {
@@ -170,4 +178,74 @@ test("warmup, the 12-frame streak, and cooldown ignore spikes and suspension", (
   const duringCooldown = state.dprCap;
   for (let i = 0; i < ADAPT_COOLDOWN; i += 1) observeFrame(state, 80, 2, true);
   assert.equal(state.dprCap, duringCooldown);
+});
+
+test("pending timer queries do not extend a confirmed slow streak", () => {
+  const state = createQualityState("NVIDIA GeForce RTX 4070");
+  state.warmup = 0;
+  for (let i = 0; i < SLOW_FRAME_LIMIT - 1; i += 1) {
+    assert.equal(recordFrame(state, 48, 55, true, 2), false);
+    assert.equal(recordFrame(state, 70, null, true, 2), false);
+    assert.equal(state.slowFrames, i + 1);
+  }
+  assert.equal(state.adaptations, 0);
+  assert.equal(state.dprCap, PREMIUM_DPR_CAP);
+  for (let i = 0; i < 30; i += 1) {
+    assert.equal(recordFrame(state, 90, null, true, 2), false);
+  }
+  assert.equal(state.slowFrames, SLOW_FRAME_LIMIT - 1);
+  assert.equal(state.dprCap, PREMIUM_DPR_CAP);
+  assert.equal(recordFrame(state, 48, 55, true, 2), true);
+  assert.equal(state.dprCap, 1.25);
+  assert.equal(state.adaptations, 1);
+});
+
+test("a confirmed slow streak steps once and a fast confirmed frame clears it", () => {
+  const state = createQualityState("Apple GPU");
+  state.warmup = 0;
+  for (let i = 0; i < SLOW_FRAME_LIMIT - 1; i += 1) {
+    assert.equal(recordFrame(state, 16, 50, true, 2), false);
+  }
+  assert.equal(recordFrame(state, 12, 8, true, 2), false);
+  assert.equal(state.slowFrames, 0);
+  assert.equal(state.dprCap, PREMIUM_DPR_CAP);
+  for (let i = 0; i < SLOW_FRAME_LIMIT; i += 1) {
+    const stepped = recordFrame(state, 16, 42, true, 2);
+    assert.equal(stepped, i === SLOW_FRAME_LIMIT - 1);
+  }
+  assert.equal(state.dprCap, 1.25);
+});
+
+test("disjoint timer readings are discarded and cannot step quality", () => {
+  assert.equal(gpuTimerMilliseconds(false, false, 55_000_000), null);
+  assert.equal(gpuTimerMilliseconds(true, true, 5_000_000_000), null);
+  assert.equal(gpuTimerMilliseconds(true, false, Number.NaN), null);
+  assert.equal(gpuTimerMilliseconds(true, false, 55_000_000), 55);
+
+  const state = createQualityState("ANGLE (Apple, Apple M1, OpenGL 4.1)");
+  state.warmup = 0;
+  for (let i = 0; i < 6; i += 1) recordFrame(state, 20, 48, true, 2);
+  assert.equal(state.slowFrames, 6);
+  for (let i = 0; i < SLOW_FRAME_LIMIT + 5; i += 1) {
+    const discarded = gpuTimerMilliseconds(true, true, 8_000_000_000);
+    assert.equal(recordFrame(state, 120, discarded, true, 2), false);
+  }
+  assert.equal(state.slowFrames, 6);
+  assert.equal(state.dprCap, PREMIUM_DPR_CAP);
+  assert.equal(state.adaptations, 0);
+});
+
+test("suspension and resume do not count as slow frames", () => {
+  const state = createQualityState("NVIDIA GeForce RTX 4070");
+  state.warmup = 0;
+  for (let i = 0; i < 6; i += 1) recordFrame(state, 18, 46, true, 2);
+  assert.equal(recordFrame(state, 0, 46, true, 2), false);
+  assert.equal(recordFrame(state, SUSPENDED_FRAME_MS, 12, false, 2), false);
+  assert.equal(recordFrame(state, 4_000, 12, true, 2), false);
+  assert.equal(state.slowFrames, 6);
+  assert.equal(state.dprCap, PREMIUM_DPR_CAP);
+  for (let i = 0; i < 5; i += 1) recordFrame(state, 18, 46, true, 2);
+  assert.equal(state.dprCap, PREMIUM_DPR_CAP);
+  assert.equal(recordFrame(state, 18, 46, true, 2), true);
+  assert.equal(state.dprCap, 1.25);
 });

@@ -34,6 +34,27 @@ export function createQualityState(rendererName) {
   };
 }
 
+// Three.js floors the drawing buffer and rounds the viewport from the same
+// product. When that product ends in .5 or above, those two sizes disagree
+// by one pixel. Nudge the ratio down into the range where floor and round
+// land on the same buffer, without crossing into the next smaller pixel.
+function ratioForMatchingViewport(cssWidth, cssHeight, requested) {
+  const splits = [cssWidth, cssHeight].some((css) => {
+    const product = css * requested;
+    return Math.floor(product) !== Math.round(product);
+  });
+  if (!splits) return requested;
+  let low = 0;
+  let high = Number.POSITIVE_INFINITY;
+  for (const css of [cssWidth, cssHeight]) {
+    const target = Math.floor(css * requested);
+    low = Math.max(low, target / css);
+    high = Math.min(high, (target + 0.5) / css);
+  }
+  if (!(low < high)) return requested;
+  return (low + high) / 2;
+}
+
 // CSS pixels in, drawing-buffer pixels out. The ratio is applied once to the
 // CSS size. Calling this again with the same CSS size cannot compound.
 export function drawingBufferSize(cssWidth, cssHeight, devicePixelRatio, dprCap) {
@@ -41,7 +62,7 @@ export function drawingBufferSize(cssWidth, cssHeight, devicePixelRatio, dprCap)
   const height = Math.max(0, Math.round(Number(cssHeight) || 0));
   const ratio = Number.isFinite(devicePixelRatio) && devicePixelRatio > 0 ? devicePixelRatio : 1;
   const cap = Number.isFinite(dprCap) && dprCap > 0 ? dprCap : ratio;
-  const dpr = Math.min(ratio, cap);
+  const dpr = ratioForMatchingViewport(width, height, Math.min(ratio, cap));
   return {
     cssWidth: width,
     cssHeight: height,
@@ -61,8 +82,15 @@ export function nextEffectiveCap(cap, devicePixelRatio) {
   return cap;
 }
 
-// `gpuMs` is null while a timer query is still pending. Without a timer,
-// the frame gap itself is the measurement and can reset the slow streak.
+// Available + not disjoint yields milliseconds. Pending, disjoint, and
+// non-finite readings yield null so they cannot become a confirmed sample.
+export function gpuTimerMilliseconds(available, disjoint, elapsedNs) {
+  if (!available || disjoint || !Number.isFinite(elapsedNs)) return null;
+  return elapsedNs / 1e6;
+}
+
+// `gpuMs` is null while a timer query is still pending or was discarded as
+// disjoint. Without a timer, the frame gap itself is the measurement.
 // Returns null for the first frame, the frame after a resume, and gaps long
 // enough to be a suspended tab rather than a render.
 export function measureFrame(rawMs, gpuMs, hasTimer) {
@@ -72,6 +100,14 @@ export function measureFrame(rawMs, gpuMs, hasTimer) {
   if (hasTimer && Number.isFinite(gpuMs) && gpuMs >= SUSPENDED_FRAME_MS) return null;
   if (pending || !hasTimer) return { sample: rawMs, confirmed: !pending };
   return { sample: Math.max(rawMs, gpuMs), confirmed: true };
+}
+
+// Same decision renderFrame uses. A null measurement (resume or suspension)
+// does not touch the slow streak.
+export function recordFrame(state, rawMs, gpuMs, hasTimer, devicePixelRatio) {
+  const measured = measureFrame(rawMs, gpuMs, hasTimer);
+  if (!measured) return false;
+  return observeFrame(state, measured.sample, devicePixelRatio, measured.confirmed);
 }
 
 // Mutates state. Returns true when the drawing-buffer cap changed.
@@ -86,8 +122,12 @@ export function observeFrame(state, frameMs, devicePixelRatio, confirmed = true)
     state.cooldown -= 1;
     return false;
   }
+  // Pending and disjoint readings are unconfirmed. They must not extend the
+  // slow streak or step the cap, and they must not erase a streak that a
+  // later confirmed sample will finish.
+  if (!confirmed) return false;
   if (!(frameMs > SLOW_FRAME_MS)) {
-    if (confirmed) state.slowFrames = 0;
+    state.slowFrames = 0;
     return false;
   }
   state.slowFrames += 1;

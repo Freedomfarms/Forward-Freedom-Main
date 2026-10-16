@@ -7,9 +7,9 @@ import { FILAMENT_ANCHOR_Y, FILAMENT_COLORS, createFilamentCore } from "./filame
 import {
   createQualityState,
   drawingBufferSize,
-  measureFrame,
-  observeFrame,
+  gpuTimerMilliseconds,
   probeWebGLRenderer,
+  recordFrame,
 } from "./filamentQuality.js";
 
 const IDLE_RADIUS = 0.58;
@@ -103,12 +103,15 @@ export class ChiefIntelligenceEngine {
 
     this.onContextLost = (event) => {
       event.preventDefault();
-      this.running = false;
-      if (this.raf) cancelAnimationFrame(this.raf);
-      this.raf = 0;
+      this.dropGpuQuery();
+      this.pause();
     };
     this.onContextRestored = () => {
-      if (!this.disposed) this.start();
+      if (this.disposed) return;
+      this.gpuTimer = this.liveContext()?.getExtension("EXT_disjoint_timer_query_webgl2") || null;
+      this.viewDpr = 0;
+      this.resize();
+      this.start();
     };
     canvas.addEventListener("webglcontextlost", this.onContextLost);
     canvas.addEventListener("webglcontextrestored", this.onContextRestored);
@@ -194,10 +197,14 @@ export class ChiefIntelligenceEngine {
     const raw = this.last ? now - this.last : 0;
     const dt = raw ? Math.min(raw / 1000, 0.05) : 0.016;
     this.last = now;
-    const measured = measureFrame(raw, this.takeGpuSample(), Boolean(this.gpuTimer));
     if (
-      measured &&
-      observeFrame(this.quality, measured.sample, window.devicePixelRatio || 1, measured.confirmed)
+      recordFrame(
+        this.quality,
+        raw,
+        this.takeGpuSample(),
+        Boolean(this.gpuTimer),
+        window.devicePixelRatio || 1
+      )
     ) {
       this.resize();
     }
@@ -213,36 +220,87 @@ export class ChiefIntelligenceEngine {
     this.queueFrame();
   }
 
+  liveContext() {
+    const gl = this.renderer?.getContext?.();
+    if (!gl || gl.isContextLost?.()) return null;
+    return gl;
+  }
+
+  dropGpuQuery() {
+    this.gpuOpened = false;
+    this.gpuQuery = null;
+    this.gpuTimer = null;
+  }
+
+  releaseGpuQuery() {
+    const query = this.gpuQuery;
+    const opened = this.gpuOpened;
+    const timer = this.gpuTimer;
+    this.gpuOpened = false;
+    this.gpuQuery = null;
+    const gl = this.liveContext();
+    if (!gl || !query) return;
+    try {
+      if (opened && timer) gl.endQuery(timer.TIME_ELAPSED_EXT);
+      gl.deleteQuery(query);
+    } catch {
+      // The context may already be lost.
+    }
+  }
+
   takeGpuSample() {
     const timer = this.gpuTimer;
     const query = this.gpuQuery;
-    if (!timer || !query) return null;
-    const gl = this.renderer.getContext();
-    if (!gl.getQueryParameter(query, gl.QUERY_RESULT_AVAILABLE)) return null;
-    this.gpuQuery = null;
-    let sample = null;
-    if (!gl.getParameter(timer.GPU_DISJOINT_EXT)) {
-      sample = gl.getQueryParameter(query, gl.QUERY_RESULT) / 1e6;
+    const gl = this.liveContext();
+    if (!timer || !query || !gl) return null;
+    let available;
+    try {
+      available = Boolean(gl.getQueryParameter(query, gl.QUERY_RESULT_AVAILABLE));
+    } catch {
+      this.dropGpuQuery();
+      return null;
     }
-    gl.deleteQuery(query);
-    return sample;
+    if (!available) return null;
+    this.gpuQuery = null;
+    let elapsed = null;
+    let disjoint;
+    try {
+      disjoint = Boolean(gl.getParameter(timer.GPU_DISJOINT_EXT));
+      if (!disjoint) elapsed = gl.getQueryParameter(query, gl.QUERY_RESULT);
+      gl.deleteQuery(query);
+    } catch {
+      return null;
+    }
+    return gpuTimerMilliseconds(true, disjoint, elapsed);
   }
 
   beginGpuQuery() {
     this.gpuOpened = false;
     if (!this.gpuTimer || this.gpuQuery) return;
-    const gl = this.renderer.getContext();
+    const gl = this.liveContext();
+    if (!gl) return;
     const query = gl.createQuery();
     if (!query) return;
     this.gpuQuery = query;
     this.gpuOpened = true;
-    gl.beginQuery(this.gpuTimer.TIME_ELAPSED_EXT, query);
+    try {
+      gl.beginQuery(this.gpuTimer.TIME_ELAPSED_EXT, query);
+    } catch {
+      this.dropGpuQuery();
+    }
   }
 
   endGpuQuery() {
     if (!this.gpuOpened) return;
+    const timer = this.gpuTimer;
     this.gpuOpened = false;
-    this.renderer.getContext().endQuery(this.gpuTimer.TIME_ELAPSED_EXT);
+    const gl = this.liveContext();
+    if (!gl || !timer) return;
+    try {
+      gl.endQuery(timer.TIME_ELAPSED_EXT);
+    } catch {
+      this.dropGpuQuery();
+    }
   }
 
   advance(dt) {
@@ -290,17 +348,7 @@ export class ChiefIntelligenceEngine {
     window.removeEventListener("pageshow", this.onPageShow);
     window.removeEventListener("pointermove", this.onPointer);
     this.observer?.disconnect();
-    if (this.renderer) {
-      try {
-        const gl = this.renderer.getContext();
-        if (this.gpuOpened && this.gpuTimer) gl.endQuery(this.gpuTimer.TIME_ELAPSED_EXT);
-        if (this.gpuQuery) gl.deleteQuery(this.gpuQuery);
-      } catch {
-        // The context may already be lost.
-      }
-      this.gpuOpened = false;
-      this.gpuQuery = null;
-    }
+    this.releaseGpuQuery();
     this.core?.userData.disposeCore?.();
     this.renderer?.dispose();
     this.scene = null;
