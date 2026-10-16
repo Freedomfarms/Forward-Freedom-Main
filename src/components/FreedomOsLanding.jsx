@@ -445,18 +445,16 @@ export function PublicFreedomOsHome({ onSignIn, onCreateAccount, onExploreFreedo
 
   return (
     <ErrorBoundary>
-      <FreedomShell preview>
+      <FreedomShell>
         <header className="freedom-brand">
           <h1>FREEDOM OS</h1>
-          <p className="freedom-mission">
-            Your autonomous operating system for life, work, and wealth.
-          </p>
+          <p className="freedom-mission">A unified personal intelligence system.</p>
         </header>
         <div className="freedom-actions">
           <div className="freedom-actions-row">
-            <FreedomButton onClick={onSignIn}>Enter Freedom OS</FreedomButton>
+            <FreedomButton onClick={onSignIn}>Sign In</FreedomButton>
             <FreedomButton variant="quiet" onClick={onCreateAccount}>
-              Create account
+              Create Account
             </FreedomButton>
           </div>
           <div className="freedom-links">

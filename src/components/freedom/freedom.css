@@ -1,13 +1,13 @@
-/* Homepage and login host the ChiefCore sandbox. CHIEF keeps its own
-   selectors so this file cannot restyle that screen. */
+/* Public entry shell. The filament core fills this viewport the same way
+   CHIEF's conversation slot does. Branding sits in the clear band above the
+   sphere and authentication sits in the clear band below it. */
 
 .freedom-shell {
   position: relative;
   height: 100vh;
   height: 100dvh;
-  min-height: 620px;
   overflow: hidden;
-  background: #04080f;
+  background: #070b1c;
   color: #f0ede8;
   font-family:
     system-ui,
@@ -17,12 +17,19 @@
     sans-serif;
 }
 
-.freedom-shell--auth .freedom-brand {
-  padding: 0 88px;
+.freedom-core-slot {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
 }
 
-.freedom-shell--auth .freedom-brand h1 {
-  font-size: clamp(22px, 4vw, 42px);
+.freedom-shell .chief-intelligence-core,
+.freedom-shell .chief-intelligence-core canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: transparent;
 }
 
 .freedom-brand {
@@ -30,8 +37,8 @@
   z-index: 24;
   left: 0;
   right: 0;
-  top: clamp(78px, 12vh, 108px);
-  padding: 0 24px;
+  top: max(10px, env(safe-area-inset-top, 0px));
+  padding: 0 72px;
   text-align: center;
   pointer-events: none;
   animation: freedom-in 700ms ease both;
@@ -40,9 +47,9 @@
 .freedom-brand h1 {
   margin: 0;
   font-weight: 500;
-  font-size: clamp(28px, 5.4vw, 64px);
-  letter-spacing: 0.18em;
-  line-height: 0.95;
+  font-size: clamp(22px, 4vw, 40px);
+  letter-spacing: 0.22em;
+  line-height: 1;
   color: #f0ede8;
   text-shadow:
     0 0 12px rgba(240, 237, 232, 0.22),
@@ -50,33 +57,25 @@
 }
 
 .freedom-mission {
-  margin: 14px auto 0;
+  margin: 8px auto 0;
   max-width: 34ch;
   color: rgba(240, 237, 232, 0.72);
-  font-size: 15px;
-  line-height: 1.5;
-}
-
-.chief-core-boot {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  background:
-    radial-gradient(ellipse at 50% 42%, rgba(88, 28, 135, 0.42), transparent 28%),
-    radial-gradient(ellipse at 50% 42%, rgba(255, 244, 255, 0.14), transparent 10%), #07040f;
+  font-size: 13px;
+  line-height: 1.4;
 }
 
 .freedom-actions {
   position: absolute;
   z-index: 24;
   left: 50%;
-  top: auto;
-  bottom: max(28px, env(safe-area-inset-bottom, 0px));
+  bottom: max(10px, env(safe-area-inset-bottom, 0px));
   transform: translateX(-50%);
   width: min(560px, calc(100% - 24px));
+  max-height: calc(20dvh - env(safe-area-inset-bottom, 0px));
+  overflow: auto;
   display: grid;
   justify-items: center;
-  gap: 14px;
+  gap: 10px;
   animation: freedom-in 700ms ease both;
 }
 
@@ -91,7 +90,7 @@
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 8px 16px;
+  gap: 4px 16px;
 }
 
 .freedom-links .chief-text-button {
@@ -103,14 +102,14 @@
 
 .freedom-glass {
   display: grid;
-  gap: 14px;
-  padding: 16px 16px 14px;
+  gap: 10px;
+  padding: 12px 14px 10px;
   border: 1px solid rgba(167, 139, 250, 0.28);
-  border-radius: 22px;
-  background: rgba(5, 16, 28, 0.42);
-  backdrop-filter: blur(18px) saturate(1.15);
+  border-radius: 18px;
+  background: rgba(8, 6, 18, 0.55);
+  backdrop-filter: blur(16px) saturate(1.1);
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.28);
-  color: #e7f7ff;
+  color: #f6f0ff;
 }
 
 .freedom-glass .chief-action,
@@ -121,23 +120,91 @@
   font-weight: 700;
 }
 
-.freedom-auth {
+.freedom-glass.freedom-auth {
+  display: flex;
+  flex-direction: column;
   position: absolute;
   z-index: 24;
   left: 50%;
-  bottom: max(12px, env(safe-area-inset-bottom, 0px));
+  bottom: max(10px, env(safe-area-inset-bottom, 0px));
   transform: translateX(-50%);
   width: min(420px, calc(100% - 24px));
-  max-height: min(42dvh, 440px);
-  overflow: auto;
+  max-height: calc(22dvh - env(safe-area-inset-bottom, 0px));
+  overflow: hidden;
   animation: freedom-in 700ms ease both;
+}
+
+.freedom-auth-form {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 6px;
+  min-height: 0;
+  max-height: calc(22dvh - env(safe-area-inset-bottom, 0px) - 22px);
+  overflow: hidden;
+}
+
+.freedom-auth-form > .freedom-auth-body:first-child {
+  gap: 4px;
+  overflow: visible;
+}
+
+.freedom-auth .freedom-status {
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.freedom-auth .freedom-modes button {
+  min-height: 26px;
+  padding: 2px 0;
+}
+
+.freedom-auth .freedom-field {
+  padding: 4px 2px 6px;
+}
+
+.freedom-auth-form > .freedom-auth-body:nth-child(2) {
+  min-height: 0;
+  overflow: auto;
+}
+
+.freedom-auth-body {
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(192, 132, 252, 0.75) transparent;
+}
+
+.freedom-auth-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 8px;
+}
+
+.freedom-auth-actions .chief-action {
+  flex: 1 1 0;
+  min-width: 0;
+  width: auto;
+  min-height: 34px;
+  padding: 0 8px;
+  letter-spacing: 0.06em;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.freedom-auth-reset {
+  flex: 1 0 100%;
+  min-height: 28px;
+  text-align: center;
 }
 
 .freedom-return {
   position: absolute;
   z-index: 31;
-  top: 18px;
-  right: 18px;
+  top: max(12px, env(safe-area-inset-top, 0px));
+  right: 16px;
   letter-spacing: 0.16em;
   text-transform: uppercase;
   font-size: 12px;
@@ -156,8 +223,7 @@
 }
 
 .freedom-auth form {
-  display: grid;
-  gap: 14px;
+  gap: 0;
 }
 
 .freedom-auth .chief-text-button {
@@ -179,8 +245,8 @@
   font-weight: 700;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  min-height: 36px;
-  padding: 6px 0;
+  min-height: 32px;
+  padding: 4px 0;
   cursor: pointer;
 }
 
@@ -191,7 +257,7 @@
 
 .freedom-label {
   display: grid;
-  gap: 6px;
+  gap: 4px;
   color: rgba(223, 246, 255, 0.62);
   font-size: 11px;
   font-weight: 600;
@@ -206,7 +272,7 @@
   border-radius: 0;
   background: transparent;
   color: #f3fbff;
-  padding: 10px 2px 12px;
+  padding: 8px 2px 8px;
   font: inherit;
   font-size: 16px;
   font-weight: 500;
@@ -230,7 +296,7 @@
   align-items: flex-start;
   color: rgba(231, 247, 255, 0.78);
   font-size: 12px;
-  line-height: 1.5;
+  line-height: 1.45;
   letter-spacing: 0;
   text-transform: none;
   font-weight: 500;
@@ -262,7 +328,14 @@
 }
 
 .freedom-auth .chief-action {
-  width: 100%;
+  min-height: 36px;
+}
+
+.freedom-shell button:focus-visible,
+.freedom-shell input:focus-visible,
+.freedom-shell a:focus-visible {
+  outline: 2px solid #c084fc;
+  outline-offset: 3px;
 }
 
 @keyframes freedom-in {
@@ -274,62 +347,30 @@
   }
 }
 
-@media (min-width: 1000px) {
-  .freedom-brand {
-    top: clamp(36px, 7vh, 72px);
-  }
-}
-
-@media (min-width: 1280px) {
-  .freedom-auth {
-    left: auto;
-    right: max(28px, 4vw);
-    top: 50%;
-    bottom: auto;
-    transform: translateY(-50%);
-    width: min(360px, 28vw);
-    max-height: calc(100dvh - 80px);
-  }
-}
-
-@media (max-height: 820px) {
-  .freedom-brand {
-    top: max(14px, env(safe-area-inset-top, 0px));
-  }
-
-  .freedom-brand h1 {
-    font-size: clamp(22px, 4vw, 34px);
-  }
-
-  .freedom-mission {
-    margin-top: 8px;
-    font-size: 13px;
-  }
-
-  .freedom-actions {
-    top: auto;
-    bottom: max(12px, env(safe-area-inset-bottom, 0px));
-    gap: 8px;
-  }
-}
-
 @media (max-width: 720px) {
-  .freedom-actions {
-    width: calc(100% - 16px);
-  }
-
-  .freedom-actions .chief-action {
-    width: 100%;
+  .freedom-brand {
+    padding: 0 64px;
   }
 
   .freedom-brand h1 {
-    font-size: clamp(26px, 9vw, 40px);
-    letter-spacing: 0.12em;
+    letter-spacing: 0.14em;
   }
 
+  .freedom-actions,
   .freedom-auth {
     width: calc(100% - 16px);
-    max-height: min(46dvh, 420px);
+  }
+}
+
+@media (max-height: 1040px) {
+  .freedom-mission {
+    display: none;
+  }
+}
+
+@media (max-height: 700px) {
+  .freedom-brand h1 {
+    font-size: 22px;
   }
 }
 
