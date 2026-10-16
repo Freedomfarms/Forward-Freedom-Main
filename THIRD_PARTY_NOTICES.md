@@ -302,6 +302,20 @@ Conventions used in this repository:
   philosophy, human-in-the-loop reversibility rules) inform CHIEF's design, as recorded in
   the audit.
 
+## jarvis-ai-web-animation (cyber1443)
+
+- Package: `jarvis-ai-web-animation@0.1.2`
+- Repository: https://github.com/cyber1443/jarvis-ai-orb-web-animation
+- Commit: `8af5ad1d43cfac6b464203dba13aadfa6c7f6f8a` (published source; `src/` matches this commit)
+- License: MIT, Copyright (c) 2026 cyber1443
+- Use in this repository: the published `JarvisOrb` component on the CHIEF homepage.
+  The renderer, shaders, and geometry are the package build. They are not reimplemented here.
+- Live demo configuration used on the homepage: `examples/basic/src/App.tsx` `?hero=1`
+  (`size="hero"`, `palette="cyan"`, `state="thinking"`, `interactive`, `draggableSpin`, 560px).
+  Page background `#050913` is `examples/basic/index.html`. Quality stays the component default (`auto`).
+- Full license text: `licenses/jarvis-ai-web-animation-LICENSE-MIT.txt` (also at
+  `src/third_party/jarvis-ai-web-animation/LICENSE`).
+
 ## APEX-UI (Ruben Mouradian / Reznikov Engineering)
 
 - Repository: https://github.com/RubenM1990/APEX-UI
@@ -352,3 +366,4 @@ plan is explicit:
 | `@modelcontextprotocol/sdk`                             | MIT        | Planned — MCP tool client (Phase 4)                                                              |
 | `cron-parser` (`^5.10.1`, depends on `luxon`, MIT)      | MIT        | **Installed (Phase 5)** — cron evaluation, `server/chief/scheduler/schedule.js`                  |
 | `three`, `react-force-graph-3d`, `react-force-graph-2d` | MIT        | Planned — cortex-map runtime dependencies (Phase 7)                                              |
+| `jarvis-ai-web-animation` (`0.1.2`)                     | MIT        | **Installed** — published `JarvisOrb` on the CHIEF homepage                                      |

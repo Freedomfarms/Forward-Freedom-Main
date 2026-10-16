@@ -1,3 +1,4 @@
+import { JarvisOrb } from "jarvis-ai-web-animation";
 import footerUrl from "./chief-footer.webp";
 import sceneUrl from "./chief-scene.webp";
 import "./ChiefInterface.css";
@@ -324,15 +325,24 @@ export function ChiefInterface({
       </nav>
 
       <section className="chief-stage" aria-label="CHIEF">
-        <div className="chief-scene-frame">
-          <div className="chief-scene-plate">
-            <img className="chief-scene" src={sceneUrl} alt="" draggable="false" />
-            <img className="chief-core-field" src={sceneUrl} alt="" draggable="false" />
-            <i className="chief-core-wash" />
-            <img className="chief-ring-field" src={sceneUrl} alt="" draggable="false" />
-            <i className="chief-ring-flow" />
+        {workspace ? (
+          <div className="chief-scene-frame">
+            <div className="chief-scene-plate">
+              <img className="chief-scene" src={sceneUrl} alt="" draggable="false" />
+              <img className="chief-core-field" src={sceneUrl} alt="" draggable="false" />
+              <i className="chief-core-wash" />
+              <img className="chief-ring-field" src={sceneUrl} alt="" draggable="false" />
+              <i className="chief-ring-flow" />
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="chief-jarvis-frame">
+            {/* examples/basic hero view (?hero=1): 560px, cyan, thinking, interactive, draggableSpin. */}
+            <div className="chief-jarvis-orb">
+              <JarvisOrb size="hero" palette="cyan" state="thinking" interactive draggableSpin />
+            </div>
+          </div>
+        )}
 
         {workspace ? <div className="chief-workspace-slot">{workspace}</div> : null}
 
