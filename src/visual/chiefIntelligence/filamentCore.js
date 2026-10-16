@@ -1,8 +1,6 @@
-// Two layers, not a filled tangle. The shell is a few dozen long blue
-// and cyan paths. The interior is a smaller set of violet and magenta
-// paths with open space between them. A shared random field was filling
-// every direction, so the sphere read as spaghetti and the dark pockets
-// disappeared.
+// Independent arcs in four radius bands. A few dozen long paths read as
+// an empty cage: the luminous volume comes from many short arcs, each
+// with its own heading, packed through the shell and the interior.
 
 import * as THREE from "three";
 
@@ -14,15 +12,11 @@ export const FILAMENT_COLORS = Object.freeze({
   cyan: 0x5ce8ff,
 });
 
-const SHELL_FLOWS = Object.freeze([
-  Object.freeze({ count: 32, radius: 0.99, steps: 42, step: 0.042, tilt: 0.12, turn: 0.012, seed: 3 }),
-  Object.freeze({ count: 22, radius: 0.95, steps: 36, step: 0.046, tilt: 0.62, turn: 0.016, seed: 11 }),
-  Object.freeze({ count: 14, radius: 0.91, steps: 30, step: 0.05, tilt: -0.4, turn: 0.018, seed: 17 }),
-]);
-
-const INNER_CLUSTERS = Object.freeze([
-  Object.freeze({ count: 16, axis: Object.freeze([0.2, 0.25, 0.9]), spread: 0.7, min: 0.52, max: 0.68, steps: 34, step: 0.05, tilt: 0.35, turn: 0.07, seed: 29, branch: 0.45 }),
-  Object.freeze({ count: 12, axis: Object.freeze([-0.55, -0.15, 0.75]), spread: 0.55, min: 0.34, max: 0.5, steps: 30, step: 0.048, tilt: -0.25, turn: 0.1, seed: 43, branch: 0.8 }),
+const BANDS = Object.freeze([
+  Object.freeze({ count: 1500, min: 0.9, max: 1, steps: 10, step: 0.09, seed: 5, dive: 0.22, branch: 0.28, layer: 0, floor: 0.74, ceiling: 1, turn: 0.05 }),
+  Object.freeze({ count: 900, min: 0.55, max: 0.86, steps: 9, step: 0.095, seed: 19, dive: 0.32, branch: 0.34, layer: 1, floor: 0.3, ceiling: 0.9, turn: 0.06 }),
+  Object.freeze({ count: 480, min: 0.26, max: 0.54, steps: 8, step: 0.09, seed: 37, dive: 0.16, branch: 0.3, layer: 1, floor: 0.14, ceiling: 0.6, turn: 0.07 }),
+  Object.freeze({ count: 220, min: 0.08, max: 0.24, steps: 6, step: 0.08, seed: 101, dive: 0, branch: 0, layer: 1, floor: 0.05, ceiling: 0.28, turn: 0.05 }),
 ]);
 
 function mulberry32(seed) {
@@ -40,40 +34,29 @@ function normalize(v) {
   return [v[0] / length, v[1] / length, v[2] / length];
 }
 
-function clusterStart(axis, spread, radius, tilt, rand) {
-  const aim = normalize(axis);
-  const up = Math.abs(aim[1]) > 0.85 ? [1, 0, 0] : [0, 1, 0];
-  const tangent = normalize([
-    aim[1] * up[2] - aim[2] * up[1],
-    aim[2] * up[0] - aim[0] * up[2],
-    aim[0] * up[1] - aim[1] * up[0],
-  ]);
-  const bitangent = normalize([
-    aim[1] * tangent[2] - aim[2] * tangent[1],
-    aim[2] * tangent[0] - aim[0] * tangent[2],
-    aim[0] * tangent[1] - aim[1] * tangent[0],
-  ]);
-  const dir = normalize([
-    aim[0] + tangent[0] * (rand() - 0.5) * spread + bitangent[0] * (rand() - 0.5) * spread,
-    aim[1] + tangent[1] * (rand() - 0.5) * spread + bitangent[1] * (rand() - 0.5) * spread,
-    aim[2] + tangent[2] * (rand() - 0.5) * spread + bitangent[2] * (rand() - 0.5) * spread,
-  ]);
-  return {
-    dir,
-    tangent: normalize(rotateAround(tangent, dir, tilt)),
-    radius,
-  };
+function direction(rand) {
+  const z = rand() * 2 - 1;
+  const theta = rand() * Math.PI * 2;
+  const ring = Math.sqrt(Math.max(0, 1 - z * z));
+  return [ring * Math.cos(theta), ring * Math.sin(theta), z];
 }
 
-function shellStart(index, count, radius, tilt, rand) {
-  const height = Math.cos(((index + 0.5) / count) * Math.PI) * 0.8;
-  const ring = Math.sqrt(Math.max(0, 1 - height * height));
-  const theta = index * 2.399963 + (rand() - 0.5) * 0.35;
-  const dir = normalize([Math.cos(theta) * ring, height, Math.sin(theta) * ring]);
-  let tangent = normalize([-Math.sin(theta), 0, Math.cos(theta)]);
-  const lean = tilt * (index % 2 === 0 ? 1 : -1);
-  tangent = normalize(rotateAround(tangent, dir, lean));
-  return { dir, tangent, radius: radius * (0.985 + rand() * 0.015) };
+function tangentFrame(dir, rand) {
+  const up = Math.abs(dir[1]) > 0.85 ? [1, 0, 0] : [0, 1, 0];
+  let tx = dir[1] * up[2] - dir[2] * up[1];
+  let ty = dir[2] * up[0] - dir[0] * up[2];
+  let tz = dir[0] * up[1] - dir[1] * up[0];
+  const length = Math.hypot(tx, ty, tz) || 1;
+  tx /= length;
+  ty /= length;
+  tz /= length;
+  const bx = dir[1] * tz - dir[2] * ty;
+  const by = dir[2] * tx - dir[0] * tz;
+  const bz = dir[0] * ty - dir[1] * tx;
+  const angle = rand() * Math.PI * 2;
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  return [tx * cos + bx * sin, ty * cos + by * sin, tz * cos + bz * sin];
 }
 
 function rotateAround(vector, axis, angle) {
@@ -165,40 +148,44 @@ function pushStrand(buffers, points, seed, layer) {
 
 function createLatticeGeometry() {
   const buffers = { position: [], next: [], side: [], along: [], seed: [], layer: [] };
-  for (const family of SHELL_FLOWS) {
+  for (const family of BANDS) {
     const rand = mulberry32(family.seed);
     for (let index = 0; index < family.count; index += 1) {
-      const start = shellStart(index, family.count, family.radius, family.tilt, rand);
-      const phase = rand() * Math.PI * 2;
-      const arc = traceArc(start.dir, start.tangent, start.radius, family.steps, family.step, 0, phase, family.turn, 0.88, 1);
-      pushStrand(buffers, arc.points, phase, 0);
-    }
-  }
-  for (const family of INNER_CLUSTERS) {
-    const rand = mulberry32(family.seed);
-    for (let index = 0; index < family.count; index += 1) {
+      const dir = direction(rand);
+      const tangent = tangentFrame(dir, rand);
       const radius = family.min + rand() * (family.max - family.min);
-      const start = clusterStart(family.axis, family.spread, radius, family.tilt, rand);
+      const diving = rand() < family.dive;
+      const drift = diving ? -0.01 - rand() * 0.016 : 0;
       const phase = rand() * Math.PI * 2;
-      const drift = (index % 2 === 0 ? -1 : 1) * 0.004;
-      const arc = traceArc(start.dir, start.tangent, radius, family.steps, family.step, drift, phase, family.turn, 0.24, 0.72);
-      pushStrand(buffers, arc.points, phase + 1.4, 1);
+      const arc = traceArc(
+        dir,
+        tangent,
+        radius,
+        family.steps,
+        family.step,
+        drift,
+        phase,
+        family.turn,
+        family.floor,
+        family.ceiling
+      );
+      pushStrand(buffers, arc.points, phase, family.layer);
       if (rand() < family.branch) {
-        const turn = (rand() < 0.5 ? -1 : 1) * (0.7 + rand() * 0.35);
-        const branchTangent = normalize(rotateAround(arc.forward, arc.heading, turn));
+        const split = (rand() < 0.5 ? -1 : 1) * (0.65 + rand() * 0.4);
+        const branchTangent = normalize(rotateAround(arc.forward, arc.heading, split));
         const branch = traceArc(
           arc.heading,
           branchTangent,
           arc.reach,
-          12,
-          family.step * 0.85,
-          -0.012,
-          phase + 2.1,
-          0.06,
-          0.2,
-          0.72
+          8,
+          family.step,
+          -0.014,
+          phase + 1.7,
+          family.turn,
+          Math.max(0.06, family.floor - 0.12),
+          family.ceiling
         );
-        pushStrand(buffers, branch.points, phase + 2.4, 1);
+        pushStrand(buffers, branch.points, phase + 0.4, family.layer);
       }
     }
   }
@@ -269,18 +256,18 @@ export function createFilamentMaterial(uniforms) {
       varying float vLayer;
       void main() {
         float pace = max(uPace, 0.4);
-        float spine = pow(clamp(1.0 - abs(vSide), 0.0, 1.0), 1.45);
-        float travel = 0.62 + 0.38 * sin(vAlong * 22.0 - uTime * (0.24 + pace * 0.16) + vSeed);
+        float spine = pow(clamp(1.0 - abs(vSide), 0.0, 1.0), 1.2);
+        float travel = 0.58 + 0.42 * sin(vAlong * 28.0 - uTime * (0.28 + pace * 0.16) + vSeed);
         float dye = fract(sin(vSeed * 12.9898) * 43758.5453);
-        vec3 shell = mix(uBlue, uCyan, smoothstep(0.32, 0.78, dye));
-        vec3 inner = mix(uViolet, uMagenta, smoothstep(0.2, 0.75, dye));
-        inner = mix(inner, uMagenta, smoothstep(0.52, 0.28, vRadius) * 0.55);
+        vec3 shell = mix(uBlue, uCyan, smoothstep(0.2, 0.62, dye));
+        shell = mix(shell, uViolet, smoothstep(0.58, 0.92, dye));
+        vec3 inner = mix(uViolet, uMagenta, smoothstep(0.18, 0.78, dye));
         vec3 strand = mix(shell, inner, vLayer);
-        float point = smoothstep(0.035, 0.0, vRadius);
-        strand = mix(strand, vec3(0.86, 0.95, 1.0), point * spine);
-        strand *= (0.72 + spine * 0.4) * (0.84 + travel * 0.16);
-        float alpha = (0.42 + spine * 0.5) * (0.86 + travel * 0.14);
-        alpha *= mix(1.0, 0.86, vLayer);
+        float point = smoothstep(0.055, 0.0, vRadius);
+        strand = mix(strand, vec3(0.9, 0.96, 1.0), point * (0.4 + spine * 0.6));
+        strand *= (0.7 + spine * 0.45) * (0.82 + travel * 0.2);
+        float alpha = (0.18 + spine * 0.46) * (0.78 + travel * 0.22);
+        alpha *= mix(1.12, 0.92, vLayer);
         gl_FragColor = vec4(strand, alpha);
       }
     `,
@@ -317,7 +304,7 @@ function createHeartMaterial(uniforms) {
       varying vec3 vNormal;
       varying vec3 vView;
       void main() {
-        float facing = pow(clamp(dot(normalize(vNormal), normalize(vView)), 0.0, 1.0), 3.2);
+        float facing = pow(clamp(dot(normalize(vNormal), normalize(vView)), 0.0, 1.0), 2.6);
         vec3 color = mix(uCyan, vec3(1.0), 0.2 + facing * 0.8);
         gl_FragColor = vec4(color, facing);
       }
@@ -347,7 +334,7 @@ export function createFilamentCore(uniforms) {
   lattice.renderOrder = 2;
   root.add(lattice);
 
-  const heartGeometry = new THREE.SphereGeometry(0.02, 24, 16);
+  const heartGeometry = new THREE.SphereGeometry(0.026, 24, 16);
   const heart = new THREE.Mesh(heartGeometry, createHeartMaterial(uniforms));
   heart.name = "filament-heart";
   heart.frustumCulled = false;

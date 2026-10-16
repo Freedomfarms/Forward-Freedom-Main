@@ -56,7 +56,7 @@ test("the homepage core is one purple filament ball outside the login scene", as
   const lattice = core.getObjectByName("filament-volume");
   assert.equal(lattice.geometry.index, null);
   const count = lattice.geometry.attributes.position.count;
-  assert.ok(count > 8000 && count < 50000, `filament count ${count}`);
+  assert.ok(count > 100000, `filament count ${count}`);
   assert.doesNotMatch(filaments, /TubeGeometry|Points\(|Sprite|uCamLocal/);
   core.userData.disposeCore();
 });
