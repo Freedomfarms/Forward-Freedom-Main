@@ -235,43 +235,47 @@ export function ChiefInterface({
         </div>
 
         <div className="chief-top-actions">
-          <p className={`chief-header-status is-${statusTone}`}>
-            <i />
-            <span>{status}</span>
-          </p>
-          {modelControl ? <div className="chief-header-model">{modelControl}</div> : null}
-          {onSearch ? (
-            <form className="chief-search" role="search" onSubmit={submitSearch}>
-              <Icon name="search" size={16} />
-              <input
-                name="q"
-                type="search"
-                placeholder="Search conversations"
-                aria-label="Search conversations"
-                enterKeyHint="search"
-              />
-            </form>
-          ) : null}
-          {onNotifications ? (
-            <button
-              type="button"
-              className="chief-icon-button"
-              onClick={onNotifications}
-              aria-label="Notifications"
-            >
-              <Icon name="bell" size={18} />
-            </button>
-          ) : null}
-          {onProfile ? (
-            <button
-              type="button"
-              className="chief-profile"
-              onClick={onProfile}
-              aria-label="Settings"
-            >
-              {profileMark ? profileMark.slice(0, 2) : <Icon name="user" size={18} />}
-            </button>
-          ) : null}
+          <div className="chief-header-cluster">
+            <p className={`chief-header-status is-${statusTone}`}>
+              <i />
+              <span>{status}</span>
+            </p>
+            {modelControl ? <div className="chief-header-model">{modelControl}</div> : null}
+          </div>
+          <div className="chief-header-tools">
+            {onSearch ? (
+              <form className="chief-search" role="search" onSubmit={submitSearch}>
+                <Icon name="search" size={16} />
+                <input
+                  name="q"
+                  type="search"
+                  placeholder="Search conversations"
+                  aria-label="Search conversations"
+                  enterKeyHint="search"
+                />
+              </form>
+            ) : null}
+            {onNotifications ? (
+              <button
+                type="button"
+                className="chief-icon-button"
+                onClick={onNotifications}
+                aria-label="Notifications"
+              >
+                <Icon name="bell" size={18} />
+              </button>
+            ) : null}
+            {onProfile ? (
+              <button
+                type="button"
+                className="chief-profile"
+                onClick={onProfile}
+                aria-label="Settings"
+              >
+                {profileMark ? profileMark.slice(0, 2) : <Icon name="user" size={18} />}
+              </button>
+            ) : null}
+          </div>
         </div>
       </header>
 
