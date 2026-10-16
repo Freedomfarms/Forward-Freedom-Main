@@ -12,6 +12,7 @@ import { CHIEF_COMPACTION_TOKENS, CHIEF_KEEP_RECENT_TOKENS } from "../runtime/co
 import { PrismaCheckpointStore } from "../runtime/checkpoint.js";
 import { createContextAssembler, lastTurnUserText } from "./assemble.js";
 import { renderConversationMove, settleReply } from "./behavior.js";
+import { buildInvestigationBrief } from "./investigate.js";
 import {
   isDelegationConversationReply,
   isDelegationFollowUp,
@@ -113,8 +114,14 @@ export function createChiefTurnServices({
         prepared = null;
       }
       const section = renderContextPackage(pack);
+      const brief = buildInvestigationBrief({
+        query,
+        plan: pack?.plan ?? null,
+        items: pack?.items ?? [],
+        transcript: turn?.transcript ?? null,
+      });
       const move = renderConversationMove(turn?.transcript, query);
-      return [prompt, section, move].filter(Boolean).join("\n\n");
+      return [prompt, section, brief, move].filter(Boolean).join("\n\n");
     },
     compaction: { atTokens, keepRecentTokens },
     memory,

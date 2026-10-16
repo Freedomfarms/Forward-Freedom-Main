@@ -2,8 +2,8 @@
 //
 // Each scenario calls the current exported functions and scores them against
 // the intended pass criteria from the 16 Oct 2026 roadmap. The assertions lock
-// today's pass/fail record. A failing check is a recorded gap, not a production
-// change. This file does not open a network connection, a database, or a model.
+// the latest reviewed pass/fail record. This file does not open a network
+// connection, a database, or a model.
 
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -396,59 +396,19 @@ function wastefulInvestigation() {
   };
 }
 
-// Locked after the Phase 1 run on 16 Oct 2026. Phase 2 updated the intent rows
-// (ambiguous follow-up and generic rewrite) after those functions changed.
+// Locked after the Phase 1 run on 16 Oct 2026. Phase 2 updated the intent rows.
+// Phase 3 and Phase 4 closed the remaining recorded gaps on 16 Oct 2026.
 export const INTELLIGENCE_BASELINE = Object.freeze([
-  {
-    id: "ambiguous-follow-up",
-    pass: false,
-    failed: ["oak-fact-excluded"],
-  },
-  {
-    id: "earlier-conversation",
-    pass: false,
-    failed: ["episodic-gate-opens"],
-  },
-  {
-    id: "different-wording",
-    pass: false,
-    failed: ["oak-fact-excluded"],
-  },
-  {
-    id: "multiple-sources",
-    pass: false,
-    failed: ["decision-episode-searched", "decision-survives-unguarded-price"],
-  },
-  {
-    id: "authorized-read",
-    pass: false,
-    failed: ["code-tool-planned", "prior-conversation-searched"],
-  },
-  {
-    id: "conflicting-evidence",
-    pass: false,
-    failed: ["both-episodes-considered"],
-  },
-  {
-    id: "insufficient-evidence",
-    pass: true,
-    failed: [],
-  },
-  {
-    id: "simple-question",
-    pass: false,
-    failed: ["no-tool-call-kept"],
-  },
-  {
-    id: "generic-rewrite",
-    pass: true,
-    failed: [],
-  },
-  {
-    id: "wasteful-investigation",
-    pass: true,
-    failed: [],
-  },
+  { id: "ambiguous-follow-up", pass: true, failed: [] },
+  { id: "earlier-conversation", pass: true, failed: [] },
+  { id: "different-wording", pass: true, failed: [] },
+  { id: "multiple-sources", pass: true, failed: [] },
+  { id: "authorized-read", pass: true, failed: [] },
+  { id: "conflicting-evidence", pass: true, failed: [] },
+  { id: "insufficient-evidence", pass: true, failed: [] },
+  { id: "simple-question", pass: true, failed: [] },
+  { id: "generic-rewrite", pass: true, failed: [] },
+  { id: "wasteful-investigation", pass: true, failed: [] },
 ]);
 
 function compact(card) {
@@ -464,12 +424,12 @@ test("phase 1 fixtures cover ten classes and match the locked scorecard", () => 
   assert.deepEqual(compact(card), INTELLIGENCE_BASELINE);
 });
 
-test("phase 1 failure list is the locked gap record", () => {
+test("the locked scorecard matches the latest reviewed gaps", () => {
   const failures = compact(evaluateIntelligenceFixtures()).filter((row) => row.pass === false);
   assert.deepEqual(
     failures,
     INTELLIGENCE_BASELINE.filter((row) => row.pass === false)
   );
-  assert.equal(failures.length, 7);
-  assert.equal(INTELLIGENCE_BASELINE.filter((row) => row.pass).length, 3);
+  assert.equal(failures.length, 0);
+  assert.equal(INTELLIGENCE_BASELINE.filter((row) => row.pass).length, 10);
 });

@@ -6,10 +6,10 @@
 // read here.
 
 import { lexicalRank } from "../runtime/recall.js";
-import { keywordRank, rankFacts } from "./rrf.js";
+import { rankFacts } from "./rrf.js";
 import { isSnapshotFact, isStaleFact } from "./qualify.js";
 import { isStandingPreference } from "./provenance.js";
-import { embedText, semanticSimilarity } from "./semantic.js";
+import { embedText, expandedOverlap, semanticSimilarity } from "./semantic.js";
 
 export const MEMORY_LAYER = Object.freeze({
   WORKING: "WORKING",
@@ -19,25 +19,38 @@ export const MEMORY_LAYER = Object.freeze({
 
 export const PERSONAL_MIN_SIMILARITY = 0.34;
 export const EPISODE_MIN_SIMILARITY = 0.34;
+export const PERSONAL_OVERLAP_MIN = 0.15;
+export const EPISODE_OVERLAP_MIN = 0.15;
 export const EPISODE_LIMIT = 3;
+const SCORE_TIE = 0.05;
 const STANDING_LIMIT = 3;
 
 const EPISODIC_REQUEST =
   /\b(earlier|previously|last time|before|we (?:discussed|fixed|talked)|why can(?:not|'t)|remember when|past conversation|dealt with|used to|go back to|what happened)\b/i;
 
+const EARLIER_DECISION =
+  /\b(?:decid(?:e|ed|ing)|decision|since we|last talked|worth selling)\b/i;
+
+const KEEP_OR_SELL =
+  /\bkeep(?:ing)?\b[^.]{0,80}\bsell(?:ing)?\b|\bsell(?:ing)?\b[^.]{0,80}\bkeep(?:ing)?\b/i;
+
 const CODE_REQUEST = /\b(codebase|source code|implemented in|which file|current source)\b/i;
+
+const CODE_PATH =
+  /(?:^|[\s`'"(])(?:[\w.-]+\/)+[\w.-]+\.(?:js|jsx|mjs|cjs|ts|tsx|py|go|rs|sql|prisma)\b/i;
 const WEB_REQUEST =
   /\b(news|headline|current events|web search)\b|\b(?:price|market)\b.*\b(?:today|current|right now|latest)\b|\b(?:today|current|right now|latest)\b.*\b(?:price|market)\b/i;
 const FINANCE_REQUEST =
   /\b(how much|how many|worth|balance|net worth|holdings?|mortgage|own|owns|price)\b/i;
 
 export function needsEpisodicMemory(query) {
-  return EPISODIC_REQUEST.test(String(query ?? ""));
+  const text = String(query ?? "");
+  return EPISODIC_REQUEST.test(text) || EARLIER_DECISION.test(text) || KEEP_OR_SELL.test(text);
 }
 
 export function authoritativeDomain(query) {
   const text = String(query ?? "");
-  if (CODE_REQUEST.test(text)) return "code";
+  if (CODE_REQUEST.test(text) || CODE_PATH.test(text)) return "code";
   if (WEB_REQUEST.test(text)) return "web";
   if (FINANCE_REQUEST.test(text)) return "finance";
   return null;
@@ -58,9 +71,9 @@ export function selectPersonalFacts(query, facts, { limit = 5, now = new Date() 
   const standing = usable.filter((fact) => isStandingPreference(fact)).slice(0, STANDING_LIMIT);
   const matched = new Map();
   for (const fact of standing) matched.set(fact.content, fact);
-  for (const fact of keywordRank(query, usable)) matched.set(fact.content, fact);
   for (const fact of usable) {
-    if (semanticSimilarity(query, fact.content) >= PERSONAL_MIN_SIMILARITY) {
+    if (matched.has(fact.content)) continue;
+    if (expandedOverlap(query, fact.content) >= PERSONAL_OVERLAP_MIN) {
       matched.set(fact.content, fact);
     }
   }
@@ -74,6 +87,11 @@ export function selectPersonalFacts(query, facts, { limit = 5, now = new Date() 
 
 function episodeText(episode) {
   return `${episode?.title ?? ""}\n${episode?.content ?? ""}`.trim();
+}
+
+function decisionBoost(query, text) {
+  if (!/\b(?:decid(?:e|ed|ing)|decision)\b/i.test(query)) return 0;
+  return /\b(?:decid(?:e|ed|ing)|decision)\b/i.test(text) ? 0.6 : 0;
 }
 
 export function rankEpisodes(
@@ -94,16 +112,24 @@ export function rankEpisodes(
     const text = episodeText(episode);
     const semantic = semanticSimilarity(query, text, embed);
     const lexical = lexicalRank(query, text);
-    if (semantic < minSimilarity && lexical <= 0) continue;
+    const overlap = expandedOverlap(query, text);
+    if (overlap < EPISODE_OVERLAP_MIN && lexical <= 0) continue;
+    if (overlap < EPISODE_OVERLAP_MIN && semantic < minSimilarity) continue;
     const updated = new Date(episode.updatedAt ?? 0);
     const ageMs = Math.max(0, now.getTime() - updated.getTime());
     const recency = Math.exp((-Math.LN2 * ageMs) / (14 * 24 * 60 * 60 * 1000));
     const importance = Number.isFinite(episode.importance) ? episode.importance : 0.5;
-    const score = semantic + lexical * 0.5 + recency * 0.15 + importance * 0.25;
+    const score =
+      overlap +
+      lexical * 0.5 +
+      Math.max(0, semantic) * 0.1 +
+      recency * 0.15 +
+      importance * 0.25 +
+      decisionBoost(query, text);
     ranked.push({ episode, score, semantic, lexical, recency, importance });
   }
   ranked.sort((left, right) => {
-    if (left.score !== right.score) return right.score - left.score;
+    if (Math.abs(left.score - right.score) > SCORE_TIE) return right.score - left.score;
     const leftTime = new Date(left.episode.updatedAt ?? 0).getTime();
     const rightTime = new Date(right.episode.updatedAt ?? 0).getTime();
     if (leftTime !== rightTime) return rightTime - leftTime;

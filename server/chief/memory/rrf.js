@@ -12,6 +12,8 @@
 // and there is no embedding index. rankFacts points this function at a
 // keyword ranking and a recency ranking of the same fact list.
 
+import { expandedTokens } from "./semantic.js";
+
 export function reciprocalRankFusion(rankedLists, { k = 60, weights = null } = {}) {
   const lists = rankedLists ?? [];
   const listWeights = weights ?? lists.map(() => 1);
@@ -52,14 +54,13 @@ function asResult(fact) {
 }
 
 export function keywordRank(query, facts) {
-  const terms = String(query ?? "")
-    .toLowerCase()
-    .split(/\s+/)
-    .filter((term) => term.length > 2);
+  const terms = expandedTokens(query);
+  if (terms.size === 0) return [];
   return facts
     .map((fact) => {
-      const haystack = factContent(fact).toLowerCase();
-      const score = terms.reduce((sum, term) => sum + (haystack.includes(term) ? 1 : 0), 0);
+      const haystack = expandedTokens(factContent(fact));
+      let score = 0;
+      for (const term of terms) if (haystack.has(term)) score += 1;
       return { fact, score };
     })
     .filter((row) => row.score > 0)

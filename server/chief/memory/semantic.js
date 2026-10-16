@@ -1,10 +1,15 @@
-// Local embeddings for CHIEF episodic and personal recall.
+// Local similarity for CHIEF episodic and personal recall.
 //
 // chief_fact.embedding and chief_knowledge_entity.embedding already exist for
 // pgvector, and fact text is encrypted, so Postgres cannot rank fact bodies.
 // This hasher runs in process over text the caller already decrypted or over
-// ChiefSession.recallDocument. A provider embedder can be passed in later.
-// No second database and no new vector service.
+// ChiefSession.recallDocument. No second database and no new vector service.
+//
+// A hosted embedding API is not called. Decrypted facts and conversation text
+// stay in this process. expandedOverlap is the relevance signal. embedText
+// remains a local token hash for callers that already pass an embed function.
+// It is not a neural embedding, and hash collisions are not enough to include
+// an unrelated fact.
 
 const DIMENSIONS = 128;
 
@@ -52,6 +57,10 @@ const SYNONYM_GROUPS = [
   ["house", "home", "mortgage"],
   ["prefer", "preference", "concise", "brief", "short"],
   ["fix", "fixed", "repair", "repaired"],
+  ["cabin", "vacation", "property", "lake"],
+  ["decide", "decided", "deciding", "decision"],
+  ["sell", "selling", "sale"],
+  ["keep", "keeping", "kept"],
 ];
 
 const SYNONYMS = new Map();
@@ -106,6 +115,15 @@ export function cosineSimilarity(left, right) {
   }
   if (leftNorm === 0 || rightNorm === 0) return 0;
   return dot / Math.sqrt(leftNorm * rightNorm);
+}
+
+export function expandedOverlap(leftText, rightText) {
+  const left = expandedTokens(leftText);
+  const right = expandedTokens(rightText);
+  if (left.size === 0 || right.size === 0) return 0;
+  let shared = 0;
+  for (const token of left) if (right.has(token)) shared += 1;
+  return shared / left.size;
 }
 
 export function semanticSimilarity(left, right, embed = embedText) {
