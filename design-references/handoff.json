@@ -1,0 +1,61 @@
+{
+  "name": "Freedom OS — CHIEF Prototype Draft 4",
+  "version": "draft-4-cursor-handoff",
+  "purpose": "Source handoff metadata; not runtime configuration",
+  "entry": "index.html",
+  "reference": "freedom-chief-prototype-draft-4.html",
+  "runtimeDependencies": [],
+  "buildRequired": false,
+  "design": {
+    "animation": "Draft 1",
+    "palette": "lightning blue",
+    "sphereDesign": "Draft 2",
+    "sphereMotion": "centered",
+    "panels": "six staggered entrances; remain visible",
+    "defaultDurationMs": 5800,
+    "optionalDurationMs": 8000
+  },
+  "integrationStatus": "Standalone prototype; existing application integration required",
+  "verified": [
+    "JavaScript syntax",
+    "Exact source extraction",
+    "Original reference unchanged",
+    "Local asset references"
+  ],
+  "remainingVerification": [
+    "Full browser layout",
+    "Live Freedom OS integration"
+  ],
+  "files": [
+    {
+      "name": "README.md",
+      "bytes": 5060,
+      "sha256": "c1c7f43f34b5b9cff14df192b0ef465984f46411c48925dffab4b839d48c7beb"
+    },
+    {
+      "name": "CURSOR_PROMPT.md",
+      "bytes": 4652,
+      "sha256": "55ac954f6718186d2bb3489825d1785866ab3c28b94e50cff6844c692f098a30"
+    },
+    {
+      "name": "index.html",
+      "bytes": 5911,
+      "sha256": "19726f2f1d87641a3186dfcde7f5678e3de9a8313bfcafa367b7031f3ce47067"
+    },
+    {
+      "name": "chief-intro.css",
+      "bytes": 10058,
+      "sha256": "d720dda0d9d5a042a78e55d19a5131a57a0fa07c0df6a773dea614ee6b514a16"
+    },
+    {
+      "name": "chief-intro.js",
+      "bytes": 13039,
+      "sha256": "70396dc5419049606ad861e60ebb0579be324437438da30ea9638681d21522cf"
+    },
+    {
+      "name": "freedom-chief-prototype-draft-4.html",
+      "bytes": 28970,
+      "sha256": "375c869c5f0d5a0fa846cfa9685dd5f8d7347f1752b59e5b0568788ead3794d9"
+    }
+  ]
+}
