@@ -182,6 +182,7 @@ test("the home path stops speech without starting the microphone", () => {
   assert.match(stop, /voice\.stopSpeaking\(\)/);
   assert.doesNotMatch(stop, /toggleListening|stopActiveTurn|abortRef/);
   assert.match(page, /onStopSpeech=\{stopSpeech\}/);
+  assert.match(page, /rememberRevealedAnswer/);
   assert.match(page, /speechEpoch\.current \+= 1/);
   assert.match(page, /if \(speechEpoch\.current !== epoch\) return/);
   assert.match(face, /<ChiefResponseMode/);

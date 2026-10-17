@@ -1,3 +1,4 @@
+import { isRevealedAnswer } from "../../utils/chiefRevealedAnswers.js";
 import { parseChiefMarkdown } from "../../utils/chiefMarkdown.js";
 
 function InlineRun({ nodes }) {
@@ -137,9 +138,8 @@ export function ChiefTranscript({
   );
 }
 
-export function ChiefEarlierTurns({ earlier = [], showResponseText = true, revealedTexts = [] }) {
+export function ChiefEarlierTurns({ earlier = [], showResponseText = true, revealedKeys = [] }) {
   if (!earlier.length) return null;
-  const revealed = new Set(revealedTexts.map((text) => text.trim()));
   return (
     <div className="chief-earlier">
       <div className="chief-sheet-title">Earlier in this conversation</div>
@@ -148,7 +148,7 @@ export function ChiefEarlierTurns({ earlier = [], showResponseText = true, revea
           <p key={message.id} className="chief-earlier-user">
             {message.text}
           </p>
-        ) : showResponseText || revealed.has(message.text.trim()) ? (
+        ) : showResponseText || isRevealedAnswer(revealedKeys, message.text) ? (
           <div key={message.id} className="chief-earlier-chief">
             <ChiefMarkdown text={message.text} />
           </div>

@@ -39,6 +39,11 @@ import {
   writeChiefPreferences,
 } from "../../utils/chiefPreferences.js";
 import { speakCompletedReply } from "../../utils/chiefReplySpeech.js";
+import {
+  isRevealedAnswer,
+  readRevealedAnswers,
+  rememberRevealedAnswer,
+} from "../../utils/chiefRevealedAnswers.js";
 
 function errorText(error) {
   return error?.message || "CHIEF could not complete that request.";
@@ -96,7 +101,9 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
   const [archiveFocusId, setArchiveFocusId] = useState("");
   const [preferences, setPreferences] = useState(() => readChiefPreferences());
   const [speechStopped, setSpeechStopped] = useState(false);
-  const [revealedAnswers, setRevealedAnswers] = useState([]);
+  const [revealedAnswers, setRevealedAnswers] = useState(() =>
+    readRevealedAnswers(sessionUid, readChiefActiveSessionId(sessionUid))
+  );
   const [focusConversationSearch, setFocusConversationSearch] = useState(false);
   const abortRef = useRef(null);
   const busyRef = useRef(false);
@@ -138,6 +145,13 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
     preferencesRef.current = preferences;
     answerTextRef.current = turnView.answer;
   });
+
+  const revealScopeKey = `${sessionUid}:${activeSessionId || ""}`;
+  const [revealScope, setRevealScope] = useState(revealScopeKey);
+  if (revealScope !== revealScopeKey) {
+    setRevealScope(revealScopeKey);
+    setRevealedAnswers(readRevealedAnswers(sessionUid, activeSessionId));
+  }
   const activeArchived = archivedSessions.some((session) => session.sessionId === activeSessionId);
 
   function setBusyState(value) {
@@ -335,10 +349,15 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [accessOpen, settingsOpen]);
 
+  function revealStoredAnswer(text, sessionId = activeSessionIdRef.current) {
+    const saved = rememberRevealedAnswer(sessionUid, sessionId, text);
+    if (saved) setRevealedAnswers(saved);
+  }
+
   function selectSession(sessionId) {
     speechEpoch.current += 1;
     setSpeechStopped(false);
-    setRevealedAnswers([]);
+    setRevealedAnswers(readRevealedAnswers(sessionUid, sessionId));
     stopActiveTurn();
     voice.stopListening();
     voice.stopSpeaking();
@@ -359,7 +378,7 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
   function startNewConversation() {
     speechEpoch.current += 1;
     setSpeechStopped(false);
-    setRevealedAnswers([]);
+    setRevealedAnswers(readRevealedAnswers(sessionUid, null));
     stopActiveTurn();
     voice.stopListening();
     voice.stopSpeaking();
@@ -556,11 +575,7 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
     const result = await delivery.pending;
     if (speechEpoch.current !== epoch) return;
     if (result?.ok) return;
-    if (answerForReveal) {
-      setRevealedAnswers((current) =>
-        current.includes(answerForReveal) ? current : [...current, answerForReveal]
-      );
-    }
+    if (answerForReveal) revealStoredAnswer(answerForReveal, sessionIdNow);
     if (result?.reason === "aborted") setSpeechStopped(true);
   }
 
@@ -708,9 +723,7 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
   function stopSpeech() {
     voice.stopSpeaking();
     const answer = typeof answerTextRef.current === "string" ? answerTextRef.current.trim() : "";
-    if (answer) {
-      setRevealedAnswers((current) => (current.includes(answer) ? current : [...current, answer]));
-    }
+    if (answer) revealStoredAnswer(answer);
     setSpeechStopped(true);
   }
 
@@ -805,9 +818,7 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
         isLoading={historyLoading}
         notFound={notFound}
         showEmpty={showEmpty}
-        showResponseText={
-          showAssistantText || revealedAnswers.includes((turnView.answer || "").trim())
-        }
+        showResponseText={showAssistantText || isRevealedAnswer(revealedAnswers, turnView.answer)}
         onBackToList={backToConversations}
       />
       {transcriptError ? (
@@ -864,7 +875,7 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
         <ChiefEarlierTurns
           earlier={turnView.earlier}
           showResponseText={showAssistantText}
-          revealedTexts={revealedAnswers}
+          revealedKeys={revealedAnswers}
         />
       ) : null}
     </>
