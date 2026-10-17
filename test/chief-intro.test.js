@@ -350,6 +350,7 @@ test("the public intro stays scoped and leaves authentication intact", () => {
   const shell = read("src/components/freedom/FreedomShell.jsx");
   const auth = read("src/components/AuthScreen.jsx");
   const css = read("src/visual/chiefIntro/chief-intro.css");
+  const freedomCss = read("src/components/freedom/freedom.css");
   const landing = read("src/components/FreedomOsLanding.jsx");
 
   // One renderer module, cleanup-complete, no React state per frame.
@@ -391,6 +392,14 @@ test("the public intro stays scoped and leaves authentication intact", () => {
   assert.match(shell, /ChiefIntroBackdrop/);
   assert.match(auth, /FreedomShell/);
   assert.match(auth, /signInWithEmail/);
+  assert.match(auth, /freedom-auth-fields/);
+  assert.match(auth, /htmlFor="auth-password"/);
+  assert.doesNotMatch(auth, /credentialsOpen/);
+  assert.doesNotMatch(freedomCss, /22dvh/);
+  assert.match(
+    freedomCss,
+    /\.freedom-auth-fields[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\) minmax\(0, 1fr\)/
+  );
   assert.match(auth, /signUpWithEmail/);
   assert.match(auth, /requestPasswordReset/);
   assert.doesNotMatch(auth, /createChiefIntroRenderer/);
