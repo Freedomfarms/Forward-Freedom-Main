@@ -151,9 +151,11 @@ test("prior defect: a self-contained savings calculation returns $7,200 without 
       executed += 1;
     },
   });
+  const traceStore = new MemoryTraceStore();
   const result = await runTurn({
     query,
     eventBus: bus,
+    traceStore,
     tooling,
     engine: scriptedEngine([
       {
@@ -164,6 +166,10 @@ test("prior defect: a self-contained savings calculation returns $7,200 without 
   });
   assert.equal(executed, 0);
   assert.match(result.checkpoint.transcript.at(-1).content, /\$7,200/);
+  const respond = traceStore.traces[0].steps.find((step) => step.stepType === "RESPOND");
+  assert.deepEqual(respond.detail.settlementDiagnostics, [
+    { reason: "tool_suppressed_self_contained_calculation", count: 1 },
+  ]);
 });
 
 test("current home equity requires and uses an authorized live financial reading", async () => {
@@ -203,7 +209,12 @@ test("default-model answers come from configured, active, and fallback runtime m
       available: ["grok-default", "grok-fallback", "claude-active"],
     }
   );
-  const result = await runTurn({ query: "What model is default for you?", engine });
+  const traceStore = new MemoryTraceStore();
+  const result = await runTurn({
+    query: "What model is default for you?",
+    engine,
+    traceStore,
+  });
   const answer = result.checkpoint.transcript.at(-1).content;
   assert.match(answer, /configured default is Grok Default \(`grok-default`\)/);
   assert.match(answer, /automatic routing/);
@@ -211,6 +222,10 @@ test("default-model answers come from configured, active, and fallback runtime m
   assert.match(answer, /configured routing fallback is Grok Fallback \(`grok-fallback`\)/);
   assert.doesNotMatch(answer, /API_KEY|secret|credential/i);
   assert.doesNotMatch(answer, /I think I am GPT/);
+  const respond = traceStore.traces[0].steps.find((step) => step.stepType === "RESPOND");
+  assert.deepEqual(respond.detail.settlementDiagnostics, [
+    { reason: "response_rewritten_model_identity", count: 1 },
+  ]);
 });
 
 test("an authorized code read survives a heuristic-plan miss and its full findings are delivered", async () => {
@@ -259,7 +274,6 @@ test("an authorized code read survives a heuristic-plan miss and its full findin
   const respond = traceStore.traces[0].steps.find((step) => step.stepType === "RESPOND");
   assert.deepEqual(respond.detail.settlementDiagnostics, [
     { reason: "tool_plan_mismatch_preserved", count: 1 },
-    { reason: "response_rewritten_formatting", count: 1 },
   ]);
   assert.doesNotMatch(JSON.stringify(respond.detail), /selected operation|settleReply filters/);
 });

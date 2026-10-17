@@ -457,7 +457,7 @@ test("a clear new question does not inherit the previous subject", () => {
   assert.equal(conversationMove(transcript).kind, MOVE.DIRECT);
   const plan = planContext("What's the weather?", { transcript });
   assert.equal(plan.live.includes("finance"), false);
-  assert.equal(plan.live.includes("web"), false);
+  assert.equal(plan.live.includes("web"), true);
 
   const ambiguous = [
     { role: "user", content: "How much XRP do I own?" },

@@ -149,7 +149,7 @@ export function renderConversationMove(transcript, query = null) {
 }
 
 const OFFER_LINE =
-  /\b(?:would you like me to|do you want me to|want me to|i can also|let me know if you(?:'d| would) like|if you(?:'d| would) like|i(?:'d| would) be happy to)\b/i;
+  /\b(?:would you like me to|do you want me to|want me to|i can(?: also)?|let me know if you(?:'d| would) like|if you(?:'d| would) like|i(?:'d| would) be happy to)\b/i;
 
 const REPORT_OPENING =
   /^(?:certainly|of course|absolutely)[!,.]?\s+|^(?:based on (?:my |the )?(?:analysis|records|information)|here(?:'s| is) (?:a |an )?(?:comprehensive |detailed |brief )?(?:analysis|summary|overview)|i can provide (?:an |a )?(?:analysis|summary|overview))\b[^.]{0,160}[.!]?\s*/i;
@@ -253,6 +253,12 @@ function openWithAnswer(text, transcript) {
   if (!report) return original;
   let body = original.replace(REPORT_OPENING, "").trim();
   body = body.replace(REPORT_OPENING, "").trim();
+  body = body
+    .replace(
+      /^(?:based on|according to) (?:my |the )?[^.]{0,180}(?:information|analysis|records?)[^.]*\.\s*/i,
+      ""
+    )
+    .trim();
   body = body.replace(/^#{1,3}\s+(?:summary|answer|analysis|overview)\s*\n?/i, "").trim();
   return body || original;
 }
@@ -612,6 +618,31 @@ export function settleReply({
     ...(carried ? { delegation: carried, clearDelegation: false } : {}),
     diagnostics: diagnostics(),
   });
+  const pureReaction = REACTION.test(spoken(userText)) && !delegationIntent;
+  if (pureReaction) {
+    if (calls.length) note("tool_suppressed_reaction", calls.length);
+    const claimsWork = WORKFORCE_CLAIMS.some((rule) =>
+      rule.claim.test(String(text ?? ""))
+    );
+    if (claimsWork) {
+      const answer = shortReaction(userText);
+      if (answer !== String(text ?? "").trim()) note("response_rewritten_reaction");
+      return finish({ text: answer, toolCalls: [] });
+    }
+    const kept = stripOffers(stripMachinery(String(text ?? ""), transcript), transcript).trim();
+    if (CURRENT_FIGURE.test(kept)) {
+      const guarded = blockUnsupportedCurrentClaim(kept, transcript, pack);
+      if (guarded.blocked) note("response_rewritten_unsupported_current_claim", guarded.blocked);
+      const answer = guarded.text || shortReaction(userText);
+      if (answer !== String(text ?? "").trim()) note("response_rewritten_reaction");
+      return finish({ text: answer, toolCalls: [] });
+    }
+    const answer = reactionIsAlreadyShort(String(text ?? ""))
+      ? String(text).trim()
+      : shortReaction(userText);
+    if (answer !== String(text ?? "").trim()) note("response_rewritten_reaction");
+    return finish({ text: answer, toolCalls: [] });
+  }
   if (isModelIdentityQuestion(userText) && modelIdentity) {
     const answer = renderModelIdentity(modelIdentity);
     if (answer !== String(text ?? "").trim()) note("response_rewritten_model_identity");

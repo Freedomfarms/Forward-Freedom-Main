@@ -40,12 +40,13 @@ function modelDescription(id, catalog, available) {
 
 export function describeModelIdentity(engine, { modelRoute = null, activeModel = null } = {}) {
   const catalog = modelCatalog(engine);
-  let availableKeys = [];
-  try {
-    availableKeys = engine?.availableModelKeys?.() ?? [];
-  } catch {
-    availableKeys = [];
-  }
+  const availableKeys = (() => {
+    try {
+      return engine?.availableModelKeys?.() ?? [];
+    } catch {
+      return [];
+    }
+  })();
   const available = new Set(availableKeys);
   const configuredDefault = modelDescription(engine?.config?.defaultModel, catalog, available);
   const configuredFallback = modelDescription(engine?.config?.fallbackModel, catalog, available);

@@ -35,7 +35,7 @@ const KEEP_OR_SELL =
   /\bkeep(?:ing)?\b[^.]{0,80}\bsell(?:ing)?\b|\bsell(?:ing)?\b[^.]{0,80}\bkeep(?:ing)?\b/i;
 
 const CODE_REQUEST =
-  /\b(codebase|source code|current source|implementation|implemented in|which file|turn ?machine|tool ?executor|response contract|request classif\w*|response postprocess\w*)\b|\b(?:how|why|where|which|what)\b[^?]{0,100}\b(?:chief|freedom os|your code|your implementation)\b/i;
+  /\b(codebase|source code|current source|your (?:code|implementation)|implementation|implemented in|which file|turn ?machine|tool ?executor|response contract|request classif\w*|response postprocess\w*)\b|\b(?:how|why|where|which|what)\b[^?]{0,80}\b(?:chief|freedom os)\b[^?]{0,80}\b(?:work|built|implement|handle|process|route|classif|block|suppress|choose|call|respond)\w*\b/i;
 
 const CODE_PATH =
   /(?:^|[\s`'"(])(?:[\w.-]+\/)+[\w.-]+\.(?:js|jsx|mjs|cjs|ts|tsx|py|go|rs|sql|prisma)\b/i;
