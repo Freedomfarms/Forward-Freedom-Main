@@ -6,8 +6,6 @@
 // only labels the latest utterance so a follow-up stays on the open thread
 // and a reaction does not become a new task.
 
-import { appendFileSync } from "node:fs";
-
 import { messageText } from "../runtime/compaction.js";
 import { buildWorkingMemory, isAnaphoric } from "../memory/working.js";
 import { isSelfContainedCalculation } from "../memory/retrieve.js";
@@ -602,12 +600,6 @@ export function settleReply({
   const calls = Array.isArray(toolCalls) ? [...toolCalls] : [];
   const move = conversationMove(transcript);
   const userText = latestUserText(transcript);
-  // #region agent log
-  appendFileSync(
-    "/opt/cursor/logs/debug.log",
-    `${JSON.stringify({ hypothesisId: "B", location: "server/chief/context/behavior.js:settleReply:entry", message: "settlement classification before suppression branches", data: { move: move.kind, unresolvedOther: move.unresolvedOther, pureReaction: REACTION.test(spoken(userText)) && !delegationIntent, identityQuestion: isModelIdentityQuestion(userText), selfContainedCalculation: isSelfContainedCalculation(userText), incomingCalls: calls.map((call) => call?.name), planLive: Array.isArray(pack?.plan?.live) ? pack.plan.live : null, currentState: pack?.plan?.currentState ?? null, hasDelegationIntent: Boolean(delegationIntent) }, timestamp: Date.now() })}\n`
-  );
-  // #endregion
   const diagnosticCounts = new Map();
   const note = (reason, count = 1) => {
     if (!reason || count <= 0) return;
@@ -635,12 +627,6 @@ export function settleReply({
     userText,
     pending: delegationIntent,
   });
-  // #region agent log
-  appendFileSync(
-    "/opt/cursor/logs/debug.log",
-    `${JSON.stringify({ hypothesisId: "C", location: "server/chief/context/behavior.js:settleReply:delegation", message: "delegation settlement output", data: { handled: delegation.handled === true, effect: delegation.effect ?? null, incomingCalls: calls.map((call) => call?.name), remainingCalls: Array.isArray(delegation.toolCalls) ? delegation.toolCalls.map((call) => call?.name) : null, carriesDelegation: delegation.delegation?.disposition === "delegate" }, timestamp: Date.now() })}\n`
-  );
-  // #endregion
   if (delegation.handled) {
     if (delegation.text !== String(text ?? "").trim()) note("response_rewritten_delegation");
     if (calls.length > delegation.toolCalls.length) {
@@ -693,12 +679,6 @@ export function settleReply({
     userText,
     unresolvedOther: move.unresolvedOther,
   });
-  // #region agent log
-  appendFileSync(
-    "/opt/cursor/logs/debug.log",
-    `${JSON.stringify({ hypothesisId: "A", location: "server/chief/context/behavior.js:settleReply:callDecision", message: "plan justification result", data: { keptCalls: keptCalls.map((call) => call?.name), justifiedCalls: callDecision.calls.map((call) => call?.name), suppressed: callDecision.suppressed, suppressionReason: callDecision.suppressionReason, mismatches: callDecision.mismatches, unresolvedOther: move.unresolvedOther }, timestamp: Date.now() })}\n`
-  );
-  // #endregion
   if (callDecision.suppressed) {
     note(callDecision.suppressionReason, callDecision.suppressed);
   }
