@@ -89,7 +89,10 @@ test("conflicting history is named and a missing reading is not filled in", () =
     text: "The cabin is worth $410000.",
     pack: { plan: planContext(worth, { transcript: worthTranscript }), items: [], authority: [] },
   });
-  assert.equal(invented.text, "I can't verify that from a current reading.");
+  assert.equal(
+    invented.text,
+    "I'm missing a current property-value reading, so I can't verify that estimate."
+  );
   assert.doesNotMatch(invented.text, /410/);
 });
 
@@ -111,10 +114,10 @@ test("a repository question plans a code read and does not unlock writes", () =>
     ],
     pack: { plan, items: [], authority: [] },
   });
-  assert.deepEqual(
-    reply.toolCalls.map((call) => call.name),
-    ["code_read"]
-  );
+  assert.deepEqual(reply.toolCalls.map((call) => call.name), ["code_read", "web_search"]);
+  assert.deepEqual(reply.diagnostics, [
+    { reason: "tool_plan_mismatch_preserved", count: 1 },
+  ]);
   const brief = buildInvestigationBrief({ query, plan, transcript });
   assert.match(brief, /code read/);
   assert.match(brief, /prior decision or conversation/);
@@ -140,7 +143,7 @@ test("an unresolved follow-up does not investigate the previous subject", () => 
   assert.deepEqual(reply.toolCalls, []);
 });
 
-test("a justified finance read is kept and an extra web search is not", () => {
+test("authorized reads survive when the heuristic plan did not request their domain", () => {
   const transcript = [{ role: "user", content: "How much XRP do I own?" }];
   const plan = planContext("How much XRP do I own?", { transcript });
   const reply = settleReply({
@@ -152,8 +155,11 @@ test("a justified finance read is kept and an extra web search is not", () => {
     ],
     pack: { plan, items: [], authority: [] },
   });
-  assert.deepEqual(
-    reply.toolCalls.map((call) => call.name),
-    ["finance_summary"]
-  );
+  assert.deepEqual(reply.toolCalls.map((call) => call.name), [
+    "finance_summary",
+    "web_search",
+  ]);
+  assert.deepEqual(reply.diagnostics, [
+    { reason: "tool_plan_mismatch_preserved", count: 1 },
+  ]);
 });

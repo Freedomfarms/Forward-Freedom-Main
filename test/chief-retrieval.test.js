@@ -123,6 +123,14 @@ test("a repository path is a code read and a balance question stays finance", ()
     true
   );
   assert.equal(authoritativeDomain("How much XRP do I own?"), "finance");
+  assert.equal(
+    authoritativeDomain(
+      "If I set aside $400 a month starting this month, how much would I have after 18 months, ignoring interest?"
+    ),
+    null
+  );
+  assert.equal(authoritativeDomain("How much is 18 * 400?"), null);
+  assert.equal(authoritativeDomain("What is my current home equity?"), "finance");
   assert.equal(authoritativeDomain("What is the XRP price today?"), "web");
   assert.equal(
     authoritativeDomain("Where is finance access implemented in the codebase?"),

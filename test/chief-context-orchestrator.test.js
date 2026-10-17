@@ -385,6 +385,19 @@ test("context selection follows the question and does not read every system", as
   assert.equal(renderContextPackage(ordinary), "");
 });
 
+test("a self-contained savings follow-up does not inherit a prior finance lookup", () => {
+  const query =
+    "What if I set aside $400 a month for 18 months, ignoring interest?";
+  const transcript = [
+    { role: "user", content: "What is my current balance?" },
+    { role: "assistant", content: "I need a current financial reading." },
+    { role: "user", content: query },
+  ];
+  const plan = planContext(query, { transcript });
+  assert.deepEqual(plan.live, []);
+  assert.equal(plan.currentState, false);
+});
+
 test("a live reading is not written into long-term memory", async () => {
   const facts = new MemoryFactStore();
   await facts.write({

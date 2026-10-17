@@ -540,7 +540,10 @@ test("the reply guard enforces the contract when the model ignores it", () => {
     text: "Your balance is $84,000.",
     pack: { plan: { currentState: true }, authority: [{ origin: "live", available: false }] },
   });
-  assert.equal(missing.text, "I can't verify that from a current reading.");
+  assert.equal(
+    missing.text,
+    "I'm missing a current Freedom Financial balance reading, so I can't verify that amount."
+  );
   assert.doesNotMatch(missing.text, /84,000/);
 
   const failedRead = settleReply({
@@ -551,7 +554,10 @@ test("the reply guard enforces the contract when the model ignores it", () => {
     text: "Your balance is $84,000.",
     pack: { plan: { currentState: true }, authority: [] },
   });
-  assert.equal(failedRead.text, "I can't verify that from a current reading.");
+  assert.equal(
+    failedRead.text,
+    "I'm missing a current Freedom Financial balance reading, so I can't verify that amount."
+  );
 
   const read = settleReply({
     transcript: [

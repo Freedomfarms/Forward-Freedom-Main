@@ -34,14 +34,41 @@ const EARLIER_DECISION =
 const KEEP_OR_SELL =
   /\bkeep(?:ing)?\b[^.]{0,80}\bsell(?:ing)?\b|\bsell(?:ing)?\b[^.]{0,80}\bkeep(?:ing)?\b/i;
 
-const CODE_REQUEST = /\b(codebase|source code|implemented in|which file|current source)\b/i;
+const CODE_REQUEST =
+  /\b(codebase|source code|current source|implementation|implemented in|which file|turn ?machine|tool ?executor|response contract|request classif\w*|response postprocess\w*)\b|\b(?:how|why|where|which|what)\b[^?]{0,100}\b(?:chief|freedom os|your code|your implementation)\b/i;
 
 const CODE_PATH =
   /(?:^|[\s`'"(])(?:[\w.-]+\/)+[\w.-]+\.(?:js|jsx|mjs|cjs|ts|tsx|py|go|rs|sql|prisma)\b/i;
 const WEB_REQUEST =
-  /\b(news|headline|current events|web search)\b|\b(?:price|market)\b.*\b(?:today|current|right now|latest)\b|\b(?:today|current|right now|latest)\b.*\b(?:price|market)\b/i;
-const FINANCE_REQUEST =
-  /\b(how much|how many|worth|balance|net worth|holdings?|mortgage|own|owns|price)\b/i;
+  /\b(news|headlines?|current events|web search|weather)\b|\b(?:price|quote|market)\b.*\b(?:today|current|right now|latest)\b|\b(?:today|current|right now|latest)\b.*\b(?:price|quote|market)\b|\b(?:bitcoin|btc|xrp|ethereum|eth|stock|share|gold|silver)\b[^?]{0,60}\b(?:price|quote|trading at|worth)\b/i;
+const FINANCIAL_STATE =
+  /\b(balance|net worth|holdings?|mortgage|home equity|equity|assets?|debts?|loans?|credit cards?|cash|true cash|portfolio|accounts?|spending|budget|money)\b/i;
+const OWNED_ASSET =
+  /\b(crypto|bitcoin|btc|xrp|ethereum|eth|stock|shares?|gold|silver|house|home|cabin|property|properties)\b/i;
+const PERSONAL_FINANCE = /\b(my|our|mine|ours|i|we)\b/i;
+const OWNERSHIP = /\b(own|owns|owned|hold|holds|held|have|has|owe|owes|owed)\b/i;
+const CURRENT = /\b(current|currently|right now|today|available|left)\b/i;
+const VALUATION = /\b(worth|value|valued)\b/i;
+const CALCULATION =
+  /\b(calculate|calculation|compute|arithmetic|per (?:month|week|year)|each (?:month|week|year)|after \d|over \d|ignoring interest|without interest|set aside|save|saved|starting (?:this|next)|would (?:i|we) have|percent of|percentage of)\b|[+\-*/×÷]/i;
+
+export function isSelfContainedCalculation(query) {
+  const text = String(query ?? "");
+  const inputs = text.match(/(?:^|[^\w])\$?-?\d[\d,]*(?:\.\d+)?%?/g) ?? [];
+  return inputs.length >= 2 && CALCULATION.test(text);
+}
+
+function isPersonalFinanceRequest(text) {
+  if (/\bhow much do (?:i|we) owe\b/i.test(text)) return true;
+  if (/\bwhat(?:'s| is) (?:it|that|this|they|them) worth\b/i.test(text)) return true;
+  if (FINANCIAL_STATE.test(text)) {
+    return PERSONAL_FINANCE.test(text) || OWNERSHIP.test(text) || CURRENT.test(text);
+  }
+  if (OWNED_ASSET.test(text) && (PERSONAL_FINANCE.test(text) || OWNERSHIP.test(text))) {
+    return true;
+  }
+  return /\b(house|home|cabin|property)\b/i.test(text) && VALUATION.test(text);
+}
 
 export function needsEpisodicMemory(query) {
   const text = String(query ?? "");
@@ -51,8 +78,9 @@ export function needsEpisodicMemory(query) {
 export function authoritativeDomain(query) {
   const text = String(query ?? "");
   if (CODE_REQUEST.test(text) || CODE_PATH.test(text)) return "code";
+  if (isSelfContainedCalculation(text) && !WEB_REQUEST.test(text)) return null;
+  if (isPersonalFinanceRequest(text)) return "finance";
   if (WEB_REQUEST.test(text)) return "web";
-  if (FINANCE_REQUEST.test(text)) return "finance";
   return null;
 }
 

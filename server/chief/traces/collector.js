@@ -8,7 +8,8 @@
 //
 // Preserved upstream semantics:
 //   - subscribe to inference_start, inference_end, tool_call_start,
-//     tool_call_end, and memory_retrieve for the duration of one run
+//     tool_call_end, memory_retrieve, and privacy-safe settlement telemetry
+//     for the duration of one run
 //   - append a final RESPOND step when the turn finishes
 //   - persist once, then publish trace_complete
 //   - step types are the OpenJarvis StepType values
@@ -22,8 +23,8 @@
 //     tool body has run. A gate refusal must still be visible, and it is
 //     not retried.
 //   - Detail is an allowlist: model, provider, token counts, retrieval
-//     counts, tool name, and success. Query, answer, messages, arguments,
-//     and tool output are dropped.
+//     counts, tool name, success, and settlement reason-code counts. Query,
+//     answer, messages, arguments, and tool output are dropped.
 //   - trace_complete carries an id and counts, not the trace body.
 //   - A store error is logged and dropped. It does not change the turn.
 
@@ -124,6 +125,7 @@ export class TraceCollector {
     this._tokensInput = 0;
     this._tokensOutput = 0;
     this._pendingTool = null;
+    this._settlementDiagnostics = new Map();
     this._startedAt = new Date();
     this._handlers = null;
   }
@@ -137,6 +139,7 @@ export class TraceCollector {
       [EventType.TOOL_CALL_END, (event) => this._onToolEnd(event)],
       [EventType.MEMORY_RETRIEVE, (event) => this._onRetrieve(event)],
       [EventType.CAPABILITY_DENIED, (event) => this._onCapabilityDenied(event)],
+      [EventType.TELEMETRY_RECORD, (event) => this._onTelemetry(event)],
     ];
     for (const [eventType, handler] of this._handlers) {
       this._bus.subscribe(eventType, handler);
@@ -165,7 +168,13 @@ export class TraceCollector {
       stepType: TRACE_STEP.RESPOND,
       name: null,
       status,
-      detail: { outcome: status },
+      detail: {
+        outcome: status,
+        settlementDiagnostics: [...this._settlementDiagnostics].map(([reason, count]) => ({
+          reason,
+          count,
+        })),
+      },
     });
     const record = {
       userId: this._userId,
@@ -271,6 +280,18 @@ export class TraceCollector {
     this._rememberCaller(event?.data);
     this._pendingTool = null;
     this._pushTool(toolName(event?.data), false);
+  }
+
+  _onTelemetry(event) {
+    const data = event?.data ?? {};
+    if (data.component !== "chief_response_settlement") return;
+    const reason = typeof data.reason === "string" ? data.reason : "";
+    const count = numberOrZero(data.count);
+    if (!/^[a-z0-9_]{1,80}$/.test(reason) || count <= 0) return;
+    this._settlementDiagnostics.set(
+      reason,
+      (this._settlementDiagnostics.get(reason) ?? 0) + count
+    );
   }
 
   _pushTool(name, success, code) {

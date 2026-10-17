@@ -8,7 +8,12 @@
 
 import { conversationMove, MOVE } from "./behavior.js";
 import { isSnapshotFact } from "../memory/qualify.js";
-import { MEMORY_LAYER, authoritativeDomain, needsEpisodicMemory } from "../memory/retrieve.js";
+import {
+  MEMORY_LAYER,
+  authoritativeDomain,
+  isSelfContainedCalculation,
+  needsEpisodicMemory,
+} from "../memory/retrieve.js";
 
 export const CONTEXT_SCOPE = Object.freeze({
   WORKING: "working",
@@ -140,6 +145,7 @@ function wantsHoldingValue(text) {
 function classifyQuery(query) {
   const text = String(query ?? "");
   const domain = authoritativeDomain(text);
+  const calculation = isSelfContainedCalculation(text) && domain == null;
   const episodic = needsEpisodicMemory(text);
   const decision = DECISION_TEXT.test(text);
   const agents = AGENT_TEXT.test(text) || WORKFORCE_DIRECT.test(text);
@@ -148,13 +154,15 @@ function classifyQuery(query) {
   const email = /\b(e-?mail|inbox)\b/i.test(text);
   const relationship = RELATION_TEXT.test(text);
   const live = [];
-  if (domain === "finance") live.push("finance");
-  if (domain === "web" || wantsHoldingValue(text)) live.push("web");
-  if (domain === "code") live.push("code");
-  if (agents) live.push("agents");
-  if (schedule) live.push("schedule");
-  if (calendar) live.push("calendar");
-  if (email) live.push("email");
+  if (!calculation) {
+    if (domain === "finance") live.push("finance");
+    if (domain === "web" || wantsHoldingValue(text)) live.push("web");
+    if (domain === "code") live.push("code");
+    if (agents) live.push("agents");
+    if (schedule) live.push("schedule");
+    if (calendar) live.push("calendar");
+    if (email) live.push("email");
+  }
 
   const memory = [CONTEXT_SCOPE.WORKING];
   if (text.trim()) memory.push(CONTEXT_SCOPE.PERSONAL);
@@ -203,6 +211,7 @@ export function planContext(query, options = {}) {
       currentState: false,
     };
   }
+  if (isSelfContainedCalculation(query)) return planned;
   if ((move.kind === MOVE.CONTINUE || move.kind === MOVE.CONFIRM) && planned.live.length === 0) {
     if (move.unresolvedOther) {
       return {

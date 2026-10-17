@@ -117,7 +117,10 @@ test("a concrete figure on a reaction still has to come from a current reading",
     text: "The lake cabin equity is $410,000.",
     pack: { plan: { currentState: true }, authority: [{ origin: "live", available: false }] },
   });
-  assert.equal(blocked.text, "I can't verify that from a current reading.");
+  assert.equal(
+    blocked.text,
+    "I'm missing the current mortgage balance and current home value needed to calculate home equity."
+  );
   assert.doesNotMatch(blocked.text, /410/);
 
   const grounded = settleReply({

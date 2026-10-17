@@ -446,7 +446,7 @@ export class TurnMachine {
     }
   }
 
-  async _settledStep(text, toolCalls) {
+  async _settledStep(text, toolCalls, { activeModel = null } = {}) {
     if (typeof this._settleModelStep !== "function") return { text, toolCalls };
     try {
       const settled = await this._settleModelStep({
@@ -454,6 +454,8 @@ export class TurnMachine {
         text,
         toolCalls,
         delegationIntent: this._checkpoint.context?.delegationIntent ?? null,
+        modelRoute: this._checkpoint.modelRoute ?? null,
+        activeModel,
       });
       if (typeof settled?.text !== "string" || !Array.isArray(settled.toolCalls)) {
         return { text, toolCalls };
@@ -521,7 +523,9 @@ export class TurnMachine {
       }
     }
     const finalized = await opened.finalize();
-    const settled = await this._settledStep(text, toolCalls);
+    const activeModel = opened.resolution?.modelKey ?? finalized?.model ?? null;
+    if (activeModel) execution.activeModel = activeModel;
+    const settled = await this._settledStep(text, toolCalls, { activeModel });
     text = settled.text;
     const nextCalls = settled.toolCalls.slice();
     if (settled.clearDelegation && this._checkpoint.context) {
@@ -622,7 +626,7 @@ export class TurnMachine {
         agentId: "chief",
         caller: { kind: this._callerKind, id: execution.turnId, trigger: this._callerTrigger },
         mutationApproved: grantedMutations.has(call.callId),
-        model: this._checkpoint.modelRoute ?? null,
+        model: execution.activeModel ?? this._checkpoint.modelRoute ?? null,
         sessionTaint: this._checkpoint.sessionTaint ?? [],
         saveMiddlewareState: (middlewareId, state) =>
           this._store.saveMiddlewareState(this._userId, this._sessionId, middlewareId, state),

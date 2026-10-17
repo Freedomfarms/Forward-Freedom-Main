@@ -5,9 +5,11 @@
 import { agentContextReader } from "../agents/context.js";
 import { PrismaExternalArchive } from "../archive/store.js";
 import { Capability } from "../core/capabilities.js";
+import { EventType } from "../core/events.js";
 import { applyMemoryCommands } from "../memory/commands.js";
 import { rememberExchange } from "../memory/extract.js";
 import { createMemoryAccess } from "../memory/provider.js";
+import { describeModelIdentity } from "../models/identity.js";
 import { CHIEF_COMPACTION_TOKENS, CHIEF_KEEP_RECENT_TOKENS } from "../runtime/compaction.js";
 import { PrismaCheckpointStore } from "../runtime/checkpoint.js";
 import { createContextAssembler, lastTurnUserText } from "./assemble.js";
@@ -125,7 +127,14 @@ export function createChiefTurnServices({
     },
     compaction: { atTokens, keepRecentTokens },
     memory,
-    settleModelStep: async ({ transcript, text, toolCalls, delegationIntent = null }) => {
+    settleModelStep: async ({
+      transcript,
+      text,
+      toolCalls,
+      delegationIntent = null,
+      modelRoute = null,
+      activeModel = null,
+    }) => {
       const peeked = peekDelegation(text, toolCalls);
       const packHasAgents = (prepared?.items ?? []).some(
         (item) => item?.sourceType === "live_agent_state" && item.sourceId !== "workforce-coverage"
@@ -140,14 +149,23 @@ export function createChiefTurnServices({
       ) {
         workforcePicture = await readWorkforcePicture(agentRuntime, preparedUserId, now);
       }
-      return settleReply({
+      const settled = settleReply({
         transcript,
         text,
         toolCalls,
         pack: prepared,
         workforcePicture,
         delegationIntent,
+        modelIdentity: describeModelIdentity(engine, { modelRoute, activeModel }),
       });
+      for (const diagnostic of settled.diagnostics ?? []) {
+        eventBus?.publish(EventType.TELEMETRY_RECORD, {
+          component: "chief_response_settlement",
+          reason: diagnostic.reason,
+          count: diagnostic.count,
+        });
+      }
+      return settled;
     },
     onTurnComplete: async (exchange) => {
       await applyMemoryCommands({ facts, ...exchange, provider: memory.provider });
