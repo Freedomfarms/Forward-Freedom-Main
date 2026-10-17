@@ -638,6 +638,15 @@
     width: calc(100% - 28px);
   }
 
+  .fc-root .fc-cta {
+    font-size: 11px;
+    letter-spacing: 1px;
+  }
+
+  .fc-root .fc-cta--quiet {
+    padding: 0 10px;
+  }
+
   .fc-root .fc-dock-meta {
     font-size: 9px;
   }
