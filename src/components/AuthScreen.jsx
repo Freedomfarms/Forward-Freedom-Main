@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useAuth } from "../context/AuthContext.jsx";
 import {
   bindPendingLegalConsentEmail,
@@ -37,8 +37,6 @@ export function AuthScreen({
   const [agreedToLegal, setAgreedToLegal] = useState(false);
   const [activeDocument, setActiveDocument] = useState(null);
   const [formError, setFormError] = useState("");
-  const [credentialsOpen, setCredentialsOpen] = useState(() => Boolean(initialForm?.email));
-  const authDetailsRef = useRef(null);
   const hasError = Boolean(formError || error);
   const feedbackId = hasError ? "auth-feedback" : notice ? "auth-notice" : undefined;
 
@@ -49,33 +47,9 @@ export function AuthScreen({
     if (notice) clearNotice();
   };
 
-  useEffect(() => {
-    if (!credentialsOpen) return;
-    const scroller = authDetailsRef.current;
-    const field = document.getElementById("auth-password");
-    if (!scroller || !field) return;
-    const top =
-      field.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
-    scroller.scrollTop = Math.max(0, top - 4);
-  }, [credentialsOpen]);
-
-  const revealCredentials = () => {
-    if (!form.email.trim() || !form.email.includes("@")) {
-      setFormError("Enter your email address.");
-      return false;
-    }
-    setFormError("");
-    setCredentialsOpen(true);
-    return true;
-  };
-
   const handleEmailSubmit = async (event) => {
     event.preventDefault();
 
-    if (!credentialsOpen) {
-      revealCredentials();
-      return;
-    }
     if (!form.email.trim()) {
       setFormError("Enter your email address.");
       return;
@@ -133,7 +107,6 @@ export function AuthScreen({
 
   const handleGoogleSignIn = () => {
     if (!agreedToLegal) {
-      setCredentialsOpen(true);
       setFormError("Review and accept the Terms of Service and Privacy Policy to continue.");
       return;
     }
@@ -191,7 +164,24 @@ export function AuthScreen({
               </div>
             </div>
 
-            <div className="freedom-auth-body" ref={authDetailsRef}>
+            <div className="freedom-auth-fields">
+              {mode === "register" ? (
+                <label className="freedom-label freedom-auth-span" htmlFor="auth-full-name">
+                  Full name
+                  <input
+                    id="auth-full-name"
+                    className="freedom-field"
+                    type="text"
+                    value={form.fullName}
+                    onChange={(event) => updateForm("fullName", event.target.value)}
+                    placeholder="Workspace owner"
+                    autoComplete="name"
+                    required={mode === "register"}
+                    aria-invalid={hasError && !form.fullName.trim() ? "true" : undefined}
+                    aria-describedby={feedbackId}
+                  />
+                </label>
+              ) : null}
               <label className="freedom-label" htmlFor="auth-email">
                 Email
                 <input
@@ -207,44 +197,23 @@ export function AuthScreen({
                   aria-describedby={feedbackId}
                 />
               </label>
-              {credentialsOpen ? (
-                <>
-                  {mode === "register" ? (
-                    <label className="freedom-label" htmlFor="auth-full-name">
-                      Full name
-                      <input
-                        id="auth-full-name"
-                        className="freedom-field"
-                        type="text"
-                        value={form.fullName}
-                        onChange={(event) => updateForm("fullName", event.target.value)}
-                        placeholder="Workspace owner"
-                        autoComplete="name"
-                        required={mode === "register"}
-                        aria-invalid={hasError && !form.fullName.trim() ? "true" : undefined}
-                        aria-describedby={feedbackId}
-                      />
-                    </label>
-                  ) : null}
-                  <label className="freedom-label" htmlFor="auth-password">
-                    Password
-                    <input
-                      id="auth-password"
-                      className="freedom-field"
-                      type="password"
-                      value={form.password}
-                      onChange={(event) => updateForm("password", event.target.value)}
-                      placeholder={mode === "register" ? "Choose a secure password" : "Password"}
-                      autoComplete={mode === "register" ? "new-password" : "current-password"}
-                      required
-                      aria-invalid={hasError && !form.password ? "true" : undefined}
-                      aria-describedby={feedbackId}
-                    />
-                  </label>
-                </>
-              ) : null}
+              <label className="freedom-label" htmlFor="auth-password">
+                Password
+                <input
+                  id="auth-password"
+                  className="freedom-field"
+                  type="password"
+                  value={form.password}
+                  onChange={(event) => updateForm("password", event.target.value)}
+                  placeholder={mode === "register" ? "Choose a secure password" : "Password"}
+                  autoComplete={mode === "register" ? "new-password" : "current-password"}
+                  required
+                  aria-invalid={hasError && !form.password ? "true" : undefined}
+                  aria-describedby={feedbackId}
+                />
+              </label>
 
-              <label className="freedom-consent" htmlFor="auth-legal-consent">
+              <label className="freedom-consent freedom-auth-span" htmlFor="auth-legal-consent">
                 <input
                   id="auth-legal-consent"
                   type="checkbox"
@@ -279,19 +248,24 @@ export function AuthScreen({
               </label>
 
               {formError || error ? (
-                <div id="auth-feedback" className="freedom-alert" role="alert">
+                <div id="auth-feedback" className="freedom-alert freedom-auth-span" role="alert">
                   {formError || error}
                 </div>
               ) : null}
               {notice ? (
-                <div id="auth-notice" className="freedom-notice" role="status" aria-live="polite">
+                <div
+                  id="auth-notice"
+                  className="freedom-notice freedom-auth-span"
+                  role="status"
+                  aria-live="polite"
+                >
                   {notice}
                 </div>
               ) : null}
-              {credentialsOpen && mode === "login" ? (
+              {mode === "login" ? (
                 <button
                   type="button"
-                  className="chief-text-button freedom-auth-reset"
+                  className="chief-text-button freedom-auth-reset freedom-auth-span"
                   disabled={isBusy}
                   onClick={() => {
                     void handlePasswordReset();
@@ -312,13 +286,9 @@ export function AuthScreen({
                 Continue with Google
               </FreedomButton>
 
-              {credentialsOpen ? (
-                <FreedomButton type="submit" disabled={isBusy}>
-                  {isBusy ? "Working..." : mode === "register" ? "Create access" : "Enter"}
-                </FreedomButton>
-              ) : (
-                <FreedomButton type="submit">Continue</FreedomButton>
-              )}
+              <FreedomButton type="submit" disabled={isBusy}>
+                {isBusy ? "Working..." : mode === "register" ? "Create access" : "Enter"}
+              </FreedomButton>
             </div>
           </form>
         </FreedomGlass>

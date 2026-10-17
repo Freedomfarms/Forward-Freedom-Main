@@ -350,6 +350,7 @@ test("the public intro stays scoped and leaves authentication intact", () => {
   const shell = read("src/components/freedom/FreedomShell.jsx");
   const auth = read("src/components/AuthScreen.jsx");
   const css = read("src/visual/chiefIntro/chief-intro.css");
+  const freedomCss = read("src/components/freedom/freedom.css");
   const landing = read("src/components/FreedomOsLanding.jsx");
 
   // One renderer module, cleanup-complete, no React state per frame.
@@ -376,8 +377,14 @@ test("the public intro stays scoped and leaves authentication intact", () => {
   // The homepage keeps registration/sign-in routes and calls no CHIEF API.
   assert.match(home, /onSignIn/);
   assert.match(home, /onCreateAccount/);
-  assert.match(home, /Replay/);
   assert.match(home, /Skip/);
+  assert.match(home, /fc-wordmark">FREEDOM OS/);
+  assert.match(home, /fc-kicker">PERSONAL INTELLIGENCE SYSTEM/);
+  assert.doesNotMatch(home, /INTELLIGENCE, AT YOUR COMMAND/);
+  assert.doesNotMatch(home, /fc-header/);
+  assert.doesNotMatch(home, /Cinematic/);
+  assert.doesNotMatch(home, /Replay/);
+  assert.doesNotMatch(home, /fc-control--accent/);
   assert.doesNotMatch(home, /chiefApi|fetch\(|\/api\//);
   assert.match(landing, /ChiefIntroHome/);
 
@@ -385,6 +392,14 @@ test("the public intro stays scoped and leaves authentication intact", () => {
   assert.match(shell, /ChiefIntroBackdrop/);
   assert.match(auth, /FreedomShell/);
   assert.match(auth, /signInWithEmail/);
+  assert.match(auth, /freedom-auth-fields/);
+  assert.match(auth, /htmlFor="auth-password"/);
+  assert.doesNotMatch(auth, /credentialsOpen/);
+  assert.doesNotMatch(freedomCss, /22dvh/);
+  assert.match(
+    freedomCss,
+    /\.freedom-auth-fields[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\) minmax\(0, 1fr\)/
+  );
   assert.match(auth, /signUpWithEmail/);
   assert.match(auth, /requestPasswordReset/);
   assert.doesNotMatch(auth, /createChiefIntroRenderer/);
