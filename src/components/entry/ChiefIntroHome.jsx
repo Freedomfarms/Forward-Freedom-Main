@@ -1,10 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { LegalModal } from "../LegalDocuments.jsx";
-import {
-  CHIEF_INTRO_DEFAULT_MS,
-  CHIEF_INTRO_SLOW_MS,
-  createChiefIntroRenderer,
-} from "../../visual/chiefIntro/chiefIntroRenderer.js";
+import { createChiefIntroRenderer } from "../../visual/chiefIntro/chiefIntroRenderer.js";
 import {
   hasChiefIntroPlayed,
   markChiefIntroPlayed,
@@ -13,8 +9,8 @@ import "../../visual/chiefIntro/chief-intro.css";
 
 // The approved CHIEF Draft 4 cinematic as the public Freedom OS homepage:
 // Draft 1 choreography, lightning-blue palette, Draft 2 sphere, six capability
-// panels with staggered entrances that remain visible, ~5.8s default sequence
-// with an optional 8s pace, Replay/Skip, and reduced-motion support.
+// panels with staggered entrances that remain visible, at the 6 second pace,
+// with Skip and reduced-motion support.
 //
 // Adaptations from the prototype, per the public-page scope:
 // - The demo conversation composer became the sign-in / create-account entry
@@ -22,8 +18,7 @@ import "../../visual/chiefIntro/chief-intro.css";
 // - Capability panels open concise explanatory dialogs describing capability
 //   categories; nothing implies live data, tools, memories, or agents for a
 //   signed-out visitor, and no protected endpoint is called.
-// - Sign In is also always available in the header, so the intro never blocks
-//   authentication.
+// - Sign-in stays on the bottom dock, so the intro never blocks authentication.
 
 const CAPABILITIES = [
   {
@@ -81,7 +76,6 @@ export function ChiefIntroHome({ onSignIn, onCreateAccount, onExploreFreedomFina
   const controllerRef = useRef(null);
   const detailCloseRef = useRef(null);
   const detailTriggerRef = useRef(null);
-  const [pace, setPace] = useState(String(CHIEF_INTRO_DEFAULT_MS));
   const [activeCapability, setActiveCapability] = useState(null);
   const [activeDocument, setActiveDocument] = useState(null);
 
@@ -146,25 +140,6 @@ export function ChiefIntroHome({ onSignIn, onCreateAccount, onExploreFreedomFina
               </span>
             </div>
             <div className="fc-controls">
-              <select
-                className="fc-control"
-                aria-label="Intro pace"
-                value={pace}
-                onChange={(event) => {
-                  setPace(event.target.value);
-                  controllerRef.current?.setDuration(Number(event.target.value));
-                }}
-              >
-                <option value={String(CHIEF_INTRO_DEFAULT_MS)}>Cinematic &middot; 6s</option>
-                <option value={String(CHIEF_INTRO_SLOW_MS)}>Slow &middot; 8s</option>
-              </select>
-              <button
-                type="button"
-                className="fc-control fc-replay"
-                onClick={() => controllerRef.current?.replay()}
-              >
-                Replay
-              </button>
               <button
                 type="button"
                 className="fc-control fc-skip"
@@ -174,9 +149,6 @@ export function ChiefIntroHome({ onSignIn, onCreateAccount, onExploreFreedomFina
                 }}
               >
                 Skip
-              </button>
-              <button type="button" className="fc-control fc-control--accent" onClick={onSignIn}>
-                Sign In
               </button>
             </div>
           </header>

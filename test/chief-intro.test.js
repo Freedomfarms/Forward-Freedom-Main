@@ -376,8 +376,10 @@ test("the public intro stays scoped and leaves authentication intact", () => {
   // The homepage keeps registration/sign-in routes and calls no CHIEF API.
   assert.match(home, /onSignIn/);
   assert.match(home, /onCreateAccount/);
-  assert.match(home, /Replay/);
   assert.match(home, /Skip/);
+  assert.doesNotMatch(home, /Cinematic/);
+  assert.doesNotMatch(home, /Replay/);
+  assert.doesNotMatch(home, /fc-control--accent/);
   assert.doesNotMatch(home, /chiefApi|fetch\(|\/api\//);
   assert.match(landing, /ChiefIntroHome/);
 
