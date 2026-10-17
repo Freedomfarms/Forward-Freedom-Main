@@ -1,0 +1,60 @@
+body{margin:0;background:#05090c}#freedom-chief-draft-four{border-radius:0!important;max-width:1600px;margin:auto}
+
+    #freedom-chief-draft-four{--ink:#eaf6ff;--muted:#96a7b5;--electric:#92ceff;--cyan:#91e7f3;position:relative;isolation:isolate;overflow:hidden;background:#05090c;color:var(--ink);font-family:Inter,Arial,sans-serif;font-size:14px;min-height:760px;border-radius:14px;color-scheme:dark}
+    #freedom-chief-draft-four *{box-sizing:border-box}
+    #freedom-chief-draft-four button,#freedom-chief-draft-four input,#freedom-chief-draft-four select{font:inherit}
+    #freedom-chief-draft-four button{cursor:pointer;color:inherit}
+    #freedom-chief-draft-four button:focus-visible,#freedom-chief-draft-four input:focus-visible,#freedom-chief-draft-four select:focus-visible{outline:2px solid #acdaff;outline-offset:5px}
+    #freedom-chief-draft-four .fc-header{position:relative;z-index:4;height:76px;margin:0 30px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #ffffff10;gap:12px}
+    #freedom-chief-draft-four .fc-brand{display:flex;align-items:center;gap:12px;font-size:12px;letter-spacing:3px;font-weight:600;white-space:nowrap}
+    #freedom-chief-draft-four .fc-mark{width:27px;height:30px;clip-path:polygon(57% 0,15% 58%,46% 58%,34% 100%,88% 35%,56% 35%,70% 0);background:linear-gradient(140deg,#ffffff,#8acaff 65%,#639ecf)}
+    #freedom-chief-draft-four .fc-subbrand{color:#97acbe;letter-spacing:1px;font-size:10px;margin-top:5px;font-weight:400}
+    #freedom-chief-draft-four .fc-controls{display:flex;align-items:center;gap:8px}
+    #freedom-chief-draft-four .fc-control{border:1px solid #97adbf30;background:#12191e;border-radius:6px;padding:9px 12px;font-size:11px;min-height:36px;color:#c1ced8}
+    #freedom-chief-draft-four select.fc-control{max-width:110px}
+    #freedom-chief-draft-four .fc-control:hover{background:#202c35}
+    #freedom-chief-draft-four .fc-stage{position:relative;height:555px;perspective:1200px}
+    #freedom-chief-draft-four .fc-canvas{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none}
+    #freedom-chief-draft-four .fc-wordmark{position:absolute;top:18px;left:0;right:0;text-align:center;pointer-events:none;font-size:86px;font-weight:400;letter-spacing:28px;padding-left:28px;color:#c7e6ff06}
+    #freedom-chief-draft-four .fc-kicker{position:absolute;top:32px;left:0;right:0;text-align:center;font-size:10px;letter-spacing:4px;color:#9caebd;opacity:var(--awaken,0);transition:opacity .15s}
+    #freedom-chief-draft-four .fc-center-label{position:absolute;left:50%;top:395px;transform:translateX(-50%);text-align:center;pointer-events:none;opacity:var(--ignition,0);width:250px}
+    #freedom-chief-draft-four .fc-center-label strong{display:block;font-size:22px;letter-spacing:10px;font-weight:400;margin-left:10px}
+    #freedom-chief-draft-four .fc-center-label small{display:block;font:9px monospace;letter-spacing:2px;color:#87a4bc;margin-top:10px}
+    #freedom-chief-draft-four .fc-panel{position:absolute;z-index:2;width:220px;min-height:100px;text-align:left;appearance:none;border:1px solid #a0cef32a;border-radius:9px;padding:17px 18px;background:linear-gradient(125deg,#19232bde,#0b101be8);box-shadow:0 16px 48px #00000066,inset 0 1px 0 #ffffff09;opacity:0;transform:translate3d(var(--from-x),32px,-200px) rotateY(var(--tilt)) scale(.88);will-change:transform,opacity;transition:border-color .2s,background .2s}
+    #freedom-chief-draft-four .fc-panel:before{content:"";position:absolute;left:-1px;top:20px;width:2px;height:20px;background:linear-gradient(transparent,#a4d6ff,transparent);box-shadow:0 0 12px #6bbcff}
+    #freedom-chief-draft-four .fc-panel:hover{border-color:#98d1ff80;background:linear-gradient(125deg,#202e39ee,#141d25ee)}
+    #freedom-chief-draft-four .fc-panel[data-side="left"]{left:5%;--from-x:95px;--tilt:22deg}
+    #freedom-chief-draft-four .fc-panel[data-side="right"]{right:5%;--from-x:-95px;--tilt:-22deg}
+    #freedom-chief-draft-four .fc-panel[data-row="0"]{top:88px}
+    #freedom-chief-draft-four .fc-panel[data-row="1"]{top:219px}
+    #freedom-chief-draft-four .fc-panel[data-row="2"]{top:350px}
+    #freedom-chief-draft-four .fc-panel-top{display:flex;align-items:center;justify-content:space-between;font:9px monospace;letter-spacing:1px;color:#91b6d4;margin-bottom:13px}
+    #freedom-chief-draft-four .fc-symbol{font-size:15px;line-height:12px;color:#b9e0ff}
+    #freedom-chief-draft-four .fc-panel h3{font-size:11px;letter-spacing:2px;font-weight:500;margin:0 0 8px}
+    #freedom-chief-draft-four .fc-panel p{font-size:11px;line-height:1.5;margin:0;color:#a3b1bc}
+    #freedom-chief-draft-four .fc-phase{position:absolute;bottom:24px;left:0;right:0;text-align:center;font:10px monospace;letter-spacing:2px;color:#9babb9;z-index:2}
+    #freedom-chief-draft-four .fc-phase-dot{display:inline-block;width:4px;height:4px;background:#a0d4ff;border-radius:50%;margin:0 9px 2px 0;box-shadow:0 0 10px #81c6ff}
+    #freedom-chief-draft-four .fc-progress{position:absolute;bottom:0;left:30px;right:30px;height:1px;background:#ffffff09}
+    #freedom-chief-draft-four .fc-progress i{display:block;transform:scaleX(var(--progress,0));transform-origin:left;height:1px;background:linear-gradient(90deg,transparent,#81bdee,#d9eeff);box-shadow:0 0 8px #8ac9fc}
+    #freedom-chief-draft-four .fc-dock{position:relative;z-index:3;margin:17px auto 0;width:min(620px,calc(100% - 48px));opacity:0;transform:translateY(15px);transition:opacity .5s,transform .5s}
+    #freedom-chief-draft-four[data-ready="true"] .fc-dock{opacity:1;transform:none}
+    #freedom-chief-draft-four .fc-input-wrap{display:flex;gap:10px;padding:9px 10px 9px 18px;border-radius:12px;border:1px solid #a2ccee33;background:linear-gradient(110deg,#17242f,#10171c);box-shadow:0 0 30px #61b8ff08}
+    #freedom-chief-draft-four .fc-input-wrap input{width:100%;min-width:0;background:transparent;border:0;color:#e8f5ff;font-size:14px;outline-offset:0}
+    #freedom-chief-draft-four .fc-input-wrap input::placeholder{color:#91a2af}
+    #freedom-chief-draft-four .fc-send{flex:0 0 38px;height:38px;background:#97c6ed;color:#0d1a24;border:0;border-radius:8px;font-size:22px}
+    #freedom-chief-draft-four .fc-dock-meta{display:flex;justify-content:space-between;margin:10px 2px;font-size:10px;color:#84939f;gap:10px}
+    #freedom-chief-draft-four .fc-dock-meta span:first-child{color:#a2b8ca}
+    #freedom-chief-draft-four .fc-footer{display:flex;justify-content:space-between;padding:12px 30px 20px;color:#6f7d89;font:9px monospace;letter-spacing:1px;gap:12px}
+    #freedom-chief-draft-four .fc-toast{margin:0 auto 12px;width:min(620px,calc(100% - 48px));font-size:12px;line-height:1.5;color:#b7cad9;text-align:center}
+    #freedom-chief-draft-four .fc-detail{position:absolute;z-index:8;left:50%;top:50%;transform:translate(-50%,-50%);width:min(420px,calc(100% - 40px));background:#12191e;border:1px solid #8ab2d367;border-radius:14px;padding:30px;box-shadow:0 30px 150px #000000}
+    #freedom-chief-draft-four .fc-detail h2{margin:10px 0 14px;font-size:19px;letter-spacing:3px;font-weight:400}
+    #freedom-chief-draft-four .fc-detail p{line-height:1.7;color:#b2c2cf;font-size:14px}
+    #freedom-chief-draft-four .fc-detail small{font:10px monospace;color:#8bacc7;letter-spacing:1px}
+    #freedom-chief-draft-four .fc-detail-close{float:right;background:none;border:0;font-size:23px;color:#b9cbd9;padding:0 5px}
+    #freedom-chief-draft-four .fc-scrim{position:absolute;inset:0;z-index:7;background:#020508b8}
+    #freedom-chief-draft-four [hidden]{display:none!important}
+    @media(min-width:1150px){#freedom-chief-draft-four .fc-panel{width:245px}#freedom-chief-draft-four .fc-panel[data-side="left"]{left:8%}#freedom-chief-draft-four .fc-panel[data-side="right"]{right:8%}}
+    @media(max-width:760px){#freedom-chief-draft-four .fc-panel{width:180px;padding:14px 12px}#freedom-chief-draft-four .fc-panel[data-side="left"]{left:3%}#freedom-chief-draft-four .fc-panel[data-side="right"]{right:3%}#freedom-chief-draft-four .fc-panel h3{font-size:10px;letter-spacing:1.2px}#freedom-chief-draft-four .fc-header{margin:0 18px}#freedom-chief-draft-four .fc-brand{letter-spacing:1px}#freedom-chief-draft-four .fc-subbrand{display:none}}
+    @media(max-width:580px){#freedom-chief-draft-four{min-height:920px}#freedom-chief-draft-four .fc-header{height:72px;margin:0 14px}#freedom-chief-draft-four .fc-mark{width:19px;height:23px}#freedom-chief-draft-four .fc-brand{font-size:10px;gap:7px}#freedom-chief-draft-four .fc-controls{gap:5px}#freedom-chief-draft-four .fc-control{font-size:10px;padding:8px;min-height:36px}#freedom-chief-draft-four .fc-stage{height:710px}#freedom-chief-draft-four .fc-wordmark{font-size:55px;letter-spacing:15px;padding-left:15px;top:22px}#freedom-chief-draft-four .fc-kicker{font-size:9px;letter-spacing:2px}#freedom-chief-draft-four .fc-center-label{top:285px}#freedom-chief-draft-four .fc-center-label strong{font-size:17px}#freedom-chief-draft-four .fc-panel{width:calc(50% - 20px);min-height:91px;padding:12px}#freedom-chief-draft-four .fc-panel[data-side="left"]{left:14px}#freedom-chief-draft-four .fc-panel[data-side="right"]{right:14px}#freedom-chief-draft-four .fc-panel[data-row="0"]{top:365px}#freedom-chief-draft-four .fc-panel[data-row="1"]{top:468px}#freedom-chief-draft-four .fc-panel[data-row="2"]{top:571px}#freedom-chief-draft-four .fc-panel-top{margin-bottom:9px}#freedom-chief-draft-four .fc-panel h3{font-size:10px;letter-spacing:1px}#freedom-chief-draft-four .fc-panel p{font-size:11px}#freedom-chief-draft-four .fc-phase{bottom:18px;font-size:9px}#freedom-chief-draft-four .fc-dock{width:calc(100% - 28px)}#freedom-chief-draft-four .fc-input-wrap input{font-size:16px}#freedom-chief-draft-four .fc-dock-meta{font-size:9px}#freedom-chief-draft-four .fc-footer{padding:10px 16px 16px;font-size:8px;letter-spacing:0}#freedom-chief-draft-four .fc-progress{left:14px;right:14px}}
+    @media(prefers-reduced-motion:reduce){#freedom-chief-draft-four *{transition:none!important;scroll-behavior:auto!important}}
+  

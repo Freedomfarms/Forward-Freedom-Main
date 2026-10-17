@@ -201,7 +201,9 @@ const chiefBoundariesPlugin = {
 
 export default [
   {
-    ignores: ["dist/", "node_modules/"],
+    // design-references/ holds supplied visual prototypes (reference material,
+    // not application code); it is preserved verbatim and not linted.
+    ignores: ["dist/", "node_modules/", "design-references/"],
   },
   js.configs.recommended,
   {

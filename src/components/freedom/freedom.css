@@ -1,20 +1,16 @@
-/* Public entry shell. The filament core fills this viewport the same way
-   CHIEF's conversation slot does. Branding sits in the clear band above the
-   sphere and authentication sits in the clear band below it. */
+/* Public entry shell. The CHIEF Draft 4 scene (sphere, bolt, stars) fills
+   this viewport as a backdrop. Branding sits in the clear band above the
+   sphere and authentication sits in the clear band below it. Palette follows
+   the approved lightning-blue / ice-blue reference. */
 
 .freedom-shell {
   position: relative;
   height: 100vh;
   height: 100dvh;
   overflow: hidden;
-  background: #070b1c;
-  color: #f0ede8;
-  font-family:
-    system-ui,
-    -apple-system,
-    "Segoe UI",
-    Roboto,
-    sans-serif;
+  background: #05090c;
+  color: #eaf6ff;
+  font-family: Inter, Arial, sans-serif;
 }
 
 .freedom-core-slot {
@@ -24,8 +20,8 @@
   pointer-events: none;
 }
 
-.freedom-shell .chief-intelligence-core,
-.freedom-shell .chief-intelligence-core canvas {
+.freedom-shell .fc-root--backdrop,
+.freedom-shell .fc-root--backdrop .fc-canvas {
   display: block;
   width: 100%;
   height: 100%;
@@ -50,16 +46,16 @@
   font-size: clamp(22px, 4vw, 40px);
   letter-spacing: 0.22em;
   line-height: 1;
-  color: #f0ede8;
+  color: #eaf6ff;
   text-shadow:
-    0 0 12px rgba(240, 237, 232, 0.22),
-    0 0 42px rgba(124, 58, 237, 0.32);
+    0 0 12px rgba(234, 246, 255, 0.22),
+    0 0 42px rgba(98, 170, 240, 0.32);
 }
 
 .freedom-mission {
   margin: 8px auto 0;
   max-width: 34ch;
-  color: rgba(240, 237, 232, 0.72);
+  color: rgba(234, 246, 255, 0.72);
   font-size: 13px;
   line-height: 1.4;
 }
@@ -97,19 +93,19 @@
   font-size: 11px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: rgba(240, 237, 232, 0.55);
+  color: rgba(234, 246, 255, 0.55);
 }
 
 .freedom-glass {
   display: grid;
   gap: 10px;
   padding: 12px 14px 10px;
-  border: 1px solid rgba(167, 139, 250, 0.28);
+  border: 1px solid rgba(162, 204, 238, 0.28);
   border-radius: 18px;
-  background: rgba(8, 6, 18, 0.55);
+  background: rgba(10, 18, 28, 0.55);
   backdrop-filter: blur(16px) saturate(1.1);
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.28);
-  color: #f6f0ff;
+  color: #eaf6ff;
 }
 
 .freedom-glass .chief-action,
@@ -174,7 +170,7 @@
   align-content: start;
   gap: 10px;
   scrollbar-width: thin;
-  scrollbar-color: rgba(192, 132, 252, 0.75) transparent;
+  scrollbar-color: rgba(138, 201, 252, 0.75) transparent;
 }
 
 .freedom-auth-actions {
@@ -218,7 +214,7 @@
   letter-spacing: 0.22em;
   line-height: 1.45;
   text-transform: uppercase;
-  color: #d8c6ff;
+  color: #a9cbe4;
   opacity: 0.8;
 }
 
@@ -239,7 +235,7 @@
 .freedom-modes button {
   border: 0;
   background: transparent;
-  color: rgba(183, 168, 201, 0.92);
+  color: rgba(168, 186, 201, 0.92);
   font: inherit;
   font-size: 12px;
   font-weight: 700;
@@ -251,8 +247,8 @@
 }
 
 .freedom-modes button[aria-pressed="true"] {
-  color: #f6f0ff;
-  box-shadow: inset 0 -1px 0 #c084fc;
+  color: #eaf6ff;
+  box-shadow: inset 0 -1px 0 #8ac9fc;
 }
 
 .freedom-label {
@@ -268,7 +264,7 @@
 .freedom-field {
   width: 100%;
   border: 0;
-  border-bottom: 1px solid rgba(167, 139, 250, 0.38);
+  border-bottom: 1px solid rgba(162, 204, 238, 0.38);
   border-radius: 0;
   background: transparent;
   color: #f3fbff;
@@ -287,7 +283,7 @@
 .freedom-field:focus,
 .freedom-field:focus-visible {
   outline: none;
-  border-bottom-color: #c084fc;
+  border-bottom-color: #8ac9fc;
 }
 
 .freedom-consent {
@@ -305,7 +301,7 @@
 .freedom-inline {
   border: 0;
   background: transparent;
-  color: #d4c4ff;
+  color: #b9e0ff;
   font: inherit;
   font-weight: 600;
   padding: 0;
@@ -324,17 +320,29 @@
 }
 
 .freedom-notice {
-  color: #d4c4ff;
+  color: #b9e0ff;
 }
 
 .freedom-auth .chief-action {
   min-height: 36px;
 }
 
+/* Entry buttons follow the Draft 4 ice-blue accents instead of the global
+   purple CHIEF theme; this stays scoped to the public shell. */
+.freedom-shell .chief-action {
+  border-color: rgba(154, 205, 243, 0.42);
+  background: rgba(44, 120, 183, 0.3);
+  color: #eaf6ff;
+}
+
+.freedom-shell .chief-action--quiet {
+  background: transparent;
+}
+
 .freedom-shell button:focus-visible,
 .freedom-shell input:focus-visible,
 .freedom-shell a:focus-visible {
-  outline: 2px solid #c084fc;
+  outline: 2px solid #acdaff;
   outline-offset: 3px;
 }
 
