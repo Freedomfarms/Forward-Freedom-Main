@@ -39,6 +39,7 @@
 //     "schedule:<taskId>" into the same machine; this file does not schedule.
 
 import { randomUUID } from "node:crypto";
+import { appendFileSync } from "node:fs";
 
 import { jsonSchema, tool } from "ai";
 
@@ -372,6 +373,12 @@ export class TurnMachine {
         }
         throw error;
       }
+      // #region agent log
+      appendFileSync(
+        "/opt/cursor/logs/debug.log",
+        `${JSON.stringify({ hypothesisId: "E", location: "server/chief/runtime/turn.js:_modelLoop:streamed", message: "model loop branch input", data: { modelStep: execution.modelSteps, toolCalls: streamed.toolCalls.map((call) => call?.name), willComplete: streamed.toolCalls.length === 0, currentStatus: this._status, hasPendingApproval: Boolean(this._checkpoint.pendingApproval) }, timestamp: Date.now() })}\n`
+      );
+      // #endregion
 
       this._checkpoint.transcript.push(streamed.assistant);
       if (streamed.usage) {
@@ -525,7 +532,19 @@ export class TurnMachine {
     const finalized = await opened.finalize();
     const activeModel = opened.resolution?.modelKey ?? finalized?.model ?? null;
     if (activeModel) execution.activeModel = activeModel;
+    // #region agent log
+    appendFileSync(
+      "/opt/cursor/logs/debug.log",
+      `${JSON.stringify({ hypothesisId: "A", location: "server/chief/runtime/turn.js:_consumeModel:raw", message: "raw model step before response settlement", data: { modelStep: execution.modelSteps, rawCalls: toolCalls.map((call) => call?.name), rawCallIds: toolCalls.map((call) => call?.callId), hasSettlement: typeof this._settleModelStep === "function" }, timestamp: Date.now() })}\n`
+    );
+    // #endregion
     const settled = await this._settledStep(text, toolCalls, { activeModel });
+    // #region agent log
+    appendFileSync(
+      "/opt/cursor/logs/debug.log",
+      `${JSON.stringify({ hypothesisId: "A", location: "server/chief/runtime/turn.js:_consumeModel:settled", message: "model step after response settlement", data: { modelStep: execution.modelSteps, rawCalls: toolCalls.map((call) => call?.name), settledCalls: Array.isArray(settled?.toolCalls) ? settled.toolCalls.map((call) => call?.name) : null, diagnostics: Array.isArray(settled?.diagnostics) ? settled.diagnostics : null, clearDelegation: settled?.clearDelegation === true }, timestamp: Date.now() })}\n`
+    );
+    // #endregion
     text = settled.text;
     const nextCalls = settled.toolCalls.slice();
     if (settled.clearDelegation && this._checkpoint.context) {
@@ -578,6 +597,12 @@ export class TurnMachine {
       classification.mutationIds,
       { explicitCallIds: classification.explicitIds }
     );
+    // #region agent log
+    appendFileSync(
+      "/opt/cursor/logs/debug.log",
+      `${JSON.stringify({ hypothesisId: "D", location: "server/chief/runtime/turn.js:_authorize", message: "tool classification and approval decision", data: { calls: toolCalls.map((call) => call?.name), matchingSpecs: toolCalls.map((call) => { const spec = this._toolSpecs.find((candidate) => candidate.name === call.name); return { name: call.name, found: Boolean(spec), requiresConfirmation: spec?.requiresConfirmation ?? null, effect: spec?.effect ?? null }; }), mutationIds: classification.mutationIds, readIds: classification.readIds, explicitIds: classification.explicitIds, decision: decision.type }, timestamp: Date.now() })}\n`
+    );
+    // #endregion
     if (decision.type === "execute") {
       const granted = new Set(
         classification.mutationIds.filter((callId) => decision.permissions.forCall(callId).mutation)
