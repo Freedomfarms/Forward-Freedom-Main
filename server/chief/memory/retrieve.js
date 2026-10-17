@@ -51,9 +51,10 @@ const CURRENT = /\b(current|currently|right now|today|available|left)\b/i;
 const VALUATION = /\b(worth|value|valued)\b/i;
 const CALCULATION =
   /\b(calculate|calculation|compute|arithmetic|per (?:month|week|year)|each (?:month|week|year)|after \d|over \d|ignoring interest|without interest|set aside|save|saved|starting (?:this|next)|would (?:i|we) have|percent of|percentage of)\b|[+\-*/×÷]/i;
+const ISO_TIMESTAMP = /\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z\b/gi;
 
 export function isSelfContainedCalculation(query) {
-  const text = String(query ?? "");
+  const text = String(query ?? "").replace(ISO_TIMESTAMP, "");
   const inputs = text.match(/(?:^|[^\w])\$?-?\d[\d,]*(?:\.\d+)?%?/g) ?? [];
   return inputs.length >= 2 && CALCULATION.test(text);
 }

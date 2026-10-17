@@ -5,6 +5,7 @@ import test from "node:test";
 
 import {
   authoritativeDomain,
+  isSelfContainedCalculation,
   needsEpisodicMemory,
   planMemoryRetrieval,
   rankEpisodes,
@@ -130,6 +131,12 @@ test("a repository path is a code read and a balance question stays finance", ()
     null
   );
   assert.equal(authoritativeDomain("How much is 18 * 400?"), null);
+  assert.equal(
+    isSelfContainedCalculation(
+      '[Scheduled task "check well" fired at 2026-09-30T12:00:00.000Z. No user is present.] Record the well level.'
+    ),
+    false
+  );
   assert.equal(authoritativeDomain("What is my current home equity?"), "finance");
   assert.equal(authoritativeDomain("What is the XRP price today?"), "web");
   assert.equal(
