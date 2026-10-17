@@ -1,0 +1,691 @@
+/* CHIEF Draft 4 public-entry styles, ported from
+   design-references/chief-draft-4/chief-intro.css. The prototype's root id
+   (#freedom-chief-draft-four) became the .fc-root class, and the standalone
+   page's body reset was intentionally NOT copied: .fc-page scopes the page
+   background to the public homepage instead. Every color, dimension,
+   breakpoint, and transition value is preserved from the approved prototype.
+   .fc-root--backdrop is the login variant: the same canvas scene, full-bleed
+   behind the real authentication form, without the panel composition. */
+
+.fc-page {
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: #05090c;
+  display: flex;
+  flex-direction: column;
+}
+
+.fc-page .fc-root {
+  width: 100%;
+  max-width: 1600px;
+  margin: 0 auto;
+  flex: 1 0 auto;
+  border-radius: 0;
+}
+
+.fc-root {
+  --ink: #eaf6ff;
+  --muted: #96a7b5;
+  --electric: #92ceff;
+  --cyan: #91e7f3;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background: #05090c;
+  color: var(--ink);
+  font-family: Inter, Arial, sans-serif;
+  font-size: 14px;
+  min-height: 760px;
+  border-radius: 14px;
+  color-scheme: dark;
+}
+
+.fc-root * {
+  box-sizing: border-box;
+}
+
+.fc-root button,
+.fc-root input,
+.fc-root select {
+  font: inherit;
+}
+
+.fc-root button {
+  cursor: pointer;
+  color: inherit;
+}
+
+.fc-root button:focus-visible,
+.fc-root input:focus-visible,
+.fc-root select:focus-visible {
+  outline: 2px solid #acdaff;
+  outline-offset: 5px;
+}
+
+.fc-root .fc-header {
+  position: relative;
+  z-index: 4;
+  height: 76px;
+  margin: 0 30px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #ffffff10;
+  gap: 12px;
+}
+
+.fc-root .fc-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  letter-spacing: 3px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.fc-root .fc-mark {
+  width: 27px;
+  height: 30px;
+  clip-path: polygon(57% 0, 15% 58%, 46% 58%, 34% 100%, 88% 35%, 56% 35%, 70% 0);
+  background: linear-gradient(140deg, #ffffff, #8acaff 65%, #639ecf);
+}
+
+.fc-root .fc-subbrand {
+  color: #97acbe;
+  letter-spacing: 1px;
+  font-size: 10px;
+  margin-top: 5px;
+  font-weight: 400;
+}
+
+.fc-root .fc-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fc-root .fc-control {
+  border: 1px solid #97adbf30;
+  background: #12191e;
+  border-radius: 6px;
+  padding: 9px 12px;
+  font-size: 11px;
+  min-height: 36px;
+  color: #c1ced8;
+}
+
+.fc-root select.fc-control {
+  max-width: 110px;
+}
+
+.fc-root .fc-control:hover {
+  background: #202c35;
+}
+
+.fc-root .fc-control--accent {
+  border-color: #8ac9fc66;
+  background: #16242e;
+  color: #cfe9ff;
+}
+
+.fc-root .fc-stage {
+  position: relative;
+  height: 555px;
+  perspective: 1200px;
+}
+
+.fc-root .fc-canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.fc-root .fc-wordmark {
+  position: absolute;
+  top: 18px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  pointer-events: none;
+  font-size: 86px;
+  font-weight: 400;
+  letter-spacing: 28px;
+  padding-left: 28px;
+  color: #c7e6ff06;
+}
+
+.fc-root .fc-kicker {
+  position: absolute;
+  top: 32px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 10px;
+  letter-spacing: 4px;
+  color: #9caebd;
+  opacity: var(--awaken, 0);
+  transition: opacity 0.15s;
+}
+
+.fc-root .fc-center-label {
+  position: absolute;
+  left: 50%;
+  top: 395px;
+  transform: translateX(-50%);
+  text-align: center;
+  pointer-events: none;
+  opacity: var(--ignition, 0);
+  width: 250px;
+}
+
+.fc-root .fc-center-label strong {
+  display: block;
+  font-size: 22px;
+  letter-spacing: 10px;
+  font-weight: 400;
+  margin-left: 10px;
+}
+
+.fc-root .fc-center-label small {
+  display: block;
+  font: 9px monospace;
+  letter-spacing: 2px;
+  color: #87a4bc;
+  margin-top: 10px;
+}
+
+.fc-root .fc-panel {
+  position: absolute;
+  z-index: 2;
+  width: 220px;
+  min-height: 100px;
+  text-align: left;
+  appearance: none;
+  border: 1px solid #a0cef32a;
+  border-radius: 9px;
+  padding: 17px 18px;
+  background: linear-gradient(125deg, #19232bde, #0b101be8);
+  box-shadow:
+    0 16px 48px #00000066,
+    inset 0 1px 0 #ffffff09;
+  opacity: 0;
+  transform: translate3d(var(--from-x), 32px, -200px) rotateY(var(--tilt)) scale(0.88);
+  will-change: transform, opacity;
+  transition:
+    border-color 0.2s,
+    background 0.2s;
+}
+
+.fc-root .fc-panel:before {
+  content: "";
+  position: absolute;
+  left: -1px;
+  top: 20px;
+  width: 2px;
+  height: 20px;
+  background: linear-gradient(transparent, #a4d6ff, transparent);
+  box-shadow: 0 0 12px #6bbcff;
+}
+
+.fc-root .fc-panel:hover {
+  border-color: #98d1ff80;
+  background: linear-gradient(125deg, #202e39ee, #141d25ee);
+}
+
+.fc-root .fc-panel[data-side="left"] {
+  left: 5%;
+  --from-x: 95px;
+  --tilt: 22deg;
+}
+
+.fc-root .fc-panel[data-side="right"] {
+  right: 5%;
+  --from-x: -95px;
+  --tilt: -22deg;
+}
+
+.fc-root .fc-panel[data-row="0"] {
+  top: 88px;
+}
+
+.fc-root .fc-panel[data-row="1"] {
+  top: 219px;
+}
+
+.fc-root .fc-panel[data-row="2"] {
+  top: 350px;
+}
+
+.fc-root .fc-panel-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font: 9px monospace;
+  letter-spacing: 1px;
+  color: #91b6d4;
+  margin-bottom: 13px;
+}
+
+.fc-root .fc-symbol {
+  font-size: 15px;
+  line-height: 12px;
+  color: #b9e0ff;
+}
+
+.fc-root .fc-panel h3 {
+  font-size: 11px;
+  letter-spacing: 2px;
+  font-weight: 500;
+  margin: 0 0 8px;
+}
+
+.fc-root .fc-panel p {
+  font-size: 11px;
+  line-height: 1.5;
+  margin: 0;
+  color: #a3b1bc;
+}
+
+.fc-root .fc-phase {
+  position: absolute;
+  bottom: 24px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font: 10px monospace;
+  letter-spacing: 2px;
+  color: #9babb9;
+  z-index: 2;
+}
+
+.fc-root .fc-phase-dot {
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  background: #a0d4ff;
+  border-radius: 50%;
+  margin: 0 9px 2px 0;
+  box-shadow: 0 0 10px #81c6ff;
+}
+
+.fc-root .fc-progress {
+  position: absolute;
+  bottom: 0;
+  left: 30px;
+  right: 30px;
+  height: 1px;
+  background: #ffffff09;
+}
+
+.fc-root .fc-progress i {
+  display: block;
+  transform: scaleX(var(--progress, 0));
+  transform-origin: left;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #81bdee, #d9eeff);
+  box-shadow: 0 0 8px #8ac9fc;
+}
+
+.fc-root .fc-dock {
+  position: relative;
+  z-index: 3;
+  margin: 17px auto 0;
+  width: min(620px, calc(100% - 48px));
+  opacity: 0;
+  transform: translateY(15px);
+  transition:
+    opacity 0.5s,
+    transform 0.5s;
+}
+
+.fc-root[data-ready="true"] .fc-dock {
+  opacity: 1;
+  transform: none;
+}
+
+.fc-root .fc-input-wrap {
+  display: flex;
+  gap: 10px;
+  padding: 9px 10px 9px 18px;
+  border-radius: 12px;
+  border: 1px solid #a2ccee33;
+  background: linear-gradient(110deg, #17242f, #10171c);
+  box-shadow: 0 0 30px #61b8ff08;
+}
+
+/* Public entry actions composed inside the prototype's dock frame. The demo
+   composer was presentation-only; on the real homepage this area is the
+   sign-in path instead of a chat that is not connected. */
+.fc-root .fc-cta {
+  flex: 1 1 auto;
+  min-height: 38px;
+  border: 0;
+  border-radius: 8px;
+  background: #97c6ed;
+  color: #0d1a24;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+.fc-root .fc-cta:hover {
+  background: #b7dbf7;
+}
+
+.fc-root .fc-cta--quiet {
+  flex: 0 1 auto;
+  background: transparent;
+  border: 1px solid #97adbf30;
+  color: #c1ced8;
+  padding: 0 16px;
+}
+
+.fc-root .fc-cta--quiet:hover {
+  background: #202c35;
+  color: #e8f5ff;
+}
+
+.fc-root .fc-dock-meta {
+  display: flex;
+  justify-content: space-between;
+  margin: 10px 2px;
+  font-size: 10px;
+  color: #84939f;
+  gap: 10px;
+}
+
+.fc-root .fc-dock-meta span:first-child {
+  color: #a2b8ca;
+}
+
+.fc-root .fc-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 12px 30px 20px;
+  color: #6f7d89;
+  font: 9px monospace;
+  letter-spacing: 1px;
+  gap: 12px;
+}
+
+.fc-root .fc-footer-links {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.fc-root .fc-footer-link {
+  background: none;
+  border: 0;
+  padding: 4px 0;
+  font: inherit;
+  color: inherit;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.fc-root .fc-footer-link:hover {
+  color: #9fc6e4;
+}
+
+.fc-root .fc-detail {
+  position: absolute;
+  z-index: 8;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(420px, calc(100% - 40px));
+  background: #12191e;
+  border: 1px solid #8ab2d367;
+  border-radius: 14px;
+  padding: 30px;
+  box-shadow: 0 30px 150px #000000;
+}
+
+.fc-root .fc-detail h2 {
+  margin: 10px 0 14px;
+  font-size: 19px;
+  letter-spacing: 3px;
+  font-weight: 400;
+}
+
+.fc-root .fc-detail p {
+  line-height: 1.7;
+  color: #b2c2cf;
+  font-size: 14px;
+}
+
+.fc-root .fc-detail small {
+  font: 10px monospace;
+  color: #8bacc7;
+  letter-spacing: 1px;
+}
+
+.fc-root .fc-detail-close {
+  float: right;
+  background: none;
+  border: 0;
+  font-size: 23px;
+  color: #b9cbd9;
+  padding: 0 5px;
+}
+
+.fc-root .fc-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  background: #020508b8;
+  border: 0;
+}
+
+.fc-root [hidden] {
+  display: none !important;
+}
+
+@media (min-width: 1150px) {
+  .fc-root .fc-panel {
+    width: 245px;
+  }
+
+  .fc-root .fc-panel[data-side="left"] {
+    left: 8%;
+  }
+
+  .fc-root .fc-panel[data-side="right"] {
+    right: 8%;
+  }
+}
+
+@media (max-width: 760px) {
+  .fc-root .fc-panel {
+    width: 180px;
+    padding: 14px 12px;
+  }
+
+  .fc-root .fc-panel[data-side="left"] {
+    left: 3%;
+  }
+
+  .fc-root .fc-panel[data-side="right"] {
+    right: 3%;
+  }
+
+  .fc-root .fc-panel h3 {
+    font-size: 10px;
+    letter-spacing: 1.2px;
+  }
+
+  .fc-root .fc-header {
+    margin: 0 18px;
+  }
+
+  .fc-root .fc-brand {
+    letter-spacing: 1px;
+  }
+
+  .fc-root .fc-subbrand {
+    display: none;
+  }
+}
+
+@media (max-width: 580px) {
+  .fc-root {
+    min-height: 920px;
+  }
+
+  .fc-root .fc-header {
+    height: 72px;
+    margin: 0 14px;
+  }
+
+  .fc-root .fc-mark {
+    width: 19px;
+    height: 23px;
+  }
+
+  .fc-root .fc-brand {
+    font-size: 10px;
+    gap: 7px;
+  }
+
+  .fc-root .fc-controls {
+    gap: 5px;
+  }
+
+  .fc-root .fc-control {
+    font-size: 10px;
+    padding: 8px;
+    min-height: 36px;
+  }
+
+  .fc-root .fc-stage {
+    height: 710px;
+  }
+
+  .fc-root .fc-wordmark {
+    font-size: 55px;
+    letter-spacing: 15px;
+    padding-left: 15px;
+    top: 22px;
+  }
+
+  .fc-root .fc-kicker {
+    font-size: 9px;
+    letter-spacing: 2px;
+  }
+
+  .fc-root .fc-center-label {
+    top: 285px;
+  }
+
+  .fc-root .fc-center-label strong {
+    font-size: 17px;
+  }
+
+  .fc-root .fc-panel {
+    width: calc(50% - 20px);
+    min-height: 91px;
+    padding: 12px;
+  }
+
+  .fc-root .fc-panel[data-side="left"] {
+    left: 14px;
+  }
+
+  .fc-root .fc-panel[data-side="right"] {
+    right: 14px;
+  }
+
+  .fc-root .fc-panel[data-row="0"] {
+    top: 365px;
+  }
+
+  .fc-root .fc-panel[data-row="1"] {
+    top: 468px;
+  }
+
+  .fc-root .fc-panel[data-row="2"] {
+    top: 571px;
+  }
+
+  .fc-root .fc-panel-top {
+    margin-bottom: 9px;
+  }
+
+  .fc-root .fc-panel h3 {
+    font-size: 10px;
+    letter-spacing: 1px;
+  }
+
+  .fc-root .fc-panel p {
+    font-size: 11px;
+  }
+
+  .fc-root .fc-phase {
+    bottom: 18px;
+    font-size: 9px;
+  }
+
+  .fc-root .fc-dock {
+    width: calc(100% - 28px);
+  }
+
+  .fc-root .fc-dock-meta {
+    font-size: 9px;
+  }
+
+  .fc-root .fc-footer {
+    padding: 10px 16px 16px;
+    font-size: 8px;
+    letter-spacing: 0;
+  }
+
+  .fc-root .fc-progress {
+    left: 14px;
+    right: 14px;
+  }
+}
+
+/* Login backdrop variant: the same renderer and scene, stretched behind the
+   real authentication form. Panels, dock, phase, and progress do not mount
+   here; the sphere, bolt, stars, and center label carry the visual language. */
+.fc-root--backdrop {
+  position: absolute;
+  inset: 0;
+  min-height: 0;
+  max-width: none;
+  margin: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.fc-root--backdrop .fc-stage {
+  height: 100%;
+}
+
+@media (max-width: 580px) {
+  .fc-root--backdrop {
+    min-height: 0;
+  }
+}
+
+@media (max-height: 640px) {
+  .fc-root--backdrop .fc-center-label {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fc-root * {
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}

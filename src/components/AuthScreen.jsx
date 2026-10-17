@@ -155,7 +155,7 @@ export function AuthScreen({
 
   return (
     <>
-      <FreedomShell variant="auth" orbState={isBusy ? "thinking" : "idle"}>
+      <FreedomShell variant="auth">
         <header className="freedom-brand">
           <h1>FREEDOM OS</h1>
         </header>

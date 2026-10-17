@@ -167,20 +167,25 @@ test("the homepage sandbox does not enter the CHIEF room", () => {
   assert.doesNotMatch(page, /ChiefCore|chiefCore/);
   assert.match(atmosphere, /visual\/chiefCore\/ChiefCore/);
   assert.doesNotMatch(atmosphere, /import .*ApexWorld|import .*ApexCore3D|import .*ApexClock/);
-  assert.match(home, /<FreedomShell>/);
+  assert.match(home, /ChiefIntroHome/);
   assert.doesNotMatch(home, /ChiefAtmosphere|ChiefCore/);
   assert.match(auth, /FreedomShell/);
   assert.match(auth, /signInWithEmail/);
-  assert.match(shell, /ChiefIntelligenceCore/);
-  assert.match(shell, /showCore && !reducedMotion/);
-  assert.match(shell, /prefers-reduced-motion: reduce/);
+  // The public shell mounts the CHIEF Draft 4 backdrop; the authenticated
+  // conversation keeps ChiefIntelligenceCore. Reduced motion is settled inside
+  // the intro renderer rather than by unmounting the scene.
+  assert.match(shell, /ChiefIntroBackdrop/);
+  assert.doesNotMatch(shell, /ChiefIntelligenceCore|chiefIntelligence/);
+  assert.match(shell, /showCore \?/);
   assert.doesNotMatch(shell, /ChiefAtmosphere|chiefCore\/ChiefCore/);
+  const face = read("src/components/chief/ChiefInterface.jsx");
+  assert.match(face, /ChiefIntelligenceCore/);
   const app = read("src/App.jsx");
   assert.match(app, /<FreedomShell showCore=\{false\} \/>/);
   const css = read("src/components/freedom/freedom.css");
   assert.match(css, /\.freedom-core-slot\s*\{[^}]*inset:\s*0;/);
-  assert.match(css, /chief-intelligence-core canvas[\s\S]*width:\s*100%/);
-  assert.match(css, /chief-intelligence-core canvas[\s\S]*height:\s*100%/);
+  assert.match(css, /fc-root--backdrop .fc-canvas[\s\S]*width:\s*100%/);
+  assert.match(css, /fc-root--backdrop .fc-canvas[\s\S]*height:\s*100%/);
   assert.doesNotMatch(css, /@media \(min-width: 1280px\)/);
   assert.doesNotMatch(scene, /@react-three|useFrame|supabase|plaid|TurnMachine|firebase/i);
   assert.equal(scene.split("requestAnimationFrame").length - 1, 1);

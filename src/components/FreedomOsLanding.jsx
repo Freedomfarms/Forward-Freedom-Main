@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { ErrorBoundary } from "./ErrorBoundary.jsx";
 import { LegalModal } from "./LegalDocuments.jsx";
-import { FreedomButton } from "./freedom/FreedomButton.jsx";
-import { FreedomShell } from "./freedom/FreedomShell.jsx";
+import { ChiefIntroHome } from "./entry/ChiefIntroHome.jsx";
 import "./entry/entry.css";
 
-// Shared Freedom OS entry visuals. PublicFreedomOsHome and
-// AuthenticatedFreedomOsShell are separate screens that reuse this frame.
+// Freedom OS entry screens. PublicFreedomOsHome is the signed-out homepage
+// (the approved CHIEF Draft 4 cinematic); AuthenticatedFreedomOsShell is a
+// separate signed-in screen with its own stage.
 
 const TAGLINE = "Your autonomous operating system for life, work, and wealth.";
 
@@ -441,50 +441,13 @@ function FreedomOsStage({ bootLines, actions, portals }) {
 }
 
 export function PublicFreedomOsHome({ onSignIn, onCreateAccount, onExploreFreedomFinancial }) {
-  const [activeDocument, setActiveDocument] = useState(null);
-
   return (
     <ErrorBoundary>
-      <FreedomShell>
-        <header className="freedom-brand">
-          <h1>FREEDOM OS</h1>
-          <p className="freedom-mission">A unified personal intelligence system.</p>
-        </header>
-        <div className="freedom-actions">
-          <div className="freedom-actions-row">
-            <FreedomButton onClick={onSignIn}>Sign In</FreedomButton>
-            <FreedomButton variant="quiet" onClick={onCreateAccount}>
-              Create Account
-            </FreedomButton>
-          </div>
-          <div className="freedom-links">
-            {typeof onExploreFreedomFinancial === "function" ? (
-              <button
-                type="button"
-                className="chief-text-button"
-                onClick={onExploreFreedomFinancial}
-              >
-                Freedom Financial
-              </button>
-            ) : null}
-            <button
-              type="button"
-              className="chief-text-button"
-              onClick={() => setActiveDocument("terms")}
-            >
-              Terms
-            </button>
-            <button
-              type="button"
-              className="chief-text-button"
-              onClick={() => setActiveDocument("privacy")}
-            >
-              Privacy
-            </button>
-          </div>
-        </div>
-      </FreedomShell>
-      <LegalModal activeDocument={activeDocument} closeDocument={() => setActiveDocument(null)} />
+      <ChiefIntroHome
+        onSignIn={onSignIn}
+        onCreateAccount={onCreateAccount}
+        onExploreFreedomFinancial={onExploreFreedomFinancial}
+      />
     </ErrorBoundary>
   );
 }
