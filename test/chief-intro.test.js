@@ -377,6 +377,10 @@ test("the public intro stays scoped and leaves authentication intact", () => {
   assert.match(home, /onSignIn/);
   assert.match(home, /onCreateAccount/);
   assert.match(home, /Skip/);
+  assert.match(home, /fc-wordmark">FREEDOM OS/);
+  assert.match(home, /fc-kicker">PERSONAL INTELLIGENCE SYSTEM/);
+  assert.doesNotMatch(home, /INTELLIGENCE, AT YOUR COMMAND/);
+  assert.doesNotMatch(home, /fc-header/);
   assert.doesNotMatch(home, /Cinematic/);
   assert.doesNotMatch(home, /Replay/);
   assert.doesNotMatch(home, /fc-control--accent/);

@@ -131,34 +131,20 @@ export function ChiefIntroHome({ onSignIn, onCreateAccount, onExploreFreedomFina
     <>
       <div className="fc-page">
         <div ref={rootRef} className="fc-root" onKeyDown={handleDetailKeyDown}>
-          <header className="fc-header" inert={detailOpen || undefined}>
-            <div className="fc-brand">
-              <span className="fc-mark" aria-hidden="true" />
-              <span>
-                FREEDOM OS
-                <span className="fc-subbrand"> PERSONAL INTELLIGENCE SYSTEM</span>
-              </span>
-            </div>
-            <div className="fc-controls">
-              <button
-                type="button"
-                className="fc-control fc-skip"
-                onClick={() => {
-                  controllerRef.current?.skip();
-                  markChiefIntroPlayed();
-                }}
-              >
-                Skip
-              </button>
-            </div>
-          </header>
-
           <div className="fc-stage" inert={detailOpen || undefined}>
             <canvas className="fc-canvas" aria-hidden="true" />
-            <div className="fc-wordmark" aria-hidden="true">
-              CHIEF
-            </div>
-            <div className="fc-kicker">INTELLIGENCE, AT YOUR COMMAND.</div>
+            <h1 className="fc-wordmark">FREEDOM OS</h1>
+            <p className="fc-kicker">PERSONAL INTELLIGENCE SYSTEM</p>
+            <button
+              type="button"
+              className="fc-control fc-skip"
+              onClick={() => {
+                controllerRef.current?.skip();
+                markChiefIntroPlayed();
+              }}
+            >
+              Skip
+            </button>
             {CAPABILITIES.map((item, index) => (
               <button
                 key={item.title}

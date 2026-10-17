@@ -149,12 +149,14 @@
   top: 18px;
   left: 0;
   right: 0;
+  margin: 0;
   text-align: center;
   pointer-events: none;
-  font-size: 86px;
+  font-size: 72px;
   font-weight: 400;
-  letter-spacing: 28px;
-  padding-left: 28px;
+  line-height: 1;
+  letter-spacing: 12px;
+  padding-left: 12px;
   color: #c7e6ff06;
 }
 
@@ -163,12 +165,20 @@
   top: 32px;
   left: 0;
   right: 0;
+  margin: 0;
   text-align: center;
   font-size: 10px;
   letter-spacing: 4px;
   color: #9caebd;
   opacity: var(--awaken, 0);
   transition: opacity 0.15s;
+}
+
+.fc-root .fc-stage > .fc-skip {
+  position: absolute;
+  z-index: 5;
+  top: 14px;
+  right: 16px;
 }
 
 .fc-root .fc-center-label {
@@ -523,6 +533,12 @@
     letter-spacing: 1.2px;
   }
 
+  .fc-root .fc-wordmark {
+    font-size: 48px;
+    letter-spacing: 6px;
+    padding-left: 6px;
+  }
+
   .fc-root .fc-header {
     margin: 0 18px;
   }
@@ -571,9 +587,9 @@
   }
 
   .fc-root .fc-wordmark {
-    font-size: 55px;
-    letter-spacing: 15px;
-    padding-left: 15px;
+    font-size: 30px;
+    letter-spacing: 3px;
+    padding-left: 3px;
     top: 22px;
   }
 
