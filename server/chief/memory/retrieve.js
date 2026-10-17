@@ -42,21 +42,42 @@ const CODE_PATH =
 const WEB_REQUEST =
   /\b(news|headlines?|current events|web search|weather)\b|\b(?:price|quote|market)\b.*\b(?:today|current|right now|latest)\b|\b(?:today|current|right now|latest)\b.*\b(?:price|quote|market)\b|\b(?:bitcoin|btc|xrp|ethereum|eth|stock|share|gold|silver)\b[^?]{0,60}\b(?:price|quote|trading at|worth)\b/i;
 const FINANCIAL_STATE =
-  /\b(balance|net worth|holdings?|mortgage|home equity|equity|assets?|debts?|loans?|credit cards?|cash|true cash|portfolio|accounts?|spending|budget|money)\b/i;
+  /\b(balance|net worth|holdings?|mortgage|home equity|equity|assets?|debts?|loans?|credit cards?|cash|true cash|portfolio|accounts?|spending|spend|spent|expenses?|income|budget|money)\b/i;
 const OWNED_ASSET =
   /\b(crypto|bitcoin|btc|xrp|ethereum|eth|stock|shares?|gold|silver|house|home|cabin|property|properties)\b/i;
 const PERSONAL_FINANCE = /\b(my|our|mine|ours|i|we)\b/i;
 const OWNERSHIP = /\b(own|owns|owned|hold|holds|held|have|has|owe|owes|owed)\b/i;
 const CURRENT = /\b(current|currently|right now|today|available|left)\b/i;
 const VALUATION = /\b(worth|value|valued)\b/i;
-const CALCULATION =
-  /\b(calculate|calculation|compute|arithmetic|per (?:month|week|year)|each (?:month|week|year)|after \d|over \d|ignoring interest|without interest|set aside|save|saved|starting (?:this|next)|would (?:i|we) have|percent of|percentage of)\b|[+\-*/×÷]/i;
+// A self-contained calculation supplies every operand in the question. Dates,
+// timestamps, and bare years are reference points rather than operands, and a
+// hyphen only counts as subtraction when it is written as an operator.
+const CALCULATION_PHRASE =
+  /\b(calculate|calculation|compute|arithmetic|plus|minus|times|multiplied by|divided by|per (?:month|week|year)|each (?:month|week|year)|a (?:month|week|year)|after \d|over \d|ignoring interest|without interest|set aside|save|saved|starting (?:this|next)|would (?:i|we) have|percent of|percentage of)\b|\d\s*%\s*(?:of|off)\b|\b(?:up|down|drops?|falls?|rises?|gains?|loses?|grows?|increases?|decreases?)\s+(?:by\s+)?\d[\d,]*(?:\.\d+)?\s*%/i;
+const ARITHMETIC_OPERATOR =
+  /\d[\d,]*(?:\.\d+)?\s*%?(?:\s*[+*/×÷]\s*|\s+[-x]\s+)\$?-?\d/i;
+const PERSONAL_STATE_LOOKUP =
+  /\b(?:what|how much|how many)\s+(?:was|were|is|are|did|do|does|has|have|had)\s+(?:my|our)\b/i;
 const ISO_TIMESTAMP = /\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z\b/gi;
+const CALENDAR_DATE =
+  /\b\d{4}-\d{1,2}-\d{1,2}\b|\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b|\b(?:on|from|to|until|through|by|since|before|after|between|and)\s+\d{1,2}\/\d{1,2}\b|\b\d{1,2}:\d{2}(?::\d{2})?\b/gi;
+const BARE_YEAR =
+  /(?<![$\d.,]|[+*/×÷-]\s{0,3})\b(?:19|20)\d{2}\b(?![\d,.]\d|\s*[+*/×÷%-]|\s+(?:x|times|plus|minus|divided|multiplied)\b)/gi;
+const NUMERIC_OPERAND = /(?:^|[^\w])\$?-?\d[\d,]*(?:\.\d+)?%?/g;
+
+function calculationOperands(query) {
+  const text = String(query ?? "")
+    .replace(ISO_TIMESTAMP, " ")
+    .replace(CALENDAR_DATE, " ")
+    .replace(BARE_YEAR, " ");
+  return { text, operands: text.match(NUMERIC_OPERAND) ?? [] };
+}
 
 export function isSelfContainedCalculation(query) {
-  const text = String(query ?? "").replace(ISO_TIMESTAMP, "");
-  const inputs = text.match(/(?:^|[^\w])\$?-?\d[\d,]*(?:\.\d+)?%?/g) ?? [];
-  return inputs.length >= 2 && CALCULATION.test(text);
+  const { text, operands } = calculationOperands(query);
+  if (operands.length < 2) return false;
+  if (PERSONAL_STATE_LOOKUP.test(text)) return false;
+  return ARITHMETIC_OPERATOR.test(text) || CALCULATION_PHRASE.test(text);
 }
 
 function isPersonalFinanceRequest(text) {
