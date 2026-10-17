@@ -508,7 +508,15 @@ test("the reply guard enforces the contract when the model ignores it", () => {
 
   const live = {
     plan: { currentState: true },
-    authority: [{ origin: "live", available: true, text: "XRP quantity 2500" }],
+    authority: [
+      {
+        origin: "live",
+        available: true,
+        source: "freedom_financial",
+        sourceType: "live_financial_state",
+        text: "XRP quantity 2500",
+      },
+    ],
   };
   const verbose = settleReply({
     transcript: [{ role: "user", content: "How much XRP do I own?" }],
@@ -562,7 +570,17 @@ test("the reply guard enforces the contract when the model ignores it", () => {
   const read = settleReply({
     transcript: [
       { role: "user", content: "What is my current balance?" },
-      { role: "tool", content: "liquid cash 84000" },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "finance-1",
+            toolName: "finance_summary",
+            output: { type: "text", value: "liquid cash 84000" },
+          },
+        ],
+      },
     ],
     text: "Your balance is about $84,000.",
     pack: { plan: { currentState: true }, authority: [] },
@@ -591,6 +609,143 @@ test("the reply guard enforces the contract when the model ignores it", () => {
   });
   assert.match(hypothetical.text, /lower too/);
   assert.match(hypothetical.text, /pull Zillow/);
+});
+
+test("offer stripping removes unsolicited offers and keeps factual 'I can' findings", () => {
+  const transcript = [{ role: "user", content: "Did the code reader find the bug?" }];
+  const finding = settleReply({
+    transcript,
+    text: "I can confirm the code reader located the issue. I can also look that up if you'd like.",
+    pack: { plan: { currentState: false, live: [] }, authority: [] },
+  });
+  assert.equal(finding.text, "I can confirm the code reader located the issue.");
+  assert.doesNotMatch(finding.text, /don't have enough information/);
+
+  const kept = settleReply({
+    transcript,
+    text: "I can see the retry loop never re-checks the flag, so the operation stalls there.",
+    pack: { plan: { currentState: false, live: [] }, authority: [] },
+  });
+  assert.match(kept.text, /retry loop never re-checks the flag/);
+
+  const offers = settleReply({
+    transcript,
+    text: [
+      "The handler returns early.",
+      "I can pull the surrounding file if needed.",
+      "Let me know if you want the full trace.",
+      "Would you like me to keep digging?",
+    ].join(" "),
+    pack: { plan: { currentState: false, live: [] }, authority: [] },
+  });
+  assert.equal(offers.text, "The handler returns early.");
+
+  const thanks = settleReply({
+    transcript: [{ role: "user", content: "Thanks." }],
+    text: "You're welcome. I can pull your full balances.",
+    toolCalls: [{ callId: "c1", name: "finance_summary", arguments: {} }],
+  });
+  assert.equal(thanks.text, "Anytime.");
+  assert.deepEqual(thanks.toolCalls, []);
+});
+
+function toolResult(toolName, value, callId = `${toolName}-1`) {
+  return {
+    role: "tool",
+    content: [
+      { type: "tool-result", toolCallId: callId, toolName, output: { type: "text", value } },
+    ],
+  };
+}
+
+test("a current claim needs successful evidence from the planned live domain", () => {
+  const financePack = { plan: { currentState: true, live: ["finance"] }, authority: [] };
+  const claim = "Your current balance is $84,000.";
+  const gap = "I'm missing a current Freedom Financial balance reading, so I can't verify that amount.";
+  const ask = { role: "user", content: "What is my current balance?" };
+
+  const missing = settleReply({ transcript: [ask], text: claim, pack: financePack });
+  assert.equal(missing.text, gap);
+
+  const failed = settleReply({
+    transcript: [
+      ask,
+      toolResult(
+        "finance_summary",
+        "Capability 'finance:read' denied for agent 'chief' on tool 'finance_summary'."
+      ),
+    ],
+    text: claim,
+    pack: financePack,
+  });
+  assert.equal(failed.text, gap);
+
+  const unrelated = settleReply({
+    transcript: [ask, toolResult("settings_read", '{"timezone":"America/Denver"}')],
+    text: claim,
+    pack: financePack,
+  });
+  assert.equal(unrelated.text, gap);
+
+  const otherDomain = settleReply({
+    transcript: [ask, toolResult("web_search", "Bank savings rates are rising this quarter.")],
+    text: claim,
+    pack: financePack,
+  });
+  assert.equal(otherDomain.text, gap);
+
+  const unnamed = settleReply({
+    transcript: [ask, { role: "tool", content: "liquid cash 84000" }],
+    text: claim,
+    pack: financePack,
+  });
+  assert.equal(unnamed.text, gap);
+
+  const valid = settleReply({
+    transcript: [ask, toolResult("settings_read", "{}"), toolResult("finance_summary", "liquid cash 84000")],
+    text: claim,
+    pack: financePack,
+  });
+  assert.equal(valid.text, claim);
+
+  const twoDomains = {
+    plan: { currentState: true, live: ["finance", "web"] },
+    authority: [],
+  };
+  const half = settleReply({
+    transcript: [
+      { role: "user", content: "What is my XRP worth right now?" },
+      toolResult("finance_summary", "XRP quantity 2500"),
+    ],
+    text: "Your 2,500 XRP is worth $6,750 at $2.70.",
+    pack: twoDomains,
+  });
+  assert.doesNotMatch(half.text, /6,750/);
+  const whole = settleReply({
+    transcript: [
+      { role: "user", content: "What is my XRP worth right now?" },
+      toolResult("finance_summary", "XRP quantity 2500"),
+      toolResult("web_search", "XRP $2.70"),
+    ],
+    text: "Your 2,500 XRP is worth $6,750 at $2.70.",
+    pack: twoDomains,
+  });
+  assert.match(whole.text, /6,750/);
+
+  const codePack = { plan: { currentState: true, live: ["code"] }, authority: [] };
+  const codeAsk = {
+    role: "user",
+    content: "How many times does server/chief/runtime/turn.js retry the balance check?",
+  };
+  const codeClaim = "The balance check retries 3 times in the turn loop.";
+  const codeUnread = settleReply({ transcript: [codeAsk], text: codeClaim, pack: codePack });
+  assert.doesNotMatch(codeUnread.text, /3 times/);
+  const codeRead = settleReply({
+    transcript: [codeAsk, toolResult("code_read", "const BALANCE_RETRIES = 3;")],
+    text: codeClaim,
+    pack: codePack,
+  });
+  assert.equal(codeRead.text, codeClaim);
 });
 
 test("TurnMachine drops a tool call on a reaction and stores the guarded reply", async () => {

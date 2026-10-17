@@ -289,6 +289,125 @@ test("missing current data names the specific equity inputs instead of a generic
   assert.doesNotMatch(answer, /\$300,000|can't verify that from a current reading/i);
 });
 
+test("a dated balance question is a finance reading, not self-contained arithmetic", async () => {
+  const query = "What was my mortgage balance on 2025-10-01 and on 2026-10-01?";
+  assert.deepEqual(planContext(query).live, ["finance"]);
+  let executed = 0;
+  const bus = new EventBus();
+  const traceStore = new MemoryTraceStore();
+  const tooling = readTool({
+    name: "finance_summary",
+    capability: Capability.FINANCE_READ,
+    output: "mortgage balance 2025-10-01: 312000; mortgage balance 2026-10-01: 300000",
+    bus,
+    onExecute: () => {
+      executed += 1;
+    },
+  });
+  const result = await runTurn({
+    query,
+    eventBus: bus,
+    traceStore,
+    tooling,
+    engine: scriptedEngine([
+      { toolCalls: [{ callId: "finance-1", name: "finance_summary" }] },
+      { text: "Your mortgage balance was $312,000 on 2025-10-01 and $300,000 on 2026-10-01." },
+    ]),
+  });
+  assert.equal(executed, 1);
+  assert.match(result.checkpoint.transcript.at(-1).content, /\$312,000/);
+  assert.match(result.checkpoint.transcript.at(-1).content, /\$300,000/);
+  const respond = traceStore.traces[0].steps.find((step) => step.stepType === "RESPOND");
+  assert.doesNotMatch(
+    JSON.stringify(respond.detail.settlementDiagnostics ?? []),
+    /tool_suppressed_self_contained_calculation/
+  );
+});
+
+test("a model recommendation question is answered by the model, not by runtime identity", async () => {
+  const advice = "Which model should I use for CHIEF's reasoning?";
+  const result = await runTurn({
+    query: advice,
+    engine: scriptedEngine([
+      { text: "For long reasoning chains, a larger reasoning model is the better fit." },
+    ]),
+  });
+  const answer = result.checkpoint.transcript.at(-1).content;
+  assert.match(answer, /larger reasoning model is the better fit/);
+  assert.doesNotMatch(answer, /configured default|automatic routing/);
+
+  const identity = await runTurn({
+    query: "Which model are you running right now?",
+    engine: scriptedEngine([{ text: "I am GPT-4." }]),
+  });
+  const identityAnswer = identity.checkpoint.transcript.at(-1).content;
+  assert.match(identityAnswer, /this reply is running on Claude Active \(`claude-active`\)/);
+  assert.doesNotMatch(identityAnswer, /GPT-4/);
+});
+
+test("an unrelated settings read does not authorize a current balance claim", async () => {
+  const query = "What is my current balance?";
+  assert.deepEqual(planContext(query).live, ["finance"]);
+  let executed = 0;
+  const bus = new EventBus();
+  const tooling = readTool({
+    name: "settings_read",
+    capability: Capability.SETTINGS_READ,
+    output: '{"timezone":"America/Denver"}',
+    bus,
+    onExecute: () => {
+      executed += 1;
+    },
+  });
+  const result = await runTurn({
+    query,
+    eventBus: bus,
+    tooling,
+    engine: scriptedEngine([
+      { toolCalls: [{ callId: "settings-1", name: "settings_read" }] },
+      { text: "Your current balance is $84,000." },
+    ]),
+  });
+  assert.equal(executed, 1);
+  const answer = result.checkpoint.transcript.at(-1).content;
+  assert.doesNotMatch(answer, /84,000/);
+  assert.match(answer, /missing a current Freedom Financial balance reading/);
+});
+
+test("a denied finance read does not authorize a current balance claim", async () => {
+  const query = "What is my current balance?";
+  const bus = new EventBus();
+  const policy = new CapabilityPolicy({ defaultDeny: true });
+  const tool = new BaseTool({
+    isLocal: true,
+    spec: {
+      name: "finance_summary",
+      description: "read finance",
+      requiresConfirmation: false,
+      timeoutSeconds: 5,
+      requiredCapabilities: [Capability.FINANCE_READ],
+      parameters: { type: "object", properties: {} },
+    },
+    async execute() {
+      return { output: "liquid cash 84000" };
+    },
+  });
+  const result = await runTurn({
+    query,
+    eventBus: bus,
+    tooling: { executor: new ToolExecutor({ tools: [tool], policy, bus }), specs: [tool.spec] },
+    engine: scriptedEngine([
+      { toolCalls: [{ callId: "finance-1", name: "finance_summary" }] },
+      { text: "Your current balance is $84,000." },
+    ]),
+  });
+  const toolMessage = result.checkpoint.transcript.find((message) => message.role === "tool");
+  assert.match(toolMessage.content[0].output.value, /denied/i);
+  const answer = result.checkpoint.transcript.at(-1).content;
+  assert.doesNotMatch(answer, /84,000/);
+  assert.match(answer, /missing a current Freedom Financial balance reading/);
+});
+
 test("an ordinary thanks suppresses tools and stores only a short reaction", async () => {
   let executed = 0;
   const bus = new EventBus();

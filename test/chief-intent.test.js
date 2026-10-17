@@ -128,8 +128,26 @@ test("a concrete figure on a reaction still has to come from a current reading",
     text: "The lake cabin equity is $410,000.",
     pack: {
       plan: { currentState: true },
-      authority: [{ origin: "live", available: true, text: "cabin equity 410000" }],
+      authority: [
+        {
+          origin: "live",
+          available: true,
+          source: "freedom_financial",
+          sourceType: "live_financial_state",
+          text: "cabin equity 410000",
+        },
+      ],
     },
   });
   assert.match(grounded.text, /\$410,000/);
+
+  const unattributed = settleReply({
+    transcript: [{ role: "user", content: "Thanks." }],
+    text: "The lake cabin equity is $410,000.",
+    pack: {
+      plan: { currentState: true, live: ["finance"] },
+      authority: [{ origin: "live", available: true, text: "cabin equity 410000" }],
+    },
+  });
+  assert.doesNotMatch(unattributed.text, /410/);
 });

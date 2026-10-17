@@ -148,8 +148,10 @@ export function renderConversationMove(transcript, query = null) {
   return "";
 }
 
+// Unsolicited offers of further work. "I can" alone is not an offer: findings
+// such as "I can confirm the code reader located the issue" must survive.
 const OFFER_LINE =
-  /\b(?:would you like me to|do you want me to|want me to|i can(?: also)?|let me know if you(?:'d| would) like|if you(?:'d| would) like|i(?:'d| would) be happy to)\b/i;
+  /\b(?:would you like me to|do you want me to|want me to|shall i|let me know if you(?:'d| would)? (?:like|want|need)|if you(?:'d| would)? (?:like|want|need|prefer)|if needed|just (?:say the word|ask)|i(?:'d| would) be (?:happy|glad) to|happy to (?:pull|check|look|run|dig|help|do|go)|i can (?:also |always |certainly |definitely |gladly )?(?:pull|check|look|run|dig|grab|get|search|fetch|review|analy[sz]e|break (?:it |that |this )?down|walk you through|help(?: you)? (?:with|further)|go (?:deeper|further)|expand|elaborate|draft|prepare|set (?:that|this|it) up|take a (?:closer )?look)\b)/i;
 
 const REPORT_OPENING =
   /^(?:certainly|of course|absolutely)[!,.]?\s+|^(?:based on (?:my |the )?(?:analysis|records|information)|here(?:'s| is) (?:a |an )?(?:comprehensive |detailed |brief )?(?:analysis|summary|overview)|i can provide (?:an |a )?(?:analysis|summary|overview))\b[^.]{0,160}[.!]?\s*/i;
@@ -276,46 +278,54 @@ function evidenceDomainForItem(item) {
   return null;
 }
 
+// ToolExecutor denials and tool-side failures are recorded as plain text in
+// the transcript, so a failed reading is recognised by its message.
+const TOOL_FAILURE =
+  /\b(?:unavailable|not connected|not configured|disabled|error|failed|failure|denied|unknown tool|invalid arguments|rate limit|taint violation|refusing|timed out|timeout)\b/i;
+
+function toolOutputText(output) {
+  if (typeof output === "string") return output.trim();
+  if (typeof output?.value === "string") return output.value.trim();
+  if (output == null) return "";
+  try {
+    return JSON.stringify(output).trim();
+  } catch {
+    return "";
+  }
+}
+
+// Live evidence is only the successful output of a tool whose domain is
+// known. A tool from another domain (for example a settings read) and a
+// bare string tool message with no tool name never stand in for a reading.
 function toolEvidenceAfterLatestUser(transcript) {
   const messages = Array.isArray(transcript) ? transcript : [];
   const start = lastIndex(messages, "user");
   const domains = new Set();
-  let generic = false;
   for (let index = start + 1; index < messages.length; index += 1) {
     if (messages[index]?.role !== "tool") continue;
-    const raw = messageText(messages[index]);
-    if (!raw.trim() || /unavailable|not connected|disabled|error|failed|denied/i.test(raw)) {
-      continue;
-    }
     const parts = Array.isArray(messages[index].content) ? messages[index].content : [];
-    const names = parts
-      .filter((part) => part?.type === "tool-result")
-      .map((part) => part.toolName);
-    if (names.length === 0) generic = true;
-    for (const name of names) {
-      const domain = LIVE_TOOL_DOMAIN[name];
-      if (domain) domains.add(domain);
-      else generic = true;
+    for (const part of parts) {
+      if (part?.type !== "tool-result") continue;
+      const domain = LIVE_TOOL_DOMAIN[part.toolName];
+      if (!domain) continue;
+      const output = toolOutputText(part.output);
+      if (!output || TOOL_FAILURE.test(output)) continue;
+      domains.add(domain);
     }
   }
-  return { domains, generic };
+  return domains;
 }
 
 function liveReadingReady(pack, transcript) {
   const required = Array.isArray(pack?.plan?.live) ? pack.plan.live : [];
   const domains = new Set();
-  let generic = false;
   for (const item of pack?.authority ?? []) {
     if (item?.origin !== "live" || item.available === false) continue;
     const domain = evidenceDomainForItem(item);
     if (domain) domains.add(domain);
-    else generic = true;
   }
-  const tool = toolEvidenceAfterLatestUser(transcript);
-  for (const domain of tool.domains) domains.add(domain);
-  generic ||= tool.generic;
-  if (required.length === 0) return domains.size > 0 || generic;
-  if (required.length === 1 && generic) return true;
+  for (const domain of toolEvidenceAfterLatestUser(transcript)) domains.add(domain);
+  if (required.length === 0) return domains.size > 0;
   return required.every((domain) => domains.has(domain));
 }
 
