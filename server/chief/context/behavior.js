@@ -8,6 +8,8 @@
 
 import { messageText } from "../runtime/compaction.js";
 import { buildWorkingMemory, isAnaphoric } from "../memory/working.js";
+import { isSelfContainedCalculation } from "../memory/retrieve.js";
+import { isModelIdentityQuestion, renderModelIdentity } from "../models/identity.js";
 import {
   answerFromWorkforce,
   correctWorkforceSentence,
@@ -32,9 +34,11 @@ export const CHIEF_RESPONSE_CONTRACT = [
   "Sound natural when read aloud. Say about $321K, not a labeled report line. Use the user's name only when it fits.",
   "Call the minimum tools. A holding needs the finance read. What that holding is worth also needs the current price. Equity needs the mortgage and the current home value. A past decision needs memory, not a live balance. Weather or other public facts need the web only when no closer tool exists. A reaction needs no tool.",
   "Memory is what was said or decided. Live readings are what is true now. For a current question, live data wins. If a live source is missing, say it is unavailable. Do not invent the figure.",
+  "Arithmetic and self-contained hypothetical calculations do not need a live finance or web reading. Keep the supplied inputs and the calculated result in the final answer.",
   "Workforce lines are observations from the named provider. Answer the question from those observations, and name the state that fits: current, completed, failed, attention, idle, stale, revoked, or unknown. A start is not a completion. Silence is not success. Stale or revoked is not current activity. A missing observation is unknown. Do not invent a tool, a code change, or a result. A bare denial does not replace an observed fact.",
   'If the work requires a repository change, a test-and-fix, or a deploy, report one line: DELEGATION {"effect":"change"|"deploy","objective":"what should be true","outcome":"what a later observation would show","constraints":["limits"]}. Do not call a tool for that work. Explain, summarize, inspect, and other reads stay with you. A DELEGATION line is an intention, not execution. If an intention is already open, a new objective replaces it, and an added limit keeps that same objective. A yes or no applies only to that open intention. Do not say the work started, and do not hand an email or other send you can already perform to the workforce.',
-  "Never say Certainly, Of course, Based on my records, According to the available information, or I'd be happy to. Do not mention the model, the orchestrator, or the prompt.",
+  "When the user asks how CHIEF or Freedom OS is implemented, preserve the technical findings and name the relevant components. When the user asks which model is configured or active, do not guess; use the authoritative runtime model description.",
+  "Never say Certainly, Of course, Based on my records, According to the available information, or I'd be happy to. Do not mention the model, the orchestrator, or the prompt unless the user specifically asks about that technical detail.",
 ].join(" ");
 
 const REACTION =
@@ -144,8 +148,10 @@ export function renderConversationMove(transcript, query = null) {
   return "";
 }
 
+// Unsolicited offers of further work. "I can" alone is not an offer: findings
+// such as "I can confirm the code reader located the issue" must survive.
 const OFFER_LINE =
-  /\b(?:would you like me to|do you want me to|want me to|i can also|let me know if you(?:'d| would) like|if you(?:'d| would) like|i(?:'d| would) be happy to)\b/i;
+  /\b(?:would you like me to|do you want me to|want me to|shall i|let me know if you(?:'d| would)? (?:like|want|need)|if you(?:'d| would)? (?:like|want|need|prefer)|if needed|just (?:say the word|ask)|i(?:'d| would) be (?:happy|glad) to|happy to (?:pull|check|look|run|dig|help|do|go)|i can (?:also |always |certainly |definitely |gladly )?(?:pull|check|look|run|dig|grab|get|search|fetch|review|analy[sz]e|break (?:it |that |this )?down|walk you through|help(?: you)? (?:with|further)|go (?:deeper|further)|expand|elaborate|draft|prepare|set (?:that|this|it) up|take a (?:closer )?look)\b)/i;
 
 const REPORT_OPENING =
   /^(?:certainly|of course|absolutely)[!,.]?\s+|^(?:based on (?:my |the )?(?:analysis|records|information)|here(?:'s| is) (?:a |an )?(?:comprehensive |detailed |brief )?(?:analysis|summary|overview)|i can provide (?:an |a )?(?:analysis|summary|overview))\b[^.]{0,160}[.!]?\s*/i;
@@ -159,13 +165,14 @@ const MACHINERY =
 const ARCHITECTURE_ASK =
   /\b(?:how (?:do you|does chief) work|your architecture|system prompt|how (?:are|were) you built|orchestrat\w*)\b/i;
 
+const TECHNICAL_ASK =
+  /\b(?:code|codebase|source|implementation|implemented|function|class|module|api|endpoint|runtime|turn ?machine|tool ?executor|classif\w*|postprocess\w*|response contract|provider routing)\b|\b(?:explain|walk me through|investigate|inspect)\b[^?]{0,100}\b(?:how|why|path|flow|behavior|happens)\b/i;
+
 const RESTATEMENT =
   /^(?:you asked|your question|to answer your question|regarding your (?:question|request))\b/i;
 
 const CURRENT_FIGURE =
   /(?:\$\s?\d|\b\d[\d,]*(?:\.\d+)?\s*(?:xrp|btc|eth|k|grand)\b|\b(?:own|owns|worth|balance|equity|valued)\b[^.]{0,40}\d)/i;
-
-const UNAVAILABLE_ANSWER = "I can't verify that from a current reading.";
 
 function latestUserText(transcript) {
   const messages = Array.isArray(transcript) ? transcript : [];
@@ -191,7 +198,8 @@ function askedForStructure(transcript) {
 }
 
 function askedArchitecture(transcript) {
-  return ARCHITECTURE_ASK.test(latestUserText(transcript));
+  const question = latestUserText(transcript);
+  return ARCHITECTURE_ASK.test(question) || TECHNICAL_ASK.test(question);
 }
 
 function shortReaction(userText) {
@@ -247,44 +255,78 @@ function openWithAnswer(text, transcript) {
   if (!report) return original;
   let body = original.replace(REPORT_OPENING, "").trim();
   body = body.replace(REPORT_OPENING, "").trim();
-  const kept = sentenceList(body).filter((sentence) => {
-    if (/\d/.test(sentence)) return true;
-    if (OFFER_LINE.test(sentence)) return false;
-    return !/\b(?:based on|i can provide|let me provide|according to (?:my |the )?(?:records|information|analysis))\b/i.test(
-      sentence
-    );
-  });
-  const lead = kept.slice(0, 3).join(" ").trim();
-  return lead || original;
+  body = body
+    .replace(
+      /^(?:based on|according to) (?:my |the )?[^.]{0,180}(?:information|analysis|records?)[^.]*\.\s*/i,
+      ""
+    )
+    .trim();
+  body = body.replace(/^#{1,3}\s+(?:summary|answer|analysis|overview)\s*\n?/i, "").trim();
+  return body || original;
 }
 
-function numbersIn(text) {
-  return [...String(text ?? "").matchAll(/\d[\d,]*(?:\.\d+)?/g)].map((match) =>
-    match[0].replace(/,/g, "")
-  );
+function evidenceDomainForItem(item) {
+  const source = String(item?.source ?? "");
+  const sourceType = String(item?.sourceType ?? "");
+  if (source === "freedom_financial" || sourceType === "live_financial_state") return "finance";
+  if (source === "web" || sourceType === "live_web") return "web";
+  if (source === "code" || sourceType === "live_code") return "code";
+  if (source === "grokbot" || sourceType === "live_agent_state") return "agents";
+  if (source === "scheduler" || sourceType === "live_schedule") return "schedule";
+  if (source === "calendar" || sourceType === "live_calendar") return "calendar";
+  if (source === "email" || sourceType === "live_email") return "email";
+  return null;
 }
 
-function priorTranscriptText(transcript) {
-  const messages = Array.isArray(transcript) ? transcript : [];
-  return messages.map((message) => messageText(message)).join("\n");
+// ToolExecutor denials and tool-side failures are recorded as plain text in
+// the transcript, so a failed reading is recognised by its message.
+const TOOL_FAILURE =
+  /\b(?:unavailable|not connected|not configured|disabled|error|failed|failure|denied|unknown tool|invalid arguments|rate limit|taint violation|refusing|timed out|timeout)\b/i;
+
+function toolOutputText(output) {
+  if (typeof output === "string") return output.trim();
+  if (typeof output?.value === "string") return output.value.trim();
+  if (output == null) return "";
+  try {
+    return JSON.stringify(output).trim();
+  } catch {
+    return "";
+  }
 }
 
-function toolResultAfterLatestUser(transcript) {
+// Live evidence is only the successful output of a tool whose domain is
+// known. A tool from another domain (for example a settings read) and a
+// bare string tool message with no tool name never stand in for a reading.
+function toolEvidenceAfterLatestUser(transcript) {
   const messages = Array.isArray(transcript) ? transcript : [];
   const start = lastIndex(messages, "user");
+  const domains = new Set();
   for (let index = start + 1; index < messages.length; index += 1) {
     if (messages[index]?.role !== "tool") continue;
-    const raw = messageText(messages[index]);
-    if (numbersIn(raw).some((value) => value.length > 1)) return true;
-    if (raw.trim() && !/unavailable|not connected|disabled|error|failed/i.test(raw)) return true;
+    const parts = Array.isArray(messages[index].content) ? messages[index].content : [];
+    for (const part of parts) {
+      if (part?.type !== "tool-result") continue;
+      const domain = LIVE_TOOL_DOMAIN[part.toolName];
+      if (!domain) continue;
+      const output = toolOutputText(part.output);
+      if (!output || TOOL_FAILURE.test(output)) continue;
+      domains.add(domain);
+    }
   }
-  return false;
+  return domains;
 }
 
-function liveReadingReady(pack) {
-  return (pack?.authority ?? []).some(
-    (item) => item?.origin === "live" && item.available !== false
-  );
+function liveReadingReady(pack, transcript) {
+  const required = Array.isArray(pack?.plan?.live) ? pack.plan.live : [];
+  const domains = new Set();
+  for (const item of pack?.authority ?? []) {
+    if (item?.origin !== "live" || item.available === false) continue;
+    const domain = evidenceDomainForItem(item);
+    if (domain) domains.add(domain);
+  }
+  for (const domain of toolEvidenceAfterLatestUser(transcript)) domains.add(domain);
+  if (required.length === 0) return domains.size > 0;
+  return required.every((domain) => domains.has(domain));
 }
 
 function deniesClaim(sentence, pattern) {
@@ -478,39 +520,88 @@ const LIVE_TOOL_DOMAIN = Object.freeze({
   code_tree: "code",
 });
 
-function callsJustifiedByPlan(calls, pack) {
+function callsJustifiedByPlan(calls, pack, { userText = "", unresolvedOther = false } = {}) {
+  if (unresolvedOther && calls.length > 0) {
+    return {
+      calls: [],
+      suppressed: calls.length,
+      suppressionReason: "tool_suppressed_unresolved_referent",
+      mismatches: 0,
+    };
+  }
+  if (
+    isSelfContainedCalculation(userText) &&
+    (pack?.plan?.live?.length ?? 0) === 0 &&
+    calls.length > 0
+  ) {
+    return {
+      calls: [],
+      suppressed: calls.length,
+      suppressionReason: "tool_suppressed_self_contained_calculation",
+      mismatches: 0,
+    };
+  }
   const live = pack?.plan?.live;
-  if (!Array.isArray(live)) return calls;
+  if (!Array.isArray(live)) {
+    return { calls, suppressed: 0, suppressionReason: null, mismatches: 0 };
+  }
   const allowed = new Set(live);
-  return calls.filter((call) => {
+  const mismatches = calls.reduce((count, call) => {
     const domain = LIVE_TOOL_DOMAIN[call?.name];
-    if (!domain) return true;
-    return allowed.has(domain);
+    return domain && !allowed.has(domain) ? count + 1 : count;
+  }, 0);
+  return { calls, suppressed: 0, suppressionReason: null, mismatches };
+}
+
+function missingCurrentInformation(transcript, pack, claimText = "") {
+  const query = latestUserText(transcript);
+  const subject = `${query}\n${claimText}`;
+  if (/\bequity\b/i.test(subject)) {
+    return "I'm missing the current mortgage balance and current home value needed to calculate home equity.";
+  }
+  if (/\b(?:holdings?|own|owns|holding)\b/i.test(subject)) {
+    return "I'm missing a current Freedom Financial holdings reading, so I can't verify that position.";
+  }
+  if (/\b(?:balance|cash|net worth)\b/i.test(subject)) {
+    return "I'm missing a current Freedom Financial balance reading, so I can't verify that amount.";
+  }
+  if (/\b(?:house|home|cabin|property)\b[^?]{0,50}\b(?:worth|value)\b/i.test(subject)) {
+    return "I'm missing a current property-value reading, so I can't verify that estimate.";
+  }
+  const live = Array.isArray(pack?.plan?.live) ? pack.plan.live : [];
+  const missing = live.map((domain) => {
+    if (domain === "finance") return "a current Freedom Financial reading";
+    if (domain === "web") return "a current public source";
+    if (domain === "code") return "an authorized code reading";
+    if (domain === "agents") return "current agent state";
+    if (domain === "schedule") return "the current schedule";
+    if (domain === "calendar") return "the current calendar";
+    if (domain === "email") return "the current inbox";
+    return `a current ${domain} reading`;
   });
+  if (missing.length > 0) {
+    return `I'm missing ${missing.join(" and ")}, so I can't verify that current claim.`;
+  }
+  return "I'm missing the current source needed to verify that claim.";
 }
 
 function blockUnsupportedCurrentClaim(text, transcript, pack) {
   const answer = String(text ?? "").trim();
-  if (!pack?.plan?.currentState || exploring(transcript)) return answer;
-  if (liveReadingReady(pack) || toolResultAfterLatestUser(transcript)) return answer;
-  const known = new Set(numbersIn(priorTranscriptText(transcript)));
+  if (!pack?.plan?.currentState) return { text: answer, blocked: 0 };
+  if (liveReadingReady(pack, transcript)) return { text: answer, blocked: 0 };
   const sentences = sentenceList(answer);
   const kept = [];
-  let blocked = false;
+  let blocked = 0;
   for (const sentence of sentences) {
-    if (!CURRENT_FIGURE.test(sentence)) {
+    if (!CURRENT_FIGURE.test(sentence) || deniesClaim(sentence, CURRENT_FIGURE)) {
       kept.push(sentence);
       continue;
     }
-    const novel = numbersIn(sentence).some((value) => value.length > 1 && !known.has(value));
-    if (!novel) {
-      kept.push(sentence);
-      continue;
-    }
-    blocked = true;
+    blocked += 1;
   }
-  if (!blocked) return answer;
-  return kept.join(" ").trim() || UNAVAILABLE_ANSWER;
+  if (!blocked) return { text: answer, blocked: 0 };
+  const gap = missingCurrentInformation(transcript, pack, answer);
+  return { text: [...kept, gap].filter(Boolean).join(" ").trim(), blocked };
 }
 
 export function settleReply({
@@ -520,10 +611,54 @@ export function settleReply({
   pack = null,
   workforcePicture = null,
   delegationIntent = null,
+  modelIdentity = null,
 } = {}) {
   const calls = Array.isArray(toolCalls) ? [...toolCalls] : [];
   const move = conversationMove(transcript);
   const userText = latestUserText(transcript);
+  const diagnosticCounts = new Map();
+  const note = (reason, count = 1) => {
+    if (!reason || count <= 0) return;
+    diagnosticCounts.set(reason, (diagnosticCounts.get(reason) ?? 0) + count);
+  };
+  const diagnostics = () =>
+    [...diagnosticCounts].map(([reason, count]) => ({ reason, count }));
+  const finish = (body, carried = null) => ({
+    ...body,
+    ...(carried ? { delegation: carried, clearDelegation: false } : {}),
+    diagnostics: diagnostics(),
+  });
+  const pureReaction = REACTION.test(spoken(userText)) && !delegationIntent;
+  if (pureReaction) {
+    if (calls.length) note("tool_suppressed_reaction", calls.length);
+    const claimsWork = WORKFORCE_CLAIMS.some((rule) =>
+      rule.claim.test(String(text ?? ""))
+    );
+    if (claimsWork) {
+      const answer = shortReaction(userText);
+      if (answer !== String(text ?? "").trim()) note("response_rewritten_reaction");
+      return finish({ text: answer, toolCalls: [] });
+    }
+    const kept = stripOffers(stripMachinery(String(text ?? ""), transcript), transcript).trim();
+    if (CURRENT_FIGURE.test(kept)) {
+      const guarded = blockUnsupportedCurrentClaim(kept, transcript, pack);
+      if (guarded.blocked) note("response_rewritten_unsupported_current_claim", guarded.blocked);
+      const answer = guarded.text || shortReaction(userText);
+      if (answer !== String(text ?? "").trim()) note("response_rewritten_reaction");
+      return finish({ text: answer, toolCalls: [] });
+    }
+    const answer = reactionIsAlreadyShort(String(text ?? ""))
+      ? String(text).trim()
+      : shortReaction(userText);
+    if (answer !== String(text ?? "").trim()) note("response_rewritten_reaction");
+    return finish({ text: answer, toolCalls: [] });
+  }
+  if (isModelIdentityQuestion(userText) && modelIdentity) {
+    const answer = renderModelIdentity(modelIdentity);
+    if (answer !== String(text ?? "").trim()) note("response_rewritten_model_identity");
+    if (calls.length) note("tool_suppressed_identity_question", calls.length);
+    return finish({ text: answer, toolCalls: [] });
+  }
   const delegation = settleDelegation({
     transcript,
     text,
@@ -534,16 +669,19 @@ export function settleReply({
     pending: delegationIntent,
   });
   if (delegation.handled) {
-    return {
+    if (delegation.text !== String(text ?? "").trim()) note("response_rewritten_delegation");
+    if (calls.length > delegation.toolCalls.length) {
+      note("tool_suppressed_delegation", calls.length - delegation.toolCalls.length);
+    }
+    return finish({
       text: delegation.text,
       toolCalls: delegation.toolCalls,
       delegation: delegation.delegation,
       clearDelegation: delegation.clearDelegation,
-    };
+    });
   }
   const carried = delegation.delegation?.disposition === "delegate" ? delegation.delegation : null;
-  const reply = (body) =>
-    carried ? { ...body, delegation: carried, clearDelegation: false } : body;
+  const reply = (body) => finish(body, carried);
   const modelText =
     delegation.text ||
     (delegation.effect === "read"
@@ -551,33 +689,57 @@ export function settleReply({
       : "");
   const keptCalls = delegation.toolCalls;
   if (delegation.effect === "external") {
+    note("response_rewritten_external_action");
     return reply({
       text: "Sending that stays with me. I am not handing it to the workforce.",
       toolCalls: keptCalls,
     });
   }
   if (move.kind === MOVE.ACKNOWLEDGE) {
+    if (keptCalls.length) note("tool_suppressed_reaction", keptCalls.length);
     const claimsWork = WORKFORCE_CLAIMS.some((rule) => rule.claim.test(modelText));
     if (!claimsWork) {
       const kept = stripOffers(stripMachinery(modelText, transcript), transcript).trim();
       if (CURRENT_FIGURE.test(kept)) {
-        const guarded = blockUnsupportedCurrentClaim(kept, transcript, pack).trim();
-        return reply({ text: guarded || shortReaction(userText), toolCalls: [] });
+        const guarded = blockUnsupportedCurrentClaim(kept, transcript, pack);
+        if (guarded.blocked) note("response_rewritten_unsupported_current_claim", guarded.blocked);
+        const answer = guarded.text || shortReaction(userText);
+        if (answer !== modelText) note("response_rewritten_reaction");
+        return reply({ text: answer, toolCalls: [] });
       }
     }
+    const answer =
+      !claimsWork && reactionIsAlreadyShort(modelText) ? modelText : shortReaction(userText);
+    if (answer !== modelText) note("response_rewritten_reaction");
     return reply({
-      text: !claimsWork && reactionIsAlreadyShort(modelText) ? modelText : shortReaction(userText),
+      text: answer,
       toolCalls: [],
     });
   }
-  const justified = callsJustifiedByPlan(keptCalls, pack);
-  if (justified.length > 0) return reply({ text: modelText, toolCalls: justified });
+  const callDecision = callsJustifiedByPlan(keptCalls, pack, {
+    userText,
+    unresolvedOther: move.unresolvedOther,
+  });
+  if (callDecision.suppressed) {
+    note(callDecision.suppressionReason, callDecision.suppressed);
+  }
+  if (callDecision.mismatches) {
+    note("tool_plan_mismatch_preserved", callDecision.mismatches);
+  }
+  const justified = callDecision.calls;
   let answer = openWithAnswer(modelText, transcript);
   answer = stripMachinery(answer, transcript);
   answer = stripOffers(answer, transcript);
-  answer = blockUnsupportedCurrentClaim(answer, transcript, pack);
-  answer = guardWorkforceReply(answer, pack, transcript);
+  const guarded = blockUnsupportedCurrentClaim(answer, transcript, pack);
+  answer = guarded.text;
+  if (guarded.blocked) note("response_rewritten_unsupported_current_claim", guarded.blocked);
+  const workforceAnswer = guardWorkforceReply(answer, pack, transcript);
+  if (workforceAnswer !== answer) note("response_rewritten_workforce_grounding");
+  answer = workforceAnswer;
   answer = answer.trim();
-  if (!answer) answer = modelText || String(text ?? "").trim();
+  if (!answer && justified.length === 0) {
+    answer = "I don't have enough information to answer that yet.";
+  }
+  if (answer !== modelText && !guarded.blocked) note("response_rewritten_formatting");
   return reply({ text: answer, toolCalls: justified });
 }

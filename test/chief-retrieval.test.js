@@ -5,6 +5,7 @@ import test from "node:test";
 
 import {
   authoritativeDomain,
+  isSelfContainedCalculation,
   needsEpisodicMemory,
   planMemoryRetrieval,
   rankEpisodes,
@@ -123,11 +124,59 @@ test("a repository path is a code read and a balance question stays finance", ()
     true
   );
   assert.equal(authoritativeDomain("How much XRP do I own?"), "finance");
+  assert.equal(
+    authoritativeDomain(
+      "If I set aside $400 a month starting this month, how much would I have after 18 months, ignoring interest?"
+    ),
+    null
+  );
+  assert.equal(authoritativeDomain("How much is 18 * 400?"), null);
+  assert.equal(
+    isSelfContainedCalculation(
+      '[Scheduled task "check well" fired at 2026-09-30T12:00:00.000Z. No user is present.] Record the well level.'
+    ),
+    false
+  );
+  assert.equal(authoritativeDomain("What is my current home equity?"), "finance");
   assert.equal(authoritativeDomain("What is the XRP price today?"), "web");
   assert.equal(
     authoritativeDomain("Where is finance access implemented in the codebase?"),
     "code"
   );
+});
+
+test("dates and date ranges are not arithmetic operands", () => {
+  const dated = "What was my mortgage balance on 2025-10-01 and on 2026-10-01?";
+  assert.equal(isSelfContainedCalculation(dated), false);
+  assert.equal(authoritativeDomain(dated), "finance");
+  for (const query of [
+    "How much did I spend between 2025-10-01 and 2026-10-01?",
+    "Show my mortgage balance on 10/1/2025 versus 10/1/2026.",
+    "How did my net worth change from 2024 to 2026?",
+    "What was my cash balance at 9:30 on 2026-10-01?",
+    "What is my balance if I had $5,000 and added $200?",
+  ]) {
+    assert.equal(isSelfContainedCalculation(query), false, query);
+    assert.equal(authoritativeDomain(query), "finance", query);
+  }
+});
+
+test("percentages, negative numbers, and written operators stay self-contained", () => {
+  for (const query of [
+    "If I set aside $400 a month starting this month, how much would I have after 18 months, ignoring interest?",
+    "What is 15% of $2,400?",
+    "If a $50,000 position drops 20%, what is it worth?",
+    "What is -40 + 25?",
+    "What is 25 minus 40?",
+    "What is 2000 times 3?",
+    "What is 1200/12?",
+    "How much is 18 * 400?",
+  ]) {
+    assert.equal(isSelfContainedCalculation(query), true, query);
+    assert.equal(authoritativeDomain(query), null, query);
+  }
+  assert.equal(isSelfContainedCalculation("Pay $400 by 2026-10-01."), false);
+  assert.equal(isSelfContainedCalculation("Account 1234-5678 and 9876-5432"), false);
 });
 
 test("episode ranking still prefers the finance fix over an unrelated note", () => {

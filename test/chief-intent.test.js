@@ -117,7 +117,10 @@ test("a concrete figure on a reaction still has to come from a current reading",
     text: "The lake cabin equity is $410,000.",
     pack: { plan: { currentState: true }, authority: [{ origin: "live", available: false }] },
   });
-  assert.equal(blocked.text, "I can't verify that from a current reading.");
+  assert.equal(
+    blocked.text,
+    "I'm missing the current mortgage balance and current home value needed to calculate home equity."
+  );
   assert.doesNotMatch(blocked.text, /410/);
 
   const grounded = settleReply({
@@ -125,8 +128,26 @@ test("a concrete figure on a reaction still has to come from a current reading",
     text: "The lake cabin equity is $410,000.",
     pack: {
       plan: { currentState: true },
-      authority: [{ origin: "live", available: true, text: "cabin equity 410000" }],
+      authority: [
+        {
+          origin: "live",
+          available: true,
+          source: "freedom_financial",
+          sourceType: "live_financial_state",
+          text: "cabin equity 410000",
+        },
+      ],
     },
   });
   assert.match(grounded.text, /\$410,000/);
+
+  const unattributed = settleReply({
+    transcript: [{ role: "user", content: "Thanks." }],
+    text: "The lake cabin equity is $410,000.",
+    pack: {
+      plan: { currentState: true, live: ["finance"] },
+      authority: [{ origin: "live", available: true, text: "cabin equity 410000" }],
+    },
+  });
+  assert.doesNotMatch(unattributed.text, /410/);
 });
