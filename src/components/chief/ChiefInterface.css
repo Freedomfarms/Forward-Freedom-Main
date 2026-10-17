@@ -340,7 +340,12 @@
 
 .chief-interface .chief-nav-item.is-active .chief-nav-icon {
   color: #f4f8ff;
-  background: radial-gradient(circle, rgba(90, 170, 255, 0.5), rgba(40, 90, 180, 0.08) 68%, transparent 70%);
+  background: radial-gradient(
+    circle,
+    rgba(90, 170, 255, 0.5),
+    rgba(40, 90, 180, 0.08) 68%,
+    transparent 70%
+  );
   box-shadow: 0 0 18px rgba(80, 160, 255, 0.42);
 }
 
@@ -767,6 +772,67 @@
   color: #f4f8ff;
   font-size: 12px;
   font-weight: 560;
+}
+
+.chief-interface .chief-response-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.chief-interface .chief-response-mode {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.chief-interface .chief-response-mode legend {
+  padding: 0;
+  color: #d5e7ff;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+.chief-interface .chief-response-mode-options {
+  display: flex;
+  min-width: 0;
+  padding: 2px;
+  border-radius: 999px;
+  border: 1px solid rgba(150, 196, 255, 0.38);
+  background: rgba(6, 12, 32, 0.62);
+}
+
+.chief-interface .chief-response-mode-options button {
+  min-height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #d5e7ff;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.chief-interface .chief-response-mode-options button.is-selected {
+  color: #04121c;
+  background: linear-gradient(180deg, #8af6ff, #3aa7ff 55%, #6c6bff);
+}
+
+.chief-interface .chief-stop-speech {
+  flex: none;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 180, 180, 0.45);
+  background: rgba(48, 10, 24, 0.72);
+  color: #ffd7df;
+  font-size: 12px;
 }
 
 .chief-interface .chief-composer {

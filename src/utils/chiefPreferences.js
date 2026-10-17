@@ -3,9 +3,12 @@
 
 export const CHIEF_PREFERENCES_KEY = "chief.preferences";
 
+export const CHIEF_RESPONSE_MODES = Object.freeze(["text", "voice", "both"]);
+
 export const DEFAULT_CHIEF_PREFERENCES = Object.freeze({
   conversation: Object.freeze({
     voiceResponses: true,
+    responseMode: "both",
     autoSpeak: true,
     speechChoice: true,
     showResponseText: true,
@@ -23,6 +26,28 @@ function bool(value, fallback) {
   return typeof value === "boolean" ? value : fallback;
 }
 
+export function isResponseMode(value) {
+  return value === "text" || value === "voice" || value === "both";
+}
+
+function flagsForResponseMode(mode) {
+  if (mode === "text") return { autoSpeak: false, showResponseText: true };
+  if (mode === "voice") return { autoSpeak: true, showResponseText: false };
+  return { autoSpeak: true, showResponseText: true };
+}
+
+// Missing responseMode follows the last saved speech and text flags.
+// An explicit responseMode wins, and the legacy flags are rewritten from it.
+export function responseModeFromConversation(conversation) {
+  const source = conversation && typeof conversation === "object" ? conversation : {};
+  if (isResponseMode(source.responseMode)) return source.responseMode;
+  const explicitChoice = source.speechChoice === true || source.speechChoice === false;
+  const textShown = source.showResponseText !== false;
+  if (source.autoSpeak === false && explicitChoice && textShown) return "text";
+  if (source.showResponseText === false && source.autoSpeak !== false) return "voice";
+  return "both";
+}
+
 export function normalizeChiefPreferences(value) {
   const source = value && typeof value === "object" ? value : {};
   const conversation =
@@ -34,18 +59,18 @@ export function normalizeChiefPreferences(value) {
     appearance.animationIntensity === "low" || appearance.animationIntensity === "off"
       ? appearance.animationIntensity
       : "full";
+  const responseMode = responseModeFromConversation(conversation);
+  const flags = flagsForResponseMode(responseMode);
   return {
     conversation: {
       voiceResponses: bool(
         conversation.voiceResponses,
         DEFAULT_CHIEF_PREFERENCES.conversation.voiceResponses
       ),
-      autoSpeak: bool(conversation.autoSpeak, DEFAULT_CHIEF_PREFERENCES.conversation.autoSpeak),
+      responseMode,
+      autoSpeak: flags.autoSpeak,
       speechChoice: conversation.speechChoice === false ? false : true,
-      showResponseText: bool(
-        conversation.showResponseText,
-        DEFAULT_CHIEF_PREFERENCES.conversation.showResponseText
-      ),
+      showResponseText: flags.showResponseText,
       enterToSend: bool(
         conversation.enterToSend,
         DEFAULT_CHIEF_PREFERENCES.conversation.enterToSend
@@ -66,11 +91,22 @@ export function normalizeChiefPreferences(value) {
   };
 }
 
-export function shouldSpeakReply({ source = "text", preferences } = {}) {
+// Input method does not decide delivery. Text and microphone turns share this gate.
+// voiceResponses is the mute. It does not rewrite responseMode.
+export function shouldSpeakReply({ preferences } = {}) {
   const next = normalizeChiefPreferences(preferences);
   if (next.conversation.voiceResponses !== true) return false;
-  if (source === "voice") return true;
-  return next.conversation.autoSpeak === true;
+  return next.conversation.responseMode === "voice" || next.conversation.responseMode === "both";
+}
+
+// Voice mode hides assistant text while speech can play. Mute and an explicit
+// reveal keep the answer readable without changing the stored mode.
+export function shouldShowAssistantText({ preferences, reveal = false } = {}) {
+  const next = normalizeChiefPreferences(preferences);
+  if (reveal) return true;
+  if (next.conversation.responseMode !== "voice") return true;
+  if (next.conversation.voiceResponses !== true) return true;
+  return false;
 }
 
 function storageOf(storage) {
@@ -97,19 +133,23 @@ export function readChiefPreferences(storage) {
       conversation?.autoSpeak === false &&
       conversation.speechChoice !== true &&
       conversation.speechChoice !== false;
-    const next = normalizeChiefPreferences(
-      legacySilent
-        ? {
-            ...parsed,
-            conversation: { ...conversation, autoSpeak: true, speechChoice: true },
-          }
-        : parsed
-    );
-    if (legacySilent) {
+    const seeded = legacySilent
+      ? {
+          ...parsed,
+          conversation: { ...conversation, autoSpeak: true, speechChoice: true },
+        }
+      : parsed;
+    const next = normalizeChiefPreferences(seeded);
+    const flagsDiffer =
+      legacySilent ||
+      conversation?.responseMode !== next.conversation.responseMode ||
+      conversation?.autoSpeak !== next.conversation.autoSpeak ||
+      conversation?.showResponseText !== next.conversation.showResponseText;
+    if (flagsDiffer) {
       try {
         bin.setItem(CHIEF_PREFERENCES_KEY, JSON.stringify(next));
       } catch {
-        // The in-memory copy still speaks.
+        // The in-memory copy still applies.
       }
     }
     return next;

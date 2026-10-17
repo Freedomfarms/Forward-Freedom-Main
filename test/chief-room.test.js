@@ -430,7 +430,8 @@ test("the home screen keeps the latest exchange inside the full-bleed scene", ()
   assert.doesNotMatch(world, /showStatus/);
   assert.match(page, /const homeClass/);
   assert.match(page, /className=\{homeClass\}/);
-  assert.match(page, /voice\.audioActive \? "Speaking" : voiceNote/);
+  assert.match(page, /voice\.audioActive\s*\?\s*"Speaking"\s*:\s*voiceNote/);
+  assert.match(page, /Generating audio/);
   const homeExchange = page.slice(
     page.indexOf("const homeExchange"),
     page.indexOf('if (room === "home" || room === "convos")')

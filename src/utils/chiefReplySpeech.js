@@ -1,6 +1,6 @@
 // Decides whether a finished CHIEF turn is spoken on the home conversation path.
 // Text rendering stays with the transcript. This module only chooses the
-// string passed to voice.speakAnswer(), once.
+// string passed to voice.speakAnswer(), once. Typed and spoken input share it.
 
 import { CHIEF_STATUS } from "./chiefProtocol.js";
 import { shouldSpeakReply } from "./chiefPreferences.js";
@@ -27,7 +27,9 @@ export function replySpeechText({
 
 export function speakCompletedReply(voice, input) {
   const spoken = replySpeechText(input);
-  if (!spoken || typeof voice?.speakAnswer !== "function") return "";
-  void voice.speakAnswer(spoken);
-  return spoken;
+  if (!spoken || typeof voice?.speakAnswer !== "function") return null;
+  return {
+    spoken,
+    pending: Promise.resolve(voice.speakAnswer(spoken)),
+  };
 }

@@ -11,6 +11,7 @@ import {
   CHIEF_PREFERENCES_KEY,
   normalizeChiefPreferences,
   readChiefPreferences,
+  shouldShowAssistantText,
   shouldSpeakReply,
   writeChiefPreferences,
 } from "../src/utils/chiefPreferences.js";
@@ -135,6 +136,8 @@ test("interface preferences persist without credentials", () => {
     storage
   );
   assert.equal(saved.conversation.autoSpeak, true);
+  assert.equal(saved.conversation.responseMode, "both");
+  assert.equal(saved.conversation.showResponseText, true);
   assert.equal(saved.conversation.enterToSend, false);
   assert.equal(saved.conversation.voiceResponses, true);
   assert.equal(saved.appearance.animationIntensity, "off");
@@ -145,6 +148,7 @@ test("interface preferences persist without credentials", () => {
   assert.equal(shouldSpeakReply({ source: "text", preferences: saved }), true);
   assert.equal(shouldSpeakReply({ source: "text" }), true);
   assert.equal(normalizeChiefPreferences(null).conversation.autoSpeak, true);
+  assert.equal(normalizeChiefPreferences(null).conversation.responseMode, "both");
   assert.equal(
     shouldSpeakReply({
       source: "voice",
@@ -161,6 +165,15 @@ test("interface preferences persist without credentials", () => {
     }),
     false
   );
+  assert.equal(
+    shouldSpeakReply({
+      source: "voice",
+      preferences: normalizeChiefPreferences({
+        conversation: { autoSpeak: false, speechChoice: true },
+      }),
+    }),
+    false
+  );
 
   const legacy = memoryStorage({
     [CHIEF_PREFERENCES_KEY]: JSON.stringify({
@@ -170,8 +183,56 @@ test("interface preferences persist without credentials", () => {
   const upgraded = readChiefPreferences(legacy);
   assert.equal(upgraded.conversation.autoSpeak, true);
   assert.equal(upgraded.conversation.speechChoice, true);
+  assert.equal(upgraded.conversation.responseMode, "both");
   assert.equal(shouldSpeakReply({ source: "text", preferences: upgraded }), true);
   assert.equal(readChiefPreferences(legacy).conversation.autoSpeak, true);
+
+  const textMode = readChiefPreferences(
+    memoryStorage({
+      [CHIEF_PREFERENCES_KEY]: JSON.stringify({
+        conversation: {
+          autoSpeak: false,
+          speechChoice: true,
+          showResponseText: true,
+          voiceResponses: true,
+        },
+      }),
+    })
+  );
+  assert.equal(textMode.conversation.responseMode, "text");
+  assert.equal(textMode.conversation.autoSpeak, false);
+  assert.equal(textMode.conversation.showResponseText, true);
+  assert.equal(shouldSpeakReply({ source: "voice", preferences: textMode }), false);
+
+  const voiceMode = readChiefPreferences(
+    memoryStorage({
+      [CHIEF_PREFERENCES_KEY]: JSON.stringify({
+        conversation: { autoSpeak: true, showResponseText: false, voiceResponses: true },
+      }),
+    })
+  );
+  assert.equal(voiceMode.conversation.responseMode, "voice");
+  assert.equal(voiceMode.conversation.autoSpeak, true);
+  assert.equal(voiceMode.conversation.showResponseText, false);
+  assert.equal(shouldSpeakReply({ source: "text", preferences: voiceMode }), true);
+  assert.equal(shouldShowAssistantText({ preferences: voiceMode }), false);
+
+  const muted = normalizeChiefPreferences({
+    conversation: { responseMode: "voice", voiceResponses: false, autoSpeak: false },
+  });
+  assert.equal(muted.conversation.responseMode, "voice");
+  assert.equal(muted.conversation.autoSpeak, true);
+  assert.equal(muted.conversation.voiceResponses, false);
+  assert.equal(shouldSpeakReply({ preferences: muted }), false);
+  assert.equal(shouldShowAssistantText({ preferences: muted }), true);
+
+  const storedMode = writeChiefPreferences(
+    { conversation: { responseMode: "text", voiceResponses: true } },
+    memoryStorage()
+  );
+  assert.equal(storedMode.conversation.responseMode, "text");
+  assert.equal(storedMode.conversation.autoSpeak, false);
+  assert.equal(storedMode.conversation.showResponseText, true);
 });
 
 test("CHIEF settings stays inside the room and drops the CEO settings detour", () => {
