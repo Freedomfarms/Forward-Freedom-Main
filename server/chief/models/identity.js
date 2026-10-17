@@ -3,11 +3,25 @@
 // credentials, environment variable names, and provider-private metadata do
 // not enter this description.
 
-const MODEL_IDENTITY_QUESTION =
-  /\b(?:what|which)\s+(?:ai\s+)?model\b|\bdefault model\b|\bmodel (?:are|is|do) (?:you|chief)\b|\b(?:active|fallback|configured) model\b/i;
+// Only questions about the model CHIEF itself is configured with or running on
+// are answered from runtime metadata. Advice, comparisons, and recommendations
+// about which model to use stay with the model's own reasoning.
+const MODEL_WORD = /\b(?:ai\s+|llm\s+|language\s+)?model\b/i;
+const QUESTION_FORM =
+  /\b(?:what|which|is|are|do|does|am)\b|\?/i;
+const SELF_REFERENCE =
+  /\b(?:you|your|yourself|chief(?:'s)?|this (?:conversation|session|chat|reply|response))\b|\b(?:default|fallback|active|configured|current(?:ly)?)\b[^?]{0,24}\bmodel\b|\bmodel\b[^?]{0,24}\b(?:default|fallback|active|configured|running|in use|right now|currently)\b/i;
+const ADVICE_OR_COMPARISON =
+  /\b(?:should|would|could|best|better|recommend\w*|suggest\w*|prefer\w*|choose|pick|compare|comparison|comparing|versus|vs\.?|cheaper|faster|stronger|smarter|more (?:accurate|capable|reliable)|for (?:my|a|an|the|our)\b|to use for|good for|right for|trade-?offs?)\b/i;
+const NON_AI_MODEL =
+  /\bmodel\s+(?:year|number|no\.?|#)\b|\b(?:truck|car|tractor|vehicle|phone|laptop|mower|boat|trailer|generator|printer|camera|financial model|business model|pricing model|threat model|data model|domain model)\b/i;
 
 export function isModelIdentityQuestion(query) {
-  return MODEL_IDENTITY_QUESTION.test(String(query ?? ""));
+  const text = String(query ?? "");
+  if (!MODEL_WORD.test(text) || !QUESTION_FORM.test(text)) return false;
+  if (!SELF_REFERENCE.test(text)) return false;
+  if (ADVICE_OR_COMPARISON.test(text) || NON_AI_MODEL.test(text)) return false;
+  return true;
 }
 
 function modelCatalog(engine) {
