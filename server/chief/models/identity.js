@@ -5,7 +5,9 @@
 
 // Only questions about the model CHIEF itself is configured with or running on
 // are answered from runtime metadata. Advice, comparisons, and recommendations
-// about which model to use stay with the model's own reasoning.
+// about which model to use stay with the model's own reasoning. How and why
+// questions about routing, reasoning, model selection, or tool suppression
+// stay with the model too, so an authorized code read can explain them.
 const MODEL_WORD = /\b(?:ai\s+|llm\s+|language\s+)?model\b/i;
 const QUESTION_FORM =
   /\b(?:what|which|is|are|do|does|am)\b|\?/i;
@@ -15,12 +17,15 @@ const ADVICE_OR_COMPARISON =
   /\b(?:should|would|could|best|better|recommend\w*|suggest\w*|prefer\w*|choose|pick|compare|comparison|comparing|versus|vs\.?|cheaper|faster|stronger|smarter|more (?:accurate|capable|reliable)|for (?:my|a|an|the|our)\b|to use for|good for|right for|trade-?offs?)\b/i;
 const NON_AI_MODEL =
   /\bmodel\s+(?:year|number|no\.?|#)\b|\b(?:truck|car|tractor|vehicle|phone|laptop|mower|boat|trailer|generator|printer|camera|financial model|business model|pricing model|threat model|data model|domain model)\b/i;
+const MECHANISM_QUESTION =
+  /\b(?:how|why)\b[^?\n]{0,220}\b(?:rout\w*|reason\w*|select\w*|suppress\w*|decid\w*|choos\w*|chose|chosen|handle[sd]?|works?)\b/i;
 
 export function isModelIdentityQuestion(query) {
   const text = String(query ?? "");
   if (!MODEL_WORD.test(text) || !QUESTION_FORM.test(text)) return false;
   if (!SELF_REFERENCE.test(text)) return false;
   if (ADVICE_OR_COMPARISON.test(text) || NON_AI_MODEL.test(text)) return false;
+  if (MECHANISM_QUESTION.test(text)) return false;
   return true;
 }
 

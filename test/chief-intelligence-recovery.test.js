@@ -9,6 +9,7 @@ import test from "node:test";
 import { createChiefTurnServices } from "../server/chief/context/wire.js";
 import { planContext } from "../server/chief/context/orchestrate.js";
 import { Capability, CapabilityPolicy } from "../server/chief/core/capabilities.js";
+import { isModelIdentityQuestion } from "../server/chief/models/identity.js";
 import { EventBus } from "../server/chief/core/events.js";
 import { MemoryFactStore } from "../server/chief/memory/facts.js";
 import { MemoryCheckpointStore } from "../server/chief/runtime/checkpoint.js";
@@ -321,6 +322,58 @@ test("a dated balance question is a finance reading, not self-contained arithmet
   assert.doesNotMatch(
     JSON.stringify(respond.detail.settlementDiagnostics ?? []),
     /tool_suppressed_self_contained_calculation/
+  );
+});
+
+test("a how-routing question uses an authorized code read instead of model identity", async () => {
+  const query =
+    "How does CHIEF decide which model handles my question? Inspect your code and explain.";
+  assert.equal(isModelIdentityQuestion(query), false);
+  assert.deepEqual(planContext(query).live, ["code"]);
+  const finding =
+    "HeuristicRouter selects among models whose provider is instantiated; identity metadata is not the routing decision.";
+  let executed = 0;
+  const bus = new EventBus();
+  const traceStore = new MemoryTraceStore();
+  const tooling = readTool({
+    name: "code_read",
+    capability: Capability.CODE_READ,
+    output: finding,
+    bus,
+    onExecute: () => {
+      executed += 1;
+    },
+  });
+  const result = await runTurn({
+    query,
+    eventBus: bus,
+    traceStore,
+    tooling,
+    engine: scriptedEngine([
+      {
+        text: "I will read the routing code.",
+        toolCalls: [
+          {
+            callId: "code-1",
+            name: "code_read",
+            arguments: { path: "server/chief/models/router.js" },
+          },
+        ],
+      },
+      { text: finding },
+    ]),
+  });
+  const toolMessage = result.checkpoint.transcript.find((message) => message.role === "tool");
+  const answer = result.checkpoint.transcript.at(-1).content;
+  assert.equal(executed, 1);
+  assert.equal(toolMessage.content[0].toolName, "code_read");
+  assert.match(toolMessage.content[0].output.value, /HeuristicRouter selects among models/);
+  assert.match(answer, /HeuristicRouter selects among models whose provider is instantiated/);
+  assert.doesNotMatch(answer, /configured default is|not callable in this deployment/);
+  const respond = traceStore.traces[0].steps.find((step) => step.stepType === "RESPOND");
+  assert.doesNotMatch(
+    JSON.stringify(respond.detail.settlementDiagnostics ?? []),
+    /response_rewritten_model_identity|tool_suppressed_identity_question/
   );
 });
 
