@@ -4,13 +4,6 @@ import { frontierActivity, frontierStatusCopy } from "./frontier/frontierActivit
 import { useFrontierScene } from "./frontier/useFrontierScene.js";
 import "./ChiefInterface.css";
 
-const SUGGESTION_ICONS = {
-  plan: "core",
-  finances: "chart",
-  research: "search",
-  projects: "network",
-};
-
 const ACTIVITIES = [
   ["idle", "Standing by"],
   ["listening", "Listening"],
@@ -143,7 +136,6 @@ export function ChiefInterface({
   shortcuts = [],
   showNavLabels = true,
   onHome,
-  onSearch,
   onNotifications,
   onProfile,
   profileMark = "",
@@ -168,11 +160,8 @@ export function ChiefInterface({
   showSystemStatus = true,
   systemStatus = {},
   quickActions = [],
-  recent = null,
-  suggestions = [],
   conversation = null,
   workspace = null,
-  modelControl = null,
   inputRef = null,
   responseMode = "both",
   onResponseMode,
@@ -402,52 +391,16 @@ export function ChiefInterface({
                 );
               })}
             </nav>
-            {recent ? (
-              <div className="recent">
-                <div className="side-label">
-                  RECENT
-                  {onSearch ? (
-                    <button type="button" onClick={() => onSearch("")}>
-                      SEARCH
-                    </button>
-                  ) : null}
-                </div>
-                {recent.loading ? <p className="frontier-note">Loading</p> : null}
-                {!recent.loading && recent.error ? (
-                  <p className="frontier-note">Unavailable</p>
-                ) : null}
-                {!recent.loading && !recent.error && recent.items?.length
-                  ? recent.items.map((item) => (
-                      <button
-                        key={item.id}
-                        type="button"
-                        className="recent-item"
-                        onClick={item.onSelect}
-                      >
-                        <i className="thread-line" />
-                        <span>
-                          {item.label}
-                          {item.time ? <small>{item.time}</small> : null}
-                        </span>
-                        <span className="thread-arrow">→</span>
-                      </button>
-                    ))
-                  : null}
-                {!recent.loading && !recent.error && !recent.items?.length ? (
-                  <p className="frontier-note">No recent conversations</p>
-                ) : null}
-                {newConversation ? (
-                  <button
-                    type="button"
-                    className="new-conversation"
-                    onClick={newConversation.onSelect}
-                    disabled={newConversation.disabled}
-                  >
-                    <Icon name="plus" />
-                    New conversation
-                  </button>
-                ) : null}
-              </div>
+            {newConversation ? (
+              <button
+                type="button"
+                className="new-conversation"
+                onClick={newConversation.onSelect}
+                disabled={newConversation.disabled}
+              >
+                <Icon name="plus" />
+                New conversation
+              </button>
             ) : null}
             <div className="sidebar-bottom">
               <div className="independence">
@@ -483,15 +436,6 @@ export function ChiefInterface({
                   )}
                 </h1>
               </div>
-              {modelControl ? (
-                <div className="model-control">
-                  <Icon name="core" />
-                  {modelControl}
-                  <span className="select-chevron" aria-hidden="true">
-                    ⌄
-                  </span>
-                </div>
-              ) : null}
             </div>
 
             <div className={`core-stage${conversation ? " has-response" : ""}`} ref={stageRef}>
@@ -620,19 +564,6 @@ export function ChiefInterface({
                     )}
                   </button>
                 </form>
-              ) : null}
-              {showComposer && !workspace && suggestions.length ? (
-                <div className={suggestions.length === 4 ? "suggestions is-four" : "suggestions"}>
-                  {suggestions.map((item) =>
-                    typeof item.onSelect === "function" ? (
-                      <button key={item.id} type="button" onClick={item.onSelect}>
-                        <Icon name={item.icon || SUGGESTION_ICONS[item.id] || "core"} />
-                        {item.label}
-                        <span>→</span>
-                      </button>
-                    ) : null
-                  )}
-                </div>
               ) : null}
               {shortcuts.length ? (
                 <div className="suggestions">

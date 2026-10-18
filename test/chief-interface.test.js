@@ -41,10 +41,11 @@ test("CHIEF home mounts the supplied interface on the existing conversation path
   assert.match(css, /\.chief-frontier/);
   assert.match(face, /allowAttach \?/);
   assert.equal((face.match(/fetch\(/g) || []).length, 0);
-  assert.match(page, /conversationLabel/);
-  assert.match(page, /formatChiefTime/);
+  assert.match(page, /ChiefConversationList/);
+  assert.match(page, /onChooseModel=\{chooseModel\}/);
   assert.match(page, /quickActions=\{homeQuickActions\}/);
-  assert.match(page, /setDraft\(text\)/);
+  assert.doesNotMatch(page, /ChiefModelSelect|homeSuggestions|recentConversations|modelControl=/);
+  assert.doesNotMatch(face, /Help me plan|No recent conversations/);
   assert.match(page, /onStopTurn=\{stopTurn\}/);
   assert.match(page, /systems=\{access\.systems\}/);
   assert.doesNotMatch(page, /24%|8\/8|-12ms|Research market opportunity/);
