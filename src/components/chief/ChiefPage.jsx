@@ -57,6 +57,14 @@ function profileInitial(user) {
   return source ? source.slice(0, 1).toUpperCase() : "";
 }
 
+function profileName(user) {
+  const name = typeof user?.displayName === "string" ? user.displayName.trim() : "";
+  if (name) return name.split(/\s+/)[0];
+  const email = typeof user?.email === "string" ? user.email.trim() : "";
+  if (!email.includes("@")) return "";
+  return email.split("@")[0];
+}
+
 function recentWhen(session, now) {
   const raw = formatChiefTime(session?.updatedAt || session?.createdAt, now);
   if (!raw) return "";
@@ -683,6 +691,19 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
     setAccessOpen(true);
   }
 
+  function openSystem(id) {
+    if (id === "freedom-financial" && onOpenFinancial) {
+      onOpenFinancial();
+      return;
+    }
+    if (id === "grokbot" && onOpenAgents) {
+      onOpenAgents();
+      return;
+    }
+    setSettingsSection("systems");
+    setSettingsOpen(true);
+  }
+
   function returnHome() {
     setAccessOpen(false);
     setRoom("home");
@@ -735,6 +756,21 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
     if (typeof draft?.voiceId === "string" && draft.voiceId) voice.chooseVoice(draft.voiceId);
     voice.ensureAudio();
     await voice.speakAnswer("Hello. I am CHIEF.", draft);
+  }
+
+  function stopTurn() {
+    const active = abortRef.current;
+    stopActiveTurn();
+    voice.stopSpeaking();
+    if (!active) return;
+    setBusyState(false);
+    setStatus((current) =>
+      current === CHIEF_STATUS.READY ||
+      current === CHIEF_STATUS.APPROVAL ||
+      current === CHIEF_STATUS.ERROR
+        ? current
+        : CHIEF_STATUS.READY
+    );
   }
 
   const fieldStatus = user ? status : CHIEF_STATUS.READY;
@@ -1079,6 +1115,13 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
           onResponseMode={user ? changeResponseMode : undefined}
           speechActive={voice.playback === "preparing" || voice.playback === "playing"}
           onStopSpeech={stopSpeech}
+          profileName={profileName(user)}
+          generating={busy}
+          onStopTurn={stopTurn}
+          systems={access.systems}
+          accessLine={user ? moneyWebLine(access.money, access.web) : ""}
+          onOpenSystem={user ? openSystem : undefined}
+          onOpenAccess={user ? openAccess : undefined}
         />
         <p className="chief-sr" aria-live="polite">
           {voice.listening

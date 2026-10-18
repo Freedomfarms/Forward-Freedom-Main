@@ -171,15 +171,15 @@ test("the homepage sandbox does not enter the CHIEF room", () => {
   assert.doesNotMatch(home, /ChiefAtmosphere|ChiefCore/);
   assert.match(auth, /FreedomShell/);
   assert.match(auth, /signInWithEmail/);
-  // The public shell mounts the CHIEF Draft 4 backdrop; the authenticated
-  // conversation keeps ChiefIntelligenceCore. Reduced motion is settled inside
-  // the intro renderer rather than by unmounting the scene.
+  // The public shell mounts the CHIEF Draft 4 backdrop. The signed-in
+  // conversation uses the Frontier canvas, not the filament core.
   assert.match(shell, /ChiefIntroBackdrop/);
   assert.doesNotMatch(shell, /ChiefIntelligenceCore|chiefIntelligence/);
   assert.match(shell, /showCore \?/);
   assert.doesNotMatch(shell, /ChiefAtmosphere|chiefCore\/ChiefCore/);
   const face = read("src/components/chief/ChiefInterface.jsx");
-  assert.match(face, /ChiefIntelligenceCore/);
+  assert.match(face, /useFrontierScene/);
+  assert.doesNotMatch(face, /ChiefIntelligenceCore/);
   const app = read("src/App.jsx");
   assert.match(app, /<FreedomShell showCore=\{false\} \/>/);
   const css = read("src/components/freedom/freedom.css");

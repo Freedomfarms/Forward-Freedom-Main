@@ -13,7 +13,8 @@ test("the homepage core is one purple filament ball outside the login scene", as
   const filaments = read("src/visual/chiefIntelligence/filamentCore.js");
   const login = read("src/visual/chiefCore/ChiefCoreScene.js");
 
-  assert.match(face, /ChiefIntelligenceCore/);
+  assert.match(face, /useFrontierScene/);
+  assert.doesNotMatch(face, /ChiefIntelligenceCore|chiefIntelligence/);
   assert.doesNotMatch(page, /ChiefIntelligenceCore|chiefIntelligence|ChiefCore|chiefCore/);
   assert.match(engine, /poseFor/);
   assert.match(engine, /stepPose/);

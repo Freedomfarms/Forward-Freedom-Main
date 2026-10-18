@@ -410,8 +410,8 @@ test("the public intro stays scoped and leaves authentication intact", () => {
   assert.match(css, /\.fc-root \*/);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
 
-  // The authenticated CHIEF face still owns its own renderer.
+  // The signed-in CHIEF face owns the Frontier renderer, not the public intro.
   const face = read("src/components/chief/ChiefInterface.jsx");
-  assert.match(face, /ChiefIntelligenceCore/);
-  assert.doesNotMatch(face, /ChiefIntroBackdrop|chiefIntroRenderer/);
+  assert.match(face, /useFrontierScene/);
+  assert.doesNotMatch(face, /ChiefIntelligenceCore|ChiefIntroBackdrop|chiefIntroRenderer/);
 });
