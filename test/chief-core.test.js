@@ -167,11 +167,11 @@ test("the homepage sandbox does not enter the CHIEF room", () => {
   assert.doesNotMatch(page, /ChiefCore|chiefCore/);
   assert.match(atmosphere, /visual\/chiefCore\/ChiefCore/);
   assert.doesNotMatch(atmosphere, /import .*ApexWorld|import .*ApexCore3D|import .*ApexClock/);
-  assert.match(home, /ChiefIntroHome/);
+  assert.match(home, /AwakeningExperience/);
   assert.doesNotMatch(home, /ChiefAtmosphere|ChiefCore/);
-  assert.match(auth, /FreedomShell/);
   assert.match(auth, /signInWithEmail/);
-  // The public shell mounts the CHIEF Draft 4 backdrop. The signed-in
+  assert.doesNotMatch(auth, /ChiefAtmosphere|ChiefCore/);
+  // The loading shell can still host the older public backdrop. The signed-in
   // conversation uses the Frontier canvas, not the filament core.
   assert.match(shell, /ChiefIntroBackdrop/);
   assert.doesNotMatch(shell, /ChiefIntelligenceCore|chiefIntelligence/);
