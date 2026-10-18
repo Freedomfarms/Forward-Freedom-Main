@@ -19,8 +19,14 @@ import {
   readElevenLabsApiKey,
   upstreamDetail,
 } from "../server/chief/voice/elevenlabs.js";
-import { takePcmSamples, transcriptFromSpeechEvent } from "../src/utils/chiefSpeech.js";
-import { selectChiefVoiceId } from "../src/utils/chiefVoicePreference.js";
+import {
+  ensureAudioRunning,
+  holdAudioContext,
+  playPcmStream,
+  takePcmSamples,
+  transcriptFromSpeechEvent,
+} from "../src/utils/chiefSpeech.js";
+import { selectChiefVoiceId, speechVoiceId } from "../src/utils/chiefVoicePreference.js";
 
 const SECRET = "xi-test-key-should-not-leak";
 const VOICE = "21m00Tcm4TlvDq8ikWAM";
@@ -230,6 +236,37 @@ test("speech streams pcm for the selected voice_id and strips markdown", async (
   assert.equal("style" in calls[0].init.body.voice_settings, false);
   assert.equal(JSON.stringify(http.state.body || {}).includes(SECRET), false);
   assert.equal(Buffer.concat(http.chunks).includes(Buffer.from(SECRET)), false);
+});
+
+test("a consumed request does not cancel speech before audio starts", async () => {
+  let signalAborted = null;
+  const fetchImpl = async (_url, init) => {
+    signalAborted = init.signal.aborted;
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new Uint8Array([1, 2, 3, 4]));
+        controller.close();
+      },
+    });
+    return new Response(stream, { status: 200 });
+  };
+  const http = mockResponse();
+  const incoming = request({
+    method: "POST",
+    body: { text: "Hello. I am CHIEF.", voice_id: VOICE },
+  });
+  incoming.on = (event, listener) => {
+    if (event === "close") listener();
+  };
+  await handleChiefSpeak(incoming, http.response, {
+    authenticate: auth("user-1"),
+    env: { ELEVENLABS_API_KEY: SECRET },
+    logger: silentLogger,
+    fetchImpl,
+  });
+  assert.equal(signalAborted, false);
+  assert.equal(http.state.statusCode, 200);
+  assert.deepEqual(Buffer.concat(http.chunks), Buffer.from([1, 2, 3, 4]));
 });
 
 test("a rejected voice id never reaches ElevenLabs", async () => {
@@ -481,6 +518,114 @@ test("speech capture and pcm framing stay shared helpers", () => {
   assert.deepEqual(Array.from(first.pending), [0x02]);
   const second = takePcmSamples(first.pending, new Uint8Array([0x01]));
   assert.equal(second.samples[0], 258);
+});
+
+test("a saved voice survives a catalog that has no free-plan replacement", () => {
+  assert.equal(speechVoiceId("voice-from-settings", ""), "voice-from-settings");
+  assert.equal(speechVoiceId("", "voice-from-settings"), "voice-from-settings");
+  assert.equal(speechVoiceId("picked", "saved"), "picked");
+});
+
+test("reply playback fails fast when the audio context never starts", async () => {
+  const body = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new Uint8Array([1, 2, 3, 4]));
+      controller.close();
+    },
+  });
+  const started = Date.now();
+  await assert.rejects(
+    playPcmStream(body, {
+      audioContext: {
+        state: "suspended",
+        currentTime: 0,
+        resume() {
+          return new Promise(() => {});
+        },
+      },
+    }),
+    (error) => error?.code === "playback_blocked"
+  );
+  assert.ok(Date.now() - started < 1000);
+});
+
+test("reply playback uses a running audio context", async () => {
+  const body = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new Uint8Array([1, 0, 2, 0]));
+      controller.close();
+    },
+  });
+  const sources = [];
+  let resumed = false;
+  const audioContext = {
+    state: "running",
+    currentTime: 0,
+    sampleRate: 24000,
+    destination: {},
+    resume() {
+      resumed = true;
+      return Promise.resolve();
+    },
+    createBuffer(_channels, length, rate) {
+      return { duration: length / rate, copyToChannel() {} };
+    },
+    createBufferSource() {
+      const source = {
+        connect() {},
+        start() {
+          sources.push(source);
+        },
+        stop() {},
+      };
+      return source;
+    },
+  };
+  await playPcmStream(body, { audioContext });
+  assert.equal(resumed, false);
+  assert.equal(sources.length, 1);
+  assert.equal(await ensureAudioRunning(audioContext), true);
+});
+
+test("a gesture hold starts silent audio immediately", () => {
+  const started = [];
+  const audioContext = {
+    state: "suspended",
+    sampleRate: 24000,
+    destination: {},
+    resume() {
+      this.state = "running";
+      return Promise.resolve();
+    },
+    createBuffer() {
+      return {};
+    },
+    createBufferSource() {
+      return {
+        connect() {},
+        start() {
+          started.push("buffer");
+        },
+      };
+    },
+    createGain() {
+      return { gain: { value: 1 }, connect() {}, disconnect() {} };
+    },
+    createOscillator() {
+      return {
+        connect() {},
+        start() {
+          started.push("hold");
+        },
+        stop() {},
+        disconnect() {},
+      };
+    },
+  };
+  const release = holdAudioContext(audioContext);
+  assert.deepEqual(started, ["buffer", "hold"]);
+  release();
+  release();
 });
 
 test("the browser never receives the ElevenLabs key or a second chat path", () => {

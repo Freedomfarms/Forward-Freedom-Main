@@ -26,8 +26,13 @@ export async function handleChiefSpeak(request, response, deps = {}) {
   const logger = deps.logger ?? console;
   const apiKey = readElevenLabsApiKey(deps.env ?? process.env);
   const controller = new AbortController();
-  const onClose = () => controller.abort();
-  request.on?.("close", onClose);
+  // The request body is already consumed by the time this handler runs, so
+  // `request` "close" fires immediately and would cancel speech before any
+  // audio exists. Abort only when the client goes away mid-response.
+  const onClientGone = () => {
+    if (!response.writableEnded) controller.abort();
+  };
+  response.on?.("close", onClientGone);
 
   let opened;
   try {

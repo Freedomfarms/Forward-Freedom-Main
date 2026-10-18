@@ -4,6 +4,84 @@
 
 const PCM_RATE = 24000;
 const MIN_SAMPLES = 2400;
+const RESUME_LIMIT_MS = 300;
+
+function playbackBlocked() {
+  return Object.assign(new Error("CHIEF could not play that response."), {
+    code: "playback_blocked",
+  });
+}
+
+// A click that only calls resume() does not keep audio unlocked until a reply
+// arrives. Start a silent buffer in that gesture, and hold a zero-gain node
+// until the reply finishes so the context is still running.
+export function holdAudioContext(audioContext) {
+  if (!audioContext) return () => {};
+  if (audioContext.state === "suspended" && typeof audioContext.resume === "function") {
+    void audioContext.resume();
+  }
+  const stoppers = [];
+  try {
+    const rate = audioContext.sampleRate || PCM_RATE;
+    const buffer = audioContext.createBuffer(1, 1, rate);
+    const source = audioContext.createBufferSource();
+    source.buffer = buffer;
+    source.connect(audioContext.destination);
+    source.start(0);
+  } catch {
+    // The context cannot start a buffer yet. The hold below still tries.
+  }
+  try {
+    const gain = audioContext.createGain();
+    gain.gain.value = 0;
+    const oscillator = audioContext.createOscillator();
+    oscillator.connect(gain);
+    gain.connect(audioContext.destination);
+    oscillator.start();
+    stoppers.push(() => {
+      try {
+        oscillator.stop();
+      } catch {
+        // Already stopped.
+      }
+      try {
+        oscillator.disconnect();
+      } catch {
+        // Already disconnected.
+      }
+      try {
+        gain.disconnect();
+      } catch {
+        // Already disconnected.
+      }
+    });
+  } catch {
+    // Playback can still use this context when a later gesture starts it.
+  }
+  return () => {
+    while (stoppers.length) stoppers.pop()();
+  };
+}
+
+export async function ensureAudioRunning(audioContext) {
+  if (!audioContext) return false;
+  if (audioContext.state === "running") return true;
+  if (typeof audioContext.resume !== "function") return false;
+  let timer = null;
+  try {
+    await Promise.race([
+      Promise.resolve(audioContext.resume()),
+      new Promise((resolve) => {
+        timer = setTimeout(resolve, RESUME_LIMIT_MS);
+      }),
+    ]);
+  } catch {
+    return false;
+  } finally {
+    if (timer != null) clearTimeout(timer);
+  }
+  return audioContext.state === "running";
+}
 
 export function speechErrorMessage(code) {
   if (code === "unsupported") return "Speech recognition is not available in this browser.";
@@ -181,6 +259,9 @@ export async function playPcmStream(
   { audioContext, signal, sampleRate = PCM_RATE, onPlaybackStart } = {}
 ) {
   if (!body || !audioContext) throw new Error("CHIEF could not play that response.");
+  const running = await ensureAudioRunning(audioContext);
+  if (signal?.aborted) throw abortError();
+  if (!running) throw playbackBlocked();
   const reader = body.getReader();
   const sources = [];
   let pending = new Uint8Array();
@@ -216,11 +297,9 @@ export async function playPcmStream(
       }
     }
   };
-  if (signal?.aborted) throw abortError();
   signal?.addEventListener("abort", abort, { once: true });
 
   try {
-    if (audioContext.state === "suspended") await audioContext.resume();
     while (!signal?.aborted) {
       const { done, value } = await reader.read();
       if (value) {
@@ -236,8 +315,114 @@ export async function playPcmStream(
     const remaining = Math.max(0, (nextTime - audioContext.currentTime) * 1000);
     await wait(remaining, signal);
   } finally {
+    try {
+      reader.releaseLock?.();
+    } catch {
+      // The reader is already released.
+    }
     signal?.removeEventListener("abort", abort);
   }
+}
+
+async function playDecodedBuffer(audioContext, audioBuffer, { signal, onPlaybackStart } = {}) {
+  const running = await ensureAudioRunning(audioContext);
+  if (signal?.aborted) throw abortError();
+  if (!running) throw playbackBlocked();
+  const source = audioContext.createBufferSource();
+  source.buffer = audioBuffer;
+  source.connect(audioContext.destination);
+  const durationMs = Math.max(0, Number(audioBuffer?.duration) * 1000 || 0);
+  await new Promise((resolve, reject) => {
+    let settled = false;
+    let timer = null;
+    const finish = (error) => {
+      if (settled) return;
+      settled = true;
+      if (timer != null) clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      if (error) reject(error);
+      else resolve();
+    };
+    const onAbort = () => {
+      try {
+        source.stop();
+      } catch {
+        // Already stopped.
+      }
+      finish(abortError());
+    };
+    timer = setTimeout(() => finish(), durationMs + 1500);
+    source.onended = () => {
+      clearTimeout(timer);
+      finish();
+    };
+    if (signal?.aborted) {
+      onAbort();
+      return;
+    }
+    signal?.addEventListener("abort", onAbort, { once: true });
+    try {
+      source.start(audioContext.currentTime + 0.02);
+    } catch (error) {
+      clearTimeout(timer);
+      finish(error);
+      return;
+    }
+    onPlaybackStart?.();
+  });
+}
+
+export function speakBrowserText(text, { rate = 1, signal, onStart } = {}) {
+  const synthesis = globalThis.speechSynthesis;
+  const Utterance = globalThis.SpeechSynthesisUtterance;
+  if (!synthesis || typeof Utterance !== "function") throw playbackBlocked();
+  const spoken = typeof text === "string" ? text.trim() : "";
+  if (!spoken) throw playbackBlocked();
+  const utterance = new Utterance(spoken);
+  const numericRate = Number(rate);
+  utterance.rate = Number.isFinite(numericRate) ? Math.min(1.2, Math.max(0.7, numericRate)) : 1;
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (error) => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener("abort", onAbort);
+      if (error) reject(error);
+      else resolve();
+    };
+    const onAbort = () => {
+      try {
+        synthesis.cancel();
+      } catch {
+        // Already stopped.
+      }
+      finish(abortError());
+    };
+    utterance.onstart = () => {
+      if (signal?.aborted) return;
+      onStart?.();
+    };
+    utterance.onend = () => finish();
+    utterance.onerror = (event) => {
+      if (event?.error === "interrupted" || event?.error === "canceled") {
+        finish(abortError());
+        return;
+      }
+      finish(playbackBlocked());
+    };
+    if (signal?.aborted) {
+      onAbort();
+      return;
+    }
+    signal?.addEventListener("abort", onAbort, { once: true });
+    try {
+      synthesis.cancel();
+      synthesis.resume?.();
+      synthesis.speak(utterance);
+    } catch (error) {
+      finish(error);
+    }
+  });
 }
 
 function playMp3Blob(blob, { signal, onPlaybackStart } = {}) {
@@ -274,9 +459,18 @@ export async function playChiefSpeech(response, { audioContext, signal, onPlayba
   const format = response?.headers?.get?.("X-Chief-Audio-Format") || "pcm_24000";
   if (signal?.aborted) throw abortError();
   if (format === "mp3") {
-    const blob = await response.blob();
+    const bytes = await response.arrayBuffer();
     if (signal?.aborted) throw abortError();
-    await playMp3Blob(blob, { signal, onPlaybackStart });
+    if (audioContext && typeof audioContext.decodeAudioData === "function") {
+      try {
+        const decoded = await audioContext.decodeAudioData(bytes.slice(0));
+        await playDecodedBuffer(audioContext, decoded, { signal, onPlaybackStart });
+        return;
+      } catch (error) {
+        if (error?.name === "AbortError" || error?.code === "playback_blocked") throw error;
+      }
+    }
+    await playMp3Blob(new Blob([bytes], { type: "audio/mpeg" }), { signal, onPlaybackStart });
     return;
   }
   await playPcmStream(response.body, { audioContext, signal, onPlaybackStart });

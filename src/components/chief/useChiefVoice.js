@@ -1,9 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchChiefSpeech, fetchChiefVoices } from "../../utils/chiefApi.js";
-import { createChiefSpeechInput, playChiefSpeech } from "../../utils/chiefSpeech.js";
+import {
+  createChiefSpeechInput,
+  holdAudioContext,
+  playChiefSpeech,
+  speakBrowserText,
+} from "../../utils/chiefSpeech.js";
 import {
   readChiefVoiceId,
   selectChiefVoiceId,
+  speechVoiceId,
   writeChiefVoiceId,
 } from "../../utils/chiefVoicePreference.js";
 import { createAudioLevel } from "./voice/audioLevel.js";
@@ -36,6 +42,7 @@ export function useChiefVoice({ user, sessionUid, onTranscript }) {
   const speakAbortRef = useRef(null);
   const speakGenerationRef = useRef(0);
   const audioCtxRef = useRef(null);
+  const audioHoldRef = useRef(null);
   const speechRef = useRef(null);
   const userRef = useRef(user);
   const voiceTurnRef = useRef(false);
@@ -78,8 +85,11 @@ export function useChiefVoice({ user, sessionUid, onTranscript }) {
       const configured = typeof payload?.defaultVoiceId === "string" ? payload.defaultVoiceId : "";
       setVoiceId((current) => {
         const stored = current || readChiefVoiceId(sessionUid);
-        const next = selectChiefVoiceId(list, { stored, configured });
-        if (next) writeChiefVoiceId(sessionUid, next);
+        const next = speechVoiceId(selectChiefVoiceId(list, { stored, configured }), stored);
+        if (next) {
+          writeChiefVoiceId(sessionUid, next);
+          voiceIdRef.current = next;
+        }
         return next;
       });
     } catch (error) {
@@ -96,8 +106,17 @@ export function useChiefVoice({ user, sessionUid, onTranscript }) {
     return undefined;
   }, [sessionUid, loadVoices, voiceAttempt]);
 
+  const releaseAudioHold = useCallback(() => {
+    const release = audioHoldRef.current;
+    audioHoldRef.current = null;
+    release?.();
+  }, []);
+
   useEffect(() => {
     return () => {
+      const release = audioHoldRef.current;
+      audioHoldRef.current = null;
+      release?.();
       const controller = speakAbortRef.current;
       speakAbortRef.current = null;
       controller?.abort();
@@ -128,7 +147,7 @@ export function useChiefVoice({ user, sessionUid, onTranscript }) {
     return () => input.abort();
   }, []);
 
-  const ensureAudio = useCallback(() => {
+  const openAudioContext = useCallback(() => {
     const Ctx = globalThis.AudioContext || globalThis.webkitAudioContext;
     if (!Ctx) return null;
     if (!audioCtxRef.current || audioCtxRef.current.state === "closed") {
@@ -138,13 +157,31 @@ export function useChiefVoice({ user, sessionUid, onTranscript }) {
     return audioCtxRef.current;
   }, []);
 
-  const stopSpeaking = useCallback(() => {
-    speakGenerationRef.current += 1;
-    speakAbortRef.current?.abort();
-    speakAbortRef.current = null;
-    setAudioActive(false);
-    setPlayback("idle");
-  }, []);
+  const ensureAudio = useCallback(() => {
+    const context = openAudioContext();
+    if (!context) return null;
+    if (!audioHoldRef.current) audioHoldRef.current = holdAudioContext(context);
+    return context;
+  }, [openAudioContext]);
+
+  const stopSpeaking = useCallback(
+    (options) => {
+      speakGenerationRef.current += 1;
+      speakAbortRef.current?.abort();
+      speakAbortRef.current = null;
+      if (!options?.preserveHold) releaseAudioHold();
+      if (typeof globalThis.speechSynthesis?.cancel === "function") {
+        try {
+          globalThis.speechSynthesis.cancel();
+        } catch {
+          // The browser has no active utterance.
+        }
+      }
+      setAudioActive(false);
+      setPlayback("idle");
+    },
+    [releaseAudioHold]
+  );
 
   const clearSpeechError = useCallback(() => {
     setSpeechError("");
@@ -162,8 +199,20 @@ export function useChiefVoice({ user, sessionUid, onTranscript }) {
       const generation = ++speakGenerationRef.current;
       const stale = () => speakGenerationRef.current !== generation;
       const spoken = typeof text === "string" ? text.trim() : "";
-      const selected = voiceIdRef.current;
       const currentUser = userRef.current;
+      const saved = readVoiceSettings();
+      const voiceSettings = settingsOverride
+        ? normalizeVoiceSettings({ ...saved, ...settingsOverride })
+        : saved;
+      const overrideId =
+        settingsOverride && typeof settingsOverride.voiceId === "string"
+          ? settingsOverride.voiceId
+          : "";
+      const selected = speechVoiceId(
+        speechVoiceId(overrideId, voiceIdRef.current),
+        voiceSettings.voiceId
+      );
+      if (selected) voiceIdRef.current = selected;
       if (!spoken || !currentUser) {
         speakAbortRef.current?.abort();
         speakAbortRef.current = null;
@@ -180,10 +229,6 @@ export function useChiefVoice({ user, sessionUid, onTranscript }) {
         setSpeechError(message);
         return { ok: false, reason: "error", error: message };
       }
-      const saved = readVoiceSettings();
-      const voiceSettings = settingsOverride
-        ? normalizeVoiceSettings({ ...saved, ...settingsOverride })
-        : saved;
       const controller = new AbortController();
       const previous = speakAbortRef.current;
       speakAbortRef.current = controller;
@@ -207,7 +252,7 @@ export function useChiefVoice({ user, sessionUid, onTranscript }) {
           return { ok: false, reason: "aborted" };
         }
         await playChiefSpeech(response, {
-          audioContext: ensureAudio(),
+          audioContext: openAudioContext(),
           signal: controller.signal,
           onPlaybackStart: () => {
             if (stale() || controller.signal.aborted || speakAbortRef.current !== controller) {
@@ -225,10 +270,37 @@ export function useChiefVoice({ user, sessionUid, onTranscript }) {
         if (stale() || controller.signal.aborted || error?.name === "AbortError") {
           return { ok: false, reason: "aborted" };
         }
+        if (voiceSettings.fallbackEnabled) {
+          try {
+            await speakBrowserText(spoken, {
+              rate: voiceSettings.speed,
+              signal: controller.signal,
+              onStart: () => {
+                if (stale() || controller.signal.aborted || speakAbortRef.current !== controller) {
+                  return;
+                }
+                setPlayback("playing");
+                setAudioActive(true);
+              },
+            });
+            if (stale() || controller.signal.aborted) return { ok: false, reason: "aborted" };
+            return { ok: true };
+          } catch (browserError) {
+            if (
+              stale() ||
+              controller.signal.aborted ||
+              browserError?.name === "AbortError" ||
+              browserError?.code === "aborted"
+            ) {
+              return { ok: false, reason: "aborted" };
+            }
+          }
+        }
         const message = error?.message || "CHIEF could not speak that response.";
         setSpeechError(message);
         return { ok: false, reason: "error", error: message };
       } finally {
+        if (!stale()) releaseAudioHold();
         if (speakAbortRef.current === controller) {
           speakAbortRef.current = null;
           setPlayback("idle");
@@ -236,7 +308,7 @@ export function useChiefVoice({ user, sessionUid, onTranscript }) {
         }
       }
     },
-    [ensureAudio]
+    [openAudioContext, releaseAudioHold]
   );
 
   const toggleListening = useCallback(() => {
@@ -292,6 +364,7 @@ export function useChiefVoice({ user, sessionUid, onTranscript }) {
     clearSpeechError,
     speakAnswer,
     ensureAudio,
+    releaseAudioHold,
     audioLevelRef,
     consumeVoiceTurn,
   };
