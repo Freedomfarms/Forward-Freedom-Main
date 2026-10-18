@@ -104,6 +104,40 @@ test("authenticated normalization does not fill missing fields with demo data", 
   assert.deepEqual(user.metricSnapshots, {});
 });
 
+test("removing the objectives tab keeps saved goals and leaves that tab", async () => {
+  const { buildScopedAppStateStorageKey, loadPersistedAppStateRecord, persistAppState } =
+    await loadAppStateModule();
+  installLocalStorage();
+  const scopedKey = buildScopedAppStateStorageKey("auth-user");
+  const savedGoals = [{ id: "goal-1", title: "Pay down the card" }];
+  persistAppState(
+    {
+      users: [
+        {
+          id: "auth-user-profile",
+          name: "Real User",
+          activeTab: "Objectives",
+          objectives: savedGoals,
+          accounts: [{ id: "checking", name: "Checking" }],
+        },
+      ],
+      activeUserId: "auth-user-profile",
+    },
+    scopedKey
+  );
+
+  const scopedRecord = loadPersistedAppStateRecord(scopedKey, {
+    fallbackToDefaultStorageKey: false,
+    includeLegacyMetricSnapshots: false,
+    useSeedData: false,
+  });
+  const [user] = scopedRecord.state.users;
+
+  assert.equal(user.activeTab, "Command Center");
+  assert.deepEqual(user.objectives, savedGoals);
+  assert.equal(user.accounts[0].name, "Checking");
+});
+
 test("authenticated legacy snapshots do not inherit legacy metric chart data", async () => {
   const {
     LEGACY_METRIC_SNAPSHOT_STORAGE_KEY,

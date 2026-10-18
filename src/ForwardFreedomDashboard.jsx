@@ -105,7 +105,6 @@ import {
   SetupWelcomeModal,
 } from "./components/OnboardingExperience.jsx";
 import { OperationsBoard } from "./components/OperationsBoard.jsx";
-import { ObjectivesBoard } from "./components/ObjectivesBoard.jsx";
 import { RecurringSubscriptions } from "./components/RecurringSubscriptions.jsx";
 import { TransactionsView } from "./components/TransactionsView.jsx";
 import { WorkspaceGuideAssistant } from "./components/WorkspaceGuideAssistant.jsx";
@@ -747,7 +746,6 @@ function ForwardFreedomDashboard({
   const incomeStreams = activeUser.incomeStreams;
   const rawSubscriptions = activeUser.subscriptions;
   const recurringPreferences = normalizeRecurringPreferences(activeUser.recurringPreferences);
-  const objectives = Array.isArray(activeUser.objectives) ? activeUser.objectives : [];
   const plaidItems = activeUser.plaidItems;
   const lastPlaidSyncAt = activeUser.lastPlaidSyncAt;
   const merchantCategoryRules = activeUser.merchantCategoryRules || {};
@@ -801,7 +799,6 @@ function ForwardFreedomDashboard({
           : valueOrUpdater
       )
     );
-  const setObjectives = (valueOrUpdater) => setActiveUserField("objectives", valueOrUpdater);
   const setMerchantCategoryRules = (valueOrUpdater) =>
     setActiveUserField("merchantCategoryRules", valueOrUpdater);
   const setPlaidTransactionOverrides = (valueOrUpdater) =>
@@ -2703,20 +2700,6 @@ function ForwardFreedomDashboard({
               subscriptions={subscriptions}
               setSubscriptions={setSubscriptions}
               removeSubscription={removeSubscription}
-              householdProfilesProps={householdProfilesProps}
-            />
-          ) : activeTab === APP_TABS.OBJECTIVES ? (
-            <ObjectivesBoard
-              objectives={objectives}
-              setObjectives={setObjectives}
-              transactions={categorizedTransactions}
-              subscriptions={subscriptions}
-              trueCash={trueCash}
-              totalNetWorth={totalNetWorth}
-              currentMonthSnapshot={currentMonthSpendSnapshot}
-              monthlyFlow={monthlyFlow}
-              metricSnapshots={trackedMetricSnapshots}
-              currentMonthIncome={currentMonthIncome}
               householdProfilesProps={householdProfilesProps}
             />
           ) : (
