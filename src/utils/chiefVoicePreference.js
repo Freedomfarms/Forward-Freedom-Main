@@ -42,6 +42,14 @@ export function voiceAllowedOnFreePlan(voice) {
 // Keep a saved voice when the Free plan can speak it. Otherwise use the
 // configured ELEVENLABS_VOICE_ID when that id is in the free-tier list, then
 // the first premade voice the account API returned.
+// The voice the person picked wins. A catalog that cannot offer a replacement
+// must not clear it: the settings test speaks that id, and later replies use it.
+export function speechVoiceId(selected, saved) {
+  const primary = typeof selected === "string" ? selected.trim() : "";
+  if (primary) return primary;
+  return typeof saved === "string" ? saved.trim() : "";
+}
+
 export function selectChiefVoiceId(voices, { stored = "", configured = "" } = {}) {
   const list = Array.isArray(voices) ? voices : [];
   const allowed = list.filter(voiceAllowedOnFreePlan);

@@ -474,117 +474,121 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
     setSpeechStopped(false);
     voice.clearSpeechError();
     voice.stopListening();
-    voice.stopSpeaking();
+    voice.stopSpeaking(source === "voice" ? { preserveHold: true } : undefined);
     voice.ensureAudio();
-    if (archivedSessions.some((session) => session.sessionId === sessionId)) {
-      setTurnError("This conversation is archived. Restore it before sending.");
-      return;
-    }
-    lastTextRef.current = trimmed;
-    stopActiveTurn();
-    const controller = new AbortController();
-    abortRef.current = controller;
-    generation.current += 1;
-    setBusyState(true);
-    setTurnError("");
-    setHistoryError("");
-    setApproval(null);
-    setStreamText("");
-    setStatus(CHIEF_STATUS.WORKING);
-    setDraft("");
-    if (appendUser) {
-      setMessages((current) => [...current, { role: "user", text: trimmed }]);
-    }
-    let turn = initialTurnState(sessionId);
     try {
-      await streamChiefChat({
-        user,
-        sessionId,
-        text: trimmed,
-        signal: controller.signal,
-        onEvent: (event) => {
-          if (controller.signal.aborted) return;
-          turn = applyChiefEvent(turn, event);
-          setStatus(turn.status);
-          setStreamText(turn.streamText);
-          if (turn.sessionId && turn.sessionId !== activeSessionIdRef.current) {
-            activeSessionIdRef.current = turn.sessionId;
-            setActiveSessionId(turn.sessionId);
-            writeStoredSessionId(turn.sessionId);
-          }
-          if (turn.approval) setApproval(turn.approval);
-          if (turn.error) setTurnError(turn.error);
-        },
-      });
-    } catch (error) {
-      if (controller.signal.aborted || error?.name === "AbortError") return;
-      if (abortRef.current !== controller) return;
-      setStatus(CHIEF_STATUS.ERROR);
-      setTurnError(errorText(error));
-      setBusyState(false);
-      return;
-    }
-    if (controller.signal.aborted || abortRef.current !== controller) return;
-
-    const sessionIdNow = turn.sessionId;
-    let historyAnswer = "";
-    if (sessionIdNow && (turn.finished || turn.approval)) {
-      try {
-        const payload = await fetchChiefHistory(user, sessionIdNow);
-        if (abortRef.current !== controller) return;
-        const historyMessages = Array.isArray(payload?.messages) ? payload.messages : [];
-        setMessages(historyMessages);
-        setStreamText("");
-        setNotFound(false);
-        if (turn.finished && turn.status !== CHIEF_STATUS.ERROR && !turn.error) {
-          historyAnswer = currentTurn(historyMessages, "").answer;
-        }
-      } catch (error) {
-        if (abortRef.current !== controller) return;
-        if (error?.status === 404) {
-          setNotFound(true);
-          setMessages([]);
-        } else {
-          setHistoryError(errorText(error));
-        }
+      if (archivedSessions.some((session) => session.sessionId === sessionId)) {
+        setTurnError("This conversation is archived. Restore it before sending.");
+        return;
       }
-      try {
-        await refreshSessions();
-      } catch (error) {
-        if (abortRef.current === controller) setSessionsError(errorText(error));
-      }
-    }
-    if (abortRef.current !== controller) return;
-    if (turn.approval || turn.turnStatus === "suspended") {
-      setStatus(CHIEF_STATUS.APPROVAL);
-      if (sessionIdNow) {
-        const pending = await fetchChiefPendingApproval(user, sessionIdNow).catch(() => null);
-        if (abortRef.current !== controller) return;
-        if (pending) setApproval(pending);
-      }
-    } else {
+      lastTextRef.current = trimmed;
+      stopActiveTurn();
+      const controller = new AbortController();
+      abortRef.current = controller;
+      generation.current += 1;
+      setBusyState(true);
+      setTurnError("");
+      setHistoryError("");
       setApproval(null);
-      setStatus(turn.status === CHIEF_STATUS.ERROR ? CHIEF_STATUS.ERROR : CHIEF_STATUS.READY);
+      setStreamText("");
+      setStatus(CHIEF_STATUS.WORKING);
+      setDraft("");
+      if (appendUser) {
+        setMessages((current) => [...current, { role: "user", text: trimmed }]);
+      }
+      let turn = initialTurnState(sessionId);
+      try {
+        await streamChiefChat({
+          user,
+          sessionId,
+          text: trimmed,
+          signal: controller.signal,
+          onEvent: (event) => {
+            if (controller.signal.aborted) return;
+            turn = applyChiefEvent(turn, event);
+            setStatus(turn.status);
+            setStreamText(turn.streamText);
+            if (turn.sessionId && turn.sessionId !== activeSessionIdRef.current) {
+              activeSessionIdRef.current = turn.sessionId;
+              setActiveSessionId(turn.sessionId);
+              writeStoredSessionId(turn.sessionId);
+            }
+            if (turn.approval) setApproval(turn.approval);
+            if (turn.error) setTurnError(turn.error);
+          },
+        });
+      } catch (error) {
+        if (controller.signal.aborted || error?.name === "AbortError") return;
+        if (abortRef.current !== controller) return;
+        setStatus(CHIEF_STATUS.ERROR);
+        setTurnError(errorText(error));
+        setBusyState(false);
+        return;
+      }
+      if (controller.signal.aborted || abortRef.current !== controller) return;
+
+      const sessionIdNow = turn.sessionId;
+      let historyAnswer = "";
+      if (sessionIdNow && (turn.finished || turn.approval)) {
+        try {
+          const payload = await fetchChiefHistory(user, sessionIdNow);
+          if (abortRef.current !== controller) return;
+          const historyMessages = Array.isArray(payload?.messages) ? payload.messages : [];
+          setMessages(historyMessages);
+          setStreamText("");
+          setNotFound(false);
+          if (turn.finished && turn.status !== CHIEF_STATUS.ERROR && !turn.error) {
+            historyAnswer = currentTurn(historyMessages, "").answer;
+          }
+        } catch (error) {
+          if (abortRef.current !== controller) return;
+          if (error?.status === 404) {
+            setNotFound(true);
+            setMessages([]);
+          } else {
+            setHistoryError(errorText(error));
+          }
+        }
+        try {
+          await refreshSessions();
+        } catch (error) {
+          if (abortRef.current === controller) setSessionsError(errorText(error));
+        }
+      }
+      if (abortRef.current !== controller) return;
+      if (turn.approval || turn.turnStatus === "suspended") {
+        setStatus(CHIEF_STATUS.APPROVAL);
+        if (sessionIdNow) {
+          const pending = await fetchChiefPendingApproval(user, sessionIdNow).catch(() => null);
+          if (abortRef.current !== controller) return;
+          if (pending) setApproval(pending);
+        }
+      } else {
+        setApproval(null);
+        setStatus(turn.status === CHIEF_STATUS.ERROR ? CHIEF_STATUS.ERROR : CHIEF_STATUS.READY);
+      }
+      setBusyState(false);
+      void refreshAccess();
+      const answerForReveal = (historyAnswer || turn.streamText || "").trim();
+      const delivery = speakCompletedReply(voice, {
+        streamText: turn.streamText,
+        historyAnswer,
+        finished: turn.finished === true,
+        status: turn.status,
+        error: turn.error,
+        aborted: controller.signal.aborted || abortRef.current !== controller,
+        source,
+        preferences: preferencesRef.current,
+      });
+      if (!delivery?.pending) return;
+      const result = await delivery.pending;
+      if (speechEpoch.current !== epoch) return;
+      if (result?.ok) return;
+      if (answerForReveal) revealStoredAnswer(answerForReveal, sessionIdNow);
+      if (result?.reason === "aborted") setSpeechStopped(true);
+    } finally {
+      if (speechEpoch.current === epoch) voice.releaseAudioHold?.();
     }
-    setBusyState(false);
-    void refreshAccess();
-    const answerForReveal = (historyAnswer || turn.streamText || "").trim();
-    const delivery = speakCompletedReply(voice, {
-      streamText: turn.streamText,
-      historyAnswer,
-      finished: turn.finished === true,
-      status: turn.status,
-      error: turn.error,
-      aborted: controller.signal.aborted || abortRef.current !== controller,
-      source,
-      preferences: preferencesRef.current,
-    });
-    if (!delivery?.pending) return;
-    const result = await delivery.pending;
-    if (speechEpoch.current !== epoch) return;
-    if (result?.ok) return;
-    if (answerForReveal) revealStoredAnswer(answerForReveal, sessionIdNow);
-    if (result?.reason === "aborted") setSpeechStopped(true);
   }
 
   useEffect(() => {
