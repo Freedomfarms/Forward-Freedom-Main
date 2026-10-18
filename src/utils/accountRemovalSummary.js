@@ -1,3 +1,18 @@
+export function connectionDeleteTarget(item, accounts = []) {
+  if (!item?.itemId) return null;
+
+  const linkedAccount = accounts.find((account) => account.plaidItemId === item.itemId);
+  if (linkedAccount) return linkedAccount;
+
+  const institutionName = item.institutionName || "Linked institution";
+  return {
+    id: item.itemId,
+    plaidItemId: item.itemId,
+    name: institutionName,
+    institution: institutionName,
+  };
+}
+
 export function buildAccountRemovalSummary(
   deleteTarget,
   accounts,

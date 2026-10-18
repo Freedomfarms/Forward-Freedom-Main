@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { AccountRemoveConfirmModal } from "./AccountRemoveConfirmModal.jsx";
 import { styles } from "../styles.js";
+import { connectionDeleteTarget } from "../utils/accountRemovalSummary.js";
 import { getCurrentTimestamp } from "../utils/date.js";
 import { money } from "../utils/format.js";
 import { roundMoney } from "../utils/money.js";
@@ -665,6 +666,14 @@ export function AccountsView({
     closeModal();
   };
 
+  const requestDeleteConnection = (item) => {
+    if (plaidIntegration?.isSyncing || isDeletingAccount) return;
+    const target = connectionDeleteTarget(item, accounts);
+    if (!target) return;
+    setDeleteError("");
+    setDeleteTarget(target);
+  };
+
   const confirmDeleteAccount = async () => {
     if (!deleteTarget || typeof deleteAccount !== "function" || isDeletingAccount) return;
 
@@ -1014,25 +1023,48 @@ export function AccountsView({
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => repairPlaidItem?.(item.itemId)}
-                  disabled={plaidIntegration?.isSyncing}
-                  style={{
-                    background: "rgba(255,166,0,.12)",
-                    border: "1px solid rgba(255,196,112,.38)",
-                    borderRadius: 8,
-                    color: "#fff1d6",
-                    padding: "8px 12px",
-                    fontWeight: 700,
-                    cursor: plaidIntegration?.isSyncing ? "progress" : "pointer",
-                    fontSize: 12,
-                    whiteSpace: "nowrap",
-                    opacity: plaidIntegration?.isSyncing ? 0.72 : 1,
-                  }}
-                >
-                  Repair connection
-                </button>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    onClick={() => repairPlaidItem?.(item.itemId)}
+                    disabled={plaidIntegration?.isSyncing || isDeletingAccount}
+                    style={{
+                      background: "rgba(255,166,0,.12)",
+                      border: "1px solid rgba(255,196,112,.38)",
+                      borderRadius: 8,
+                      color: "#fff1d6",
+                      padding: "8px 12px",
+                      fontWeight: 700,
+                      cursor:
+                        plaidIntegration?.isSyncing || isDeletingAccount ? "progress" : "pointer",
+                      fontSize: 12,
+                      whiteSpace: "nowrap",
+                      opacity: plaidIntegration?.isSyncing || isDeletingAccount ? 0.72 : 1,
+                    }}
+                  >
+                    Repair connection
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => requestDeleteConnection(item)}
+                    disabled={plaidIntegration?.isSyncing || isDeletingAccount}
+                    style={{
+                      background: "rgba(255,36,77,.1)",
+                      border: "1px solid rgba(255,93,122,.32)",
+                      borderRadius: 8,
+                      color: "#ffd9df",
+                      padding: "8px 12px",
+                      fontWeight: 700,
+                      cursor:
+                        plaidIntegration?.isSyncing || isDeletingAccount ? "progress" : "pointer",
+                      fontSize: 12,
+                      whiteSpace: "nowrap",
+                      opacity: plaidIntegration?.isSyncing || isDeletingAccount ? 0.72 : 1,
+                    }}
+                  >
+                    Delete connection
+                  </button>
+                </div>
               </div>
             ))}
           </div>
