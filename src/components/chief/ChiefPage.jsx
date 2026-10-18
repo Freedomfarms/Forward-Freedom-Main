@@ -22,14 +22,12 @@ import {
   readChiefActiveSessionId,
   writeChiefActiveSessionId,
 } from "../../utils/chiefActiveSession.js";
-import { conversationLabel, formatChiefTime } from "../../utils/chiefProtocol.js";
 import { conversationSearchTarget } from "../../utils/chiefConversationWorkspace.js";
 import { scenePhaseForInteraction, visualStateForInteraction } from "./apexVisualState.js";
 import { ChiefAccessSheet } from "./ChiefAccessSheet.jsx";
 import { ChiefInterface } from "./ChiefInterface.jsx";
 import { ChiefApprovalCard } from "./ChiefApprovalCard.jsx";
 import { ChiefConversationList } from "./ChiefConversationList.jsx";
-import { ChiefModelSelect } from "./ChiefModelSelect.jsx";
 import { ChiefEarlierTurns, ChiefTranscript } from "./ChiefTranscript.jsx";
 import { ChiefSettings } from "./ChiefSettings.jsx";
 import { useChiefVoice } from "./useChiefVoice.js";
@@ -55,13 +53,6 @@ function profileInitial(user) {
     (typeof user?.email === "string" && user.email.trim()) ||
     "";
   return source ? source.slice(0, 1).toUpperCase() : "";
-}
-
-function recentWhen(session, now) {
-  const raw = formatChiefTime(session?.updatedAt || session?.createdAt, now);
-  if (!raw) return "";
-  if (raw === "now") return "now";
-  return /^\d+[mhd]$/.test(raw) ? `${raw} ago` : raw;
 }
 
 export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgents, onSignOut }) {
@@ -972,20 +963,6 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
     onSelect: () => openNode({ key: "settings" }),
   });
 
-  const homeSuggestions =
-    user && !approval && !activeArchived
-      ? [
-          ["plan", "Help me plan…", "Help me plan my day."],
-          ["finances", "Analyze my finances…", "Analyze my finances."],
-          ["research", "Research this topic…", "Research this topic."],
-          ["projects", "Work on my projects…", "Work on my projects."],
-        ].map(([id, label, text]) => ({
-          id,
-          label,
-          onSelect: () => setDraft(text),
-        }))
-      : [];
-
   const homeQuickActions = user
     ? [
         {
@@ -1004,25 +981,6 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
         },
       ]
     : [];
-
-  const recentConversations = user
-    ? {
-        loading: !sessionsResolved && !sessionsError,
-        error: sessionsError || "",
-        onViewAll: () => openConversations(),
-        items: sessions.slice(0, 4).flatMap((session) => {
-          if (!session?.sessionId) return [];
-          return [
-            {
-              id: session.sessionId,
-              label: conversationLabel(session),
-              time: recentWhen(session, now.getTime()),
-              onSelect: () => selectSession(session.sessionId),
-            },
-          ];
-        }),
-      }
-    : null;
 
   if (room === "home" || room === "convos") {
     return (
@@ -1045,8 +1003,6 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
           onProfile={() => setSettingsOpen(true)}
           profileMark={profileInitial(user)}
           quickActions={homeQuickActions}
-          recent={recentConversations}
-          suggestions={room === "convos" ? [] : homeSuggestions}
           status={homeStatus}
           statusTone={homeStatusTone}
           assistantState={orbState}
@@ -1064,16 +1020,6 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
           systemStatus={homeSystemStatus}
           conversation={room === "convos" ? null : showHomeExchange ? homeExchange : null}
           workspace={room === "convos" ? conversationList : null}
-          modelControl={
-            user && models.length ? (
-              <ChiefModelSelect
-                models={models}
-                value={modelRoute || defaultModel}
-                disabled={busy || historyLoading || notFound || Boolean(approval) || activeArchived}
-                onChange={chooseModel}
-              />
-            ) : null
-          }
           inputRef={composerRef}
           responseMode={preferences.conversation.responseMode}
           onResponseMode={user ? changeResponseMode : undefined}

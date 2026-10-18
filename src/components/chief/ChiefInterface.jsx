@@ -172,11 +172,8 @@ export function ChiefInterface({
     network: null,
   },
   quickActions = [],
-  recent = null,
-  suggestions = [],
   conversation = null,
   workspace = null,
-  modelControl = null,
   inputRef = null,
   responseMode = "both",
   onResponseMode,
@@ -252,7 +249,6 @@ export function ChiefInterface({
               <i />
               <span>{status}</span>
             </p>
-            {modelControl ? <div className="chief-header-model">{modelControl}</div> : null}
           </div>
           <div className="chief-header-tools">
             {onSearch ? (
@@ -406,18 +402,6 @@ export function ChiefInterface({
             </div>
           ) : null}
 
-          {showComposer && !workspace && suggestions.length ? (
-            <div className="chief-suggestions">
-              {suggestions.map((item) =>
-                typeof item.onSelect === "function" ? (
-                  <button key={item.id} type="button" onClick={item.onSelect}>
-                    {item.label}
-                  </button>
-                ) : null
-              )}
-            </div>
-          ) : null}
-
           {shortcuts.length ? (
             <div className="chief-shortcuts">
               {shortcuts.map((item) =>
@@ -489,37 +473,6 @@ export function ChiefInterface({
                 </button>
               ))}
             </div>
-          </Panel>
-        ) : null}
-
-        {recent ? (
-          <Panel className="chief-recent-panel">
-            <div className="chief-system-title">
-              <strong>Recent conversations</strong>
-              {typeof recent.onViewAll === "function" ? (
-                <button type="button" className="chief-text-link" onClick={recent.onViewAll}>
-                  View all
-                </button>
-              ) : null}
-            </div>
-            {recent.loading ? <p className="chief-panel-note">Loading</p> : null}
-            {!recent.loading && recent.error ? (
-              <p className="chief-panel-note">Unavailable</p>
-            ) : null}
-            {!recent.loading && !recent.error && recent.items?.length ? (
-              <div className="chief-recent-list">
-                {recent.items.map((item) => (
-                  <button key={item.id} type="button" onClick={item.onSelect}>
-                    <Icon name="chat" size={15} />
-                    <span>{item.label}</span>
-                    {item.time ? <time>{item.time}</time> : null}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-            {!recent.loading && !recent.error && !recent.items?.length ? (
-              <p className="chief-panel-note">No recent conversations</p>
-            ) : null}
           </Panel>
         ) : null}
       </aside>
