@@ -402,14 +402,6 @@ export function resolveWorkspaceGuideReply(question, context) {
     };
   }
 
-  if (includesAny(text, ["goal", "objective"])) {
-    return {
-      text:
-        "Objectives is where you track progress targets after your cash flow and account data are reasonably complete.",
-      actions: [buildAction("Open Objectives", APP_TABS.OBJECTIVES)],
-    };
-  }
-
   return {
     text:
       "I can explain any card or chart (like True Cash or the cash flow chart), walk you through tasks (like deleting a transaction or connecting a bank), or point you to the next setup step. Ask about a card, a chart, a module, or what to do next.",

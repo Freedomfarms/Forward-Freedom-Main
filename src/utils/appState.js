@@ -12,7 +12,6 @@ import {
   normalizeOnboardingState,
 } from "./onboarding.js";
 import { buildPlanYearData, normalizePlansByYear } from "./planning.js";
-import { buildSeedObjectives, normalizeObjectives } from "./objectives.js";
 import { normalizeRecurringPreferences } from "./recurringSuggestions.js";
 import {
   HOUSEHOLD_DEMO_PLAN_ANCHOR,
@@ -27,6 +26,8 @@ const DEFAULT_ACTIVE_RANGE = "ALL";
 const LEGACY_APP_TABS = {
   Dashboard: APP_TABS.DASHBOARD,
   "Budget Command Center": APP_TABS.BUDGET_COMMAND_CENTER,
+  // The Objectives tab was removed. Saved sessions land on Command Center.
+  Objectives: APP_TABS.DASHBOARD,
 };
 
 function cloneSeed(value) {
@@ -86,7 +87,7 @@ function buildUserState({
     transactions: useSeedData ? cloneSeed(demoDataset.transactions) : [],
     budgetRows: cloneSeed(currentPlanData.budgetRows),
     incomeStreams: cloneSeed(currentPlanData.incomeStreams),
-    objectives: buildSeedObjectives(),
+    objectives: [],
     plansByYear: {
       [String(currentYear)]: buildPlanYearData(currentPlanData),
     },
@@ -138,7 +139,7 @@ function normalizeUserState(rawUser, fallbackName, useSeedData = true) {
     incomeStreams: Array.isArray(rawUser?.incomeStreams)
       ? rawUser.incomeStreams
       : defaults.incomeStreams,
-    objectives: normalizeObjectives(rawUser?.objectives, defaults.objectives),
+    objectives: Array.isArray(rawUser?.objectives) ? rawUser.objectives : defaults.objectives,
     plansByYear: normalizePlansByYear(rawUser?.plansByYear, {
       budgetRows: Array.isArray(rawUser?.budgetRows) ? rawUser.budgetRows : defaults.budgetRows,
       incomeStreams: Array.isArray(rawUser?.incomeStreams)
