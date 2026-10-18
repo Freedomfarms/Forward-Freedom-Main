@@ -1,6 +1,7 @@
 // Model identity answers come from runtime metadata only when the user asks
 // what CHIEF itself is configured with or running on. Advice, comparison, and
-// recommendation questions about models are left to the model's reasoning.
+// recommendation questions stay with the model. How and why questions about
+// routing, reasoning, selection, or suppression do too.
 
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -20,6 +21,15 @@ const RUNTIME_IDENTITY_QUESTIONS = [
   "What model are you?",
   "Is Grok your default model?",
   "What model is this conversation pinned to?",
+  "How is your default model configured?",
+];
+
+const MECHANISM_QUESTIONS = [
+  "How does CHIEF decide which model handles my question? Inspect your code and explain.",
+  "Why does CHIEF route this question to a different model?",
+  "How does model selection decide your active model?",
+  "Why does CHIEF's tool suppression replace the model answer?",
+  "How does your reasoning model work?",
 ];
 
 const MODEL_ADVICE_QUESTIONS = [
@@ -47,6 +57,12 @@ test("runtime identity questions are recognised", () => {
 
 test("model advice and comparison questions are not identity questions", () => {
   for (const question of MODEL_ADVICE_QUESTIONS) {
+    assert.equal(isModelIdentityQuestion(question), false, question);
+  }
+});
+
+test("how and why questions about routing stay with the explanation", () => {
+  for (const question of MECHANISM_QUESTIONS) {
     assert.equal(isModelIdentityQuestion(question), false, question);
   }
 });
