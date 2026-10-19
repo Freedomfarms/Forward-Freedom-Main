@@ -108,6 +108,7 @@ export async function handleChiefChat(request, response, deps = {}) {
       policy: deps.policy,
       audit: deps.audit,
       bus: eventBus,
+      modelEngine: engine,
     });
     toolExecutor = tooling.executor;
     toolSpecs = deps.toolSpecs ?? tooling.specs;

@@ -220,15 +220,6 @@ export function useChiefVoice({ user, sessionUid, onTranscript }) {
         setPlayback("idle");
         return { ok: false, reason: "empty" };
       }
-      if (!selected) {
-        speakAbortRef.current?.abort();
-        speakAbortRef.current = null;
-        setAudioActive(false);
-        setPlayback("idle");
-        const message = "Select an ElevenLabs voice before CHIEF can speak.";
-        setSpeechError(message);
-        return { ok: false, reason: "error", error: message };
-      }
       const controller = new AbortController();
       const previous = speakAbortRef.current;
       speakAbortRef.current = controller;

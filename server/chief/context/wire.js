@@ -134,6 +134,7 @@ export function createChiefTurnServices({
       delegationIntent = null,
       modelRoute = null,
       activeModel = null,
+      availableTools = null,
     }) => {
       const peeked = peekDelegation(text, toolCalls);
       const packHasAgents = (prepared?.items ?? []).some(
@@ -157,6 +158,7 @@ export function createChiefTurnServices({
         workforcePicture,
         delegationIntent,
         modelIdentity: describeModelIdentity(engine, { modelRoute, activeModel }),
+        availableTools,
       });
       for (const diagnostic of settled.diagnostics ?? []) {
         eventBus?.publish(EventType.TELEMETRY_RECORD, {

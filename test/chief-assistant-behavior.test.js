@@ -658,10 +658,66 @@ function toolResult(toolName, value, callId = `${toolName}-1`) {
   };
 }
 
+test("a repeated settings read does not replace the runtime model answer", () => {
+  const settled = settleReply({
+    transcript: [
+      { role: "user", content: "What model are you?" },
+      toolResult("settings_read", '{"model":{"configuredDefault":{"id":"grok-4.7"}}}'),
+    ],
+    text: "I am GPT.",
+    toolCalls: [{ callId: "again", name: "settings_read", arguments: {} }],
+    modelIdentity: {
+      routingMode: "automatic",
+      configuredDefault: { id: "grok-4.7", name: "Grok", available: true },
+      active: { id: "grok-4.7", name: "Grok", available: true },
+      configuredFallback: null,
+    },
+  });
+  assert.match(settled.text, /configured default is Grok/);
+  assert.deepEqual(settled.toolCalls, []);
+});
+
+test("permissions and ElevenLabs questions require the authorized read", () => {
+  const permissions = settleReply({
+    transcript: [{ role: "user", content: "What permissions do you have?" }],
+    text: "I think I can read your email.",
+    availableTools: ["capability_discover", "settings_read"],
+  });
+  assert.equal(permissions.text, "");
+  assert.deepEqual(
+    permissions.toolCalls.map((call) => call.name),
+    ["capability_discover"]
+  );
+  assert.equal(
+    permissions.diagnostics.some((item) => item.reason === "tool_required_operational_read"),
+    true
+  );
+
+  const voice = settleReply({
+    transcript: [{ role: "user", content: "Is ElevenLabs connected?" }],
+    text: "I can't see voice settings.",
+    availableTools: ["settings_read"],
+  });
+  assert.equal(voice.text, "");
+  assert.equal(voice.toolCalls[0].name, "settings_read");
+
+  const already = settleReply({
+    transcript: [
+      { role: "user", content: "Is ElevenLabs connected?" },
+      toolResult("settings_read", '{"voice":{"status":"not_configured","integration":"native"}}'),
+    ],
+    text: "ElevenLabs is not configured. It is a native voice integration.",
+    availableTools: ["settings_read"],
+  });
+  assert.match(already.text, /native voice integration/);
+  assert.deepEqual(already.toolCalls, []);
+});
+
 test("a current claim needs successful evidence from the planned live domain", () => {
   const financePack = { plan: { currentState: true, live: ["finance"] }, authority: [] };
   const claim = "Your current balance is $84,000.";
-  const gap = "I'm missing a current Freedom Financial balance reading, so I can't verify that amount.";
+  const gap =
+    "I'm missing a current Freedom Financial balance reading, so I can't verify that amount.";
   const ask = { role: "user", content: "What is my current balance?" };
 
   const missing = settleReply({ transcript: [ask], text: claim, pack: financePack });
@@ -702,7 +758,11 @@ test("a current claim needs successful evidence from the planned live domain", (
   assert.equal(unnamed.text, gap);
 
   const valid = settleReply({
-    transcript: [ask, toolResult("settings_read", "{}"), toolResult("finance_summary", "liquid cash 84000")],
+    transcript: [
+      ask,
+      toolResult("settings_read", "{}"),
+      toolResult("finance_summary", "liquid cash 84000"),
+    ],
     text: claim,
     pack: financePack,
   });

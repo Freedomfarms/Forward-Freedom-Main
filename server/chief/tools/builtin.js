@@ -54,6 +54,7 @@ import { createCodeTools } from "../codeintel/tools.js";
 import { withUserContext } from "../../db/prisma.js";
 import { resolveUserTimeZone } from "../../platform/timezone.js";
 import { readUserSettings, updateUserTimezone } from "../../platform/userSettings.js";
+import { buildOperationalSettings } from "../settings/operational.js";
 
 function memoryRead(store) {
   return new BaseTool({
@@ -1035,13 +1036,20 @@ function settingsFailure(error, fallback) {
   };
 }
 
-function settingsRead(withUser = withUserContext) {
+function settingsRead(withUser = withUserContext, dependencies = {}) {
+  const {
+    modelEngine = null,
+    connectors = null,
+    moduleAccess = null,
+    readOperationalSettings = buildOperationalSettings,
+    env = process.env,
+  } = dependencies;
   return new BaseTool({
     isLocal: true,
     spec: {
       name: "settings_read",
       description:
-        "Read the authenticated user's Freedom OS timezone. This returns timezone only. It does not accept a user id and does not return email, role, admin status, legal consent, credentials, or tokens.",
+        "Read this user's timezone plus CHIEF model settings, ElevenLabs status, server voice configuration, and authorized integrations. ElevenLabs is a native Freedom OS integration, not an external connector. External connectors are email, calendar, drive, GitHub, and files. This does not accept a user id and does not return email, role, admin status, legal consent, credentials, tokens, or browser storage. Timezone is the only field settings_update can change. Grants and approval rules are on capability_discover.",
       category: "settings",
       requiresConfirmation: false,
       requiredCapabilities: [Capability.SETTINGS_READ],
@@ -1058,7 +1066,29 @@ function settingsRead(withUser = withUserContext) {
       if (payload.error) return { output: JSON.stringify({ error: payload.error }), isError: true };
       try {
         const settings = await readUserSettings(context.userId, { withUser });
-        return { output: JSON.stringify({ timezone: settings.timezone }) };
+        let freedomFinancialRead = false;
+        let freedomFinancialReadable = true;
+        if (moduleAccess?.isFreedomFinancialReadEnabled) {
+          try {
+            freedomFinancialRead =
+              (await moduleAccess.isFreedomFinancialReadEnabled(context.userId)) === true;
+          } catch {
+            freedomFinancialReadable = false;
+          }
+        }
+        const operational = await readOperationalSettings({
+          engine: modelEngine,
+          env,
+          modelRoute: context.modelRoute ?? null,
+          activeModel: context.model ?? null,
+          policy: context.capabilityPolicy ?? null,
+          connectors,
+          freedomFinancialRead,
+          freedomFinancialReadable,
+        });
+        return {
+          output: JSON.stringify({ timezone: settings.timezone, ...operational }),
+        };
       } catch (error) {
         return settingsFailure(error, "Settings could not be read.");
       }
@@ -1274,6 +1304,9 @@ export function createChiefCapabilityRegistry({
   settingsWithUser = withUserContext,
   codeintel = null,
   connectors = defaultConnectors(),
+  modelEngine = null,
+  readOperationalSettings = buildOperationalSettings,
+  env = process.env,
 } = {}) {
   assertControlPlane(CHIEF_TOOL_INVENTORY);
   const registry = new CapabilityRegistry();
@@ -1314,7 +1347,13 @@ export function createChiefCapabilityRegistry({
       archived: false,
     }),
     conversationDelete(checkpointStore, facts),
-    settingsRead(settingsWithUser),
+    settingsRead(settingsWithUser, {
+      modelEngine,
+      connectors,
+      moduleAccess,
+      readOperationalSettings,
+      env,
+    }),
     settingsUpdate(settingsWithUser),
     ...createCodeTools(codeintel ?? undefined),
     capabilityDiscover({ moduleAccess, connectors }),
@@ -1346,6 +1385,9 @@ export function createChiefTools({
   settingsWithUser = withUserContext,
   codeintel = null,
   connectors = defaultConnectors(),
+  modelEngine = null,
+  readOperationalSettings = buildOperationalSettings,
+  env = process.env,
 } = {}) {
   const registry = createChiefCapabilityRegistry({
     facts,
@@ -1363,6 +1405,9 @@ export function createChiefTools({
     settingsWithUser,
     codeintel,
     connectors,
+    modelEngine,
+    readOperationalSettings,
+    env,
   });
   const tools = registry.toBaseTools();
   for (const tool of tools) {
@@ -1383,6 +1428,9 @@ export async function createChiefTooling({
   search = null,
   moduleAccess = null,
   connectors = defaultConnectors(),
+  modelEngine = null,
+  readOperationalSettings = buildOperationalSettings,
+  env = process.env,
 } = {}) {
   let resolved = policy;
   if (!resolved) {
@@ -1405,6 +1453,9 @@ export async function createChiefTooling({
     settingsWithUser: stores?.settingsWithUser,
     codeintel: stores?.codeintel,
     connectors,
+    modelEngine,
+    readOperationalSettings,
+    env,
   });
   const executor = new ToolExecutor({
     tools,

@@ -269,6 +269,33 @@ test("a consumed request does not cancel speech before audio starts", async () =
   assert.deepEqual(Buffer.concat(http.chunks), Buffer.from([1, 2, 3, 4]));
 });
 
+test("an empty voice id uses the configured ElevenLabs voice", async () => {
+  const calls = [];
+  const opened = await openElevenLabsSpeech({
+    apiKey: SECRET,
+    voiceId: "",
+    text: "Hello. I am CHIEF.",
+    env: { ELEVENLABS_API_KEY: SECRET, ELEVENLABS_VOICE_ID: VOICE },
+    logger: silentLogger,
+    fetchImpl: async (url) => {
+      calls.push(String(url));
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(new Uint8Array([1, 2, 3, 4]));
+          controller.close();
+        },
+      });
+      return new Response(stream, { status: 200 });
+    },
+  });
+  assert.equal(opened.ok, true);
+  assert.match(calls[0], new RegExp(VOICE));
+  assert.equal(
+    calls.some((url) => url.includes("/v2/voices")),
+    false
+  );
+});
+
 test("a rejected voice id never reaches ElevenLabs", async () => {
   let called = false;
   const http = mockResponse();
@@ -651,6 +678,10 @@ test("the browser never receives the ElevenLabs key or a second chat path", () =
   assert.match(api, /voice_id: voiceId/);
   assert.match(api, /similarity_boost/);
   assert.match(read("src/components/chief/useChiefVoice.js"), /readVoiceSettings/);
+  assert.doesNotMatch(
+    read("src/components/chief/useChiefVoice.js"),
+    /Select an ElevenLabs voice before/
+  );
   assert.match(read("src/components/chief/ChiefPage.jsx"), /speakCompletedReply\(voice,/);
   assert.match(read("src/utils/chiefReplySpeech.js"), /voice\.speakAnswer\(spoken\)/);
   assert.match(read("src/components/chief/ChiefSettings.jsx"), /Style \(unavailable\)/);

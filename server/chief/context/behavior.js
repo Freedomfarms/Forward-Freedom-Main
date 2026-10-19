@@ -10,6 +10,7 @@ import { messageText } from "../runtime/compaction.js";
 import { buildWorkingMemory, isAnaphoric } from "../memory/working.js";
 import { isSelfContainedCalculation } from "../memory/retrieve.js";
 import { isModelIdentityQuestion, renderModelIdentity } from "../models/identity.js";
+import { needsCapabilityRead, needsSettingsRead } from "../settings/questions.js";
 import {
   answerFromWorkforce,
   correctWorkforceSentence,
@@ -518,7 +519,49 @@ const LIVE_TOOL_DOMAIN = Object.freeze({
   code_read: "code",
   code_search: "code",
   code_tree: "code",
+  settings_read: "settings",
+  capability_discover: "settings",
 });
+
+const OPERATIONAL_READS = new Set([
+  "settings_read",
+  "capability_discover",
+  "code_read",
+  "code_search",
+  "code_tree",
+]);
+
+function toolNamesAfterLatestUser(transcript) {
+  const messages = Array.isArray(transcript) ? transcript : [];
+  const start = lastIndex(messages, "user");
+  const names = new Set();
+  for (let index = Math.max(0, start + 1); index < messages.length; index += 1) {
+    if (messages[index]?.role !== "tool") continue;
+    const parts = Array.isArray(messages[index].content) ? messages[index].content : [];
+    for (const part of parts) {
+      if (part?.type === "tool-result" && part.toolName) names.add(part.toolName);
+    }
+  }
+  return names;
+}
+
+function requiredOperationalCalls(calls, userText, availableTools, transcript) {
+  const available = availableTools instanceof Set ? availableTools : new Set(availableTools ?? []);
+  if (available.size === 0) return { calls, injected: 0 };
+  const already = toolNamesAfterLatestUser(transcript);
+  const next = [...calls];
+  const names = new Set(next.map((call) => call?.name));
+  let injected = 0;
+  const add = (name) => {
+    if (!available.has(name) || names.has(name) || already.has(name)) return;
+    next.push({ callId: `required-${name}`, name, arguments: {} });
+    names.add(name);
+    injected += 1;
+  };
+  if (needsSettingsRead(userText)) add("settings_read");
+  if (needsCapabilityRead(userText)) add("capability_discover");
+  return { calls: next, injected };
+}
 
 function callsJustifiedByPlan(calls, pack, { userText = "", unresolvedOther = false } = {}) {
   if (unresolvedOther && calls.length > 0) {
@@ -577,6 +620,7 @@ function missingCurrentInformation(transcript, pack, claimText = "") {
     if (domain === "schedule") return "the current schedule";
     if (domain === "calendar") return "the current calendar";
     if (domain === "email") return "the current inbox";
+    if (domain === "settings") return "an authorized settings reading";
     return `a current ${domain} reading`;
   });
   if (missing.length > 0) {
@@ -612,6 +656,7 @@ export function settleReply({
   workforcePicture = null,
   delegationIntent = null,
   modelIdentity = null,
+  availableTools = null,
 } = {}) {
   const calls = Array.isArray(toolCalls) ? [...toolCalls] : [];
   const move = conversationMove(transcript);
@@ -621,8 +666,7 @@ export function settleReply({
     if (!reason || count <= 0) return;
     diagnosticCounts.set(reason, (diagnosticCounts.get(reason) ?? 0) + count);
   };
-  const diagnostics = () =>
-    [...diagnosticCounts].map(([reason, count]) => ({ reason, count }));
+  const diagnostics = () => [...diagnosticCounts].map(([reason, count]) => ({ reason, count }));
   const finish = (body, carried = null) => ({
     ...body,
     ...(carried ? { delegation: carried, clearDelegation: false } : {}),
@@ -631,9 +675,7 @@ export function settleReply({
   const pureReaction = REACTION.test(spoken(userText)) && !delegationIntent;
   if (pureReaction) {
     if (calls.length) note("tool_suppressed_reaction", calls.length);
-    const claimsWork = WORKFORCE_CLAIMS.some((rule) =>
-      rule.claim.test(String(text ?? ""))
-    );
+    const claimsWork = WORKFORCE_CLAIMS.some((rule) => rule.claim.test(String(text ?? "")));
     if (claimsWork) {
       const answer = shortReaction(userText);
       if (answer !== String(text ?? "").trim()) note("response_rewritten_reaction");
@@ -653,11 +695,26 @@ export function settleReply({
     if (answer !== String(text ?? "").trim()) note("response_rewritten_reaction");
     return finish({ text: answer, toolCalls: [] });
   }
-  if (isModelIdentityQuestion(userText) && modelIdentity) {
-    const answer = renderModelIdentity(modelIdentity);
-    if (answer !== String(text ?? "").trim()) note("response_rewritten_model_identity");
-    if (calls.length) note("tool_suppressed_identity_question", calls.length);
-    return finish({ text: answer, toolCalls: [] });
+  if (
+    isModelIdentityQuestion(userText) &&
+    modelIdentity &&
+    !needsSettingsRead(userText) &&
+    !needsCapabilityRead(userText)
+  ) {
+    const alreadyRead = toolNamesAfterLatestUser(transcript);
+    const kept = calls.filter(
+      (call) => OPERATIONAL_READS.has(call?.name) && !alreadyRead.has(call?.name)
+    );
+    if (kept.length === 0) {
+      const answer = renderModelIdentity(modelIdentity);
+      if (answer !== String(text ?? "").trim()) note("response_rewritten_model_identity");
+      if (calls.length) note("tool_suppressed_identity_question", calls.length);
+      return finish({ text: answer, toolCalls: [] });
+    }
+    if (calls.length > kept.length) {
+      note("tool_suppressed_identity_question", calls.length - kept.length);
+    }
+    return finish({ text: "", toolCalls: kept });
   }
   const delegation = settleDelegation({
     transcript,
@@ -726,7 +783,13 @@ export function settleReply({
   if (callDecision.mismatches) {
     note("tool_plan_mismatch_preserved", callDecision.mismatches);
   }
-  const justified = callDecision.calls;
+  let justified = callDecision.calls;
+  const required = requiredOperationalCalls(justified, userText, availableTools, transcript);
+  if (required.injected) {
+    note("tool_required_operational_read", required.injected);
+    return reply({ text: "", toolCalls: required.calls });
+  }
+  justified = required.calls;
   let answer = openWithAnswer(modelText, transcript);
   answer = stripMachinery(answer, transcript);
   answer = stripOffers(answer, transcript);
