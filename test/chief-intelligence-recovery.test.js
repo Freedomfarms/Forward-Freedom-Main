@@ -202,14 +202,11 @@ test("current home equity requires and uses an authorized live financial reading
 });
 
 test("default-model answers come from configured, active, and fallback runtime metadata", async () => {
-  const engine = scriptedEngine(
-    [{ text: "I think I am GPT." }],
-    {
-      defaultModel: "grok-default",
-      fallbackModel: "grok-fallback",
-      available: ["grok-default", "grok-fallback", "claude-active"],
-    }
-  );
+  const engine = scriptedEngine([{ text: "I think I am GPT." }], {
+    defaultModel: "grok-default",
+    fallbackModel: "grok-fallback",
+    available: ["grok-default", "grok-fallback", "claude-active"],
+  });
   const traceStore = new MemoryTraceStore();
   const result = await runTurn({
     query: "What model is default for you?",
@@ -252,9 +249,7 @@ test("an authorized code read survives a heuristic-plan miss and its full findin
     engine: scriptedEngine([
       {
         text: "I will inspect the path.",
-        toolCalls: [
-          { callId: "code-1", name: "code_search", arguments: { query: "settleReply" } },
-        ],
+        toolCalls: [{ callId: "code-1", name: "code_search", arguments: { query: "settleReply" } }],
       },
       {
         text: [
@@ -396,6 +391,40 @@ test("a model recommendation question is answered by the model, not by runtime i
   const identityAnswer = identity.checkpoint.transcript.at(-1).content;
   assert.match(identityAnswer, /this reply is running on Claude Active \(`claude-active`\)/);
   assert.doesNotMatch(identityAnswer, /GPT-4/);
+});
+
+test("an ElevenLabs question runs settings_read when the model does not call it", async () => {
+  const query = "Is ElevenLabs connected, and what voice is configured?";
+  assert.equal(planContext(query).live.includes("settings"), true);
+  let executed = 0;
+  const bus = new EventBus();
+  const tooling = readTool({
+    name: "settings_read",
+    capability: Capability.SETTINGS_READ,
+    output: JSON.stringify({
+      voice: { provider: "elevenlabs", integration: "native", status: "not_configured" },
+    }),
+    bus,
+    onExecute: () => {
+      executed += 1;
+    },
+  });
+  const result = await runTurn({
+    query,
+    eventBus: bus,
+    tooling,
+    engine: scriptedEngine([
+      { text: "I can't see ElevenLabs." },
+      { text: "ElevenLabs is not configured. It is a native voice integration." },
+    ]),
+  });
+  assert.equal(executed, 1);
+  const toolMessage = result.checkpoint.transcript.find((message) => message.role === "tool");
+  assert.equal(toolMessage.content[0].toolName, "settings_read");
+  assert.match(toolMessage.content[0].output.value, /native/);
+  const answer = result.checkpoint.transcript.at(-1).content;
+  assert.match(answer, /native voice integration/);
+  assert.doesNotMatch(answer, /I can't see ElevenLabs/);
 });
 
 test("an unrelated settings read does not authorize a current balance claim", async () => {

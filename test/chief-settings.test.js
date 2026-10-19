@@ -11,9 +11,14 @@ import { ApprovalCoordinator } from "../server/chief/runtime/approvals.js";
 import { MemoryCheckpointStore } from "../server/chief/runtime/checkpoint.js";
 import { classifyToolCalls, TurnMachine } from "../server/chief/runtime/turn.js";
 import { MemoryAuditLog } from "../server/chief/security/audit.js";
+import { MemoryModuleAccess } from "../server/chief/security/module-access.js";
 import { createChiefTooling, createChiefTools } from "../server/chief/tools/builtin.js";
 import { CHIEF_TOOL_INVENTORY } from "../server/chief/tools/inventory.js";
 import { readUserSettings, updateUserTimezone } from "../server/platform/userSettings.js";
+import {
+  buildOperationalSettings,
+  readElevenLabsOperationalStatus,
+} from "../server/chief/settings/operational.js";
 
 function settingsDb(seed = {}) {
   const rows = new Map(Object.entries(seed).map(([id, row]) => [id, { id, ...row }]));
@@ -55,6 +60,7 @@ function toolingFor(db, capabilities, extra = {}) {
     userId: "user-a",
     policy: policyWith(capabilities, extra),
     audit: new MemoryAuditLog(),
+    moduleAccess: new MemoryModuleAccess(),
     stores: { settingsWithUser: db.withUser },
   });
 }
@@ -93,7 +99,7 @@ test("settings capabilities are registered reads and writes", () => {
   assert.equal(settingsGuidance(["memory_read"]), "");
 });
 
-test("settings_read returns only the authenticated user's timezone", async () => {
+test("settings_read returns timezone and the public operational snapshot for the authenticated user", async () => {
   const db = settingsDb({
     "user-a": PRIVATE_ROW,
     "user-b": { ...PRIVATE_ROW, timezone: "America/Los_Angeles", email: "other@example.com" },
@@ -104,11 +110,33 @@ test("settings_read returns only the authenticated user's timezone", async () =>
     { userId: "user-a", agentId: "chief" }
   );
   assert.equal(result.isError, false);
-  assert.deepEqual(JSON.parse(result.output), { timezone: "America/Chicago" });
+  const body = JSON.parse(result.output);
+  assert.equal(body.timezone, "America/Chicago");
+  assert.equal(body.model.readable, true);
+  assert.equal(typeof body.model.configuredDefault.id, "string");
+  assert.equal(body.model.configuredDefault.id.length > 0, true);
+  assert.equal(body.voice.provider, "elevenlabs");
+  assert.equal(body.voice.integration, "native");
+  assert.equal(body.voice.status, "not_configured");
+  assert.equal(body.voice.authenticated, false);
+  assert.equal(body.voice.browserVoiceSelection, "not_readable");
+  assert.equal(body.integrations.native[0].id, "elevenlabs");
+  assert.equal(body.integrations.native[0].kind, "native");
+  assert.equal(body.integrations.native[0].connected, false);
+  assert.equal(
+    body.integrations.externalConnectors.every((connector) => connector.connected === false),
+    true
+  );
+  assert.equal(
+    body.integrations.externalConnectors.some((connector) => connector.id === "email"),
+    true
+  );
   assert.equal(result.output.includes("secret-token"), false);
   assert.equal(result.output.includes("ada@example.com"), false);
   assert.equal(result.output.includes("isAdmin"), false);
   assert.equal(result.output.includes("legalConsent"), false);
+  assert.equal(result.output.includes("ELEVENLABS_API_KEY"), false);
+  assert.equal(result.output.includes("xi-api-key"), false);
   assert.deepEqual(db.operations[0].select, { timezone: true });
   assert.equal(db.operations[0].userId, "user-a");
   assert.equal(db.operations[0].whereId, "user-a");
@@ -116,6 +144,48 @@ test("settings_read returns only the authenticated user's timezone", async () =>
     db.operations.some((operation) => operation.whereId === "user-b"),
     false
   );
+});
+
+test("settings_read reports a live ElevenLabs probe without the API key", async () => {
+  const db = settingsDb({ "user-a": PRIVATE_ROW });
+  const secret = "xi-super-secret-key";
+  const voiceId = "21m00Tcm4TlvDq8ikWAM";
+  let probed = false;
+  const tooling = await createChiefTooling({
+    userId: "user-a",
+    policy: policyWith([Capability.SETTINGS_READ]),
+    audit: new MemoryAuditLog(),
+    stores: { settingsWithUser: db.withUser },
+    moduleAccess: new MemoryModuleAccess(),
+    env: { ELEVENLABS_API_KEY: secret, ELEVENLABS_VOICE_ID: voiceId },
+    readOperationalSettings: (input) =>
+      buildOperationalSettings({
+        ...input,
+        readVoiceStatus: (voiceInput) =>
+          readElevenLabsOperationalStatus({
+            ...voiceInput,
+            listVoices: async ({ apiKey }) => {
+              probed = true;
+              assert.equal(apiKey, secret);
+              return { ok: true, voices: [{ voice_id: voiceId, name: "Rachel" }] };
+            },
+          }),
+      }),
+  });
+  const result = await tooling.executor.execute(
+    { callId: "r", name: "settings_read", arguments: {} },
+    { userId: "user-a", agentId: "chief", model: "grok-4.7", modelRoute: null }
+  );
+  assert.equal(probed, true);
+  assert.equal(result.isError, false);
+  const body = JSON.parse(result.output);
+  assert.equal(body.voice.status, "connected");
+  assert.equal(body.voice.integration, "native");
+  assert.equal(body.voice.defaultVoiceId, voiceId);
+  assert.equal(body.integrations.native[0].connected, true);
+  assert.equal(body.model.active.id, "grok-4.7");
+  assert.equal(result.output.includes(secret), false);
+  assert.equal(result.output.includes("ada@example.com"), false);
 });
 
 test("settings_read is denied without the grant and an explicit deny wins", async () => {

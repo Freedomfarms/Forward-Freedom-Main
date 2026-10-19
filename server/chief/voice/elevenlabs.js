@@ -327,9 +327,18 @@ export async function openElevenLabsSpeech({
   if (!apiKey) {
     return { ok: false, status: 503, message: "ElevenLabs is not configured." };
   }
-  if (!isVoiceId(voiceId)) {
+  const requested = typeof voiceId === "string" ? voiceId.trim() : "";
+  if (requested && !isVoiceId(requested)) {
     return { ok: false, status: 400, message: "Choose an ElevenLabs voice." };
   }
+  let resolvedVoiceId = requested || configuredElevenVoiceId(env);
+  if (!resolvedVoiceId) {
+    resolvedVoiceId = await defaultFreeVoiceId({ fetchImpl, apiKey, avoid: "" });
+  }
+  if (!resolvedVoiceId) {
+    return { ok: false, status: 400, message: "Choose an ElevenLabs voice." };
+  }
+  voiceId = resolvedVoiceId;
   if (!spoken) {
     return { ok: false, status: 400, message: "There is nothing to speak." };
   }

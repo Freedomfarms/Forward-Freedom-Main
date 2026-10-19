@@ -11,6 +11,7 @@ const LIVE_NEED = Object.freeze({
   finance: "a current Freedom Financial reading",
   web: "a public web reading",
   code: "an authorized code read",
+  settings: "an authorized settings read",
   agents: "current agent state",
   schedule: "the current schedule",
   calendar: "the current calendar",
@@ -82,7 +83,9 @@ export function buildInvestigationBrief({
       "If a required live reading is missing, say it is unavailable. Do not invent the current figure."
     );
   } else if (live.length) {
-    lines.push("Use the authorized read for the current part. Do not answer that part from memory.");
+    lines.push(
+      "Use the authorized read for the current part. Do not answer that part from memory."
+    );
   }
   lines.push("Stop when the question is answered or the missing evidence is named.");
   return lines.join("\n");

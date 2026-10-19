@@ -301,12 +301,16 @@ export function settingsGuidance(availableTools) {
   const tools = availableTools instanceof Set ? availableTools : new Set(availableTools);
   if (!tools.has("settings_read") && !tools.has("settings_update")) return "";
   return (
-    "The only Freedom OS user setting you can read or change is timezone. " +
-    "Call settings_read to report the authenticated user's timezone. " +
-    "When the user asks to change it, call settings_update with an IANA name. " +
+    "Call settings_read before answering about this user's timezone, CHIEF model settings, ElevenLabs status, server voice configuration, or which integrations are authorized. " +
+    "Report only the fields that call returns. Do not guess a model, a voice, a connection, or a grant. " +
+    "ElevenLabs is a native Freedom OS voice integration. It does not need to be an external connector. " +
+    "externalConnectors are email, calendar, drive, GitHub, and files. connected false means that connector is not connected. " +
+    "browserVoiceSelection not_readable means the selected voice stays in the browser and this read does not open browser storage. " +
+    "Call capability_discover for the full grant inventory, approval rules, and tools. " +
+    "The only setting you can change is timezone. When the user asks to change it, call settings_update with an IANA name. " +
     "Eastern Time is America/New_York, Central is America/Chicago, Mountain is America/Denver, and Pacific is America/Los_Angeles. " +
     "settings_update waits for confirmation. Do not tell the user to change it in the interface. " +
-    "Do not pass a user id. Do not claim email, role, admin status, legal consent, or financial records were changed."
+    "Do not pass a user id. Do not claim email, role, admin status, legal consent, credentials, or financial records were read or changed."
   );
 }
 

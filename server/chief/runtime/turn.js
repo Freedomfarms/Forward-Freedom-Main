@@ -456,6 +456,7 @@ export class TurnMachine {
         delegationIntent: this._checkpoint.context?.delegationIntent ?? null,
         modelRoute: this._checkpoint.modelRoute ?? null,
         activeModel,
+        availableTools: this._toolSpecs.map((spec) => spec.name),
       });
       if (typeof settled?.text !== "string" || !Array.isArray(settled.toolCalls)) {
         return { text, toolCalls };
@@ -627,6 +628,7 @@ export class TurnMachine {
         caller: { kind: this._callerKind, id: execution.turnId, trigger: this._callerTrigger },
         mutationApproved: grantedMutations.has(call.callId),
         model: execution.activeModel ?? this._checkpoint.modelRoute ?? null,
+        modelRoute: this._checkpoint.modelRoute ?? null,
         sessionTaint: this._checkpoint.sessionTaint ?? [],
         saveMiddlewareState: (middlewareId, state) =>
           this._store.saveMiddlewareState(this._userId, this._sessionId, middlewareId, state),

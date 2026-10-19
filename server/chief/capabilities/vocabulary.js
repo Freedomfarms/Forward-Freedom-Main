@@ -167,7 +167,8 @@ export function builtInCapabilities() {
       tools: ["settings_read"],
       confirmation: "none",
       readiness: "read",
-      summary: "Read this user's timezone.",
+      summary:
+        "Read timezone, CHIEF model settings, ElevenLabs status, server voice configuration, and whether integrations are authorized.",
     }),
     entry({
       id: "settings:write",

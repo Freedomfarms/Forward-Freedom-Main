@@ -7,6 +7,7 @@
 // Current live state outranks historical memory for a current-state question.
 
 import { conversationMove, MOVE } from "./behavior.js";
+import { needsOperationalSettingsContext } from "../settings/questions.js";
 import { isSnapshotFact } from "../memory/qualify.js";
 import {
   MEMORY_LAYER,
@@ -114,6 +115,16 @@ const LIVE = Object.freeze({
     deferred:
       "No code reading is in this context. Use the live code reader. Do not invent file contents.",
   },
+  settings: {
+    source: "settings",
+    sourceType: "live_settings",
+    scope: CONTEXT_SCOPE.TEMPORAL,
+    tools: ["settings_read", "capability_discover"],
+    missing:
+      "Settings read is not available on this turn. Do not invent model, voice, or integration state.",
+    deferred:
+      "No settings reading is in this context. Call settings_read for timezone, model settings, ElevenLabs, voice, and integrations. Call capability_discover for grants. Do not guess.",
+  },
 });
 
 function unique(values) {
@@ -162,6 +173,7 @@ function classifyQuery(query) {
     if (schedule) live.push("schedule");
     if (calendar) live.push("calendar");
     if (email) live.push("email");
+    if (needsOperationalSettingsContext(text)) live.push("settings");
   }
 
   const memory = [CONTEXT_SCOPE.WORKING];
