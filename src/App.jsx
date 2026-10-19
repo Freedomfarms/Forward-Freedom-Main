@@ -9,9 +9,6 @@ import { presentationForRoute } from "./routing/appRoutes.js";
 import { clearSignedOutClientState } from "./utils/clientSessionCleanup.js";
 
 const ForwardFreedomDashboard = lazy(() => import("./ForwardFreedomDashboard.jsx"));
-const AuthScreen = lazy(() =>
-  import("./components/AuthScreen.jsx").then((module) => ({ default: module.AuthScreen }))
-);
 const DemoWorkspaceApp = lazy(() =>
   import("./components/DemoWorkspaceApp.jsx").then((module) => ({
     default: module.DemoWorkspaceApp,
@@ -823,21 +820,6 @@ function PublicRouteScreen({ screen, demoSessionKey }) {
     );
   }
 
-  if (screen === "login" || screen === "signup") {
-    const initialForm = screen === "signup" ? readSignupInitialForm() : null;
-    return (
-      <LazyRouteBoundary message="Loading sign-in...">
-        <AuthScreen
-          key={screen}
-          initialMode={screen === "signup" ? "register" : "login"}
-          initialForm={initialForm}
-          onBackHome={() => navigateApp("/")}
-          onModeChange={(mode) => navigateApp(mode === "register" ? "/signup" : "/login")}
-        />
-      </LazyRouteBoundary>
-    );
-  }
-
   if (screen === "finance-marketing") {
     return (
       <LandingPage
@@ -848,14 +830,19 @@ function PublicRouteScreen({ screen, demoSessionKey }) {
     );
   }
 
-  return (
-    <PublicFreedomOsHome
-      onSignIn={() => navigateApp("/login")}
-      onCreateAccount={() => navigateApp("/signup")}
-      onExploreCeoAgents={() => navigateApp("/login")}
-      onExploreFreedomFinancial={() => navigateApp("/finance")}
-    />
-  );
+  if (screen === "public-home" || screen === "login" || screen === "signup") {
+    const initialForm = screen === "signup" ? readSignupInitialForm() : null;
+    return (
+      <PublicFreedomOsHome
+        initialMode={screen === "signup" ? "register" : "login"}
+        deepLink={screen === "login" || screen === "signup"}
+        initialForm={initialForm}
+        onModeChange={(mode) => navigateApp(mode === "register" ? "/signup" : "/login")}
+      />
+    );
+  }
+
+  return null;
 }
 
 function AppContent() {

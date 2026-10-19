@@ -346,10 +346,11 @@ test("the session flag is per-storage and failure-safe", () => {
 test("the public intro stays scoped and leaves authentication intact", () => {
   const renderer = read("src/visual/chiefIntro/chiefIntroRenderer.js");
   const backdrop = read("src/visual/chiefIntro/ChiefIntroBackdrop.jsx");
-  const home = read("src/components/entry/ChiefIntroHome.jsx");
+  const home = read("src/components/awakening/AwakeningExperience.jsx");
+  const scene = read("src/components/awakening/awakeningScene.js");
   const shell = read("src/components/freedom/FreedomShell.jsx");
   const auth = read("src/components/AuthScreen.jsx");
-  const css = read("src/visual/chiefIntro/chief-intro.css");
+  const css = read("src/components/awakening/awakening.css");
   const freedomCss = read("src/components/freedom/freedom.css");
   const landing = read("src/components/FreedomOsLanding.jsx");
 
@@ -366,49 +367,49 @@ test("the public intro stays scoped and leaves authentication intact", () => {
   assert.doesNotMatch(renderer, /useState|useEffect|setState/);
   assert.doesNotMatch(renderer, /from "three"/);
 
-  // Both hosts mount the same renderer and share the per-tab session flag.
-  for (const host of [backdrop, home]) {
-    assert.match(host, /createChiefIntroRenderer/);
-    assert.match(host, /hasChiefIntroPlayed/);
-    assert.match(host, /markChiefIntroPlayed/);
-    assert.match(host, /controller\.destroy\(\)/);
-  }
+  // The loading-shell backdrop still mounts the older intro renderer.
+  assert.match(backdrop, /createChiefIntroRenderer/);
+  assert.match(backdrop, /hasChiefIntroPlayed/);
+  assert.match(backdrop, /markChiefIntroPlayed/);
+  assert.match(backdrop, /controller\.destroy\(\)/);
 
-  // The homepage keeps registration/sign-in routes and calls no CHIEF API.
-  assert.match(home, /onSignIn/);
-  assert.match(home, /onCreateAccount/);
-  assert.match(home, /Skip/);
-  assert.match(home, /fc-wordmark">FREEDOM OS/);
-  assert.match(home, /fc-kicker">PERSONAL INTELLIGENCE SYSTEM/);
-  assert.doesNotMatch(home, /INTELLIGENCE, AT YOUR COMMAND/);
-  assert.doesNotMatch(home, /fc-header/);
-  assert.doesNotMatch(home, /Cinematic/);
-  assert.doesNotMatch(home, /Replay/);
-  assert.doesNotMatch(home, /fc-control--accent/);
+  // The public page is the awakening journey and calls no CHIEF API.
+  assert.match(home, /ENTER FREEDOM OS/);
+  assert.match(home, /href="#entry"/);
+  assert.match(home, /SKIP INTRO/);
+  assert.match(home, /INTELLIGENCE, AT YOUR COMMAND/);
+  assert.match(home, /mountAwakeningScene/);
+  assert.match(scene, /seed=81/);
+  assert.match(scene, /length:52/);
+  assert.match(scene, /OPENING_DURATION/);
+  assert.match(scene, /scene\.destroy\(\)|function destroy/);
   assert.doesNotMatch(home, /chiefApi|fetch\(|\/api\//);
-  assert.match(landing, /ChiefIntroHome/);
+  assert.doesNotMatch(scene, /from "three"/);
+  assert.doesNotMatch(scene, /DESIGN PREVIEW/);
+  assert.match(landing, /AwakeningExperience/);
 
-  // Login keeps the real form on the real shell with the backdrop behind it.
+  // Login keeps the real handlers inside the awakening form.
   assert.match(shell, /ChiefIntroBackdrop/);
-  assert.match(auth, /FreedomShell/);
   assert.match(auth, /signInWithEmail/);
-  assert.match(auth, /freedom-auth-fields/);
-  assert.match(auth, /htmlFor="auth-password"/);
+  assert.match(auth, /htmlFor="password"/);
+  assert.match(auth, /Terms of Service/);
+  assert.match(auth, /Privacy Policy/);
   assert.doesNotMatch(auth, /credentialsOpen/);
+  assert.doesNotMatch(auth, /DESIGN PREVIEW/);
   assert.doesNotMatch(freedomCss, /22dvh/);
-  assert.match(
-    freedomCss,
-    /\.freedom-auth-fields[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\) minmax\(0, 1fr\)/
-  );
   assert.match(auth, /signUpWithEmail/);
   assert.match(auth, /requestPasswordReset/);
+  assert.match(auth, /signInWithGoogle/);
   assert.doesNotMatch(auth, /createChiefIntroRenderer/);
+  assert.doesNotMatch(scene, /createChiefIntroRenderer/);
 
   // CSS is scoped to the experience root; the standalone body reset stayed in
   // the reference folder.
   assert.doesNotMatch(css, /(^|\n)\s*body\s*\{/);
-  assert.match(css, /\.fc-root \*/);
-  assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
+  assert.match(css, /\.fos-awaken, \.fos-awaken \*/);
+  assert.match(css, /@media\(prefers-reduced-motion:reduce\)/);
+  assert.match(css, /overflow-x:clip/);
+  assert.doesNotMatch(css, /overflow-x:hidden/);
 
   // The signed-in CHIEF face owns the Frontier renderer, not the public intro.
   const face = read("src/components/chief/ChiefInterface.jsx");

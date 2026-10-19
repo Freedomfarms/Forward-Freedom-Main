@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { ErrorBoundary } from "./ErrorBoundary.jsx";
 import { LegalModal } from "./LegalDocuments.jsx";
-import { ChiefIntroHome } from "./entry/ChiefIntroHome.jsx";
+import { AwakeningExperience } from "./awakening/AwakeningExperience.jsx";
 import "./entry/entry.css";
 
-// Freedom OS entry screens. PublicFreedomOsHome is the signed-out homepage
-// (the approved CHIEF Draft 4 cinematic); AuthenticatedFreedomOsShell is a
-// separate signed-in screen with its own stage.
+// Freedom OS entry screens. PublicFreedomOsHome is the signed-out awakening
+// journey, including account entry. AuthenticatedFreedomOsShell is a separate
+// signed-in screen with its own stage.
 
 const TAGLINE = "Your autonomous operating system for life, work, and wealth.";
 
@@ -440,13 +440,19 @@ function FreedomOsStage({ bootLines, actions, portals }) {
   );
 }
 
-export function PublicFreedomOsHome({ onSignIn, onCreateAccount, onExploreFreedomFinancial }) {
+export function PublicFreedomOsHome({
+  initialMode = "login",
+  deepLink = false,
+  initialForm = null,
+  onModeChange = null,
+}) {
   return (
     <ErrorBoundary>
-      <ChiefIntroHome
-        onSignIn={onSignIn}
-        onCreateAccount={onCreateAccount}
-        onExploreFreedomFinancial={onExploreFreedomFinancial}
+      <AwakeningExperience
+        initialMode={initialMode}
+        deepLink={deepLink}
+        initialForm={initialForm}
+        onModeChange={onModeChange}
       />
     </ErrorBoundary>
   );

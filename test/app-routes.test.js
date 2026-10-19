@@ -23,8 +23,8 @@ const homeSource = readFileSync(
   new URL("../src/components/FreedomOsLanding.jsx", import.meta.url),
   "utf8"
 );
-const introHomeSource = readFileSync(
-  new URL("../src/components/entry/ChiefIntroHome.jsx", import.meta.url),
+const experienceSource = readFileSync(
+  new URL("../src/components/awakening/AwakeningExperience.jsx", import.meta.url),
   "utf8"
 );
 const demoSource = readFileSync(
@@ -41,13 +41,13 @@ test("signed-out / is the public homepage", () => {
   assert.equal(screen("/"), "public-home");
   assert.equal(resolveAppRoute("/").kind, "public-home");
   assert.match(homeSource, /export function PublicFreedomOsHome/);
-  assert.match(homeSource, /ChiefIntroHome/);
-  assert.match(introHomeSource, /Enter Freedom OS/);
-  assert.match(introHomeSource, /Create Account/);
-  assert.doesNotMatch(introHomeSource, /Cinematic/);
-  assert.doesNotMatch(introHomeSource, /Replay/);
+  assert.match(homeSource, /AwakeningExperience/);
+  assert.match(experienceSource, /ENTER FREEDOM OS/);
+  assert.match(experienceSource, /href="#entry"/);
+  assert.doesNotMatch(experienceSource, /Cinematic/);
+  assert.doesNotMatch(experienceSource, /Replay/);
   assert.match(appSource, /navigateApp\("\/login"\)/);
-  assert.match(appSource, /navigateApp\("\/signup"\)/);
+  assert.match(appSource, /"\/signup"/);
 });
 
 test("signed-out /login and /signup render auth modes", () => {
