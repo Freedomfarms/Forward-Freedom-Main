@@ -8,8 +8,8 @@ alwaysApply: true
 - Shared memory lives in `../ai-development-wiki` (private repo `Freedomfarms/ai-development-wiki`).
 - Before changing code, run `scripts/cloud-agent-wiki.sh check`. On `WARNING`, say the wiki is
   unavailable and do not claim shared memory was loaded; fall back to `README.md` and `docs/`.
-- When available, read `wiki/index.md`, this project's architecture page, and the shared standards
-  first.
+- When available, read `index.md` and `log.md` at the wiki root, then `wiki/projects/freedom-os/`,
+  `wiki/projects/forward-freedom-financial/`, and the shared standards under `wiki/shared/` first.
 - Wiki updates go through pull requests in `ai-development-wiki` only. Never push to its `main`,
   never copy wiki content into this repo, and never commit credentials for it.
 - Full setup and troubleshooting: `docs/SHARED_WIKI.md`.

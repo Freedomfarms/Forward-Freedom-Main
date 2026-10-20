@@ -32,17 +32,10 @@ resolve_wiki_dir() {
     printf '%s\n' "$AI_DEV_WIKI_DIR"
     return
   fi
-  local parent sibling
+  local parent
   parent="$(cd "$APP_ROOT/.." && pwd)"
   [ "$parent" = "/" ] && parent=""
-  sibling="$parent/$WIKI_NAME"
-  # Multi-repo Cloud environments check every repo out side by side under /workspace. Prefer an
-  # existing checkout there if the sibling location is empty.
-  if [ ! -d "$sibling/.git" ] && [ -d "/workspace/$WIKI_NAME/.git" ]; then
-    printf '%s\n' "/workspace/$WIKI_NAME"
-    return
-  fi
-  printf '%s\n' "$sibling"
+  printf '%s\n' "$parent/$WIKI_NAME"
 }
 
 WIKI_DIR="$(resolve_wiki_dir)"
@@ -95,7 +88,7 @@ cmd_sync() {
     return 0
   fi
 
-  if [ -d "$WIKI_DIR/wiki" ]; then
+  if [ -r "$WIKI_DIR/index.md" ]; then
     log "wiki present at $WIKI_DIR (not a git checkout; skipping refresh)"
     return 0
   fi
@@ -121,8 +114,8 @@ cmd_sync() {
     warn "could not clone the shared wiki."
     sed 's/^/[shared-wiki]   /' /tmp/shared-wiki-clone.err >&2
     warn "shared wiki NOT available; do not assume shared memory was loaded."
-    warn "fix: add $WIKI_NAME to this Cloud environment's repositories (preferred) or add an"
-    warn "     AI_DEV_WIKI_TOKEN secret with read access. See docs/SHARED_WIKI.md."
+    warn "fix: add a Cloud Agent secret AI_DEV_WIKI_TOKEN with read-only access to the wiki repo."
+    warn "     See docs/SHARED_WIKI.md."
     rmdir "$WIKI_DIR" 2>/dev/null || sudo -n rmdir "$WIKI_DIR" 2>/dev/null || true
   fi
   rm -f /tmp/shared-wiki-clone.err
@@ -130,7 +123,7 @@ cmd_sync() {
 }
 
 cmd_check() {
-  if [ ! -d "$WIKI_DIR/wiki" ]; then
+  if [ ! -r "$WIKI_DIR/index.md" ]; then
     warn "shared wiki NOT available at $WIKI_DIR."
     warn "Do not claim shared memory was loaded. Run 'scripts/cloud-agent-wiki.sh sync' and see docs/SHARED_WIKI.md."
     return 1
@@ -143,7 +136,7 @@ cmd_check() {
   log "shared wiki available at $WIKI_DIR (rev $rev)"
 
   local f
-  for f in wiki/index.md wiki/log.md wiki/shared/tooling/connecting-a-project-repo.md; do
+  for f in index.md log.md wiki/shared/tooling/connecting-a-project-repo.md; do
     if [ -r "$WIKI_DIR/$f" ]; then
       log "  found $f"
     else
@@ -151,11 +144,24 @@ cmd_check() {
     fi
   done
 
+  local d
+  for d in wiki/projects/freedom-os wiki/projects/forward-freedom-financial wiki/shared; do
+    if [ -d "$WIKI_DIR/$d" ]; then
+      log "  $d/:"
+      find "$WIKI_DIR/$d" -type f -name '*.md' 2>/dev/null | sort | sed "s|^$WIKI_DIR/|[shared-wiki]     |"
+    else
+      log "  (missing) $d/"
+    fi
+  done
+
   log "architecture pages:"
-  find "$WIKI_DIR/wiki" -type f -iname '*architecture*' 2>/dev/null | sed "s|^$WIKI_DIR/|[shared-wiki]   |"
+  find "$WIKI_DIR" -path "$WIKI_DIR/.git" -prune -o -type f -iname '*architecture*' -print 2>/dev/null |
+    sort | sed "s|^$WIKI_DIR/|[shared-wiki]   |"
   log "standards pages:"
-  find "$WIKI_DIR/wiki" -type f -iname '*standard*' 2>/dev/null | sed "s|^$WIKI_DIR/|[shared-wiki]   |"
-  log "read wiki/index.md first, then the pages above for this project, before changing code."
+  find "$WIKI_DIR" -path "$WIKI_DIR/.git" -prune -o -type f -iname '*standard*' -print 2>/dev/null |
+    sort | sed "s|^$WIKI_DIR/|[shared-wiki]   |"
+  log "read index.md first, then wiki/projects/freedom-os/, wiki/projects/forward-freedom-financial/"
+  log "and the shared standards under wiki/shared/ before changing code."
   return 0
 }
 

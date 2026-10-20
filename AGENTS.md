@@ -28,8 +28,9 @@ Read before work:
 1. Run `scripts/cloud-agent-wiki.sh check`. If it prints `WARNING`, the wiki is not available:
    state that explicitly in your summary, do not claim shared memory was loaded, and continue with
    this repo's own `README.md` and `docs/`.
-2. If it is available, read `wiki/index.md`, then the project architecture page for this repo and
-   the shared standards it links, before changing code.
+2. If it is available, read `index.md` and `log.md` at the wiki root, then
+   `wiki/projects/freedom-os/` and `wiki/projects/forward-freedom-financial/` (architecture pages
+   for this repo) and the shared standards under `wiki/shared/`, before changing code.
 
 Knowledge updates are PR-only:
 
