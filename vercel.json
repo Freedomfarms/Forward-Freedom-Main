@@ -4,7 +4,11 @@
     { "path": "/api/cron/chief-dispatch", "schedule": "*/5 * * * *" }
   ],
   "functions": {
-    "api/cron/chief-dispatch.js": { "maxDuration": 60 }
+    "api/cron/chief-dispatch.js": { "maxDuration": 60 },
+    "api/chief/managed/runs.js": { "maxDuration": 60 },
+    "api/chief/managed/runs/[runId].js": { "maxDuration": 60 },
+    "api/chief/managed/drain.js": { "maxDuration": 60 },
+    "api/chief/managed/webhook.js": { "maxDuration": 60 }
   },
   "rewrites": [
     {
