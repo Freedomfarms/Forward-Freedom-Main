@@ -15,6 +15,7 @@ import { TraceCollector, assertDetailSafe } from "../server/chief/traces/collect
 import { MemoryTraceStore, PrismaTraceStore } from "../server/chief/traces/store.js";
 import { ToolExecutor } from "../server/chief/tools/executor.js";
 import { BaseTool } from "../server/chief/tools/spec.js";
+import { scriptedManagedClient } from "./chief-managed-client-fixture.js";
 
 const USER_TEXT = "user-private-note-xyz";
 const TOOL_OUTPUT = "dollar-secret-42";
@@ -221,7 +222,7 @@ test("a turn failure still propagates", async () => {
   assert.equal(dumped(traceStore).includes(USER_TEXT), false);
 });
 
-test("a scheduled turn uses the same writer and does not add a task", async () => {
+test("a scheduled turn records the run and does not use the legacy trace writer", async () => {
   const traceStore = new MemoryTraceStore();
   const tasks = [
     {
@@ -239,14 +240,15 @@ test("a scheduled turn uses the same writer and does not add a task", async () =
       lockedAt: null,
     },
   ];
+  const taskStore = new MemoryTaskStore({ tasks });
   const report = await runChiefTick({
-    taskStore: new MemoryTaskStore({ tasks }),
+    taskStore,
     checkpointStore: new MemoryCheckpointStore(),
     traceStore,
     clock: () => new Date("2026-09-30T12:00:00.000Z"),
-    createEngine: ({ eventBus }) => publishingEngine(eventBus, [textStep()]),
-    createTooling: ({ eventBus }) => ({
-      executor: new ToolExecutor({ bus: eventBus }),
+    client: scriptedManagedClient([{ text: ANSWER }]),
+    createTooling: () => ({
+      executor: new ToolExecutor(),
       specs: [],
       policy: null,
     }),
@@ -254,10 +256,9 @@ test("a scheduled turn uses the same writer and does not add a task", async () =
   assert.equal(tasks.length, 1);
   assert.equal(report.runs.length, 1);
   assert.equal(report.runs[0].status, "SUCCEEDED");
-  assert.equal(traceStore.traces.length, 1);
-  assert.equal(traceStore.traces[0].outcome, "completed");
-  assert.equal(dumped(traceStore).includes(USER_TEXT), false);
-  assert.equal(dumped(traceStore).includes(ANSWER), false);
+  assert.equal(traceStore.traces.length, 0);
+  assert.equal(taskStore.runs[0].result.summary, ANSWER);
+  assert.equal(JSON.stringify(taskStore.runs[0].result).includes(USER_TEXT), false);
 });
 
 test("prisma save is user-scoped and stores no transcript fields", async () => {

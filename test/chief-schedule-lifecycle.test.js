@@ -15,6 +15,7 @@ import { TurnMachine } from "../server/chief/runtime/turn.js";
 import { quietAttention } from "../server/chief/scheduler/operative.js";
 import { initialNextRun } from "../server/chief/scheduler/schedule.js";
 import { completeAwaitingScheduledRun } from "../server/chief/scheduler/resume.js";
+import { scriptedManagedClient } from "./chief-managed-client-fixture.js";
 import { MemoryTaskStore, RunStatus } from "../server/chief/scheduler/store.js";
 import { runChiefTick } from "../server/chief/scheduler/tick.js";
 import { MemoryAuditLog } from "../server/chief/security/audit.js";
@@ -192,7 +193,7 @@ test("pause stops future claims without moving nextRunAt or the in-flight run", 
   const report = await runChiefTick({
     taskStore,
     checkpointStore: new MemoryCheckpointStore(),
-    createEngine: () => scripted([textStep("should not run")]),
+    client: scriptedManagedClient([textStep("should not run")]),
     createTooling: () => tooling(schedule),
     clock: () => T0,
   });
@@ -250,7 +251,7 @@ test("a resumed one-time task whose runAt is past is due on the next tick", asyn
     taskStore,
     checkpointStore: new MemoryCheckpointStore(),
     audit: new MemoryAuditLog(),
-    createEngine: () => scripted([textStep("due")]),
+    client: scriptedManagedClient([textStep("due")]),
     createTooling: ({ userId }) =>
       createChiefTooling({
         userId,
@@ -328,7 +329,7 @@ test("cancel keeps the row, clears nextRunAt, and leaves Phase 11 resume intact"
   const report = await runChiefTick({
     taskStore,
     checkpointStore: new MemoryCheckpointStore(),
-    createEngine: () => scripted([textStep("no")]),
+    client: scriptedManagedClient([textStep("no")]),
     createTooling: () => tooling(schedule),
     clock: () => T0,
   });
@@ -549,7 +550,7 @@ test("phase 12 does not add a second loop, sender, or CEO Agents import", () => 
   assert.equal(
     (readFileSync("server/chief/scheduler/tick.js", "utf8").match(/new TurnMachine\(/g) ?? [])
       .length,
-    1
+    0
   );
   assert.equal(
     (readFileSync("server/chief/tools/builtin.js", "utf8").match(/new TurnMachine\(/g) ?? [])

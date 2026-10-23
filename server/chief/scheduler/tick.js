@@ -1,28 +1,16 @@
-// CHIEF operative tick — due scheduled tasks become schedule-caller turns.
+// CHIEF operative tick — the scheduler decides when. Claude Managed Agents
+// decides how. Claim, recurrence, and run records stay here. There is no
+// legacy reasoning fallback.
 //
-// BUILD NEW (docs/adr/0005-chief-scheduler-tick.md). Concepts adapted from
-// OpenJarvis scheduler._execute_task (log the run, recompute next_run, mark a
-// finished once task completed), möbius run_routine_with_state (a fresh
-// session per run, Skipped when a limit rejects the run) and Hermes
-// cron/unreachable_retry.py (see retry.js).
+// A due task is claimed, then a managed-schedule session is queued. The same
+// cron request starts the session. If the provider is still working when the
+// request budget ends, the durable work row resumes it on a later cron.
+// A requiresConfirmation tool suspends the run for the signed-in user.
 //
-// This is not a second agent loop. Each claimed task is one TurnMachine.run
-// with caller kind "schedule". The model call goes through ChiefModelEngine
-// (budget, pause flag, Grok default routing) and every tool call goes through
-// ToolExecutor. A scheduled turn has no sticky approvals: its session is new,
-// so any requiresConfirmation tool suspends the turn for the user.
-//
-// Workforce execution polling is not activated here. The integration point is
-// this tick, before due tasks run: list nonterminal WorkforceExecution rows
-// (SUBMITTING, SUBMITTED, AMBIGUOUS, RUNNING) with the service client, then
-// read each one inside withUserContext. AMBIGUOUS and SUBMITTING rows are
-// reconciled with GET /v1/agents/{id}. They are never retried with POST.
-// Polling stays off until CURSOR_API_KEY and the repository allowlist exist.
+// Workforce execution polling is not activated here.
 
-import { EventBus } from "../core/events.js";
-import { ApprovalCoordinator } from "../runtime/approvals.js";
-import { TurnMachine } from "../runtime/turn.js";
-import { EventMsgType } from "../protocol/index.js";
+import { runManagedChiefTurn } from "../managed/chatTurn.js";
+import { MANAGED_SCHEDULE_ORIGIN } from "../managed/productionAgent.js";
 import {
   lastAssistantText,
   operatorStateKey,
@@ -30,13 +18,14 @@ import {
   quietAttention,
   stateFromResponse,
 } from "./operative.js";
-import { planRetry } from "./retry.js";
+import { isTransientNetworkError, planRetry, reachedModel } from "./retry.js";
+import { completeAwaitingScheduledRun } from "./resume.js";
 import { RunStatus } from "./store.js";
-import { SCHEDULED_TURN_EXCLUDED_TOOLS } from "../tools/inventory.js";
 
 export const LOCK_TTL_MS = 15 * 60 * 1000;
 export const DEFAULT_TICK_LIMIT = 3;
-export const DEFAULT_TURN_TIMEOUT_MS = 45_000;
+export const DEFAULT_TURN_TIMEOUT_MS = 20_000;
+const MAX_SCHEDULE_RESUMES = 3;
 export const DEFAULT_TICK_BUDGET_MS = 50_000;
 
 const ACTOR = "chief:schedule";
@@ -59,26 +48,37 @@ async function safeAudit(audit, entry) {
 export async function runChiefTick({
   taskStore,
   checkpointStore,
-  createEngine,
   createTooling,
-  createTurnServices = null,
-  traceStore = null,
+  client = null,
+  jobs = null,
+  bindings = null,
+  threads = null,
+  runTurn = runManagedChiefTurn,
   audit = null,
   clock = () => new Date(),
   limit = DEFAULT_TICK_LIMIT,
   turnTimeoutMs = DEFAULT_TURN_TIMEOUT_MS,
   tickBudgetMs = DEFAULT_TICK_BUDGET_MS,
 } = {}) {
-  if (!taskStore || !checkpointStore || !createEngine || !createTooling) {
-    throw new TypeError(
-      "runChiefTick requires taskStore, checkpointStore, createEngine, createTooling"
-    );
+  if (!taskStore || !checkpointStore) {
+    throw new TypeError("runChiefTick requires taskStore and checkpointStore");
   }
   const startedAt = clock();
   const staleBefore = new Date(startedAt.getTime() - LOCK_TTL_MS);
-  const report = { recovered: 0, initialized: 0, paused: 0, runs: [] };
+  const report = { recovered: 0, resumed: 0, initialized: 0, paused: 0, runs: [] };
 
   for (const stale of await taskStore.listStaleRuns(staleBefore)) {
+    const resumed = await resumeInterruptedRun({
+      stale,
+      taskStore,
+      checkpointStore,
+      jobs,
+      clock,
+    });
+    if (resumed) {
+      report.resumed += 1;
+      continue;
+    }
     const recovered = await taskStore.recoverRun(stale.userId, stale.id, startedAt);
     if (!recovered) continue;
     report.recovered += 1;
@@ -105,6 +105,11 @@ export async function runChiefTick({
     }
   }
 
+  if (!client) {
+    report.blocked = "ANTHROPIC_API_KEY";
+    return report;
+  }
+
   const due = await taskStore.listDue(startedAt, staleBefore, limit);
   for (const candidate of due) {
     if (clock().getTime() - startedAt.getTime() > tickBudgetMs) break;
@@ -114,10 +119,12 @@ export async function runChiefTick({
         candidate,
         taskStore,
         checkpointStore,
-        createEngine,
         createTooling,
-        createTurnServices,
-        traceStore,
+        client,
+        jobs,
+        bindings,
+        threads,
+        runTurn,
         audit,
         clock,
         staleBefore,
@@ -137,10 +144,12 @@ async function runScheduledTask({
   candidate,
   taskStore,
   checkpointStore,
-  createEngine,
   createTooling,
-  createTurnServices = null,
-  traceStore = null,
+  client,
+  jobs,
+  bindings,
+  threads,
+  runTurn,
   audit,
   clock,
   staleBefore,
@@ -232,39 +241,19 @@ async function runScheduledTask({
     };
   };
 
+  const scheduleCaller = { kind: "schedule", trigger: `schedule:${task.id}` };
   let sessionId = null;
-  let tooling;
-  let machine;
   try {
-    const eventBus = new EventBus();
-    tooling = await createTooling({ userId, eventBus });
-    const engine = createEngine({ eventBus });
-    const turnServices = createTurnServices
-      ? await createTurnServices({
-          userId,
-          engine,
-          checkpointStore,
-          policy: tooling.policy ?? null,
-          eventBus,
-        })
-      : {};
-    machine = new TurnMachine({
-      store: checkpointStore,
-      engine,
-      approvals: new ApprovalCoordinator(),
-      toolExecutor: tooling.executor,
-      callerKind: "schedule",
-      callerTrigger: `schedule:${task.id}`,
-      contextAssembler: turnServices.contextAssembler ?? null,
-      compaction: turnServices.compaction ?? null,
-      onTurnComplete: turnServices.onTurnComplete ?? null,
-      settleModelStep: turnServices.settleModelStep ?? null,
-      traceStore,
-      eventBus,
-    });
     const session = await checkpointStore.createSession({
       userId,
-      context: { origin: "schedule", scheduledTaskId: task.id, runId: run.id },
+      context: {
+        origin: MANAGED_SCHEDULE_ORIGIN,
+        scheduledTaskId: task.id,
+        runId: run.id,
+        pendingPrompt: prepared.text,
+        scheduleCaller,
+        scheduleKind: task.kind,
+      },
     });
     sessionId = session.id;
     session.checkpoint.sessionTaint = prepared.sessionTaint;
@@ -274,78 +263,194 @@ async function runScheduledTask({
     return failRun(error, sessionId);
   }
 
-  let abortReason = null;
+  let tooling = { executor: null, specs: [] };
+  try {
+    if (createTooling) tooling = await createTooling({ userId });
+  } catch (error) {
+    return failRun(error, sessionId);
+  }
+
   let result;
   try {
-    result = await machine.run({
+    result = await runTurn({
       userId,
       sessionId,
-      submission: {
-        id: `schedule-${run.id}-${run.attempts}`,
-        op: { type: "message", message: { text: prepared.text } },
-      },
-      signal: AbortSignal.timeout(turnTimeoutMs),
-      toolSpecs: (tooling.specs ?? []).filter(
-        (spec) => !SCHEDULED_TURN_EXCLUDED_TOOLS.includes(spec.name)
-      ),
-      onEvent(event) {
-        if (event?.msg?.type === EventMsgType.TURN_ABORTED) abortReason = event.msg.reason ?? null;
-      },
+      store: checkpointStore,
+      client,
+      toolExecutor: tooling.executor ?? tooling.toolExecutor ?? null,
+      toolSpecs: tooling.specs ?? [],
+      jobs,
+      bindings,
+      threads,
+      resume: true,
+      caller: scheduleCaller,
+      budgetMs: turnTimeoutMs,
     });
   } catch (error) {
     return failRun(error, sessionId);
   }
 
-  const checkpoint = result.checkpoint;
-  const stats = {
+  if (result?.status === "continuing") {
+    return { taskId: task.id, runId: run.id, sessionId, status: "continuing" };
+  }
+  const settled = await settleScheduledSession({
+    userId,
     sessionId,
-    turnStatus: result.status,
-    abortReason,
-    modelSteps: checkpoint.executionStats?.modelSteps ?? 0,
-    toolCalls: checkpoint.executionStats?.toolCalls ?? 0,
-    totalTokens: checkpoint.totalUsage?.total_tokens ?? 0,
+    taskStore,
+    checkpointStore,
+    audit,
+    turnResult: result,
+    clock,
+  });
+  return {
+    taskId: task.id,
+    runId: run.id,
+    sessionId,
+    status: settled.status ?? result?.status,
   };
-  let status;
-  let error = null;
-  if (result.status === "completed") {
-    status = RunStatus.SUCCEEDED;
-  } else if (result.status === "suspended") {
-    status = RunStatus.AWAITING_APPROVAL;
-  } else if (SKIP_REASONS.has(abortReason)) {
-    status = RunStatus.SKIPPED;
-    error = abortReason;
-  } else {
-    status = RunStatus.FAILED;
-    error = abortReason ?? "aborted";
+}
+
+export async function settleScheduledSession({
+  userId,
+  sessionId,
+  taskStore,
+  checkpointStore = null,
+  audit = null,
+  turnResult = null,
+  error = null,
+  clock = () => new Date(),
+} = {}) {
+  if (!userId || !sessionId || !taskStore?.findOpenBySession) {
+    return { updated: false, keepQueued: false };
+  }
+  const open = await taskStore.findOpenBySession(userId, sessionId);
+  if (!open) return { updated: false, keepQueued: false };
+  if (turnResult?.status === "continuing") return { updated: false, keepQueued: true, status: "continuing" };
+
+  const loaded = checkpointStore ? await checkpointStore.load(userId, sessionId) : null;
+  const checkpoint = turnResult?.checkpoint ?? loaded?.checkpoint ?? null;
+  if (error && isTransientNetworkError(error) && reachedModel(checkpoint)) {
+    return { updated: false, keepQueued: true };
   }
 
-  const summaryText = lastAssistantText(checkpoint.transcript);
-  if (status === RunStatus.SUCCEEDED) {
-    const state = stateFromResponse(summaryText, { runId: run.id, at: clock() });
+  if (open.run.status === RunStatus.AWAITING_APPROVAL) {
+    const updated = await completeAwaitingScheduledRun({
+      userId,
+      sessionId,
+      taskStore,
+      checkpointStore,
+      turnResult,
+      error,
+      abortReason: turnResult?.abortReason ?? null,
+      clock,
+    });
+    return { ...updated, keepQueued: false };
+  }
+
+  if (error) {
+    const retryAt = planRetry({
+      task: open.task,
+      error,
+      checkpoint,
+      attempts: open.run.attempts,
+      naturalNext: open.task.nextRunAt,
+      now: clock(),
+    });
+    const status = retryAt ? RunStatus.RETRYING : RunStatus.FAILED;
+    await taskStore.finish(userId, {
+      taskId: open.task.id,
+      runId: open.run.id,
+      status,
+      error: errorSummary(error),
+      retryAt,
+      completeTask: open.task.kind === "ONCE" && !retryAt,
+      now: clock(),
+    });
+    await safeAudit(audit, {
+      userId,
+      action: retryAt ? "schedule.run_retrying" : "schedule.run_failed",
+      resource: open.task.id,
+      summary: `run ${open.run.id} attempt ${open.run.attempts}: ${errorSummary(error)}`,
+    });
+    return { updated: true, keepQueued: false, status };
+  }
+
+  const abortReason = turnResult?.abortReason ?? null;
+  let status;
+  let failure = null;
+  if (turnResult?.status === "completed") status = RunStatus.SUCCEEDED;
+  else if (turnResult?.status === "suspended") status = RunStatus.AWAITING_APPROVAL;
+  else if (SKIP_REASONS.has(abortReason)) {
+    status = RunStatus.SKIPPED;
+    failure = abortReason;
+  } else {
+    status = RunStatus.FAILED;
+    failure = abortReason ?? turnResult?.status ?? "aborted";
+  }
+  const summaryText = lastAssistantText(checkpoint?.transcript);
+  const result =
+    status === RunStatus.AWAITING_APPROVAL
+      ? null
+      : {
+          sessionId,
+          turnStatus: turnResult?.status ?? null,
+          abortReason,
+          modelSteps: checkpoint?.executionStats?.modelSteps ?? 0,
+          toolCalls: checkpoint?.executionStats?.toolCalls ?? 0,
+          totalTokens: checkpoint?.totalUsage?.total_tokens ?? 0,
+          summary: summaryText.slice(0, 1000),
+          attention: quietAttention(),
+        };
+  const now = clock();
+  await taskStore.finish(userId, {
+    taskId: open.task.id,
+    runId: open.run.id,
+    status,
+    error: failure,
+    result,
+    completeTask:
+      open.task.kind === "ONCE" &&
+      status !== RunStatus.RETRYING &&
+      status !== RunStatus.AWAITING_APPROVAL,
+    now,
+  });
+  if (status === RunStatus.SUCCEEDED && checkpointStore) {
+    const state = stateFromResponse(summaryText, { runId: open.run.id, at: now });
     if (state) {
       await checkpointStore.saveMiddlewareState(
         userId,
         sessionId,
-        operatorStateKey(task.id),
+        operatorStateKey(open.task.id),
         state
       );
     }
   }
-  await finish({
-    status,
-    error,
-    // Suspension is not a successful result. The resume writes the result,
-    // including attention: false, when the same run actually ends.
-    result:
-      status === RunStatus.AWAITING_APPROVAL
-        ? null
-        : { ...stats, summary: summaryText.slice(0, 1000), attention: quietAttention() },
-  });
   await safeAudit(audit, {
     userId,
     action: `schedule.run_${status.toLowerCase()}`,
-    resource: task.id,
-    summary: `run ${run.id} session ${sessionId}${error ? `: ${error}` : ""}`,
+    resource: open.task.id,
+    summary: `run ${open.run.id} session ${sessionId}${failure ? `: ${failure}` : ""}`,
   });
-  return { taskId: task.id, runId: run.id, sessionId, status };
+  return { updated: true, keepQueued: false, status };
+}
+
+async function resumeInterruptedRun({ stale, checkpointStore, jobs }) {
+  if (!jobs || !stale.sessionId) return false;
+  const record = await checkpointStore.load(stale.userId, stale.sessionId);
+  const context = record?.checkpoint?.context;
+  if (context?.origin !== MANAGED_SCHEDULE_ORIGIN) return false;
+  const managed = context.managed;
+  if (!managed?.providerSessionId && !context.pendingPrompt) return false;
+  const resumes = context.scheduleResumes ?? 0;
+  if (resumes >= MAX_SCHEDULE_RESUMES) return false;
+  record.checkpoint.context = { ...context, scheduleResumes: resumes + 1 };
+  await checkpointStore.saveWithEvents(stale.userId, stale.sessionId, {
+    checkpoint: record.checkpoint,
+  });
+  try {
+    await jobs.enqueue({ userId: stale.userId, threadId: stale.sessionId });
+  } catch {
+    // The checkpoint still points at the provider session. The next tick retries.
+  }
+  return true;
 }

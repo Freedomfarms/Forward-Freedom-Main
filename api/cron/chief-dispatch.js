@@ -1,9 +1,10 @@
 // GET /api/cron/chief-dispatch — CHIEF scheduler tick (vercel.json cron).
 //
-// BUILD NEW thin shell (docs/adr/0005-chief-scheduler-tick.md): cron auth,
-// then runChiefTick. Interactive CHIEF chat does not use this tick.
-// After the tick, queued Claude Managed Agents work is resumed. The drain
-// makes a provider call only when a job is waiting and ANTHROPIC_API_KEY is set.
+// Cron auth, then runChiefTick. The tick claims due tasks and asks Claude
+// Managed Agents to do the work. It does not call the legacy turn machine.
+// After the tick, queued managed work — chat continuations and scheduled
+// sessions that did not finish in this request — is resumed. A missing
+// ANTHROPIC_API_KEY is a 503. There is no legacy fallback.
 //
 // Authenticated by CRON_SECRET ("Authorization: Bearer <secret>", which
 // Vercel Cron sends when CRON_SECRET is set, or ?secret=). Fails closed with
@@ -12,20 +13,13 @@
 import crypto from "node:crypto";
 
 import { readBearerToken } from "../../server/auth/verifyAuth.js";
-import {
-  archiveAlongsideCheckpoint,
-  createChiefTurnServices,
-} from "../../server/chief/context/wire.js";
-import { PrismaBudgetStore } from "../../server/chief/models/budget.js";
-import { createModelEngine } from "../../server/chief/models/engine.js";
 import { PrismaFactStore } from "../../server/chief/memory/facts.js";
+import { createManagedClient, drainManagedWork } from "../../server/chief/managed/chatTurn.js";
+import { createPrismaWorkQueue } from "../../server/chief/managed/workQueue.js";
 import { PrismaCheckpointStore } from "../../server/chief/runtime/checkpoint.js";
 import { PrismaTaskStore } from "../../server/chief/scheduler/store.js";
-import { drainManagedWork } from "../../server/chief/managed/chatTurn.js";
-import { runChiefTick } from "../../server/chief/scheduler/tick.js";
-import { PrismaTraceStore } from "../../server/chief/traces/store.js";
+import { runChiefTick, settleScheduledSession } from "../../server/chief/scheduler/tick.js";
 import { PrismaAuditLog } from "../../server/chief/security/audit.js";
-import { PrismaModuleAccess } from "../../server/chief/security/module-access.js";
 import { createChiefTooling } from "../../server/chief/tools/builtin.js";
 import { enforceRateLimit, generalApiRateLimit } from "../../server/http/rateLimit.js";
 import { applySecurityHeaders } from "../../server/http/responseHelpers.js";
@@ -38,26 +32,14 @@ function secretMatches(provided, secret) {
 
 function defaultDeps() {
   const audit = new PrismaAuditLog();
-  const budget = new PrismaBudgetStore();
   const facts = new PrismaFactStore();
   const checkpointStore = new PrismaCheckpointStore();
   return {
     taskStore: new PrismaTaskStore(),
     checkpointStore,
-    createEngine: ({ eventBus } = {}) => createModelEngine({ budget, eventBus }),
-    createTooling: ({ userId, eventBus }) =>
-      createChiefTooling({ userId, audit, stores: { facts }, bus: eventBus }),
-    createTurnServices: ({ engine, policy, eventBus }) =>
-      createChiefTurnServices({
-        facts,
-        engine,
-        checkpointStore,
-        archiveStore: archiveAlongsideCheckpoint(checkpointStore),
-        capabilityPolicy: policy ?? null,
-        eventBus,
-        moduleAccess: new PrismaModuleAccess(),
-      }),
-    traceStore: new PrismaTraceStore(),
+    jobs: createPrismaWorkQueue(),
+    createClient: () => createManagedClient(),
+    createTooling: ({ userId }) => createChiefTooling({ userId, audit, stores: { facts } }),
     audit,
   };
 }
@@ -83,13 +65,42 @@ export async function handleChiefDispatch(request, response, deps = {}) {
 
   try {
     const resolved = deps.taskStore ? deps : { ...defaultDeps(), ...deps };
-    const report = await runChiefTick(resolved);
+    let client = Object.hasOwn(resolved, "client") ? resolved.client : null;
+    if (!Object.hasOwn(resolved, "client")) {
+      try {
+        client = (resolved.createClient ?? createManagedClient)();
+      } catch (error) {
+        client = null;
+        if (error?.status !== 503) throw error;
+      }
+    }
+    const jobs = resolved.jobs ?? resolved.managedJobs ?? createPrismaWorkQueue();
+    const report = await runChiefTick({ ...resolved, client, jobs });
+    if (report.blocked === "ANTHROPIC_API_KEY") {
+      response.status(503).json({
+        ok: false,
+        error: "Claude Managed Agents is not configured. Set ANTHROPIC_API_KEY on the server.",
+        ...report,
+      });
+      return;
+    }
     let managedDrain = { drained: 0 };
     try {
       managedDrain = await (deps.drainManagedWork ?? drainManagedWork)({
         store: resolved.checkpointStore,
-        client: deps.managedClient,
-        jobs: deps.managedJobs,
+        client,
+        jobs,
+        createTooling: resolved.createTooling,
+        afterTurn: async ({ job, result, error }) =>
+          (deps.settleScheduledSession ?? settleScheduledSession)({
+            userId: job.userId,
+            sessionId: job.threadId,
+            taskStore: resolved.taskStore,
+            checkpointStore: resolved.checkpointStore,
+            audit: resolved.audit,
+            turnResult: result,
+            error,
+          }),
       });
     } catch (error) {
       console.error("[chief/dispatch] managed", error?.name || "Error");

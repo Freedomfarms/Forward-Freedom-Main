@@ -6,6 +6,7 @@
 
 import { authenticateRequest } from "../../server/auth/verifyAuth.js";
 import { createManagedClient, runManagedChiefTurn } from "../../server/chief/managed/chatTurn.js";
+import { MANAGED_SCHEDULE_ORIGIN } from "../../server/chief/managed/productionAgent.js";
 import { encodeSseEvent, eventMsg, makeEvent } from "../../server/chief/protocol/index.js";
 import { PrismaCheckpointStore } from "../../server/chief/runtime/checkpoint.js";
 import { titleFromTranscript } from "../../server/chief/runtime/conversationTitle.js";
@@ -54,8 +55,9 @@ export async function handleChiefChat(request, response, deps = {}) {
   }
 
   const store = deps.store ?? new PrismaCheckpointStore();
+  let existing = null;
   if (typeof body.session_id === "string" && body.session_id) {
-    const existing = await store.load(userId, body.session_id);
+    existing = await store.load(userId, body.session_id);
     if (existing?.archivedAt) {
       response.status(409).json({
         error: "This conversation is archived. Restore it before sending.",
@@ -67,6 +69,19 @@ export async function handleChiefChat(request, response, deps = {}) {
   response.status(200);
   response.setHeader("Content-Type", "text/event-stream; charset=utf-8");
   response.setHeader("Cache-Control", "no-cache, no-transform");
+  if (existing?.checkpoint?.context?.origin === MANAGED_SCHEDULE_ORIGIN) {
+    response.write(
+      encodeSseEvent(
+        makeEvent(
+          eventMsg.submissionRejected(
+            "This scheduled session continues from Approvals. Chat does not resume it."
+          )
+        )
+      )
+    );
+    response.end();
+    return;
+  }
   const controller = new AbortController();
   request.on?.("close", () => controller.abort());
 
@@ -162,7 +177,8 @@ export async function handleChiefChat(request, response, deps = {}) {
 }
 
 async function titleCompletedSession(store, userId, result) {
-  if (result.checkpoint?.context?.origin === "schedule") return;
+  const origin = result.checkpoint?.context?.origin;
+  if (origin === "schedule" || origin === MANAGED_SCHEDULE_ORIGIN) return;
   if (typeof store.setTitleIfEmpty === "function") {
     const title = titleFromTranscript(result.checkpoint?.transcript);
     if (title) await store.setTitleIfEmpty(userId, result.sessionId, title);

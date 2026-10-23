@@ -28,6 +28,8 @@ import { LOCK_TTL_MS, runChiefTick } from "../server/chief/scheduler/tick.js";
 import { MemoryAuditLog } from "../server/chief/security/audit.js";
 import { createChiefTooling } from "../server/chief/tools/builtin.js";
 import { MemoryScheduleStore, normalizeSchedule } from "../server/chief/tools/schedule-store.js";
+import { scriptedManagedClient } from "./chief-managed-client-fixture.js";
+import { createMemoryWorkQueue } from "../server/chief/managed/workQueue.js";
 
 const T0 = new Date("2026-09-30T12:00:00.000Z");
 
@@ -35,28 +37,10 @@ function at(offsetMs) {
   return new Date(T0.getTime() + offsetMs);
 }
 
-function scripted(steps, calls = []) {
-  let index = 0;
-  return {
-    calls,
-    async openStream(messages, options) {
-      const step = steps[Math.min(index, steps.length - 1)];
-      index += 1;
-      calls.push({ messages: structuredClone(messages), caller: options.caller });
-      if (step.throws) throw step.throws;
-      return {
-        fullStream: (async function* stream() {
-          for (const part of step.parts ?? []) yield part;
-        })(),
-        finalize: async () => ({
-          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
-          content: step.text ?? "",
-          tool_calls: [],
-          finish_reason: "stop",
-        }),
-      };
-    },
-  };
+function prompts(client) {
+  return client.state.sent
+    .filter((item) => Array.isArray(item.initial_events))
+    .map((item) => item.initial_events[0]?.content?.[0]?.text || "");
 }
 
 function textStep(text) {
@@ -91,8 +75,8 @@ function harness({ tasks, steps = [textStep("Level is 12 ft.")], clock = () => T
   const checkpointStore = new MemoryCheckpointStore();
   const audit = new MemoryAuditLog();
   const facts = new MemoryFactStore();
-  const engineCalls = [];
-  let engine = scripted(steps, engineCalls);
+  const bucket = { steps, cursor: 0 };
+  const client = scriptedManagedClient(bucket);
   const policy = new CapabilityPolicy({ defaultDeny: true });
   policy.grant("chief", Capability.MEMORY_READ);
   policy.grant("chief", Capability.MEMORY_WRITE);
@@ -101,7 +85,8 @@ function harness({ tasks, steps = [textStep("Level is 12 ft.")], clock = () => T
     checkpointStore,
     audit,
     clock,
-    createEngine: () => engine,
+    client,
+    jobs: createMemoryWorkQueue(),
     createTooling: ({ userId }) =>
       createChiefTooling({
         userId,
@@ -116,9 +101,10 @@ function harness({ tasks, steps = [textStep("Level is 12 ft.")], clock = () => T
     checkpointStore,
     audit,
     facts,
-    engineCalls,
+    client,
     setSteps(next) {
-      engine = scripted(next, engineCalls);
+      bucket.steps = next;
+      bucket.cursor = 0;
     },
     tick: (overrides = {}) => runChiefTick({ ...deps, ...overrides }),
   };
@@ -174,18 +160,14 @@ test("schedule_create normalization requires a clean prompt and computes nextRun
   );
 });
 
-test("a due task runs one TurnMachine turn as caller kind schedule and records the run", async () => {
+test("a due task runs one managed schedule session and records the run", async () => {
   const h = harness({ tasks: [task()] });
   const report = await h.tick();
   assert.equal(report.runs.length, 1);
   assert.equal(report.runs[0].status, RunStatus.SUCCEEDED);
 
-  assert.equal(h.engineCalls.length, 1);
-  assert.deepEqual(
-    { kind: h.engineCalls[0].caller.kind, trigger: h.engineCalls[0].caller.trigger },
-    { kind: "schedule", trigger: "schedule:task-1" }
-  );
-  const userText = h.engineCalls[0].messages.at(-1).content;
+  assert.equal(prompts(h.client).length, 1);
+  const userText = prompts(h.client)[0];
   assert.match(userText, /Scheduled task "check well"/);
   assert.match(userText, /## Task\nSummarize the well level\./);
 
@@ -195,10 +177,12 @@ test("a due task runs one TurnMachine turn as caller kind schedule and records t
   assert.equal(run.result.summary, "Level is 12 ft.");
   assert.ok(run.completedAt);
   const session = await h.checkpointStore.load("user-1", run.sessionId);
-  assert.deepEqual(session.checkpoint.context, {
-    origin: "schedule",
-    scheduledTaskId: "task-1",
-    runId: run.id,
+  assert.equal(session.checkpoint.context.origin, "managed-schedule");
+  assert.equal(session.checkpoint.context.scheduledTaskId, "task-1");
+  assert.equal(session.checkpoint.context.runId, run.id);
+  assert.deepEqual(session.checkpoint.context.scheduleCaller, {
+    kind: "schedule",
+    trigger: "schedule:task-1",
   });
 
   const [stored] = h.taskStore.tasks;
@@ -219,7 +203,7 @@ test("tasks that are not due, paused, or locked are not run", async () => {
   });
   const report = await h.tick();
   assert.equal(report.runs.length, 0);
-  assert.equal(h.engineCalls.length, 0);
+  assert.equal(prompts(h.client).length, 0);
 });
 
 test("a once task completes after its run and does not fire again", async () => {
@@ -229,7 +213,7 @@ test("a once task completes after its run and does not fire again", async () => 
   assert.equal(h.taskStore.tasks[0].nextRunAt, null);
   const again = await h.tick();
   assert.equal(again.runs.length, 0);
-  assert.equal(h.engineCalls.length, 1);
+  assert.equal(prompts(h.client).length, 1);
 });
 
 test("a second claim of the same slot loses", async () => {
@@ -288,7 +272,7 @@ test("operator state is auto-persisted and recalled as Previous State on the nex
   h.setSteps([textStep("Level is 11 ft.")]);
   await h.tick();
   assert.equal(h.taskStore.runs.length, 2);
-  const secondText = h.engineCalls[1].messages.at(-1).content;
+  const secondText = prompts(h.client)[1];
   assert.match(secondText, /## Previous State\nLevel is 12 ft\./);
   assert.notEqual(h.taskStore.runs[1].sessionId, firstRun.sessionId);
 });
@@ -304,7 +288,7 @@ test("poisoned operator state is dropped and audited", async () => {
   now = at(3600_000);
   h.setSteps([textStep("ok")]);
   await h.tick();
-  assert.doesNotMatch(h.engineCalls[1].messages.at(-1).content, /Previous State/);
+  assert.doesNotMatch(prompts(h.client)[1], /Previous State/);
   assert.ok(h.audit.entries.some((entry) => entry.action === "schedule.state_dropped"));
 });
 
@@ -314,7 +298,7 @@ test("a stored prompt that fails the injection scan never reaches the model", as
   });
   const report = await h.tick();
   assert.equal(report.runs[0].reason, "prompt_rejected");
-  assert.equal(h.engineCalls.length, 0);
+  assert.equal(prompts(h.client).length, 0);
   assert.equal(h.taskStore.runs[0].status, RunStatus.FAILED);
   assert.equal(h.taskStore.runs[0].error, "prompt_rejected");
   assert.equal(h.taskStore.tasks[0].status, "PAUSED");
@@ -449,7 +433,7 @@ test("a run left RUNNING by a crashed tick is failed as interrupted and not re-r
   assert.equal(h.taskStore.runs[0].status, RunStatus.FAILED);
   assert.equal(h.taskStore.runs[0].error, "interrupted");
   assert.equal(h.taskStore.tasks[0].status, "COMPLETED");
-  assert.equal(h.engineCalls.length, 0);
+  assert.equal(prompts(h.client).length, 0);
 });
 
 test("unscheduled tasks get a nextRunAt; invalid ones are paused", async () => {
@@ -506,7 +490,7 @@ test("the dispatch endpoint fails closed without CRON_SECRET and rejects a wrong
     const wrong = mockResponse();
     await handleChiefDispatch(cronRequest("Bearer nope"), wrong.response, h.deps);
     assert.equal(wrong.state.statusCode, 401);
-    assert.equal(h.engineCalls.length, 0);
+    assert.equal(prompts(h.client).length, 0);
 
     const ok = mockResponse();
     await handleChiefDispatch(cronRequest("Bearer correct-secret"), ok.response, h.deps);

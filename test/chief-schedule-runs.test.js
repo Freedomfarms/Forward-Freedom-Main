@@ -365,7 +365,7 @@ test("phase 13 does not add a second loop, sender, or CEO Agents import", () => 
   assert.equal(
     (readFileSync("server/chief/scheduler/tick.js", "utf8").match(/new TurnMachine\(/g) ?? [])
       .length,
-    1
+    0
   );
   assert.equal(
     (readFileSync("server/chief/tools/builtin.js", "utf8").match(/new TurnMachine\(/g) ?? [])

@@ -1,6 +1,6 @@
 // POST /api/chief/speak — stream ElevenLabs speech for a CHIEF reply.
 // This does not start a turn, grant a tool, or read a provider secret from
-// the browser. TurnMachine remains the only conversation path.
+// the browser. Speaking does not start a reasoning turn.
 
 import { authenticateRequest } from "../../server/auth/verifyAuth.js";
 import { openElevenLabsSpeech, readElevenLabsApiKey } from "../../server/chief/voice/elevenlabs.js";

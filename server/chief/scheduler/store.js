@@ -81,7 +81,7 @@ export class MemoryTaskStore {
           new Date(run.startedAt).getTime() < staleBefore.getTime()
       )
       .slice(0, limit)
-      .map((run) => ({ id: run.id, userId: run.userId }));
+      .map((run) => ({ id: run.id, userId: run.userId, sessionId: run.sessionId ?? null }));
   }
 
   async recoverRun(userId, runId, now) {
@@ -127,8 +127,15 @@ export class MemoryTaskStore {
   }
 
   async listDue(now, staleBefore, limit = 3) {
+    const busy = new Set(
+      this.runs
+        .filter(
+          (run) => run.status === RunStatus.RUNNING || run.status === RunStatus.AWAITING_APPROVAL
+        )
+        .map((run) => run.scheduledTaskId)
+    );
     return this.tasks
-      .filter((task) => isDue(task, now, staleBefore))
+      .filter((task) => isDue(task, now, staleBefore) && !busy.has(task.id))
       .sort((a, b) => new Date(a.nextRunAt) - new Date(b.nextRunAt))
       .slice(0, limit)
       .map((task) => ({ id: task.id, userId: task.userId }));
@@ -139,7 +146,9 @@ export class MemoryTaskStore {
     if (!task || !isDue(task, now, staleBefore)) return null;
     if (
       this.runs.some(
-        (run) => run.scheduledTaskId === task.id && run.status === RunStatus.AWAITING_APPROVAL
+        (run) =>
+          run.scheduledTaskId === task.id &&
+          (run.status === RunStatus.RUNNING || run.status === RunStatus.AWAITING_APPROVAL)
       )
     ) {
       return null;
@@ -179,6 +188,20 @@ export class MemoryTaskStore {
   async attachSession(userId, runId, sessionId) {
     const run = this.runs.find((row) => row.id === runId && row.userId === userId);
     if (run) run.sessionId = sessionId;
+  }
+
+  async findOpenBySession(userId, sessionId) {
+    if (!userId || !sessionId) return null;
+    const run = this.runs.find(
+      (row) =>
+        row.userId === userId &&
+        row.sessionId === sessionId &&
+        (row.status === RunStatus.RUNNING || row.status === RunStatus.AWAITING_APPROVAL)
+    );
+    if (!run?.scheduledTaskId) return null;
+    const task = this._task(userId, run.scheduledTaskId);
+    if (!task) return null;
+    return { run: { ...run }, task: { ...task } };
   }
 
   async findAwaitingBySession(userId, sessionId) {
@@ -274,7 +297,7 @@ export class PrismaTaskStore {
   async listStaleRuns(staleBefore, limit = 20) {
     return this._serviceClient().chiefTaskRun.findMany({
       where: { status: RunStatus.RUNNING, startedAt: { lt: staleBefore } },
-      select: { id: true, userId: true },
+      select: { id: true, userId: true, sessionId: true },
       orderBy: { startedAt: "asc" },
       take: limit,
     });
@@ -347,6 +370,7 @@ export class PrismaTaskStore {
         status: "ACTIVE",
         nextRunAt: { lte: now },
         OR: [{ lockedAt: null }, { lockedAt: { lt: staleBefore } }],
+        runs: { none: { status: { in: [RunStatus.RUNNING, RunStatus.AWAITING_APPROVAL] } } },
       },
       select: { id: true, userId: true },
       orderBy: { nextRunAt: "asc" },
@@ -358,10 +382,14 @@ export class PrismaTaskStore {
     return this._withUser(userId, async (tx) => {
       const task = await tx.chiefScheduledTask.findFirst({ where: { id: taskId, userId } });
       if (!task || !isDue(task, now, staleBefore)) return null;
-      const awaiting = await tx.chiefTaskRun.findFirst({
-        where: { scheduledTaskId: taskId, userId, status: RunStatus.AWAITING_APPROVAL },
+      const open = await tx.chiefTaskRun.findFirst({
+        where: {
+          scheduledTaskId: taskId,
+          userId,
+          status: { in: [RunStatus.RUNNING, RunStatus.AWAITING_APPROVAL] },
+        },
       });
-      if (awaiting) return null;
+      if (open) return null;
       let advanced;
       try {
         advanced = advanceAtClaim(task, now);
@@ -408,6 +436,25 @@ export class PrismaTaskStore {
     await this._withUser(userId, (tx) =>
       tx.chiefTaskRun.update({ where: { id: runId }, data: { sessionId } })
     );
+  }
+
+  async findOpenBySession(userId, sessionId) {
+    if (!userId || !sessionId) return null;
+    return this._withUser(userId, async (tx) => {
+      const run = await tx.chiefTaskRun.findFirst({
+        where: {
+          userId,
+          sessionId,
+          status: { in: [RunStatus.RUNNING, RunStatus.AWAITING_APPROVAL] },
+        },
+      });
+      if (!run?.scheduledTaskId) return null;
+      const task = await tx.chiefScheduledTask.findFirst({
+        where: { id: run.scheduledTaskId, userId },
+      });
+      if (!task) return null;
+      return { run, task };
+    });
   }
 
   async findAwaitingBySession(userId, sessionId) {
