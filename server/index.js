@@ -53,6 +53,10 @@ import chiefVoiceVoicesHandler from "../api/chief/voice/voices.js";
 import chiefVoiceTraceHandler from "../api/chief/voice/trace.js";
 import chiefWorkforceReportHandler from "../api/chief/workforce/report.js";
 import chiefWorkforceReportKeyHandler from "../api/chief/workforce/report-key.js";
+import chiefManagedRunStartHandler from "../api/chief/managed/runs.js";
+import chiefManagedRunStatusHandler from "../api/chief/managed/runs/[runId].js";
+import chiefManagedDrainHandler from "../api/chief/managed/drain.js";
+import chiefManagedWebhookHandler from "../api/chief/managed/webhook.js";
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3001;
@@ -73,6 +77,11 @@ app.use("/api", expressServerBackstopRateLimit);
 // byte-identical to what Plaid sent and would make the SHA-256 signature check
 // in webhookVerification.js fail for every webhook (bug C-1).
 app.post("/api/plaid/webhook", express.raw({ type: "*/*", limit: "256kb" }), plaidWebhookHandler);
+app.post(
+  "/api/chief/managed/webhook",
+  express.raw({ type: "*/*", limit: "256kb" }),
+  chiefManagedWebhookHandler
+);
 
 // Document/onboarding uploads can carry up to 10 files at 500,000 KB each
 // (size still enforced in the documents module). Historical conversation
@@ -181,6 +190,12 @@ app
   .delete(chiefWorkforceReportKeyHandler);
 // Cron dispatcher: GET with no JSON body; same CRON_SECRET check as Vercel.
 app.get("/api/cron/agent-dispatch", cronAgentDispatchHandler);
+app.post("/api/chief/managed/runs", chiefManagedRunStartHandler);
+app.get("/api/chief/managed/runs/:runId", (request, response) => {
+  request.params = { ...(request.params || {}), runId: request.params.runId };
+  return chiefManagedRunStatusHandler(request, response);
+});
+app.post("/api/chief/managed/drain", chiefManagedDrainHandler);
 
 app.listen(PORT, () => {
   console.log(`Freedom OS API server listening on http://localhost:${PORT}`);

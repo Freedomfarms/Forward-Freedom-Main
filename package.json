@@ -21,6 +21,9 @@
     "preview": "vite preview --host 0.0.0.0",
     "server": "node server/index.js",
     "test": "node --test --experimental-test-module-mocks test/*.test.js",
+    "chief:proof:identity": "node scripts/chief-proof-db-identity.mjs",
+    "chief:proof:readiness": "node scripts/chief-proof-db-readiness.mjs",
+    "chief:supervisor": "node scripts/chief-managed-supervisor.mjs",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check ."

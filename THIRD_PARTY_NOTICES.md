@@ -367,3 +367,11 @@ plan is explicit:
 | `cron-parser` (`^5.10.1`, depends on `luxon`, MIT)      | MIT        | **Installed (Phase 5)** — cron evaluation, `server/chief/scheduler/schedule.js`                  |
 | `three`, `react-force-graph-3d`, `react-force-graph-2d` | MIT        | Planned — cortex-map runtime dependencies (Phase 7)                                              |
 | `jarvis-ai-web-animation` (`0.1.2`)                     | MIT        | **Installed** — published `JarvisOrb` on the CHIEF homepage                                      |
+
+## icm-architect (vendored skill)
+
+- Repository: https://github.com/RinDig/icm-architect
+- Pin: `e16cafe6a664dcf6d787a726b452adba77d913f4`
+- License: MIT, Copyright (c) 2026 Jake Van Clief. Text: `licenses/icm-architect-MIT.txt` and `third_party/icm-architect/LICENSE`.
+- Use: packaged unchanged into the Assignment 1 skill zip. `third_party/icm-architect/VENDORED.md` is not part of the zip.
+- Related methodology pin, not vendored: `02ba5d85c7871b75c7c702a2d8da6524723d53d4` (RinDig/Interpretable-Context-Methodology).

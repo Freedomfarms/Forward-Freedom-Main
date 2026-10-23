@@ -159,6 +159,15 @@ model User {
   observedAgents          ObservedAgent[]
   activityEvents          ActivityEvent[]
   workforceExecutions     WorkforceExecution[]
+  chiefProofProjects      ChiefProofProject[]
+  chiefProofDocuments     ChiefProofDocument[]
+  chiefProofConflicts     ChiefProofConflict[]
+  chiefProofRuns          ChiefProofRun[]
+  chiefProofJobs          ChiefProofJob[]
+  chiefProofToolCalls     ChiefProofToolCall[]
+  chiefProofPings         ChiefProofPing[]
+  chiefProofLatencySamples ChiefProofLatencySample[]
+  chiefManagedResources   ChiefManagedResource[]
 }
 
 model PlaidItem {
@@ -1397,6 +1406,224 @@ model WorkforceExecution {
   @@index([state, updatedAt])
   @@index([agentId, runId])
   @@map("workforce_execution")
+}
+
+// Assignment 1 proof only. These tables are not the production memory system.
+// Job and tool rows use pending | running | completed. Write ownership is the
+// project lease generation, separate from the drain-job generation.
+
+enum ChiefManagedJobStatus {
+  pending
+  running
+  completed
+}
+
+enum ChiefManagedRunStatus {
+  queued
+  running
+  waiting
+  idle
+  closed
+  failed
+}
+
+enum ChiefManagedResourceStatus {
+  creating
+  ready
+  needs_reconciliation
+}
+
+// Deployment resources (skill, agent, environment) have a null userId and are
+// written with the service role. Memory stores set userId so RLS can see them.
+model ChiefManagedResource {
+  id             String                     @id @default(cuid())
+  userId         String?
+  projectId      String?
+  kind           String
+  idempotencyKey String                     @unique
+  providerId     String?
+  version        String?
+  status         ChiefManagedResourceStatus @default(creating)
+  fingerprint    String
+  detail         String?
+  createdAt      DateTime                   @default(now())
+  updatedAt      DateTime                   @updatedAt
+  user           User?                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([kind, status])
+  @@map("chief_managed_resource")
+}
+
+model ChiefProofProject {
+  id                  String    @id @default(cuid())
+  userId              String
+  title               String
+  revision            Int       @default(0)
+  writeSessionId      String?
+  leaseGeneration     Int       @default(0)
+  writeLeaseExpiresAt DateTime?
+  memoryStoreId       String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  documents           ChiefProofDocument[]
+  conflicts           ChiefProofConflict[]
+  runs                ChiefProofRun[]
+
+  @@index([userId, updatedAt])
+  @@map("chief_proof_project")
+}
+
+model ChiefProofDocument {
+  id                String   @id @default(cuid())
+  userId            String
+  projectId         String
+  path              String
+  revision          Int
+  contentSha256     String
+  contentCiphertext String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project           ChiefProofProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, path])
+  @@index([userId, projectId])
+  @@map("chief_proof_document")
+}
+
+model ChiefProofConflict {
+  id                 String   @id @default(cuid())
+  userId             String
+  projectId          String
+  path               String
+  writeSessionId     String?
+  leaseGeneration    Int
+  baseSha256         String?
+  currentSha256      String?
+  reason             String
+  rejectedCiphertext String
+  createdAt          DateTime @default(now())
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project            ChiefProofProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([userId, projectId, createdAt])
+  @@map("chief_proof_conflict")
+}
+
+model ChiefProofRun {
+  id                 String                @id @default(cuid())
+  userId             String
+  projectId          String
+  priorRunId         String?
+  phase              String
+  status             ChiefManagedRunStatus @default(queued)
+  promptClass        String
+  promptCiphertext   String
+  providerSessionId  String?               @unique
+  memoryStoreId      String?
+  priorStoreId       String?
+  attachedStoreIds   Json?
+  baseRevision       Int?
+  baseHashes         Json?
+  modelEvidence      Json?
+  skillEvidence      Json?
+  workspaceEvidence  Json?
+  assistantCiphertext String?
+  promptSubmittedBy  String?
+  synced             Boolean               @default(false)
+  lastError          String?
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+  closedAt           DateTime?
+  user               User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project            ChiefProofProject     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  jobs               ChiefProofJob[]
+  toolCalls          ChiefProofToolCall[]
+  pings              ChiefProofPing[]
+  samples            ChiefProofLatencySample[]
+
+  @@index([userId, projectId, createdAt])
+  @@map("chief_proof_run")
+}
+
+model ChiefProofJob {
+  id              String                @id @default(cuid())
+  userId          String
+  runId           String
+  kind            String
+  status          ChiefManagedJobStatus @default(pending)
+  cursor          String
+  leaseGeneration Int                   @default(0)
+  leaseExpiresAt  DateTime?
+  webhookEventId  String?               @unique
+  availableAt     DateTime              @default(now())
+  lastError       String?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+  completedAt     DateTime?
+  user            User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  run             ChiefProofRun         @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([status, availableAt])
+  @@index([runId, status])
+  @@map("chief_proof_job")
+}
+
+model ChiefProofToolCall {
+  id                  String                @id @default(cuid())
+  userId              String
+  runId               String
+  providerToolEventId String                @unique
+  name                String
+  status              ChiefManagedJobStatus @default(pending)
+  resultCiphertext   String?
+  postedAt            DateTime?
+  completedAt         DateTime?
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  user                User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  run                 ChiefProofRun         @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([userId, runId])
+  @@map("chief_proof_tool_call")
+}
+
+model ChiefProofPing {
+  id          String   @id @default(cuid())
+  userId      String
+  runId       String
+  toolEventId String   @unique
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  run         ChiefProofRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([userId, runId])
+  @@map("chief_proof_ping")
+}
+
+model ChiefProofLatencySample {
+  id            String   @id @default(cuid())
+  userId        String
+  runId         String
+  kind          String
+  delayClass    String
+  phase         String
+  actor         String
+  startedAt     DateTime
+  firstTextAt   DateTime?
+  completedAt   DateTime?
+  processedAt   DateTime?
+  observedAt    DateTime
+  routeMs       Int?
+  pollDelayMs   Int?
+  note          String?
+  createdAt     DateTime @default(now())
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  run           ChiefProofRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([userId, runId, createdAt])
+  @@map("chief_proof_latency_sample")
 }
 
 // Self-notification only: agents may notify the user (in-app or via the
