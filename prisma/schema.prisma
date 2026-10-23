@@ -1671,6 +1671,8 @@ model ChiefManagedWork {
   user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   thread          ChiefManagedThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
 
+  // One open row per user/thread. The partial unique index is in
+  // 20261023203000_chief_managed_work_open_guard (queued|running only).
   @@index([status, leaseUntil])
   @@index([userId, threadId])
   @@map("chief_managed_work")

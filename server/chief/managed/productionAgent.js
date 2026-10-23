@@ -2,6 +2,7 @@ import { bundledSkills } from "../skills/catalog.js";
 import { PROOF_MODEL } from "./constants.js";
 
 export const MANAGED_ORIGIN = "managed";
+export const MANAGED_SCHEDULE_ORIGIN = "managed-schedule";
 export const MANAGED_MODEL_ROUTE = PROOF_MODEL.id;
 export const ENVIRONMENT_KEY = "environment:chief:production:v1";
 

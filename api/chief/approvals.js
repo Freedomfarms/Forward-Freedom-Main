@@ -5,31 +5,16 @@
 
 import { authenticateRequest } from "../../server/auth/verifyAuth.js";
 import { createManagedClient, runManagedChiefTurn } from "../../server/chief/managed/chatTurn.js";
-import { MANAGED_ORIGIN } from "../../server/chief/managed/productionAgent.js";
-import { EventBus } from "../../server/chief/core/events.js";
-import { PrismaBudgetStore } from "../../server/chief/models/budget.js";
-import { createModelEngine } from "../../server/chief/models/engine.js";
-import { EventMsgType } from "../../server/chief/protocol/index.js";
-import { ApprovalCoordinator } from "../../server/chief/runtime/approvals.js";
-import {
-  archiveAlongsideCheckpoint,
-  createChiefTurnServices,
-} from "../../server/chief/context/wire.js";
-import { PrismaModuleAccess } from "../../server/chief/security/module-access.js";
+import { MANAGED_ORIGIN, MANAGED_SCHEDULE_ORIGIN } from "../../server/chief/managed/productionAgent.js";
 import { PrismaFactStore } from "../../server/chief/memory/facts.js";
 import { PrismaCheckpointStore } from "../../server/chief/runtime/checkpoint.js";
-import { TurnMachine } from "../../server/chief/runtime/turn.js";
-import { PrismaTraceStore } from "../../server/chief/traces/store.js";
-import { createChiefTooling } from "../../server/chief/tools/builtin.js";
 import { PrismaTaskStore } from "../../server/chief/scheduler/store.js";
-import {
-  completeAwaitingScheduledRun,
-  scheduledCaller,
-} from "../../server/chief/scheduler/resume.js";
+import { settleScheduledSession } from "../../server/chief/scheduler/tick.js";
+import { createChiefTooling } from "../../server/chief/tools/builtin.js";
 import { applySecurityHeaders } from "../../server/http/responseHelpers.js";
 import { enforceRateLimit, generalApiRateLimit } from "../../server/http/rateLimit.js";
 
-async function toolingFor(deps, userId, eventBus) {
+async function toolingFor(deps, userId) {
   if (deps.toolExecutor) {
     if (!deps.toolExecutor.gatesInstalled) return { error: "CHIEF tooling is unavailable." };
     return {
@@ -46,7 +31,6 @@ async function toolingFor(deps, userId, eventBus) {
       stores: deps.stores ?? { facts },
       policy: deps.policy,
       audit: deps.audit,
-      bus: eventBus,
       mcpClient: deps.mcpClient,
     });
     if (!tooling?.executor?.gatesInstalled) return { error: "CHIEF tooling is unavailable." };
@@ -101,147 +85,79 @@ export async function handleChiefApprovals(request, response, deps = {}) {
   }
 
   const existing = await store.load(userId, body.session_id);
-  if (existing?.checkpoint?.context?.origin === MANAGED_ORIGIN) {
-    const eventBus = deps.eventBus ?? new EventBus();
-    const built = await toolingFor(deps, userId, eventBus);
-    if (built.error) {
-      response.status(503).json({ error: built.error });
-      return;
-    }
-    let client = Object.hasOwn(deps, "client") ? deps.client : null;
-    if (!client && !Object.hasOwn(deps, "client")) {
-      try {
-        client = (deps.createClient ?? createManagedClient)();
-      } catch (error) {
-        response.status(error.status || 503).json({
-          error: "Claude Managed Agents is not configured. Set ANTHROPIC_API_KEY on the server.",
-        });
-        return;
-      }
-    }
-    try {
-      const result = await runManagedChiefTurn({
-        userId,
-        sessionId: body.session_id,
-        submission: body.submission,
-        store,
-        client,
-        toolExecutor: built.toolExecutor,
-        toolSpecs: built.toolSpecs,
-        bindings: deps.bindings,
-        threads: deps.threads,
-        jobs: deps.jobs,
-        sleepFn: deps.sleepFn,
-        budgetMs: deps.budgetMs,
-      });
-      response.status(200).json({
-        sessionId: result.sessionId,
-        status: result.status,
-        pendingApproval: result.checkpoint?.pendingApproval
-          ? {
-              id: result.checkpoint.pendingApproval.id,
-              turnId: result.checkpoint.pendingApproval.turnId,
-            }
-          : null,
-      });
-    } catch (error) {
-      response.status(400).json({ error: "approval failed" });
-      console.error("[chief/approvals]", error?.name || "Error");
-    }
+  const origin = existing?.checkpoint?.context?.origin;
+  if (origin !== MANAGED_ORIGIN && origin !== MANAGED_SCHEDULE_ORIGIN) {
+    response.status(409).json({
+      error: "This approval belongs to the previous CHIEF runtime. Start a new conversation.",
+    });
     return;
   }
 
-  const eventBus = deps.eventBus ?? new EventBus();
-  const built = await toolingFor(deps, userId, eventBus);
+  const built = await toolingFor(deps, userId);
   if (built.error) {
     response.status(503).json({ error: built.error });
     return;
   }
-  const engine = deps.engine ?? createModelEngine({ budget: new PrismaBudgetStore(), eventBus });
-  const traceStore = Object.hasOwn(deps, "traceStore")
-    ? deps.traceStore
-    : deps.engine
-      ? null
-      : new PrismaTraceStore();
+  let client = Object.hasOwn(deps, "client") ? deps.client : null;
+  if (!client && !Object.hasOwn(deps, "client")) {
+    try {
+      client = (deps.createClient ?? createManagedClient)();
+    } catch (error) {
+      response.status(error.status || 503).json({
+        error: "Claude Managed Agents is not configured. Set ANTHROPIC_API_KEY on the server.",
+      });
+      return;
+    }
+  }
   const taskStore = Object.hasOwn(deps, "taskStore")
     ? deps.taskStore
-    : deps.engine
-      ? null
-      : new PrismaTaskStore();
-  const awaiting =
-    taskStore && body.session_id
-      ? await taskStore.findAwaitingBySession(userId, body.session_id)
+    : origin === MANAGED_SCHEDULE_ORIGIN
+      ? new PrismaTaskStore()
       : null;
-  const caller = scheduledCaller(awaiting) ?? {};
-  const turnServices =
-    deps.turnServices ??
-    (built.facts && !deps.toolExecutor
-      ? createChiefTurnServices({
-          facts: built.facts,
-          engine,
-          checkpointStore: store,
-          archiveStore: Object.hasOwn(deps, "archiveStore")
-            ? deps.archiveStore
-            : archiveAlongsideCheckpoint(store),
-          capabilityPolicy: built.policy,
-          eventBus,
-          moduleAccess: deps.moduleAccess ?? new PrismaModuleAccess(),
-        })
-      : {});
-  const machine = new TurnMachine({
-    store,
-    engine,
-    approvals: new ApprovalCoordinator(),
-    toolExecutor: built.toolExecutor,
-    contextAssembler: turnServices.contextAssembler ?? null,
-    compaction: turnServices.compaction ?? null,
-    onTurnComplete: turnServices.onTurnComplete ?? null,
-    settleModelStep: turnServices.settleModelStep ?? null,
-    traceStore,
-    eventBus,
-    ...caller,
-  });
-
-  let abortReason = null;
   let result = null;
   let turnError = null;
   try {
-    result = await machine.run({
+    result = await runManagedChiefTurn({
       userId,
       sessionId: body.session_id,
       submission: body.submission,
+      store,
+      client,
+      toolExecutor: built.toolExecutor,
       toolSpecs: built.toolSpecs,
-      onEvent(event) {
-        if (event?.msg?.type === EventMsgType.TURN_ABORTED) abortReason = event.msg.reason ?? null;
-      },
+      bindings: deps.bindings,
+      threads: deps.threads,
+      jobs: deps.jobs,
+      sleepFn: deps.sleepFn,
+      budgetMs: deps.budgetMs,
     });
   } catch (error) {
     turnError = error;
   }
-  if (taskStore) {
+  if (origin === MANAGED_SCHEDULE_ORIGIN && taskStore) {
     try {
-      await completeAwaitingScheduledRun({
+      await (deps.settleScheduledSession ?? settleScheduledSession)({
         userId,
         sessionId: body.session_id,
         taskStore,
         checkpointStore: store,
         turnResult: result,
         error: turnError,
-        abortReason,
         clock: deps.clock,
       });
     } catch {
-      // The run stays AWAITING_APPROVAL when the finish write fails.
+      // The run stays open when the finish write fails.
     }
   }
   if (turnError) {
     response.status(400).json({ error: turnError.message || "approval failed" });
+    console.error("[chief/approvals]", turnError?.name || "Error");
     return;
   }
   response.status(200).json({
     sessionId: result.sessionId,
     status: result.status,
-    pendingApproval: result.checkpoint.pendingApproval
+    pendingApproval: result.checkpoint?.pendingApproval
       ? {
           id: result.checkpoint.pendingApproval.id,
           turnId: result.checkpoint.pendingApproval.turnId,

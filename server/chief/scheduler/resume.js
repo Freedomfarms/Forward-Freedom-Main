@@ -11,8 +11,8 @@
 //   - the same session continues until the turn completes or aborts
 // Adaptations:
 //   - This file does not run a model, execute a tool, or decide an approval.
-//     TurnMachine resumes the session. ToolExecutor runs the tool.
-//     ApprovalCoordinator records the decision.
+//     The approvals route resumes the managed session. Tool execution stays
+//     on that session. The signed-in user's decision is the only approval.
 //   - The signed-in user submits the decision. The caller stays "schedule"
 //     so the run keeps its budget, trace, and task identity.
 //   - Nothing here claims a task or moves nextRunAt.

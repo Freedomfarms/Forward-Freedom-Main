@@ -21,6 +21,15 @@ export function createMemoryWorkQueue() {
   return {
     rows,
     async enqueue({ userId, threadId }) {
+      for (const row of rows.values()) {
+        if (
+          row.userId === userId &&
+          row.threadId === threadId &&
+          (row.status === "queued" || row.status === "running")
+        ) {
+          return row;
+        }
+      }
       const id = `work-${rows.size + 1}`;
       const row = {
         id,
@@ -74,10 +83,19 @@ export function createPrismaWorkQueue() {
       const client = service();
       if (!client?.chiefManagedWork) return null;
       try {
+        const open = await client.chiefManagedWork.findFirst({
+          where: { userId, threadId, status: { in: ["queued", "running"] } },
+        });
+        if (open) return open;
         return await client.chiefManagedWork.create({
           data: { userId, threadId, status: "queued" },
         });
       } catch (error) {
+        if (error?.code === "P2002") {
+          return client.chiefManagedWork.findFirst({
+            where: { userId, threadId, status: { in: ["queued", "running"] } },
+          });
+        }
         if (ignorable(error)) return null;
         throw error;
       }

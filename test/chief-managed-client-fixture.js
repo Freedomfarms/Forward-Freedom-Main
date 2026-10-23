@@ -1,7 +1,33 @@
 // In-memory Claude Managed Agents client. No network.
 
-export function scriptedManagedClient(steps) {
-  let cursor = 0;
+function normalize(step) {
+  if (!step || typeof step !== "object") return { text: "" };
+  if (step.throws) return step;
+  if (step.tool || step.running || step.reasoning || typeof step.text === "string") return step;
+  const tool = Array.isArray(step.parts)
+    ? step.parts.find((part) => part?.type === "tool-call")
+    : null;
+  if (tool) {
+    return {
+      tool: { id: tool.toolCallId, name: tool.toolName, input: tool.input ?? {} },
+    };
+  }
+  const text = Array.isArray(step.parts)
+    ? step.parts
+        .filter((part) => part?.type === "text-delta" && typeof part.text === "string")
+        .map((part) => part.text)
+        .join("")
+    : "";
+  return { text };
+}
+
+function bucketOf(stepsOrBucket) {
+  if (Array.isArray(stepsOrBucket)) return { steps: stepsOrBucket, cursor: 0 };
+  return stepsOrBucket;
+}
+
+export function scriptedManagedClient(stepsOrBucket) {
+  const bucket = bucketOf(stepsOrBucket);
   const state = {
     agents: [],
     environments: [],
@@ -11,10 +37,18 @@ export function scriptedManagedClient(steps) {
     sent: [],
   };
 
-  function apply(session) {
-    const step = steps[cursor] ?? { text: "" };
-    cursor += 1;
-    const n = cursor;
+  function take() {
+    // The last scripted step repeats, matching the previous scripted model.
+    // A single provider error therefore fails every later attempt.
+    const index = bucket.steps.length ? Math.min(bucket.cursor, bucket.steps.length - 1) : 0;
+    bucket.cursor += 1;
+    const step = normalize(bucket.steps[index] ?? { text: "" });
+    if (step.throws) throw step.throws;
+    return step;
+  }
+
+  function apply(session, step) {
+    const n = bucket.cursor;
     if (step.reasoning) {
       session.events.push({
         id: `reason-${n}`,
@@ -92,6 +126,7 @@ export function scriptedManagedClient(steps) {
     },
     async createSession(body) {
       state.sent.push(body);
+      const step = take();
       const session = {
         id: `prov_${state.sessions.size + 1}`,
         status: "running",
@@ -100,7 +135,7 @@ export function scriptedManagedClient(steps) {
         events: [],
       };
       state.sessions.set(session.id, session);
-      apply(session);
+      apply(session, step);
       return session;
     },
     async retrieveSession(id) {
@@ -114,7 +149,7 @@ export function scriptedManagedClient(steps) {
       const session = state.sessions.get(id);
       const toolResult = (events || []).some((event) => event.type === "user.custom_tool_result");
       const userMessage = (events || []).some((event) => event.type === "user.message");
-      if (toolResult || userMessage) apply(session);
+      if (toolResult || userMessage) apply(session, take());
       return { ok: true };
     },
     async listSkills() {

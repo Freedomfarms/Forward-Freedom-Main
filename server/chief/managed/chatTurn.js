@@ -14,6 +14,7 @@ import {
   ENVIRONMENT_KEY,
   MANAGED_MODEL_ROUTE,
   MANAGED_ORIGIN,
+  MANAGED_SCHEDULE_ORIGIN,
   agentKeyFor,
   memoryKeyFor,
   productionAgentBody,
@@ -23,9 +24,16 @@ import {
 } from "./productionAgent.js";
 import { redactSecrets } from "./redact.js";
 import { createPrismaWorkQueue } from "./workQueue.js";
+import { SCHEDULED_TURN_EXCLUDED_TOOLS } from "../tools/inventory.js";
 
 const LEGACY_MESSAGE =
   "This conversation belongs to the previous CHIEF runtime. Start a new conversation.";
+
+function skipReason(error) {
+  if (error?.name === "BudgetExceededError") return "budget_exceeded";
+  if (error?.name === "ModelLayerPausedError") return error.name;
+  return null;
+}
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -186,7 +194,7 @@ async function ensureResources({ client, userId, toolSpecs, bindings, managed })
   return next;
 }
 
-async function executeTool({ toolExecutor, call, userId, sessionId, approved }) {
+async function executeTool({ toolExecutor, call, userId, sessionId, approved, caller }) {
   if (!toolExecutor) {
     return { output: `Tool ${call.name} is not available.`, isError: true };
   }
@@ -197,7 +205,7 @@ async function executeTool({ toolExecutor, call, userId, sessionId, approved }) 
       sessionId,
       agentId: "chief",
       mutationApproved: approved === true,
-      caller: { kind: "user_turn", trigger: "turn" },
+      caller: caller || { kind: "user_turn", trigger: "turn" },
     }
   );
   const output =
@@ -219,6 +227,8 @@ async function collect({
   sleepFn,
   signal,
   resolveToolId,
+  caller,
+  store,
 }) {
   const seen = new Set(checkpoint.context.seenEventIds || []);
   const deadline = Date.now() + budgetMs;
@@ -263,7 +273,10 @@ async function collect({
     const call = toolEvent ? toolCallOf(toolEvent) : null;
     if (call) {
       const spec = (toolSpecs || []).find((item) => item.name === call.name);
-      const needsApproval = spec?.requiresConfirmation === true && call.id !== resolveToolId;
+      const excluded =
+        caller?.kind === "schedule" && SCHEDULED_TURN_EXCLUDED_TOOLS.includes(call.name);
+      const needsApproval =
+        !excluded && spec?.requiresConfirmation === true && call.id !== resolveToolId;
       if (needsApproval) {
         checkpoint.pendingApproval = {
           id: `approval-${call.id}`,
@@ -291,13 +304,16 @@ async function collect({
           args: call.input,
         })
       );
-      const executed = await executeTool({
-        toolExecutor,
-        call,
-        userId,
-        sessionId,
-        approved: spec?.requiresConfirmation === true,
-      });
+      const executed = excluded
+        ? { output: `Tool ${call.name} is not available on a scheduled run.`, isError: true }
+        : await executeTool({
+            toolExecutor,
+            call,
+            userId,
+            sessionId,
+            approved: spec?.requiresConfirmation === true,
+            caller,
+          });
       onEmit(
         eventMsg.toolCallEnd({
           turnId,
@@ -318,6 +334,11 @@ async function collect({
       seen.add(call.id);
       checkpoint.pendingApproval = null;
       checkpoint.context.seenEventIds = [...seen];
+      checkpoint.executionStats = {
+        modelSteps: checkpoint.executionStats?.modelSteps ?? 0,
+        toolCalls: (checkpoint.executionStats?.toolCalls ?? 0) + (excluded ? 0 : 1),
+      };
+      if (store) await store.saveWithEvents(userId, sessionId, { checkpoint });
       continue;
     }
     const idle =
@@ -378,6 +399,7 @@ export async function runManagedChiefTurn({
   signal,
   sleepFn = delay,
   resume = false,
+  caller = null,
 } = {}) {
   const parsed = resume ? null : parseSubmission(submission);
   const submissionId = parsed?.id ?? null;
@@ -434,7 +456,18 @@ export async function runManagedChiefTurn({
     emit(eventMsg.submissionRejected(LEGACY_MESSAGE));
     return { sessionId: record.id, status: "rejected", checkpoint };
   }
-  checkpoint.context = { ...(checkpoint.context || {}), origin: MANAGED_ORIGIN };
+  if (checkpoint.context?.origin !== MANAGED_SCHEDULE_ORIGIN) {
+    checkpoint.context = { ...(checkpoint.context || {}), origin: MANAGED_ORIGIN };
+  }
+  const scheduleCaller =
+    caller ||
+    checkpoint.context?.scheduleCaller ||
+    (checkpoint.context?.origin === MANAGED_SCHEDULE_ORIGIN
+      ? {
+          kind: "schedule",
+          trigger: `schedule:${checkpoint.context.scheduledTaskId || "task"}`,
+        }
+      : { kind: "user_turn", trigger: "turn" });
   checkpoint.modelRoute = MANAGED_MODEL_ROUTE;
   if (!Array.isArray(checkpoint.transcript)) checkpoint.transcript = [];
   if (!checkpoint.executionStats) checkpoint.executionStats = { modelSteps: 0, toolCalls: 0 };
@@ -452,8 +485,9 @@ export async function runManagedChiefTurn({
     ) {
       checkpoint.pendingApproval = null;
       await store.saveWithEvents(userId, record.id, { checkpoint });
-      emit(eventMsg.turnAborted(turnId, decision.type));
-      return { sessionId: record.id, status: "aborted", checkpoint };
+      const abortReason = decision.type === ReviewDecisionType.ABORT ? "approval_abort" : decision.type;
+      emit(eventMsg.turnAborted(turnId, abortReason));
+      return { sessionId: record.id, status: "aborted", abortReason, checkpoint };
     }
   }
 
@@ -489,7 +523,20 @@ export async function runManagedChiefTurn({
       resolveToolId = null;
       if (managed.providerSessionId && pending.toolEventId) {
         const note =
-          decision.type === ReviewDecisionType.DENIED ? decision.rejection || "denied" : "aborted";
+          decision.type === ReviewDecisionType.DENIED
+            ? `denied: ${decision.rejection ?? "rejected"}`
+            : "aborted";
+        checkpoint.transcript.push({
+          role: "tool",
+          content: [
+            {
+              type: "tool-result",
+              toolCallId: pending.calls?.[0]?.callId || pending.toolEventId,
+              toolName: pending.calls?.[0]?.name || "tool",
+              output: { type: "text", value: note },
+            },
+          ],
+        });
         await client.sendEvents(managed.providerSessionId, [
           {
             type: "user.custom_tool_result",
@@ -505,9 +552,14 @@ export async function runManagedChiefTurn({
       }
       checkpoint.pendingApproval = null;
       if (decision.type === ReviewDecisionType.ABORT) {
-        emit(eventMsg.turnAborted(turnId, "aborted"));
+        emit(eventMsg.turnAborted(turnId, "approval_abort"));
         await store.saveWithEvents(userId, record.id, { checkpoint });
-        return { sessionId: record.id, status: "aborted", checkpoint };
+        return {
+          sessionId: record.id,
+          status: "aborted",
+          abortReason: "approval_abort",
+          checkpoint,
+        };
       }
     } else {
       resolveToolId = pending.toolEventId;
@@ -516,42 +568,61 @@ export async function runManagedChiefTurn({
   } else if (!resume && parsed.op.type === OpType.MESSAGE) {
     const text = messageText(parsed);
     checkpoint.transcript.push({ role: "user", content: text });
-    if (!managed.providerSessionId) {
-      const opened = await client.createSession(
-        productionSessionBody({
-          agentId: managed.agentId,
-          agentVersion: managed.agentVersion,
-          environmentId: managed.environmentId,
-          memoryStoreId: managed.memoryStoreId,
-          sessionId: record.id,
-          prompt: text,
-        })
-      );
-      if (!opened?.id) throw new Error("Claude Managed Agents did not return a session id.");
-      managed.providerSessionId = opened.id;
-    } else {
-      await client.sendEvents(managed.providerSessionId, [
-        { type: "user.message", content: [{ type: "text", text }] },
-      ]);
-    }
+    checkpoint.context.outboundPrompt = text;
   }
 
+  if (checkpoint.context?.pendingPrompt && !managed.providerSessionId) {
+    const text = checkpoint.context.pendingPrompt;
+    checkpoint.transcript.push({ role: "user", content: text });
+    checkpoint.context.pendingPrompt = null;
+    checkpoint.context.outboundPrompt = text;
+  }
+
+  checkpoint.context.scheduleCaller = scheduleCaller;
   checkpoint.context.managed = managed;
-  const status = await collect({
-    client,
-    checkpoint,
-    sessionId: record.id,
-    providerSessionId: managed.providerSessionId,
-    userId,
-    toolSpecs: resolvedSpecs,
-    toolExecutor,
-    onEmit: emit,
-    turnId,
-    budgetMs,
-    sleepFn,
-    signal,
-    resolveToolId,
-  });
+  let status;
+  try {
+    if (checkpoint.context.outboundPrompt) {
+      const text = checkpoint.context.outboundPrompt;
+      checkpoint.context.outboundPrompt = null;
+      await openOrContinue({
+        client,
+        managed,
+        checkpoint,
+        sessionId: record.id,
+        prompt: text,
+      });
+    }
+    if (!managed.providerSessionId) {
+      throw new Error("Claude Managed Agents did not return a session id.");
+    }
+    status = await collect({
+      client,
+      checkpoint,
+      sessionId: record.id,
+      providerSessionId: managed.providerSessionId,
+      userId,
+      toolSpecs: resolvedSpecs,
+      toolExecutor,
+      onEmit: emit,
+      turnId,
+      budgetMs,
+      sleepFn,
+      signal,
+      resolveToolId,
+      caller: scheduleCaller,
+      store,
+    });
+  } catch (error) {
+    const reason = skipReason(error);
+    checkpoint.context.managed = managed;
+    await store.saveWithEvents(userId, record.id, { checkpoint });
+    if (reason) {
+      emit(eventMsg.turnAborted(turnId, reason));
+      return { sessionId: record.id, status: "aborted", abortReason: reason, checkpoint };
+    }
+    throw error;
+  }
   checkpoint.context.managed = managed;
   await store.saveWithEvents(userId, record.id, { checkpoint });
   await persistThread(threadStore, userId, record.id, managed, status);
@@ -560,11 +631,36 @@ export async function runManagedChiefTurn({
     try {
       await queue.enqueue({ userId, threadId: record.id });
     } catch {
-      // The session id is already stored. The next chat message continues it.
+      // The session id is already stored. The next cron drain continues it.
     }
   }
   if (status === "completed") emit(eventMsg.turnComplete(turnId));
   return { sessionId: record.id, status, checkpoint };
+}
+
+async function openOrContinue({ client, managed, checkpoint, sessionId, prompt }) {
+  if (!managed.providerSessionId) {
+    const opened = await client.createSession(
+      productionSessionBody({
+        agentId: managed.agentId,
+        agentVersion: managed.agentVersion,
+        environmentId: managed.environmentId,
+        memoryStoreId: managed.memoryStoreId,
+        sessionId,
+        prompt,
+      })
+    );
+    if (!opened?.id) throw new Error("Claude Managed Agents did not return a session id.");
+    managed.providerSessionId = opened.id;
+    checkpoint.totalUsage = {
+      ...(checkpoint.totalUsage || {}),
+      total_tokens: Math.max(checkpoint.totalUsage?.total_tokens ?? 0, 1),
+    };
+    return;
+  }
+  await client.sendEvents(managed.providerSessionId, [
+    { type: "user.message", content: [{ type: "text", text: prompt }] },
+  ]);
 }
 
 export async function drainManagedWork({
@@ -574,6 +670,9 @@ export async function drainManagedWork({
   env = process.env,
   runTurn = runManagedChiefTurn,
   now = new Date(),
+  createTooling = null,
+  afterTurn = null,
+  sleepFn,
 } = {}) {
   const due = await jobs.claimDue(now, 2);
   if (!due.length) return { drained: 0 };
@@ -587,6 +686,17 @@ export async function drainManagedWork({
   }
   let drained = 0;
   for (const job of due) {
+    let toolExecutor = null;
+    let toolSpecs = [];
+    if (createTooling) {
+      try {
+        const tooling = await createTooling({ userId: job.userId });
+        toolExecutor = tooling?.executor ?? null;
+        toolSpecs = tooling?.specs ?? [];
+      } catch {
+        toolExecutor = null;
+      }
+    }
     try {
       const result = await runTurn({
         userId: job.userId,
@@ -595,13 +705,19 @@ export async function drainManagedWork({
         client: anthropic,
         resume: true,
         jobs,
+        toolExecutor,
+        toolSpecs,
         budgetMs: 20_000,
+        sleepFn,
       });
-      if (result?.status === "continuing") await jobs.release(job);
+      const settled = afterTurn ? await afterTurn({ job, result, error: null }) : null;
+      if (result?.status === "continuing" || settled?.keepQueued) await jobs.release(job);
       else await jobs.complete(job);
       drained += 1;
     } catch (error) {
-      await jobs.release(job);
+      const settled = afterTurn ? await afterTurn({ job, result: null, error }) : { keepQueued: true };
+      if (settled?.keepQueued !== false) await jobs.release(job);
+      else await jobs.complete(job);
       console.error("[chief/managed] drain", redactSecrets(error?.message || "Error"));
     }
   }

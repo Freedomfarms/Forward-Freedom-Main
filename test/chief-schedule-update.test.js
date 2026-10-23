@@ -345,7 +345,7 @@ test("phase 14 does not add a second loop or touch the tick", () => {
   assert.equal(
     (readFileSync("server/chief/scheduler/tick.js", "utf8").match(/new TurnMachine\(/g) ?? [])
       .length,
-    1
+    0
   );
   assert.equal(
     readFileSync("server/chief/scheduler/tick.js", "utf8").includes("schedule_update"),

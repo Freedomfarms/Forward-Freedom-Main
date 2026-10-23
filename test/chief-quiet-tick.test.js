@@ -16,6 +16,7 @@ import { MemoryModuleAccess } from "../server/chief/security/module-access.js";
 import { createChiefTools } from "../server/chief/tools/builtin.js";
 import { ToolExecutor } from "../server/chief/tools/executor.js";
 import { CHIEF_TOOL_INVENTORY } from "../server/chief/tools/inventory.js";
+import { scriptedManagedClient } from "./chief-managed-client-fixture.js";
 
 const T0 = new Date("2026-09-30T12:00:00.000Z");
 const FINANCE_MARKER = "PHASE10_FINANCE_MARKER_9f3c";
@@ -34,26 +35,10 @@ function textStep(text) {
   return { parts: [{ type: "text-delta", text }], text };
 }
 
-function scripted(steps, calls) {
-  let index = 0;
-  return {
-    async openStream(messages, options) {
-      const step = steps[Math.min(index, steps.length - 1)];
-      index += 1;
-      calls.push({ messages: structuredClone(messages), caller: options.caller });
-      return {
-        fullStream: (async function* stream() {
-          for (const part of step.parts ?? []) yield part;
-        })(),
-        finalize: async () => ({
-          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
-          content: step.text ?? "",
-          tool_calls: [],
-          finish_reason: "stop",
-        }),
-      };
-    },
-  };
+function prompts(client) {
+  return client.state.sent
+    .filter((item) => Array.isArray(item.initial_events))
+    .map((item) => item.initial_events[0]?.content?.[0]?.text || "");
 }
 
 function task(fields = {}) {
@@ -77,15 +62,15 @@ function task(fields = {}) {
 function harness({ steps, createTooling, tasks = [task()] } = {}) {
   const taskStore = new MemoryTaskStore({ tasks });
   const checkpointStore = new MemoryCheckpointStore();
-  const engineCalls = [];
   const notifications = [];
+  const client = scriptedManagedClient(steps);
   const policy = new CapabilityPolicy({ defaultDeny: true });
   policy.grant("chief", Capability.MEMORY_READ);
   const deps = {
     taskStore,
     checkpointStore,
     clock: () => T0,
-    createEngine: () => scripted(steps, engineCalls),
+    client,
     createTooling:
       createTooling ??
       (async () => {
@@ -101,7 +86,8 @@ function harness({ steps, createTooling, tasks = [task()] } = {}) {
   };
   return {
     taskStore,
-    engineCalls,
+    checkpointStore,
+    client,
     notifications,
     tick: () => runChiefTick(deps),
   };
@@ -121,9 +107,12 @@ test("a successful scheduled turn stores attention false and stays SUCCEEDED", a
   assert.equal(report.runs.length, 1);
   assert.equal(report.runs[0].status, RunStatus.SUCCEEDED);
   assert.equal(h.taskStore.runs.length, 1);
-  assert.equal(h.engineCalls.length, 1);
-  assert.equal(h.engineCalls[0].caller.kind, "schedule");
-  assert.equal(h.engineCalls[0].caller.trigger, "schedule:task-1");
+  assert.equal(prompts(h.client).length, 1);
+  const session = await h.checkpointStore.load("user-1", h.taskStore.runs[0].sessionId);
+  assert.deepEqual(session.checkpoint.context.scheduleCaller, {
+    kind: "schedule",
+    trigger: "schedule:task-1",
+  });
 
   const [run] = h.taskStore.runs;
   assert.equal(run.status, RunStatus.SUCCEEDED);
@@ -184,11 +173,8 @@ test("finance_summary output cannot raise attention or land in a new result fiel
   assert.equal(h.taskStore.runs.length, 1);
   assert.equal(run.status, RunStatus.SUCCEEDED);
   assert.equal(loads, 1);
-  assert.equal(h.engineCalls.length, 2);
-  assert.deepEqual(
-    h.engineCalls.map((call) => call.caller.trigger),
-    ["schedule:task-1", "schedule:task-1"]
-  );
+  assert.equal(prompts(h.client).length, 1);
+  assert.equal(h.client.state.sent.length, 2);
   assert.equal(run.result.attention, false);
   assert.equal(run.result.summary, "Nothing to add.");
   assert.equal(run.result.toolCalls, 1);
@@ -207,7 +193,7 @@ test("a fenced scheduled prompt never reaches the model and stores no result", a
   const report = await h.tick();
   assert.equal(report.runs[0].status, RunStatus.FAILED);
   assert.equal(report.runs[0].reason, "prompt_rejected");
-  assert.equal(h.engineCalls.length, 0);
+  assert.equal(prompts(h.client).length, 0);
   assert.equal(h.taskStore.runs.length, 1);
   assert.equal(h.taskStore.runs[0].result, null);
   assert.equal(h.notifications.length, 0);
@@ -219,7 +205,22 @@ test("a user turn does not create a task run or a notification", async () => {
   const engineCalls = [];
   const result = await new TurnMachine({
     store: new MemoryCheckpointStore(),
-    engine: scripted([textStep("notify the user at ops@example.com")], engineCalls),
+    engine: {
+      async openStream(_messages, options) {
+        engineCalls.push({ caller: options.caller });
+        return {
+          fullStream: (async function* stream() {
+            yield { type: "text-delta", text: "notify the user at ops@example.com" };
+          })(),
+          finalize: async () => ({
+            usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+            content: "notify the user at ops@example.com",
+            tool_calls: [],
+            finish_reason: "stop",
+          }),
+        };
+      },
+    },
     callerKind: "user_turn",
   }).run({
     userId: "user-1",
@@ -234,11 +235,13 @@ test("a user turn does not create a task run or a notification", async () => {
   assert.equal(Object.hasOwn(result, "attention"), false);
 });
 
-test("the tick keeps one TurnMachine and does not import a sender", () => {
+test("the tick does not call TurnMachine and does not import a sender", () => {
   const tick = readFileSync("server/chief/scheduler/tick.js", "utf8");
   const operative = readFileSync("server/chief/scheduler/operative.js", "utf8");
   const source = `${tick}\n${operative}`;
-  assert.equal((tick.match(/new TurnMachine\(/g) ?? []).length, 1);
+  assert.equal((tick.match(/new TurnMachine\(/g) ?? []).length, 0);
+  assert.equal(tick.includes("ChiefModelEngine"), false);
+  assert.match(tick, /runManagedChiefTurn/);
   assert.equal(source.includes("server/agents"), false);
   assert.equal(source.includes("Notification"), false);
   assert.equal(source.includes("notification.create"), false);

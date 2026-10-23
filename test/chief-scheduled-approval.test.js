@@ -33,29 +33,6 @@ function toolStep(name, input, id = "w1") {
   return { parts: [{ type: "tool-call", toolCallId: id, toolName: name, input }] };
 }
 
-function scripted(steps, calls) {
-  let index = 0;
-  return {
-    async openStream(_messages, options) {
-      const step = steps[Math.min(index, steps.length - 1)];
-      index += 1;
-      calls.push({ caller: options.caller });
-      if (step.throws) throw step.throws;
-      return {
-        fullStream: (async function* stream() {
-          for (const part of step.parts ?? []) yield part;
-        })(),
-        finalize: async () => ({
-          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
-          content: step.text ?? "",
-          tool_calls: [],
-          finish_reason: "stop",
-        }),
-      };
-    },
-  };
-}
-
 function task(fields = {}) {
   return {
     id: "task-1",
@@ -87,15 +64,14 @@ function harness({ tasks, steps, clock = () => T0 } = {}) {
   const audit = new MemoryAuditLog();
   const facts = new MemoryFactStore();
   const stores = { facts, graph: new MemoryGraphStore(), schedule: new MemoryScheduleStore() };
-  const engineCalls = [];
-  const engine = scripted(steps, engineCalls);
+  const client = scriptedManagedClient(steps);
   const granted = policy();
   const deps = {
     taskStore,
     checkpointStore,
     audit,
     clock,
-    createEngine: () => engine,
+    client,
     createTooling: ({ userId }) => createChiefTooling({ userId, policy: granted, audit, stores }),
   };
   return {
@@ -106,8 +82,7 @@ function harness({ tasks, steps, clock = () => T0 } = {}) {
     facts,
     stores,
     granted,
-    engine,
-    engineCalls,
+    client,
     tick: () => runChiefTick(deps),
   };
 }
@@ -176,7 +151,7 @@ async function suspend(fields = {}) {
 function approvalDeps(h, extra = {}) {
   return {
     store: h.checkpointStore,
-    engine: h.engine,
+    client: h.client,
     authenticate: auth("user-1"),
     taskStore: h.taskStore,
     facts: h.facts,
@@ -222,7 +197,7 @@ test("a scheduled memory_write suspends with no success result and leaves the on
   assert.equal(h.taskStore.tasks[0].lockedAt, null);
   const again = await h.tick();
   assert.equal(again.runs.length, 0);
-  assert.equal(h.engineCalls.length, 1);
+  assert.equal(h.client.state.sessions.size, 1);
   assert.equal(h.taskStore.runs.length, 1);
   assert.equal(h.taskStore.runs[0].status, RunStatus.AWAITING_APPROVAL);
   assert.equal(h.taskStore.tasks[0].status, "ACTIVE");
@@ -274,9 +249,11 @@ test("an approved memory_write runs once on the same schedule session and comple
   assert.equal(state.summary, "Stored the well level.");
   assert.equal(h.taskStore.tasks[0].status, "COMPLETED");
   assert.equal(h.taskStore.tasks[0].nextRunAt, nextRunAt);
-  assert.equal(h.engineCalls.at(-1).caller.kind, "schedule");
-  assert.equal(h.engineCalls.at(-1).caller.trigger, "schedule:task-1");
-  assert.equal(h.engineCalls.filter((call) => call.caller.kind !== "schedule").length, 0);
+  const resumed = await h.checkpointStore.load("user-1", sessionId);
+  assert.deepEqual(resumed.checkpoint.context.scheduleCaller, {
+    kind: "schedule",
+    trigger: "schedule:task-1",
+  });
 });
 
 test("an interval task does not move nextRunAt when the approval resumes", async () => {
@@ -437,8 +414,11 @@ test("chat resume keeps the schedule caller and a normal chat does not touch a t
   );
   assert.equal(h.taskStore.runs[0].status, RunStatus.AWAITING_APPROVAL);
   assert.equal(toolFacts(h.facts).length, 0);
-  assert.equal(h.engineCalls.at(-1).caller.kind, "schedule");
-  assert.equal(h.engineCalls.at(-1).caller.trigger, "schedule:task-1");
+  const scheduled = await h.checkpointStore.load("user-1", run.sessionId);
+  assert.deepEqual(scheduled.checkpoint.context.scheduleCaller, {
+    kind: "schedule",
+    trigger: "schedule:task-1",
+  });
 
   const normalStore = new MemoryTaskStore();
   const normalCalls = [];
@@ -515,7 +495,7 @@ test("tooling that cannot be reconstructed does not execute the waiting tool", a
   assert.equal(h.taskStore.runs[0].status, RunStatus.AWAITING_APPROVAL);
   assert.equal(h.taskStore.tasks[0].status, "ACTIVE");
   assert.equal(toolFacts(h.facts).length, 0);
-  assert.equal(h.engineCalls.length, 1);
+  assert.equal(h.client.state.sessions.size, 1);
 });
 
 test("prisma finish from AWAITING_APPROVAL is compare-and-swap and does not move nextRunAt", async () => {
@@ -606,15 +586,19 @@ test("phase 11 does not add a second loop, executor, sender, or CEO Agents impor
   assert.equal(source.includes("attention: true"), false);
   assert.equal((resume.match(/new TurnMachine\(/g) ?? []).length, 0);
   assert.equal((resume.match(/new ToolExecutor\(/g) ?? []).length, 0);
-  assert.equal((tick.match(/new TurnMachine\(/g) ?? []).length, 1);
-  assert.equal((approvals.match(/new TurnMachine\(/g) ?? []).length, 1);
+  assert.equal((tick.match(/new TurnMachine\(/g) ?? []).length, 0);
+  assert.equal((approvals.match(/new TurnMachine\(/g) ?? []).length, 0);
+  assert.equal(tick.includes("ChiefModelEngine"), false);
+  assert.equal(approvals.includes("createModelEngine"), false);
+  assert.match(tick, /runManagedChiefTurn/);
+  assert.match(approvals, /runManagedChiefTurn/);
   assert.equal((chat.match(/new TurnMachine\(/g) ?? []).length, 0);
   assert.equal(chat.includes("ChiefModelEngine"), false);
   assert.match(chat, /runManagedChiefTurn/);
   assert.equal((approvals.match(/new ToolExecutor\(/g) ?? []).length, 0);
   assert.match(approvals, /createChiefTooling/);
   assert.match(tick, /attention: quietAttention\(\)/);
-  assert.equal(tick.includes("scheduler/resume.js"), false);
+  assert.match(tick, /completeAwaitingScheduledRun/);
   assert.match(store, /onlyFrom/);
   assert.match(store, /findAwaitingBySession/);
 });
