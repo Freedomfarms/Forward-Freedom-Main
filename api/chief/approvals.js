@@ -4,6 +4,8 @@
 // turn machine as /api/chief/chat, so resume-from-approval has one implementation.
 
 import { authenticateRequest } from "../../server/auth/verifyAuth.js";
+import { createManagedClient, runManagedChiefTurn } from "../../server/chief/managed/chatTurn.js";
+import { MANAGED_ORIGIN } from "../../server/chief/managed/productionAgent.js";
 import { EventBus } from "../../server/chief/core/events.js";
 import { PrismaBudgetStore } from "../../server/chief/models/budget.js";
 import { createModelEngine } from "../../server/chief/models/engine.js";
@@ -95,6 +97,57 @@ export async function handleChiefApprovals(request, response, deps = {}) {
   const body = request.body ?? {};
   if (!body.session_id || !body.submission) {
     response.status(400).json({ error: "session_id and submission are required" });
+    return;
+  }
+
+  const existing = await store.load(userId, body.session_id);
+  if (existing?.checkpoint?.context?.origin === MANAGED_ORIGIN) {
+    const eventBus = deps.eventBus ?? new EventBus();
+    const built = await toolingFor(deps, userId, eventBus);
+    if (built.error) {
+      response.status(503).json({ error: built.error });
+      return;
+    }
+    let client = Object.hasOwn(deps, "client") ? deps.client : null;
+    if (!client && !Object.hasOwn(deps, "client")) {
+      try {
+        client = (deps.createClient ?? createManagedClient)();
+      } catch (error) {
+        response.status(error.status || 503).json({
+          error: "Claude Managed Agents is not configured. Set ANTHROPIC_API_KEY on the server.",
+        });
+        return;
+      }
+    }
+    try {
+      const result = await runManagedChiefTurn({
+        userId,
+        sessionId: body.session_id,
+        submission: body.submission,
+        store,
+        client,
+        toolExecutor: built.toolExecutor,
+        toolSpecs: built.toolSpecs,
+        bindings: deps.bindings,
+        threads: deps.threads,
+        jobs: deps.jobs,
+        sleepFn: deps.sleepFn,
+        budgetMs: deps.budgetMs,
+      });
+      response.status(200).json({
+        sessionId: result.sessionId,
+        status: result.status,
+        pendingApproval: result.checkpoint?.pendingApproval
+          ? {
+              id: result.checkpoint.pendingApproval.id,
+              turnId: result.checkpoint.pendingApproval.turnId,
+            }
+          : null,
+      });
+    } catch (error) {
+      response.status(400).json({ error: "approval failed" });
+      console.error("[chief/approvals]", error?.name || "Error");
+    }
     return;
   }
 

@@ -8,7 +8,10 @@ import { handleChiefChat } from "../api/chief/chat.js";
 import { handleChiefHistory } from "../api/chief/history.js";
 import { handleChiefModels } from "../api/chief/models.js";
 import { createModelEngine } from "../server/chief/models/engine.js";
+import { MANAGED_MODEL_ROUTE } from "../server/chief/managed/productionAgent.js";
 import { MemoryCheckpointStore } from "../server/chief/runtime/checkpoint.js";
+import { ToolExecutor } from "../server/chief/tools/executor.js";
+import { scriptedManagedClient } from "./chief-managed-client-fixture.js";
 
 const silentLogger = { warn() {}, error() {}, log() {} };
 
@@ -71,34 +74,6 @@ function submission(op) {
   return { id: `sub-${op.type}-${op.route ?? "message"}`, op };
 }
 
-function recordingEngine(available) {
-  const calls = [];
-  let index = 0;
-  const answers = ["First answer.", "Second answer."];
-  return {
-    calls,
-    availableModelKeys() {
-      return available;
-    },
-    async openStream(_messages, options) {
-      calls.push(options?.model ?? null);
-      const text = answers[index] ?? "Answer.";
-      index += 1;
-      return {
-        fullStream: (async function* stream() {
-          yield { type: "text-delta", text };
-        })(),
-        finalize: async () => ({
-          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
-          content: text,
-          tool_calls: [],
-          finish_reason: "stop",
-        }),
-      };
-    },
-  };
-}
-
 async function postChat(deps, body) {
   const http = mockResponse();
   await handleChiefChat(request({ body }), http.response, deps);
@@ -148,42 +123,31 @@ test("the model list exposes only providers that have credentials", async () => 
   assert.equal(serialized.includes("credential"), false);
 });
 
-test("set_model pins the existing session and keeps its history", async () => {
+test("set_model stays on the managed Claude agent and keeps history", async () => {
   const store = new MemoryCheckpointStore();
-  const engine = recordingEngine(["claude-sonnet-4-6", "gpt-4.1", "grok-4.7"]);
+  const client = scriptedManagedClient([{ text: "First answer." }, { text: "Second answer." }]);
   const deps = {
     store,
     authenticate: auth("user-1"),
-    engine,
-    toolExecutor: { async execute() {} },
-    taskStore: null,
-    traceStore: null,
+    client,
+    toolExecutor: new ToolExecutor(),
   };
   const first = await postChat(deps, {
     submission: submission({ type: "message", message: { text: "Hello" } }),
   });
   const sessionId = first.events.at(-1).msg.session_id;
   assert.equal(first.events.at(-1).msg.status, "completed");
-  assert.deepEqual(engine.calls, [null]);
 
-  for (const route of ["claude-sonnet-4-6", "gpt-4.1", "grok-4.7"]) {
-    const switched = await postChat(deps, {
-      session_id: sessionId,
-      submission: submission({ type: "set_model", route }),
-    });
-    assert.equal(switched.events.at(-1).msg.session_id, sessionId);
-    assert.equal(
-      switched.events.some(
-        (event) => event.msg.type === "model_changed" && event.msg.route === route
-      ),
-      true
-    );
-  }
-
-  const owned = await store.listOwnedSessions("user-1");
-  assert.deepEqual(
-    owned.map((row) => row.id),
-    [sessionId]
+  const pinned = await postChat(deps, {
+    session_id: sessionId,
+    submission: submission({ type: "set_model", route: MANAGED_MODEL_ROUTE }),
+  });
+  assert.equal(pinned.events.at(-1).msg.session_id, sessionId);
+  assert.equal(
+    pinned.events.some(
+      (event) => event.msg.type === "model_changed" && event.msg.route === MANAGED_MODEL_ROUTE
+    ),
+    true
   );
 
   const second = await postChat(deps, {
@@ -191,38 +155,34 @@ test("set_model pins the existing session and keeps its history", async () => {
     submission: submission({ type: "message", message: { text: "Next" } }),
   });
   assert.equal(second.events.at(-1).msg.session_id, sessionId);
-  assert.deepEqual(engine.calls, [null, "grok-4.7"]);
+  const continued = client.state.sent.find((entry) => entry.sessionId);
+  assert.equal(continued.events[0].content[0].text, "Next");
+  assert.equal(JSON.stringify(continued).includes("Hello"), false);
 
   const history = mockResponse();
   await handleChiefHistory(
     request({ method: "GET", query: { session_id: sessionId } }),
     history.response,
-    {
-      store,
-      authenticate: auth("user-1"),
-    }
+    { store, authenticate: auth("user-1") }
   );
-  assert.equal(history.state.body.modelRoute, "grok-4.7");
+  assert.equal(history.state.body.modelRoute, MANAGED_MODEL_ROUTE);
   assert.deepEqual(
     history.state.body.messages.map((message) => message.text),
     ["Hello", "First answer.", "Next", "Second answer."]
   );
-  assert.equal((await store.listOwnedSessions("user-1")).length, 1);
 });
 
-test("an unavailable model route is rejected and does not change the session", async () => {
+test("a non-Claude route is rejected and does not change the session", async () => {
   const store = new MemoryCheckpointStore();
-  const engine = recordingEngine(["claude-sonnet-4-6"]);
+  const client = scriptedManagedClient([{ text: "First answer." }]);
   const deps = {
     store,
     authenticate: auth("user-1"),
-    engine,
-    toolExecutor: { async execute() {} },
-    taskStore: null,
-    traceStore: null,
+    client,
+    toolExecutor: new ToolExecutor(),
   };
   const created = await postChat(deps, {
-    submission: submission({ type: "set_model", route: "claude-sonnet-4-6" }),
+    submission: submission({ type: "message", message: { text: "Hello" } }),
   });
   const sessionId = created.events.at(-1).msg.session_id;
   assert.equal(typeof sessionId, "string");
@@ -254,12 +214,12 @@ test("an unavailable model route is rejected and does not change the session", a
   await handleChiefHistory(
     request({ method: "GET", query: { session_id: sessionId } }),
     history.response,
-    {
-      store,
-      authenticate: auth("user-1"),
-    }
+    { store, authenticate: auth("user-1") }
   );
-  assert.equal(history.state.body.modelRoute, "claude-sonnet-4-6");
-  assert.deepEqual(history.state.body.messages, []);
+  assert.equal(history.state.body.modelRoute, MANAGED_MODEL_ROUTE);
+  assert.deepEqual(
+    history.state.body.messages.map((message) => message.text),
+    ["Hello", "First answer."]
+  );
   assert.equal((await store.listOwnedSessions("user-1")).length, 1);
 });

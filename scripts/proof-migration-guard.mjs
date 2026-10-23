@@ -62,6 +62,28 @@ export function withholdMigrationDirectories(migrationsDir, names, stagingDir) {
   };
 }
 
+export function databaseHost(connectionString) {
+  try {
+    return new URL(connectionString).hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+export function isLoopbackHost(hostname) {
+  const host = String(hostname || "").toLowerCase();
+  return host === "localhost" || host === "127.0.0.1" || host === "::1";
+}
+
+// CHIEF_PROOF_MIGRATE=1 is not sufficient. Vercel builds and any non-loopback
+// database are treated as production-capable and never receive proof migrations.
+export function proofMigrateAllowed(env = process.env) {
+  if (env.VERCEL === "1") return false;
+  if (env.VERCEL_ENV === "production" || env.VERCEL_ENV === "preview") return false;
+  if (env.CHIEF_PROOF_MIGRATE !== "1") return false;
+  return isLoopbackHost(databaseHost(env.DIRECT_URL || env.DATABASE_URL || ""));
+}
+
 export async function readAppliedMigrationNames(env = process.env) {
   const connectionString = env.DIRECT_URL || env.DATABASE_URL;
   if (!connectionString) return [];

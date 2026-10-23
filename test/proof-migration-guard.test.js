@@ -8,6 +8,7 @@ import {
   isProofMigration,
   listMigrationNames,
   migrationsToWithhold,
+  proofMigrateAllowed,
   withholdMigrationDirectories,
 } from "../scripts/proof-migration-guard.mjs";
 
@@ -61,4 +62,31 @@ test("pending proof migrations are withheld and applied ones stay", () => {
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("CHIEF_PROOF_MIGRATE cannot unlock a Vercel or remote database", () => {
+  const loopback = {
+    CHIEF_PROOF_MIGRATE: "1",
+    DATABASE_URL: "postgresql://freedom_app:secret@127.0.0.1:5432/chief_proof",
+  };
+  assert.equal(proofMigrateAllowed(loopback), true);
+  assert.equal(proofMigrateAllowed({ ...loopback, VERCEL: "1" }), false);
+  assert.equal(proofMigrateAllowed({ ...loopback, VERCEL_ENV: "production" }), false);
+  assert.equal(proofMigrateAllowed({ ...loopback, VERCEL_ENV: "preview" }), false);
+  assert.equal(
+    proofMigrateAllowed({
+      CHIEF_PROOF_MIGRATE: "1",
+      DATABASE_URL: "postgresql://freedom_app:secret@db.example.supabase.co:5432/postgres",
+    }),
+    false
+  );
+  assert.equal(
+    proofMigrateAllowed({
+      CHIEF_PROOF_MIGRATE: "1",
+      DIRECT_URL: "postgresql://postgres:secret@aws-0-us-east-1.pooler.supabase.com:5432/postgres",
+      DATABASE_URL: "postgresql://freedom_app:secret@127.0.0.1:5432/chief_proof",
+    }),
+    false
+  );
+  assert.equal(proofMigrateAllowed({ ...loopback, CHIEF_PROOF_MIGRATE: "0" }), false);
 });
