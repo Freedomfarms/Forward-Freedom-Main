@@ -31,6 +31,7 @@ import {
 import { createChiefTools } from "../server/chief/tools/builtin.js";
 import { CHIEF_TOOL_INVENTORY } from "../server/chief/tools/inventory.js";
 import { ToolExecutor } from "../server/chief/tools/executor.js";
+import { scriptedManagedClient } from "./chief-managed-client-fixture.js";
 
 const MARKER = "keep-one-chief-session-row";
 const TOOL_PAYLOAD = "finance_summary_payload_998877";
@@ -1034,6 +1035,10 @@ test("a completed turn can be searched and retrieved without writing facts or th
   const specs = tools.map((tool) => tool.spec);
   const auth = async (request) => ({ uid: request.uid });
 
+  const client = scriptedManagedClient([
+    { text: `We decided to ${MARKER} and search with a recall document.` },
+    { text: "I can continue from this message only." },
+  ]);
   const first = mockResponse();
   await handleChiefChat(
     {
@@ -1058,16 +1063,7 @@ test("a completed turn can be searched and retrieved without writing facts or th
       authenticate: auth,
       toolExecutor: executor,
       toolSpecs: specs,
-      engine: {
-        async openStream() {
-          return textStream([
-            {
-              type: "text-delta",
-              text: `We decided to ${MARKER} and search with a recall document.`,
-            },
-          ]);
-        },
-      },
+      client,
     }
   );
 
@@ -1079,8 +1075,6 @@ test("a completed turn can be searched and retrieved without writing facts or th
   const priorDocument = prior.recallDocument;
   const priorTitle = prior.title;
 
-  const seenSystems = [];
-  let step = 0;
   const second = mockResponse();
   await handleChiefChat(
     {
@@ -1108,57 +1102,20 @@ test("a completed turn can be searched and retrieved without writing facts or th
       facts,
       toolExecutor: executor,
       toolSpecs: specs,
-      turnServices: {
-        contextAssembler: createContextAssembler({ facts, checkpointStore: store }),
-      },
-      engine: {
-        async openStream(messages) {
-          step += 1;
-          const system = messages.find((message) => message.role === "system")?.content ?? "";
-          seenSystems.push(system);
-          const blob = JSON.stringify(messages);
-          const sessionMatch = blob.match(/sessionId\\?":\\?"([0-9a-f-]{36})/i);
-          if (step === 1) {
-            return textStream([
-              {
-                type: "tool-call",
-                toolCallId: "s1",
-                toolName: "conversation_search",
-                input: { query: "CHIEF conversation history architecture" },
-              },
-            ]);
-          }
-          if (step === 2) {
-            return textStream([
-              {
-                type: "tool-call",
-                toolCallId: "r1",
-                toolName: "conversation_retrieve",
-                input: { session_id: sessionMatch[1], query: "architecture" },
-              },
-            ]);
-          }
-          const updated = blob.match(/updatedAt\\?":\\?"([0-9T:.-]+Z)/)[1].slice(0, 10);
-          const title = prior.title;
-          return textStream([
-            {
-              type: "text-delta",
-              text: `I found your ${updated} conversation titled "${title}". We kept a single session record.`,
-            },
-          ]);
-        },
-      },
+      client,
     }
   );
 
   const current = [...store.sessions.values()].find((record) => record.id !== priorId);
-  const blob = JSON.stringify(current.checkpoint.transcript);
-  assert.match(blob, /conversation_search/);
-  assert.match(blob, /conversation_retrieve/);
-  assert.match(blob, /HISTORICAL CONVERSATION/);
-  assert.match(blob, new RegExp(prior.title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
-  assert.match(current.checkpoint.transcript.at(-1).content, /single session record/);
-  assert.equal(seenSystems.at(-1).includes(MARKER), false);
+  const providerSessions = client.state.sent.filter((entry) => entry.initial_events);
+  assert.equal(providerSessions.length, 2);
+  const secondPrompt = JSON.stringify(providerSessions[1]);
+  assert.equal(secondPrompt.includes(MARKER), false);
+  assert.equal(
+    secondPrompt.includes("Let's design the CHIEF conversation history architecture."),
+    false
+  );
+  assert.equal(JSON.stringify(current.checkpoint.transcript).includes(MARKER), false);
   assert.equal(current.recallDocument.includes(MARKER), false);
   assert.equal(prior.recallDocument, priorDocument);
   assert.equal(JSON.stringify(prior.checkpoint.transcript), priorTranscript);

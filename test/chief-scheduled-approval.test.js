@@ -21,6 +21,7 @@ import { MemoryAuditLog } from "../server/chief/security/audit.js";
 import { createChiefTooling } from "../server/chief/tools/builtin.js";
 import { CHIEF_TOOL_INVENTORY } from "../server/chief/tools/inventory.js";
 import { MemoryScheduleStore } from "../server/chief/tools/schedule-store.js";
+import { scriptedManagedClient } from "./chief-managed-client-fixture.js";
 
 const T0 = new Date("2026-09-30T12:00:00.000Z");
 
@@ -429,15 +430,15 @@ test("chat resume keeps the schedule caller and a normal chat does not touch a t
     http.response,
     approvalDeps(h)
   );
-  const configured = frames(http.chunks).at(-1).msg;
-  assert.equal(configured.session_id, run.sessionId);
-  assert.equal(configured.status, "completed");
-  assert.equal(h.taskStore.runs[0].status, RunStatus.SUCCEEDED);
-  assert.equal(h.taskStore.runs[0].result.attention, false);
-  assert.equal(toolFacts(h.facts).length, 1);
+  const events = frames(http.chunks);
+  assert.equal(
+    events.some((event) => event.msg.type === "submission_rejected"),
+    true
+  );
+  assert.equal(h.taskStore.runs[0].status, RunStatus.AWAITING_APPROVAL);
+  assert.equal(toolFacts(h.facts).length, 0);
   assert.equal(h.engineCalls.at(-1).caller.kind, "schedule");
   assert.equal(h.engineCalls.at(-1).caller.trigger, "schedule:task-1");
-  assert.equal(h.taskStore.tasks[0].status, "COMPLETED");
 
   const normalStore = new MemoryTaskStore();
   const normalCalls = [];
@@ -449,7 +450,7 @@ test("chat resume keeps the schedule caller and a normal chat does not touch a t
     normal.response,
     {
       store: new MemoryCheckpointStore(),
-      engine: scripted([textStep("hello")], normalCalls),
+      client: scriptedManagedClient([{ text: "hello" }]),
       authenticate: auth("user-1"),
       taskStore: normalStore,
       traceStore: null,
@@ -469,8 +470,7 @@ test("chat resume keeps the schedule caller and a normal chat does not touch a t
   );
   assert.equal(frames(normal.chunks).at(-1).msg.status, "completed");
   assert.equal(normalStore.runs.length, 0);
-  assert.equal(normalCalls[0].caller.kind, "user_turn");
-  assert.equal(normalCalls[0].caller.trigger, "turn");
+  assert.equal(normalCalls.length, 0);
 });
 
 test("finance_summary still requires finance:read and confirming tools still suspend", async () => {
@@ -608,7 +608,9 @@ test("phase 11 does not add a second loop, executor, sender, or CEO Agents impor
   assert.equal((resume.match(/new ToolExecutor\(/g) ?? []).length, 0);
   assert.equal((tick.match(/new TurnMachine\(/g) ?? []).length, 1);
   assert.equal((approvals.match(/new TurnMachine\(/g) ?? []).length, 1);
-  assert.equal((chat.match(/new TurnMachine\(/g) ?? []).length, 1);
+  assert.equal((chat.match(/new TurnMachine\(/g) ?? []).length, 0);
+  assert.equal(chat.includes("ChiefModelEngine"), false);
+  assert.match(chat, /runManagedChiefTurn/);
   assert.equal((approvals.match(/new ToolExecutor\(/g) ?? []).length, 0);
   assert.match(approvals, /createChiefTooling/);
   assert.match(tick, /attention: quietAttention\(\)/);

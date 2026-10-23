@@ -1,6 +1,6 @@
 # CHIEF rebuild — Assignment 1 status
 
-On 23 October 2026 the proof is merged on `main` at `fecc0e0`. Production builds withhold pending proof migrations unless `CHIEF_PROOF_MIGRATE=1`. That flag is for an isolated database only and must not be set on Vercel. Whether production already applied `20261022193000_chief_managed_proof` was not visible from build logs or a production connection.
+On 23 October 2026 the proof is merged on `main` at `fecc0e0`. Interactive CHIEF chat now calls Claude Managed Agents and does not call `TurnMachine`. `CHIEF_PROOF_MIGRATE=1` cannot apply proof migrations on Vercel or on any non-loopback database. Public proof routes stay disabled unless `CHIEF_MANAGED_PROOF=1`. Scheduled background ticks still use the retained turn machine; that path is not the chat interface.
 
 Branch `cursor/chief-managed-agents-proof-1ece`. Base `32301c2`. Pushed to `origin` on 23 October 2026 because the branch was requested for review. A new cloud agent can fetch this branch. `docs/chief-rebuild/HANDOFF.md` still describes the local bundle.
 

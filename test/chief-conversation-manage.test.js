@@ -17,24 +17,7 @@ import {
   titleFromTranscript,
 } from "../server/chief/runtime/conversationTitle.js";
 import { ToolExecutor } from "../server/chief/tools/executor.js";
-
-function textEngine(text = "Noted") {
-  return {
-    async openStream() {
-      return {
-        fullStream: (async function* stream() {
-          yield { type: "text-delta", text };
-        })(),
-        finalize: async () => ({
-          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
-          content: text,
-          tool_calls: [],
-          finish_reason: "stop",
-        }),
-      };
-    },
-  };
-}
+import { scriptedManagedClient } from "./chief-managed-client-fixture.js";
 
 function mockResponse() {
   const state = { statusCode: null, body: null, ended: false };
@@ -102,10 +85,18 @@ async function seed(store, userId, sessionId, { transcript, context, title } = {
 }
 
 async function chat(store, body, uid = "user-a") {
+  if (!store.managedClient) {
+    store.managedClient = scriptedManagedClient([
+      { text: "Noted" },
+      { text: "Noted" },
+      { text: "Noted" },
+      { text: "Noted" },
+    ]);
+  }
   const http = mockResponse();
   await handleChiefChat(request({ method: "POST", body, uid }), http.response, {
     store,
-    engine: textEngine("Noted"),
+    client: store.managedClient,
     authenticate: auth(uid),
     toolExecutor: new ToolExecutor(),
   });

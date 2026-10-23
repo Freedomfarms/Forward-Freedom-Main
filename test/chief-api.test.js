@@ -10,6 +10,7 @@ import { handleChiefApprovals } from "../api/chief/approvals.js";
 import { MemoryCheckpointStore } from "../server/chief/runtime/checkpoint.js";
 import { lookupExecutor } from "./chief-tool-fixture.js";
 import { ToolExecutor } from "../server/chief/tools/executor.js";
+import { scriptedManagedClient } from "./chief-managed-client-fixture.js";
 
 function textEngine(text = "Hello") {
   return {
@@ -118,7 +119,7 @@ test("chat streams the turn and ends with session_configured", async () => {
     http.response,
     {
       store,
-      engine: textEngine("Hello"),
+      client: scriptedManagedClient([{ text: "Hello" }]),
       authenticate: auth("user-1"),
       toolExecutor: new ToolExecutor(),
     }
@@ -140,8 +141,8 @@ test("chat streams the turn and ends with session_configured", async () => {
 
 test("a thrown turn error is redacted on the SSE stream", async () => {
   const http = mockResponse();
-  const engine = {
-    async openStream() {
+  const client = {
+    async listAgents() {
       throw new Error("provider secret sk-live-should-not-leak");
     },
   };
@@ -152,7 +153,7 @@ test("a thrown turn error is redacted on the SSE stream", async () => {
     http.response,
     {
       store: new MemoryCheckpointStore(),
-      engine,
+      client,
       authenticate: auth("user-1"),
       toolExecutor: new ToolExecutor(),
     }
@@ -166,32 +167,13 @@ test("a thrown turn error is redacted on the SSE stream", async () => {
 
 test("approvals lists a pending batch and a decision resumes it", async () => {
   const store = new MemoryCheckpointStore();
-  const steps = [
-    { parts: [{ type: "tool-call", toolCallId: "c1", toolName: "lookup", input: { q: "a" } }] },
-    { parts: [{ type: "text-delta", text: "done" }] },
-  ];
-  let index = 0;
-  const engine = {
-    async openStream() {
-      const step = steps[index];
-      index += 1;
-      return {
-        fullStream: (async function* stream() {
-          for (const part of step.parts) yield part;
-        })(),
-        finalize: async () => ({
-          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
-          content: "",
-          tool_calls: [],
-          finish_reason: "stop",
-        }),
-      };
-    },
-  };
   const executed = [];
   const deps = {
     store,
-    engine,
+    client: scriptedManagedClient([
+      { tool: { name: "lookup", input: { q: "a" } } },
+      { text: "done" },
+    ]),
     authenticate: auth("user-1"),
     toolExecutor: lookupExecutor({
       onExecute: (call) => executed.push(call.name),

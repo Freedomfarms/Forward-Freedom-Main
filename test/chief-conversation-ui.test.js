@@ -15,27 +15,7 @@ import {
   publicTranscriptMessages,
 } from "../src/utils/chiefProtocol.js";
 import { lookupExecutor } from "./chief-tool-fixture.js";
-
-function scriptedEngine(steps) {
-  let index = 0;
-  return {
-    async openStream() {
-      const step = steps[index] ?? { parts: [] };
-      index += 1;
-      return {
-        fullStream: (async function* stream() {
-          for (const part of step.parts) yield part;
-        })(),
-        finalize: async () => ({
-          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
-          content: "",
-          tool_calls: [],
-          finish_reason: "stop",
-        }),
-      };
-    },
-  };
-}
+import { scriptedManagedClient } from "./chief-managed-client-fixture.js";
 
 function mockResponse() {
   const headers = {};
@@ -109,22 +89,10 @@ test("chat, history, continue, and approval stay on one session without tool-cal
       onExecute: (call) => executed.push(call.name),
       output: "found",
     }),
-    engine: scriptedEngine([
-      {
-        parts: [
-          { type: "reasoning-delta", text: "hidden-reasoning" },
-          { type: "text-delta", text: "The accounts look steady." },
-        ],
-      },
-      {
-        parts: [
-          { type: "text-delta", text: "Looking now." },
-          { type: "tool-call", toolCallId: "c1", toolName: "lookup", input: { q: "secret-arg" } },
-        ],
-      },
-      {
-        parts: [{ type: "text-delta", text: "Here is the result." }],
-      },
+    client: scriptedManagedClient([
+      { reasoning: "hidden-reasoning", text: "The accounts look steady." },
+      { text: "Looking now.", tool: { name: "lookup", input: { q: "secret-arg" } } },
+      { text: "Here is the result." },
     ]),
   };
 

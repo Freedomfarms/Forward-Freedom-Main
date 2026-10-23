@@ -1,48 +1,33 @@
-// CHIEF chat — one turn invocation over SSE.
+// CHIEF chat — one turn over SSE.
 //
-// BUILD NEW thin shell (docs/CHIEF_ARCHITECTURE.md §8.4): auth, then the
-// ported turn machine. No domain decisions live here. Model calls go through
-// ChiefModelEngine; tools go through ToolExecutor.
+// The active conversation path is Claude Managed Agents. The previous custom
+// reasoning classes remain in the repository and are not called from here.
+// A missing provider configuration is an error, not a legacy fallback.
 
 import { authenticateRequest } from "../../server/auth/verifyAuth.js";
-import { EventBus } from "../../server/chief/core/events.js";
-import { PrismaBudgetStore } from "../../server/chief/models/budget.js";
-import { createModelEngine } from "../../server/chief/models/engine.js";
-import {
-  encodeSseEvent,
-  eventMsg,
-  EventMsgType,
-  makeEvent,
-} from "../../server/chief/protocol/index.js";
-import { ApprovalCoordinator } from "../../server/chief/runtime/approvals.js";
-import {
-  archiveAlongsideCheckpoint,
-  createChiefTurnServices,
-} from "../../server/chief/context/wire.js";
-import { PrismaModuleAccess } from "../../server/chief/security/module-access.js";
-import { PrismaFactStore } from "../../server/chief/memory/facts.js";
+import { createManagedClient, runManagedChiefTurn } from "../../server/chief/managed/chatTurn.js";
+import { encodeSseEvent, eventMsg, makeEvent } from "../../server/chief/protocol/index.js";
 import { PrismaCheckpointStore } from "../../server/chief/runtime/checkpoint.js";
 import { titleFromTranscript } from "../../server/chief/runtime/conversationTitle.js";
-import { CONVERSATION_RECALL_TOOLS } from "../../server/chief/runtime/recall.js";
-import { TurnMachine } from "../../server/chief/runtime/turn.js";
-import { PrismaTraceStore } from "../../server/chief/traces/store.js";
 import { createChiefTooling } from "../../server/chief/tools/builtin.js";
-import { PrismaTaskStore } from "../../server/chief/scheduler/store.js";
-import {
-  completeAwaitingScheduledRun,
-  scheduledCaller,
-} from "../../server/chief/scheduler/resume.js";
 import { applySecurityHeaders } from "../../server/http/responseHelpers.js";
 import { enforceRateLimit, generalApiRateLimit } from "../../server/http/rateLimit.js";
 
 function defaultDeps() {
   return {
     store: new PrismaCheckpointStore(),
-    engine: createModelEngine({ budget: new PrismaBudgetStore() }),
-    toolExecutor: null,
-    taskStore: new PrismaTaskStore(),
     authenticate: authenticateRequest,
+    createClient: () => createManagedClient(),
+    createTooling: createChiefTooling,
   };
+}
+
+function configurationFailure(error) {
+  return (
+    error?.status === 503 &&
+    typeof error.message === "string" &&
+    error.message.startsWith("Claude Managed Agents is not configured")
+  );
 }
 
 export async function handleChiefChat(request, response, deps = {}) {
@@ -85,113 +70,68 @@ export async function handleChiefChat(request, response, deps = {}) {
   const controller = new AbortController();
   request.on?.("close", () => controller.abort());
 
-  const eventBus = deps.eventBus ?? new EventBus();
-  const engine = deps.engine ?? createModelEngine({ budget: new PrismaBudgetStore(), eventBus });
-  const traceStore = Object.hasOwn(deps, "traceStore")
-    ? deps.traceStore
-    : deps.engine
-      ? null
-      : new PrismaTraceStore();
   let toolExecutor = deps.toolExecutor ?? null;
   let toolSpecs = deps.toolSpecs ?? null;
-  let facts = deps.facts ?? null;
-  let capabilityPolicy = null;
   if (!toolExecutor) {
-    facts = facts ?? deps.stores?.facts ?? new PrismaFactStore();
-    const tooling = await createChiefTooling({
+    const tooling = await (deps.createTooling ?? createChiefTooling)({
       userId,
-      stores: {
-        ...(deps.stores ?? {}),
-        facts,
-        checkpoints: deps.stores?.checkpoints ?? store,
-      },
+      stores: deps.stores ?? {},
       policy: deps.policy,
       audit: deps.audit,
-      bus: eventBus,
-      modelEngine: engine,
     });
     toolExecutor = tooling.executor;
     toolSpecs = deps.toolSpecs ?? tooling.specs;
-    capabilityPolicy = tooling.policy;
-  }
-  const taskStore = Object.hasOwn(deps, "taskStore")
-    ? deps.taskStore
-    : deps.engine
-      ? null
-      : new PrismaTaskStore();
-  const awaiting =
-    taskStore && body.session_id
-      ? await taskStore.findAwaitingBySession(userId, body.session_id)
-      : null;
-  const caller = scheduledCaller(awaiting) ?? {};
-  const turnServices =
-    deps.turnServices ??
-    (facts && !deps.toolExecutor
-      ? createChiefTurnServices({
-          facts,
-          engine,
-          checkpointStore: store,
-          archiveStore: Object.hasOwn(deps, "archiveStore")
-            ? deps.archiveStore
-            : archiveAlongsideCheckpoint(store),
-          capabilityPolicy,
-          eventBus,
-          moduleAccess: deps.moduleAccess ?? new PrismaModuleAccess(),
-        })
-      : {});
-
-  if (caller.callerKind === "schedule" && Array.isArray(toolSpecs)) {
-    toolSpecs = toolSpecs.filter((spec) => !CONVERSATION_RECALL_TOOLS.includes(spec.name));
   }
 
-  const machine = new TurnMachine({
-    store,
-    engine,
-    approvals: new ApprovalCoordinator(),
-    toolExecutor,
-    contextAssembler: turnServices.contextAssembler ?? null,
-    compaction: turnServices.compaction ?? null,
-    onTurnComplete: turnServices.onTurnComplete ?? null,
-    settleModelStep: turnServices.settleModelStep ?? null,
-    traceStore,
-    eventBus,
-    ...caller,
-  });
+  let client;
+  if (Object.hasOwn(deps, "client")) {
+    client = deps.client;
+  } else {
+    try {
+      client = (deps.createClient ?? createManagedClient)();
+    } catch (error) {
+      if (!configurationFailure(error)) throw error;
+      response.write(
+        encodeSseEvent(
+          makeEvent(
+            eventMsg.error({
+              kind: "internal",
+              message: error.message,
+              retryable: false,
+            })
+          )
+        )
+      );
+      response.end();
+      return;
+    }
+  }
 
-  let abortReason = null;
   let result = null;
   let turnError = null;
   try {
-    result = await machine.run({
+    result = await runManagedChiefTurn({
       userId,
       sessionId: body.session_id ?? null,
       submission: body.submission,
       signal: controller.signal,
+      store,
+      client,
+      toolExecutor,
       toolSpecs: toolSpecs ?? [],
+      bindings: deps.bindings,
+      threads: deps.threads,
+      jobs: deps.jobs,
+      sleepFn: deps.sleepFn,
+      budgetMs: deps.budgetMs,
       onEvent: (event) => {
-        if (event?.msg?.type === EventMsgType.TURN_ABORTED) abortReason = event.msg.reason ?? null;
         response.write(encodeSseEvent(event));
       },
     });
   } catch (error) {
     turnError = error;
   }
-  if (awaiting && taskStore && body.session_id) {
-    try {
-      await completeAwaitingScheduledRun({
-        userId,
-        sessionId: body.session_id,
-        taskStore,
-        checkpointStore: store,
-        turnResult: result,
-        error: turnError,
-        abortReason,
-        clock: deps.clock,
-      });
-    } catch {
-      // The run stays AWAITING_APPROVAL when the finish write fails.
-    }
-  }
+
   if (!turnError && result?.status === "completed") {
     try {
       await titleCompletedSession(store, userId, result);
@@ -200,28 +140,23 @@ export async function handleChiefChat(request, response, deps = {}) {
     }
   }
   if (turnError) {
+    const configured = configurationFailure(turnError);
     response.write(
       encodeSseEvent(
         makeEvent(
           eventMsg.error({
             kind: "internal",
-            message: "The turn could not be completed.",
-            retryable: true,
+            message: configured ? turnError.message : "The turn could not be completed.",
+            retryable: !configured,
           })
         )
       )
     );
     console.error("[chief/chat]", turnError?.name || "Error");
   } else {
-    response.write(
-      encodeSseEvent(
-        makeEvent({
-          type: "session_configured",
-          session_id: result.sessionId,
-          status: result.status,
-        })
-      )
-    );
+    const msg = { type: "session_configured", status: result.status };
+    if (result.sessionId) msg.session_id = result.sessionId;
+    response.write(encodeSseEvent(makeEvent(msg)));
   }
   response.end();
 }

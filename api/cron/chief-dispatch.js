@@ -1,8 +1,9 @@
 // GET /api/cron/chief-dispatch — CHIEF scheduler tick (vercel.json cron).
 //
 // BUILD NEW thin shell (docs/adr/0005-chief-scheduler-tick.md): cron auth,
-// then runChiefTick. Every due task becomes one TurnMachine turn with caller
-// kind "schedule". Nothing here calls a model or a tool.
+// then runChiefTick. Interactive CHIEF chat does not use this tick.
+// After the tick, queued Claude Managed Agents work is resumed. The drain
+// makes a provider call only when a job is waiting and ANTHROPIC_API_KEY is set.
 //
 // Authenticated by CRON_SECRET ("Authorization: Bearer <secret>", which
 // Vercel Cron sends when CRON_SECRET is set, or ?secret=). Fails closed with
@@ -20,6 +21,7 @@ import { createModelEngine } from "../../server/chief/models/engine.js";
 import { PrismaFactStore } from "../../server/chief/memory/facts.js";
 import { PrismaCheckpointStore } from "../../server/chief/runtime/checkpoint.js";
 import { PrismaTaskStore } from "../../server/chief/scheduler/store.js";
+import { drainManagedWork } from "../../server/chief/managed/chatTurn.js";
 import { runChiefTick } from "../../server/chief/scheduler/tick.js";
 import { PrismaTraceStore } from "../../server/chief/traces/store.js";
 import { PrismaAuditLog } from "../../server/chief/security/audit.js";
@@ -80,8 +82,20 @@ export async function handleChiefDispatch(request, response, deps = {}) {
   }
 
   try {
-    const report = await runChiefTick(deps.taskStore ? deps : { ...defaultDeps(), ...deps });
-    response.status(200).json({ ok: true, ...report });
+    const resolved = deps.taskStore ? deps : { ...defaultDeps(), ...deps };
+    const report = await runChiefTick(resolved);
+    let managedDrain = { drained: 0 };
+    try {
+      managedDrain = await (deps.drainManagedWork ?? drainManagedWork)({
+        store: resolved.checkpointStore,
+        client: deps.managedClient,
+        jobs: deps.managedJobs,
+      });
+    } catch (error) {
+      console.error("[chief/dispatch] managed", error?.name || "Error");
+      managedDrain = { drained: 0, error: "drain_failed" };
+    }
+    response.status(200).json({ ok: true, ...report, managedDrain });
   } catch (error) {
     console.error("[chief/dispatch]", error?.name || "Error");
     response.status(error?.status === 503 ? 503 : 500).json({ error: "CHIEF tick failed" });

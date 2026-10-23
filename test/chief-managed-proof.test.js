@@ -250,9 +250,12 @@ function createMockClient() {
   return client;
 }
 
-test("production chat runtime stays legacy unless explicitly switched", () => {
+test("runtimeMode is not the interactive chat switch", () => {
   assert.equal(runtimeMode({}), "legacy");
   assert.equal(runtimeMode({ CHIEF_RUNTIME: "managed" }), "managed");
+  const chat = fs.readFileSync(new URL("../api/chief/chat.js", import.meta.url), "utf8");
+  assert.equal(chat.includes("runtimeMode"), false);
+  assert.equal(chat.includes("CHIEF_RUNTIME"), false);
 });
 
 test("database identity requires the cluster id, not the database name", () => {

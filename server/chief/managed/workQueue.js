@@ -1,0 +1,145 @@
+import { getServicePrismaClient } from "../../db/servicePrisma.js";
+
+// Cross-user claim for the CHIEF managed drain. Same class of bypass as the
+// scheduler tick: the cron has no Firebase user until the job row names one.
+// Chat turns themselves use withUserContext.
+
+const LEASE_MS = 90_000;
+
+function ignorable(error) {
+  const message = String(error?.message || "");
+  return (
+    error?.code === "P2021" ||
+    message.includes("not configured") ||
+    message.includes("does not exist") ||
+    message.includes("Cannot read properties of undefined")
+  );
+}
+
+export function createMemoryWorkQueue() {
+  const rows = new Map();
+  return {
+    rows,
+    async enqueue({ userId, threadId }) {
+      const id = `work-${rows.size + 1}`;
+      const row = {
+        id,
+        userId,
+        threadId,
+        status: "queued",
+        leaseGeneration: 0,
+        leaseUntil: null,
+      };
+      rows.set(id, row);
+      return row;
+    },
+    async claimDue(now, limit = 2) {
+      const claimed = [];
+      for (const row of rows.values()) {
+        if (claimed.length >= limit) break;
+        const expired = row.leaseUntil && row.leaseUntil < now;
+        const open = row.status === "queued" || (row.status === "running" && expired);
+        if (!open) continue;
+        row.status = "running";
+        row.leaseGeneration += 1;
+        row.leaseUntil = new Date(now.getTime() + LEASE_MS);
+        claimed.push({ ...row });
+      }
+      return claimed;
+    },
+    async complete(job) {
+      const row = rows.get(job.id);
+      if (!row || row.leaseGeneration !== job.leaseGeneration) return false;
+      row.status = "succeeded";
+      row.leaseUntil = null;
+      return true;
+    },
+    async release(job) {
+      const row = rows.get(job.id);
+      if (!row || row.leaseGeneration !== job.leaseGeneration) return false;
+      row.status = "queued";
+      row.leaseUntil = null;
+      return true;
+    },
+  };
+}
+
+function service() {
+  return getServicePrismaClient();
+}
+
+export function createPrismaWorkQueue() {
+  return {
+    async enqueue({ userId, threadId }) {
+      const client = service();
+      if (!client?.chiefManagedWork) return null;
+      try {
+        return await client.chiefManagedWork.create({
+          data: { userId, threadId, status: "queued" },
+        });
+      } catch (error) {
+        if (ignorable(error)) return null;
+        throw error;
+      }
+    },
+    async claimDue(now, limit = 2) {
+      const client = service();
+      if (!client?.chiefManagedWork) return [];
+      try {
+        const rows = await client.chiefManagedWork.findMany({
+          where: {
+            OR: [{ status: "queued" }, { status: "running", leaseUntil: { lt: now } }],
+          },
+          orderBy: { createdAt: "asc" },
+          take: limit,
+        });
+        const claimed = [];
+        for (const row of rows) {
+          const next = row.leaseGeneration + 1;
+          const updated = await client.chiefManagedWork.updateMany({
+            where: { id: row.id, leaseGeneration: row.leaseGeneration },
+            data: {
+              status: "running",
+              leaseGeneration: next,
+              leaseUntil: new Date(now.getTime() + LEASE_MS),
+            },
+          });
+          if (updated.count === 1)
+            claimed.push({ ...row, leaseGeneration: next, status: "running" });
+        }
+        return claimed;
+      } catch (error) {
+        if (ignorable(error)) return [];
+        throw error;
+      }
+    },
+    async complete(job) {
+      const client = service();
+      if (!client?.chiefManagedWork) return false;
+      try {
+        const updated = await client.chiefManagedWork.updateMany({
+          where: { id: job.id, leaseGeneration: job.leaseGeneration },
+          data: { status: "succeeded", leaseUntil: null },
+        });
+        return updated.count === 1;
+      } catch (error) {
+        if (ignorable(error)) return false;
+        throw error;
+      }
+    },
+    async release(job) {
+      const client = service();
+      if (!client?.chiefManagedWork) return false;
+      try {
+        const updated = await client.chiefManagedWork.updateMany({
+          where: { id: job.id, leaseGeneration: job.leaseGeneration },
+          data: { status: "queued", leaseUntil: null },
+        });
+        return updated.count === 1;
+      } catch (error) {
+        if (ignorable(error)) return false;
+        throw error;
+      }
+    },
+  };
+}

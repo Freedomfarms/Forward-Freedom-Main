@@ -168,6 +168,9 @@ model User {
   chiefProofPings         ChiefProofPing[]
   chiefProofLatencySamples ChiefProofLatencySample[]
   chiefManagedResources   ChiefManagedResource[]
+  chiefManagedBinding     ChiefManagedBinding?
+  chiefManagedThreads     ChiefManagedThread[]
+  chiefManagedWork        ChiefManagedWork[]
 }
 
 model PlaidItem {
@@ -1624,6 +1627,53 @@ model ChiefProofLatencySample {
 
   @@index([userId, runId, createdAt])
   @@map("chief_proof_latency_sample")
+}
+
+// Production CHIEF runtime. These rows point at Claude Managed Agents
+// resources. They do not copy the previous conversation or memory tables.
+model ChiefManagedBinding {
+  userId         String   @id
+  agentId        String
+  agentVersion   String
+  environmentId  String
+  memoryStoreId  String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("chief_managed_binding")
+}
+
+model ChiefManagedThread {
+  id                String   @id
+  userId            String
+  providerSessionId String?
+  memoryStoreId     String?
+  status            String   @default("active")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  work              ChiefManagedWork[]
+
+  @@index([userId, updatedAt])
+  @@map("chief_managed_thread")
+}
+
+model ChiefManagedWork {
+  id              String    @id @default(cuid())
+  userId          String
+  threadId        String
+  status          String    @default("queued")
+  leaseGeneration Int       @default(0)
+  leaseUntil      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  thread          ChiefManagedThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  @@index([status, leaseUntil])
+  @@index([userId, threadId])
+  @@map("chief_managed_work")
 }
 
 // Self-notification only: agents may notify the user (in-app or via the
