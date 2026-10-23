@@ -17,8 +17,24 @@ import {
   planSync,
 } from "../server/chief/managed/ownership.js";
 import { deliverProofPing } from "../server/chief/managed/proofPing.js";
-import { evaluateSchemaReadiness } from "../server/chief/managed/readiness.js";
-import { connectionLabel, redactSecrets } from "../server/chief/managed/redact.js";
+import {
+  evaluateMigrationBaseline,
+  evaluateSchemaReadiness,
+} from "../server/chief/managed/readiness.js";
+import { acknowledgeSupervisor } from "../server/chief/managed/drainTarget.js";
+import { createKickServer } from "../server/chief/managed/kickServer.js";
+import {
+  LIVE_PHASES,
+  assessLivePrerequisites,
+  assessProofUser,
+  executeLiveProof,
+} from "../server/chief/managed/liveProof.js";
+import {
+  connectionLabel,
+  projectRefFromConnection,
+  redactSecrets,
+} from "../server/chief/managed/redact.js";
+import { runProofCommand } from "../scripts/chief-managed-proof.mjs";
 import { classifyResourceList, ensureResource } from "../server/chief/managed/resources.js";
 import { PROOF_TABLES } from "../server/chief/managed/constants.js";
 import { queueProofRun } from "../server/chief/managed/queue.js";
@@ -214,7 +230,16 @@ function createMockClient() {
       return events;
     },
     async listMemories() {
-      return workspaceMemories();
+      const latest = sessions.at(-1);
+      const files = workspaceMemories();
+      if (latest?.prompt?.includes("40 goats")) {
+        return files.map((file) =>
+          file.path.endsWith("requirements.md")
+            ? { ...file, content: "Herd size is 40 goats." }
+            : file
+        );
+      }
+      return files;
     },
     async sendEvents() {
       calls.sendEvents += 1;
@@ -666,47 +691,34 @@ test("same-store continuation and postgres recovery use different stores", async
   assert.equal(client.calls.createAgent, 1);
 });
 
-test("run start awaits prompt submission before the response, and status does not drain", async () => {
+test("run start returns the run id after a dispatch ack and does not wait for the provider", async () => {
   const store = createMemoryStore();
-  const client = createMockClient();
-  client.setEvents("running");
-  let sessionAtKick = null;
-  let release;
-  const gate = new Promise((resolve) => {
-    release = resolve;
-  });
-  let finished = false;
+  let providerFinished = false;
   const res = response();
-  const pending = handleManagedRunStart(
+  await handleManagedRunStart(
     { method: "POST", body: { phase: "initial", title: "Goat hay feeder" } },
     res,
     {
       enabled: true,
       authenticate: async () => ({ uid: "user_1" }),
       storeFor: () => store,
-      client,
-      selfPost: async ({ runId }) => {
-        sessionAtKick = (await store.getRun(runId)).providerSessionId;
-        await gate;
-        finished = true;
-        return { status: 200 };
+      dispatch: async ({ runId }) => {
+        setTimeout(() => {
+          providerFinished = runId;
+        }, 50);
+        return { accepted: true };
       },
     }
   );
-  // The skill archive is built before the session id exists, and that work
-  // yields to the event loop. Poll until the awaited kick records the id.
-  const deadline = Date.now() + 3000;
-  while (!sessionAtKick && !res.body && Date.now() < deadline) {
-    await new Promise((resolve) => setImmediate(resolve));
-  }
-  assert.ok(sessionAtKick);
-  assert.equal(finished, false);
-  release();
-  await pending;
-  assert.equal(finished, true);
   assert.equal(res.statusCode, 202);
-  assert.equal(res.body.promptSubmitted, true);
-  assert.equal(res.body.chained, true);
+  assert.equal(res.body.promptSubmitted, false);
+  assert.equal(res.body.status, "queued");
+  assert.equal(res.body.dispatchAcknowledged, true);
+  assert.ok(res.body.runId);
+  assert.equal(providerFinished, false);
+  const saved = await store.getRun(res.body.runId);
+  assert.equal(saved.status, "queued");
+  assert.equal(saved.providerSessionId, null);
 
   const statusResponse = response();
   await handleManagedRunStatus(
@@ -724,7 +736,7 @@ test("run start awaits prompt submission before the response, and status does no
     }
   );
   assert.equal(statusResponse.statusCode, 200);
-  assert.equal(statusResponse.body.run.providerSessionId, sessionAtKick);
+  assert.equal(statusResponse.body.run.providerSessionId, null);
   assert.equal(statusResponse.body.latency.dropped, 0);
 });
 
@@ -810,4 +822,273 @@ test("drain requires the shared secret", async () => {
     storeFor: () => createMemoryStore(),
   });
   assert.equal(res.statusCode, 503);
+});
+
+test("a managed role denied pg_control_system still matches the owner cluster", () => {
+  const denied = {
+    systemIdentifier: null,
+    systemIdentifierAccess: "denied",
+    databaseOid: "5",
+    databaseName: "postgres",
+    projectRef: "proofref",
+    serverAddr: "10.0.0.1",
+  };
+  const owner = {
+    systemIdentifier: "111",
+    systemIdentifierAccess: "granted",
+    databaseOid: "5",
+    databaseName: "postgres",
+    projectRef: "proofref",
+    serverAddr: "10.0.0.2",
+  };
+  const isolated = compareDatabaseIdentities({
+    runtime: denied,
+    direct: owner,
+    service: { ...denied, serverAddr: "10.0.0.3" },
+    requireService: true,
+    productionSystemId: "999",
+  });
+  assert.equal(isolated.ok, true);
+  assert.equal(isolated.identity.method, "owner_system_identifier");
+  assert.equal(isolated.identity.systemIdentifier, "111");
+  assert.equal(isolated.serviceChecked, true);
+  assert.match(isolated.identity.limitation, /cannot call pg_control_system/);
+
+  const missingRef = compareDatabaseIdentities({
+    runtime: { ...denied, projectRef: "" },
+    direct: owner,
+    productionSystemId: "999",
+  });
+  assert.equal(missingRef.ok, false);
+  assert.match(missingRef.failures.join(" "), /project ref is missing/);
+});
+
+test("project ref and database oid are the fallback when every role is denied", () => {
+  const denied = {
+    systemIdentifier: null,
+    systemIdentifierAccess: "denied",
+    databaseOid: "5",
+    databaseName: "postgres",
+    projectRef: "proofref",
+  };
+  const isolated = compareDatabaseIdentities({
+    runtime: denied,
+    direct: denied,
+    service: denied,
+    requireService: true,
+    productionProjectRef: "prodref",
+  });
+  assert.equal(isolated.ok, true);
+  assert.equal(isolated.identity.method, "project_ref_and_database_oid");
+  assert.equal(isolated.identity.systemIdentifier, null);
+  assert.match(isolated.identity.limitation, /not the Postgres system identifier/);
+
+  const sameProject = compareDatabaseIdentities({
+    runtime: denied,
+    direct: denied,
+    productionProjectRef: "proofref",
+  });
+  assert.equal(sameProject.isolation, "production");
+  assert.equal(sameProject.ok, false);
+});
+
+test("project ref parsing drops the role name and password", () => {
+  assert.equal(
+    projectRefFromConnection(
+      "postgresql://freedom_app.proofref:secret-token@aws-0-us-east-1.pooler.supabase.com:6543/postgres"
+    ),
+    "proofref"
+  );
+  assert.equal(
+    projectRefFromConnection(
+      "postgresql://postgres:secret-token@db.proofref.supabase.co:5432/postgres"
+    ),
+    "proofref"
+  );
+  assert.equal(
+    JSON.stringify(
+      projectRefFromConnection("postgresql://postgres:secret@db.proofref.supabase.co/postgres")
+    ).includes("secret"),
+    false
+  );
+});
+
+test("baseline readiness requires the init migration and User, not only the proof migration", () => {
+  const proofOnly = evaluateMigrationBaseline({
+    userTable: false,
+    appliedMigrations: ["20261022193000_chief_managed_proof"],
+  });
+  assert.equal(proofOnly.ok, false);
+  assert.match(proofOnly.failures.join(" "), /20250604120000_init/);
+  assert.match(proofOnly.failures.join(" "), /User/);
+  const ready = evaluateMigrationBaseline({
+    userTable: true,
+    appliedMigrations: ["20250604120000_init", "20261022193000_chief_managed_proof"],
+  });
+  assert.equal(ready.ok, true);
+});
+
+test("live prerequisites name what is missing and do not say the runner is unimplemented", () => {
+  const missing = assessLivePrerequisites({});
+  assert.equal(
+    missing.some((item) => /not implemented/i.test(item)),
+    false
+  );
+  assert.match(missing.join("\n"), /CHIEF_PROOF_SPEND_APPROVED/);
+  assert.match(missing.join("\n"), /SERVICE_DATABASE_URL/);
+  assert.match(missing.join("\n"), /CHIEF_SUPERVISOR_URL/);
+  assert.match(missing.join("\n"), /5 provider sessions/);
+  assert.equal(assessProofUser(null, "user_proof").ok, false);
+});
+
+test("the live runner executes phases through a supervisor ack when prerequisites are injected", async () => {
+  const store = createMemoryStore();
+  const client = createMockClient();
+  client.setEvents("idle");
+  const result = await executeLiveProof({
+    store,
+    userId: "user_1",
+    phases: LIVE_PHASES,
+    queue: queueProofRun,
+    liveProvider: false,
+    timeoutMs: 5000,
+    dispatch: ({ runId }) => {
+      setImmediate(() => {
+        advanceRun({ store, client, runId, actor: "supervisor", budgetMs: 20_000 }).catch(() => {});
+      });
+      return { accepted: true };
+    },
+    readRun: (runId) => store.getRun(runId),
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.acceptance, "runner_exercised_with_injected_client");
+  assert.equal(result.mocked, true);
+  assert.equal(result.sessionsReserved, 5);
+  const continued = client.sessions[1];
+  const recovered = client.sessions.at(-1);
+  assert.equal(continued.access, "read_only");
+  assert.equal(continued.storeId, client.sessions[0].storeId);
+  assert.equal(client.sessions[2].prompt.includes("40 goats"), true);
+  assert.notEqual(recovered.storeId, client.sessions[0].storeId);
+  assert.equal(client.calls.createSkill, 1);
+  assert.equal(client.calls.createAgent, 1);
+  assert.ok(client.calls.createMemory.some((body) => body.content.includes("40 goats")));
+  assert.equal(result.evidence.at(-1).priorStoreId, client.sessions[0].storeId);
+});
+
+test("the proposed session cap stops the runner before another provider session", async () => {
+  const store = createMemoryStore();
+  const client = createMockClient();
+  client.setEvents("idle");
+  const result = await executeLiveProof({
+    store,
+    userId: "user_1",
+    queue: queueProofRun,
+    sessionCap: 1,
+    ledgerCents: 1000,
+    timeoutMs: 5000,
+    dispatch: ({ runId }) => {
+      setImmediate(() => {
+        advanceRun({ store, client, runId, actor: "supervisor", budgetMs: 20_000 }).catch(() => {});
+      });
+      return { accepted: true };
+    },
+    readRun: (runId) => store.getRun(runId),
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "proposed_cost_cap");
+  assert.equal(result.sessionsReserved, 1);
+  assert.equal(client.calls.createSession, 1);
+});
+
+test("supervisor kick acknowledges before work finishes and continues after the client aborts", async () => {
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  let finished = false;
+  const listener = await createKickServer({
+    secret: "proof-secret",
+    onKick: async () => {
+      await gate;
+      finished = true;
+    },
+  });
+  try {
+    const controller = new AbortController();
+    const response = await fetch(`http://127.0.0.1:${listener.port}/kick`, {
+      method: "POST",
+      headers: { authorization: "Bearer proof-secret" },
+      signal: controller.signal,
+    });
+    assert.equal(response.status, 202);
+    assert.equal((await response.json()).accepted, true);
+    assert.equal(finished, false);
+    controller.abort();
+    const acked = await acknowledgeSupervisor(
+      {
+        CHIEF_SUPERVISOR_URL: `http://127.0.0.1:${listener.port}`,
+        CHIEF_DRAIN_SECRET: "proof-secret",
+      },
+      fetch
+    );
+    assert.equal(acked.accepted, true);
+    assert.equal(finished, false);
+    release();
+    const deadline = Date.now() + 1000;
+    while (!finished && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    assert.equal(finished, true);
+  } finally {
+    await listener.close();
+  }
+});
+
+test("the live command runs the injected experiment when prerequisites pass", async () => {
+  const env = {
+    CHIEF_PROOF_SPEND_APPROVED: "1",
+    ANTHROPIC_API_KEY: "present",
+    CHIEF_MANAGED_PROOF: "1",
+    DATABASE_URL: "present",
+    DIRECT_URL: "present",
+    SERVICE_DATABASE_URL: "present",
+    CHIEF_PRODUCTION_DB_SYSTEM_ID: "production",
+    FFF_ENCRYPTION_KEYS: "present",
+    FFF_ENCRYPTION_ACTIVE_VERSION: "1",
+    CHIEF_PROOF_USER_ID: "user_proof",
+    CHIEF_SUPERVISOR_URL: "http://127.0.0.1:9",
+    CHIEF_DRAIN_SECRET: "present",
+    CHIEF_SUPERVISOR_MODE: "embedded",
+  };
+  let called = false;
+  const result = await runProofCommand(env, {
+    live: true,
+    identify: async () => ({ ok: true, serviceChecked: true, failures: [] }),
+    checkReadiness: async () => ({
+      ok: true,
+      baseline: { ok: true, failures: [] },
+      readiness: { ok: true, failures: [] },
+    }),
+    lookupUser: async () => ({ id: "user_proof" }),
+    execute: async () => {
+      called = true;
+      return { ok: true, acceptance: "live", mocked: false };
+    },
+  });
+  assert.equal(called, true);
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.body.acceptance, "live");
+  assert.equal(result.body.mocked, false);
+});
+
+test("the live command refuses with the missing prerequisites", async () => {
+  const refused = await runProofCommand({}, { live: true });
+  assert.equal(refused.exitCode, 3);
+  assert.equal(refused.body.implemented, true);
+  assert.equal(refused.body.acceptance, "live_refused");
+  assert.equal(JSON.stringify(refused.body).includes("not implemented"), false);
+  const dry = await runProofCommand({}, { live: false });
+  assert.equal(dry.body.acceptance, "mocked_only");
+  assert.equal(dry.body.live, false);
 });

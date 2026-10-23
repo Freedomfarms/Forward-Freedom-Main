@@ -1,5 +1,5 @@
 import { proofEnabled, SLICE_BUDGET_MS } from "./constants.js";
-import { acceptRun } from "./kick.js";
+import { acknowledgeDispatch } from "./kick.js";
 import { summarizeLatency } from "./latency.js";
 import { queueProofRun } from "./queue.js";
 import { decideWebhookDelivery } from "./jobs.js";
@@ -31,37 +31,19 @@ export async function handleManagedRunStart(request, response, deps = {}) {
     response.status(error.status || 500).json({ error: error.message || "unable to queue run" });
     return;
   }
-  let accepted;
+  let acknowledged;
   try {
-    accepted = await acceptRun({
-      store,
-      client: deps.client,
-      runId: queued.run.id,
-      actor: "awaited_start",
-      budgetMs: deps.budgetMs || SLICE_BUDGET_MS,
-      routeStartedAt: deps.now || new Date(),
-      selfPost: deps.selfPost || null,
-    });
+    acknowledged = await acknowledgeDispatch(deps.dispatch, queued.run.id);
   } catch {
-    response.status(202).json({
-      runId: queued.run.id,
-      projectId: queued.project.id,
-      promptSubmitted: false,
-      status: "queued",
-      yielded: true,
-      reason: "kick_failed",
-      chained: false,
-    });
-    return;
+    acknowledged = { accepted: false, reason: "dispatch_failed" };
   }
   response.status(202).json({
     runId: queued.run.id,
     projectId: queued.project.id,
-    promptSubmitted: Boolean(accepted.promptSubmitted),
-    status: accepted.run?.status || queued.run.status,
-    yielded: Boolean(accepted.yielded),
-    reason: accepted.reason || null,
-    chained: Boolean(accepted.chained),
+    promptSubmitted: false,
+    status: "queued",
+    dispatchAcknowledged: acknowledged.accepted,
+    reason: acknowledged.reason,
   });
 }
 
@@ -183,16 +165,16 @@ export async function handleManagedWebhook(request, response, deps = {}) {
       webhookEventId: verified.webhookId,
     });
   }
+  let dispatchAcknowledged = false;
   if (decision.action === "wake" || decision.action === "insert") {
-    await advanceRun({
-      store,
-      client: deps.client,
-      runId: located.id,
-      actor: "awaited_start",
-      budgetMs: deps.budgetMs || SLICE_BUDGET_MS,
-    });
+    try {
+      const ack = await acknowledgeDispatch(deps.dispatch, located.id);
+      dispatchAcknowledged = ack.accepted;
+    } catch {
+      dispatchAcknowledged = false;
+    }
   }
-  response.status(200).json({ delivery: decision.action });
+  response.status(200).json({ delivery: decision.action, dispatchAcknowledged });
 }
 
 function allow(request, response, deps, { proofOnly = false } = {}) {

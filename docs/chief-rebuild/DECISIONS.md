@@ -1,12 +1,14 @@
 # CHIEF rebuild — Assignment 1 decisions
 
-## Normal start awaits the slice
+## Run start returns after a dispatch acknowledgement
 
-`POST /api/chief/managed/runs` inserts the job, then awaits `advanceRun` before it responds. Self-POST is an awaited optimization after that persist, capped by chain depth. The 30-second supervisor reclaims `pending` jobs and expired job leases. It is not the chat-start delay. Unawaited work after the serverless response is not the processing path.
+`POST /api/chief/managed/runs` inserts the durable job, then waits for the separate supervisor's `POST /kick` to return 202. The response carries the run id with `promptSubmitted: false`. Claude's response and the rest of the experiment continue in the supervisor process after the client can disconnect. The start route does not call `advanceRun`. The 30-second supervisor reclaims `pending` jobs and expired job leases when the kick did not land. Unawaited work after a serverless response is not the processing path. The Vercel drain route is not that supervisor.
 
 ## Database identity is the cluster and the database oid
 
-`scripts/chief-proof-db-identity.mjs` reads `pg_control_system().system_identifier`, `pg_database.oid`, and `current_database()` on the runtime and direct URLs. Hosts may differ. A missing system identifier fails closed. `CHIEF_PRODUCTION_DB_SYSTEM_ID` is required and must differ. `SERVICE_DATABASE_URL`, when set, must be the same cluster and database. The script prints host, port, and database name only. Readiness runs the identity check first and does not claim a schema when identity fails.
+`pg_control_system()` is granted to superusers and `pg_monitor` by default. This repo never grants that to `freedom_app` or `freedom_service`, so `DATABASE_URL` and `SERVICE_DATABASE_URL` can be denied with SQLSTATE `42501`. `DIRECT_URL` is the owner role and is the supported reader of `system_identifier`. A denied connection must still match database oid, database name, and the Supabase project ref parsed from `db.<ref>.supabase.co` or the pooler username `role.<ref>`. If every connection is denied, the check uses that project ref plus the database oid and records the limitation that this is not the Postgres system identifier. `SERVICE_DATABASE_URL`, when set, is probed. The live proof requires it. The script prints host, port, database name, role name, and access. It does not print credentials. Readiness runs identity first and does not claim a schema when identity fails.
+
+The isolated database gets its shape from `npx prisma migrate deploy` against that `DIRECT_URL`. The command applies every migration from `20250604120000_init` through the proof migration. Applying only `20261022193000_chief_managed_proof` does not create `"User"`, which the proof foreign keys require.
 
 ## Leases
 
@@ -35,7 +37,9 @@ The configured model is `{ id: "claude-opus-5-5", effort: "medium" }`. `served_m
 
 ## Supervisor location
 
-The prepared durable location is a Fly.io shared-cpu machine, app `freedom-os-chief-supervisor`, region `iad`, embedded mode, `min_machines_running = 1`. It is not created. A Cursor cloud VM may run the same script for one bounded experiment and must not be described as production hosting.
+The first live experiment is a temporary Cursor cloud VM running `scripts/chief-managed-supervisor.mjs` in embedded mode on `127.0.0.1`. It is not production hosting. Fly.io app `freedom-os-chief-supervisor` in `iad` remains a later hosting option and is not created.
+
+The proposed first-experiment cost cap is 5 provider sessions and 1000 cents ($10.00), because each session body carries a $2.00 budget. That spend is not approved. The runner stops at the cap.
 
 ## This branch stays unpushed
 

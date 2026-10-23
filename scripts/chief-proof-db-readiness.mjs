@@ -3,8 +3,15 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { buildPgPoolConfig } from "../server/db/pgPoolConfig.js";
-import { PROOF_TABLES } from "../server/chief/managed/constants.js";
-import { evaluateSchemaReadiness } from "../server/chief/managed/readiness.js";
+import {
+  BASE_MIGRATION,
+  PROOF_MIGRATION,
+  PROOF_TABLES,
+} from "../server/chief/managed/constants.js";
+import {
+  evaluateMigrationBaseline,
+  evaluateSchemaReadiness,
+} from "../server/chief/managed/readiness.js";
 import { redactSecrets } from "../server/chief/managed/redact.js";
 import { identifyProofDatabase } from "./chief-proof-db-identity.mjs";
 
@@ -18,13 +25,27 @@ const QUERY = `
     AND c.relname = ANY($1::text[])
 `;
 
-export async function checkProofReadiness(env = process.env) {
-  const identity = await identifyProofDatabase(env);
+const BASELINE_QUERY = `
+  SELECT migration_name
+  FROM "_prisma_migrations"
+  WHERE finished_at IS NOT NULL
+    AND rolled_back_at IS NULL
+    AND migration_name = ANY($1::text[])
+`;
+
+const USER_QUERY = `SELECT to_regclass('public."User"')::text AS user_table`;
+
+export async function checkProofReadiness(env = process.env, existingIdentity = null) {
+  const identity = existingIdentity || (await identifyProofDatabase(env));
   if (!identity.ok) {
-    return { ok: false, stage: "identity", identity, readiness: null };
+    return { ok: false, stage: "identity", identity, baseline: null, readiness: null };
   }
   const pool = new pg.Pool(buildPgPoolConfig(env.DIRECT_URL));
   try {
+    const baseline = await readBaseline(pool);
+    if (!baseline.ok) {
+      return { ok: false, stage: "baseline", identity, baseline, readiness: null };
+    }
     const result = await pool.query(QUERY, [PROOF_TABLES]);
     const tables = result.rows.map((row) => ({
       name: row.name,
@@ -32,9 +53,27 @@ export async function checkProofReadiness(env = process.env) {
       forced: row.forced,
     }));
     const readiness = evaluateSchemaReadiness(tables);
-    return { ok: readiness.ok, stage: "schema", identity, readiness };
+    return { ok: readiness.ok, stage: "schema", identity, baseline, readiness };
   } finally {
     await pool.end();
+  }
+}
+
+async function readBaseline(pool) {
+  try {
+    const [migrations, user] = await Promise.all([
+      pool.query(BASELINE_QUERY, [[BASE_MIGRATION, PROOF_MIGRATION]]),
+      pool.query(USER_QUERY),
+    ]);
+    return evaluateMigrationBaseline({
+      userTable: Boolean(user.rows[0]?.user_table),
+      appliedMigrations: migrations.rows.map((row) => row.migration_name),
+    });
+  } catch (error) {
+    if (error.code === "42P01") {
+      return evaluateMigrationBaseline({ userTable: false, appliedMigrations: [] });
+    }
+    throw error;
   }
 }
 

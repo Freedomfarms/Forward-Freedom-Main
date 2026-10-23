@@ -1,7 +1,6 @@
-import http from "node:http";
-
 import { SUPERVISOR_INTERVAL_MS } from "../server/chief/managed/constants.js";
 import { drainHeaders, drainTarget } from "../server/chief/managed/drainTarget.js";
+import { createKickServer } from "../server/chief/managed/kickServer.js";
 import { redactSecrets } from "../server/chief/managed/redact.js";
 import { supervise } from "../server/chief/managed/supervisor.js";
 
@@ -32,9 +31,7 @@ async function embeddedTick() {
   const { createAnthropicManagedClient } = await import("../server/chief/managed/client.js");
   const { createUserStore, listClaimableJobs } =
     await import("../server/chief/managed/prismaStore.js");
-  if (!process.env.ANTHROPIC_API_KEY) {
-    throw new Error("ANTHROPIC_API_KEY is not configured.");
-  }
+  if (!process.env.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY is not configured.");
   const jobs = await listClaimableJobs(new Date());
   const client = createAnthropicManagedClient({ apiKey: process.env.ANTHROPIC_API_KEY });
   let drained = 0;
@@ -54,24 +51,29 @@ const tick = mode === "embedded" ? embeddedTick : httpTick;
 
 if (process.env.CHIEF_SUPERVISOR_LISTEN === "1") {
   const port = Number(process.env.CHIEF_SUPERVISOR_PORT || 8787);
-  const server = http.createServer(async (request, response) => {
-    if (request.method === "POST" && request.url === "/kick") {
-      try {
-        const result = await tick();
-        response.writeHead(202, { "content-type": "application/json" });
-        response.end(JSON.stringify({ accepted: true, drained: result.drained }));
-      } catch (error) {
-        response.writeHead(503, { "content-type": "application/json" });
-        response.end(JSON.stringify({ accepted: false, error: redactSecrets(error.message) }));
-      }
-      return;
-    }
-    response.writeHead(404);
-    response.end();
-  });
-  server.listen(port, () => {
-    log({ event: "supervisor_listen", port, mode, durable: false });
-  });
+  const host = process.env.CHIEF_SUPERVISOR_HOST || "127.0.0.1";
+  createKickServer({
+    host,
+    port,
+    secret: process.env.CHIEF_DRAIN_SECRET,
+    onKick: () => tick(),
+    onError: (message) =>
+      log({ event: "supervisor_kick_failed", error: message, delayClass: "supervisor_recovery" }),
+  })
+    .then((listener) => {
+      log({
+        event: "supervisor_listen",
+        host: listener.host,
+        port: listener.port,
+        mode,
+        hosting: "temporary_cursor_cloud_process",
+        durable: false,
+      });
+    })
+    .catch((error) => {
+      process.stderr.write(`${redactSecrets(error.message)}\n`);
+      process.exitCode = 1;
+    });
 }
 
 supervise({

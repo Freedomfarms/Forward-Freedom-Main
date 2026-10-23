@@ -1,4 +1,4 @@
-import { createAnthropicManagedClient } from "../../../server/chief/managed/client.js";
+import { acknowledgeSupervisor } from "../../../server/chief/managed/drainTarget.js";
 import { handleManagedWebhook } from "../../../server/chief/managed/handlers.js";
 import {
   createUserStore,
@@ -18,8 +18,6 @@ export default async function handler(request, response) {
   return handleManagedWebhook(request, response, {
     storeFor: (userId) => createUserStore({ userId }),
     findRunBySession: (sessionId) => findRunByProviderSession(sessionId),
-    client: process.env.ANTHROPIC_API_KEY
-      ? createAnthropicManagedClient({ apiKey: process.env.ANTHROPIC_API_KEY })
-      : null,
+    dispatch: () => acknowledgeSupervisor(),
   });
 }

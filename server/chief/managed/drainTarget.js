@@ -5,6 +5,17 @@ export function drainTarget(env = process.env) {
   return null;
 }
 
+export async function acknowledgeSupervisor(env = process.env, fetchImpl = fetch) {
+  if (!env.CHIEF_SUPERVISOR_URL) return { accepted: false, reason: "supervisor_url_required" };
+  const url = drainTarget(env);
+  if (!url || !env.CHIEF_DRAIN_SECRET)
+    return { accepted: false, reason: "supervisor_not_configured" };
+  const downstream = await fetchImpl(url, { method: "POST", headers: drainHeaders(0, env) });
+  const payload = await downstream.json().catch(() => ({}));
+  const accepted = downstream.status === 202 && payload.accepted === true;
+  return { accepted, reason: accepted ? null : "dispatch_not_acknowledged" };
+}
+
 export function drainHeaders(depth, env = process.env) {
   const headers = {
     authorization: `Bearer ${env.CHIEF_DRAIN_SECRET || ""}`,

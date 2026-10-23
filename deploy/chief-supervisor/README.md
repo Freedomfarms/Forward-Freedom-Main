@@ -1,17 +1,33 @@
 # Prepared cloud supervisor
 
 This process is the recovery loop for CHIEF proof drain jobs. It is not durable
-production hosting until a machine is provisioned. This assignment does not
-provision it and does not spend money.
+production hosting. This assignment does not provision it and does not spend money.
 
-## Proposed location
+## First live experiment
+
+Use a temporary Cursor cloud VM. Run the supervisor there as its own process.
+That VM disappears with the session. Do not describe it as production hosting.
+Fly.io is a later option and is not required for this experiment.
+
+The start route stores the job, then waits only for `POST /kick` to return 202. The supervisor process continues the experiment after that response, so
+the client can disconnect. The 30-second loop reclaims jobs if that kick is lost.
+
+```bash
+CHIEF_SUPERVISOR_MODE=embedded \
+CHIEF_SUPERVISOR_LISTEN=1 \
+CHIEF_SUPERVISOR_HOST=127.0.0.1 \
+CHIEF_SUPERVISOR_PORT=8787 \
+CHIEF_DRAIN_SECRET=<secret> \
+node scripts/chief-managed-supervisor.mjs
+```
+
+Point `CHIEF_SUPERVISOR_URL` at `http://127.0.0.1:8787`. Do not start this until
+the identity check, the full migration history, and spend approval are in place.
+
+## Later hosting option
 
 A Fly.io shared-cpu machine in `iad`, app name `freedom-os-chief-supervisor`,
-running `node scripts/chief-managed-supervisor.mjs` in `embedded` mode. The
-machine stays up, so a kick is a normal process, not work after a serverless
-response. The 30-second loop reclaims `pending` jobs and expired `running`
-leases. Normal run submission still awaits prompt processing in
-`POST /api/chief/managed/runs` before that response returns.
+can run the same embedded process. It is not created.
 
 Fly.io charges for the machine. Do not run `fly apps create`, `fly deploy`, or
 `fly secrets set` until that spend and the isolated database are approved.
@@ -20,18 +36,6 @@ From the repository root, the future command would be:
 
 ```bash
 fly deploy . --config deploy/chief-supervisor/fly.toml --dockerfile deploy/chief-supervisor/Dockerfile --ha=false
-```
-
-## Bounded experiment
-
-A Cursor cloud VM can run the same process against a local API for one
-experiment. That VM is temporary. Do not describe it as production hosting.
-
-```bash
-CHIEF_SUPERVISOR_MODE=http \
-CHIEF_DRAIN_URL=http://127.0.0.1:3001/api/chief/managed/drain \
-CHIEF_DRAIN_SECRET=<secret> \
-node scripts/chief-managed-supervisor.mjs
 ```
 
 ## Configuration names
@@ -51,6 +55,5 @@ Set these on the worker. Do not put values in git.
 - `FFF_ENCRYPTION_KEYS`, `FFF_ENCRYPTION_ACTIVE_VERSION`
 - `CHIEF_MANAGED_PROOF=1`
 
-The API can await `CHIEF_SUPERVISOR_URL/kick` after it has persisted the job.
-That await is an optimization. The persisted job and this loop are the recovery
-path.
+`POST /api/chief/managed/runs` waits for this process to accept `/kick`. It does
+not wait for Claude. The 30-second loop is recovery when the kick did not land.

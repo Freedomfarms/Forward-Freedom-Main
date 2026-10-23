@@ -19,6 +19,11 @@ export const WRITE_LEASE_MS = 90_000;
 export const SLICE_BUDGET_MS = 25_000;
 export const SUPERVISOR_INTERVAL_MS = 30_000;
 export const SESSION_BUDGET_CENTS = "200";
+// First live experiment cap. This is a proposal, not spend approval.
+export const PROPOSED_PROOF_SESSION_CAP = 5;
+export const PROPOSED_PROOF_LEDGER_CENTS = 1000;
+export const BASE_MIGRATION = "20250604120000_init";
+export const PROOF_MIGRATION = "20261022193000_chief_managed_proof";
 
 export const REQUIRED_WORKSPACE_PATHS = Object.freeze([
   "requirements.md",

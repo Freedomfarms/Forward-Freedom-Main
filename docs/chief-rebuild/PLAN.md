@@ -6,12 +6,12 @@ This assignment does not implement voice, financial integration, scheduled brief
 
 ## Proof surface
 
-- `POST /api/chief/managed/runs` authenticates, inserts a queued run and a pending job, then awaits `advanceRun` until the prompt is submitted or the slice yields. A self-POST runs only after that persist, and only when the slice yielded. The 30-second supervisor tick is recovery.
+- `POST /api/chief/managed/runs` authenticates, inserts a queued run and a pending job, then waits only for the separate supervisor to acknowledge `POST /kick` with 202. It returns the run id then. It does not wait for Claude or for the rest of the experiment. The supervisor process continues after the client disconnects. The 30-second tick reclaims a job if that acknowledgement was lost.
 - `GET /api/chief/managed/runs/:runId` returns the public run and every latency sample. It does not drain.
 - `POST /api/chief/managed/webhook` verifies a Standard Webhooks signature, dedupes on `webhook-id`, and wakes a drain job.
 - `POST /api/chief/managed/drain` requires `CHIEF_DRAIN_SECRET` and advances claimable jobs.
 - `server/chief/managed/client.js` is the only caller of the Anthropic Managed Agents, memory, and skills APIs.
-- `scripts/chief-managed-supervisor.mjs` is the reusable recovery process. `deploy/chief-supervisor/` prepares a Fly.io machine and does not provision it.
+- `scripts/chief-managed-supervisor.mjs` is the reusable recovery process. The first live experiment runs it on a temporary Cursor cloud VM. `deploy/chief-supervisor/` keeps a Fly.io config for later and does not provision it.
 - `prisma/migrations/20261022193000_chief_managed_proof/` is the isolated proof schema. It is not applied.
 - `third_party/icm-architect/` is the pinned ICM Architect skill (`e16cafe6a664dcf6d787a726b452adba77d913f4`). The zip used for upload omits `VENDORED.md`.
 
@@ -25,10 +25,10 @@ Required workspace files: `requirements.md`, `decisions.md`, `open-questions.md`
 
 ## Gates before any live step
 
-1. Run `npm run chief:proof:identity`. It must show the same `system_identifier` and database oid for runtime, direct, and service connections, and a production system id that differs. A matching database name is not enough.
-2. Apply `20261022193000_chief_managed_proof` only to that isolated database.
-3. Run `npm run chief:proof:readiness`. Identity is checked again before any schema claim. Readiness requires the proof tables with forced row-level security.
-4. Spend approval is separate. `scripts/chief-managed-proof.mjs --live` exits 3 until `CHIEF_PROOF_SPEND_APPROVED=1`, and even then this assignment does not execute the live call.
+1. Run `npm run chief:proof:identity`. `DATABASE_URL` is `freedom_app` and `SERVICE_DATABASE_URL` is `freedom_service`. Neither role is granted `pg_monitor`, so `pg_control_system()` may return SQLSTATE `42501`. `DIRECT_URL` is the owner role and is the supported reader of `system_identifier`. The denied connections must still share database oid, database name, and Supabase project ref with that owner. If every connection is denied, isolation falls back to the project ref plus database oid, and the result says that this is not the Postgres system identifier. A matching database name is not enough. `SERVICE_DATABASE_URL` is probed whenever it is set.
+2. On that isolated database only, run `npx prisma migrate deploy` with `DIRECT_URL` pointed at it. That applies the full history, beginning at `20250604120000_init`, including `20261022193000_chief_managed_proof`. The proof migration references `"User"`, so applying only the new SQL file to an empty database is not enough.
+3. Run `npm run chief:proof:readiness`. Identity is checked again before any schema claim. Readiness then requires both migration names in `_prisma_migrations`, the `"User"` table, and forced row-level security on the proof tables.
+4. Spend approval is separate. `scripts/chief-managed-proof.mjs --live` is implemented. Without the prerequisites it exits 3 and names each missing one. It does not run until those are present, including `CHIEF_PROOF_SPEND_APPROVED=1`. The proposed cap is 5 provider sessions and 1000 cents. That spend is not approved.
 
 ## Push gate
 

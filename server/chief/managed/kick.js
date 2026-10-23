@@ -1,30 +1,10 @@
-import { SLICE_BUDGET_MS } from "./constants.js";
-import { advanceRun } from "./orchestrator.js";
+// The start route awaits only this acknowledgement. It does not call
+// advanceRun. Claude's response and the rest of the experiment run in the
+// separate supervisor process after the run id has been returned.
 
-// The start route awaits this before it responds. Self-POST runs only after
-// advanceRun has already persisted the job, and the await is an optimization.
-// The 30-second supervisor is the recovery path when this chain stops.
-
-export async function acceptRun({
-  store,
-  client,
-  runId,
-  actor = "awaited_start",
-  budgetMs = SLICE_BUDGET_MS,
-  now = new Date(),
-  routeStartedAt = null,
-  selfPost = null,
-}) {
-  const advanced = await advanceRun({
-    store,
-    client,
-    runId,
-    actor,
-    budgetMs,
-    now,
-    routeStartedAt,
-  });
-  if (!advanced.yielded || !selfPost) return { ...advanced, chained: null };
-  const chained = await selfPost({ runId });
-  return { ...advanced, chained };
+export async function acknowledgeDispatch(dispatch, runId) {
+  if (!dispatch) return { accepted: false, reason: "dispatch_not_configured" };
+  const result = await dispatch({ runId });
+  if (result?.accepted) return { accepted: true, reason: null };
+  return { accepted: false, reason: result?.reason || "dispatch_not_acknowledged" };
 }
