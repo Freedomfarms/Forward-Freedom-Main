@@ -1,14 +1,13 @@
 # CHIEF rebuild — Assignment 1 status
 
-Branch `cursor/chief-managed-agents-proof-1ece`. Base `32301c2`. Not on `origin`. No upstream. No pull request.
+Branch `cursor/chief-managed-agents-proof-1ece`. Base `32301c2`. Pushed to `origin` on 23 October 2026 because the branch was requested for review. A new cloud agent can fetch this branch. `docs/chief-rebuild/HANDOFF.md` still describes the local bundle.
 
 Commits that contain the proof, oldest first:
 
 - `903e5b8` Add the isolated CHIEF managed-agent proof for Assignment 1.
 - `a2f71e9` Implement the CHIEF proof live runner and return run ids after supervisor ack.
-- The branch tip is the handoff commit on top of `a2f71e9`. `git rev-parse HEAD` after restoring the bundle is the current commit. That hash is also written in the downloaded handoff next to the bundle.
-
-A new cloud agent cannot read this VM’s unpushed commits. Recover them from `chief-assignment-1.bundle`. Instructions: `docs/chief-rebuild/HANDOFF.md`.
+- `cdfd226` Record the Assignment 1 handoff and the unpushed recovery path.
+- The status commit on top of `cdfd226` records this push.
 
 ## Implemented
 
@@ -34,7 +33,7 @@ Recorded in `docs/chief-rebuild/VERIFICATION.md`. Mocked or local only:
 
 ## Blockers
 
-- Do not push. Vercel Preview runs `npm run build`, which runs `prisma migrate deploy` unless Preview `DATABASE_URL` is unset or exactly `postgresql://postgres:password@localhost:5432/forward_freedom`. Supabase Preview on pull request 306 was skipped. Preview database identity was not proven.
+- The branch is on `origin`. Vercel Preview still runs `npm run build`, which runs `prisma migrate deploy` unless Preview `DATABASE_URL` is unset or exactly `postgresql://postgres:password@localhost:5432/forward_freedom`. Supabase Preview on pull request 306 was skipped. Preview database identity was not proven. Confirm the Preview database before treating a preview deployment as safe.
 - Do not migrate, deploy, provision Fly, or make a paid Anthropic call.
 - Spend is not approved. Proposed cap: 5 provider sessions, 1000 cents ($10.00).
 - No isolated database has been identity-checked or migrated.
@@ -42,8 +41,7 @@ Recorded in `docs/chief-rebuild/VERIFICATION.md`. Mocked or local only:
 
 ## Exact next steps
 
-1. Download `chief-assignment-1.bundle` and the handoff from this chat before leaving this VM.
-2. Save `ANTHROPIC_API_KEY` in the environment secrets dashboard, then start the new cloud agent. Attach the bundle. This VM will still show the key as MISSING.
-3. In the new agent, restore the branch with `docs/chief-rebuild/HANDOFF.md`. Confirm `git rev-parse HEAD` matches the handoff tip.
-4. Report each live prerequisite as PRESENT or MISSING. Do not print values. Do not connect, migrate, or call Anthropic in that check.
-5. Push only after the Vercel Preview `DATABASE_URL` cannot migrate production. Run `--live` only after identity, the full migration history, readiness, and an explicit spend approval.
+1. Fetch `origin/cursor/chief-managed-agents-proof-1ece`. The local bundle remains a fallback copy.
+2. Save `ANTHROPIC_API_KEY` in the environment secrets dashboard, then start a new cloud agent. This VM will still show the key as MISSING.
+3. Report each live prerequisite as PRESENT or MISSING. Do not print values. Do not connect, migrate, or call Anthropic in that check.
+4. Confirm the Vercel Preview `DATABASE_URL` cannot migrate production before relying on the preview build. Run `--live` only after identity, the full migration history, readiness, and an explicit spend approval.

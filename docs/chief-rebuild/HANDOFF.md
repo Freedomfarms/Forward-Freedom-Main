@@ -1,6 +1,6 @@
 # Assignment 1 handoff
 
-This branch is not on GitHub. A new Cursor cloud agent boots from the saved environment and the remote repository. It cannot see commits that exist only on the VM that created them.
+This branch was pushed to `origin` on 23 October 2026 as `cursor/chief-managed-agents-proof-1ece`. Fetch that branch. The bundle below remains a fallback if the remote branch is unavailable.
 
 ## Restore
 
@@ -17,6 +17,6 @@ git merge-base --is-ancestor 32301c2 HEAD
 
 `git rev-parse HEAD` must match the tip named in the handoff that was downloaded with the bundle. `git log --oneline 32301c2..HEAD` must show `903e5b8`, `a2f71e9`, and the handoff commit.
 
-Do not push. A push starts a Vercel Preview build, and `npm run build` runs `prisma migrate deploy` when `DATABASE_URL` is not the placeholder `postgresql://postgres:password@localhost:5432/forward_freedom`.
+The push starts a Vercel Preview build, and `npm run build` runs `prisma migrate deploy` when `DATABASE_URL` is not the placeholder `postgresql://postgres:password@localhost:5432/forward_freedom`. Confirm the Preview database before treating that build as safe.
 
 Do not deploy, migrate, provision Fly, or run `scripts/chief-managed-proof.mjs --live`.
