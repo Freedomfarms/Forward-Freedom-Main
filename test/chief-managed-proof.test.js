@@ -28,6 +28,7 @@ import {
   assessLivePrerequisites,
   assessProofUser,
   executeLiveProof,
+  parseLivePhases,
 } from "../server/chief/managed/liveProof.js";
 import {
   connectionLabel,
@@ -1080,6 +1081,51 @@ test("the live command runs the injected experiment when prerequisites pass", as
   assert.equal(result.exitCode, 0);
   assert.equal(result.body.acceptance, "live");
   assert.equal(result.body.mocked, false);
+});
+
+test("one live session is the initial phase only", async () => {
+  assert.deepEqual(parseLivePhases(["--phase", "initial"]), {
+    ok: true,
+    phases: ["initial"],
+    explicit: true,
+  });
+  assert.equal(parseLivePhases(["--phase"]).ok, false);
+  assert.equal(parseLivePhases(["--phase", "nope"]).ok, false);
+  assert.equal(parseLivePhases([]).explicit, false);
+  let seen = null;
+  const env = {
+    CHIEF_PROOF_SPEND_APPROVED: "1",
+    ANTHROPIC_API_KEY: "present",
+    CHIEF_MANAGED_PROOF: "1",
+    DATABASE_URL: "present",
+    DIRECT_URL: "present",
+    SERVICE_DATABASE_URL: "present",
+    CHIEF_PRODUCTION_DB_SYSTEM_ID: "production",
+    FFF_ENCRYPTION_KEYS: "present",
+    FFF_ENCRYPTION_ACTIVE_VERSION: "1",
+    CHIEF_PROOF_USER_ID: "user_proof",
+    CHIEF_SUPERVISOR_URL: "http://127.0.0.1:9",
+    CHIEF_DRAIN_SECRET: "present",
+    CHIEF_SUPERVISOR_MODE: "embedded",
+  };
+  const result = await runProofCommand(env, {
+    live: true,
+    phases: ["initial"],
+    identify: async () => ({ ok: true, serviceChecked: true, failures: [] }),
+    checkReadiness: async () => ({
+      ok: true,
+      baseline: { ok: true, failures: [] },
+      readiness: { ok: true, failures: [] },
+    }),
+    lookupUser: async () => ({ id: "user_proof" }),
+    execute: async (_env, context) => {
+      seen = context.phases;
+      return { ok: true, acceptance: "live", mocked: false };
+    },
+  });
+  assert.deepEqual(seen, ["initial"]);
+  assert.equal(result.exitCode, 0);
+  assert.equal(result.body.acceptance, "live");
 });
 
 test("the live command refuses with the missing prerequisites", async () => {
