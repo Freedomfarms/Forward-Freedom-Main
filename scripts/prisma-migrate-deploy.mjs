@@ -8,6 +8,7 @@ import {
   listMigrationNames,
   migrationsToWithhold,
   readAppliedMigrationNames,
+  proofMigrateAllowed,
   withholdMigrationDirectories,
 } from "./proof-migration-guard.mjs";
 
@@ -22,8 +23,9 @@ import {
 //
 // Proof-only migrations stay in prisma/migrations so an isolated database can
 // apply the full history. This script withholds any that are not already
-// recorded, unless CHIEF_PROOF_MIGRATE=1. That flag is for the isolated proof
-// database only and must not be set on Vercel.
+// recorded. CHIEF_PROOF_MIGRATE=1 applies them only for a loopback database
+// outside Vercel. The flag is ignored for production, preview, and any
+// remote host, so it cannot apply proof migrations to production.
 //
 // IMPORTANT: this step is intentionally NON-BLOCKING. The runtime has a
 // schema-compatibility layer (server/db/schemaCapabilities.js) that tolerates
@@ -55,7 +57,7 @@ function warnAndContinue(reason) {
       "     or fail — Prisma Migrate cannot run schema changes through them.\n" +
       "  2. DATABASE_URL (app runtime) can stay on the transaction pooler.\n" +
       "  3. Alternatively run `npm run db:migrate` manually with DIRECT_URL.\n" +
-      "  4. Proof migrations are withheld unless CHIEF_PROOF_MIGRATE=1.\n\n"
+      "  4. Proof migrations stay withheld on Vercel and on any non-loopback database.\n\n"
   );
 }
 
@@ -91,7 +93,12 @@ export async function deployMigrations({ env = process.env, migrationsDir = MIGR
     return { skipped: true, withheld: [] };
   }
 
-  const allowProofMigrate = env.CHIEF_PROOF_MIGRATE === "1";
+  const allowProofMigrate = proofMigrateAllowed(env);
+  if (env.CHIEF_PROOF_MIGRATE === "1" && !allowProofMigrate) {
+    process.stdout.write(
+      "[prisma-migrate-deploy] Ignoring CHIEF_PROOF_MIGRATE. Proof migrations run only on a loopback database outside Vercel.\n"
+    );
+  }
   let appliedNames = [];
   if (!allowProofMigrate) {
     try {
