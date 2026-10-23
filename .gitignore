@@ -1,4 +1,5 @@
 node_modules/
+.proof-migrations-withheld/
 /dist/
 .vite/
 .vercel/

@@ -1,4 +1,5 @@
 import {
+  PROOF_PHASES,
   PROPOSED_PROOF_LEDGER_CENTS,
   PROPOSED_PROOF_SESSION_CAP,
   SESSION_BUDGET_CENTS,
@@ -16,6 +17,27 @@ export const LIVE_PHASES = Object.freeze([
 ]);
 
 const SESSION_PHASES = new Set(["initial", "continue_same_store", "correct", "confirm", "recover"]);
+
+// `--phase initial` is the one-session proof. With no --phase flag the
+// existing runner still uses every LIVE_PHASES entry.
+export function parseLivePhases(argv = []) {
+  const phases = [];
+  for (let index = 0; index < argv.length; index += 1) {
+    if (argv[index] !== "--phase") continue;
+    const value = argv[index + 1];
+    if (!value || value.startsWith("--")) {
+      return { ok: false, phases: [], reason: "--phase requires a phase name" };
+    }
+    phases.push(value);
+    index += 1;
+  }
+  if (!phases.length) return { ok: true, phases: [...LIVE_PHASES], explicit: false };
+  const unknown = phases.filter((phase) => !PROOF_PHASES.includes(phase));
+  if (unknown.length) {
+    return { ok: false, phases, reason: `unknown phase: ${unknown.join(", ")}` };
+  }
+  return { ok: true, phases, explicit: true };
+}
 const WRITE_PHASES = new Set(["initial", "correct", "recover"]);
 
 export function assessLivePrerequisites(env = {}, extras = {}) {

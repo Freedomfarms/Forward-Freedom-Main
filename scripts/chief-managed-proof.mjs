@@ -7,12 +7,16 @@ import {
   assessLivePrerequisites,
   assessProofUser,
   executeLiveProof,
+  parseLivePhases,
 } from "../server/chief/managed/liveProof.js";
 import { redactSecrets } from "../server/chief/managed/redact.js";
 
 const live = process.argv.includes("--live");
 
 export async function runProofCommand(env = process.env, deps = {}) {
+  const parsed = Array.isArray(deps.phases)
+    ? { ok: deps.phases.length > 0, phases: deps.phases, reason: "empty phase list" }
+    : parseLivePhases(deps.argv || []);
   if (!liveRequested(deps, env)) {
     return {
       exitCode: 0,
@@ -20,9 +24,31 @@ export async function runProofCommand(env = process.env, deps = {}) {
         mode: "dry_run",
         live: false,
         acceptance: "mocked_only",
-        phases: LIVE_PHASES,
+        phases: parsed.ok ? parsed.phases : LIVE_PHASES,
         knownPhases: PROOF_PHASES,
-        note: "Dry run only. This does not call Anthropic or migrate a database. --live runs the implemented runner after the prerequisites below are present.",
+        note: "Dry run only. This does not call Anthropic or migrate a database. One session is --live --phase initial. That command still refuses until the prerequisites below are present.",
+      },
+    };
+  }
+  if (!parsed.ok) {
+    return {
+      exitCode: 3,
+      body: {
+        acceptance: "live_refused",
+        implemented: true,
+        missing: [parsed.reason || "phase list is invalid"],
+      },
+    };
+  }
+  const phases = parsed.phases;
+  const unknown = phases.filter((phase) => !PROOF_PHASES.includes(phase));
+  if (unknown.length) {
+    return {
+      exitCode: 3,
+      body: {
+        acceptance: "live_refused",
+        implemented: true,
+        missing: [`unknown phase: ${unknown.join(", ")}`],
       },
     };
   }
@@ -48,13 +74,18 @@ export async function runProofCommand(env = process.env, deps = {}) {
     user,
   });
   if (blocked.length) {
-    return { exitCode: 2, body: { acceptance: "live_refused", implemented: true, missing: blocked } };
+    return {
+      exitCode: 2,
+      body: { acceptance: "live_refused", implemented: true, missing: blocked },
+    };
   }
-  const started = await (deps.execute || executeConfigured)(env);
+  const started = await (
+    deps.execute || ((environment, context) => executeConfigured(environment, context))
+  )(env, { phases });
   return { exitCode: started.ok ? 0 : 4, body: started };
 }
 
-async function executeConfigured(env) {
+async function executeConfigured(env, context = {}) {
   // The embedded supervisor creates the Anthropic client and advances the job.
   // This process queues the run, waits for the kick acknowledgement, and polls.
   const { acknowledgeSupervisor } = await import("../server/chief/managed/drainTarget.js");
@@ -64,6 +95,7 @@ async function executeConfigured(env) {
   return executeLiveProof({
     store,
     userId: env.CHIEF_PROOF_USER_ID,
+    phases: context.phases,
     queue: queueProofRun,
     dispatch: () => acknowledgeSupervisor(env),
     readRun: (runId) => store.getRun(runId),
@@ -94,13 +126,21 @@ const isMain =
   process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
 
 if (isMain) {
-  runProofCommand(process.env, { live })
-    .then((result) => {
-      process.stdout.write(`${JSON.stringify(result.body, null, 2)}\n`);
-      process.exitCode = result.exitCode;
-    })
-    .catch((error) => {
-      process.stderr.write(`${redactSecrets(error.message)}\n`);
-      process.exitCode = 4;
-    });
+  const parsed = parseLivePhases(process.argv);
+  if (live && !parsed.ok) {
+    process.stdout.write(
+      `${JSON.stringify({ acceptance: "live_refused", implemented: true, missing: [parsed.reason] }, null, 2)}\n`
+    );
+    process.exitCode = 3;
+  } else {
+    runProofCommand(process.env, { live, phases: parsed.phases, argv: process.argv })
+      .then((result) => {
+        process.stdout.write(`${JSON.stringify(result.body, null, 2)}\n`);
+        process.exitCode = result.exitCode;
+      })
+      .catch((error) => {
+        process.stderr.write(`${redactSecrets(error.message)}\n`);
+        process.exitCode = 4;
+      });
+  }
 }

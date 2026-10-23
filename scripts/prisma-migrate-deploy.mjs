@@ -1,5 +1,15 @@
 import process from "node:process";
+import path from "node:path";
 import { spawn } from "node:child_process";
+import { pathToFileURL } from "node:url";
+
+import { redactSecrets } from "../server/chief/managed/redact.js";
+import {
+  listMigrationNames,
+  migrationsToWithhold,
+  readAppliedMigrationNames,
+  withholdMigrationDirectories,
+} from "./proof-migration-guard.mjs";
 
 // Applies pending Prisma migrations during the build (e.g. on Vercel) so the
 // database schema is always in sync with the deployed code. This prevents the
@@ -10,6 +20,11 @@ import { spawn } from "node:child_process";
 // without a database (or using the generate-only placeholder) are skipped so
 // they keep working.
 //
+// Proof-only migrations stay in prisma/migrations so an isolated database can
+// apply the full history. This script withholds any that are not already
+// recorded, unless CHIEF_PROOF_MIGRATE=1. That flag is for the isolated proof
+// database only and must not be set on Vercel.
+//
 // IMPORTANT: this step is intentionally NON-BLOCKING. The runtime has a
 // schema-compatibility layer (server/db/schemaCapabilities.js) that tolerates
 // an un-migrated database, so a migration hiccup here (unreachable DB, pooler
@@ -19,29 +34,8 @@ import { spawn } from "node:child_process";
 // migration.
 
 const PLACEHOLDER_DATABASE_URL = "postgresql://postgres:password@localhost:5432/forward_freedom";
-const databaseUrl = (process.env.DATABASE_URL || "").trim();
-
-if (!databaseUrl || databaseUrl === PLACEHOLDER_DATABASE_URL) {
-  process.stdout.write(
-    "[prisma-migrate-deploy] No production DATABASE_URL configured; skipping migrate deploy.\n"
-  );
-  process.exit(0);
-}
-
-process.stdout.write("[prisma-migrate-deploy] Applying pending migrations…\n");
-
-// Without a hard timeout, an unreachable/misconfigured migrations connection
-// (e.g. a Supabase transaction-mode pooler URL, which Prisma Migrate can't
-// use for schema changes — it needs the session pooler / direct connection
-// via DIRECT_URL) can hang on the advisory lock and stall the Vercel build
-// indefinitely until someone cancels it manually.
+const MIGRATIONS_DIR = path.resolve("prisma/migrations");
 const MIGRATE_TIMEOUT_MS = 90_000;
-
-const child = spawn("npx", ["prisma", "migrate", "deploy"], {
-  stdio: "inherit",
-  env: process.env,
-  shell: process.platform === "win32",
-});
 
 function warnAndContinue(reason) {
   process.stderr.write(
@@ -60,32 +54,99 @@ function warnAndContinue(reason) {
       "     pgbouncer param). Transaction-mode pooler URLs (port 6543) hang\n" +
       "     or fail — Prisma Migrate cannot run schema changes through them.\n" +
       "  2. DATABASE_URL (app runtime) can stay on the transaction pooler.\n" +
-      "  3. Alternatively run `npm run db:migrate` manually with DIRECT_URL.\n\n"
+      "  3. Alternatively run `npm run db:migrate` manually with DIRECT_URL.\n" +
+      "  4. Proof migrations are withheld unless CHIEF_PROOF_MIGRATE=1.\n\n"
   );
-  process.exit(0);
 }
 
-let timedOut = false;
-const timeoutHandle = setTimeout(() => {
-  timedOut = true;
-  child.kill("SIGKILL");
-}, MIGRATE_TIMEOUT_MS);
+function runPrismaDeploy() {
+  return new Promise((resolve) => {
+    const child = spawn("npx", ["prisma", "migrate", "deploy"], {
+      stdio: "inherit",
+      env: process.env,
+      shell: process.platform === "win32",
+    });
+    let timedOut = false;
+    const timeoutHandle = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGKILL");
+    }, MIGRATE_TIMEOUT_MS);
+    child.on("exit", (code) => {
+      clearTimeout(timeoutHandle);
+      resolve({ code: timedOut ? null : code, timedOut, error: null });
+    });
+    child.on("error", (error) => {
+      clearTimeout(timeoutHandle);
+      resolve({ code: 1, timedOut: false, error });
+    });
+  });
+}
 
-child.on("exit", (code) => {
-  clearTimeout(timeoutHandle);
-  if (timedOut) {
-    warnAndContinue(
-      `timed out after ${MIGRATE_TIMEOUT_MS / 1000}s — the migrations connection is unreachable or blocked (typical of a transaction-mode pooler URL).`
+export async function deployMigrations({ env = process.env, migrationsDir = MIGRATIONS_DIR } = {}) {
+  const databaseUrl = (env.DATABASE_URL || "").trim();
+  if (!databaseUrl || databaseUrl === PLACEHOLDER_DATABASE_URL) {
+    process.stdout.write(
+      "[prisma-migrate-deploy] No production DATABASE_URL configured; skipping migrate deploy.\n"
     );
-  } else if (code !== 0) {
-    warnAndContinue(`\`prisma migrate deploy\` exited with code ${code}.`);
-  } else {
-    process.stdout.write("[prisma-migrate-deploy] Migrations applied successfully.\n");
-    process.exit(0);
+    return { skipped: true, withheld: [] };
   }
-});
 
-child.on("error", (error) => {
-  clearTimeout(timeoutHandle);
-  warnAndContinue(`failed to start \`prisma migrate deploy\`: ${error}`);
-});
+  const allowProofMigrate = env.CHIEF_PROOF_MIGRATE === "1";
+  let appliedNames = [];
+  if (!allowProofMigrate) {
+    try {
+      appliedNames = await readAppliedMigrationNames(env);
+    } catch (error) {
+      process.stderr.write(
+        `[prisma-migrate-deploy] Could not read migration history (${redactSecrets(error.message)}). Pending proof migrations will be withheld.\n`
+      );
+    }
+  }
+  const withheld = migrationsToWithhold({
+    migrationsDir,
+    migrationNames: listMigrationNames(migrationsDir),
+    appliedNames,
+    allowProofMigrate,
+  });
+  const restore = withheld.length
+    ? withholdMigrationDirectories(migrationsDir, withheld)
+    : () => {};
+  if (withheld.length) {
+    process.stdout.write(
+      `[prisma-migrate-deploy] Withholding proof-only migrations: ${withheld.join(", ")}\n`
+    );
+  }
+  process.stdout.write("[prisma-migrate-deploy] Applying pending migrations…\n");
+  try {
+    const result = await runPrismaDeploy();
+    if (result.timedOut) {
+      warnAndContinue(
+        `timed out after ${MIGRATE_TIMEOUT_MS / 1000}s — the migrations connection is unreachable or blocked (typical of a transaction-mode pooler URL).`
+      );
+    } else if (result.error) {
+      warnAndContinue(
+        `failed to start \`prisma migrate deploy\`: ${redactSecrets(result.error.message)}`
+      );
+    } else if (result.code !== 0) {
+      warnAndContinue(`\`prisma migrate deploy\` exited with code ${result.code}.`);
+    } else {
+      process.stdout.write("[prisma-migrate-deploy] Migrations applied successfully.\n");
+    }
+    return { skipped: false, withheld, code: result.code };
+  } finally {
+    restore();
+  }
+}
+
+const isMain =
+  process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
+
+if (isMain) {
+  deployMigrations()
+    .catch((error) => {
+      warnAndContinue(redactSecrets(error.message));
+    })
+    .finally(() => {
+      process.exit(0);
+    });
+}
