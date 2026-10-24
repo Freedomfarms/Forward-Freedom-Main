@@ -72,14 +72,6 @@ function waitForAbort(ms, signal) {
   });
 }
 
-function profileInitial(user) {
-  const source =
-    (typeof user?.displayName === "string" && user.displayName.trim()) ||
-    (typeof user?.email === "string" && user.email.trim()) ||
-    "";
-  return source ? source.slice(0, 1).toUpperCase() : "";
-}
-
 function profileName(user) {
   const name = typeof user?.displayName === "string" ? user.displayName.trim() : "";
   if (name) return name.split(/\s+/)[0];
@@ -1272,13 +1264,6 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
           activeSection={room === "convos" ? "conversations" : "chief"}
           navItems={homeNavItems}
           showNavLabels={preferences.appearance.showNavLabels}
-          onHome={returnHome}
-          onNotifications={() => {
-            setSettingsSection("notifications");
-            setSettingsOpen(true);
-          }}
-          onProfile={() => setSettingsOpen(true)}
-          profileMark={profileInitial(user)}
           quickActions={homeQuickActions}
           status={homeStatus}
           statusTone={homeStatusTone}

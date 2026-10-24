@@ -32,6 +32,15 @@ test("CHIEF home mounts the supplied interface on the existing conversation path
   assert.equal(face.includes("Open Workspace"), false);
   assert.equal(face.includes("Play Demo"), false);
   assert.match(face, /useFrontierScene/);
+  assert.match(face, /className="window-tools"/);
+  assert.match(face, /localTime\(clock\)/);
+  assert.match(face, /aria-label=\{fullscreen \? "Collapse" : "Expand"\}/);
+  assert.doesNotMatch(
+    face,
+    /className="topbar"|Pause ambient|aria-label="Notifications"|className="avatar"/
+  );
+  assert.doesNotMatch(css, /\.chief-frontier \.topbar \{/);
+  assert.match(css, /\.chief-frontier \.window-tools/);
   assert.match(face, /Share a thought with CHIEF/);
   assert.match(face, /SYSTEM/);
   assert.doesNotMatch(face, /jarvis-ai-web-animation|JarvisOrb/);
