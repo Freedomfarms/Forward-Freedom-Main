@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { bundledSkills } from "../skills/catalog.js";
 import { PROOF_MODEL } from "./constants.js";
 
@@ -5,6 +7,9 @@ export const MANAGED_ORIGIN = "managed";
 export const MANAGED_SCHEDULE_ORIGIN = "managed-schedule";
 export const MANAGED_MODEL_ROUTE = PROOF_MODEL.id;
 export const ENVIRONMENT_KEY = "environment:chief:production:v1";
+// Anthropic metadata values are rejected above this length. A rejected agent
+// create fails the turn before CHIEF can reply.
+export const METADATA_VALUE_MAX = 512;
 
 const WORKSPACE_INTRO = [
   ["requirements.md", "CHIEF workspace. Keep the project requirements here."],
@@ -25,7 +30,23 @@ export function toolFingerprint(toolSpecs) {
 }
 
 export function agentKeyFor(toolSpecs) {
-  return `agent:chief:production:${toolFingerprint(toolSpecs)}`;
+  const digest = createHash("sha256").update(toolFingerprint(toolSpecs)).digest("hex");
+  return `agent:chief:production:${digest}`;
+}
+
+function providerInputSchema(schema) {
+  const source = schema && typeof schema === "object" && !Array.isArray(schema) ? schema : {};
+  const properties =
+    source.properties && typeof source.properties === "object" && !Array.isArray(source.properties)
+      ? source.properties
+      : {};
+  const next = { type: "object", properties };
+  if (Array.isArray(source.required)) {
+    next.required = source.required.filter(
+      (name) => typeof name === "string" && Object.hasOwn(properties, name)
+    );
+  }
+  return next;
 }
 
 export function memoryKeyFor(userId) {
@@ -49,6 +70,9 @@ export function productionAgentBody({
   skillId,
   skillVersion,
 } = {}) {
+  if (typeof idempotencyKey !== "string" || idempotencyKey.length > METADATA_VALUE_MAX) {
+    throw new Error("CHIEF agent key must be at most 512 characters.");
+  }
   const allow = (name) => ({ name, enabled: true, permission_policy: { type: "always_allow" } });
   const custom = [];
   for (const spec of toolSpecs) {
@@ -57,7 +81,7 @@ export function productionAgentBody({
       type: "custom",
       name: spec.name,
       description: String(spec.description || spec.name).slice(0, 1000),
-      input_schema: spec.parameters || spec.inputSchema || { type: "object", properties: {} },
+      input_schema: providerInputSchema(spec.parameters || spec.inputSchema),
     });
   }
   const body = {

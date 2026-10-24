@@ -4,7 +4,14 @@ import { readFileSync } from "node:fs";
 
 import { handleChiefChat } from "../api/chief/chat.js";
 import { drainManagedWork } from "../server/chief/managed/chatTurn.js";
+import {
+  METADATA_VALUE_MAX,
+  agentKeyFor,
+  productionAgentBody,
+  toolFingerprint,
+} from "../server/chief/managed/productionAgent.js";
 import { MemoryCheckpointStore } from "../server/chief/runtime/checkpoint.js";
+import { createChiefTools } from "../server/chief/tools/builtin.js";
 import { ToolExecutor } from "../server/chief/tools/executor.js";
 import { scriptedManagedClient } from "./chief-managed-client-fixture.js";
 import { createMemoryWorkQueue } from "../server/chief/managed/workQueue.js";
@@ -168,4 +175,30 @@ test("a missing provider configuration does not fall back", async () => {
   const body = http.chunks.join("");
   assert.match(body, /ANTHROPIC_API_KEY/);
   assert.equal(body.includes("TurnMachine"), false);
+});
+
+test("the production agent body stays inside the Managed Agents limits", () => {
+  const specs = createChiefTools().map((tool) => tool.spec);
+  const raw = `agent:chief:production:${toolFingerprint(specs)}`;
+  assert.ok(raw.length > METADATA_VALUE_MAX);
+  const key = agentKeyFor(specs);
+  assert.ok(key.length <= METADATA_VALUE_MAX);
+  assert.match(key, /^agent:chief:production:[a-f0-9]{64}$/);
+  const body = productionAgentBody({
+    toolSpecs: specs,
+    idempotencyKey: key,
+  });
+  assert.equal(body.metadata.freedom_os_key, key);
+  const custom = body.tools.filter((tool) => tool.type === "custom");
+  assert.equal(custom.length, specs.length);
+  for (const tool of custom) {
+    for (const name of Object.keys(tool.input_schema)) {
+      assert.ok(name === "type" || name === "properties" || name === "required");
+    }
+    assert.equal(tool.input_schema.type, "object");
+    assert.equal(Object.hasOwn(tool.input_schema, "additionalProperties"), false);
+  }
+  const search = custom.find((tool) => tool.name === "web_search");
+  assert.deepEqual(search.input_schema.required, ["query"]);
+  assert.equal(search.input_schema.properties.query.type, "string");
 });
