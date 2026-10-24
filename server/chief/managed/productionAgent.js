@@ -10,6 +10,28 @@ export const ENVIRONMENT_KEY = "environment:chief:production:v1";
 // Anthropic metadata values are rejected above this length. A rejected agent
 // create fails the turn before CHIEF can reply.
 export const METADATA_VALUE_MAX = 512;
+// Names owned by agent_toolset_20260401. A custom tool with one of these
+// names is rejected and the turn ends before CHIEF can reply.
+const BUILTIN_AGENT_TOOL_NAMES = new Set([
+  "bash",
+  "edit",
+  "glob",
+  "grep",
+  "read",
+  "web_fetch",
+  "web_search",
+  "write",
+]);
+
+export function providerToolName(name) {
+  return BUILTIN_AGENT_TOOL_NAMES.has(name) ? `chief_${name}` : name;
+}
+
+export function localToolName(name) {
+  if (typeof name !== "string" || !name.startsWith("chief_")) return name;
+  const local = name.slice("chief_".length);
+  return BUILTIN_AGENT_TOOL_NAMES.has(local) ? local : name;
+}
 
 const WORKSPACE_INTRO = [
   ["requirements.md", "CHIEF workspace. Keep the project requirements here."],
@@ -79,7 +101,7 @@ export function productionAgentBody({
     if (typeof spec?.name !== "string" || !spec.name) continue;
     custom.push({
       type: "custom",
-      name: spec.name,
+      name: providerToolName(spec.name),
       description: String(spec.description || spec.name).slice(0, 1000),
       input_schema: providerInputSchema(spec.parameters || spec.inputSchema),
     });

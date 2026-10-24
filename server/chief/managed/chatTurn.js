@@ -16,6 +16,7 @@ import {
   MANAGED_ORIGIN,
   MANAGED_SCHEDULE_ORIGIN,
   agentKeyFor,
+  localToolName,
   memoryKeyFor,
   productionAgentBody,
   productionEnvironmentBody,
@@ -82,7 +83,7 @@ function partsOf(event) {
 
 function toolCallOf(event) {
   if (event?.type !== "agent.custom_tool_use") return null;
-  const name = event.name || event.tool_name;
+  const name = localToolName(event.name || event.tool_name);
   if (!name || !event.id) return null;
   const input = event.input && typeof event.input === "object" ? event.input : {};
   return { id: event.id, name, input };
@@ -485,7 +486,8 @@ export async function runManagedChiefTurn({
     ) {
       checkpoint.pendingApproval = null;
       await store.saveWithEvents(userId, record.id, { checkpoint });
-      const abortReason = decision.type === ReviewDecisionType.ABORT ? "approval_abort" : decision.type;
+      const abortReason =
+        decision.type === ReviewDecisionType.ABORT ? "approval_abort" : decision.type;
       emit(eventMsg.turnAborted(turnId, abortReason));
       return { sessionId: record.id, status: "aborted", abortReason, checkpoint };
     }
@@ -715,7 +717,9 @@ export async function drainManagedWork({
       else await jobs.complete(job);
       drained += 1;
     } catch (error) {
-      const settled = afterTurn ? await afterTurn({ job, result: null, error }) : { keepQueued: true };
+      const settled = afterTurn
+        ? await afterTurn({ job, result: null, error })
+        : { keepQueued: true };
       if (settled?.keepQueued !== false) await jobs.release(job);
       else await jobs.complete(job);
       console.error("[chief/managed] drain", redactSecrets(error?.message || "Error"));

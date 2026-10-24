@@ -7,6 +7,7 @@ import { drainManagedWork } from "../server/chief/managed/chatTurn.js";
 import {
   METADATA_VALUE_MAX,
   agentKeyFor,
+  localToolName,
   productionAgentBody,
   toolFingerprint,
 } from "../server/chief/managed/productionAgent.js";
@@ -198,7 +199,12 @@ test("the production agent body stays inside the Managed Agents limits", () => {
     assert.equal(tool.input_schema.type, "object");
     assert.equal(Object.hasOwn(tool.input_schema, "additionalProperties"), false);
   }
-  const search = custom.find((tool) => tool.name === "web_search");
+  const search = custom.find((tool) => tool.name === "chief_web_search");
+  assert.equal(
+    custom.some((tool) => tool.name === "web_search"),
+    false
+  );
+  assert.equal(localToolName("chief_web_search"), "web_search");
   assert.deepEqual(search.input_schema.required, ["query"]);
   assert.equal(search.input_schema.properties.query.type, "string");
 });
