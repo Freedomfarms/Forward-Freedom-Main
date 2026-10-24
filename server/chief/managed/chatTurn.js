@@ -23,7 +23,7 @@ import {
   productionSessionBody,
   workspaceDocuments,
 } from "./productionAgent.js";
-import { redactSecrets } from "./redact.js";
+import { providerErrorFields } from "./redact.js";
 import { createPrismaWorkQueue } from "./workQueue.js";
 import { SCHEDULED_TURN_EXCLUDED_TOOLS } from "../tools/inventory.js";
 
@@ -379,6 +379,7 @@ export function createManagedClient(env = process.env) {
       "Claude Managed Agents is not configured. Set ANTHROPIC_API_KEY on the server."
     );
     error.status = 503;
+    error.operation = "configure";
     throw error;
   }
   return createAnthropicManagedClient({ apiKey: env.ANTHROPIC_API_KEY });
@@ -498,6 +499,7 @@ export async function runManagedChiefTurn({
       "Claude Managed Agents is not configured. Set ANTHROPIC_API_KEY on the server."
     );
     error.status = 503;
+    error.operation = "configure";
     throw error;
   }
 
@@ -722,7 +724,8 @@ export async function drainManagedWork({
         : { keepQueued: true };
       if (settled?.keepQueued !== false) await jobs.release(job);
       else await jobs.complete(job);
-      console.error("[chief/managed] drain", redactSecrets(error?.message || "Error"));
+      const logged = providerErrorFields(error);
+      console.error("[chief/managed] drain", logged.operation, logged.status, logged.message);
     }
   }
   return { drained };

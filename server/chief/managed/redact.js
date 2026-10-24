@@ -1,10 +1,21 @@
 const URL_SECRET = /postgres(?:ql)?:\/\/[^\s'"]+/gi;
-const KEY_SECRET = /\b(?:sk-ant-|whsec_)[A-Za-z0-9_+/=-]{8,}/g;
+const KEY_SECRET = /\b(?:sk-[A-Za-z0-9_-]{8,}|whsec_[A-Za-z0-9_+/=-]{8,}|BSA-[A-Za-z0-9_-]{8,})/g;
+const EMAIL_SECRET = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
 
 export function redactSecrets(value) {
   return String(value ?? "")
     .replace(URL_SECRET, "postgresql://<redacted>")
-    .replace(KEY_SECRET, "<redacted>");
+    .replace(KEY_SECRET, "<redacted>")
+    .replace(EMAIL_SECRET, "<redacted>");
+}
+
+// Server logs only. The chat stream keeps the generic sentence.
+export function providerErrorFields(error) {
+  return {
+    operation: typeof error?.operation === "string" && error.operation ? error.operation : "turn",
+    status: Number.isInteger(error?.status) ? error.status : "",
+    message: redactSecrets(error?.message || error?.name || "Error").slice(0, 300),
+  };
 }
 
 export function connectionLabel(connectionString) {

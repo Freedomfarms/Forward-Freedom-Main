@@ -12,7 +12,7 @@ export const ENVIRONMENT_KEY = "environment:chief:production:v1";
 export const METADATA_VALUE_MAX = 512;
 // Names owned by agent_toolset_20260401. A custom tool with one of these
 // names is rejected and the turn ends before CHIEF can reply.
-const BUILTIN_AGENT_TOOL_NAMES = new Set([
+export const BUILTIN_AGENT_TOOL_NAMES = Object.freeze([
   "bash",
   "edit",
   "glob",
@@ -22,15 +22,16 @@ const BUILTIN_AGENT_TOOL_NAMES = new Set([
   "web_search",
   "write",
 ]);
+const BUILTIN_AGENT_TOOL_NAME_SET = new Set(BUILTIN_AGENT_TOOL_NAMES);
 
 export function providerToolName(name) {
-  return BUILTIN_AGENT_TOOL_NAMES.has(name) ? `chief_${name}` : name;
+  return BUILTIN_AGENT_TOOL_NAME_SET.has(name) ? `chief_${name}` : name;
 }
 
 export function localToolName(name) {
   if (typeof name !== "string" || !name.startsWith("chief_")) return name;
   const local = name.slice("chief_".length);
-  return BUILTIN_AGENT_TOOL_NAMES.has(local) ? local : name;
+  return BUILTIN_AGENT_TOOL_NAME_SET.has(local) ? local : name;
 }
 
 const WORKSPACE_INTRO = [
