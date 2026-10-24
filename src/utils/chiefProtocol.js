@@ -88,6 +88,31 @@ export function isActiveChiefTurn(turnStatus) {
   return turnStatus === "continuing" || turnStatus === "running";
 }
 
+// A question typed while CHIEF is still answering stays in the composer.
+// It is not submitted into the unresolved turn.
+export function acceptChiefSubmission({ busy = false, turnStatus = "", text = "" } = {}) {
+  const trimmed = typeof text === "string" ? text.trim() : "";
+  if (!trimmed) return { action: "ignore", draft: "" };
+  if (busy || isActiveChiefTurn(turnStatus)) return { action: "preserve", draft: trimmed };
+  return { action: "send", draft: "" };
+}
+
+// Navigation mounts a fresh page. The saved conversation is the source of
+// truth: a local error does not survive, and an unfinished turn is followed.
+export function restoredChiefTurn({ messages, turnStatus = "", heldPrompt = "" } = {}) {
+  const held = typeof heldPrompt === "string" ? heldPrompt.trim() : "";
+  const live = isActiveChiefTurn(turnStatus);
+  return {
+    messages: Array.isArray(messages) ? messages : [],
+    turnStatus: live ? turnStatus : held ? "continuing" : "",
+    status: live || held ? CHIEF_STATUS.WORKING : CHIEF_STATUS.READY,
+    streamText: "",
+    error: "",
+    follow: live || Boolean(held),
+    heldPrompt: held,
+  };
+}
+
 // Speech waits until the Managed Agents turn has actually settled. A budget
 // handoff ("continuing") and a suspension are not finished replies.
 export function isSpeakableTurn(turnStatus) {
@@ -120,15 +145,65 @@ export function applyChiefEvent(state, event) {
   const msg = event?.msg;
   if (!msg || typeof msg.type !== "string") return state;
   switch (msg.type) {
-    case "turn_started":
+    case "turn_started": {
+      const nextTurnId = typeof msg.turn_id === "string" ? msg.turn_id : "";
+      if (state.held && !state.boundTurnId) {
+        return {
+          ...state,
+          status: CHIEF_STATUS.WORKING,
+          finished: false,
+          turnStatus: "running",
+        };
+      }
+      const switching = Boolean(
+        state.boundTurnId && nextTurnId && nextTurnId !== state.boundTurnId
+      );
       return {
         ...state,
-        status: state.streamText ? CHIEF_STATUS.RESPONDING : CHIEF_STATUS.WORKING,
+        boundTurnId: nextTurnId || state.boundTurnId || null,
+        turnId: nextTurnId || state.turnId || null,
+        streamText: switching ? "" : state.streamText,
+        status: !switching && state.streamText ? CHIEF_STATUS.RESPONDING : CHIEF_STATUS.WORKING,
         finished: false,
         turnStatus: "running",
       };
+    }
+    case "message": {
+      const delivery = msg.delivery === "queue" ? "queue" : msg.delivery === "turn" ? "turn" : "";
+      const text = typeof msg.text === "string" ? msg.text : "";
+      if (delivery === "queue") {
+        return {
+          ...state,
+          held: true,
+          boundTurnId: null,
+          heldText: text || state.heldText || "",
+          finished: false,
+          turnStatus: "continuing",
+          status: CHIEF_STATUS.WORKING,
+        };
+      }
+      if (delivery === "turn" && typeof msg.turn_id === "string" && msg.turn_id) {
+        const switching = Boolean(state.boundTurnId && state.boundTurnId !== msg.turn_id);
+        return {
+          ...state,
+          held: false,
+          boundTurnId: msg.turn_id,
+          turnId: msg.turn_id,
+          streamText: switching ? "" : state.streamText,
+          acceptedUserText: text,
+          finished: false,
+          turnStatus: "running",
+          status: CHIEF_STATUS.WORKING,
+        };
+      }
+      return state;
+    }
     case "assistant_content_delta": {
       const sessionId = sessionIdFrom(msg, state.sessionId);
+      if (state.held && !state.boundTurnId) return { ...state, sessionId };
+      if (state.boundTurnId && msg.turn_id && msg.turn_id !== state.boundTurnId) {
+        return { ...state, sessionId };
+      }
       if (!isVisibleAssistantDelta(msg)) return { ...state, sessionId };
       return {
         ...state,
@@ -138,6 +213,8 @@ export function applyChiefEvent(state, event) {
       };
     }
     case "tool_call_begin":
+      if (state.boundTurnId && msg.turn_id && msg.turn_id !== state.boundTurnId) return state;
+      if (state.held && !state.boundTurnId) return state;
       return { ...state, status: statusForToolName(msg.name) };
     case "tool_call_end":
       return { ...state, status: state.approval ? CHIEF_STATUS.APPROVAL : CHIEF_STATUS.WORKING };

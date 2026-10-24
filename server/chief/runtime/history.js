@@ -51,10 +51,14 @@ export function projectInteractiveHistory(record) {
       ? record.checkpoint.modelRoute
       : null;
   const turnStatus = record.checkpoint.context?.turnStatus;
+  const queued = Array.isArray(record.checkpoint.context?.heldPrompts)
+    ? record.checkpoint.context.heldPrompts.find((item) => typeof item === "string" && item.trim())
+    : "";
   return {
     sessionId: record.id,
     modelRoute,
     messages,
+    heldPrompt: queued ? queued.trim() : null,
     turnStatus:
       turnStatus === "running" ||
       turnStatus === "continuing" ||

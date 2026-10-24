@@ -178,7 +178,10 @@ export function parseSubmission(value) {
       requireString(op.capability, "capability");
       requireString(op.command, "command");
       const input = op.input ?? "";
-      if (typeof input !== "string" || Buffer.byteLength(input, "utf8") > MAX_CAPABILITY_INPUT_BYTES) {
+      if (
+        typeof input !== "string" ||
+        Buffer.byteLength(input, "utf8") > MAX_CAPABILITY_INPUT_BYTES
+      ) {
         throw new Error("capability input exceeds size limit");
       }
       break;
@@ -269,6 +272,15 @@ export const eventMsg = Object.freeze({
     rate_limits: rateLimits,
   }),
   contextCompacted: () => ({ type: EventMsgType.CONTEXT_COMPACTED }),
+  // delivery is MessageDelivery.TURN when the prompt was handed to Managed Agents,
+  // or MessageDelivery.QUEUE when an earlier turn is still unresolved.
+  // The user's text stays in the checkpoint. It is not copied onto the stream,
+  // so a provider failure cannot echo it back beside the generic error.
+  userTurn: ({ turnId = null, delivery }) => ({
+    type: EventMsgType.MESSAGE,
+    delivery,
+    turn_id: turnId,
+  }),
 });
 
 // TokenUsage (möbius src/protocol/events.rs). checkedAdd is all-or-nothing:

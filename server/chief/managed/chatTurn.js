@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import {
+  MessageDelivery,
   OpType,
   ReviewDecisionType,
   eventMsg,
@@ -123,6 +124,207 @@ function appendAssistant(checkpoint, text) {
   const last = transcript[transcript.length - 1];
   if (last?.role === "assistant" && last.content === text) return;
   transcript.push({ role: "assistant", content: text });
+}
+
+const ACTIVE_PROVIDER = new Set(["running", "rescheduling", "working", "in_progress"]);
+
+function eventIdentity(event, index) {
+  if (typeof event?.id === "string" && event.id) return event.id;
+  if (event?.type === "agent.message") {
+    return `message:${partsOf(event)
+      .map((part) => part.text)
+      .join("")}`;
+  }
+  return `${event?.type || "event"}#${index}`;
+}
+
+function eventIdentities(events) {
+  return (events || []).map((event, index) => eventIdentity(event, index));
+}
+
+function providerStatus(session) {
+  return typeof session?.status === "string" ? session.status : "";
+}
+
+function sessionIsActive(session) {
+  return ACTIVE_PROVIDER.has(providerStatus(session));
+}
+
+function sessionIsIdle(session) {
+  return providerStatus(session) === "idle";
+}
+
+function turnWatchOf(checkpoint) {
+  const watch = checkpoint.context?.turnWatch;
+  return watch && typeof watch === "object" ? watch : null;
+}
+
+function heldPrompts(checkpoint) {
+  const value = checkpoint.context?.heldPrompts;
+  if (!Array.isArray(value)) return [];
+  return value.filter((item) => typeof item === "string" && item.trim());
+}
+
+function sentHeldPrompts(checkpoint) {
+  const value = checkpoint.context?.sentHeldPrompts;
+  if (!Array.isArray(value)) return [];
+  return value.filter((item) => typeof item === "string" && item);
+}
+
+function queueHeldPrompt(checkpoint, text) {
+  const trimmed = typeof text === "string" ? text.trim() : "";
+  if (!trimmed) return "";
+  const list = heldPrompts(checkpoint);
+  if (list[list.length - 1] === trimmed) {
+    checkpoint.context.heldPrompts = list;
+    return trimmed;
+  }
+  list.push(trimmed);
+  checkpoint.context.heldPrompts = list;
+  return trimmed;
+}
+
+function takeHeldPrompt(checkpoint) {
+  const list = heldPrompts(checkpoint);
+  if (!list.length) return "";
+  const [next, ...rest] = list;
+  checkpoint.context.heldPrompts = rest;
+  const sent = sentHeldPrompts(checkpoint);
+  sent.push(next);
+  checkpoint.context.sentHeldPrompts = sent.slice(-20);
+  return next;
+}
+
+function mergeHeldPrompts(disk, local, sent) {
+  const skip = new Set(sent || []);
+  const merged = [];
+  for (const text of [...(disk || []), ...(local || [])]) {
+    if (typeof text !== "string" || !text.trim() || skip.has(text) || merged.includes(text)) {
+      continue;
+    }
+    merged.push(text);
+  }
+  return merged;
+}
+
+function ensureUserMessage(checkpoint, text) {
+  const transcript = checkpoint.transcript;
+  const last = transcript[transcript.length - 1];
+  if (last?.role === "user" && last.content === text) return;
+  transcript.push({ role: "user", content: text });
+}
+
+function retractLastUser(checkpoint, text) {
+  const transcript = checkpoint.transcript;
+  const last = transcript[transcript.length - 1];
+  if (last?.role === "user" && last.content === text) transcript.pop();
+}
+
+function absorbUnseen(checkpoint, events) {
+  const seen = new Set(checkpoint.context.seenEventIds || []);
+  (events || []).forEach((event, index) => {
+    if (event?.type !== "agent.message") return;
+    const eventId =
+      typeof event.id === "string" && event.id ? event.id : eventIdentity(event, index);
+    if (seen.has(eventId)) return;
+    let answer = "";
+    for (const part of partsOf(event)) {
+      if (part.phase === "final_answer") answer += part.text;
+    }
+    appendAssistant(checkpoint, answer);
+    seen.add(eventId);
+  });
+  checkpoint.context.seenEventIds = [...seen];
+}
+
+function freshProviderEvents(events, baselineIds) {
+  const baseline = new Set(baselineIds || []);
+  const fresh = [];
+  (events || []).forEach((event, index) => {
+    if (!baseline.has(eventIdentity(event, index))) fresh.push(event);
+  });
+  return fresh;
+}
+
+// A turn is done only when the provider is idle now AND this turn has seen
+// activity that was not already in the log before its prompt was sent.
+// listEvents returns the whole session, so an older session.status_idle must
+// not finish the question that was just submitted.
+function currentTurnSettled(events, watch, session) {
+  if (!sessionIsIdle(session)) return false;
+  if (watch?.sawRunning === true) return true;
+  return freshProviderEvents(events, watch?.baselineIds).some((event) => {
+    const type = event?.type;
+    return (
+      type === "agent.message" ||
+      type === "agent.custom_tool_use" ||
+      type === "session.status_idle" ||
+      type === "session.status_idled" ||
+      type === "session.status_running"
+    );
+  });
+}
+
+function previousTurnInFlight(checkpoint) {
+  const watch = turnWatchOf(checkpoint);
+  return Boolean(watch && watch.dispatched === true && watch.settled !== true);
+}
+
+function retryableProviderError(error) {
+  if (!error || error.name === "AbortError") return false;
+  if (
+    error.status === 503 &&
+    typeof error.message === "string" &&
+    error.message.startsWith("Claude Managed Agents is not configured")
+  ) {
+    return false;
+  }
+  const status = error.status;
+  if (status === 408 || status === 409 || status === 429) return true;
+  if (typeof status === "number" && status >= 500) return true;
+  if (status == null && (error.name === "TypeError" || error.name === "FetchError")) return true;
+  return false;
+}
+
+function annotateProviderError(error, fields) {
+  if (!error || typeof error !== "object") return error;
+  for (const [key, value] of Object.entries(fields)) {
+    if (value == null || value === "") continue;
+    if (error[key] == null || error[key] === "") error[key] = value;
+  }
+  return error;
+}
+
+async function persistCheckpoint(store, userId, sessionId, checkpoint) {
+  const fresh = await store.load(userId, sessionId);
+  const disk = fresh?.checkpoint;
+  if (disk?.context) {
+    checkpoint.context.heldPrompts = mergeHeldPrompts(
+      disk.context.heldPrompts,
+      checkpoint.context.heldPrompts,
+      [
+        ...sentHeldPrompts(checkpoint),
+        ...(Array.isArray(disk.context.sentHeldPrompts) ? disk.context.sentHeldPrompts : []),
+      ]
+    );
+    if ((disk.transcript?.length || 0) > (checkpoint.transcript?.length || 0)) {
+      checkpoint.transcript = disk.transcript;
+    }
+    const seen = new Set([
+      ...(Array.isArray(disk.context.seenEventIds) ? disk.context.seenEventIds : []),
+      ...(Array.isArray(checkpoint.context.seenEventIds) ? checkpoint.context.seenEventIds : []),
+    ]);
+    checkpoint.context.seenEventIds = [...seen];
+  }
+  await store.saveWithEvents(userId, sessionId, { checkpoint });
+}
+
+async function rememberHeldPrompt(store, userId, sessionId, text) {
+  const fresh = await store.load(userId, sessionId);
+  if (!fresh?.checkpoint) return null;
+  queueHeldPrompt(fresh.checkpoint, text);
+  await store.saveWithEvents(userId, sessionId, { checkpoint: fresh.checkpoint });
+  return fresh.checkpoint;
 }
 
 async function seedWorkspace(client, memoryStoreId) {
@@ -362,12 +564,20 @@ async function collect({
         modelSteps: checkpoint.executionStats?.modelSteps ?? 0,
         toolCalls: (checkpoint.executionStats?.toolCalls ?? 0) + (excluded ? 0 : 1),
       };
-      if (store) await store.saveWithEvents(userId, sessionId, { checkpoint });
+      if (store) await persistCheckpoint(store, userId, sessionId, checkpoint);
       continue;
     }
-    const idle =
-      events.some((event) => event.type === "session.status_idle") || session?.status === "idle";
-    if (idle) {
+    const watch = turnWatchOf(checkpoint) || {
+      baselineIds: [],
+      sawRunning: false,
+      settled: false,
+    };
+    if (!checkpoint.context.turnWatch) checkpoint.context.turnWatch = watch;
+    if (sessionIsActive(session)) watch.sawRunning = true;
+    const liveStatus = providerStatus(session);
+    if (liveStatus) checkpoint.context.providerStatus = liveStatus;
+    if (currentTurnSettled(events, watch, session)) {
+      watch.settled = true;
       checkpoint.context.seenEventIds = [...seen];
       checkpoint.executionStats = {
         modelSteps: (checkpoint.executionStats?.modelSteps ?? 0) + 1,
@@ -429,7 +639,7 @@ export async function runManagedChiefTurn({
   const parsed = resume ? null : parseSubmission(submission);
   const submissionId = parsed?.id ?? null;
   const emit = (msg) => onEvent?.(makeEvent(msg, submissionId));
-  const turnId = randomUUID();
+  let turnId = randomUUID();
 
   let record = sessionId ? await store.load(userId, sessionId) : null;
   if (!resume && parsed.op.type === OpType.SET_MODEL) {
@@ -538,16 +748,26 @@ export async function runManagedChiefTurn({
   }
 
   const resolvedSpecs = specsFrom(toolSpecs, toolExecutor);
-  emit(eventMsg.turnStarted(turnId));
+  if (turnWatchOf(checkpoint)?.turnId) turnId = checkpoint.context.turnWatch.turnId;
   const bindingStore = bindings ?? createPrismaBindingStore();
   const threadStore = threads ?? createPrismaThreadStore();
-  const managed = await ensureResources({
-    client,
-    userId,
-    toolSpecs: resolvedSpecs,
-    bindings: bindingStore,
-    managed: checkpoint.context.managed || null,
-  });
+  let managed;
+  try {
+    managed = await ensureResources({
+      client,
+      userId,
+      toolSpecs: resolvedSpecs,
+      bindings: bindingStore,
+      managed: checkpoint.context.managed || null,
+    });
+  } catch (error) {
+    throw annotateProviderError(error, {
+      stage: "ensure_resources",
+      submissionId,
+      turnId,
+      sessionId: record.id,
+    });
+  }
 
   let resolveToolId = null;
   if (!resume && parsed.op.type === OpType.EXEC_APPROVAL) {
@@ -604,9 +824,7 @@ export async function runManagedChiefTurn({
       checkpoint.pendingApproval = null;
     }
   } else if (!resume && !resumeSession && parsed.op.type === OpType.MESSAGE) {
-    const text = messageText(parsed);
-    checkpoint.transcript.push({ role: "user", content: text });
-    checkpoint.context.outboundPrompt = text;
+    checkpoint.context.outboundPrompt = messageText(parsed);
   }
 
   if (checkpoint.context?.pendingPrompt && !managed.providerSessionId) {
@@ -621,71 +839,227 @@ export async function runManagedChiefTurn({
   let followLease = null;
   let followQueue = null;
   let leaseStatus = "continuing";
-  if (resume || resumeSession) {
+  const startedTurns = new Set();
+  const emitTurnStarted = (id) => {
+    if (!id || startedTurns.has(id)) return;
+    startedTurns.add(id);
+    emit(eventMsg.turnStarted(id));
+  };
+  const turnErrorFields = (stage) => ({
+    stage,
+    submissionId,
+    turnId: turnWatchOf(checkpoint)?.turnId || turnId,
+    sessionId: record.id,
+    providerStatus: checkpoint.context?.providerStatus || "",
+  });
+
+  if (resume || resumeSession || checkpoint.context.outboundPrompt) {
     const held = await holdFollowLease(jobs, userId, record.id);
     if (held.deferred) {
+      const waiting = checkpoint.context.outboundPrompt;
+      if (waiting) {
+        checkpoint.context.outboundPrompt = null;
+        const saved = await rememberHeldPrompt(store, userId, record.id, waiting);
+        emit(
+          eventMsg.userTurn({
+            turnId: saved?.context?.turnWatch?.turnId || turnWatchOf(checkpoint)?.turnId || null,
+            delivery: MessageDelivery.QUEUE,
+          })
+        );
+        return {
+          sessionId: record.id,
+          status: "continuing",
+          checkpoint: saved || checkpoint,
+          deferred: true,
+        };
+      }
       return { sessionId: record.id, status: "continuing", checkpoint, deferred: true };
     }
     followLease = held.lease;
     followQueue = held.queue;
   }
-  try {
-    // A browser follow-up resumes the provider session already opened for this
-    // turn. It must not send the user text again. Scheduled runs still use
-    // resume:true to deliver their first prompt.
-    if (resumeSession) checkpoint.context.outboundPrompt = null;
-    rememberTurnStatus(checkpoint, "running");
-    let status;
-    try {
-      if (checkpoint.context.outboundPrompt) {
-        const text = checkpoint.context.outboundPrompt;
+
+  async function dispatchOutbound() {
+    const text = checkpoint.context.outboundPrompt;
+    if (!text) return "idle";
+    let priorEvents = [];
+    if (managed.providerSessionId) {
+      const session = await client.retrieveSession(managed.providerSessionId);
+      priorEvents = (await client.listEvents(managed.providerSessionId)) || [];
+      const liveStatus = providerStatus(session);
+      if (liveStatus) checkpoint.context.providerStatus = liveStatus;
+      absorbUnseen(checkpoint, priorEvents);
+      const watch = turnWatchOf(checkpoint);
+      if (
+        watch &&
+        previousTurnInFlight(checkpoint) &&
+        sessionIsIdle(session) &&
+        currentTurnSettled(priorEvents, watch, session)
+      ) {
+        watch.settled = true;
+      }
+      if (sessionIsActive(session) || previousTurnInFlight(checkpoint)) {
+        queueHeldPrompt(checkpoint, text);
         checkpoint.context.outboundPrompt = null;
-        await openOrContinue({
-          client,
-          managed,
-          checkpoint,
-          sessionId: record.id,
-          prompt: text,
-        });
+        emit(
+          eventMsg.userTurn({
+            turnId: turnWatchOf(checkpoint)?.turnId || null,
+            delivery: MessageDelivery.QUEUE,
+          })
+        );
+        return "held";
       }
-      if (!managed.providerSessionId) {
-        throw new Error("Claude Managed Agents did not return a session id.");
-      }
-      status = await collect({
+    }
+
+    const previousWatch = turnWatchOf(checkpoint);
+    const nextTurnId = randomUUID();
+    checkpoint.context.turnWatch = {
+      turnId: nextTurnId,
+      submissionId,
+      baselineIds: eventIdentities(priorEvents),
+      sawRunning: false,
+      dispatched: false,
+      settled: false,
+    };
+    turnId = nextTurnId;
+    ensureUserMessage(checkpoint, text);
+    emitTurnStarted(nextTurnId);
+    emit(
+      eventMsg.userTurn({
+        turnId: nextTurnId,
+        delivery: MessageDelivery.TURN,
+      })
+    );
+    try {
+      await openOrContinue({
         client,
+        managed,
         checkpoint,
         sessionId: record.id,
-        providerSessionId: managed.providerSessionId,
-        userId,
-        toolSpecs: resolvedSpecs,
-        toolExecutor,
-        onEmit: emit,
-        turnId,
-        budgetMs,
-        sleepFn,
-        signal,
-        resolveToolId,
-        caller: scheduleCaller,
-        store,
+        prompt: text,
       });
     } catch (error) {
-      const reason = skipReason(error);
-      checkpoint.context.managed = managed;
-      rememberTurnStatus(
-        checkpoint,
-        reason ? "aborted" : checkpoint.context.turnStatus || "running"
-      );
-      await store.saveWithEvents(userId, record.id, { checkpoint });
-      if (reason) {
-        leaseStatus = "aborted";
-        emit(eventMsg.turnAborted(turnId, reason));
-        return { sessionId: record.id, status: "aborted", abortReason: reason, checkpoint };
+      annotateProviderError(error, turnErrorFields("dispatch_prompt"));
+      if (error?.status === 409) {
+        retractLastUser(checkpoint, text);
+        checkpoint.context.turnWatch = previousWatch;
+        turnId = previousWatch?.turnId || turnId;
+        queueHeldPrompt(checkpoint, text);
+        checkpoint.context.outboundPrompt = null;
+        emit(
+          eventMsg.userTurn({
+            turnId: previousWatch?.turnId || null,
+            delivery: MessageDelivery.QUEUE,
+          })
+        );
+        return "held";
+      }
+      if (retryableProviderError(error)) {
+        rememberTurnStatus(checkpoint, "continuing");
+        checkpoint.context.managed = managed;
+        await persistCheckpoint(store, userId, record.id, checkpoint);
+        return "stop";
       }
       throw error;
     }
+    checkpoint.context.turnWatch.dispatched = true;
+    checkpoint.context.outboundPrompt = null;
+    return "sent";
+  }
+
+  try {
+    // A follow-up resumes the provider session already opened for this turn.
+    // It must not send the user text again once that prompt was accepted.
+    // A prompt that never reached Managed Agents stays outbound and is retried.
+    // Scheduled runs still use resume:true to deliver their first prompt.
+    if (resumeSession && turnWatchOf(checkpoint)?.dispatched === true) {
+      checkpoint.context.outboundPrompt = null;
+    }
+    rememberTurnStatus(checkpoint, "running");
+    const startedAt = Date.now();
+    let status = "continuing";
+    try {
+      let chained = 0;
+      while (chained < 4) {
+        chained += 1;
+        if (signal?.aborted) {
+          status = "continuing";
+          break;
+        }
+        const watch = turnWatchOf(checkpoint);
+        if (
+          !checkpoint.context.outboundPrompt &&
+          heldPrompts(checkpoint).length &&
+          (!watch || watch.settled === true) &&
+          managed.providerSessionId
+        ) {
+          const session = await client.retrieveSession(managed.providerSessionId);
+          if (sessionIsIdle(session)) {
+            checkpoint.context.outboundPrompt = takeHeldPrompt(checkpoint);
+          }
+        }
+        if (checkpoint.context.outboundPrompt) {
+          const outcome = await dispatchOutbound();
+          if (outcome === "stop") {
+            status = "continuing";
+            break;
+          }
+        }
+        if (!managed.providerSessionId) {
+          const error = new Error("Claude Managed Agents did not return a session id.");
+          error.stage = "dispatch_prompt";
+          throw error;
+        }
+        emitTurnStarted(turnWatchOf(checkpoint)?.turnId || turnId);
+        const remaining = Math.max(0, budgetMs - (Date.now() - startedAt));
+        status = await collect({
+          client,
+          checkpoint,
+          sessionId: record.id,
+          providerSessionId: managed.providerSessionId,
+          userId,
+          toolSpecs: resolvedSpecs,
+          toolExecutor,
+          onEmit: emit,
+          turnId: turnWatchOf(checkpoint)?.turnId || turnId,
+          budgetMs: remaining,
+          sleepFn,
+          signal,
+          resolveToolId,
+          caller: scheduleCaller,
+          store,
+        });
+        if (status !== "completed" || !heldPrompts(checkpoint).length) break;
+        if (Date.now() - startedAt >= budgetMs) {
+          status = "continuing";
+          break;
+        }
+      }
+    } catch (error) {
+      const reason = skipReason(error);
+      annotateProviderError(error, turnErrorFields(error?.stage || "collect"));
+      checkpoint.context.managed = managed;
+      if (reason) {
+        rememberTurnStatus(checkpoint, "aborted");
+        await persistCheckpoint(store, userId, record.id, checkpoint);
+        leaseStatus = "aborted";
+        emit(eventMsg.turnAborted(turnWatchOf(checkpoint)?.turnId || turnId, reason));
+        return { sessionId: record.id, status: "aborted", abortReason: reason, checkpoint };
+      }
+      if (retryableProviderError(error)) {
+        rememberTurnStatus(checkpoint, "continuing");
+        await persistCheckpoint(store, userId, record.id, checkpoint);
+        status = "continuing";
+      } else {
+        rememberTurnStatus(checkpoint, checkpoint.context.turnStatus || "running");
+        await persistCheckpoint(store, userId, record.id, checkpoint);
+        throw error;
+      }
+    }
+    if (heldPrompts(checkpoint).length && status === "completed") status = "continuing";
     checkpoint.context.managed = managed;
     rememberTurnStatus(checkpoint, status);
-    await store.saveWithEvents(userId, record.id, { checkpoint });
+    await persistCheckpoint(store, userId, record.id, checkpoint);
     await persistThread(threadStore, userId, record.id, managed, status);
     leaseStatus = status;
     if (status === "continuing") {
@@ -696,7 +1070,9 @@ export async function runManagedChiefTurn({
         // The session id is already stored. The next cron drain continues it.
       }
     }
-    if (status === "completed") emit(eventMsg.turnComplete(turnId));
+    if (status === "completed") {
+      emit(eventMsg.turnComplete(turnWatchOf(checkpoint)?.turnId || turnId));
+    }
     return { sessionId: record.id, status, checkpoint };
   } finally {
     if (followLease) await settleFollowLease(followQueue, followLease, leaseStatus);

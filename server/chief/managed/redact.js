@@ -1,6 +1,12 @@
 const URL_SECRET = /postgres(?:ql)?:\/\/[^\s'"]+/gi;
 const KEY_SECRET = /\b(?:sk-[A-Za-z0-9_-]{8,}|whsec_[A-Za-z0-9_+/=-]{8,}|BSA-[A-Za-z0-9_-]{8,})/g;
 const EMAIL_SECRET = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
+const LOG_TOKEN = /^[A-Za-z0-9_.:-]{1,80}$/;
+
+function logToken(value) {
+  const text = typeof value === "string" ? value.trim() : value == null ? "" : String(value);
+  return LOG_TOKEN.test(text) ? text : "";
+}
 
 export function redactSecrets(value) {
   return String(value ?? "")
@@ -11,9 +17,15 @@ export function redactSecrets(value) {
 
 // Server logs only. The chat stream keeps the generic sentence.
 export function providerErrorFields(error) {
+  const status = Number.isInteger(error?.status) ? error.status : "";
   return {
     operation: typeof error?.operation === "string" && error.operation ? error.operation : "turn",
-    status: Number.isInteger(error?.status) ? error.status : "",
+    status,
+    stage: logToken(error?.stage),
+    submissionId: logToken(error?.submissionId),
+    turnId: logToken(error?.turnId),
+    sessionId: logToken(error?.sessionId),
+    providerStatus: logToken(error?.providerStatus),
     message: redactSecrets(error?.message || error?.name || "Error").slice(0, 300),
   };
 }
