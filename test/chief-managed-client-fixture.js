@@ -117,12 +117,28 @@ export function scriptedManagedClient(stepsOrBucket) {
       state.stores.push(row);
       return row;
     },
-    async listMemories() {
-      return state.memories;
+    async listMemories(storeId) {
+      return state.memories.filter((item) => item.storeId === storeId);
     },
-    async createMemory(_id, body) {
-      state.memories.push(body);
-      return { id: `file-${state.memories.length}` };
+    async createMemory(storeId, body) {
+      const row = {
+        ...body,
+        storeId,
+        id: `file-${state.memories.length + 1}`,
+      };
+      state.memories.push(row);
+      return { id: row.id };
+    },
+    async updateMemory(storeId, memoryId, body) {
+      const row = state.memories.find((item) => item.id === memoryId && item.storeId === storeId);
+      if (!row) {
+        const error = new Error("memory not found");
+        error.status = 404;
+        throw error;
+      }
+      if (typeof body?.content === "string") row.content = body.content;
+      if (typeof body?.path === "string") row.path = body.path;
+      return { id: row.id };
     },
     async createSession(body) {
       state.sent.push(body);

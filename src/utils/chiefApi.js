@@ -444,6 +444,18 @@ export function forgetImportedMemory(user, memoryId) {
   });
 }
 
+export function fetchChiefPersonality(user) {
+  return chiefJson("/api/chief/personality", { user });
+}
+
+export function saveChiefPersonalitySettings(user, personality) {
+  return chiefJson("/api/chief/personality", {
+    user,
+    method: "PUT",
+    body: personality,
+  });
+}
+
 export function decideChiefApproval({ user, sessionId, approvalId, decision }) {
   return chiefJson("/api/chief/approvals", {
     user,

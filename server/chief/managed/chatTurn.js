@@ -25,6 +25,14 @@ import {
 } from "./productionAgent.js";
 import { providerErrorFields } from "./redact.js";
 import { createPrismaWorkQueue } from "./workQueue.js";
+import { syncPersonalityMemory } from "../personality/memory.js";
+import { readChiefPersonality } from "../personality/store.js";
+import {
+  fittedPersonalityGuidance,
+  normalizeChiefPersonality,
+  personalityDelivery,
+  personalityDigest,
+} from "../../../src/utils/chiefPersonality.js";
 import { SCHEDULED_TURN_EXCLUDED_TOOLS } from "../tools/inventory.js";
 
 const LEGACY_MESSAGE =
@@ -200,6 +208,7 @@ async function ensureResources({ client, userId, toolSpecs, bindings, managed })
     memoryStoreId: memory.id,
     memoryKey,
     providerSessionId: managed?.providerSessionId || null,
+    personalityDigest: managed?.personalityDigest || null,
     workspaceSeeded: true,
   };
   if (bindings) {
@@ -425,6 +434,7 @@ export async function runManagedChiefTurn({
   sleepFn = delay,
   resume = false,
   caller = null,
+  readPersonality = readChiefPersonality,
 } = {}) {
   const parsed = resume ? null : parseSubmission(submission);
   const submissionId = parsed?.id ?? null;
@@ -629,7 +639,13 @@ export async function runManagedChiefTurn({
     followLease = held.lease;
     followQueue = held.queue;
   }
+  const personalityState = await loadTurnPersonality(userId, readPersonality);
   try {
+    try {
+      await syncPersonalityMemory(client, managed.memoryStoreId, personalityState.guidance);
+    } catch (error) {
+      console.error("[chief/personality] memory_sync", error?.status || error?.code || "failed");
+    }
     // A browser follow-up resumes the provider session already opened for this
     // turn. It must not send the user text again. Scheduled runs still use
     // resume:true to deliver their first prompt.
@@ -640,13 +656,22 @@ export async function runManagedChiefTurn({
       if (checkpoint.context.outboundPrompt) {
         const text = checkpoint.context.outboundPrompt;
         checkpoint.context.outboundPrompt = null;
+        const delivery = personalityDelivery({
+          providerSessionId: managed.providerSessionId,
+          boundDigest: managed.personalityDigest || null,
+          digest: personalityState.digest,
+          userText: text,
+          guidance: personalityState.guidance,
+        });
         await openOrContinue({
           client,
           managed,
           checkpoint,
           sessionId: record.id,
-          prompt: text,
+          prompt: delivery.providerPrompt,
+          instructions: personalityState.instructions,
         });
+        managed.personalityDigest = delivery.nextDigest;
       }
       if (!managed.providerSessionId) {
         throw new Error("Claude Managed Agents did not return a session id.");
@@ -703,7 +728,26 @@ export async function runManagedChiefTurn({
   }
 }
 
-async function openOrContinue({ client, managed, checkpoint, sessionId, prompt }) {
+async function loadTurnPersonality(userId, readPersonality) {
+  let loaded = null;
+  if (typeof readPersonality === "function") {
+    try {
+      loaded = await readPersonality(userId);
+    } catch (error) {
+      console.error("[chief/personality]", error?.code || error?.name || "read_failed");
+    }
+  }
+  const fitted = fittedPersonalityGuidance(
+    normalizeChiefPersonality(loaded?.personality ?? loaded)
+  );
+  return {
+    guidance: fitted.guidance,
+    instructions: fitted.instructions,
+    digest: personalityDigest(fitted.guidance),
+  };
+}
+
+async function openOrContinue({ client, managed, checkpoint, sessionId, prompt, instructions }) {
   if (!managed.providerSessionId) {
     const opened = await client.createSession(
       productionSessionBody({
@@ -713,6 +757,7 @@ async function openOrContinue({ client, managed, checkpoint, sessionId, prompt }
         memoryStoreId: managed.memoryStoreId,
         sessionId,
         prompt,
+        instructions,
       })
     );
     if (!opened?.id) throw new Error("Claude Managed Agents did not return a session id.");

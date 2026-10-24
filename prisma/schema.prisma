@@ -171,6 +171,7 @@ model User {
   chiefManagedBinding     ChiefManagedBinding?
   chiefManagedThreads     ChiefManagedThread[]
   chiefManagedWork        ChiefManagedWork[]
+  chiefPersonality        ChiefPersonality?
 }
 
 model PlaidItem {
@@ -1676,6 +1677,23 @@ model ChiefManagedWork {
   @@index([status, leaseUntil])
   @@index([userId, threadId])
   @@map("chief_managed_work")
+}
+
+// One conversational preference row per signed-in user. No row means the
+// JARVIS default. This is not a second CHIEF agent.
+model ChiefPersonality {
+  userId             String   @id
+  preset             String
+  responseLength     String
+  humor              Int
+  directness         Int
+  proactiveness      Int
+  customInstructions String   @db.Text
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("chief_personality")
 }
 
 // Self-notification only: agents may notify the user (in-app or via the
