@@ -84,6 +84,22 @@ export function publicTranscriptMessages(messages) {
   return visible;
 }
 
+export function isActiveChiefTurn(turnStatus) {
+  return turnStatus === "continuing" || turnStatus === "running";
+}
+
+// Speech waits until the Managed Agents turn has actually settled. A budget
+// handoff ("continuing") and a suspension are not finished replies.
+export function isSpeakableTurn(turnStatus) {
+  return (
+    turnStatus !== "continuing" &&
+    turnStatus !== "running" &&
+    turnStatus !== "suspended" &&
+    turnStatus !== "aborted" &&
+    turnStatus !== "rejected"
+  );
+}
+
 export function initialTurnState(sessionId = null) {
   return {
     status: CHIEF_STATUS.WORKING,
@@ -105,7 +121,12 @@ export function applyChiefEvent(state, event) {
   if (!msg || typeof msg.type !== "string") return state;
   switch (msg.type) {
     case "turn_started":
-      return { ...state, status: CHIEF_STATUS.WORKING };
+      return {
+        ...state,
+        status: state.streamText ? CHIEF_STATUS.RESPONDING : CHIEF_STATUS.WORKING,
+        finished: false,
+        turnStatus: "running",
+      };
     case "assistant_content_delta": {
       const sessionId = sessionIdFrom(msg, state.sessionId);
       if (!isVisibleAssistantDelta(msg)) return { ...state, sessionId };
@@ -130,13 +151,21 @@ export function applyChiefEvent(state, event) {
             : state.approval,
       };
     case "session_configured": {
-      const suspended = msg.status === "suspended";
+      const turnStatus = typeof msg.status === "string" ? msg.status : null;
+      const suspended = turnStatus === "suspended";
+      const active = isActiveChiefTurn(turnStatus);
       return {
         ...state,
         sessionId: sessionIdFrom(msg, state.sessionId),
-        turnStatus: typeof msg.status === "string" ? msg.status : null,
-        status: suspended ? CHIEF_STATUS.APPROVAL : CHIEF_STATUS.READY,
-        finished: !suspended,
+        turnStatus,
+        status: suspended
+          ? CHIEF_STATUS.APPROVAL
+          : active
+            ? state.streamText
+              ? CHIEF_STATUS.RESPONDING
+              : CHIEF_STATUS.WORKING
+            : CHIEF_STATUS.READY,
+        finished: !suspended && !active,
         approval: suspended ? state.approval : null,
       };
     }
@@ -151,9 +180,10 @@ export function applyChiefEvent(state, event) {
             : "CHIEF could not finish that turn."
         ),
         finished: true,
+        turnStatus: "rejected",
       };
     case "turn_aborted":
-      return { ...state, status: CHIEF_STATUS.READY, finished: true };
+      return { ...state, status: CHIEF_STATUS.READY, finished: true, turnStatus: "aborted" };
     case "model_changed":
       return {
         ...state,
@@ -206,6 +236,13 @@ export function messageSubmission(text) {
   return {
     id: createSubmissionId(),
     op: { type: "message", message: { text } },
+  };
+}
+
+export function resumeSubmission(sessionId) {
+  return {
+    id: createSubmissionId(),
+    op: { type: "resume_session", session_id: sessionId },
   };
 }
 

@@ -80,13 +80,9 @@ test("empty, failed, and muted replies do not speak", () => {
     null
   );
   assert.equal(speakCompletedReply(voice, { ...finished, error: "stopped" }), null);
-  assert.equal(
-    speakCompletedReply(voice, {
-      ...finished,
-      preferences: normalizeChiefPreferences({ conversation: { voiceResponses: false } }),
-    }),
-    null
-  );
+  assert.equal(speakCompletedReply(voice, { ...finished, turnStatus: "continuing" }), null);
+  assert.equal(speakCompletedReply(voice, { ...finished, turnStatus: "aborted" }), null);
+  assert.equal(speakCompletedReply(voice, { ...finished, turnStatus: "suspended" }), null);
   assert.equal(
     speakCompletedReply(voice, {
       ...finished,
@@ -133,7 +129,7 @@ test("typed and spoken input follow the same response mode", () => {
         source,
         preferences: modePreferences("both", { voiceResponses: false }),
       }),
-      "",
+      answer,
       source
     );
     assert.equal(
@@ -142,7 +138,7 @@ test("typed and spoken input follow the same response mode", () => {
         source,
         preferences: modePreferences("voice", { voiceResponses: false }),
       }),
-      "",
+      answer,
       source
     );
     assert.equal(
@@ -158,8 +154,8 @@ test("typed and spoken input follow the same response mode", () => {
 
   const mutedVoice = modePreferences("voice", { voiceResponses: false });
   assert.equal(mutedVoice.conversation.responseMode, "voice");
-  assert.equal(mutedVoice.conversation.voiceResponses, false);
-  assert.equal(shouldShowAssistantText({ preferences: mutedVoice }), true);
+  assert.equal(mutedVoice.conversation.voiceResponses, true);
+  assert.equal(shouldShowAssistantText({ preferences: mutedVoice }), false);
   assert.equal(shouldShowAssistantText({ preferences: modePreferences("voice") }), false);
   assert.equal(
     shouldShowAssistantText({ preferences: modePreferences("voice"), reveal: true }),

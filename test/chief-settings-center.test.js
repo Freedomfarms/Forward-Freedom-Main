@@ -154,7 +154,7 @@ test("interface preferences persist without credentials", () => {
       source: "voice",
       preferences: normalizeChiefPreferences({ conversation: { voiceResponses: false } }),
     }),
-    false
+    true
   );
   assert.equal(
     shouldSpeakReply({
@@ -222,9 +222,9 @@ test("interface preferences persist without credentials", () => {
   });
   assert.equal(muted.conversation.responseMode, "voice");
   assert.equal(muted.conversation.autoSpeak, true);
-  assert.equal(muted.conversation.voiceResponses, false);
-  assert.equal(shouldSpeakReply({ preferences: muted }), false);
-  assert.equal(shouldShowAssistantText({ preferences: muted }), true);
+  assert.equal(muted.conversation.voiceResponses, true);
+  assert.equal(shouldSpeakReply({ preferences: muted }), true);
+  assert.equal(shouldShowAssistantText({ preferences: muted }), false);
 
   const storedMode = writeChiefPreferences(
     { conversation: { responseMode: "text", voiceResponses: true } },

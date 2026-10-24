@@ -11,6 +11,7 @@ import {
   fetchChiefSessionSearch,
   fetchChiefSessions,
   initialTurnState,
+  isActiveChiefTurn,
   renameChiefSession,
   selectChiefModel,
   setChiefSessionArchived,
@@ -34,6 +35,7 @@ import { useChiefVoice } from "./useChiefVoice.js";
 import {
   readChiefPreferences,
   shouldShowAssistantText,
+  shouldSpeakReply,
   writeChiefPreferences,
 } from "../../utils/chiefPreferences.js";
 import { speakCompletedReply } from "../../utils/chiefReplySpeech.js";
@@ -43,8 +45,30 @@ import {
   rememberRevealedAnswer,
 } from "../../utils/chiefRevealedAnswers.js";
 
+const CONTINUATION_RESUMES = 4;
+const CONTINUATION_POLL_MS = 4000;
+const CONTINUATION_POLL_LIMIT = 75;
+
 function errorText(error) {
   return error?.message || "CHIEF could not complete that request.";
+}
+
+function waitForAbort(ms, signal) {
+  return new Promise((resolve) => {
+    if (signal?.aborted) {
+      resolve(true);
+      return;
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve(false);
+    }, ms);
+    function onAbort() {
+      clearTimeout(timer);
+      resolve(true);
+    }
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }
 
 function profileInitial(user) {
@@ -76,6 +100,7 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
   const [notFound, setNotFound] = useState(false);
   const [draft, setDraft] = useState("");
   const [status, setStatus] = useState(CHIEF_STATUS.READY);
+  const [turnStatus, setTurnStatus] = useState("");
   const [streamText, setStreamText] = useState("");
   const [turnError, setTurnError] = useState("");
   const [approval, setApproval] = useState(null);
@@ -192,7 +217,12 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
         const pending = await fetchChiefPendingApproval(user, sessionId).catch(() => null);
         if (token !== generation.current) return;
         setApproval(pending);
-        setStatus(pending ? CHIEF_STATUS.APPROVAL : CHIEF_STATUS.READY);
+        const liveTurn = typeof payload?.turnStatus === "string" ? payload.turnStatus : "";
+        const stillWorking = isActiveChiefTurn(liveTurn);
+        setTurnStatus(stillWorking ? liveTurn : "");
+        setStatus(
+          pending ? CHIEF_STATUS.APPROVAL : stillWorking ? CHIEF_STATUS.WORKING : CHIEF_STATUS.READY
+        );
         setStreamText("");
       } catch (error) {
         if (token !== generation.current) return;
@@ -348,6 +378,29 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [accessOpen, settingsOpen]);
 
+  useEffect(() => {
+    if (!user || !activeSessionId || busy || !isActiveChiefTurn(turnStatus)) return undefined;
+    let cancelled = false;
+    const timer = window.setInterval(() => {
+      fetchChiefHistory(user, activeSessionId)
+        .then((payload) => {
+          if (cancelled) return;
+          const nextStatus = typeof payload?.turnStatus === "string" ? payload.turnStatus : "";
+          const historyMessages = Array.isArray(payload?.messages) ? payload.messages : [];
+          if (historyMessages.length) setMessages(historyMessages);
+          if (isActiveChiefTurn(nextStatus) || !nextStatus) return;
+          setTurnStatus("");
+          setStreamText("");
+          setStatus(nextStatus === "suspended" ? CHIEF_STATUS.APPROVAL : CHIEF_STATUS.READY);
+        })
+        .catch(() => {});
+    }, CONTINUATION_POLL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [user, activeSessionId, busy, turnStatus]);
+
   function revealStoredAnswer(text, sessionId = activeSessionIdRef.current) {
     const saved = rememberRevealedAnswer(sessionUid, sessionId, text);
     if (saved) setRevealedAnswers(saved);
@@ -483,35 +536,56 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
       setApproval(null);
       setStreamText("");
       setStatus(CHIEF_STATUS.WORKING);
+      setTurnStatus("running");
       setDraft("");
       if (appendUser) {
         setMessages((current) => [...current, { role: "user", text: trimmed }]);
       }
       let turn = initialTurnState(sessionId);
+      const applyEvent = (event) => {
+        if (controller.signal.aborted) return;
+        turn = applyChiefEvent(turn, event);
+        const displayStatus =
+          turn.finished && turn.status === CHIEF_STATUS.READY
+            ? turn.streamText
+              ? CHIEF_STATUS.RESPONDING
+              : CHIEF_STATUS.WORKING
+            : turn.status;
+        setStatus(displayStatus);
+        setTurnStatus(turn.turnStatus || "");
+        setStreamText(turn.streamText);
+        if (turn.sessionId && turn.sessionId !== activeSessionIdRef.current) {
+          activeSessionIdRef.current = turn.sessionId;
+          setActiveSessionId(turn.sessionId);
+          writeStoredSessionId(turn.sessionId);
+        }
+        if (turn.approval) setApproval(turn.approval);
+        if (turn.error) setTurnError(turn.error);
+      };
       try {
-        await streamChiefChat({
-          user,
-          sessionId,
-          text: trimmed,
-          signal: controller.signal,
-          onEvent: (event) => {
-            if (controller.signal.aborted) return;
-            turn = applyChiefEvent(turn, event);
-            setStatus(turn.status);
-            setStreamText(turn.streamText);
-            if (turn.sessionId && turn.sessionId !== activeSessionIdRef.current) {
-              activeSessionIdRef.current = turn.sessionId;
-              setActiveSessionId(turn.sessionId);
-              writeStoredSessionId(turn.sessionId);
-            }
-            if (turn.approval) setApproval(turn.approval);
-            if (turn.error) setTurnError(turn.error);
-          },
-        });
+        let resume = false;
+        let resumes = 0;
+        while (true) {
+          await streamChiefChat({
+            user,
+            sessionId: resume ? turn.sessionId : sessionId,
+            text: trimmed,
+            resume,
+            signal: controller.signal,
+            onEvent: applyEvent,
+          });
+          if (controller.signal.aborted || abortRef.current !== controller) return;
+          if (!isActiveChiefTurn(turn.turnStatus) || !turn.sessionId) break;
+          if (resumes >= CONTINUATION_RESUMES) break;
+          resumes += 1;
+          resume = true;
+          setStatus(turn.streamText ? CHIEF_STATUS.RESPONDING : CHIEF_STATUS.WORKING);
+        }
       } catch (error) {
         if (controller.signal.aborted || error?.name === "AbortError") return;
         if (abortRef.current !== controller) return;
         setStatus(CHIEF_STATUS.ERROR);
+        setTurnStatus("");
         setTurnError(errorText(error));
         setBusyState(false);
         return;
@@ -520,16 +594,60 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
 
       const sessionIdNow = turn.sessionId;
       let historyAnswer = "";
-      if (sessionIdNow && (turn.finished || turn.approval)) {
+      if (isActiveChiefTurn(turn.turnStatus) && sessionIdNow) {
+        for (let attempt = 0; attempt < CONTINUATION_POLL_LIMIT; attempt += 1) {
+          if (await waitForAbort(CONTINUATION_POLL_MS, controller.signal)) return;
+          if (abortRef.current !== controller) return;
+          try {
+            const payload = await fetchChiefHistory(user, sessionIdNow);
+            if (abortRef.current !== controller) return;
+            const nextStatus = typeof payload?.turnStatus === "string" ? payload.turnStatus : "";
+            const historyMessages = Array.isArray(payload?.messages) ? payload.messages : [];
+            const answer = currentTurn(historyMessages, "").answer;
+            if (answer) {
+              setMessages(historyMessages);
+              setStreamText(answer);
+              turn = { ...turn, streamText: answer, status: CHIEF_STATUS.RESPONDING };
+              setStatus(CHIEF_STATUS.RESPONDING);
+            }
+            if (!isActiveChiefTurn(nextStatus) && nextStatus) {
+              turn = {
+                ...turn,
+                turnStatus: nextStatus,
+                finished: nextStatus !== "suspended",
+                status:
+                  nextStatus === "suspended"
+                    ? CHIEF_STATUS.APPROVAL
+                    : turn.status === CHIEF_STATUS.ERROR
+                      ? CHIEF_STATUS.ERROR
+                      : CHIEF_STATUS.READY,
+                streamText: answer || turn.streamText,
+              };
+              setTurnStatus(nextStatus === "completed" ? "" : nextStatus);
+              break;
+            }
+            setTurnStatus(nextStatus || "continuing");
+            setStatus(answer ? CHIEF_STATUS.RESPONDING : CHIEF_STATUS.WORKING);
+          } catch (error) {
+            if (abortRef.current !== controller) return;
+            if (error?.status !== 404) setHistoryError(errorText(error));
+          }
+        }
+      }
+      if (abortRef.current !== controller) return;
+      if (sessionIdNow && (turn.finished || turn.approval || turn.turnStatus === "suspended")) {
         try {
           const payload = await fetchChiefHistory(user, sessionIdNow);
           if (abortRef.current !== controller) return;
           const historyMessages = Array.isArray(payload?.messages) ? payload.messages : [];
           setMessages(historyMessages);
-          setStreamText("");
           setNotFound(false);
           if (turn.finished && turn.status !== CHIEF_STATUS.ERROR && !turn.error) {
             historyAnswer = currentTurn(historyMessages, "").answer;
+          }
+          if (historyAnswer) setStreamText("");
+          if (isActiveChiefTurn(payload?.turnStatus)) {
+            turn = { ...turn, finished: false, turnStatus: payload.turnStatus };
           }
         } catch (error) {
           if (abortRef.current !== controller) return;
@@ -548,20 +666,37 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
       }
       if (abortRef.current !== controller) return;
       if (turn.approval || turn.turnStatus === "suspended") {
+        setTurnStatus("");
         setStatus(CHIEF_STATUS.APPROVAL);
         if (sessionIdNow) {
           const pending = await fetchChiefPendingApproval(user, sessionIdNow).catch(() => null);
           if (abortRef.current !== controller) return;
           if (pending) setApproval(pending);
         }
+      } else if (isActiveChiefTurn(turn.turnStatus)) {
+        setApproval(null);
+        setTurnStatus(turn.turnStatus);
+        setStatus(turn.streamText ? CHIEF_STATUS.RESPONDING : CHIEF_STATUS.WORKING);
+        setTurnError(
+          "CHIEF is still finishing that response. It will appear in this conversation."
+        );
+        if (shouldSpeakReply({ preferences: preferencesRef.current })) {
+          voice.reportSpeechError(
+            "CHIEF is still finishing that response. Use Play response when it appears."
+          );
+        }
+      } else if (turn.status === CHIEF_STATUS.ERROR) {
+        setApproval(null);
+        setTurnStatus("");
+        setStatus(CHIEF_STATUS.ERROR);
       } else {
         setApproval(null);
-        setStatus(turn.status === CHIEF_STATUS.ERROR ? CHIEF_STATUS.ERROR : CHIEF_STATUS.READY);
+        setTurnStatus("");
       }
       setBusyState(false);
       void refreshAccess();
       const answerForReveal = (historyAnswer || turn.streamText || "").trim();
-      const delivery = speakCompletedReply(voice, {
+      const speechInput = {
         streamText: turn.streamText,
         historyAnswer,
         finished: turn.finished === true,
@@ -569,11 +704,30 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
         error: turn.error,
         aborted: controller.signal.aborted || abortRef.current !== controller,
         source,
+        turnStatus: turn.turnStatus,
         preferences: preferencesRef.current,
-      });
-      if (!delivery?.pending) return;
+      };
+      const delivery = speakCompletedReply(voice, speechInput);
+      if (!delivery?.pending) {
+        if (
+          turn.finished === true &&
+          !turn.error &&
+          turn.status !== CHIEF_STATUS.ERROR &&
+          shouldSpeakReply({ preferences: preferencesRef.current }) &&
+          !answerForReveal &&
+          !isActiveChiefTurn(turn.turnStatus)
+        ) {
+          voice.reportSpeechError("CHIEF finished without text to speak.");
+        }
+        if (!isActiveChiefTurn(turn.turnStatus) && turn.status !== CHIEF_STATUS.ERROR) {
+          if (turn.turnStatus !== "suspended" && !turn.approval) setStatus(CHIEF_STATUS.READY);
+        }
+        return;
+      }
+      setStatus(CHIEF_STATUS.RESPONDING);
       const result = await delivery.pending;
       if (speechEpoch.current !== epoch) return;
+      setStatus(CHIEF_STATUS.READY);
       if (result?.ok) return;
       if (answerForReveal) revealStoredAnswer(answerForReveal, sessionIdNow);
       if (result?.reason === "aborted") setSpeechStopped(true);
@@ -726,7 +880,13 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
   }
 
   function applyPreferences(next) {
-    setPreferences(writeChiefPreferences(next));
+    const saved = writeChiefPreferences(next);
+    if (saved.conversation.responseMode === "text") {
+      speechEpoch.current += 1;
+      voice.stopSpeaking();
+      setSpeechStopped(false);
+    }
+    setPreferences(saved);
   }
 
   function changeResponseMode(responseMode) {
@@ -755,10 +915,15 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
 
   function stopTurn() {
     const active = abortRef.current;
+    speechEpoch.current += 1;
     stopActiveTurn();
     voice.stopSpeaking();
-    if (!active) return;
+    setTurnStatus("");
     setBusyState(false);
+    if (!active) {
+      setStatus(CHIEF_STATUS.READY);
+      return;
+    }
     setStatus((current) =>
       current === CHIEF_STATUS.READY ||
       current === CHIEF_STATUS.APPROVAL ||
@@ -768,11 +933,31 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
     );
   }
 
+  async function replaySpeech() {
+    const answer = typeof answerTextRef.current === "string" ? answerTextRef.current.trim() : "";
+    if (!answer) return;
+    speechEpoch.current += 1;
+    const epoch = speechEpoch.current;
+    setSpeechStopped(false);
+    voice.clearSpeechError();
+    voice.ensureAudio();
+    setStatus(CHIEF_STATUS.RESPONDING);
+    const result = await voice.speakAnswer(answer);
+    if (speechEpoch.current !== epoch) return;
+    setStatus(CHIEF_STATUS.READY);
+    if (result?.ok) return;
+    revealStoredAnswer(answer);
+    if (result?.reason === "aborted") setSpeechStopped(true);
+  }
+
   const fieldStatus = user ? status : CHIEF_STATUS.READY;
+  const turnStillRunning = isActiveChiefTurn(turnStatus);
   const interaction = {
     status: fieldStatus,
     listening: voice.listening,
     speaking: voice.audioActive,
+    playback: voice.playback,
+    turnStatus,
   };
   const orbState = visualStateForInteraction(interaction);
   const scenePhase = scenePhaseForInteraction({
@@ -810,7 +995,8 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
   }
 
   function toggleMicrophone() {
-    if (busy || historyLoading || notFound || activeArchived || approval) return;
+    if (busy || turnStillRunning || historyLoading || notFound || activeArchived || approval)
+      return;
     voice.ensureAudio();
     voice.toggleListening();
   }
@@ -850,6 +1036,7 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
         notFound={notFound}
         showEmpty={showEmpty}
         showResponseText={showAssistantText || isRevealedAnswer(revealedAnswers, turnView.answer)}
+        onReveal={(text) => revealStoredAnswer(text)}
         onBackToList={backToConversations}
       />
       {transcriptError ? (
@@ -907,6 +1094,7 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
           earlier={turnView.earlier}
           showResponseText={showAssistantText}
           revealedKeys={revealedAnswers}
+          onReveal={(text) => revealStoredAnswer(text)}
         />
       ) : null}
     </>
@@ -1016,7 +1204,13 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
           label: voice.listening ? "Listening" : "Voice",
           icon: "mic",
           pressed: voice.listening,
-          disabled: busy || historyLoading || notFound || Boolean(approval) || activeArchived,
+          disabled:
+            busy ||
+            turnStillRunning ||
+            historyLoading ||
+            notFound ||
+            Boolean(approval) ||
+            activeArchived,
           onSelect: toggleMicrophone,
         },
       ]
@@ -1046,7 +1240,9 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
           onSend={submitDraft}
           onMic={toggleMicrophone}
           listening={voice.listening}
-          composerDisabled={busy || historyLoading || notFound}
+          playback={voice.playback}
+          turnStatus={turnStatus}
+          composerDisabled={busy || turnStillRunning || historyLoading || notFound}
           enterToSend={preferences.conversation.enterToSend}
           showComposer={Boolean(user) && !approval && !activeArchived}
           reducedMotion={motionReduced}
@@ -1059,8 +1255,16 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
           onResponseMode={user ? changeResponseMode : undefined}
           speechActive={voice.playback === "preparing" || voice.playback === "playing"}
           onStopSpeech={stopSpeech}
+          onReplaySpeech={
+            shouldSpeakReply({ preferences }) &&
+            turnView.answer.trim() &&
+            voice.playback === "idle" &&
+            (voice.speechError || speechStopped)
+              ? replaySpeech
+              : undefined
+          }
           profileName={profileName(user)}
-          generating={busy}
+          generating={busy || turnStillRunning}
           onStopTurn={stopTurn}
           systems={access.systems}
           accessLine={user ? moneyWebLine(access.money, access.web) : ""}

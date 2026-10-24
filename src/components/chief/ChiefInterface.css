@@ -2688,6 +2688,16 @@
   box-shadow: inset 0 0 0 1px #a5d8ff28;
 }
 
+.chief-frontier .chief-reveal-text {
+  width: auto;
+  height: auto;
+  padding: 4px 0;
+  background: transparent;
+  color: #9ec0d6;
+  font: 8px var(--mono, Consolas, monospace);
+  letter-spacing: 0.8px;
+}
+
 .chief-frontier .chief-stop-speech {
   width: auto;
   height: auto;

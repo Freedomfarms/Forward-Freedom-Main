@@ -91,6 +91,35 @@ test("streaming hides reasoning and keeps one session id", () => {
   assert.equal(state.finished, true);
   assert.equal(state.status, CHIEF_STATUS.READY);
   assert.equal(state.sessionId, "sess-1");
+  assert.equal(state.turnStatus, "completed");
+});
+
+test("a continuing Managed Agents handoff stays unfinished", () => {
+  let state = applyChiefEvent(initialTurnState("sess-1"), {
+    msg: { type: "turn_started" },
+  });
+  assert.equal(state.turnStatus, "running");
+  assert.equal(state.finished, false);
+  state = applyChiefEvent(state, {
+    msg: { type: "session_configured", session_id: "sess-1", status: "continuing" },
+  });
+  assert.equal(state.finished, false);
+  assert.equal(state.turnStatus, "continuing");
+  assert.equal(state.status, CHIEF_STATUS.WORKING);
+  state = applyChiefEvent(state, {
+    msg: {
+      type: "assistant_content_delta",
+      phase: "final_answer",
+      delta: "Partial",
+      session_id: "sess-1",
+    },
+  });
+  state = applyChiefEvent(state, {
+    msg: { type: "session_configured", session_id: "sess-1", status: "continuing" },
+  });
+  assert.equal(state.streamText, "Partial");
+  assert.equal(state.status, CHIEF_STATUS.RESPONDING);
+  assert.equal(state.finished, false);
 });
 
 test("tool status stays in natural language and drops arguments", () => {
@@ -208,7 +237,8 @@ test("CHIEF UI does not reuse Freedom OS agent chat or agentsApi", () => {
   }
 
   const api = read("src/utils/chiefApi.js");
-  assert.match(api, /submission: messageSubmission/);
+  assert.match(api, /messageSubmission\(text\)/);
+  assert.match(api, /resumeSubmission\(sessionId\)/);
   assert.match(api, /session_id: sessionId/);
   assert.equal(api.includes("agentsApi"), false);
   assert.match(read("src/ForwardFreedomDashboard.jsx"), /APP_TABS\.CHIEF/);

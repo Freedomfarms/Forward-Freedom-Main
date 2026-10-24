@@ -2,7 +2,7 @@
 // Text rendering stays with the transcript. This module only chooses the
 // string passed to voice.speakAnswer(), once. Typed and spoken input share it.
 
-import { CHIEF_STATUS } from "./chiefProtocol.js";
+import { CHIEF_STATUS, isSpeakableTurn } from "./chiefProtocol.js";
 import { shouldSpeakReply } from "./chiefPreferences.js";
 
 export function replySpeechText({
@@ -13,9 +13,11 @@ export function replySpeechText({
   error = "",
   aborted = false,
   source = "text",
+  turnStatus = null,
   preferences,
 } = {}) {
   if (aborted || finished !== true) return "";
+  if (!isSpeakableTurn(turnStatus)) return "";
   if (status === CHIEF_STATUS.ERROR || error) return "";
   const streamed = typeof streamText === "string" ? streamText.trim() : "";
   const stored = typeof historyAnswer === "string" ? historyAnswer.trim() : "";

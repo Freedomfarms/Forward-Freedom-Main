@@ -163,6 +163,74 @@ test("a still-running session is queued and the drain resumes it", async () => {
   assert.match(JSON.stringify(record.checkpoint.transcript), /feeder plan is ready/);
 });
 
+test("resume_session continues the same Managed Agents session without a second prompt", async () => {
+  const store = new MemoryCheckpointStore();
+  const client = scriptedManagedClient([{ running: true }]);
+  const http = mockResponse();
+  await handleChiefChat(
+    request({
+      submission: { id: "s1", op: { type: "message", message: { text: "Plan the feeder." } } },
+    }),
+    http.response,
+    {
+      store,
+      client,
+      authenticate: auth,
+      toolExecutor: new ToolExecutor(),
+      budgetMs: 0,
+      sleepFn: async () => {},
+    }
+  );
+  const first = frames(http.chunks);
+  const sessionId = first.at(-1).msg.session_id;
+  assert.equal(first.at(-1).msg.status, "continuing");
+  assert.equal(client.state.sessions.size, 1);
+  const session = [...client.state.sessions.values()][0];
+  session.status = "idle";
+  session.events.push({
+    id: "later",
+    type: "agent.message",
+    content: [{ type: "text", text: "The feeder plan is ready." }],
+  });
+  session.events.push({ id: "idle-later", type: "session.status_idle" });
+  const http2 = mockResponse();
+  await handleChiefChat(
+    request({
+      session_id: sessionId,
+      submission: { id: "s2", op: { type: "resume_session", session_id: sessionId } },
+    }),
+    http2.response,
+    {
+      store,
+      client,
+      authenticate: auth,
+      toolExecutor: new ToolExecutor(),
+      sleepFn: async () => {},
+    }
+  );
+  const second = frames(http2.chunks);
+  assert.equal(second.at(-1).msg.status, "completed");
+  assert.equal(
+    second.some(
+      (event) =>
+        event.msg?.type === "assistant_content_delta" &&
+        event.msg.delta.includes("The feeder plan is ready.")
+    ),
+    true
+  );
+  assert.equal(client.state.sessions.size, 1);
+  assert.equal(
+    client.state.sent.some((item) =>
+      (item.events || []).some((event) => event.type === "user.message")
+    ),
+    false
+  );
+  const record = await store.load("user-1", sessionId);
+  assert.equal(record.checkpoint.context.turnStatus, "completed");
+  assert.equal(record.checkpoint.transcript.filter((message) => message.role === "user").length, 1);
+  assert.match(JSON.stringify(record.checkpoint.transcript), /feeder plan is ready/);
+});
+
 test("a missing provider configuration does not fall back", async () => {
   const http = mockResponse();
   await handleChiefChat(

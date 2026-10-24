@@ -144,6 +144,8 @@ export function ChiefInterface({
   statusTone = "ready",
   assistantState = "idle",
   scenePhase = "idle",
+  playback = "idle",
+  turnStatus = "",
   message = "",
   onMessageChange,
   onSend,
@@ -167,6 +169,7 @@ export function ChiefInterface({
   onResponseMode,
   speechActive = false,
   onStopSpeech,
+  onReplaySpeech,
   systems = null,
   accessLine = "",
   onOpenSystem,
@@ -193,6 +196,8 @@ export function ChiefInterface({
     assistantState,
     scenePhase: phase,
     status,
+    playback,
+    turnStatus,
   });
   const copy = frontierStatusCopy(activity, status);
   const trimmed = typeof message === "string" ? message.trim() : "";
@@ -503,6 +508,15 @@ export function ChiefInterface({
                       onClick={() => onStopSpeech?.()}
                     >
                       Stop
+                    </button>
+                  ) : null}
+                  {onReplaySpeech && !speechActive ? (
+                    <button
+                      type="button"
+                      className="chief-stop-speech"
+                      onClick={() => onReplaySpeech()}
+                    >
+                      Play response
                     </button>
                   ) : null}
                 </div>

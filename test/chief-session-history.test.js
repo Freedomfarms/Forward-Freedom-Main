@@ -88,7 +88,13 @@ test("a caller reads messages stored on their checkpoint", async () => {
     authenticate: auth("user-a"),
   });
   assert.equal(http.state.statusCode, 200);
-  assert.deepEqual(Object.keys(http.state.body).sort(), ["messages", "modelRoute", "sessionId"]);
+  assert.deepEqual(Object.keys(http.state.body).sort(), [
+    "messages",
+    "modelRoute",
+    "sessionId",
+    "turnStatus",
+  ]);
+  assert.equal(http.state.body.turnStatus, null);
   assert.equal(http.state.body.modelRoute, null);
   assert.equal(http.state.body.sessionId, created.id);
   assert.deepEqual(http.state.body.messages, [

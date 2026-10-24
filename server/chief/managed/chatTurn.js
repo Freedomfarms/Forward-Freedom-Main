@@ -95,6 +95,11 @@ function specsFrom(toolSpecs, toolExecutor) {
   return [];
 }
 
+function rememberTurnStatus(checkpoint, status) {
+  if (!checkpoint.context || typeof checkpoint.context !== "object") checkpoint.context = {};
+  checkpoint.context.turnStatus = status;
+}
+
 function appendAssistant(checkpoint, text) {
   if (!text) return;
   const transcript = checkpoint.transcript;
@@ -435,7 +440,18 @@ export async function runManagedChiefTurn({
     return { sessionId: record.id, status: "completed", checkpoint: record.checkpoint };
   }
 
-  if (!resume && parsed.op.type !== OpType.MESSAGE && parsed.op.type !== OpType.EXEC_APPROVAL) {
+  const resumeSession = !resume && parsed?.op?.type === OpType.RESUME_SESSION;
+  if (resumeSession && !record) {
+    emit(eventMsg.submissionRejected("That conversation is not available."));
+    return { sessionId: sessionId ?? null, status: "rejected", checkpoint: null };
+  }
+
+  if (
+    !resume &&
+    !resumeSession &&
+    parsed.op.type !== OpType.MESSAGE &&
+    parsed.op.type !== OpType.EXEC_APPROVAL
+  ) {
     if (!record && parsed.op.type !== OpType.MESSAGE) {
       emit(eventMsg.submissionRejected("That command is not available on Claude Managed Agents."));
       return { sessionId: null, status: "rejected", checkpoint: null };
@@ -569,7 +585,7 @@ export async function runManagedChiefTurn({
       resolveToolId = pending.toolEventId;
       checkpoint.pendingApproval = null;
     }
-  } else if (!resume && parsed.op.type === OpType.MESSAGE) {
+  } else if (!resume && !resumeSession && parsed.op.type === OpType.MESSAGE) {
     const text = messageText(parsed);
     checkpoint.transcript.push({ role: "user", content: text });
     checkpoint.context.outboundPrompt = text;
@@ -584,6 +600,11 @@ export async function runManagedChiefTurn({
 
   checkpoint.context.scheduleCaller = scheduleCaller;
   checkpoint.context.managed = managed;
+  // A browser follow-up resumes the provider session already opened for this
+  // turn. It must not send the user text again. Scheduled runs still use
+  // resume:true to deliver their first prompt.
+  if (resumeSession) checkpoint.context.outboundPrompt = null;
+  rememberTurnStatus(checkpoint, "running");
   let status;
   try {
     if (checkpoint.context.outboundPrompt) {
@@ -620,6 +641,7 @@ export async function runManagedChiefTurn({
   } catch (error) {
     const reason = skipReason(error);
     checkpoint.context.managed = managed;
+    rememberTurnStatus(checkpoint, reason ? "aborted" : checkpoint.context.turnStatus || "running");
     await store.saveWithEvents(userId, record.id, { checkpoint });
     if (reason) {
       emit(eventMsg.turnAborted(turnId, reason));
@@ -628,6 +650,7 @@ export async function runManagedChiefTurn({
     throw error;
   }
   checkpoint.context.managed = managed;
+  rememberTurnStatus(checkpoint, status);
   await store.saveWithEvents(userId, record.id, { checkpoint });
   await persistThread(threadStore, userId, record.id, managed, status);
   if (status === "continuing") {

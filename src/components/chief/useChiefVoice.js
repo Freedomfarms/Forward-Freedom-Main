@@ -187,6 +187,11 @@ export function useChiefVoice({ user, sessionUid, onTranscript }) {
     setSpeechError("");
   }, []);
 
+  const reportSpeechError = useCallback((message) => {
+    const text = typeof message === "string" ? message.trim() : "";
+    if (text) setSpeechError(text);
+  }, []);
+
   const stopListening = useCallback(() => {
     speechRef.current?.abort();
     setListening(false);
@@ -353,6 +358,7 @@ export function useChiefVoice({ user, sessionUid, onTranscript }) {
     stopListening,
     stopSpeaking,
     clearSpeechError,
+    reportSpeechError,
     speakAnswer,
     ensureAudio,
     releaseAudioHold,

@@ -95,6 +95,7 @@ export function ChiefTranscript({
   showEmpty = false,
   labeled = false,
   showResponseText = true,
+  onReveal,
   onBackToList,
 }) {
   if (notFound) {
@@ -132,13 +133,23 @@ export function ChiefTranscript({
           <div className={showResponseText ? "chief-answer" : "chief-sr"} ref={answerRef}>
             <ChiefMarkdown text={answer} />
           </div>
+          {showResponseText ? null : (
+            <button type="button" className="chief-reveal-text" onClick={() => onReveal?.(answer)}>
+              Show text
+            </button>
+          )}
         </div>
       ) : null}
     </div>
   );
 }
 
-export function ChiefEarlierTurns({ earlier = [], showResponseText = true, revealedKeys = [] }) {
+export function ChiefEarlierTurns({
+  earlier = [],
+  showResponseText = true,
+  revealedKeys = [],
+  onReveal,
+}) {
   if (!earlier.length) return null;
   return (
     <div className="chief-earlier">
@@ -153,8 +164,17 @@ export function ChiefEarlierTurns({ earlier = [], showResponseText = true, revea
             <ChiefMarkdown text={message.text} />
           </div>
         ) : (
-          <div key={message.id} className="chief-sr">
-            <ChiefMarkdown text={message.text} />
+          <div key={message.id}>
+            <div className="chief-sr">
+              <ChiefMarkdown text={message.text} />
+            </div>
+            <button
+              type="button"
+              className="chief-reveal-text"
+              onClick={() => onReveal?.(message.text)}
+            >
+              Show text
+            </button>
           </div>
         )
       )}
