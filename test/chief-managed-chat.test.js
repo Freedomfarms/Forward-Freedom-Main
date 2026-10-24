@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { handleChiefChat } from "../api/chief/chat.js";
-import { drainManagedWork } from "../server/chief/managed/chatTurn.js";
+import { drainManagedWork, runManagedChiefTurn } from "../server/chief/managed/chatTurn.js";
 import {
   BUILTIN_AGENT_TOOL_NAMES,
   METADATA_VALUE_MAX,
@@ -229,6 +229,145 @@ test("resume_session continues the same Managed Agents session without a second 
   assert.equal(record.checkpoint.context.turnStatus, "completed");
   assert.equal(record.checkpoint.transcript.filter((message) => message.role === "user").length, 1);
   assert.match(JSON.stringify(record.checkpoint.transcript), /feeder plan is ready/);
+});
+
+test("a held lease keeps the browser and the cron drain off the same session", async () => {
+  const store = new MemoryCheckpointStore();
+  const client = scriptedManagedClient([{ running: true }]);
+  const jobs = createMemoryWorkQueue();
+  let reads = 0;
+  const listEvents = client.listEvents.bind(client);
+  client.listEvents = async (id) => {
+    reads += 1;
+    return listEvents(id);
+  };
+  const http = mockResponse();
+  await handleChiefChat(
+    request({
+      submission: { id: "s1", op: { type: "message", message: { text: "Plan the feeder." } } },
+    }),
+    http.response,
+    {
+      store,
+      client,
+      jobs,
+      authenticate: auth,
+      toolExecutor: new ToolExecutor(),
+      budgetMs: 0,
+      sleepFn: async () => {},
+    }
+  );
+  const sessionId = frames(http.chunks).at(-1).msg.session_id;
+  const afterFirst = reads;
+  let release = () => {};
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  let sleeping = false;
+  let settled = false;
+  const firstResume = handleChiefChat(
+    request({
+      session_id: sessionId,
+      submission: { id: "s2", op: { type: "resume_session", session_id: sessionId } },
+    }),
+    mockResponse().response,
+    {
+      store,
+      client,
+      jobs,
+      authenticate: auth,
+      toolExecutor: new ToolExecutor(),
+      sleepFn: async () => {
+        sleeping = true;
+        await gate;
+      },
+    }
+  );
+  try {
+    for (let i = 0; i < 50 && !sleeping; i += 1)
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(sleeping, true);
+    const during = reads;
+    const overlapped = mockResponse();
+    await handleChiefChat(
+      request({
+        session_id: sessionId,
+        submission: { id: "s3", op: { type: "resume_session", session_id: sessionId } },
+      }),
+      overlapped.response,
+      {
+        store,
+        client,
+        jobs,
+        authenticate: auth,
+        toolExecutor: new ToolExecutor(),
+        sleepFn: async () => {},
+      }
+    );
+    assert.equal(frames(overlapped.chunks).at(-1).msg.status, "continuing");
+    assert.equal(reads, during);
+    const drained = await drainManagedWork({ jobs, client, store, sleepFn: async () => {} });
+    assert.equal(drained.drained, 0);
+    assert.equal(reads, during);
+    const session = [...client.state.sessions.values()][0];
+    session.status = "idle";
+    session.events.push({
+      id: "later",
+      type: "agent.message",
+      content: [{ type: "text", text: "The feeder plan is ready." }],
+    });
+    session.events.push({ id: "idle-later", type: "session.status_idle" });
+    release();
+    settled = true;
+    await firstResume;
+    assert.equal([...jobs.rows.values()][0].status, "succeeded");
+    assert.ok(reads > afterFirst);
+    const record = await store.load("user-1", sessionId);
+    assert.equal(record.checkpoint.context.turnStatus, "completed");
+  } finally {
+    if (!settled) release();
+    await firstResume;
+  }
+});
+
+test("a dropped resume leaves the same session continuable", async () => {
+  const store = new MemoryCheckpointStore();
+  const client = scriptedManagedClient([{ running: true }]);
+  const jobs = createMemoryWorkQueue();
+  const http = mockResponse();
+  await handleChiefChat(
+    request({
+      submission: { id: "s1", op: { type: "message", message: { text: "Plan the feeder." } } },
+    }),
+    http.response,
+    {
+      store,
+      client,
+      jobs,
+      authenticate: auth,
+      toolExecutor: new ToolExecutor(),
+      budgetMs: 0,
+      sleepFn: async () => {},
+    }
+  );
+  const sessionId = frames(http.chunks).at(-1).msg.session_id;
+  const controller = new AbortController();
+  controller.abort();
+  const result = await runManagedChiefTurn({
+    userId: "user-1",
+    sessionId,
+    submission: { id: "s2", op: { type: "resume_session", session_id: sessionId } },
+    store,
+    client,
+    jobs,
+    signal: controller.signal,
+    toolExecutor: new ToolExecutor(),
+    sleepFn: async () => {},
+  });
+  assert.equal(result.status, "continuing");
+  assert.equal(result.deferred, undefined);
+  assert.equal(result.checkpoint.context.turnStatus, "continuing");
+  assert.equal([...jobs.rows.values()][0].status, "queued");
 });
 
 test("a missing provider configuration does not fall back", async () => {

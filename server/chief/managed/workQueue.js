@@ -42,6 +42,30 @@ export function createMemoryWorkQueue() {
       rows.set(id, row);
       return row;
     },
+    async listDue(now, limit = 2) {
+      const due = [];
+      for (const row of rows.values()) {
+        if (due.length >= limit) break;
+        const expired = !row.leaseUntil || row.leaseUntil <= now;
+        const open = row.status === "queued" || (row.status === "running" && expired);
+        if (!open) continue;
+        due.push({ ...row });
+      }
+      return due;
+    },
+    async claimThread({ userId, threadId, now = new Date() }) {
+      for (const row of rows.values()) {
+        if (row.userId !== userId || row.threadId !== threadId) continue;
+        if (row.status !== "queued" && row.status !== "running") continue;
+        const fresh = row.status === "running" && row.leaseUntil && row.leaseUntil > now;
+        if (fresh) return null;
+        row.status = "running";
+        row.leaseGeneration += 1;
+        row.leaseUntil = new Date(now.getTime() + LEASE_MS);
+        return { ...row };
+      }
+      return { missing: true };
+    },
     async claimDue(now, limit = 2) {
       const claimed = [];
       for (const row of rows.values()) {
@@ -97,6 +121,48 @@ export function createPrismaWorkQueue() {
           });
         }
         if (ignorable(error)) return null;
+        throw error;
+      }
+    },
+    async listDue(now, limit = 2) {
+      const client = service();
+      if (!client?.chiefManagedWork) return [];
+      try {
+        return await client.chiefManagedWork.findMany({
+          where: {
+            OR: [{ status: "queued" }, { status: "running", leaseUntil: { lt: now } }],
+          },
+          orderBy: { createdAt: "asc" },
+          take: limit,
+        });
+      } catch (error) {
+        if (ignorable(error)) return [];
+        throw error;
+      }
+    },
+    async claimThread({ userId, threadId, now = new Date() }) {
+      const client = service();
+      if (!client?.chiefManagedWork) return { missing: true };
+      try {
+        const open = await client.chiefManagedWork.findFirst({
+          where: { userId, threadId, status: { in: ["queued", "running"] } },
+        });
+        if (!open) return { missing: true };
+        const fresh = open.status === "running" && open.leaseUntil && open.leaseUntil > now;
+        if (fresh) return null;
+        const next = open.leaseGeneration + 1;
+        const updated = await client.chiefManagedWork.updateMany({
+          where: { id: open.id, leaseGeneration: open.leaseGeneration },
+          data: {
+            status: "running",
+            leaseGeneration: next,
+            leaseUntil: new Date(now.getTime() + LEASE_MS),
+          },
+        });
+        if (updated.count !== 1) return null;
+        return { ...open, leaseGeneration: next, status: "running" };
+      } catch (error) {
+        if (ignorable(error)) return { missing: true };
         throw error;
       }
     },
