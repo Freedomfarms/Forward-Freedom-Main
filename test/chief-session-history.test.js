@@ -89,11 +89,13 @@ test("a caller reads messages stored on their checkpoint", async () => {
   });
   assert.equal(http.state.statusCode, 200);
   assert.deepEqual(Object.keys(http.state.body).sort(), [
+    "heldPrompt",
     "messages",
     "modelRoute",
     "sessionId",
     "turnStatus",
   ]);
+  assert.equal(http.state.body.heldPrompt, null);
   assert.equal(http.state.body.turnStatus, null);
   assert.equal(http.state.body.modelRoute, null);
   assert.equal(http.state.body.sessionId, created.id);

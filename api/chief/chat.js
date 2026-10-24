@@ -32,6 +32,18 @@ function configurationFailure(error) {
   );
 }
 
+// The request "close" event also fires once Express has finished reading a
+// normal POST body, while the SSE response is still open. Aborting there
+// cancels the turn before Managed Agents has answered. Abort only when the
+// response itself closes unfinished, which is a client disconnect.
+function abortIfClientDisconnects(response, controller) {
+  if (typeof response?.on !== "function") return;
+  response.on("close", () => {
+    if (response.writableEnded || response.writableFinished) return;
+    controller.abort();
+  });
+}
+
 export async function handleChiefChat(request, response, deps = {}) {
   applySecurityHeaders(response);
   if (!(await enforceRateLimit(request, response, generalApiRateLimit))) return;
@@ -84,7 +96,7 @@ export async function handleChiefChat(request, response, deps = {}) {
     return;
   }
   const controller = new AbortController();
-  request.on?.("close", () => controller.abort());
+  abortIfClientDisconnects(response, controller);
 
   let toolExecutor = deps.toolExecutor ?? null;
   let toolSpecs = deps.toolSpecs ?? null;
@@ -168,8 +180,22 @@ export async function handleChiefChat(request, response, deps = {}) {
         )
       )
     );
+    if (!turnError.submissionId && typeof body.submission?.id === "string") {
+      turnError.submissionId = body.submission.id;
+    }
+    if (!turnError.sessionId && result?.sessionId) turnError.sessionId = result.sessionId;
     const logged = providerErrorFields(turnError);
-    console.error("[chief/chat]", logged.operation, logged.status, logged.message);
+    console.error(
+      "[chief/chat]",
+      logged.operation,
+      logged.status,
+      logged.stage,
+      logged.submissionId,
+      logged.turnId,
+      logged.sessionId,
+      logged.providerStatus,
+      logged.message
+    );
   } else {
     const msg = { type: "session_configured", status: result.status };
     if (result.sessionId) msg.session_id = result.sessionId;

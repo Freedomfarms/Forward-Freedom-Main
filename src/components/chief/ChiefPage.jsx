@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CHIEF_STATUS,
+  acceptChiefSubmission,
   applyChiefEvent,
   decideChiefApproval,
   deleteChiefSession,
@@ -13,6 +14,7 @@ import {
   initialTurnState,
   isActiveChiefTurn,
   renameChiefSession,
+  restoredChiefTurn,
   selectChiefModel,
   setChiefSessionArchived,
   streamChiefChat,
@@ -189,6 +191,18 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
     abortRef.current = null;
   }
 
+  function commitAcceptedUser(turn) {
+    const text = typeof turn?.acceptedUserText === "string" ? turn.acceptedUserText.trim() : "";
+    if (!text) return turn;
+    setDraft((current) => (current.trim() === text ? "" : current));
+    setMessages((current) => {
+      const last = current[current.length - 1];
+      if (last?.role === "user" && last.text === text) return current;
+      return [...current, { role: "user", text }];
+    });
+    return { ...turn, acceptedUserText: "" };
+  }
+
   const refreshSessions = useCallback(async () => {
     const [active, archived] = await Promise.all([
       fetchChiefSessions(user),
@@ -213,18 +227,23 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
       try {
         const payload = await fetchChiefHistory(user, sessionId);
         if (token !== generation.current) return;
-        setMessages(Array.isArray(payload?.messages) ? payload.messages : []);
+        const restored = restoredChiefTurn({
+          messages: payload?.messages,
+          turnStatus: payload?.turnStatus,
+          heldPrompt: payload?.heldPrompt,
+        });
+        setMessages(restored.messages);
         setModelRoute(typeof payload?.modelRoute === "string" ? payload.modelRoute : null);
         const pending = await fetchChiefPendingApproval(user, sessionId).catch(() => null);
         if (token !== generation.current) return;
         setApproval(pending);
-        const liveTurn = typeof payload?.turnStatus === "string" ? payload.turnStatus : "";
-        const stillWorking = isActiveChiefTurn(liveTurn);
-        setTurnStatus(stillWorking ? liveTurn : "");
-        setStatus(
-          pending ? CHIEF_STATUS.APPROVAL : stillWorking ? CHIEF_STATUS.WORKING : CHIEF_STATUS.READY
-        );
+        setTurnError("");
+        setTurnStatus(restored.turnStatus);
+        setStatus(pending ? CHIEF_STATUS.APPROVAL : restored.status);
         setStreamText("");
+        if (restored.heldPrompt) {
+          setDraft((current) => (current.trim() ? current : restored.heldPrompt));
+        }
       } catch (error) {
         if (token !== generation.current) return;
         if (error?.status === 404) {
@@ -418,7 +437,7 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
           signal: controller.signal,
           onEvent: (event) => {
             if (controller.signal.aborted) return;
-            turn = applyChiefEvent(turn, event);
+            turn = commitAcceptedUser(applyChiefEvent(turn, event));
             if (activeSessionIdRef.current !== sessionAtStart) return;
             if (turn.streamText) setStreamText(turn.streamText);
             if (!isActiveChiefTurn(turn.turnStatus)) return;
@@ -586,7 +605,16 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
   ) {
     const trimmed = typeof text === "string" ? text.trim() : "";
     const source = voice.consumeVoiceTurn() ? "voice" : "text";
-    if (!trimmed || !user || busyRef.current) return;
+    if (!trimmed || !user) return;
+    const gate = acceptChiefSubmission({
+      busy: busyRef.current,
+      turnStatus: turnStatusRef.current,
+      text: trimmed,
+    });
+    if (gate.action !== "send") {
+      if (gate.action === "preserve") setDraft(gate.draft);
+      return;
+    }
     speechEpoch.current += 1;
     const epoch = speechEpoch.current;
     speakOnSettleRef.current = false;
@@ -624,7 +652,7 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
       let turn = initialTurnState(sessionId);
       const applyEvent = (event) => {
         if (controller.signal.aborted) return;
-        turn = applyChiefEvent(turn, event);
+        turn = commitAcceptedUser(applyChiefEvent(turn, event));
         const displayStatus =
           turn.finished && turn.status === CHIEF_STATUS.READY
             ? turn.streamText
