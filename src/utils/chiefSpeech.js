@@ -7,9 +7,10 @@ const MIN_SAMPLES = 2400;
 const RESUME_LIMIT_MS = 300;
 
 function playbackBlocked() {
-  return Object.assign(new Error("CHIEF could not play that response."), {
-    code: "playback_blocked",
-  });
+  return Object.assign(
+    new Error("CHIEF could not play that response. Click the page, then use Play response."),
+    { code: "playback_blocked" }
+  );
 }
 
 // A click that only calls resume() does not keep audio unlocked until a reply
@@ -450,7 +451,14 @@ function playMp3Blob(blob, { signal, onPlaybackStart } = {}) {
     signal?.addEventListener("abort", onAbort, { once: true });
     audio.play().then(
       () => onPlaybackStart?.(),
-      (error) => finish(error?.name === "AbortError" ? abortError() : error)
+      (error) =>
+        finish(
+          error?.name === "AbortError"
+            ? abortError()
+            : error?.name === "NotAllowedError"
+              ? playbackBlocked()
+              : error
+        )
     );
   });
 }

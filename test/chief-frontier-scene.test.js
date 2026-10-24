@@ -144,8 +144,19 @@ test("Frontier activity follows the live turn and keeps real status text", () =>
   assert.equal(frontierActivity({ status: CHIEF_STATUS.READY }), "idle");
 
   const searching = frontierStatusCopy("thinking", CHIEF_STATUS.WEB_SEARCH);
-  assert.equal(searching.title, CHIEF_STATUS.WEB_SEARCH);
+  assert.equal(searching.title, "Reasoning");
+  assert.equal(searching.subtitle, CHIEF_STATUS.WEB_SEARCH);
   assert.equal(searching.label, "REASONING");
+  assert.equal(
+    frontierActivity({ status: CHIEF_STATUS.READY, turnStatus: "continuing" }),
+    "thinking"
+  );
+  assert.equal(frontierActivity({ status: CHIEF_STATUS.READY, playback: "playing" }), "responding");
+  assert.equal(frontierActivity({ status: CHIEF_STATUS.RESPONDING }), "responding");
+  assert.equal(
+    frontierActivity({ listening: true, playback: "playing", status: CHIEF_STATUS.RESPONDING }),
+    "listening"
+  );
   const ready = frontierStatusCopy("idle", CHIEF_STATUS.READY);
   assert.equal(ready.title, "Standing by");
   assert.equal(ready.presence, "Ready when you are.");

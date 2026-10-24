@@ -95,6 +95,28 @@ function specsFrom(toolSpecs, toolExecutor) {
   return [];
 }
 
+function rememberTurnStatus(checkpoint, status) {
+  if (!checkpoint.context || typeof checkpoint.context !== "object") checkpoint.context = {};
+  checkpoint.context.turnStatus = status;
+}
+
+// One worker may collect a provider session at a time. The browser follow and
+// the cron drain both take this lease; the loser leaves the session alone.
+async function holdFollowLease(jobs, userId, threadId) {
+  const queue = jobs ?? createPrismaWorkQueue();
+  if (typeof queue?.claimThread !== "function") return { queue, lease: null, deferred: false };
+  const claimed = await queue.claimThread({ userId, threadId, now: new Date() });
+  if (claimed == null) return { queue, lease: null, deferred: true };
+  if (claimed.missing) return { queue, lease: null, deferred: false };
+  return { queue, lease: claimed, deferred: false };
+}
+
+async function settleFollowLease(queue, lease, status) {
+  if (!lease || typeof queue?.release !== "function") return;
+  if (status === "continuing") await queue.release(lease);
+  else await queue.complete(lease);
+}
+
 function appendAssistant(checkpoint, text) {
   if (!text) return;
   const transcript = checkpoint.transcript;
@@ -237,9 +259,10 @@ async function collect({
   while (spins < 70 && Date.now() <= deadline) {
     spins += 1;
     if (signal?.aborted) {
-      onEmit(eventMsg.turnAborted(turnId, "interrupted"));
+      // The request ended. The provider session is still the same one, so the
+      // checkpoint stays continuable for the open page or the cron drain.
       checkpoint.context.seenEventIds = [...seen];
-      return "aborted";
+      return "continuing";
     }
     const session = await client.retrieveSession(providerSessionId);
     const events = (await client.listEvents(providerSessionId)) || [];
@@ -435,7 +458,18 @@ export async function runManagedChiefTurn({
     return { sessionId: record.id, status: "completed", checkpoint: record.checkpoint };
   }
 
-  if (!resume && parsed.op.type !== OpType.MESSAGE && parsed.op.type !== OpType.EXEC_APPROVAL) {
+  const resumeSession = !resume && parsed?.op?.type === OpType.RESUME_SESSION;
+  if (resumeSession && !record) {
+    emit(eventMsg.submissionRejected("That conversation is not available."));
+    return { sessionId: sessionId ?? null, status: "rejected", checkpoint: null };
+  }
+
+  if (
+    !resume &&
+    !resumeSession &&
+    parsed.op.type !== OpType.MESSAGE &&
+    parsed.op.type !== OpType.EXEC_APPROVAL
+  ) {
     if (!record && parsed.op.type !== OpType.MESSAGE) {
       emit(eventMsg.submissionRejected("That command is not available on Claude Managed Agents."));
       return { sessionId: null, status: "rejected", checkpoint: null };
@@ -569,7 +603,7 @@ export async function runManagedChiefTurn({
       resolveToolId = pending.toolEventId;
       checkpoint.pendingApproval = null;
     }
-  } else if (!resume && parsed.op.type === OpType.MESSAGE) {
+  } else if (!resume && !resumeSession && parsed.op.type === OpType.MESSAGE) {
     const text = messageText(parsed);
     checkpoint.transcript.push({ role: "user", content: text });
     checkpoint.context.outboundPrompt = text;
@@ -584,62 +618,89 @@ export async function runManagedChiefTurn({
 
   checkpoint.context.scheduleCaller = scheduleCaller;
   checkpoint.context.managed = managed;
-  let status;
+  let followLease = null;
+  let followQueue = null;
+  let leaseStatus = "continuing";
+  if (resume || resumeSession) {
+    const held = await holdFollowLease(jobs, userId, record.id);
+    if (held.deferred) {
+      return { sessionId: record.id, status: "continuing", checkpoint, deferred: true };
+    }
+    followLease = held.lease;
+    followQueue = held.queue;
+  }
   try {
-    if (checkpoint.context.outboundPrompt) {
-      const text = checkpoint.context.outboundPrompt;
-      checkpoint.context.outboundPrompt = null;
-      await openOrContinue({
+    // A browser follow-up resumes the provider session already opened for this
+    // turn. It must not send the user text again. Scheduled runs still use
+    // resume:true to deliver their first prompt.
+    if (resumeSession) checkpoint.context.outboundPrompt = null;
+    rememberTurnStatus(checkpoint, "running");
+    let status;
+    try {
+      if (checkpoint.context.outboundPrompt) {
+        const text = checkpoint.context.outboundPrompt;
+        checkpoint.context.outboundPrompt = null;
+        await openOrContinue({
+          client,
+          managed,
+          checkpoint,
+          sessionId: record.id,
+          prompt: text,
+        });
+      }
+      if (!managed.providerSessionId) {
+        throw new Error("Claude Managed Agents did not return a session id.");
+      }
+      status = await collect({
         client,
-        managed,
         checkpoint,
         sessionId: record.id,
-        prompt: text,
+        providerSessionId: managed.providerSessionId,
+        userId,
+        toolSpecs: resolvedSpecs,
+        toolExecutor,
+        onEmit: emit,
+        turnId,
+        budgetMs,
+        sleepFn,
+        signal,
+        resolveToolId,
+        caller: scheduleCaller,
+        store,
       });
+    } catch (error) {
+      const reason = skipReason(error);
+      checkpoint.context.managed = managed;
+      rememberTurnStatus(
+        checkpoint,
+        reason ? "aborted" : checkpoint.context.turnStatus || "running"
+      );
+      await store.saveWithEvents(userId, record.id, { checkpoint });
+      if (reason) {
+        leaseStatus = "aborted";
+        emit(eventMsg.turnAborted(turnId, reason));
+        return { sessionId: record.id, status: "aborted", abortReason: reason, checkpoint };
+      }
+      throw error;
     }
-    if (!managed.providerSessionId) {
-      throw new Error("Claude Managed Agents did not return a session id.");
-    }
-    status = await collect({
-      client,
-      checkpoint,
-      sessionId: record.id,
-      providerSessionId: managed.providerSessionId,
-      userId,
-      toolSpecs: resolvedSpecs,
-      toolExecutor,
-      onEmit: emit,
-      turnId,
-      budgetMs,
-      sleepFn,
-      signal,
-      resolveToolId,
-      caller: scheduleCaller,
-      store,
-    });
-  } catch (error) {
-    const reason = skipReason(error);
     checkpoint.context.managed = managed;
+    rememberTurnStatus(checkpoint, status);
     await store.saveWithEvents(userId, record.id, { checkpoint });
-    if (reason) {
-      emit(eventMsg.turnAborted(turnId, reason));
-      return { sessionId: record.id, status: "aborted", abortReason: reason, checkpoint };
+    await persistThread(threadStore, userId, record.id, managed, status);
+    leaseStatus = status;
+    if (status === "continuing") {
+      const queue = jobs ?? followQueue ?? createPrismaWorkQueue();
+      try {
+        await queue.enqueue({ userId, threadId: record.id });
+      } catch {
+        // The session id is already stored. The next cron drain continues it.
+      }
     }
-    throw error;
+    if (status === "completed") emit(eventMsg.turnComplete(turnId));
+    return { sessionId: record.id, status, checkpoint };
+  } finally {
+    if (followLease) await settleFollowLease(followQueue, followLease, leaseStatus);
   }
-  checkpoint.context.managed = managed;
-  await store.saveWithEvents(userId, record.id, { checkpoint });
-  await persistThread(threadStore, userId, record.id, managed, status);
-  if (status === "continuing") {
-    const queue = jobs ?? createPrismaWorkQueue();
-    try {
-      await queue.enqueue({ userId, threadId: record.id });
-    } catch {
-      // The session id is already stored. The next cron drain continues it.
-    }
-  }
-  if (status === "completed") emit(eventMsg.turnComplete(turnId));
-  return { sessionId: record.id, status, checkpoint };
 }
 
 async function openOrContinue({ client, managed, checkpoint, sessionId, prompt }) {
@@ -678,14 +739,11 @@ export async function drainManagedWork({
   afterTurn = null,
   sleepFn,
 } = {}) {
-  const due = await jobs.claimDue(now, 2);
+  const due = typeof jobs.listDue === "function" ? await jobs.listDue(now, 2) : [];
   if (!due.length) return { drained: 0 };
   let anthropic = client;
   if (!anthropic) {
-    if (!env.ANTHROPIC_API_KEY) {
-      for (const job of due) await jobs.release(job);
-      return { drained: 0, blocked: "ANTHROPIC_API_KEY" };
-    }
+    if (!env.ANTHROPIC_API_KEY) return { drained: 0, blocked: "ANTHROPIC_API_KEY" };
     anthropic = createManagedClient(env);
   }
   let drained = 0;
@@ -714,16 +772,24 @@ export async function drainManagedWork({
         budgetMs: 20_000,
         sleepFn,
       });
+      if (result?.deferred) continue;
       const settled = afterTurn ? await afterTurn({ job, result, error: null }) : null;
-      if (result?.status === "continuing" || settled?.keepQueued) await jobs.release(job);
-      else await jobs.complete(job);
+      if (settled?.keepQueued && result?.status !== "continuing") {
+        await jobs.enqueue({ userId: job.userId, threadId: job.threadId });
+      }
       drained += 1;
     } catch (error) {
       const settled = afterTurn
         ? await afterTurn({ job, result: null, error })
         : { keepQueued: true };
-      if (settled?.keepQueued !== false) await jobs.release(job);
-      else await jobs.complete(job);
+      if (settled?.keepQueued === false && typeof jobs.claimThread === "function") {
+        const claimed = await jobs.claimThread({
+          userId: job.userId,
+          threadId: job.threadId,
+          now,
+        });
+        if (claimed && !claimed.missing) await jobs.complete(claimed);
+      }
       const logged = providerErrorFields(error);
       console.error("[chief/managed] drain", logged.operation, logged.status, logged.message);
     }

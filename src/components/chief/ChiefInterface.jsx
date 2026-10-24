@@ -57,12 +57,6 @@ function Icon({ name }) {
         <path d="m13 6 6 6-6 6" />
       </>
     ),
-    bell: (
-      <>
-        <path d="M6 16V10a6 6 0 1 1 12 0v6" />
-        <path d="M4.5 16.5h15M10 19a2 2 0 0 0 4 0" />
-      </>
-    ),
     chart: (
       <>
         <path d="M4 19h16" />
@@ -75,12 +69,6 @@ function Icon({ name }) {
         <circle cx="17" cy="8" r="2" />
         <circle cx="12" cy="16" r="2" />
         <path d="m8.6 9.4 2.2 4.4M15.4 9.4l-2.2 4.4M9 8h6" />
-      </>
-    ),
-    pause: (
-      <>
-        <path d="M8 5v14" />
-        <path d="M16 5v14" />
       </>
     ),
     expand: (
@@ -135,15 +123,13 @@ export function ChiefInterface({
   navItems = [],
   shortcuts = [],
   showNavLabels = true,
-  onHome,
-  onNotifications,
-  onProfile,
-  profileMark = "",
   profileName = "",
   status = "Ready",
   statusTone = "ready",
   assistantState = "idle",
   scenePhase = "idle",
+  playback = "idle",
+  turnStatus = "",
   message = "",
   onMessageChange,
   onSend,
@@ -167,6 +153,7 @@ export function ChiefInterface({
   onResponseMode,
   speechActive = false,
   onStopSpeech,
+  onReplaySpeech,
   systems = null,
   accessLine = "",
   onOpenSystem,
@@ -176,7 +163,6 @@ export function ChiefInterface({
   const canvasRef = useRef(null);
   const anchorRef = useRef(null);
   const stageRef = useRef(null);
-  const [motionPaused, setMotionPaused] = useState(false);
   const [systemReduced, setSystemReduced] = useState(() =>
     typeof window !== "undefined" && typeof window.matchMedia === "function"
       ? window.matchMedia("(prefers-reduced-motion: reduce)").matches
@@ -186,13 +172,15 @@ export function ChiefInterface({
   const [fullscreen, setFullscreen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const reduced = Boolean(reducedMotion || systemReduced);
-  const paused = reduced || motionPaused;
+  const paused = reduced;
   const phase = ["idle", "thinking", "responding"].includes(scenePhase) ? scenePhase : "idle";
   const activity = frontierActivity({
     listening,
     assistantState,
     scenePhase: phase,
     status,
+    playback,
+    turnStatus,
   });
   const copy = frontierStatusCopy(activity, status);
   const trimmed = typeof message === "string" ? message.trim() : "";
@@ -280,76 +268,6 @@ export function ChiefInterface({
       <div className="atmosphere" />
       <div className="screen-frame" />
       <div className="os-shell">
-        <header className="topbar">
-          <button
-            type="button"
-            className="brand"
-            onClick={() => onHome?.()}
-            aria-label="CHIEF home"
-          >
-            <svg className="bolt-mark" viewBox="0 0 24 36" aria-hidden="true">
-              <path d="M14 1 6 16h7l-2 18 12-20h-8L14 1z" />
-            </svg>
-            <span>
-              CHIEF
-              <small>FREEDOM OS</small>
-            </span>
-          </button>
-          <div className="top-center">
-            <span className="top-route">FREEDOM</span>
-            <span className="route-slash">/</span>
-            <span className="route-current">CHIEF</span>
-          </div>
-          <div className="top-actions">
-            <span className="local-time">{localTime(clock)}</span>
-            <button
-              type="button"
-              className="icon-btn frontier-menu"
-              aria-expanded={menuOpen}
-              aria-label={menuOpen ? "Close navigation" : "Open navigation"}
-              onClick={() => setMenuOpen((current) => !current)}
-            >
-              <Icon name="chat" />
-            </button>
-            {onNotifications ? (
-              <button
-                type="button"
-                className="icon-btn"
-                onClick={onNotifications}
-                aria-label="Notifications"
-              >
-                <Icon name="bell" />
-              </button>
-            ) : null}
-            <button
-              type="button"
-              className="icon-btn"
-              aria-pressed={paused || reduced}
-              aria-label={
-                paused || reduced ? "Resume ambient animation" : "Pause ambient animation"
-              }
-              title={paused || reduced ? "Resume ambient animation" : "Pause ambient animation"}
-              disabled={reduced}
-              onClick={() => setMotionPaused((current) => !current)}
-            >
-              {paused || reduced ? <span style={{ fontSize: 10 }}>▶</span> : <Icon name="pause" />}
-            </button>
-            <button
-              type="button"
-              className="icon-btn fullscreen"
-              aria-label={fullscreen ? "Exit fullscreen" : "Enter fullscreen"}
-              onClick={() => void toggleFullscreen()}
-            >
-              <Icon name="expand" />
-            </button>
-            {onProfile ? (
-              <button type="button" className="avatar" onClick={onProfile} aria-label="Settings">
-                {profileMark ? profileMark.slice(0, 2) : "•"}
-              </button>
-            ) : null}
-          </div>
-        </header>
-
         <div className="workspace">
           <aside className="sidebar">
             <div className="side-label">
@@ -418,6 +336,27 @@ export function ChiefInterface({
           </aside>
 
           <section className="central" aria-label="CHIEF">
+            <div className="window-tools">
+              <span className="local-time">{localTime(clock)}</span>
+              <button
+                type="button"
+                className="icon-btn frontier-menu"
+                aria-expanded={menuOpen}
+                aria-label={menuOpen ? "Close navigation" : "Open navigation"}
+                onClick={() => setMenuOpen((current) => !current)}
+              >
+                <Icon name="chat" />
+              </button>
+              <button
+                type="button"
+                className="icon-btn fullscreen"
+                aria-label={fullscreen ? "Collapse" : "Expand"}
+                title={fullscreen ? "Collapse" : "Expand"}
+                onClick={() => void toggleFullscreen()}
+              >
+                <Icon name="expand" />
+              </button>
+            </div>
             <div className="welcome">
               <div>
                 <p className="eyebrow">
@@ -503,6 +442,15 @@ export function ChiefInterface({
                       onClick={() => onStopSpeech?.()}
                     >
                       Stop
+                    </button>
+                  ) : null}
+                  {onReplaySpeech && !speechActive ? (
+                    <button
+                      type="button"
+                      className="chief-stop-speech"
+                      onClick={() => onReplaySpeech()}
+                    >
+                      Play response
                     </button>
                   ) : null}
                 </div>

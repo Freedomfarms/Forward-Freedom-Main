@@ -254,8 +254,8 @@ test("the room intelligence maps status onto the APEX orb and web", () => {
   assert.equal(webStateForStatus(CHIEF_STATUS.APPROVAL), "standby");
   assert.equal(visualStateForStatus(CHIEF_STATUS.ERROR), "idle");
   assert.equal(webStateForStatus(CHIEF_STATUS.ERROR), "standby");
-  assert.equal(visualStateForStatus(CHIEF_STATUS.RESPONDING), "thinking");
-  assert.equal(webStateForStatus(CHIEF_STATUS.RESPONDING), "processing");
+  assert.equal(visualStateForStatus(CHIEF_STATUS.RESPONDING), "speaking");
+  assert.equal(webStateForStatus(CHIEF_STATUS.RESPONDING), "speaking");
   assert.equal(visualStateForStatus(CHIEF_STATUS.RESPONDING, "speaking"), "speaking");
   assert.equal(webStateForStatus(CHIEF_STATUS.READY, "listening"), "listening");
   assert.equal(visualStateForStatus(CHIEF_STATUS.READY, "listening"), "listening");
@@ -275,7 +275,7 @@ test("the room intelligence maps status onto the APEX orb and web", () => {
   );
   assert.equal(visualStateForInteraction({ status: CHIEF_STATUS.WORKING }), "thinking");
   assert.equal(webStateForInteraction({ status: CHIEF_STATUS.WORKING }), "processing");
-  assert.equal(visualStateForInteraction({ status: CHIEF_STATUS.RESPONDING }), "thinking");
+  assert.equal(visualStateForInteraction({ status: CHIEF_STATUS.RESPONDING }), "speaking");
   assert.equal(
     visualStateForInteraction({ status: CHIEF_STATUS.RESPONDING, speaking: true }),
     "speaking"

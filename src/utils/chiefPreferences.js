@@ -63,10 +63,7 @@ export function normalizeChiefPreferences(value) {
   const flags = flagsForResponseMode(responseMode);
   return {
     conversation: {
-      voiceResponses: bool(
-        conversation.voiceResponses,
-        DEFAULT_CHIEF_PREFERENCES.conversation.voiceResponses
-      ),
+      voiceResponses: responseMode !== "text",
       responseMode,
       autoSpeak: flags.autoSpeak,
       speechChoice: conversation.speechChoice === false ? false : true,
@@ -92,21 +89,18 @@ export function normalizeChiefPreferences(value) {
 }
 
 // Input method does not decide delivery. Text and microphone turns share this gate.
-// voiceResponses is the mute. It does not rewrite responseMode.
+// The response mode is the delivery choice. voiceResponses is kept in step with
+// it so an older mute flag cannot silence Voice or Text + Voice.
 export function shouldSpeakReply({ preferences } = {}) {
   const next = normalizeChiefPreferences(preferences);
-  if (next.conversation.voiceResponses !== true) return false;
   return next.conversation.responseMode === "voice" || next.conversation.responseMode === "both";
 }
 
-// Voice mode hides assistant text while speech can play. Mute and an explicit
-// reveal keep the answer readable without changing the stored mode.
+// Voice mode hides assistant text until the reader asks to reveal it.
 export function shouldShowAssistantText({ preferences, reveal = false } = {}) {
   const next = normalizeChiefPreferences(preferences);
   if (reveal) return true;
-  if (next.conversation.responseMode !== "voice") return true;
-  if (next.conversation.voiceResponses !== true) return true;
-  return false;
+  return next.conversation.responseMode !== "voice";
 }
 
 function storageOf(storage) {

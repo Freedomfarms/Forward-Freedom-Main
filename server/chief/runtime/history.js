@@ -50,5 +50,19 @@ export function projectInteractiveHistory(record) {
     typeof record.checkpoint.modelRoute === "string" && record.checkpoint.modelRoute
       ? record.checkpoint.modelRoute
       : null;
-  return { sessionId: record.id, modelRoute, messages };
+  const turnStatus = record.checkpoint.context?.turnStatus;
+  return {
+    sessionId: record.id,
+    modelRoute,
+    messages,
+    turnStatus:
+      turnStatus === "running" ||
+      turnStatus === "continuing" ||
+      turnStatus === "completed" ||
+      turnStatus === "suspended" ||
+      turnStatus === "aborted" ||
+      turnStatus === "rejected"
+        ? turnStatus
+        : null,
+  };
 }

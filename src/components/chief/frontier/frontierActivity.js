@@ -39,33 +39,55 @@ const COPY = Object.freeze({
   }),
 });
 
-export function frontierActivity({
+// One activity for the SYSTEM panel, the core, and the status line.
+// Listening, playback, streamed text, and the Managed Agents turn status are
+// the inputs. Tool names stay detail text; they do not invent a fifth activity.
+export function chiefLiveActivity({
   listening = false,
   assistantState = "idle",
   scenePhase = "idle",
   status = "",
+  playback = "idle",
+  speaking = false,
+  turnStatus = "",
 } = {}) {
   if (listening || assistantState === "listening") return "listening";
   if (
+    playback === "preparing" ||
+    playback === "playing" ||
+    speaking === true ||
+    status === CHIEF_STATUS.RESPONDING ||
     scenePhase === "responding" ||
-    assistantState === "speaking" ||
-    status === CHIEF_STATUS.RESPONDING
+    assistantState === "speaking"
   ) {
     return "responding";
   }
-  if (scenePhase === "thinking" || assistantState === "thinking" || THINKING_STATUS.has(status)) {
+  if (status === CHIEF_STATUS.APPROVAL || status === CHIEF_STATUS.ERROR) return "idle";
+  if (
+    turnStatus === "continuing" ||
+    turnStatus === "running" ||
+    scenePhase === "thinking" ||
+    assistantState === "thinking" ||
+    THINKING_STATUS.has(status)
+  ) {
     return "thinking";
   }
   return "idle";
 }
 
+export function frontierActivity(input) {
+  return chiefLiveActivity(input);
+}
+
+const GENERIC_STATUS = new Set(["Ready", "Sign in", "Working", "Responding"]);
+
 export function frontierStatusCopy(activity, status) {
   const base = COPY[activity] || COPY.idle;
   const text = typeof status === "string" ? status.trim() : "";
-  const specific = Boolean(text) && text !== "Ready" && text !== "Sign in" && text !== base.title;
+  const specific = Boolean(text) && !GENERIC_STATUS.has(text) && text !== base.title;
   return {
-    title: specific ? text : base.title,
-    subtitle: base.subtitle,
+    title: base.title,
+    subtitle: specific ? text : base.subtitle,
     presence: specific ? text : base.presence,
     label: base.label,
   };

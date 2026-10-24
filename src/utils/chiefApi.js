@@ -8,6 +8,7 @@ import {
   consumeSseBuffer,
   messageSubmission,
   modelSubmission,
+  resumeSubmission,
 } from "./chiefProtocol.js";
 import {
   accessWord,
@@ -27,6 +28,7 @@ export {
   createSubmissionId,
   formatChiefTime,
   initialTurnState,
+  isActiveChiefTurn,
   messageSubmission,
   modelSubmission,
   publicTranscriptMessages,
@@ -136,8 +138,17 @@ export async function fetchChiefPendingApproval(user, sessionId) {
   };
 }
 
-export async function streamChiefChat({ user, sessionId = null, text, onEvent, signal }) {
-  const body = { submission: messageSubmission(text) };
+export async function streamChiefChat({
+  user,
+  sessionId = null,
+  text,
+  onEvent,
+  signal,
+  resume = false,
+}) {
+  const body = {
+    submission: resume ? resumeSubmission(sessionId) : messageSubmission(text),
+  };
   if (sessionId) body.session_id = sessionId;
   const response = await fetch("/api/chief/chat", {
     method: "POST",

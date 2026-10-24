@@ -553,9 +553,17 @@ export function ChiefSettings({
               ) : null}
               <Toggle
                 label="Voice responses"
-                checked={preferences.conversation.voiceResponses}
-                detail="When off, CHIEF does not speak. The selected response mode stays unchanged."
-                onChange={(voiceResponses) => patchConversation({ voiceResponses })}
+                checked={preferences.conversation.responseMode !== "text"}
+                detail="Off selects Text. On keeps Voice, or selects Text + Voice."
+                onChange={(speak) =>
+                  patchConversation({
+                    responseMode: speak
+                      ? preferences.conversation.responseMode === "voice"
+                        ? "voice"
+                        : "both"
+                      : "text",
+                  })
+                }
               />
               <ChiefResponseMode
                 mode={preferences.conversation.responseMode}
