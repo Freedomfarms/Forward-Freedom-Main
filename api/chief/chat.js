@@ -167,7 +167,7 @@ export async function handleChiefChat(request, response, deps = {}) {
         )
       )
     );
-    console.error("[chief/chat]", turnError?.name || "Error");
+    console.error("[chief/chat]", turnError?.name || "Error", turnError?.status || "");
   } else {
     const msg = { type: "session_configured", status: result.status };
     if (result.sessionId) msg.session_id = result.sessionId;
