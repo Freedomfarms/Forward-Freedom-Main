@@ -16,13 +16,14 @@ import {
   MANAGED_ORIGIN,
   MANAGED_SCHEDULE_ORIGIN,
   agentKeyFor,
+  localToolName,
   memoryKeyFor,
   productionAgentBody,
   productionEnvironmentBody,
   productionSessionBody,
   workspaceDocuments,
 } from "./productionAgent.js";
-import { redactSecrets } from "./redact.js";
+import { providerErrorFields } from "./redact.js";
 import { createPrismaWorkQueue } from "./workQueue.js";
 import { SCHEDULED_TURN_EXCLUDED_TOOLS } from "../tools/inventory.js";
 
@@ -82,7 +83,7 @@ function partsOf(event) {
 
 function toolCallOf(event) {
   if (event?.type !== "agent.custom_tool_use") return null;
-  const name = event.name || event.tool_name;
+  const name = localToolName(event.name || event.tool_name);
   if (!name || !event.id) return null;
   const input = event.input && typeof event.input === "object" ? event.input : {};
   return { id: event.id, name, input };
@@ -378,6 +379,7 @@ export function createManagedClient(env = process.env) {
       "Claude Managed Agents is not configured. Set ANTHROPIC_API_KEY on the server."
     );
     error.status = 503;
+    error.operation = "configure";
     throw error;
   }
   return createAnthropicManagedClient({ apiKey: env.ANTHROPIC_API_KEY });
@@ -485,7 +487,8 @@ export async function runManagedChiefTurn({
     ) {
       checkpoint.pendingApproval = null;
       await store.saveWithEvents(userId, record.id, { checkpoint });
-      const abortReason = decision.type === ReviewDecisionType.ABORT ? "approval_abort" : decision.type;
+      const abortReason =
+        decision.type === ReviewDecisionType.ABORT ? "approval_abort" : decision.type;
       emit(eventMsg.turnAborted(turnId, abortReason));
       return { sessionId: record.id, status: "aborted", abortReason, checkpoint };
     }
@@ -496,6 +499,7 @@ export async function runManagedChiefTurn({
       "Claude Managed Agents is not configured. Set ANTHROPIC_API_KEY on the server."
     );
     error.status = 503;
+    error.operation = "configure";
     throw error;
   }
 
@@ -715,10 +719,13 @@ export async function drainManagedWork({
       else await jobs.complete(job);
       drained += 1;
     } catch (error) {
-      const settled = afterTurn ? await afterTurn({ job, result: null, error }) : { keepQueued: true };
+      const settled = afterTurn
+        ? await afterTurn({ job, result: null, error })
+        : { keepQueued: true };
       if (settled?.keepQueued !== false) await jobs.release(job);
       else await jobs.complete(job);
-      console.error("[chief/managed] drain", redactSecrets(error?.message || "Error"));
+      const logged = providerErrorFields(error);
+      console.error("[chief/managed] drain", logged.operation, logged.status, logged.message);
     }
   }
   return { drained };

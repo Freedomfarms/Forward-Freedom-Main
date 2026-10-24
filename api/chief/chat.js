@@ -6,6 +6,7 @@
 
 import { authenticateRequest } from "../../server/auth/verifyAuth.js";
 import { createManagedClient, runManagedChiefTurn } from "../../server/chief/managed/chatTurn.js";
+import { providerErrorFields } from "../../server/chief/managed/redact.js";
 import { MANAGED_SCHEDULE_ORIGIN } from "../../server/chief/managed/productionAgent.js";
 import { encodeSseEvent, eventMsg, makeEvent } from "../../server/chief/protocol/index.js";
 import { PrismaCheckpointStore } from "../../server/chief/runtime/checkpoint.js";
@@ -167,7 +168,8 @@ export async function handleChiefChat(request, response, deps = {}) {
         )
       )
     );
-    console.error("[chief/chat]", turnError?.name || "Error", turnError?.status || "");
+    const logged = providerErrorFields(turnError);
+    console.error("[chief/chat]", logged.operation, logged.status, logged.message);
   } else {
     const msg = { type: "session_configured", status: result.status };
     if (result.sessionId) msg.session_id = result.sessionId;

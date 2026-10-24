@@ -21,7 +21,13 @@ export function createAnthropicManagedClient({
     throw error;
   }
 
-  async function request(path, { method = "GET", beta, body, form } = {}) {
+  function safeProviderMessage(message) {
+    let text = String(message || "");
+    if (apiKey) text = text.split(apiKey).join("<redacted>");
+    return redactSecrets(text);
+  }
+
+  async function request(path, { method = "GET", beta, body, form, operation } = {}) {
     const headers = {
       "x-api-key": apiKey,
       "anthropic-version": ANTHROPIC_VERSION,
@@ -45,23 +51,25 @@ export function createAnthropicManagedClient({
     }
     if (!response.ok) {
       const error = new Error(
-        redactSecrets(parsed?.error?.message || parsed?.message || `Anthropic ${response.status}`)
+        safeProviderMessage(
+          parsed?.error?.message || parsed?.message || `Anthropic ${response.status}`
+        )
       );
       error.status = response.status;
-      error.payload = parsed;
+      error.operation = operation || method;
       throw error;
     }
     return parsed;
   }
 
-  async function listPaged(path, beta) {
+  async function listPaged(path, beta, operation) {
     const rows = [];
     let page = null;
     for (let i = 0; i < 10; i += 1) {
       const query = page
         ? `${path}${path.includes("?") ? "&" : "?"}page=${encodeURIComponent(page)}`
         : path;
-      const body = await request(query, { beta });
+      const body = await request(query, { beta, operation });
       const batch = body?.data || body?.items || [];
       rows.push(...batch);
       page = body?.next_page || null;
@@ -73,45 +81,67 @@ export function createAnthropicManagedClient({
   return {
     beta: { session: SESSION_BETA, memory: MEMORY_BETA },
     listAgents() {
-      return listPaged("/v1/agents", SESSION_BETA);
+      return listPaged("/v1/agents", SESSION_BETA, "listAgents");
     },
     createAgent(body) {
-      return request("/v1/agents", { method: "POST", beta: SESSION_BETA, body });
+      return request("/v1/agents", {
+        method: "POST",
+        beta: SESSION_BETA,
+        body,
+        operation: "createAgent",
+      });
     },
     retrieveAgent(id) {
-      return request(`/v1/agents/${encodeURIComponent(id)}`, { beta: SESSION_BETA });
+      return request(`/v1/agents/${encodeURIComponent(id)}`, {
+        beta: SESSION_BETA,
+        operation: "retrieveAgent",
+      });
     },
     listSkills() {
-      return listPaged("/v1/skills");
+      return listPaged("/v1/skills", undefined, "listSkills");
     },
     async createSkill({ filename, zipBytes, displayTitle }) {
       const form = new FormData();
       form.append("display_title", displayTitle);
       form.append("files[]", new Blob([zipBytes]), filename);
-      return request("/v1/skills", { method: "POST", form });
+      return request("/v1/skills", { method: "POST", form, operation: "createSkill" });
     },
     retrieveSkill(id) {
-      return request(`/v1/skills/${encodeURIComponent(id)}`);
+      return request(`/v1/skills/${encodeURIComponent(id)}`, { operation: "retrieveSkill" });
     },
     listEnvironments() {
-      return listPaged("/v1/environments", SESSION_BETA);
+      return listPaged("/v1/environments", SESSION_BETA, "listEnvironments");
     },
     createEnvironment(body) {
-      return request("/v1/environments", { method: "POST", beta: SESSION_BETA, body });
+      return request("/v1/environments", {
+        method: "POST",
+        beta: SESSION_BETA,
+        body,
+        operation: "createEnvironment",
+      });
     },
     retrieveEnvironment(id) {
-      return request(`/v1/environments/${encodeURIComponent(id)}`, { beta: SESSION_BETA });
+      return request(`/v1/environments/${encodeURIComponent(id)}`, {
+        beta: SESSION_BETA,
+        operation: "retrieveEnvironment",
+      });
     },
     listMemoryStores() {
-      return listPaged("/v1/memory_stores", MEMORY_BETA);
+      return listPaged("/v1/memory_stores", MEMORY_BETA, "listMemoryStores");
     },
     createMemoryStore(body) {
-      return request("/v1/memory_stores", { method: "POST", beta: MEMORY_BETA, body });
+      return request("/v1/memory_stores", {
+        method: "POST",
+        beta: MEMORY_BETA,
+        body,
+        operation: "createMemoryStore",
+      });
     },
     listMemories(storeId) {
       return listPaged(
         `/v1/memory_stores/${encodeURIComponent(storeId)}/memories?view=full`,
-        MEMORY_BETA
+        MEMORY_BETA,
+        "listMemories"
       );
     },
     createMemory(storeId, body) {
@@ -119,6 +149,7 @@ export function createAnthropicManagedClient({
         method: "POST",
         beta: MEMORY_BETA,
         body,
+        operation: "createMemory",
       });
     },
     updateMemory(storeId, memoryId, body) {
@@ -128,26 +159,40 @@ export function createAnthropicManagedClient({
           method: "POST",
           beta: MEMORY_BETA,
           body,
+          operation: "updateMemory",
         }
       );
     },
     listSessions() {
-      return listPaged("/v1/sessions", SESSION_BETA);
+      return listPaged("/v1/sessions", SESSION_BETA, "listSessions");
     },
     createSession(body) {
-      return request("/v1/sessions", { method: "POST", beta: SESSION_BETA, body });
+      return request("/v1/sessions", {
+        method: "POST",
+        beta: SESSION_BETA,
+        body,
+        operation: "createSession",
+      });
     },
     retrieveSession(id) {
-      return request(`/v1/sessions/${encodeURIComponent(id)}`, { beta: SESSION_BETA });
+      return request(`/v1/sessions/${encodeURIComponent(id)}`, {
+        beta: SESSION_BETA,
+        operation: "retrieveSession",
+      });
     },
     listEvents(sessionId) {
-      return listPaged(`/v1/sessions/${encodeURIComponent(sessionId)}/events`, SESSION_BETA);
+      return listPaged(
+        `/v1/sessions/${encodeURIComponent(sessionId)}/events`,
+        SESSION_BETA,
+        "listEvents"
+      );
     },
     sendEvents(sessionId, events) {
       return request(`/v1/sessions/${encodeURIComponent(sessionId)}/events`, {
         method: "POST",
         beta: SESSION_BETA,
         body: { events },
+        operation: "sendEvents",
       });
     },
   };

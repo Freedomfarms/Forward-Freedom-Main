@@ -5,14 +5,19 @@ import { readFileSync } from "node:fs";
 import { handleChiefChat } from "../api/chief/chat.js";
 import { drainManagedWork } from "../server/chief/managed/chatTurn.js";
 import {
+  BUILTIN_AGENT_TOOL_NAMES,
   METADATA_VALUE_MAX,
   agentKeyFor,
+  localToolName,
   productionAgentBody,
   toolFingerprint,
 } from "../server/chief/managed/productionAgent.js";
+import { providerErrorFields } from "../server/chief/managed/redact.js";
 import { MemoryCheckpointStore } from "../server/chief/runtime/checkpoint.js";
+import { Capability, CapabilityPolicy } from "../server/chief/core/capabilities.js";
 import { createChiefTools } from "../server/chief/tools/builtin.js";
 import { ToolExecutor } from "../server/chief/tools/executor.js";
+import { createWebSearchClient, createWebSearchTool } from "../server/chief/tools/web-search.js";
 import { scriptedManagedClient } from "./chief-managed-client-fixture.js";
 import { createMemoryWorkQueue } from "../server/chief/managed/workQueue.js";
 
@@ -198,7 +203,141 @@ test("the production agent body stays inside the Managed Agents limits", () => {
     assert.equal(tool.input_schema.type, "object");
     assert.equal(Object.hasOwn(tool.input_schema, "additionalProperties"), false);
   }
-  const search = custom.find((tool) => tool.name === "web_search");
+  const search = custom.find((tool) => tool.name === "chief_web_search");
+  const reserved = new Set(BUILTIN_AGENT_TOOL_NAMES);
+  const names = new Set();
+  assert.equal(
+    custom.some((tool) => tool.name === "web_search"),
+    false
+  );
+  for (const tool of custom) {
+    assert.match(tool.name, /^[A-Za-z0-9_-]{1,128}$/);
+    assert.equal(reserved.has(tool.name), false);
+    assert.equal(names.has(tool.name), false);
+    names.add(tool.name);
+    assert.equal(tool.description.length >= 1 && tool.description.length <= 1000, true);
+  }
+  assert.equal(localToolName("chief_web_search"), "web_search");
+  assert.equal(localToolName("memory_read"), "memory_read");
+  const localSearch = specs.find((spec) => spec.name === "web_search");
+  const schedule = specs.find((spec) => spec.name === "schedule_create");
+  assert.equal(localSearch.requiresConfirmation, false);
+  assert.deepEqual([...localSearch.requiredCapabilities], ["web:search"]);
+  assert.equal(schedule.requiresConfirmation, true);
   assert.deepEqual(search.input_schema.required, ["query"]);
   assert.equal(search.input_schema.properties.query.type, "string");
+  assert.equal(Object.hasOwn(search.input_schema, "additionalProperties"), false);
+});
+
+test("chief_web_search runs the Brave-backed web_search tool", async () => {
+  const requests = [];
+  const tool = createWebSearchTool(
+    createWebSearchClient({
+      env: { BRAVE_SEARCH_API_KEY: "BSA-test-key-should-never-leak" },
+      fetchImpl: async (url, init) => {
+        requests.push({ url: String(url), token: init.headers["X-Subscription-Token"] });
+        return {
+          ok: true,
+          status: 200,
+          async json() {
+            return {
+              web: {
+                results: [
+                  {
+                    title: "Hay prices",
+                    url: "https://example.com/hay",
+                    description: "Prices are steady.",
+                  },
+                ],
+              },
+            };
+          },
+        };
+      },
+    })
+  );
+  const policy = new CapabilityPolicy({ defaultDeny: true });
+  policy.grant("chief", Capability.WEB_SEARCH);
+  const http = mockResponse();
+  await handleChiefChat(
+    request({
+      submission: { id: "s1", op: { type: "message", message: { text: "hay prices" } } },
+    }),
+    http.response,
+    {
+      store: new MemoryCheckpointStore(),
+      client: scriptedManagedClient([
+        { tool: { id: "tool-search", name: "chief_web_search", input: { query: "hay prices" } } },
+        { text: "Hay prices are steady." },
+      ]),
+      authenticate: auth,
+      toolExecutor: new ToolExecutor({ tools: [tool], policy }),
+      toolSpecs: [tool.spec],
+    }
+  );
+  assert.equal(requests.length, 1);
+  assert.equal(new URL(requests[0].url).origin, "https://api.search.brave.com");
+  assert.equal(requests[0].url.includes("BSA-test-key"), false);
+  assert.equal(requests[0].token, "BSA-test-key-should-never-leak");
+  const events = frames(http.chunks);
+  const began = events.find((event) => event.msg.type === "tool_call_begin");
+  assert.equal(began.msg.name, "web_search");
+  assert.equal(events.at(-1).msg.status, "completed");
+  assert.match(events.map((event) => event.msg.delta || "").join(""), /Hay prices are steady/);
+  assert.equal(http.chunks.join("").includes("BSA-test-key"), false);
+});
+
+test("a provider failure is logged without secrets or the user text", async () => {
+  const lines = [];
+  const original = console.error;
+  console.error = (...args) => {
+    lines.push(args.map((part) => String(part)).join(" "));
+  };
+  const http = mockResponse();
+  try {
+    const client = {
+      async listAgents() {
+        const error = new Error(
+          "createAgent rejected sk-ant-api03-secretvalue for user farmer@example.com"
+        );
+        error.status = 400;
+        error.operation = "createAgent";
+        throw error;
+      },
+    };
+    await handleChiefChat(
+      request({
+        submission: {
+          id: "s1",
+          op: { type: "message", message: { text: "private account 88421" } },
+        },
+      }),
+      http.response,
+      {
+        store: new MemoryCheckpointStore(),
+        client,
+        authenticate: auth,
+        toolExecutor: new ToolExecutor(),
+      }
+    );
+  } finally {
+    console.error = original;
+  }
+  const body = http.chunks.join("");
+  const log = lines.join("\n");
+  assert.match(body, /The turn could not be completed/);
+  assert.equal(body.includes("sk-ant-api03"), false);
+  assert.equal(body.includes("farmer@example.com"), false);
+  assert.equal(body.includes("88421"), false);
+  assert.match(log, /\[chief\/chat\] createAgent 400/);
+  assert.match(log, /<redacted>/);
+  assert.equal(log.includes("sk-ant-api03"), false);
+  assert.equal(log.includes("farmer@example.com"), false);
+  assert.equal(log.includes("88421"), false);
+  const fields = providerErrorFields({
+    operation: "createAgent",
+    status: 400,
+    message: "bad sk-ant-api03-secretvalue",
+  });
+  assert.equal(fields.message.includes("sk-ant-api03"), false);
 });
