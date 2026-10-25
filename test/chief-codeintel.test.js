@@ -11,6 +11,7 @@ import path from "node:path";
 import { Effect } from "../server/chief/capabilities/descriptor.js";
 import { createGithubReader } from "../server/chief/codeintel/github.js";
 import { createCodeIntel } from "../server/chief/codeintel/index.js";
+import { rejectedCodeRoot, resolveLocalCodeRoot } from "../server/chief/resources/localCode.js";
 import { codeGuidance } from "../server/chief/context/assemble.js";
 import { Capability, CapabilityPolicy } from "../server/chief/core/capabilities.js";
 import { EventBus, EventType } from "../server/chief/core/events.js";
@@ -588,6 +589,164 @@ test("a configured token still reads GitHub and not the local checkout", async (
     assert.equal(result.output.includes("LOCAL_ONLY"), false);
     assert.equal(github.calls.length, 1);
     assert.equal(github.calls[0].method, "GET");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a truncated tree names the top-level paths it left out", async () => {
+  const tree = Array.from({ length: 300 }, (_item, index) => ({
+    path: `server/file-${index}.js`,
+    type: "blob",
+    size: 1,
+  }));
+  tree.push({
+    path: "src/components/chief/ChiefResponseMode.jsx",
+    type: "blob",
+    size: 20,
+  });
+  const github = githubDouble({ tree });
+  const ready = await tooling(intelFor(github), [Capability.CODE_READ]);
+  const listed = await ready.executor.execute(
+    { callId: "w", name: "code_tree", arguments: {} },
+    { userId: "user-a", agentId: "chief" }
+  );
+  const body = JSON.parse(listed.output);
+  assert.equal(body.truncated, true);
+  assert.equal(body.entries.some((entry) => entry.path.startsWith("src/")), false);
+  assert.deepEqual(body.notListed, ["src"]);
+});
+
+test("the Vercel function bundle is not the repository", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "chief-bundle-"));
+  try {
+    await mkdir(path.join(root, "server", "chief", "codeintel"), { recursive: true });
+    await mkdir(path.join(root, "server", "chief", "voice"), { recursive: true });
+    await mkdir(path.join(root, "___vc"), { recursive: true });
+    await writeFile(path.join(root, "server", "chief", "codeintel", "policy.js"), "export {};\n");
+    await writeFile(path.join(root, "___vc", "__env.encrypted"), "secret\n");
+    await writeFile(path.join(root, "server", "chief", "voice", "elevenlabs.js"), "voice\n");
+    assert.equal(rejectedCodeRoot(root), true);
+    assert.equal(resolveLocalCodeRoot({ CHIEF_CODE_LOCAL_ROOT: root }), null);
+    const intel = createCodeIntel({
+      env: { CHIEF_CODE_READ_TOKEN: "", CHIEF_CODE_LOCAL_ROOT: root },
+      fetchImpl: async () => {
+        throw new Error("fetch must not run");
+      },
+    });
+    assert.equal(intel.enabled, false);
+    const ready = await tooling(intel, [Capability.CODE_READ]);
+    const searched = await ready.executor.execute(
+      { callId: "s", name: "code_search", arguments: { query: "Text + Voice" } },
+      { userId: "user-a", agentId: "chief" }
+    );
+    assert.equal(searched.isError, true);
+    assert.match(searched.output, /code intelligence is unavailable/);
+    assert.match(searched.output, /not evidence that a file is missing/);
+    assert.equal(searched.output.includes("secret"), false);
+    assert.match(searched.output, /CHIEF_CODE_READ_TOKEN/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a bundle that also contains the mode control is still not searched", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "chief-bundle-ui-"));
+  try {
+    await mkdir(path.join(root, "server", "chief", "codeintel"), { recursive: true });
+    await mkdir(path.join(root, "src", "components", "chief"), { recursive: true });
+    await mkdir(path.join(root, "___vc"), { recursive: true });
+    await writeFile(path.join(root, "server", "chief", "codeintel", "policy.js"), "export {};\n");
+    await writeFile(
+      path.join(root, "src", "components", "chief", "ChiefResponseMode.jsx"),
+      'export const modes = ["Text + Voice"];\n'
+    );
+    await writeFile(path.join(root, "___vc", "__env.encrypted"), "bundle-secret\n");
+    assert.equal(rejectedCodeRoot(root), true);
+    const env = { CHIEF_CODE_READ_TOKEN: "", CHIEF_CODE_LOCAL_ROOT: root };
+    assert.equal(resolveLocalCodeRoot(env), null);
+    const intel = createCodeIntel({
+      env,
+      fetchImpl: async () => {
+        throw new Error("fetch must not run");
+      },
+    });
+    const ready = await tooling(intel, [Capability.CODE_READ]);
+    const searched = await ready.executor.execute(
+      { callId: "s", name: "code_search", arguments: { query: "Text + Voice" } },
+      { userId: "user-a", agentId: "chief" }
+    );
+    assert.equal(searched.isError, true);
+    assert.match(searched.output, /CHIEF_CODE_READ_TOKEN/);
+    assert.equal(searched.output.includes("bundle-secret"), false);
+    assert.equal(searched.output.includes("Text + Voice"), false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("a hosted process does not search a checkout when the read token is missing", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "chief-hosted-"));
+  try {
+    await mkdir(path.join(root, "server", "chief", "codeintel"), { recursive: true });
+    await mkdir(path.join(root, "src", "components", "chief"), { recursive: true });
+    await writeFile(path.join(root, "server", "chief", "codeintel", "policy.js"), "export {};\n");
+    await writeFile(
+      path.join(root, "src", "components", "chief", "ChiefResponseMode.jsx"),
+      'export const modes = ["Text + Voice"];\n'
+    );
+    await writeFile(path.join(root, ".env"), "TOKEN=hosted-secret\n");
+    const env = { VERCEL: "1", CHIEF_CODE_READ_TOKEN: "", CHIEF_CODE_LOCAL_ROOT: root };
+    assert.equal(resolveLocalCodeRoot(env), null);
+    const intel = createCodeIntel({
+      env,
+      fetchImpl: async () => {
+        throw new Error("fetch must not run");
+      },
+    });
+    const ready = await tooling(intel, [Capability.CODE_READ]);
+    const searched = await ready.executor.execute(
+      { callId: "s", name: "code_search", arguments: { query: "Text + Voice" } },
+      { userId: "user-a", agentId: "chief" }
+    );
+    assert.equal(searched.isError, true);
+    assert.match(searched.output, /not evidence that a file is missing/);
+    assert.equal(searched.output.includes("hosted-secret"), false);
+    assert.equal(searched.output.includes("Text + Voice"), false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("local search still reaches the response-mode control after earlier files", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "chief-search-"));
+  try {
+    await mkdir(path.join(root, "aaa"), { recursive: true });
+    await mkdir(path.join(root, "src", "components", "chief"), { recursive: true });
+    for (let index = 0; index < 420; index += 1) {
+      await writeFile(path.join(root, "aaa", `file-${index}.js`), "export const pad = 1;\n");
+    }
+    await writeFile(
+      path.join(root, "src", "components", "chief", "ChiefResponseMode.jsx"),
+      'const label = "Text + Voice";\n'
+    );
+    const intel = createCodeIntel({
+      env: { CHIEF_CODE_READ_TOKEN: "", CHIEF_CODE_LOCAL_ROOT: root },
+      fetchImpl: async () => {
+        throw new Error("fetch must not run");
+      },
+    });
+    const ready = await tooling(intel, [Capability.CODE_READ]);
+    const searched = await ready.executor.execute(
+      { callId: "s", name: "code_search", arguments: { query: "Text + Voice" } },
+      { userId: "user-a", agentId: "chief" }
+    );
+    assert.equal(searched.isError, false);
+    const body = JSON.parse(searched.output);
+    assert.equal(
+      body.matches.some((match) => match.path === "src/components/chief/ChiefResponseMode.jsx"),
+      true
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }

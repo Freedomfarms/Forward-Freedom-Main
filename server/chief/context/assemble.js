@@ -325,6 +325,8 @@ export function codeGuidance(availableTools) {
     "Do not call these tools for ordinary chat, arithmetic, live finances, or questions the current tools already answer. " +
     "These tools read the configured repository only. They cannot edit files, commit, push, open a pull request, or deploy. " +
     "If a code tool says code access is not enabled or code intelligence is unavailable, say that and do not invent source. " +
+    "A truncated tree lists notListed prefixes that were left out. Search or read those paths before saying the site has no such file. " +
+    "An empty search means that query missed inside the source that was actually read, not that the file cannot exist. " +
     "Do not pass a URL, a repository name, or a user id."
   );
 }

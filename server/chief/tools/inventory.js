@@ -41,6 +41,8 @@ export const CHIEF_TOOL_INVENTORY = Object.freeze({
   code_tree: Object.freeze([Capability.CODE_READ]),
   code_read: Object.freeze([Capability.CODE_READ]),
   code_search: Object.freeze([Capability.CODE_READ]),
+  coding_task_submit: Object.freeze([Capability.CODING_HANDOFF]),
+  coding_task_status: Object.freeze([Capability.CODING_HANDOFF]),
   capability_discover: Object.freeze([Capability.CAPABILITY_READ]),
 });
 

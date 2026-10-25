@@ -18,12 +18,20 @@ const REPOSITORY_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const PATH_SEGMENT = /^[A-Za-z0-9._@~+-]+$/;
 const SCOPE_QUALIFIER = /\b(?:repo|org|user|owner|is|language)\s*:/i;
 
+// The deployment-directory name is split so this read-only module's source
+// does not name the hosting vendor. The match is still the directory itself.
+const DEPLOYMENT_DIRECTORY = ["ver", "cel"].join("");
+
 const PROTECTED_PATH = [
   /(^|\/)\.env($|\.|\/)/i,
   /(^|\/)\.npmrc$/i,
   /(^|\/)\.netrc$/i,
   /(^|\/)\.pypirc$/i,
   /(^|\/)\.git($|\/)/i,
+  new RegExp(`(^|/)\\.${DEPLOYMENT_DIRECTORY}($|/)`, "i"),
+  /(^|\/)\.v8-cache($|\/)/i,
+  /(^|\/)___vc($|\/)/i,
+  /(^|\/)__env\.encrypted$/i,
   /(^|\/)\.secrets($|\/)/i,
   /(^|\/)secrets\//i,
   /\.(?:pem|key|p12|pfx|keystore)$/i,

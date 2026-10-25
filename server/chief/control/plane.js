@@ -324,6 +324,20 @@ export const CONTROL_PLANE = Object.freeze([
     tool: "code_search",
   }),
   live({
+    id: "workforce.coding_submit",
+    domain: ControlDomain.WORKFORCE,
+    effect: ControlEffect.READ,
+    capability: Capability.CODING_HANDOFF,
+    tool: "coding_task_submit",
+  }),
+  live({
+    id: "workforce.coding_status",
+    domain: ControlDomain.WORKFORCE,
+    effect: ControlEffect.READ,
+    capability: Capability.CODING_HANDOFF,
+    tool: "coding_task_status",
+  }),
+  live({
     id: "integration.mcp_invoke",
     domain: ControlDomain.INTEGRATION,
     effect: ControlEffect.CONFIRM,

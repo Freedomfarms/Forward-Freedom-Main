@@ -263,7 +263,14 @@ test("a merged grant still refuses protected code paths before fetch", async () 
     audit: new MemoryAuditLog(),
     stores: { facts: new MemoryFactStore(), schedule: new MemoryScheduleStore(), codeintel },
   });
-  for (const path of [".env", ".env.local", "secrets/keys.pem", "credentials.json"]) {
+  for (const path of [
+    ".env",
+    ".env.local",
+    "secrets/keys.pem",
+    "credentials.json",
+    ".vercel/project.json",
+    "___vc/__env.encrypted",
+  ]) {
     const refused = await tooling.executor.execute(
       { callId: path, name: "code_read", arguments: { path } },
       { userId: "user", agentId: "chief" }

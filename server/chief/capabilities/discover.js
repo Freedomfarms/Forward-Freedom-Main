@@ -73,12 +73,20 @@ function readinessFor(entry, ctx) {
       reason: `${entry.id} is not granted for this user.`,
     });
   }
+  if (entry.readiness === "coding" && ctx.cursorConfigured !== true) {
+    return rowFrom(entry, {
+      granted: true,
+      availability: "unavailable",
+      reason:
+        "Coding handoff is not configured. Set CURSOR_API_KEY on the server. CHIEF cannot open a pull request until then.",
+    });
+  }
   if (entry.readiness === "code" && ctx.codeEnabled !== true) {
     return rowFrom(entry, {
       granted: true,
       availability: "unavailable",
       reason:
-        "Code read is granted, but code intelligence is unavailable because no repository read credential is configured.",
+        "Code read is granted, but code intelligence is unavailable. CHIEF_CODE_READ_TOKEN is not configured, so the repository was not searched. The server bundle is not the site repository.",
     });
   }
   if (entry.readiness === "web" && ctx.webCredentialPresent !== true) {
@@ -172,6 +180,7 @@ export function discoverCapabilities({
   freedomFinancialReadable = true,
   webCredentialPresent = null,
   codeEnabled = null,
+  cursorConfigured = null,
   exposedTools = null,
 } = {}) {
   const activeConnectors = connectors ?? defaultConnectors();
@@ -186,6 +195,10 @@ export function discoverCapabilities({
         ? Boolean(resolveWebSearchCredential())
         : webCredentialPresent === true,
     codeEnabled: codeEnabled === null ? codeSourceAvailable() : codeEnabled === true,
+    cursorConfigured:
+      cursorConfigured === null
+        ? typeof process.env.CURSOR_API_KEY === "string" && process.env.CURSOR_API_KEY.trim().length >= 8
+        : cursorConfigured === true,
   };
   const exposed = exposedSet(exposedTools);
   const capabilities = [];

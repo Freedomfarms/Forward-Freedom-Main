@@ -51,6 +51,7 @@ import {
 import { readResource } from "../resources/access.js";
 import { codeSourceAvailable } from "../resources/localCode.js";
 import { createCodeTools } from "../codeintel/tools.js";
+import { createCodingHandoffTools } from "./codingHandoff.js";
 import { withUserContext } from "../../db/prisma.js";
 import { resolveUserTimeZone } from "../../platform/timezone.js";
 import { readUserSettings, updateUserTimezone } from "../../platform/userSettings.js";
@@ -1356,6 +1357,7 @@ export function createChiefCapabilityRegistry({
     }),
     settingsUpdate(settingsWithUser),
     ...createCodeTools(codeintel ?? undefined),
+    ...createCodingHandoffTools({ env }),
     capabilityDiscover({ moduleAccess, connectors }),
   ];
   for (const tool of tools) registerTool(registry, tool);

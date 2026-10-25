@@ -19,7 +19,8 @@
 //     connector boundaries. They do not grant a connector that is not
 //     connected, and they are not OpenJarvis labels. "workforce:read" reads
 //     the observation journal through the agent runtime. It is not a tool
-//     and it cannot submit work. There is no
+//     and it cannot submit work. "coding:handoff" submits one Cursor coding
+//     task and reads it back. It is not a merge or a deploy. There is no
 //     codebase write, git, or deploy label.
 //     Financial reads must not reuse memory:read. Loading a procedure must
 //     not reuse memory:read either. Conversation recall must not reuse
@@ -116,6 +117,10 @@ export const Capability = Object.freeze({
   // journal through the agent runtime. It does not create an agent, submit
   // work, or grant a write. Off the empty-grant baseline. There is no tool.
   WORKFORCE_READ: "workforce:read",
+  // CHIEF extension. Not an OpenJarvis label. Delegates a coding change to
+  // Cursor and reads the task back. It cannot merge, deploy, or write this
+  // process's checkout. On the empty-grant baseline.
+  CODING_HANDOFF: "coding:handoff",
 });
 
 const CAPABILITY_VALUES = new Set(Object.values(Capability));
