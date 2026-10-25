@@ -27,9 +27,11 @@ export {
   conversationLabel,
   createSubmissionId,
   formatChiefTime,
+  acceptChiefSubmission,
   initialTurnState,
   isActiveChiefTurn,
   messageSubmission,
+  restoredChiefTurn,
   modelSubmission,
   publicTranscriptMessages,
 } from "./chiefProtocol.js";

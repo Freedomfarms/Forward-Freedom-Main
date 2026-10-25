@@ -50,6 +50,13 @@ opening a provider session, sends the same guidance as the memory-store
 a saved change carries the guidance once. The transcript stores the user's
 words, not that note. Later messages in the session do not repeat it.
 
+That note is applied inside `dispatchOutbound`, and only after the turn
+synchronizer has decided to send. A question held for an unfinished turn, a
+deferred prompt, or a prompt requeued after HTTP 409 stays the user's text.
+The digest is stored after the send succeeds, so a later dispatch in the same
+run does not steer again. An older `session.status_idle` still cannot finish
+the new question.
+
 `proposePersonalityAdjustment` is the extension point for a future confirmed
 voice command. It does not persist. Settings is the only save path in this
 change.

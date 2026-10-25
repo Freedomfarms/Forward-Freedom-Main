@@ -48,6 +48,7 @@ export async function handleChiefHistory(request, response, deps = {}) {
     sessionId: history.sessionId,
     modelRoute: history.modelRoute,
     messages: history.messages,
+    heldPrompt: history.heldPrompt ?? null,
     turnStatus: history.turnStatus ?? null,
   });
 }
