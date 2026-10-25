@@ -27,10 +27,9 @@ import { providerErrorFields } from "./redact.js";
 import { createPrismaWorkQueue } from "./workQueue.js";
 import { syncPersonalityMemory } from "../personality/memory.js";
 import { readChiefPersonality } from "../personality/store.js";
+import { fittedPersonalityGuidance, personalityDelivery } from "./personalityDelivery.js";
 import {
-  fittedPersonalityGuidance,
   normalizeChiefPersonality,
-  personalityDelivery,
   personalityDigest,
 } from "../../../src/utils/chiefPersonality.js";
 import { SCHEDULED_TURN_EXCLUDED_TOOLS } from "../tools/inventory.js";

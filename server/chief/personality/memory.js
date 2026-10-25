@@ -1,6 +1,6 @@
 // Writes only personality.md. Other workspace files are left as they are.
 
-import { PERSONALITY_MEMORY_PATH } from "../../../src/utils/chiefPersonality.js";
+import { PERSONALITY_MEMORY_PATH } from "../managed/personalityDelivery.js";
 
 function memoryPath(item) {
   return String(item?.path || "")

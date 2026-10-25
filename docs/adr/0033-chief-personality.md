@@ -33,9 +33,16 @@ Settings → Personality stores preset, response length, three sliders, and
 custom instructions on `chief_personality`. A missing row is the JARVIS
 default for that user. Other settings are not written.
 
-`renderPersonalityGuidance` maps slider ranges to behavioral sentences. Raw
+`src/utils/chiefPersonality.js` owns presets, stored fields, validation, and
+`renderPersonalityGuidance`. Slider ranges become behavioral sentences. Raw
 percentages are not sent to the model. Custom instructions are fenced as
-lower-priority preferences.
+lower-priority preferences. That module does not name a provider.
+
+Claude delivery is `server/chief/managed/personalityDelivery.js`. It fits the
+guidance into Anthropic's 4,096-character memory-store instruction field and
+decides when an open session needs the one-time note. Another harness would
+send `renderPersonalityGuidance` through its own channel. This change does
+not add that channel.
 
 On a turn, CHIEF writes `personality.md` in that user's memory store and, when
 opening a provider session, sends the same guidance as the memory-store

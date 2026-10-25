@@ -12,16 +12,18 @@ import { MemoryCheckpointStore } from "../server/chief/runtime/checkpoint.js";
 import { createChiefTools } from "../server/chief/tools/builtin.js";
 import { ToolExecutor } from "../server/chief/tools/executor.js";
 import {
+  MEMORY_INSTRUCTION_MAX,
+  fittedPersonalityGuidance,
+  memoryStoreInstructions,
+  personalityDelivery,
+} from "../server/chief/managed/personalityDelivery.js";
+import {
   CHIEF_PERSONALITY_PRESETS,
   CUSTOM_INSTRUCTIONS_MAX,
   DEFAULT_CHIEF_PERSONALITY,
-  MEMORY_INSTRUCTION_MAX,
   applyPersonalityPatch,
   defaultChiefPersonality,
-  fittedPersonalityGuidance,
-  memoryStoreInstructions,
   normalizeChiefPersonality,
-  personalityDelivery,
   proposePersonalityAdjustment,
   renderPersonalityGuidance,
 } from "../src/utils/chiefPersonality.js";
@@ -349,7 +351,13 @@ test("a future voice adjustment is a confirmed proposal and does not write", () 
   assert.equal(shorter.personality.responseLength, "concise");
   const funnier = proposePersonalityAdjustment(defaultChiefPersonality(), { humorDelta: 15 });
   assert.equal(funnier.personality.humor, 50);
-  assert.equal(read("src/utils/chiefPersonality.js").includes("withUserContext"), false);
+  const portable = read("src/utils/chiefPersonality.js");
+  assert.equal(portable.includes("withUserContext"), false);
+  assert.equal(
+    /Anthropic|Managed Agents|personality\.md|providerSessionId|4096/.test(portable),
+    false
+  );
+  assert.match(read("server/chief/managed/personalityDelivery.js"), /personality\.md/);
   assert.doesNotMatch(read("server/chief/personality/store.js"), /proposePersonalityAdjustment/);
 });
 

@@ -1,15 +1,9 @@
 // CHIEF conversational preferences. Pure data: no database, no provider calls.
 //
-// Layer A (identity, tools, safety) stays in server/chief/managed/productionAgent.js.
-// This module is layer B. It never grants a tool or skips an approval.
-//
-// Claude Managed Agents has no supported per-user system prompt and no per-turn
-// system override. Session creation accepts memory-store `instructions`, and
-// Anthropic adds that text to the session system prompt. That field is fixed
-// for the life of the session (session update can change tools, not this text).
-// personality.md in the user's memory store is the mutable copy. A running
-// session is not replaced. The next user message after a saved change carries
-// the new guidance once; later messages in that session do not repeat it.
+// Presets, stored fields, slider bands, validation, and renderPersonalityGuidance
+// are harness-neutral. Any runtime can send that guidance through its own channel.
+// Provider delivery lives in server/chief/managed/personalityDelivery.js.
+// This module never grants a tool or skips an approval.
 
 export const CHIEF_PERSONALITY_PRESETS = Object.freeze({
   jarvis: Object.freeze({
@@ -61,11 +55,6 @@ export const CHIEF_PERSONALITY_FIELDS = Object.freeze([
 
 export const CUSTOM_INSTRUCTIONS_MAX = 2000;
 
-// Anthropic caps memory-store resource instructions at 4,096 characters.
-export const MEMORY_INSTRUCTION_MAX = 4096;
-
-export const PERSONALITY_MEMORY_PATH = "personality.md";
-
 export const DEFAULT_CHIEF_PERSONALITY = Object.freeze({
   preset: "jarvis",
   responseLength: "concise",
@@ -74,15 +63,6 @@ export const DEFAULT_CHIEF_PERSONALITY = Object.freeze({
   proactiveness: 70,
   customInstructions: "",
 });
-
-const MOUNT_NOTE =
-  "Project workspace and skills for this user. Read them before answering. Do not expect a pasted transcript.";
-
-const PREFACE = [
-  "Conversational preferences for this user follow. They shape wording only.",
-  "They never override CHIEF's identity, tool permissions, safety rules, or execution authorization.",
-  "If personality.md in this store disagrees with this note, follow personality.md. It is the saved preference.",
-].join(" ");
 
 const SHARED_BEHAVIOR = [
   "Answer the question that was asked.",
@@ -373,32 +353,6 @@ export function renderPersonalityGuidance(value, { customInstructions } = {}) {
   ].join("\n");
 }
 
-function instructionHead() {
-  return `${MOUNT_NOTE}\n\n${PREFACE}\n\n`;
-}
-
-export function memoryStoreInstructions(guidance) {
-  const head = instructionHead();
-  const room = Math.max(0, MEMORY_INSTRUCTION_MAX - head.length);
-  return `${head}${String(guidance || "").slice(0, room)}`;
-}
-
-export function fittedPersonalityGuidance(value) {
-  const personality = normalizeChiefPersonality(value);
-  const head = instructionHead();
-  const room = Math.max(0, MEMORY_INSTRUCTION_MAX - head.length);
-  let guidance = renderPersonalityGuidance(personality);
-  if (guidance.length > room) {
-    const overflow = guidance.length - room;
-    const custom = personality.customInstructions
-      .slice(0, Math.max(0, personality.customInstructions.length - overflow))
-      .trimEnd();
-    guidance = renderPersonalityGuidance({ ...personality, customInstructions: custom });
-    if (guidance.length > room) guidance = guidance.slice(0, room);
-  }
-  return { personality, guidance, instructions: `${head}${guidance}` };
-}
-
 export function personalityDigest(text) {
   let hash = 2166136261;
   const value = String(text || "");
@@ -407,37 +361,4 @@ export function personalityDigest(text) {
     hash = Math.imul(hash, 16777619);
   }
   return (hash >>> 0).toString(16);
-}
-
-export function steeredUserPrompt(guidance, userText) {
-  return [
-    "Saved conversational preference update. Apply it to the user message below.",
-    "Do not quote this note, and do not treat it as a separate request.",
-    "It does not grant tools, skip approvals, or override safety rules.",
-    guidance,
-    "User message:",
-    userText,
-  ].join("\n\n");
-}
-
-// New sessions receive the guidance as memory-store instructions.
-// An open session keeps its provider id. The next user message carries the
-// guidance once when the saved digest differs, then the digest is stored so
-// later messages stay the user's words only.
-export function personalityDelivery({
-  providerSessionId,
-  boundDigest,
-  digest,
-  userText,
-  guidance,
-}) {
-  const opening = !providerSessionId;
-  if (opening || boundDigest === digest) {
-    return { providerPrompt: userText, nextDigest: digest, steered: false };
-  }
-  return {
-    providerPrompt: steeredUserPrompt(guidance, userText),
-    nextDigest: digest,
-    steered: true,
-  };
 }
