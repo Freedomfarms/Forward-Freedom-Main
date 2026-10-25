@@ -7,12 +7,17 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-import { CHIEF_STATUS } from "../src/utils/chiefProtocol.js";
+import { CHIEF_STATUS, MISSING_CHIEF_ANSWER } from "../src/utils/chiefProtocol.js";
 import {
   normalizeChiefPreferences,
   shouldShowAssistantText,
 } from "../src/utils/chiefPreferences.js";
-import { replySpeechText, speakCompletedReply } from "../src/utils/chiefReplySpeech.js";
+import {
+  classifySettledDelivery,
+  PLAYBACK_BLOCKED_MESSAGE,
+  replySpeechText,
+  speakCompletedReply,
+} from "../src/utils/chiefReplySpeech.js";
 
 const root = process.cwd();
 
@@ -195,4 +200,48 @@ test("the home path stops speech without starting the microphone", () => {
   assert.match(voice, /reason: "aborted"/);
   assert.match(voice, /setPlayback\("preparing"\)/);
   assert.match(voice, /fetchChiefSpeech/);
+  assert.match(page, /stopSpeaking\(\{ preserveHold: true \}\)/);
+  assert.match(page, /const turnPreferences = preferencesRef\.current/);
+  assert.match(page, /preferences: turnPreferences/);
+  assert.doesNotMatch(page, /finished without text to speak/);
+  assert.match(page, /classifySettledDelivery/);
+});
+
+test("missing text, speech failure, and blocked playback stay distinct", () => {
+  const answer = "Yes. The site shell is in src/App.jsx.";
+  assert.deepEqual(classifySettledDelivery({ answer: "", settled: true, speak: true }), {
+    action: "missing_answer",
+    message: MISSING_CHIEF_ANSWER,
+  });
+  assert.equal(classifySettledDelivery({ answer, settled: false, speak: true }).action, "pending");
+  assert.equal(classifySettledDelivery({ answer, settled: true, speak: false }).action, "show");
+  assert.equal(classifySettledDelivery({ answer, settled: true, speak: true }).action, "speak");
+  assert.equal(
+    classifySettledDelivery({
+      answer,
+      settled: true,
+      speak: true,
+      playback: { ok: true },
+    }).action,
+    "spoken"
+  );
+  const blocked = classifySettledDelivery({
+    answer,
+    settled: true,
+    speak: true,
+    playback: { ok: false, code: "playback_blocked", error: PLAYBACK_BLOCKED_MESSAGE },
+  });
+  assert.equal(blocked.action, "blocked");
+  assert.equal(blocked.message, PLAYBACK_BLOCKED_MESSAGE);
+  assert.equal(blocked.text, answer);
+  const failed = classifySettledDelivery({
+    answer,
+    settled: true,
+    speak: true,
+    playback: { ok: false, reason: "error", error: "ElevenLabs speech failed (502)." },
+  });
+  assert.equal(failed.action, "tts_failed");
+  assert.equal(failed.message, "ElevenLabs speech failed (502).");
+  assert.notEqual(failed.message, MISSING_CHIEF_ANSWER);
+  assert.notEqual(blocked.message, failed.message);
 });

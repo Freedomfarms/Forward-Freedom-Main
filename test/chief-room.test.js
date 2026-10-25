@@ -176,6 +176,19 @@ test("the current turn is the latest exchange and earlier lines stay out of it",
   );
   assert.equal(streaming.answer, "New");
   assert.equal(streaming.userLine, "Second");
+  assert.deepEqual(
+    streaming.earlier.map((message) => message.text),
+    []
+  );
+
+  const parts = currentTurn([
+    { role: "user", text: "Can you see the coding of this site?" },
+    { role: "assistant", text: "I checked src/App.jsx." },
+    { role: "assistant", text: "Yes. The site shell is there." },
+  ]);
+  assert.equal(parts.userLine, "Can you see the coding of this site?");
+  assert.equal(parts.answer, "I checked src/App.jsx.\n\nYes. The site shell is there.");
+  assert.deepEqual(parts.earlier, []);
 });
 
 test("the diamond corners stay put while real work blooms", () => {

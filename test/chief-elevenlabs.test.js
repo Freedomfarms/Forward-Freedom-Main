@@ -553,6 +553,20 @@ test("a saved voice survives a catalog that has no free-plan replacement", () =>
   assert.equal(speechVoiceId("picked", "saved"), "picked");
 });
 
+test("an interrupted audio context is resumed before playback", async () => {
+  let resumed = false;
+  const audioContext = {
+    state: "interrupted",
+    resume() {
+      resumed = true;
+      this.state = "running";
+      return Promise.resolve();
+    },
+  };
+  assert.equal(await ensureAudioRunning(audioContext), true);
+  assert.equal(resumed, true);
+});
+
 test("reply playback fails fast when the audio context never starts", async () => {
   const body = new ReadableStream({
     start(controller) {
@@ -574,6 +588,41 @@ test("reply playback fails fast when the audio context never starts", async () =
     (error) => error?.code === "playback_blocked"
   );
   assert.ok(Date.now() - started < 1000);
+});
+
+test("playback that leaves the running state is not reported as spoken", async () => {
+  const body = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new Uint8Array([1, 0, 2, 0]));
+      controller.close();
+    },
+  });
+  const audioContext = {
+    state: "running",
+    currentTime: 0,
+    sampleRate: 24000,
+    destination: {},
+    resume() {
+      return Promise.resolve();
+    },
+    createBuffer(_channels, length, rate) {
+      return { duration: length / rate, copyToChannel() {} };
+    },
+    createBufferSource() {
+      return {
+        connect() {},
+        start() {
+          audioContext.state = "suspended";
+        },
+        stop() {},
+      };
+    },
+  };
+  await assert.rejects(
+    playPcmStream(body, { audioContext }),
+    (error) => error?.code === "playback_blocked"
+  );
+  assert.equal(audioContext.state, "suspended");
 });
 
 test("reply playback uses a running audio context", async () => {

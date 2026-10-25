@@ -2,8 +2,42 @@
 // Text rendering stays with the transcript. This module only chooses the
 // string passed to voice.speakAnswer(), once. Typed and spoken input share it.
 
-import { CHIEF_STATUS, isSpeakableTurn } from "./chiefProtocol.js";
+import { CHIEF_STATUS, isSpeakableTurn, MISSING_CHIEF_ANSWER } from "./chiefProtocol.js";
 import { shouldSpeakReply } from "./chiefPreferences.js";
+
+export { MISSING_CHIEF_ANSWER };
+export const PLAYBACK_BLOCKED_MESSAGE =
+  "Playback is blocked. Tap Play response to hear this answer.";
+
+// settled means the Managed Agents turn finished without an error or a pause.
+// speak is the response-mode choice. playback is omitted until speakAnswer returns.
+export function classifySettledDelivery({
+  answer = "",
+  speak = false,
+  settled = false,
+  playback = null,
+} = {}) {
+  if (!settled) return { action: "pending" };
+  const text = typeof answer === "string" ? answer.trim() : "";
+  if (!text) return { action: "missing_answer", message: MISSING_CHIEF_ANSWER };
+  if (!speak) return { action: "show", text };
+  if (!playback) return { action: "speak", text };
+  if (playback.ok === true) return { action: "spoken", text };
+  if (playback.reason === "aborted") return { action: "stopped", text };
+  const blocked = playback.code === "playback_blocked" || playback.reason === "blocked";
+  if (blocked) {
+    const message =
+      typeof playback.error === "string" && playback.error.trim()
+        ? playback.error.trim()
+        : PLAYBACK_BLOCKED_MESSAGE;
+    return { action: "blocked", text, message };
+  }
+  const message =
+    typeof playback.error === "string" && playback.error.trim()
+      ? playback.error.trim()
+      : "CHIEF could not speak that response.";
+  return { action: "tts_failed", text, message };
+}
 
 export function replySpeechText({
   streamText = "",

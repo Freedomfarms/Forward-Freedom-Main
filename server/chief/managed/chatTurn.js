@@ -28,11 +28,16 @@ import { providerErrorFields } from "./redact.js";
 import { createPrismaWorkQueue } from "./workQueue.js";
 import { syncPersonalityMemory } from "../personality/memory.js";
 import { readChiefPersonality } from "../personality/store.js";
-import { fittedPersonalityGuidance, personalityDelivery } from "./personalityDelivery.js";
+import {
+  fittedPersonalityGuidance,
+  personalityDelivery,
+  undeliveredTurnPrompt,
+} from "./personalityDelivery.js";
 import {
   normalizeChiefPersonality,
   personalityDigest,
 } from "../../../src/utils/chiefPersonality.js";
+import { MISSING_CHIEF_ANSWER } from "../../../src/utils/chiefProtocol.js";
 import { SCHEDULED_TURN_EXCLUDED_TOOLS } from "../tools/inventory.js";
 
 const LEGACY_MESSAGE =
@@ -253,23 +258,65 @@ function freshProviderEvents(events, baselineIds) {
   return fresh;
 }
 
-// A turn is done only when the provider is idle now AND this turn has seen
-// activity that was not already in the log before its prompt was sent.
+function stopReasonType(event) {
+  const reason = event?.stop_reason;
+  if (!reason) return "";
+  if (typeof reason === "string") return reason;
+  return typeof reason.type === "string" ? reason.type : "";
+}
+
+function latestIdleEvent(events) {
+  let idle = null;
+  for (const event of events || []) {
+    if (event?.type === "session.status_idle" || event?.type === "session.status_idled") {
+      idle = event;
+    }
+  }
+  return idle;
+}
+
+function turnHasAssistantAnswer(checkpoint) {
+  const transcript = checkpoint?.transcript || [];
+  for (let index = transcript.length - 1; index >= 0; index -= 1) {
+    const message = transcript[index];
+    if (message?.role === "user") return false;
+    if (message?.role === "assistant" && String(message.content || "").trim()) return true;
+  }
+  return false;
+}
+
+const TERMINAL_STOP_MESSAGE = Object.freeze({
+  refusal: "CHIEF declined that request.",
+  retries_exhausted: "CHIEF could not finish that response.",
+  budget_reached: "CHIEF stopped because the response budget was reached.",
+});
+
+// A turn is done when the provider is idle for this turn's own end_turn.
 // listEvents returns the whole session, so an older session.status_idle must
-// not finish the question that was just submitted.
+// not finish the question that was just submitted. A custom tool pauses the
+// session with stop_reason requires_action; that idle is not the answer, even
+// after the session has already been seen running. refusal, retries_exhausted,
+// and budget_reached are terminal failures, not a cue to keep polling.
+function freshStop(events, watch, session) {
+  if (!sessionIsIdle(session)) return null;
+  const fresh = freshProviderEvents(events, watch?.baselineIds);
+  const idle = latestIdleEvent(fresh);
+  if (!idle) return null;
+  const reason = stopReasonType(idle);
+  if (reason === "requires_action") return { kind: "pause" };
+  if (reason === "end_turn") return { kind: "end_turn" };
+  if (Object.hasOwn(TERMINAL_STOP_MESSAGE, reason)) {
+    return { kind: "failed", message: TERMINAL_STOP_MESSAGE[reason] };
+  }
+  if (reason !== "") return null;
+  if (watch?.sawRunning === true || fresh.some((event) => event?.type === "agent.message")) {
+    return { kind: "end_turn" };
+  }
+  return null;
+}
+
 function currentTurnSettled(events, watch, session) {
-  if (!sessionIsIdle(session)) return false;
-  if (watch?.sawRunning === true) return true;
-  return freshProviderEvents(events, watch?.baselineIds).some((event) => {
-    const type = event?.type;
-    return (
-      type === "agent.message" ||
-      type === "agent.custom_tool_use" ||
-      type === "session.status_idle" ||
-      type === "session.status_idled" ||
-      type === "session.status_running"
-    );
-  });
+  return freshStop(events, watch, session)?.kind === "end_turn";
 }
 
 function previousTurnInFlight(checkpoint) {
@@ -584,14 +631,20 @@ async function collect({
     if (sessionIsActive(session)) watch.sawRunning = true;
     const liveStatus = providerStatus(session);
     if (liveStatus) checkpoint.context.providerStatus = liveStatus;
-    if (currentTurnSettled(events, watch, session)) {
+    const stop = freshStop(events, watch, session);
+    if (stop?.kind === "end_turn" || stop?.kind === "failed") {
       watch.settled = true;
       checkpoint.context.seenEventIds = [...seen];
       checkpoint.executionStats = {
         modelSteps: (checkpoint.executionStats?.modelSteps ?? 0) + 1,
         toolCalls: checkpoint.executionStats?.toolCalls ?? 0,
       };
-      return "completed";
+      if (turnHasAssistantAnswer(checkpoint)) return "completed";
+      if (stop.kind === "failed") {
+        checkpoint.context.turnFailureMessage = stop.message;
+        return "failed";
+      }
+      return "empty";
     }
     if (Date.now() >= deadline) break;
     await sleepFn(400);
@@ -947,13 +1000,19 @@ export async function runManagedChiefTurn({
       userText: text,
       guidance: personalityState.guidance,
     });
+    const priorError =
+      typeof checkpoint.context.turnError === "string" ? checkpoint.context.turnError.trim() : "";
+    const providerPrompt = priorError
+      ? undeliveredTurnPrompt(delivery.providerPrompt, priorError)
+      : delivery.providerPrompt;
+    checkpoint.context.heldPrompts = heldPrompts(checkpoint).filter((item) => item !== text);
     try {
       await openOrContinue({
         client,
         managed,
         checkpoint,
         sessionId: record.id,
-        prompt: delivery.providerPrompt,
+        prompt: providerPrompt,
         instructions: personalityState.instructions,
       });
     } catch (error) {
@@ -1083,6 +1142,15 @@ export async function runManagedChiefTurn({
     if (heldPrompts(checkpoint).length && status === "completed") status = "continuing";
     checkpoint.context.managed = managed;
     rememberTurnStatus(checkpoint, status);
+    if (status === "completed") {
+      if (checkpoint.context.turnError) checkpoint.context.turnError = "";
+      checkpoint.context.turnFailureMessage = "";
+    } else if (status === "empty") {
+      checkpoint.context.turnError = MISSING_CHIEF_ANSWER;
+    } else if (status === "failed") {
+      checkpoint.context.turnError =
+        checkpoint.context.turnFailureMessage || TERMINAL_STOP_MESSAGE.retries_exhausted;
+    }
     await persistCheckpoint(store, userId, record.id, checkpoint);
     await persistThread(threadStore, userId, record.id, managed, status);
     leaseStatus = status;
@@ -1096,6 +1164,14 @@ export async function runManagedChiefTurn({
     }
     if (status === "completed") {
       emit(eventMsg.turnComplete(turnWatchOf(checkpoint)?.turnId || turnId));
+    } else if (status === "empty" || status === "failed") {
+      emit(
+        eventMsg.error({
+          kind: status,
+          message: checkpoint.context.turnError,
+          retryable: false,
+        })
+      );
     }
     return { sessionId: record.id, status, checkpoint };
   } finally {

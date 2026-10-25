@@ -1809,14 +1809,29 @@
   }
   .chief-frontier .dock-topline {
     margin-bottom: 9px;
+    flex-wrap: wrap;
+    align-items: flex-start;
   }
   .chief-frontier .dock-topline > span {
     font-size: 5px;
     letter-spacing: 0.8px;
   }
-  .chief-frontier .response-modes button {
-    font-size: 7px;
-    padding: 4px 6px;
+  .chief-frontier .response-modes,
+  .chief-frontier .response-modes .chief-response-mode-options {
+    flex-wrap: wrap;
+    max-width: 100%;
+  }
+  .chief-frontier .response-modes button,
+  .chief-frontier .response-modes .chief-response-mode-options button,
+  .chief-frontier .chief-stop-speech {
+    font-size: 12px;
+    line-height: 1.2;
+    padding: 8px 10px;
+    min-height: 36px;
+  }
+  .chief-frontier .chief-turn-note {
+    font-size: 13px;
+    line-height: 1.4;
   }
   .chief-frontier .presence {
     font-size: 10px;
@@ -3392,5 +3407,15 @@
 
   .chief-interface .chief-scene {
     filter: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .chief-frontier .response-modes .chief-response-mode-options button,
+  .chief-frontier .response-modes .chief-stop-speech {
+    font-size: 12px;
+    line-height: 1.2;
+    padding: 8px 10px;
+    min-height: 36px;
   }
 }

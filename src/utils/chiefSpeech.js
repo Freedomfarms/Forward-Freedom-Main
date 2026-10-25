@@ -7,10 +7,9 @@ const MIN_SAMPLES = 2400;
 const RESUME_LIMIT_MS = 300;
 
 function playbackBlocked() {
-  return Object.assign(
-    new Error("CHIEF could not play that response. Click the page, then use Play response."),
-    { code: "playback_blocked" }
-  );
+  return Object.assign(new Error("Playback is blocked. Tap Play response to hear this answer."), {
+    code: "playback_blocked",
+  });
 }
 
 // A click that only calls resume() does not keep audio unlocked until a reply
@@ -67,6 +66,7 @@ export function holdAudioContext(audioContext) {
 export async function ensureAudioRunning(audioContext) {
   if (!audioContext) return false;
   if (audioContext.state === "running") return true;
+  if (audioContext.state !== "suspended" && audioContext.state !== "interrupted") return false;
   if (typeof audioContext.resume !== "function") return false;
   let timer = null;
   try {
@@ -210,6 +210,19 @@ function abortError() {
   return error;
 }
 
+async function finishPlayback(audioContext, remaining, signal) {
+  const deadline = Date.now() + Math.max(0, remaining);
+  while (Date.now() < deadline) {
+    if (signal?.aborted) throw abortError();
+    if (audioContext.state !== "running") throw playbackBlocked();
+    const slice = Math.min(50, deadline - Date.now());
+    if (slice <= 0) break;
+    await wait(slice, signal);
+  }
+  if (signal?.aborted) throw abortError();
+  if (audioContext.state !== "running") throw playbackBlocked();
+}
+
 function wait(ms, signal) {
   if (ms <= 20) return Promise.resolve();
   return new Promise((resolve, reject) => {
@@ -313,8 +326,18 @@ export async function playPcmStream(
     if (signal?.aborted) throw abortError();
     enqueue(new Int16Array(), true);
     if (!started) throw new Error("CHIEF returned no audio.");
+    if (audioContext.state !== "running") throw playbackBlocked();
     const remaining = Math.max(0, (nextTime - audioContext.currentTime) * 1000);
-    await wait(remaining, signal);
+    await finishPlayback(audioContext, remaining, signal);
+  } catch (error) {
+    for (const source of sources) {
+      try {
+        source.stop();
+      } catch {
+        // Already finished.
+      }
+    }
+    throw error;
   } finally {
     try {
       reader.releaseLock?.();
@@ -333,44 +356,24 @@ async function playDecodedBuffer(audioContext, audioBuffer, { signal, onPlayback
   source.buffer = audioBuffer;
   source.connect(audioContext.destination);
   const durationMs = Math.max(0, Number(audioBuffer?.duration) * 1000 || 0);
-  await new Promise((resolve, reject) => {
-    let settled = false;
-    let timer = null;
-    const finish = (error) => {
-      if (settled) return;
-      settled = true;
-      if (timer != null) clearTimeout(timer);
-      signal?.removeEventListener("abort", onAbort);
-      if (error) reject(error);
-      else resolve();
-    };
-    const onAbort = () => {
-      try {
-        source.stop();
-      } catch {
-        // Already stopped.
-      }
-      finish(abortError());
-    };
-    timer = setTimeout(() => finish(), durationMs + 1500);
-    source.onended = () => {
-      clearTimeout(timer);
-      finish();
-    };
-    if (signal?.aborted) {
-      onAbort();
-      return;
-    }
-    signal?.addEventListener("abort", onAbort, { once: true });
+  if (signal?.aborted) throw abortError();
+  try {
+    source.start(audioContext.currentTime + 0.02);
+  } catch (error) {
+    throw error?.name === "AbortError" ? abortError() : error;
+  }
+  if (audioContext.state !== "running") throw playbackBlocked();
+  onPlaybackStart?.();
+  try {
+    await finishPlayback(audioContext, durationMs, signal);
+  } catch (error) {
     try {
-      source.start(audioContext.currentTime + 0.02);
-    } catch (error) {
-      clearTimeout(timer);
-      finish(error);
-      return;
+      source.stop();
+    } catch {
+      // Already stopped.
     }
-    onPlaybackStart?.();
-  });
+    throw error;
+  }
 }
 
 export function speakBrowserText(text, { rate = 1, signal, onStart } = {}) {
