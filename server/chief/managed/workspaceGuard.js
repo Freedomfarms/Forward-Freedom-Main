@@ -1,7 +1,8 @@
 // Guards the per-user memory files against a full replacement the user did
-// not ask for. The memory store keeps every version. A restore writes the
-// previous content back with a content_sha256 precondition so a newer edit
-// is left alone.
+// not ask for. The agent writes the memory store directly, so this cannot
+// block the write. It restores afterward. A restore is sent only when the
+// live text is still the unsafe write, and only with a content_sha256
+// precondition. A concurrent edit, or a 409, is left in place.
 
 const GUARDED = Object.freeze([
   "decisions.md",
@@ -86,6 +87,17 @@ function userAskedToReplace(userText, name) {
   return Boolean(pattern && pattern.test(String(userText || "")));
 }
 
+function writtenBytes(prior, name, input) {
+  if (name === "write" && typeof input.content === "string") return input.content;
+  if (name !== "edit") return null;
+  if (typeof input.content === "string") return input.content;
+  const old = typeof input.old_string === "string" ? input.old_string : null;
+  const next = typeof input.new_string === "string" ? input.new_string : null;
+  if (old == null || next == null || typeof prior?.content !== "string") return null;
+  if (!prior.content.includes(old) || prior.content.split(old).length !== 2) return null;
+  return prior.content.replace(old, next);
+}
+
 function lastUserTurnStart(events) {
   let start = 0;
   events.forEach((event, index) => {
@@ -124,6 +136,7 @@ export function planWorkspaceRestore({ snapshot, events, userText } = {}) {
       path: file,
       memoryId: prior.id,
       content: prior.content,
+      writtenContent: writtenBytes(prior, name, input),
       writeEventId: toolUseId(event) || `${file}:${index}`,
     });
   });
@@ -154,6 +167,10 @@ export async function restoreWorkspaceWrites({ client, memoryStoreId, snapshot, 
     const current = listed.find((entry) => workspaceFileName(entry?.path) === item.path);
     if (!current?.id || current.content === item.content) {
       restored.push({ path: item.path, writeEventId: item.writeEventId, skipped: true });
+      continue;
+    }
+    if (typeof item.writtenContent !== "string" || current.content !== item.writtenContent) {
+      restored.push({ path: item.path, writeEventId: item.writeEventId, preserved: true });
       continue;
     }
     const sha = current.content_sha256;

@@ -4,6 +4,9 @@
 // may carry a client-supplied bc- agentId. Cursor treats a repeat of that
 // id as 409 agent_id_conflict rather than a second agent. This module
 // records that conflict as ambiguous and does not POST again.
+// autoCreatePR stays false here. This path cannot open a pull request.
+// The CHIEF review handoff in codingHandoff.js is a separate client and is
+// the path that sets autoCreatePR true. Do not merge the two.
 // Status is read with GET /v1/agents/{id}/runs/{runId}. Cancel is POST on
 // that run. GET /v1/agents/{id} returning 404 does not prove the create
 // never landed. This module does not poll, stream, or call the API while

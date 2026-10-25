@@ -52,6 +52,9 @@ export function rejectedCodeRoot(candidate) {
 }
 
 export function resolveLocalCodeRoot(env = process.env) {
+  // Hosted functions set VERCEL=1 and see a deployment bundle, not the git
+  // repository. Missing CHIEF_CODE_READ_TOKEN must fail closed there.
+  if (env?.VERCEL === "1") return null;
   const configured =
     typeof env?.CHIEF_CODE_LOCAL_ROOT === "string" ? env.CHIEF_CODE_LOCAL_ROOT.trim() : "";
   if (configured) {

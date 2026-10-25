@@ -86,7 +86,7 @@ function readinessFor(entry, ctx) {
       granted: true,
       availability: "unavailable",
       reason:
-        "Code read is granted, but code intelligence is unavailable because no repository read credential is configured. The server bundle is not the site repository.",
+        "Code read is granted, but code intelligence is unavailable. CHIEF_CODE_READ_TOKEN is not configured, so the repository was not searched. The server bundle is not the site repository.",
     });
   }
   if (entry.readiness === "web" && ctx.webCredentialPresent !== true) {

@@ -45,7 +45,7 @@ export function createCodingHandoffTools({
     spec: {
       name: "coding_task_submit",
       description:
-        "Delegate one coding change to Cursor. Returns the task id. The same requirements return the existing task instead of starting another. Cursor opens a pull request on a new branch. This does not merge or deploy. Do not pass a repository, URL, or user id.",
+        "Delegate one coding change to Cursor and return the task id. Cursor opens an unmerged pull request on a new branch. Repeating the same requirements returns the current task. Pass new_attempt only after that task has finished or failed and the user wants another try. This does not merge or deploy. Do not pass a repository, URL, or user id.",
       category: "workforce",
       requiresConfirmation: false,
       requiredCapabilities: [Capability.CODING_HANDOFF],
@@ -56,16 +56,30 @@ export function createCodingHandoffTools({
             type: "string",
             description: "What should be true when the pull request is ready for review.",
           },
+          new_attempt: {
+            type: "boolean",
+            description:
+              "True only when the user wants another try after the previous task for these requirements finished or failed.",
+          },
         },
         required: ["requirements"],
       },
     },
     async execute(params, context) {
       if (!context?.userId) return resultOf({ available: false, error: "authenticated user is required" });
-      const args = argumentsOf(params, new Set(["requirements"]));
+      const args = argumentsOf(params, new Set(["requirements", "new_attempt"]));
       if (args.error) return resultOf({ available: false, error: args.error });
+      if (params?.new_attempt != null && params.new_attempt !== true && params.new_attempt !== false) {
+        return resultOf({ available: false, error: "unsupported coding task argument" });
+      }
       try {
-        return resultOf(await runtime(context).submit({ userId: context.userId, requirements: params?.requirements }));
+        return resultOf(
+          await runtime(context).submit({
+            userId: context.userId,
+            requirements: params?.requirements,
+            newAttempt: params?.new_attempt === true,
+          })
+        );
       } catch {
         return resultOf({ available: false, error: "request_rejected" });
       }

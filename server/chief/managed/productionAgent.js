@@ -57,7 +57,7 @@ export function toolFingerprint(toolSpecs) {
 
 // Bump only when the protected system text changes. Personality presets do not
 // change this key, so they do not create another agent.
-export const CORE_INSTRUCTION_REVISION = "workspace-and-coding-handoff-v1";
+export const CORE_INSTRUCTION_REVISION = "workspace-and-coding-handoff-v2";
 
 export function agentKeyFor(toolSpecs) {
   const digest = createHash("sha256")
@@ -128,9 +128,9 @@ export function productionAgentBody({
       "Read the mounted memory store before answering. Project files and skills live there.",
       "Use the workspace tools for files and the custom tools for this user's accounts, schedule, and other CHIEF actions.",
       "A code explanation, a search, or a question about how the site works is not a decision. Do not write decisions.md, requirements.md, open-questions.md, or next-step.md for it.",
-      "Read a workspace file in this turn before changing it. A write that drops the existing text is refused unless the user asked to change that file.",
-      "When the user asks for a code change, call coding_task_submit once the consequential requirements are known. Cursor does the coding on a new branch and opens a pull request. Call coding_task_status with the returned task id to follow it.",
-      "Do not start a second coding task for the same requirements. Do not merge a pull request and do not deploy.",
+      "Read a workspace file in this turn before changing it. An unread replacement is restored afterward to the previous text. A concurrent edit that is not that replacement is kept.",
+      "When the user asks for a code change, call coding_task_submit once the consequential requirements are known. That tool asks Cursor to open a pull request on a new branch. Call coding_task_status with the returned task id to follow it.",
+      "Do not start a second coding task while one for the same requirements is unfinished. Pass new_attempt only when the user asks to try again after that task has finished or failed. Do not merge a pull request and do not deploy.",
       "If coding_task_submit says Cursor is not configured, say that and do not invent a task id, branch, check, or pull request.",
       "Long-running conversation state stays on this same session. The server resumes it. Record a coding task id in next-step.md only after you have read that file.",
       "Do not expect a pasted transcript from an older CHIEF runtime.",

@@ -1,7 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { planWorkspaceRestore, snapshotGuardedMemories } from "../server/chief/managed/workspaceGuard.js";
+import {
+  planWorkspaceRestore,
+  restoreWorkspaceWrites,
+  snapshotGuardedMemories,
+} from "../server/chief/managed/workspaceGuard.js";
 
 const PRIOR = "Decisions made for this user. Do not paste an old chat transcript.";
 const NOTES = "## Code access findings\nThe mode toggle was not in the bundle.";
@@ -104,4 +108,81 @@ test("a read in an earlier turn does not authorize a later replacement", () => {
     userText: "How much of the site can you see?",
   });
   assert.equal(plan.length, 1);
+});
+
+test("a restore puts back only the unsafe write and keeps a concurrent edit", async () => {
+  const events = [
+    { type: "user.message", id: "user_1" },
+    {
+      type: "agent.tool_use",
+      id: "write_1",
+      name: "write",
+      input: { file_path: "/decisions.md", content: NOTES },
+    },
+    { type: "agent.tool_result", tool_use_id: "write_1", is_error: false },
+  ];
+  const plan = planWorkspaceRestore({
+    snapshot: snapshot(),
+    events,
+    userText: "Can you see the site code?",
+  });
+  const updates = [];
+  const client = {
+    async listMemories() {
+      return [
+        {
+          id: "mem_decisions",
+          path: "/decisions.md",
+          content: "The user added a real decision while the reply was running.",
+          content_sha256: "b".repeat(64),
+        },
+      ];
+    },
+    async updateMemory() {
+      updates.push("update");
+    },
+  };
+  const preserved = await restoreWorkspaceWrites({
+    client,
+    memoryStoreId: "store",
+    snapshot: snapshot(),
+    events,
+    userText: "Can you see the site code?",
+  });
+  assert.equal(preserved[0].preserved, true);
+  assert.equal(updates.length, 0);
+  assert.equal(plan[0].writtenContent, NOTES);
+
+  let calls = 0;
+  const restoring = {
+    async listMemories() {
+      return [
+        {
+          id: "mem_decisions",
+          path: "/decisions.md",
+          content: NOTES,
+          content_sha256: "c".repeat(64),
+        },
+      ];
+    },
+    async updateMemory(_store, _id, body) {
+      calls += 1;
+      assert.equal(body.content, PRIOR);
+      assert.equal(body.precondition.content_sha256, "c".repeat(64));
+      if (calls === 1) {
+        const error = new Error("conflict");
+        error.status = 409;
+        throw error;
+      }
+    },
+  };
+  const conflict = await restoreWorkspaceWrites({
+    client: restoring,
+    memoryStoreId: "store",
+    snapshot: snapshot(),
+    events,
+    userText: "Can you see the site code?",
+  });
+  assert.equal(conflict[0].conflict, true);
+  assert.equal(calls, 1);
 });

@@ -30,6 +30,7 @@ test("the same requirements submit one Cursor task and a retry does not post aga
         assert.equal(sent.agentId, taskId);
         assert.equal(sent.repos[0].url, REPO);
         assert.equal(sent.repos[0].startingRef, "main");
+        assert.match(sent.prompt.text, /ready for review/);
         assert.match(sent.prompt.text, /Do not merge/);
         assert.match(sent.prompt.text, /Do not deploy/);
         assert.match(sent.prompt.text, /unresolved limitations/);
@@ -150,4 +151,99 @@ test("status returns the pull request, diff, and checks, and a missing key does 
   );
   assert.equal(toolResult.isError, true);
   assert.match(toolResult.output, /unsupported coding task argument/);
+});
+
+test("a restart reuses the unfinished task, and a new attempt waits until it finishes", async () => {
+  const requirements = "Add a comment to the response mode control.";
+  const agents = new Map();
+  const runs = new Map();
+  let posts = 0;
+  const fetchImpl = async (url, init) => {
+    const href = String(url);
+    if (init?.method === "POST") {
+      const sent = JSON.parse(init.body);
+      assert.equal(sent.autoCreatePR, true);
+      assert.equal(sent.workOnCurrentBranch, false);
+      if (agents.has(sent.agentId)) return json(409, { code: "agent_id_conflict" });
+      posts += 1;
+      const runId = `run-${posts}234567890`;
+      agents.set(sent.agentId, { id: sent.agentId, latestRunId: runId });
+      runs.set(runId, {
+        id: runId,
+        agentId: sent.agentId,
+        status: "RUNNING",
+        git: { branches: [] },
+      });
+      return json(200, {
+        agent: { id: sent.agentId, latestRunId: runId },
+        run: runs.get(runId),
+      });
+    }
+    const runMatch = href.match(/\/runs\/([^/?]+)/);
+    if (runMatch) {
+      const run = runs.get(decodeURIComponent(runMatch[1]));
+      return run ? json(200, run) : json(404, {});
+    }
+    const agentMatch = href.match(/\/v1\/agents\/([^/?]+)/);
+    const agent = agentMatch ? agents.get(decodeURIComponent(agentMatch[1])) : null;
+    return agent ? json(200, agent) : json(404, {});
+  };
+  const env = {
+    CURSOR_API_KEY: KEY,
+    CHIEF_CODE_REPOSITORY: "Freedomfarms/Forward-Freedom-Main",
+  };
+  const first = createCodingHandoff({ env, fetchImpl });
+  const second = createCodingHandoff({ env, fetchImpl });
+  const [left, right] = await Promise.all([
+    first.submit({ userId: "user-a", requirements }),
+    second.submit({ userId: "user-a", requirements }),
+  ]);
+  assert.equal(left.available, true);
+  assert.equal(right.available, true);
+  assert.equal(left.taskId, right.taskId);
+  assert.equal(agents.size, 1);
+  assert.equal(posts, 1);
+
+  const restarted = createCodingHandoff({ env, fetchImpl });
+  const again = await restarted.submit({ userId: "user-a", requirements });
+  assert.equal(again.duplicate, true);
+  assert.equal(again.taskId, left.taskId);
+  assert.equal(posts, 1);
+
+  const blocked = await restarted.submit({
+    userId: "user-a",
+    requirements,
+    newAttempt: true,
+  });
+  assert.equal(blocked.taskId, left.taskId);
+  assert.equal(posts, 1);
+  assert.match(blocked.limitations.join(" "), /still running/);
+
+  const run = runs.values().next().value;
+  run.status = "ERROR";
+  const held = await restarted.submit({ userId: "user-a", requirements });
+  assert.equal(held.duplicate, true);
+  assert.equal(held.taskId, left.taskId);
+  assert.equal(posts, 1);
+
+  const [retryA, retryB] = await Promise.all([
+    createCodingHandoff({ env, fetchImpl }).submit({
+      userId: "user-a",
+      requirements,
+      newAttempt: true,
+    }),
+    createCodingHandoff({ env, fetchImpl }).submit({
+      userId: "user-a",
+      requirements,
+      newAttempt: true,
+    }),
+  ]);
+  assert.equal(retryA.available, true);
+  assert.equal(retryB.available, true);
+  assert.equal(retryA.taskId, retryB.taskId);
+  assert.notEqual(retryA.taskId, left.taskId);
+  assert.equal(agents.size, 2);
+  assert.equal(posts, 2);
+  assert.equal(retryA.merged, false);
+  assert.equal(retryA.deployed, false);
 });

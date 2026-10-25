@@ -15,7 +15,7 @@ import {
 
 const UNAVAILABLE = "code intelligence is unavailable";
 const CHECKOUT_UNAVAILABLE =
-  "code intelligence is unavailable. This process is not a full site checkout, and no repository read credential is configured. An empty listing is not evidence that a file is missing.";
+  "code intelligence is unavailable. CHIEF_CODE_READ_TOKEN is not configured, so the repository was not searched. The deployed function bundle is not the repository. An empty listing is not evidence that a file is missing.";
 const PATH_UNAVAILABLE = "that path is not available";
 const INVALID_PATH = "invalid path";
 const INVALID_REF = "invalid ref";

@@ -1,7 +1,11 @@
-// CHIEF delegates coding to one Cursor cloud agent and stops at an open pull
-// request. This process does not merge, deploy, or write the repository.
-// The same requirements reuse one Cursor agent id so a retry does not start
-// a second coding job.
+// CHIEF review handoff. coding_task_submit calls this client, not
+// createExecutionRuntime. That executor keeps autoCreatePR false and cannot
+// open a pull request. This client sends autoCreatePR true, workOnCurrentBranch
+// false, and never calls merge or deploy.
+// One requirements text maps to one Cursor agent while that run is unfinished.
+// The id is derived from the user, the text, and an attempt number, so a
+// restarted process finds the same agent. A new attempt is created only when
+// the caller asks and the previous run has finished or failed.
 
 import { createHash } from "node:crypto";
 
@@ -10,7 +14,8 @@ import { isExactRepositoryUrl, isProtectedRepository, isTerminalStatus } from ".
 
 const BASE_URL = "https://api.cursor.com";
 const GITHUB_API = "https://api.github.com";
-const AGENT_ID = /^bc-[a-f0-9]{32}$/;
+const AGENT_ID = /^bc-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const MAX_ATTEMPT = 20;
 const API_KEY = /^[^\s]{8,512}$/;
 
 export function normalizeRequirements(value) {
@@ -40,21 +45,27 @@ export function allowlistFor(env = process.env) {
   return [repositoryUrlFor(env)];
 }
 
-export function taskAgentId(userId, requirements) {
+export function taskAgentId(userId, requirements, attempt = 0) {
   const digest = createHash("sha256")
     .update(String(userId || ""))
     .update("\0")
     .update(normalizeRequirements(requirements))
-    .digest("hex")
-    .slice(0, 32);
-  return `bc-${digest}`;
+    .update("\0")
+    .update(String(attempt))
+    .digest("hex");
+  const chars = digest.slice(0, 32).split("");
+  chars[12] = "4";
+  const variant = Number.parseInt(chars[16], 16);
+  chars[16] = ((variant & 0x3) | 0x8).toString(16);
+  const hex = chars.join("");
+  return `bc-${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 export function codingTaskPrompt(requirements) {
   return [
     normalizeRequirements(requirements),
     "",
-    "Open a pull request on a new branch.",
+    "Open a pull request on a new branch and mark it ready for review.",
     "Do not merge. Do not deploy. Do not push to the default branch.",
     "The pull request description must include what changed, why, the validation you ran and its results, and any unresolved limitations.",
   ].join("\n");
@@ -160,7 +171,7 @@ export function createCodingHandoff({
     }
   }
 
-  function view(run, { taskId, duplicate = false, requirements }) {
+  function view(run, { taskId, duplicate = false, requirements, attempt = 0 }) {
     const git = platformGit(run);
     const status = typeof run?.status === "string" ? run.status : "UNKNOWN";
     const pullRequestUrl = git.pullRequests[0] || null;
@@ -180,6 +191,7 @@ export function createCodingHandoff({
       status,
       terminal: isTerminalStatus(status),
       duplicate,
+      attempt: Number.isInteger(attempt) ? attempt : null,
       repositoryUrl,
       branch: git.branches[0] || null,
       pullRequestUrl,
@@ -302,9 +314,92 @@ export function createCodingHandoff({
     return { diff, checks: checkView };
   }
 
+  async function inspect(userId, text, attempt) {
+    const taskId = taskAgentId(userId, text, attempt);
+    if (!AGENT_ID.test(taskId)) return { error: "task_id_invalid", taskId, attempt };
+    const existing = await lookup(taskId);
+    if (existing.error) return { error: existing.error, taskId, attempt };
+    if (!existing.found) return { found: false, taskId, attempt };
+    const run = await readRun(taskId, existing.agent?.latestRunId);
+    return { found: true, taskId, attempt, agent: existing.agent, run };
+  }
+
+  async function latestAttempt(userId, text) {
+    let latest = null;
+    for (let attempt = 0; attempt <= MAX_ATTEMPT; attempt += 1) {
+      const inspected = await inspect(userId, text, attempt);
+      if (inspected.error) return inspected;
+      if (!inspected.found) return latest || inspected;
+      latest = inspected;
+      if (!isTerminalStatus(inspected.run?.status)) return latest;
+    }
+    return latest;
+  }
+
+  function seen(inspected, { duplicate, requirements, text }) {
+    const run = inspected.run || {
+      agentId: inspected.taskId,
+      id: inspected.agent?.latestRunId,
+      status: "UNKNOWN",
+    };
+    return view(run, {
+      taskId: inspected.taskId,
+      duplicate,
+      requirements: requirements || text,
+      attempt: inspected.attempt,
+    });
+  }
+
+  async function create(userId, text, attempt) {
+    const taskId = taskAgentId(userId, text, attempt);
+    if (!AGENT_ID.test(taskId)) return { available: false, error: "task_id_invalid" };
+    const created = await cursor("/v1/agents", {
+      method: "POST",
+      body: {
+        prompt: { text: codingTaskPrompt(text) },
+        repos: [{ url: repositoryUrl, startingRef: "main" }],
+        workOnCurrentBranch: false,
+        autoCreatePR: true,
+        agentId: taskId,
+      },
+    });
+    if (created.response.status === 409) {
+      const again = await inspect(userId, text, attempt);
+      const result = seen(
+        again.found ? again : { taskId, attempt, run: { agentId: taskId, status: "UNKNOWN" } },
+        { duplicate: true, text }
+      );
+      await remember(result);
+      return result;
+    }
+    if (!created.response.ok) {
+      return {
+        available: false,
+        error:
+          created.response.status === 401 || created.response.status === 403
+            ? "authentication_failed"
+            : "request_rejected",
+        taskId,
+        attempt,
+      };
+    }
+    const agentId = created.body?.agent?.id;
+    const runId = created.body?.run?.id;
+    const status = created.body?.run?.status;
+    if (agentId !== taskId || typeof runId !== "string" || typeof status !== "string") {
+      return { available: false, error: "response_invalid", taskId, attempt };
+    }
+    const result = view(
+      { ...created.body.run, agentId, result: created.body.run?.result },
+      { taskId, duplicate: false, requirements: text, attempt }
+    );
+    await remember(result);
+    return result;
+  }
+
   return {
     repositoryUrl,
-    async submit({ userId, requirements } = {}) {
+    async submit({ userId, requirements, newAttempt = false } = {}) {
       const text = normalizeRequirements(requirements);
       if (!userId || !text || text.length > 8000) {
         return { available: false, error: "requirements_invalid" };
@@ -327,69 +422,32 @@ export function createCodingHandoff({
       if (text.includes(key) || (token && text.includes(token))) {
         return { available: false, error: "requirements_invalid" };
       }
-      const taskId = taskAgentId(userId, text);
-      if (!AGENT_ID.test(taskId)) return { available: false, error: "task_id_invalid" };
-      const existing = await lookup(taskId);
-      if (existing.error) return { available: false, error: existing.error, taskId };
-      if (existing.found) {
-        const run = await readRun(taskId, existing.agent?.latestRunId);
-        const result = view(run || { agentId: taskId, id: existing.agent?.latestRunId, status: "UNKNOWN" }, {
-          taskId,
-          duplicate: true,
-          requirements: text,
-        });
-        await remember(result);
-        return result;
+      const latest = await latestAttempt(userId, text);
+      if (latest?.error) return { available: false, error: latest.error, taskId: latest.taskId };
+      if (latest?.found) {
+        const terminal = isTerminalStatus(latest.run?.status);
+        if (!newAttempt || !terminal) {
+          const result = seen(latest, { duplicate: true, text });
+          if (newAttempt && !terminal) {
+            result.limitations.push(
+              "The earlier task is still running, so a new attempt was not started."
+            );
+          }
+          await remember(result);
+          return result;
+        }
+        if (latest.attempt >= MAX_ATTEMPT) {
+          return { available: false, error: "attempt_limit", taskId: latest.taskId };
+        }
+        return create(userId, text, latest.attempt + 1);
       }
-      const created = await cursor("/v1/agents", {
-        method: "POST",
-        body: {
-          prompt: { text: codingTaskPrompt(text) },
-          repos: [{ url: repositoryUrl, startingRef: "main" }],
-          workOnCurrentBranch: false,
-          autoCreatePR: true,
-          agentId: taskId,
-        },
-      });
-      if (created.response.status === 409) {
-        const again = await lookup(taskId);
-        const run = again.found ? await readRun(taskId, again.agent?.latestRunId) : null;
-        const result = view(run || { agentId: taskId, status: "UNKNOWN" }, {
-          taskId,
-          duplicate: true,
-          requirements: text,
-        });
-        await remember(result);
-        return result;
-      }
-      if (!created.response.ok) {
-        return {
-          available: false,
-          error: created.response.status === 401 || created.response.status === 403
-            ? "authentication_failed"
-            : "request_rejected",
-          taskId,
-        };
-      }
-      const agentId = created.body?.agent?.id;
-      const runId = created.body?.run?.id;
-      const status = created.body?.run?.status;
-      if (agentId !== taskId || typeof runId !== "string" || typeof status !== "string") {
-        return { available: false, error: "response_invalid", taskId };
-      }
-      const result = view(
-        { ...created.body.run, agentId, result: created.body.run?.result },
-        { taskId, duplicate: false, requirements: text }
-      );
-      await remember(result);
-      return result;
+      return create(userId, text, latest?.attempt || 0);
     },
 
     async status({ userId, taskId, requirements } = {}) {
       const text = normalizeRequirements(requirements);
-      const id = AGENT_ID.test(taskId || "") ? taskId : text && userId ? taskAgentId(userId, text) : "";
-      if (!AGENT_ID.test(id)) return { available: false, error: "task_id_invalid" };
       if (!key) {
+        const id = AGENT_ID.test(taskId || "") ? taskId : "";
         return {
           available: false,
           missing: "CURSOR_API_KEY",
@@ -397,21 +455,31 @@ export function createCodingHandoff({
           taskId: id,
         };
       }
-      const existing = await lookup(id);
-      if (existing.error) return { available: false, error: existing.error, taskId: id };
-      if (!existing.found) return { available: false, error: "task_not_found", taskId: id };
-      const run = await readRun(id, existing.agent?.latestRunId);
-      const result = view(run || { agentId: id, id: existing.agent?.latestRunId, status: "UNKNOWN" }, {
-        taskId: id,
-        duplicate: false,
-      });
-      const branch = result.branch;
-      const reviewed = await review(branch);
+      let inspected;
+      if (AGENT_ID.test(taskId || "")) {
+        const existing = await lookup(taskId);
+        if (existing.error) return { available: false, error: existing.error, taskId };
+        if (!existing.found) return { available: false, error: "task_not_found", taskId };
+        const run = await readRun(taskId, existing.agent?.latestRunId);
+        inspected = { found: true, taskId, attempt: null, agent: existing.agent, run };
+      } else if (text && userId) {
+        inspected = await latestAttempt(userId, text);
+        if (inspected?.error) return { available: false, error: inspected.error, taskId: inspected.taskId };
+        if (!inspected?.found) return { available: false, error: "task_not_found", taskId: inspected?.taskId };
+      } else {
+        return { available: false, error: "task_id_invalid" };
+      }
+      const result = seen(inspected, { duplicate: false, requirements: text });
+      const reviewed = await review(result.branch);
       result.diff = reviewed.diff;
       result.checks = reviewed.checks;
       if (reviewed.checks?.available) {
         const failing = (reviewed.checks.runs || []).filter(
-          (item) => item.conclusion && item.conclusion !== "success" && item.conclusion !== "skipped" && item.conclusion !== "neutral"
+          (item) =>
+            item.conclusion &&
+            item.conclusion !== "success" &&
+            item.conclusion !== "skipped" &&
+            item.conclusion !== "neutral"
         );
         if (failing.length) result.limitations.push("One or more checks did not succeed.");
       }

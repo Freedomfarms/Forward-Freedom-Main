@@ -247,6 +247,10 @@ test("missing configuration and unsafe commands never reach the API", async () =
     "scope_rejected"
   );
   await expectCode(
+    execution.submit(command({ autoCreatePR: true }), ACTOR),
+    "scope_rejected"
+  );
+  await expectCode(
     execution.submit(command({ provider: "grokbot" }), ACTOR),
     "provider_unsupported"
   );

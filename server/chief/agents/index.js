@@ -2,6 +2,8 @@
 // createAgentRuntime is the read path. grokbot is connected there.
 // createExecutionRuntime is the command path. cursor-cloud is connected there.
 // The two contracts are not interchangeable.
+// coding_task_submit does not use this executor. That handoff is the review
+// path and is the one that asks Cursor to open a pull request.
 
 import { agentContextReader } from "./context.js";
 import { assertReadRuntime } from "./contract.js";
