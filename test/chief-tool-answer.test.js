@@ -15,7 +15,9 @@ import {
   initialTurnState,
   isSpeakableTurn,
   MISSING_CHIEF_ANSWER,
+  restoredChiefTurn,
 } from "../src/utils/chiefProtocol.js";
+import { currentTurn } from "../src/utils/chiefRoom.js";
 import { classifySettledDelivery, replySpeechText } from "../src/utils/chiefReplySpeech.js";
 
 function mockResponse() {
@@ -384,4 +386,181 @@ test("an end_turn with no assistant text is a failed turn, not a spoken success"
     }).action,
     "pending"
   );
+
+  client.hooks.onSend = (session, events) => {
+    const text = (events || []).find((event) => event.type === "user.message")?.content?.[0]?.text;
+    session.events.push({
+      id: "answer-why",
+      type: "agent.message",
+      content: [{ type: "text", text: "I am unsure what reached you." }],
+    });
+    session.events.push({
+      id: "idle-why",
+      type: "session.status_idle",
+      stop_reason: { type: "end_turn" },
+    });
+    session.status = "idle";
+    session.lastPrompt = text;
+  };
+  const follow = mockResponse();
+  await handleChiefChat(
+    request(messageBody("q2", "What did that mean? Why did you say that response?", sessionId)),
+    follow.response,
+    {
+      store,
+      client,
+      authenticate: auth,
+      toolExecutor: { async execute() {} },
+      sleepFn: async () => {},
+    }
+  );
+  assert.match(client.session.lastPrompt, /No assistant answer was shown/);
+  assert.match(client.session.lastPrompt, new RegExp(MISSING_CHIEF_ANSWER.replace(/[.]/g, "\\.")));
+  assert.match(client.session.lastPrompt, /What did that mean\? Why did you say that response\?/);
+  assert.equal(client.session.lastPrompt.includes("too technical"), false);
+  const explained = projectInteractiveHistory(await store.load("user-1", sessionId));
+  assert.equal(
+    explained.messages.at(-2).text,
+    "What did that mean? Why did you say that response?"
+  );
+  assert.equal(explained.messages.at(-1).text, "I am unsure what reached you.");
+  assert.equal(explained.turnStatus, "completed");
+  assert.equal(JSON.stringify(explained.messages).includes("Application notice"), false);
+});
+
+test("a provider refusal is a failed turn and does not keep the client polling", async () => {
+  const store = new MemoryCheckpointStore();
+  const client = resourceClient();
+  client.hooks.onCreate = (session) => {
+    session.events.push({
+      id: "idle-refusal",
+      type: "session.status_idle",
+      stop_reason: { type: "refusal" },
+    });
+    session.status = "idle";
+  };
+  const http = mockResponse();
+  await handleChiefChat(request(messageBody("q1", "Question 1")), http.response, {
+    store,
+    client,
+    authenticate: auth,
+    toolExecutor: { async execute() {} },
+    budgetMs: 1000,
+    sleepFn: async () => {},
+  });
+  const events = frames(http.chunks);
+  assert.equal(events.at(-1).msg.status, "failed");
+  assert.equal(
+    events.some((event) => event.msg?.type === "error" && /declined/.test(event.msg.message)),
+    true
+  );
+  const sessionId = events.at(-1).msg.session_id;
+  const history = projectInteractiveHistory(await store.load("user-1", sessionId));
+  assert.equal(history.turnStatus, "failed");
+  assert.match(history.turnError, /declined/);
+  const restored = restoredChiefTurn({
+    messages: history.messages,
+    turnStatus: history.turnStatus,
+    heldPrompt: "Question 2",
+    turnError: history.turnError,
+  });
+  assert.equal(restored.follow, false);
+  assert.equal(restored.status, CHIEF_STATUS.ERROR);
+  assert.equal(restored.heldPrompt, "Question 2");
+  assert.equal(isSpeakableTurn("failed"), false);
+});
+
+test("code and web tools pause until the answer, across ten paired turns", async () => {
+  const store = new MemoryCheckpointStore();
+  const client = resourceClient();
+  const calls = [];
+  const toolFor = {
+    3: "code_read",
+    4: "code_search",
+    5: "code_tree",
+    6: "web_search",
+  };
+  function finish(session, n) {
+    session.events.push({
+      id: `answer-${n}`,
+      type: "agent.message",
+      content: [{ type: "text", text: `Answer ${n}` }],
+    });
+    session.events.push({
+      id: `idle-${n}`,
+      type: "session.status_idle",
+      stop_reason: { type: "end_turn" },
+    });
+    session.status = "idle";
+  }
+  client.hooks.onCreate = (session) => finish(session, 1);
+  client.hooks.onSend = (session, events) => {
+    const result = (events || []).find((event) => event.type === "user.custom_tool_result");
+    if (result) {
+      finish(session, session.pending);
+      return;
+    }
+    const text = (events || []).find((event) => event.type === "user.message")?.content?.[0]?.text;
+    const n = Number(String(text).replace("Question ", ""));
+    const tool = toolFor[n];
+    if (tool) {
+      session.pending = n;
+      session.events.push({
+        id: `tool-${n}`,
+        type: "agent.custom_tool_use",
+        name: tool === "web_search" ? "chief_web_search" : tool,
+        input: { path: "src/App.jsx", query: "site shell" },
+      });
+      session.events.push({
+        id: `pause-${n}`,
+        type: "session.status_idle",
+        stop_reason: { type: "requires_action", event_ids: [`tool-${n}`] },
+      });
+      session.status = "idle";
+      return;
+    }
+    finish(session, n);
+  };
+  let sessionId = null;
+  for (let n = 1; n <= 10; n += 1) {
+    const http = mockResponse();
+    await handleChiefChat(
+      request(messageBody(`q${n}`, `Question ${n}`, sessionId)),
+      http.response,
+      {
+        store,
+        client,
+        authenticate: auth,
+        toolExecutor: {
+          async execute(call) {
+            calls.push(call.name);
+            return { output: `checked ${call.name}`, isError: false };
+          },
+        },
+        toolSpecs: ["code_read", "code_search", "code_tree", "web_search"].map((name) => ({
+          name,
+          requiresConfirmation: false,
+        })),
+        budgetMs: 1000,
+        sleepFn: async () => {},
+      }
+    );
+    const events = frames(http.chunks);
+    assert.equal(events.at(-1).msg.status, "completed", `turn ${n}`);
+    assert.equal(deltas(events), `Answer ${n}`, `turn ${n}`);
+    sessionId = events.at(-1).msg.session_id;
+  }
+  assert.deepEqual(calls, ["code_read", "code_search", "code_tree", "web_search"]);
+  const history = projectInteractiveHistory(await store.load("user-1", sessionId));
+  const pairs = [];
+  for (let n = 1; n <= 10; n += 1)
+    pairs.push(["user", `Question ${n}`], ["assistant", `Answer ${n}`]);
+  assert.deepEqual(
+    history.messages.map((message) => [message.role, message.text]),
+    pairs
+  );
+  const view = currentTurn(history.messages);
+  assert.equal(view.userLine, "Question 10");
+  assert.equal(view.answer, "Answer 10");
+  assert.equal(client.sent.filter((item) => item.agent).length, 1);
 });

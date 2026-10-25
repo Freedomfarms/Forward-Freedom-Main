@@ -110,17 +110,18 @@ export function restoredChiefTurn({
 } = {}) {
   const held = typeof heldPrompt === "string" ? heldPrompt.trim() : "";
   const live = isActiveChiefTurn(turnStatus);
-  const missing =
-    turnStatus === "empty"
-      ? (typeof turnError === "string" && turnError.trim()) || MISSING_CHIEF_ANSWER
-      : "";
+  const missingStatus = turnStatus === "empty" || turnStatus === "failed" ? turnStatus : "";
+  const missing = missingStatus
+    ? (typeof turnError === "string" && turnError.trim()) ||
+      (missingStatus === "failed" ? "CHIEF could not finish that response." : MISSING_CHIEF_ANSWER)
+    : "";
   return {
     messages: Array.isArray(messages) ? messages : [],
-    turnStatus: live ? turnStatus : held ? "continuing" : missing ? "empty" : "",
-    status: live || held ? CHIEF_STATUS.WORKING : missing ? CHIEF_STATUS.ERROR : CHIEF_STATUS.READY,
+    turnStatus: live ? turnStatus : missing ? missingStatus : held ? "continuing" : "",
+    status: missing ? CHIEF_STATUS.ERROR : live || held ? CHIEF_STATUS.WORKING : CHIEF_STATUS.READY,
     streamText: "",
     error: missing,
-    follow: (live || Boolean(held)) && !missing,
+    follow: !missing && (live || Boolean(held)),
     heldPrompt: held,
   };
 }
@@ -134,7 +135,8 @@ export function isSpeakableTurn(turnStatus) {
     turnStatus !== "suspended" &&
     turnStatus !== "aborted" &&
     turnStatus !== "rejected" &&
-    turnStatus !== "empty"
+    turnStatus !== "empty" &&
+    turnStatus !== "failed"
   );
 }
 
@@ -244,7 +246,7 @@ export function applyChiefEvent(state, event) {
       const turnStatus = typeof msg.status === "string" ? msg.status : null;
       const suspended = turnStatus === "suspended";
       const active = isActiveChiefTurn(turnStatus);
-      const missing = turnStatus === "empty";
+      const missing = turnStatus === "empty" || turnStatus === "failed";
       return {
         ...state,
         sessionId: sessionIdFrom(msg, state.sessionId),

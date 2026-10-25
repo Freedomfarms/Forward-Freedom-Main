@@ -117,12 +117,28 @@ export function currentTurn(messages, streamText = "") {
     if (assistantIndex === -1 && visible[index].role === "assistant") assistantIndex = index;
   }
   const userLine = userIndex === -1 ? "" : visible[userIndex].text;
-  const storedAnswer = assistantIndex > userIndex ? visible[assistantIndex].text : "";
+  const answerIndexes = [];
+  if (userIndex !== -1) {
+    for (let index = userIndex + 1; index < visible.length; index += 1) {
+      if (visible[index].role === "assistant") answerIndexes.push(index);
+    }
+  }
+  const storedParts = answerIndexes.map((index) => visible[index].text.trim()).filter(Boolean);
+  const storedAnswer =
+    userIndex === -1
+      ? assistantIndex > userIndex
+        ? visible[assistantIndex].text
+        : ""
+      : storedParts.join("\n\n");
   const streaming = typeof streamText === "string" && streamText.length > 0;
   const answer = streaming ? streamText : storedAnswer;
   const hidden = new Set();
   if (userIndex !== -1) hidden.add(userIndex);
-  if (!streaming && assistantIndex > userIndex) hidden.add(assistantIndex);
+  if (userIndex !== -1) {
+    for (const index of answerIndexes) hidden.add(index);
+  } else if (!streaming && assistantIndex > userIndex) {
+    hidden.add(assistantIndex);
+  }
   return {
     userLine,
     answer,

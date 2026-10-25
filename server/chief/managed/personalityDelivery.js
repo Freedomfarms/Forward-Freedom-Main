@@ -50,6 +50,22 @@ export function fittedPersonalityGuidance(value) {
   return { personality, guidance, instructions: `${head}${guidance}` };
 }
 
+// The previous turn failed before the user saw an assistant answer. The next
+// provider prompt carries that fact once. The saved transcript keeps the
+// user's words only, so the model cannot explain a reply that was not shown.
+export function undeliveredTurnPrompt(providerPrompt, turnError) {
+  const notice = typeof turnError === "string" ? turnError.trim() : "";
+  const text = typeof providerPrompt === "string" ? providerPrompt : "";
+  if (!notice) return text;
+  return [
+    "Application notice about the previous turn. Do not quote this note, and do not treat it as a separate request.",
+    `No assistant answer was shown to the user. The interface showed: ${notice}`,
+    "That sentence was not your reply. If the user asks about it, say you are unsure what reached them. Do not invent a cause.",
+    "User message:",
+    text,
+  ].join("\n\n");
+}
+
 export function steeredUserPrompt(guidance, userText) {
   return [
     "Saved conversational preference update. Apply it to the user message below.",

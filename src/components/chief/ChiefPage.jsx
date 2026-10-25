@@ -619,6 +619,7 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
     }
     speechEpoch.current += 1;
     const epoch = speechEpoch.current;
+    const turnPreferences = preferencesRef.current;
     speakOnSettleRef.current = false;
     setSpeechStopped(false);
     voice.clearSpeechError();
@@ -781,7 +782,7 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
         aborted: !maySpeak,
         source,
         turnStatus: turn.turnStatus,
-        preferences: preferencesRef.current,
+        preferences: turnPreferences,
       };
       const settled =
         turn.finished === true &&
@@ -793,7 +794,7 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
         isSpeakableTurn(turn.turnStatus);
       const plan = classifySettledDelivery({
         answer: answerForReveal,
-        speak: settled && maySpeak && shouldSpeakReply({ preferences: preferencesRef.current }),
+        speak: settled && maySpeak && shouldSpeakReply({ preferences: turnPreferences }),
         settled,
       });
       if (plan.action === "missing_answer") {
@@ -1035,9 +1036,16 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
     const result = await voice.speakAnswer(answer);
     if (speechEpoch.current !== epoch) return;
     setStatus(CHIEF_STATUS.READY);
-    if (result?.ok) return;
+    const played = classifySettledDelivery({
+      answer,
+      speak: true,
+      settled: true,
+      playback: result,
+    });
+    if (played.action === "spoken") return;
     revealStoredAnswer(answer);
-    if (result?.reason === "aborted") setSpeechStopped(true);
+    if (played.action === "stopped") setSpeechStopped(true);
+    else if (played.message) voice.reportSpeechError(played.message);
   }
 
   const fieldStatus = user ? status : CHIEF_STATUS.READY;

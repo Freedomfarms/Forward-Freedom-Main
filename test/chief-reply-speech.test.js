@@ -201,6 +201,8 @@ test("the home path stops speech without starting the microphone", () => {
   assert.match(voice, /setPlayback\("preparing"\)/);
   assert.match(voice, /fetchChiefSpeech/);
   assert.match(page, /stopSpeaking\(\{ preserveHold: true \}\)/);
+  assert.match(page, /const turnPreferences = preferencesRef\.current/);
+  assert.match(page, /preferences: turnPreferences/);
   assert.doesNotMatch(page, /finished without text to speak/);
   assert.match(page, /classifySettledDelivery/);
 });

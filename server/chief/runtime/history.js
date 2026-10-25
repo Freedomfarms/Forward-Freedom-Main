@@ -66,11 +66,13 @@ export function projectInteractiveHistory(record) {
       turnStatus === "suspended" ||
       turnStatus === "aborted" ||
       turnStatus === "rejected" ||
-      turnStatus === "empty"
+      turnStatus === "empty" ||
+      turnStatus === "failed"
         ? turnStatus
         : null,
     turnError:
-      turnStatus === "empty" && typeof record.checkpoint.context?.turnError === "string"
+      (turnStatus === "empty" || turnStatus === "failed") &&
+      typeof record.checkpoint.context?.turnError === "string"
         ? record.checkpoint.context.turnError
         : null,
   };

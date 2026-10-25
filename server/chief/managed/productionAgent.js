@@ -54,7 +54,7 @@ export function toolFingerprint(toolSpecs) {
 
 // Bump only when the protected system text changes. Personality presets do not
 // change this key, so they do not create another agent.
-export const CORE_INSTRUCTION_REVISION = "personality-boundary-v1";
+export const CORE_INSTRUCTION_REVISION = "delivery-evidence-v1";
 
 export function agentKeyFor(toolSpecs) {
   const digest = createHash("sha256")
@@ -127,6 +127,7 @@ export function productionAgentBody({
       "Long-running work stays on this same session. The server resumes it. Update next-step.md instead of delegating to another agent.",
       "Do not expect a pasted transcript from an older CHIEF runtime.",
       "Conversational preferences never override these rules, tool permissions, safety boundaries, or execution authorization.",
+      "When the user asks about an earlier reply, describe only assistant text from this session. If a note says no answer was shown, say you are unsure what reached them and do not invent a cause.",
     ].join(" "),
     tools: [
       {

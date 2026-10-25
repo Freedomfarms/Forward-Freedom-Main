@@ -590,6 +590,41 @@ test("reply playback fails fast when the audio context never starts", async () =
   assert.ok(Date.now() - started < 1000);
 });
 
+test("playback that leaves the running state is not reported as spoken", async () => {
+  const body = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new Uint8Array([1, 0, 2, 0]));
+      controller.close();
+    },
+  });
+  const audioContext = {
+    state: "running",
+    currentTime: 0,
+    sampleRate: 24000,
+    destination: {},
+    resume() {
+      return Promise.resolve();
+    },
+    createBuffer(_channels, length, rate) {
+      return { duration: length / rate, copyToChannel() {} };
+    },
+    createBufferSource() {
+      return {
+        connect() {},
+        start() {
+          audioContext.state = "suspended";
+        },
+        stop() {},
+      };
+    },
+  };
+  await assert.rejects(
+    playPcmStream(body, { audioContext }),
+    (error) => error?.code === "playback_blocked"
+  );
+  assert.equal(audioContext.state, "suspended");
+});
+
 test("reply playback uses a running audio context", async () => {
   const body = new ReadableStream({
     start(controller) {
