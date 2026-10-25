@@ -8,6 +8,7 @@ import { freedomFinancialAccessCopy } from "../../utils/freedomFinancialAccessCo
 import { writeChiefPreferences } from "../../utils/chiefPreferences.js";
 import { voiceConnectionLabel } from "../../utils/chiefVoiceStatus.js";
 import { ChiefContextShare } from "./ChiefContextShare.jsx";
+import { ChiefPersonalitySettings } from "./ChiefPersonalitySettings.jsx";
 import { ChiefExternalArchive } from "./ChiefExternalArchive.jsx";
 import { ChiefResponseMode } from "./ChiefResponseMode.jsx";
 import { ChiefSettingsExtras } from "./ChiefSettingsExtras.jsx";
@@ -21,6 +22,7 @@ import {
 const CHIEF_SETTINGS_SECTIONS = Object.freeze([
   Object.freeze(["voice", "Voice"]),
   Object.freeze(["brain", "AI / Brain"]),
+  Object.freeze(["personality", "Personality"]),
   Object.freeze(["conversation", "Conversation"]),
   Object.freeze(["archive", "Imported chats"]),
   Object.freeze(["share", "Share context"]),
@@ -491,6 +493,10 @@ export function ChiefSettings({
                 </p>
               )}
             </>
+          ) : null}
+
+          {section === "personality" ? (
+            <ChiefPersonalitySettings user={user} active={open && section === "personality"} />
           ) : null}
 
           {section === "archive" ? (
