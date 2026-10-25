@@ -7,10 +7,20 @@ import path from "node:path";
 
 import { CODE_LIMITS, isProtectedPath, readCodeConfig } from "../codeintel/policy.js";
 
-const SKIP_DIRS = new Set(["node_modules", ".git", "dist", "coverage"]);
+const SKIP_DIRS = new Set([
+  "node_modules",
+  ".git",
+  "dist",
+  "coverage",
+  "___vc",
+  ".v8-cache",
+  ".vercel",
+]);
 const MARKER = path.join("server", "chief", "codeintel", "policy.js");
+const FRONTEND_MARKER = path.join("src", "components", "chief", "ChiefResponseMode.jsx");
 const SEARCH_READ_BYTES = 200_000;
-const SEARCH_VISIT_MAX = 400;
+// The repository has more files before src/ than an early cap can visit.
+const SEARCH_VISIT_MAX = 8_000;
 
 function usableDirectory(candidate) {
   if (!candidate) return null;
@@ -21,12 +31,39 @@ function usableDirectory(candidate) {
   }
 }
 
+function deploymentBundle(candidate) {
+  return (
+    existsSync(path.join(candidate, "___vc")) || existsSync(path.join(candidate, ".v8-cache"))
+  );
+}
+
+// A Vercel function bundle contains CHIEF's server modules and omits the
+// site UI. Treating that directory as the repository made code_search report
+// that frontend files were absent.
+function incompleteAppCheckout(candidate) {
+  return (
+    existsSync(path.join(candidate, MARKER)) && !existsSync(path.join(candidate, FRONTEND_MARKER))
+  );
+}
+
+export function rejectedCodeRoot(candidate) {
+  if (!candidate) return true;
+  return deploymentBundle(candidate) || incompleteAppCheckout(candidate);
+}
+
 export function resolveLocalCodeRoot(env = process.env) {
   const configured =
     typeof env?.CHIEF_CODE_LOCAL_ROOT === "string" ? env.CHIEF_CODE_LOCAL_ROOT.trim() : "";
-  if (configured) return usableDirectory(configured);
+  if (configured) {
+    const dir = usableDirectory(configured);
+    if (!dir || rejectedCodeRoot(dir)) return null;
+    return dir;
+  }
   const cwd = process.cwd();
-  if (existsSync(path.join(cwd, MARKER))) return usableDirectory(cwd);
+  if (rejectedCodeRoot(cwd)) return null;
+  if (existsSync(path.join(cwd, MARKER)) && existsSync(path.join(cwd, FRONTEND_MARKER))) {
+    return usableDirectory(cwd);
+  }
   return null;
 }
 
@@ -81,7 +118,7 @@ export function createLocalCodeReader({ root, repository } = {}) {
           return;
         }
         if (rel) entries.push({ path: posix, type: "tree" });
-        for (const name of names) {
+        for (const name of names.sort((left, right) => left.localeCompare(right))) {
           if (!rel && SKIP_DIRS.has(name)) continue;
           await visit(rel ? path.join(rel, name) : name);
         }

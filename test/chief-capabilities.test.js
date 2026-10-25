@@ -28,6 +28,7 @@ test("capability wire values match upstream, plus the CHIEF-only labels", () => 
   assert.equal(Capability.CONVERSATION_READ, "conversation:read");
   assert.equal(Capability.WORKFORCE_READ, "workforce:read");
   assert.equal(Capability.CODE_READ, "code:read");
+  assert.equal(Capability.CODING_HANDOFF, "coding:handoff");
   const upstream = new Set([
     "file:read",
     "file:write",
@@ -64,7 +65,8 @@ test("capability wire values match upstream, plus the CHIEF-only labels", () => 
   assert.equal(values.has("data:read"), true);
   assert.equal(values.has("data:write"), true);
   assert.equal(values.has("workforce:read"), true);
-  assert.equal(values.size, upstream.size + 22);
+  assert.equal(values.has("coding:handoff"), true);
+  assert.equal(values.size, upstream.size + 23);
   assert.equal(isCapability("file:read"), true);
   assert.equal(isCapability("finance:read"), true);
   assert.equal(isCapability("skill:read"), true);

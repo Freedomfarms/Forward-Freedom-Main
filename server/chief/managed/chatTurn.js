@@ -27,6 +27,7 @@ import {
 import { providerErrorFields } from "./redact.js";
 import { createPrismaWorkQueue } from "./workQueue.js";
 import { syncPersonalityMemory } from "../personality/memory.js";
+import { captureWorkspaceSnapshot, restoreWorkspaceWrites } from "./workspaceGuard.js";
 import { readChiefPersonality } from "../personality/store.js";
 import {
   fittedPersonalityGuidance,
@@ -474,7 +475,16 @@ async function ensureResources({ client, userId, toolSpecs, bindings, managed })
   return next;
 }
 
-async function executeTool({ toolExecutor, call, userId, sessionId, approved, caller }) {
+async function executeTool({
+  toolExecutor,
+  call,
+  userId,
+  sessionId,
+  approved,
+  caller,
+  memoryStoreId,
+  memoryClient,
+}) {
   if (!toolExecutor) {
     return { output: `Tool ${call.name} is not available.`, isError: true };
   }
@@ -486,6 +496,8 @@ async function executeTool({ toolExecutor, call, userId, sessionId, approved, ca
       agentId: "chief",
       mutationApproved: approved === true,
       caller: caller || { kind: "user_turn", trigger: "turn" },
+      memoryStoreId,
+      memoryClient,
     }
   );
   const output =
@@ -509,6 +521,7 @@ async function collect({
   resolveToolId,
   caller,
   store,
+  memoryStoreId,
 }) {
   const seen = new Set(checkpoint.context.seenEventIds || []);
   const deadline = Date.now() + budgetMs;
@@ -523,6 +536,25 @@ async function collect({
     }
     const session = await client.retrieveSession(providerSessionId);
     const events = (await client.listEvents(providerSessionId)) || [];
+    if (checkpoint.context?.workspaceSnapshot && memoryStoreId) {
+      const userText = [...(checkpoint.transcript || [])]
+        .reverse()
+        .find((item) => item?.role === "user")?.content;
+      try {
+        const applied = await restoreWorkspaceWrites({
+          client,
+          memoryStoreId,
+          snapshot: checkpoint.context.workspaceSnapshot,
+          events,
+          userText,
+        });
+        const done = new Set(checkpoint.context.workspaceRestored || []);
+        for (const item of applied) done.add(item.writeEventId);
+        checkpoint.context.workspaceRestored = [...done];
+      } catch (error) {
+        console.error("[chief/workspace] restore", error?.status || error?.code || "failed");
+      }
+    }
     for (const event of events) {
       if (event?.type !== "agent.message") continue;
       const eventId =
@@ -594,6 +626,8 @@ async function collect({
             sessionId,
             approved: spec?.requiresConfirmation === true,
             caller,
+            memoryStoreId,
+            memoryClient: client,
           });
       onEmit(
         eventMsg.toolCallEnd({
@@ -1006,6 +1040,10 @@ export async function runManagedChiefTurn({
       ? undeliveredTurnPrompt(delivery.providerPrompt, priorError)
       : delivery.providerPrompt;
     checkpoint.context.heldPrompts = heldPrompts(checkpoint).filter((item) => item !== text);
+    if (managed.memoryStoreId) {
+      const snapshot = await captureWorkspaceSnapshot(client, managed.memoryStoreId);
+      if (snapshot) checkpoint.context.workspaceSnapshot = snapshot;
+    }
     try {
       await openOrContinue({
         client,
@@ -1111,6 +1149,7 @@ export async function runManagedChiefTurn({
           resolveToolId,
           caller: scheduleCaller,
           store,
+          memoryStoreId: managed.memoryStoreId,
         });
         if (status !== "completed" || !heldPrompts(checkpoint).length) break;
         if (Date.now() - startedAt >= budgetMs) {

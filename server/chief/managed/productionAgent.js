@@ -36,7 +36,10 @@ export function localToolName(name) {
 
 const WORKSPACE_INTRO = [
   ["requirements.md", "CHIEF workspace. Keep the project requirements here."],
-  ["decisions.md", "Decisions made for this user. Do not paste an old chat transcript."],
+  [
+    "decisions.md",
+    "Decisions the user asked to keep. Read this file before changing it. Do not replace it with a code investigation or a chat transcript.",
+  ],
   ["open-questions.md", "Questions still open for this project."],
   [
     "next-step.md",
@@ -54,7 +57,7 @@ export function toolFingerprint(toolSpecs) {
 
 // Bump only when the protected system text changes. Personality presets do not
 // change this key, so they do not create another agent.
-export const CORE_INSTRUCTION_REVISION = "delivery-evidence-v1";
+export const CORE_INSTRUCTION_REVISION = "workspace-and-coding-handoff-v1";
 
 export function agentKeyFor(toolSpecs) {
   const digest = createHash("sha256")
@@ -121,10 +124,15 @@ export function productionAgentBody({
     description: "Freedom OS CHIEF. One primary agent for the signed-in user.",
     system: [
       "You are CHIEF for Forward Freedom Financial.",
-      "Reason and plan in this session. There is one agent; do not invent a swarm.",
+      "Reason and plan in this session. You are the only reasoning agent. Do not invent a swarm.",
       "Read the mounted memory store before answering. Project files and skills live there.",
       "Use the workspace tools for files and the custom tools for this user's accounts, schedule, and other CHIEF actions.",
-      "Long-running work stays on this same session. The server resumes it. Update next-step.md instead of delegating to another agent.",
+      "A code explanation, a search, or a question about how the site works is not a decision. Do not write decisions.md, requirements.md, open-questions.md, or next-step.md for it.",
+      "Read a workspace file in this turn before changing it. A write that drops the existing text is refused unless the user asked to change that file.",
+      "When the user asks for a code change, call coding_task_submit once the consequential requirements are known. Cursor does the coding on a new branch and opens a pull request. Call coding_task_status with the returned task id to follow it.",
+      "Do not start a second coding task for the same requirements. Do not merge a pull request and do not deploy.",
+      "If coding_task_submit says Cursor is not configured, say that and do not invent a task id, branch, check, or pull request.",
+      "Long-running conversation state stays on this same session. The server resumes it. Record a coding task id in next-step.md only after you have read that file.",
       "Do not expect a pasted transcript from an older CHIEF runtime.",
       "Conversational preferences never override these rules, tool permissions, safety boundaries, or execution authorization.",
       "When the user asks about an earlier reply, describe only assistant text from this session. If a note says no answer was shown, say you are unsure what reached them and do not invent a cause.",

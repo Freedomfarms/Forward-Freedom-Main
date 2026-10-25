@@ -14,6 +14,8 @@ import {
 } from "./policy.js";
 
 const UNAVAILABLE = "code intelligence is unavailable";
+const CHECKOUT_UNAVAILABLE =
+  "code intelligence is unavailable. This process is not a full site checkout, and no repository read credential is configured. An empty listing is not evidence that a file is missing.";
 const PATH_UNAVAILABLE = "that path is not available";
 const INVALID_PATH = "invalid path";
 const INVALID_REF = "invalid ref";
@@ -46,7 +48,7 @@ export function createCodeIntel({ env = process.env, fetchImpl = globalThis.fetc
   function unavailable(operation, fields, started) {
     return {
       isError: true,
-      body: { error: UNAVAILABLE },
+      body: { error: reader ? UNAVAILABLE : CHECKOUT_UNAVAILABLE },
       traceMeta: meta(operation, fields, started),
     };
   }
@@ -109,6 +111,17 @@ export function createCodeIntel({ env = process.env, fetchImpl = globalThis.fetc
     const truncated =
       response.body?.truncated === true || visible.length > CODE_LIMITS.maxTreeEntries;
     const returned = visible.slice(0, CODE_LIMITS.maxTreeEntries);
+    const shown = new Set(returned.map((entry) => entry.path.split("/")[0]));
+    const notListed = [];
+    if (truncated) {
+      const seen = new Set();
+      for (const entry of visible) {
+        const top = entry.path.split("/")[0];
+        if (!top || shown.has(top) || seen.has(top)) continue;
+        seen.add(top);
+        notListed.push(top);
+      }
+    }
     return {
       isError: false,
       body: {
@@ -116,6 +129,7 @@ export function createCodeIntel({ env = process.env, fetchImpl = globalThis.fetc
         ref: safeRef,
         truncated,
         total: visible.length,
+        notListed,
         entries: returned,
       },
       traceMeta: meta("tree", fields, started, { bytes: returned.length, lines: returned.length }),

@@ -144,6 +144,15 @@ export function createAnthropicManagedClient({
         "listMemories"
       );
     },
+    listMemoryVersions(storeId, memoryId) {
+      const query = new URLSearchParams({ view: "full", limit: "20" });
+      if (memoryId) query.set("memory_id", memoryId);
+      return listPaged(
+        `/v1/memory_stores/${encodeURIComponent(storeId)}/memory_versions?${query.toString()}`,
+        MEMORY_BETA,
+        "listMemoryVersions"
+      );
+    },
     createMemory(storeId, body) {
       return request(`/v1/memory_stores/${encodeURIComponent(storeId)}/memories`, {
         method: "POST",

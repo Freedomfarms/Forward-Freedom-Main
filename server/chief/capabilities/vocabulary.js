@@ -181,6 +181,17 @@ export function builtInCapabilities() {
       summary: "Change this user's timezone.",
     }),
     entry({
+      id: "coding:handoff",
+      kind: "action",
+      effect: "external",
+      grant: Capability.CODING_HANDOFF,
+      tools: ["coding_task_submit", "coding_task_status"],
+      confirmation: "none",
+      readiness: "coding",
+      summary:
+        "Send one coding change to Cursor and read the task, branch, checks, diff, and pull request. This does not merge or deploy.",
+    }),
+    entry({
       id: "code:read",
       kind: "read",
       effect: "read",
