@@ -7,10 +7,9 @@ const MIN_SAMPLES = 2400;
 const RESUME_LIMIT_MS = 300;
 
 function playbackBlocked() {
-  return Object.assign(
-    new Error("CHIEF could not play that response. Click the page, then use Play response."),
-    { code: "playback_blocked" }
-  );
+  return Object.assign(new Error("Playback is blocked. Tap Play response to hear this answer."), {
+    code: "playback_blocked",
+  });
 }
 
 // A click that only calls resume() does not keep audio unlocked until a reply
@@ -67,6 +66,7 @@ export function holdAudioContext(audioContext) {
 export async function ensureAudioRunning(audioContext) {
   if (!audioContext) return false;
   if (audioContext.state === "running") return true;
+  if (audioContext.state !== "suspended" && audioContext.state !== "interrupted") return false;
   if (typeof audioContext.resume !== "function") return false;
   let timer = null;
   try {

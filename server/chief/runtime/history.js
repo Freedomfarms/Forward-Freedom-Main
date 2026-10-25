@@ -65,8 +65,13 @@ export function projectInteractiveHistory(record) {
       turnStatus === "completed" ||
       turnStatus === "suspended" ||
       turnStatus === "aborted" ||
-      turnStatus === "rejected"
+      turnStatus === "rejected" ||
+      turnStatus === "empty"
         ? turnStatus
+        : null,
+    turnError:
+      turnStatus === "empty" && typeof record.checkpoint.context?.turnError === "string"
+        ? record.checkpoint.context.turnError
         : null,
   };
 }

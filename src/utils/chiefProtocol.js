@@ -7,6 +7,8 @@
 
 const FINANCE_TOOLS = new Set(["finance_summary", "workspace_plan_summary"]);
 
+export const MISSING_CHIEF_ANSWER = "CHIEF did not return an answer.";
+
 export const CHIEF_STATUS = Object.freeze({
   READY: "Ready",
   WORKING: "Working",
@@ -98,17 +100,27 @@ export function acceptChiefSubmission({ busy = false, turnStatus = "", text = ""
 }
 
 // Navigation mounts a fresh page. The saved conversation is the source of
-// truth: a local error does not survive, and an unfinished turn is followed.
-export function restoredChiefTurn({ messages, turnStatus = "", heldPrompt = "" } = {}) {
+// truth: an unfinished turn is followed, and a settled turn with no answer
+// keeps that failure.
+export function restoredChiefTurn({
+  messages,
+  turnStatus = "",
+  heldPrompt = "",
+  turnError = "",
+} = {}) {
   const held = typeof heldPrompt === "string" ? heldPrompt.trim() : "";
   const live = isActiveChiefTurn(turnStatus);
+  const missing =
+    turnStatus === "empty"
+      ? (typeof turnError === "string" && turnError.trim()) || MISSING_CHIEF_ANSWER
+      : "";
   return {
     messages: Array.isArray(messages) ? messages : [],
-    turnStatus: live ? turnStatus : held ? "continuing" : "",
-    status: live || held ? CHIEF_STATUS.WORKING : CHIEF_STATUS.READY,
+    turnStatus: live ? turnStatus : held ? "continuing" : missing ? "empty" : "",
+    status: live || held ? CHIEF_STATUS.WORKING : missing ? CHIEF_STATUS.ERROR : CHIEF_STATUS.READY,
     streamText: "",
-    error: "",
-    follow: live || Boolean(held),
+    error: missing,
+    follow: (live || Boolean(held)) && !missing,
     heldPrompt: held,
   };
 }
@@ -121,7 +133,8 @@ export function isSpeakableTurn(turnStatus) {
     turnStatus !== "running" &&
     turnStatus !== "suspended" &&
     turnStatus !== "aborted" &&
-    turnStatus !== "rejected"
+    turnStatus !== "rejected" &&
+    turnStatus !== "empty"
   );
 }
 
@@ -231,17 +244,21 @@ export function applyChiefEvent(state, event) {
       const turnStatus = typeof msg.status === "string" ? msg.status : null;
       const suspended = turnStatus === "suspended";
       const active = isActiveChiefTurn(turnStatus);
+      const missing = turnStatus === "empty";
       return {
         ...state,
         sessionId: sessionIdFrom(msg, state.sessionId),
         turnStatus,
-        status: suspended
-          ? CHIEF_STATUS.APPROVAL
-          : active
-            ? state.streamText
-              ? CHIEF_STATUS.RESPONDING
-              : CHIEF_STATUS.WORKING
-            : CHIEF_STATUS.READY,
+        status: missing
+          ? CHIEF_STATUS.ERROR
+          : suspended
+            ? CHIEF_STATUS.APPROVAL
+            : active
+              ? state.streamText
+                ? CHIEF_STATUS.RESPONDING
+                : CHIEF_STATUS.WORKING
+              : CHIEF_STATUS.READY,
+        error: missing ? state.error || MISSING_CHIEF_ANSWER : state.error,
         finished: !suspended && !active,
         approval: suspended ? state.approval : null,
       };

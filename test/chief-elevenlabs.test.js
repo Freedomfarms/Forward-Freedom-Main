@@ -553,6 +553,20 @@ test("a saved voice survives a catalog that has no free-plan replacement", () =>
   assert.equal(speechVoiceId("picked", "saved"), "picked");
 });
 
+test("an interrupted audio context is resumed before playback", async () => {
+  let resumed = false;
+  const audioContext = {
+    state: "interrupted",
+    resume() {
+      resumed = true;
+      this.state = "running";
+      return Promise.resolve();
+    },
+  };
+  assert.equal(await ensureAudioRunning(audioContext), true);
+  assert.equal(resumed, true);
+});
+
 test("reply playback fails fast when the audio context never starts", async () => {
   const body = new ReadableStream({
     start(controller) {

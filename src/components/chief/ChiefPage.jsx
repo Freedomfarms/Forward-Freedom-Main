@@ -40,7 +40,8 @@ import {
   shouldSpeakReply,
   writeChiefPreferences,
 } from "../../utils/chiefPreferences.js";
-import { speakCompletedReply } from "../../utils/chiefReplySpeech.js";
+import { classifySettledDelivery, speakCompletedReply } from "../../utils/chiefReplySpeech.js";
+import { isSpeakableTurn } from "../../utils/chiefProtocol.js";
 import {
   CHIEF_FOLLOW_CONNECTION,
   canAutoSpeak,
@@ -231,13 +232,14 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
           messages: payload?.messages,
           turnStatus: payload?.turnStatus,
           heldPrompt: payload?.heldPrompt,
+          turnError: payload?.turnError,
         });
         setMessages(restored.messages);
         setModelRoute(typeof payload?.modelRoute === "string" ? payload.modelRoute : null);
         const pending = await fetchChiefPendingApproval(user, sessionId).catch(() => null);
         if (token !== generation.current) return;
         setApproval(pending);
-        setTurnError("");
+        setTurnError(restored.error || "");
         setTurnStatus(restored.turnStatus);
         setStatus(pending ? CHIEF_STATUS.APPROVAL : restored.status);
         setStreamText("");
@@ -621,7 +623,7 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
     setSpeechStopped(false);
     voice.clearSpeechError();
     voice.stopListening();
-    voice.stopSpeaking(source === "voice" ? { preserveHold: true } : undefined);
+    voice.stopSpeaking({ preserveHold: true });
     voice.ensureAudio();
     try {
       if (archivedSessions.some((session) => session.sessionId === sessionId)) {
@@ -781,19 +783,28 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
         turnStatus: turn.turnStatus,
         preferences: preferencesRef.current,
       };
-      const delivery = maySpeak ? speakCompletedReply(voice, speechInput) : null;
+      const settled =
+        turn.finished === true &&
+        !turn.error &&
+        turn.status !== CHIEF_STATUS.ERROR &&
+        !turn.approval &&
+        turn.turnStatus !== "suspended" &&
+        !isActiveChiefTurn(turn.turnStatus) &&
+        isSpeakableTurn(turn.turnStatus);
+      const plan = classifySettledDelivery({
+        answer: answerForReveal,
+        speak: settled && maySpeak && shouldSpeakReply({ preferences: preferencesRef.current }),
+        settled,
+      });
+      if (plan.action === "missing_answer") {
+        setTurnError(plan.message);
+        setStatus(CHIEF_STATUS.ERROR);
+        voice.clearSpeechError();
+        releaseBusy();
+        return;
+      }
+      const delivery = plan.action === "speak" ? speakCompletedReply(voice, speechInput) : null;
       if (!delivery?.pending) {
-        if (
-          maySpeak &&
-          turn.finished === true &&
-          !turn.error &&
-          turn.status !== CHIEF_STATUS.ERROR &&
-          shouldSpeakReply({ preferences: preferencesRef.current }) &&
-          !answerForReveal &&
-          !isActiveChiefTurn(turn.turnStatus)
-        ) {
-          voice.reportSpeechError("CHIEF finished without text to speak.");
-        }
         if (!isActiveChiefTurn(turn.turnStatus) && turn.status !== CHIEF_STATUS.ERROR) {
           if (turn.turnStatus !== "suspended" && !turn.approval) setStatus(CHIEF_STATUS.READY);
         }
@@ -809,9 +820,16 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
       }
       releaseBusy();
       setStatus(CHIEF_STATUS.READY);
-      if (result?.ok) return;
-      if (answerForReveal) revealStoredAnswer(answerForReveal, sessionIdNow);
-      if (result?.reason === "aborted") setSpeechStopped(true);
+      const played = classifySettledDelivery({
+        answer: answerForReveal,
+        speak: true,
+        settled: true,
+        playback: result,
+      });
+      if (played.action === "spoken") return;
+      if (played.text) revealStoredAnswer(played.text, sessionIdNow);
+      if (played.action === "stopped") setSpeechStopped(true);
+      else if (played.message) voice.reportSpeechError(played.message);
     } finally {
       if (speechEpoch.current === epoch) voice.releaseAudioHold?.();
     }

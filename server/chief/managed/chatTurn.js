@@ -33,6 +33,7 @@ import {
   normalizeChiefPersonality,
   personalityDigest,
 } from "../../../src/utils/chiefPersonality.js";
+import { MISSING_CHIEF_ANSWER } from "../../../src/utils/chiefProtocol.js";
 import { SCHEDULED_TURN_EXCLUDED_TOOLS } from "../tools/inventory.js";
 
 const LEGACY_MESSAGE =
@@ -253,23 +254,48 @@ function freshProviderEvents(events, baselineIds) {
   return fresh;
 }
 
-// A turn is done only when the provider is idle now AND this turn has seen
-// activity that was not already in the log before its prompt was sent.
+function stopReasonType(event) {
+  const reason = event?.stop_reason;
+  if (!reason) return "";
+  if (typeof reason === "string") return reason;
+  return typeof reason.type === "string" ? reason.type : "";
+}
+
+function latestIdleEvent(events) {
+  let idle = null;
+  for (const event of events || []) {
+    if (event?.type === "session.status_idle" || event?.type === "session.status_idled") {
+      idle = event;
+    }
+  }
+  return idle;
+}
+
+function turnHasAssistantAnswer(checkpoint) {
+  const transcript = checkpoint?.transcript || [];
+  for (let index = transcript.length - 1; index >= 0; index -= 1) {
+    const message = transcript[index];
+    if (message?.role === "user") return false;
+    if (message?.role === "assistant" && String(message.content || "").trim()) return true;
+  }
+  return false;
+}
+
+// A turn is done when the provider is idle for this turn's own end_turn.
 // listEvents returns the whole session, so an older session.status_idle must
-// not finish the question that was just submitted.
+// not finish the question that was just submitted. A custom tool pauses the
+// session with stop_reason requires_action; that idle is not the answer, even
+// after the session has already been seen running.
 function currentTurnSettled(events, watch, session) {
   if (!sessionIsIdle(session)) return false;
-  if (watch?.sawRunning === true) return true;
-  return freshProviderEvents(events, watch?.baselineIds).some((event) => {
-    const type = event?.type;
-    return (
-      type === "agent.message" ||
-      type === "agent.custom_tool_use" ||
-      type === "session.status_idle" ||
-      type === "session.status_idled" ||
-      type === "session.status_running"
-    );
-  });
+  const fresh = freshProviderEvents(events, watch?.baselineIds);
+  const idle = latestIdleEvent(fresh);
+  if (!idle) return false;
+  const reason = stopReasonType(idle);
+  if (reason === "requires_action") return false;
+  if (reason === "end_turn") return true;
+  if (reason !== "") return false;
+  return watch?.sawRunning === true || fresh.some((event) => event?.type === "agent.message");
 }
 
 function previousTurnInFlight(checkpoint) {
@@ -591,7 +617,7 @@ async function collect({
         modelSteps: (checkpoint.executionStats?.modelSteps ?? 0) + 1,
         toolCalls: checkpoint.executionStats?.toolCalls ?? 0,
       };
-      return "completed";
+      return turnHasAssistantAnswer(checkpoint) ? "completed" : "empty";
     }
     if (Date.now() >= deadline) break;
     await sleepFn(400);
@@ -1083,6 +1109,11 @@ export async function runManagedChiefTurn({
     if (heldPrompts(checkpoint).length && status === "completed") status = "continuing";
     checkpoint.context.managed = managed;
     rememberTurnStatus(checkpoint, status);
+    if (status === "completed") {
+      if (checkpoint.context.turnError) checkpoint.context.turnError = "";
+    } else if (status === "empty") {
+      checkpoint.context.turnError = MISSING_CHIEF_ANSWER;
+    }
     await persistCheckpoint(store, userId, record.id, checkpoint);
     await persistThread(threadStore, userId, record.id, managed, status);
     leaseStatus = status;
@@ -1096,6 +1127,14 @@ export async function runManagedChiefTurn({
     }
     if (status === "completed") {
       emit(eventMsg.turnComplete(turnWatchOf(checkpoint)?.turnId || turnId));
+    } else if (status === "empty") {
+      emit(
+        eventMsg.error({
+          kind: "empty",
+          message: MISSING_CHIEF_ANSWER,
+          retryable: false,
+        })
+      );
     }
     return { sessionId: record.id, status, checkpoint };
   } finally {

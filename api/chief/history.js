@@ -50,6 +50,7 @@ export async function handleChiefHistory(request, response, deps = {}) {
     messages: history.messages,
     heldPrompt: history.heldPrompt ?? null,
     turnStatus: history.turnStatus ?? null,
+    turnError: history.turnError ?? null,
   });
 }
 

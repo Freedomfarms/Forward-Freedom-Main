@@ -153,7 +153,9 @@ export function useChiefVoice({ user, sessionUid, onTranscript }) {
     if (!audioCtxRef.current || audioCtxRef.current.state === "closed") {
       audioCtxRef.current = new Ctx();
     }
-    if (audioCtxRef.current.state === "suspended") void audioCtxRef.current.resume();
+    if (audioCtxRef.current.state === "suspended" || audioCtxRef.current.state === "interrupted") {
+      void audioCtxRef.current.resume();
+    }
     return audioCtxRef.current;
   }, []);
 
@@ -294,7 +296,7 @@ export function useChiefVoice({ user, sessionUid, onTranscript }) {
         }
         const message = error?.message || "CHIEF could not speak that response.";
         setSpeechError(message);
-        return { ok: false, reason: "error", error: message };
+        return { ok: false, reason: "error", error: message, code: error?.code || "" };
       } finally {
         if (!stale()) releaseAudioHold();
         if (speakAbortRef.current === controller) {
