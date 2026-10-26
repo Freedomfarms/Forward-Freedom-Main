@@ -139,24 +139,28 @@ test("one cap cannot fund two reserves, and the same operation reuses its hold",
 
     const unknown = await attributeActual({
       client,
+      userId: "user-a",
       operationId: "approval-1",
       actualUsd: null,
     });
     assert.equal(unknown.reason, "unknown_cost");
     const raised = await attributeActual({
       client,
+      userId: "user-a",
       operationId: "approval-1",
       actualUsd: 0.9,
     });
     assert.equal(raised.ok, true);
     const lowered = await attributeActual({
       client,
+      userId: "user-a",
       operationId: "approval-1",
       actualUsd: 0.1,
     });
     assert.equal(lowered.reason, "below_estimate");
     const operator = await attributeActual({
       client,
+      userId: "user-a",
       operationId: "approval-1",
       actualUsd: 0.1,
       operator: true,
@@ -166,7 +170,7 @@ test("one cap cannot fund two reserves, and the same operation reuses its hold",
     await client.query(
       `UPDATE "chief_budget_hold" SET "actualUsd" = NULL, "operatorAdjusted" = false`
     );
-    const released = await releaseHold({ client, operationId: "approval-1" });
+    const released = await releaseHold({ client, userId: "user-a", operationId: "approval-1" });
     assert.equal(released.ok, true);
     const afterRelease = await reserveHold({
       client,
@@ -177,6 +181,59 @@ test("one cap cannot fund two reserves, and the same operation reuses its hold",
       estimateUsd: 0.75,
     });
     assert.equal(afterRelease.ok, true);
+  });
+});
+
+test("another user cannot reuse, release, or reprice a hold", async () => {
+  await withBudgetDb(async (client) => {
+    await client.query(readFileSync(MIGRATION, "utf8"));
+    await client.query(
+      `INSERT INTO "chief_budget" ("id", "userId", "scope", "periodType", "capUsd") VALUES
+        ('cap-a', 'user-a', 'cursor', 'run', 1),
+        ('cap-b', 'user-b', 'cursor', 'run', 1)`
+    );
+    const reserved = await reserveHold({
+      client,
+      userId: "user-a",
+      operationId: "approval-shared",
+      estimateUsd: 0.75,
+    });
+    assert.equal(reserved.ok, true);
+    const stolen = await reserveHold({
+      client,
+      userId: "user-b",
+      operationId: "approval-shared",
+      estimateUsd: 0.75,
+    });
+    assert.equal(stolen.ok, false);
+    assert.equal(stolen.code, "budget_unverified");
+    const released = await releaseHold({
+      client,
+      userId: "user-b",
+      operationId: "approval-shared",
+    });
+    assert.equal(released.ok, false);
+    const repriced = await attributeActual({
+      client,
+      userId: "user-b",
+      operationId: "approval-shared",
+      actualUsd: 5,
+    });
+    assert.equal(repriced.ok, false);
+    const separate = await reserveHold({
+      client,
+      userId: "user-b",
+      operationId: "approval-b",
+      estimateUsd: 0.75,
+    });
+    assert.equal(separate.ok, true);
+    const rows = await client.query(
+      `SELECT "userId", "releasedAt", "actualUsd" FROM "chief_budget_hold" WHERE "operationId" = 'approval-shared'`
+    );
+    assert.equal(rows.rowCount, 1);
+    assert.equal(rows.rows[0].userId, "user-a");
+    assert.equal(rows.rows[0].releasedAt, null);
+    assert.equal(rows.rows[0].actualUsd, null);
   });
 });
 
