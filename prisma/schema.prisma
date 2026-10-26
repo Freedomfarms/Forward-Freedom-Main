@@ -151,6 +151,7 @@ model User {
   chiefCapabilityGrants   ChiefCapabilityGrant[]
   chiefAuditLogs          ChiefAuditLog[]
   chiefBudgets            ChiefBudget[]
+  chiefWorkspaceDocuments ChiefWorkspaceDocument[]
   externalConversations   ExternalConversation[]
   externalMessages        ExternalMessage[]
   externalCaptureCredential ExternalCaptureCredential?
@@ -1242,6 +1243,26 @@ model ChiefBudgetHold {
 
   @@index([userId, scope, periodType])
   @@map("chief_budget_hold")
+}
+
+// Guarded workspace files. Postgres is authoritative. An Anthropic memory
+// store is a recoverable copy of these rows plus accepted facts. A deleted
+// row stays so recovery does not recreate the file. No embedding column.
+model ChiefWorkspaceDocument {
+  id                String    @id @default(cuid())
+  userId            String
+  path              String
+  revision          Int       @default(0)
+  contentSha256     String
+  contentCiphertext String
+  deletedAt         DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, path])
+  @@index([userId, updatedAt])
+  @@map("chief_workspace_document")
 }
 
 // Original transcript imported from a native Claude or ChatGPT export.
