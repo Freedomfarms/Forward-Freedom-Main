@@ -320,10 +320,12 @@ export function guardedMemoryFiles(plan) {
 export async function publishWorkingFile(
   client,
   memoryStoreId,
-  { path, content, previousSha = null, force = false } = {}
+  { path, content, previousSha = null, force = false, listed = null } = {}
 ) {
-  const listed = (await client.listMemories(memoryStoreId)) || [];
-  const current = listed.find((item) => memoryPath(item?.path) === path);
+  const memories = Array.isArray(listed)
+    ? listed
+    : (await client.listMemories(memoryStoreId)) || [];
+  const current = memories.find((item) => memoryPath(item?.path) === path);
   const nextSha = sha256Text(content);
   if (!current) {
     try {

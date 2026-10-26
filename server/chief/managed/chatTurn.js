@@ -27,8 +27,8 @@ import { providerErrorFields } from "./redact.js";
 import { createPrismaWorkQueue } from "./workQueue.js";
 import { syncPersonalityMemory } from "../personality/memory.js";
 import {
-  captureWorkspaceSnapshot,
   restoreWorkspaceWrites,
+  snapshotGuardedMemories,
   workspaceFileName,
 } from "./workspaceGuard.js";
 import { readChiefPersonality } from "../personality/store.js";
@@ -620,22 +620,17 @@ async function ensureResources({
     await seedWorkspace(client, memory.id, authority?.available ? authority.plan : null);
   }
   let acceptedFactsSha = newStore ? null : managed?.acceptedFactsSha || null;
-  if (authority?.available && typeof client.listMemories === "function") {
-    const factsFile = authority.plan.files.find((item) => item.path === ACCEPTED_FACTS_PATH);
-    try {
-      const published = await publishWorkingFile(client, memory.id, {
+  const factsFile = authority?.available
+    ? authority.plan.files.find((item) => item.path === ACCEPTED_FACTS_PATH)
+    : null;
+  const pendingFacts = factsFile
+    ? {
         path: ACCEPTED_FACTS_PATH,
         content: factsFile.content,
         previousSha: acceptedFactsSha,
         force: newStore || !managed?.providerSessionId,
-      });
-      if (!published.preserved && published.sha) acceptedFactsSha = published.sha;
-    } catch (error) {
-      if (!quietWorkspaceError(error)) {
-        console.error("[chief/workspace] facts", error?.status || error?.code || "failed");
       }
-    }
-  }
+    : null;
   const next = {
     agentId: agent.id,
     agentVersion,
@@ -647,6 +642,7 @@ async function ensureResources({
     personalityDigest: managed?.personalityDigest || null,
     workspaceSeeded: true,
     acceptedFactsSha,
+    pendingFacts,
   };
   if (bindings) {
     try {
@@ -743,7 +739,8 @@ async function collect({
       } catch (error) {
         console.error("[chief/workspace] restore", error?.status || error?.code || "failed");
       }
-      if (documentStore && checkpoint.context.workspaceBaseHashes) {
+      const baseHashes = checkpoint.context.workspaceBaseHashes;
+      if (documentStore && baseHashes && Object.keys(baseHashes).length > 0) {
         try {
           const listed = (await client.listMemories(memoryStoreId)) || [];
           const signature = listed
@@ -758,7 +755,7 @@ async function collect({
             await commitGuardedDocuments({
               store: documentStore,
               userId,
-              baseHashes: checkpoint.context.workspaceBaseHashes,
+              baseHashes,
               memories: listed,
             });
             checkpoint.context.workspaceCommittedSignature = signature;
@@ -1270,8 +1267,27 @@ export async function runManagedChiefTurn({
       : delivery.providerPrompt;
     checkpoint.context.heldPrompts = heldPrompts(checkpoint).filter((item) => item !== text);
     if (managed.memoryStoreId) {
-      const snapshot = await captureWorkspaceSnapshot(client, managed.memoryStoreId);
-      if (snapshot) checkpoint.context.workspaceSnapshot = snapshot;
+      let listed = null;
+      try {
+        listed = (await client.listMemories(managed.memoryStoreId)) || [];
+        checkpoint.context.workspaceSnapshot = snapshotGuardedMemories(listed);
+      } catch {
+        // A failed listing leaves the previous snapshot in place.
+      }
+      if (listed && managed.pendingFacts) {
+        try {
+          const published = await publishWorkingFile(client, managed.memoryStoreId, {
+            ...managed.pendingFacts,
+            listed,
+          });
+          if (!published.preserved && published.sha) managed.acceptedFactsSha = published.sha;
+          managed.pendingFacts = null;
+        } catch (error) {
+          if (!quietWorkspaceError(error)) {
+            console.error("[chief/workspace] facts", error?.status || error?.code || "failed");
+          }
+        }
+      }
       try {
         const rows = await documents.list(userId);
         const hashes = {};
