@@ -11,6 +11,8 @@
 // agent passes its budget. CHIEF keeps that event type (server/chief/core/events.js)
 // and raises BudgetExceededError from this module so the caller can emit it.
 
+import { randomUUID } from "node:crypto";
+
 import { withUserContext } from "../../db/prisma.js";
 
 export class BudgetExceededError extends Error {
@@ -197,4 +199,181 @@ export class PrismaBudgetStore {
     if (trip) throw exceededError(trip, trip.spentUsd, 0);
     return views;
   }
+}
+
+// Unknown Cursor cost stays at this estimate. actualUsd is left null until a
+// numeric cost arrives, and it is never stored as 0 to mean "unknown".
+export const CURSOR_RUN_ESTIMATE_USD = 1;
+
+const UNVERIFIED = Object.freeze({ ok: false, code: "budget_unverified" });
+
+function asEstimate(value) {
+  if (value == null) return CURSOR_RUN_ESTIMATE_USD;
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : null;
+}
+
+async function readRows(query, text, params) {
+  const result = await query(text, params);
+  if (Array.isArray(result)) return result;
+  return result?.rows || [];
+}
+
+const EXPOSURE_SQL = `
+  SELECT COALESCE(SUM(
+    CASE
+      WHEN "operatorAdjusted" THEN COALESCE("actualUsd", "estimateUsd")
+      WHEN "actualUsd" IS NULL THEN "estimateUsd"
+      WHEN "actualUsd" > "estimateUsd" THEN "actualUsd"
+      ELSE "estimateUsd"
+    END
+  ), 0) AS exposure
+  FROM "chief_budget_hold"
+  WHERE "userId" = $1 AND "scope" = $2 AND "periodType" = $3 AND "releasedAt" IS NULL
+`;
+
+async function reserveInside(db, input) {
+  const userId = typeof input.userId === "string" ? input.userId.trim() : "";
+  const operationId = typeof input.operationId === "string" ? input.operationId.trim() : "";
+  const scope = input.scope || "cursor";
+  const periodType = input.periodType || "run";
+  const estimate = asEstimate(input.estimateUsd);
+  if (!userId || !operationId || estimate == null) return { ...UNVERIFIED };
+  const caps = await db.read(
+    `SELECT "id", "capUsd" FROM "chief_budget" WHERE "userId" = $1 AND "scope" = $2 AND "periodType" = $3 FOR UPDATE`,
+    [userId, scope, periodType]
+  );
+  if (caps.length !== 1) return { ...UNVERIFIED };
+  const existing = await db.read(
+    `SELECT "id", "operationId", "estimateUsd", "actualUsd", "releasedAt" FROM "chief_budget_hold" WHERE "operationId" = $1 FOR UPDATE`,
+    [operationId]
+  );
+  if (existing.length === 1) {
+    if (existing[0].releasedAt) return { ok: false, code: "hold_released", reused: true };
+    return { ok: true, reused: true, hold: existing[0] };
+  }
+  const exposureRows = await db.read(EXPOSURE_SQL, [userId, scope, periodType]);
+  const exposure = Number(exposureRows[0]?.exposure || 0);
+  const cap = Number(caps[0].capUsd);
+  if (exposure + estimate > cap + 1e-9) return { ok: false, code: "budget_exceeded" };
+  const id = `hold_${randomUUID()}`;
+  await db.write(
+    `INSERT INTO "chief_budget_hold"
+      ("id", "userId", "operationId", "scope", "periodType", "estimateUsd", "actualUsd", "operatorAdjusted", "createdAt", "updatedAt")
+     VALUES ($1, $2, $3, $4, $5, $6, NULL, false, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+    [id, userId, operationId, scope, periodType, estimate]
+  );
+  return {
+    ok: true,
+    reused: false,
+    hold: { id, operationId, estimateUsd: estimate, actualUsd: null },
+  };
+}
+
+function pgDb(connection) {
+  return {
+    read: async (text, params) =>
+      readRows((sql, values) => connection.query(sql, values), text, params),
+    write: (text, params) => connection.query(text, params),
+  };
+}
+
+async function withSqlClient(client, run) {
+  if (!client?.query) return { ...UNVERIFIED };
+  const owned = typeof client.totalCount === "number";
+  let connection = client;
+  try {
+    if (owned) connection = await client.connect();
+    await connection.query("BEGIN");
+    const outcome = await run(pgDb(connection));
+    if (!outcome?.ok) {
+      await connection.query("ROLLBACK");
+      return outcome || { ...UNVERIFIED };
+    }
+    await connection.query("COMMIT");
+    return outcome;
+  } catch {
+    await connection.query("ROLLBACK").catch(() => {});
+    return { ...UNVERIFIED };
+  } finally {
+    if (owned && connection !== client) connection.release();
+  }
+}
+
+export async function reserveHold(input = {}) {
+  return withSqlClient(input.client, (query) => reserveInside(query, input));
+}
+
+export async function releaseHold(input = {}) {
+  return withSqlClient(input.client, async (db) => {
+    const operationId = typeof input.operationId === "string" ? input.operationId.trim() : "";
+    if (!operationId) return { ...UNVERIFIED };
+    await db.write(
+      `UPDATE "chief_budget_hold" SET "releasedAt" = CURRENT_TIMESTAMP, "updatedAt" = CURRENT_TIMESTAMP WHERE "operationId" = $1 AND "releasedAt" IS NULL`,
+      [operationId]
+    );
+    return { ok: true, released: true, operationId };
+  });
+}
+
+export async function attributeActual(input = {}) {
+  return withSqlClient(input.client, async (db) => {
+    const operationId = typeof input.operationId === "string" ? input.operationId.trim() : "";
+    if (!operationId) return { ...UNVERIFIED };
+    if (input.actualUsd == null || !Number.isFinite(Number(input.actualUsd))) {
+      return { ok: true, unchanged: true, reason: "unknown_cost" };
+    }
+    const actual = Number(input.actualUsd);
+    const rows = await db.read(
+      `SELECT "id", "estimateUsd", "actualUsd" FROM "chief_budget_hold" WHERE "operationId" = $1 FOR UPDATE`,
+      [operationId]
+    );
+    if (rows.length !== 1) return { ...UNVERIFIED };
+    const estimate = Number(rows[0].estimateUsd);
+    if (actual + 1e-9 < estimate && input.operator !== true) {
+      return { ok: true, unchanged: true, reason: "below_estimate" };
+    }
+    const operatorAdjusted = input.operator === true && actual + 1e-9 < estimate;
+    await db.write(
+      `UPDATE "chief_budget_hold" SET "actualUsd" = $2, "operatorAdjusted" = $3, "updatedAt" = CURRENT_TIMESTAMP WHERE "operationId" = $1`,
+      [operationId, actual, operatorAdjusted]
+    );
+    return { ok: true, actualUsd: actual, operatorAdjusted };
+  });
+}
+
+function prismaDb(tx) {
+  return {
+    read: (text, params) => tx.$queryRawUnsafe(text, ...(params || [])),
+    write: (text, params) => tx.$executeRawUnsafe(text, ...(params || [])),
+  };
+}
+
+export function createPrismaReserveHold(withUser = withUserContext) {
+  return async (input) => {
+    try {
+      return await withUser(input.userId, (tx) => reserveInside(prismaDb(tx), input));
+    } catch {
+      return { ...UNVERIFIED };
+    }
+  };
+}
+
+export function createPrismaReleaseHold(withUser = withUserContext) {
+  return async (input) => {
+    const operationId = typeof input.operationId === "string" ? input.operationId.trim() : "";
+    if (!input.userId || !operationId) return { ...UNVERIFIED };
+    try {
+      await withUser(input.userId, (tx) =>
+        tx.$executeRawUnsafe(
+          `UPDATE "chief_budget_hold" SET "releasedAt" = CURRENT_TIMESTAMP, "updatedAt" = CURRENT_TIMESTAMP WHERE "operationId" = $1 AND "releasedAt" IS NULL AND "userId" = $2`,
+          operationId,
+          input.userId
+        )
+      );
+      return { ok: true, released: true, operationId };
+    } catch {
+      return { ...UNVERIFIED };
+    }
+  };
 }

@@ -1225,6 +1225,25 @@ model ChiefBudget {
   @@map("chief_budget")
 }
 
+// A reservation against ChiefBudget. No foreign key: the migration stays a
+// new table, and a missing cap row refuses the spend instead of cascading.
+model ChiefBudgetHold {
+  id                String    @id @default(cuid())
+  userId            String    @default("")
+  operationId       String    @unique @default("")
+  scope             String    @default("cursor")
+  periodType        String    @default("run")
+  estimateUsd       Decimal   @default(0) @db.Decimal(12, 6)
+  actualUsd         Decimal?  @db.Decimal(12, 6)
+  operatorAdjusted  Boolean   @default(false)
+  releasedAt        DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @default(now()) @updatedAt
+
+  @@index([userId, scope, periodType])
+  @@map("chief_budget_hold")
+}
+
 // Original transcript imported from a native Claude or ChatGPT export.
 // This is not a ChiefSession and it does not create a TurnMachine checkpoint.
 // Message bodies and titles are envelope-encrypted. recallDocument is a

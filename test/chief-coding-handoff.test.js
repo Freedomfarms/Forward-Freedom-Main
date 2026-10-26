@@ -287,6 +287,7 @@ test("a lost coding create keeps one agent id and does not post again", async ()
       return json(404, { code: "not_found" });
     },
     ledger: store,
+    reserveHold: async () => ({ ok: true, hold: { id: "hold-test" } }),
   });
   const first = await tool.execute({ requirements: REQUIREMENTS }, approvedContext(store));
   assert.equal(first.isError, true);
@@ -402,6 +403,7 @@ test("merge or deploy is rejected and a non-coding create cannot open a pull req
     apiKey: KEY,
     allowlist: [REPO],
     ledger: store.adapter(),
+    reserveHold: async () => ({ ok: true, hold: { id: "hold-test" } }),
     fetch: async (_url, init) => {
       posted.push(init?.body ? JSON.parse(init.body) : null);
       throw new Error("lost response");
