@@ -1,0 +1,25 @@
+name: production-migrate
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Classify migrations
+        run: node scripts/migration-classify.mjs
+      - name: Apply additive migrations
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+          CHIEF_MIGRATE_TARGET: production
+        run: node scripts/prisma-migrate-deploy.mjs
