@@ -285,7 +285,9 @@ test("two dispatches in one run steer only the first successful send", async () 
   assert.match(sent[0], new RegExp(STEER));
   assert.match(sent[0], /Question 2/);
   assert.equal(sent[1], "Question 3");
-  assert.equal(client.counts.memories, 1);
+  // One personality listing, plus one workspace snapshot for each prompt that
+  // was actually sent (Question 2, then the held Question 3).
+  assert.equal(client.counts.memories, 3);
   assert.deepEqual(visible(second.checkpoint.transcript), [
     ["user", "Question 1"],
     ["assistant", "Answer 1."],

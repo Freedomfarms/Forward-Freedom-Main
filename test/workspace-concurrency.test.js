@@ -1,8 +1,9 @@
 import test, { before, mock } from "node:test";
 import assert from "node:assert/strict";
 import crypto from "crypto";
-import { spawnSync } from "node:child_process";
 import { readdirSync } from "node:fs";
+
+import { databaseUrlFor, readAdminTarget, runCreatedb, runPsql } from "./pg-admin.js";
 
 // H-10: proves optimistic-concurrency control on workspace saves. Two clients
 // load the same snapshot version; the first save wins and the second (based on
@@ -19,17 +20,10 @@ import { readdirSync } from "node:fs";
 const HAS_DB = Boolean(process.env.DATABASE_URL);
 const skip = !HAS_DB;
 
-// psql must target the SAME database Prisma connects to (DATABASE_URL), so the
-// schema this test sets up is the schema the handlers run against.
-function databaseNameFromUrl(fallback) {
-  try {
-    return new URL(process.env.DATABASE_URL).pathname.replace(/^\//, "") || fallback;
-  } catch {
-    return fallback;
-  }
-}
-const DB_NAME = process.env.FULL_DB_NAME || databaseNameFromUrl("ff_full");
-const PG_PORT = process.env.TEST_PG_PORT || "5433";
+// psql and Prisma both use this database. It is not the shared DATABASE_URL
+// database: several files reset schemas, and the suite runs them in parallel.
+const DB_NAME = process.env.FULL_DB_NAME || "ff_full";
+const admin = readAdminTarget();
 
 let setupError = null;
 let handler;
@@ -62,9 +56,7 @@ function mockRes() {
 }
 
 function psql(...args) {
-  return spawnSync("psql", ["-h", "/tmp", "-p", PG_PORT, "-U", "postgres", "-d", DB_NAME, ...args], {
-    encoding: "utf8",
-  });
+  return runPsql(admin, { database: DB_NAME, args });
 }
 
 async function putSnapshot({ state, source, baseSnapshotUpdatedAt }) {
@@ -118,9 +110,8 @@ before(async () => {
   }
 
   // Fully-migrated schema: reset then apply every migration in order.
-  spawnSync("createdb", ["-h", "/tmp", "-p", PG_PORT, "-U", "postgres", DB_NAME], {
-    encoding: "utf8",
-  });
+  runCreatedb(admin, DB_NAME);
+  process.env.DATABASE_URL = databaseUrlFor(admin, DB_NAME);
   const reset = psql("-c", "DROP SCHEMA public CASCADE; CREATE SCHEMA public;");
   if (reset.status !== 0) {
     setupError = new Error(reset.stderr || "failed to reset full DB");

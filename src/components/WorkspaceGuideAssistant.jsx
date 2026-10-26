@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { styles } from "../styles.js";
 import {
   buildWorkspaceGuideContext,
@@ -74,21 +74,17 @@ export function WorkspaceGuideAssistant({
 
   const suggestions = useMemo(() => buildWorkspaceGuideSuggestions(context), [context]);
 
-  useEffect(() => {
-    if (!open) return;
-    setMessages((current) => {
-      if (current.length > 0) return current;
-      const welcome = buildWorkspaceGuideWelcome(context);
-      return [
-        {
-          id: "welcome",
-          role: "assistant",
-          text: welcome.text,
-          actions: welcome.actions,
-        },
-      ];
-    });
-  }, [context, open]);
+  if (open && messages.length === 0) {
+    const welcome = buildWorkspaceGuideWelcome(context);
+    setMessages([
+      {
+        id: "welcome",
+        role: "assistant",
+        text: welcome.text,
+        actions: welcome.actions,
+      },
+    ]);
+  }
 
   const handleAction = (action) => {
     if (action?.tab) {

@@ -70,7 +70,7 @@ test("the home screen reloads revealed answers instead of clearing them", () => 
   );
   assert.match(page, /rememberRevealedAnswer/);
   assert.match(page, /readRevealedAnswers\(sessionUid, activeSessionId\)/);
-  assert.match(page, /revealStoredAnswer\(answerForReveal, sessionIdNow\)/);
+  assert.match(page, /revealStoredAnswer\(played\.text, sessionIdNow\)/);
   assert.match(select, /readRevealedAnswers\(sessionUid, sessionId\)/);
   assert.doesNotMatch(select, /setRevealedAnswers\(\[\]\)/);
   assert.match(stop, /revealStoredAnswer\(answer\)/);

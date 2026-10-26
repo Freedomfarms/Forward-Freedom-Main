@@ -96,12 +96,46 @@ function physicalTableName(model) {
   return body?.match(/@@map\("([^"]+)"\)/)?.[1] ?? model;
 }
 
+// These models enable RLS inside a DO/EXECUTE loop. The static
+// ALTER TABLE "..." ENABLE ROW LEVEL SECURITY form is absent, so they stay
+// out of laterRlsModels. Historical migration bytes are not rewritten.
+const dynamicRlsModels = {
+  ChiefManagedResource: "20261022193000_chief_managed_proof",
+  ChiefProofProject: "20261022193000_chief_managed_proof",
+  ChiefProofDocument: "20261022193000_chief_managed_proof",
+  ChiefProofConflict: "20261022193000_chief_managed_proof",
+  ChiefProofRun: "20261022193000_chief_managed_proof",
+  ChiefProofJob: "20261022193000_chief_managed_proof",
+  ChiefProofToolCall: "20261022193000_chief_managed_proof",
+  ChiefProofPing: "20261022193000_chief_managed_proof",
+  ChiefProofLatencySample: "20261022193000_chief_managed_proof",
+  ChiefManagedBinding: "20261023194500_chief_managed_runtime",
+  ChiefManagedThread: "20261023194500_chief_managed_runtime",
+  ChiefManagedWork: "20261023194500_chief_managed_runtime",
+};
+
 test("remediation inventory is exactly every user-scoped model", () => {
   assert.equal(expectedTables.length, 17);
   assert.deepEqual(
-    [...expectedTables, ...Object.keys(laterRlsModels)].sort(),
+    [...expectedTables, ...Object.keys(laterRlsModels), ...Object.keys(dynamicRlsModels)].sort(),
     userScopedModels(prismaSchema)
   );
+});
+
+test("managed and proof tables enable row level security from a dynamic loop", () => {
+  for (const [model, migration] of Object.entries(dynamicRlsModels)) {
+    const table = physicalTableName(model);
+    const sql = withoutComments(
+      readFileSync(
+        new URL(`../prisma/migrations/${migration}/migration.sql`, import.meta.url),
+        "utf8"
+      )
+    );
+    assert.match(sql, new RegExp(`'${table}'`), `${model} must be named in ${migration}`);
+    assert.match(sql, /ENABLE ROW LEVEL SECURITY/);
+    assert.match(sql, /FORCE ROW LEVEL SECURITY/);
+    assert.match(sql, /CREATE POLICY user_isolation/);
+  }
 });
 
 test("the report-key migration does not weaken workforce row-level security", () => {

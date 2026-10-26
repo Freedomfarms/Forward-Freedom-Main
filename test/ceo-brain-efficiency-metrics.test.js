@@ -39,14 +39,17 @@ test("CEO rules require minimum questions to reach execution", () => {
 
 test("efficiency log fields exist on empty / sketched mission state", () => {
   const empty = emptyMissionState();
-  assert.deepEqual(Object.keys(empty.efficiency).sort(), [
-    "blockingGapsResolved",
-    "deferredPreferences",
-    "missionExecutableAt",
-    "missionStartedAt",
-    "questionsAsked",
-    "reaskedFields",
-  ].sort());
+  assert.deepEqual(
+    Object.keys(empty.efficiency).sort(),
+    [
+      "blockingGapsResolved",
+      "deferredPreferences",
+      "missionExecutableAt",
+      "missionStartedAt",
+      "questionsAsked",
+      "reaskedFields",
+    ].sort()
+  );
 
   const sketch = sketchMissionFromMessage("I need a weekly supplier risk report.");
   assert.ok(sketch.efficiency.missionStartedAt);
@@ -120,24 +123,29 @@ test("Re-ask Rate: detect questions for already captured fields", () => {
   );
   assert.equal(field, "suppliers");
 
-  const dup = detectReaskField(
-    "Which suppliers or supplier list?",
-    { known: [] },
-    [{ question: "What about which suppliers or supplier list?" }]
-  );
+  const dup = detectReaskField("Which suppliers or supplier list?", { known: [] }, [
+    { question: "What about which suppliers or supplier list?" },
+  ]);
   assert.equal(dup, "suppliers");
 });
 
 test("Mission Completion Rate: aggregate across conversations", () => {
   const complete = sketchMissionFromConversation(
     [
-      "Every morning email me a summary of Elon Musk and Jensen Huang posts from X and LinkedIn.",
+      "Every Friday email me a supplier risk report covering delay and financial risk for Pratt Whitney.",
     ],
     { now: clock() }
   );
-  const incomplete = sketchMissionFromConversation(["Build me something that tracks competitors."], {
-    now: clock(),
-  });
+  const blockedSocial = sketchMissionFromConversation(
+    ["Every morning email me a summary of Elon Musk and Jensen Huang posts from X and LinkedIn."],
+    { now: clock() }
+  );
+  const incomplete = sketchMissionFromConversation(
+    ["Build me something that tracks competitors."],
+    {
+      now: clock(),
+    }
+  );
   const existing = sketchMissionFromConversation(["I already have a supplier agent."], {
     existingAgents: EXISTING_AGENTS,
     now: clock(),
@@ -145,6 +153,8 @@ test("Mission Completion Rate: aggregate across conversations", () => {
 
   assert.equal(complete.missionExecutable, true);
   assert.ok(complete.efficiency.missionExecutableAt);
+  assert.equal(blockedSocial.missionExecutable, false);
+  assert.equal(blockedSocial.capabilityBlocked, true);
   assert.equal(incomplete.missionExecutable, false);
   assert.equal(existing.missionExecutable, true);
 
@@ -171,12 +181,16 @@ test("Acceptance target — simple missions: <= 2 questions", () => {
   assert.ok(metrics.questionsUntilExecution <= 2);
 
   const complete = sketchMissionFromMessage(
-    "Every morning email me a summary of Elon Musk and Jensen Huang posts from X and LinkedIn."
+    "Every Friday email me a supplier risk report covering delay and financial risk for Pratt Whitney."
   );
   const completeMetrics = computeEfficiencyMetrics(complete.efficiency);
   const completeVerdict = evaluateEfficiencyTarget("simple", completeMetrics, complete.efficiency);
   assert.equal(complete.missionExecutable, true);
-  assert.equal(completeVerdict.ok, true, JSON.stringify({ completeMetrics, completeVerdict }, null, 2));
+  assert.equal(
+    completeVerdict.ok,
+    true,
+    JSON.stringify({ completeMetrics, completeVerdict }, null, 2)
+  );
   assert.ok(completeMetrics.questionsUntilExecution <= 2);
 });
 

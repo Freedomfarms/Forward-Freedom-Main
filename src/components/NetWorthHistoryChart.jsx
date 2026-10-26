@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { buildLinePath, wholeDollars } from "../utils/format.js";
 
 const CHART_W = 620;
@@ -149,11 +149,18 @@ export function NetWorthHistoryChart({ metricSnapshots, range }) {
   );
   const defaultActiveIndex = Math.max(0, history.hoverPoints.length - 1);
   const [activeIndex, setActiveIndex] = useState(defaultActiveIndex);
+  const [trackedSelection, setTrackedSelection] = useState({
+    defaultActiveIndex,
+    range,
+  });
   const [flashToken, setFlashToken] = useState(0);
-
-  useEffect(() => {
+  if (
+    trackedSelection.defaultActiveIndex !== defaultActiveIndex ||
+    trackedSelection.range !== range
+  ) {
+    setTrackedSelection({ defaultActiveIndex, range });
     setActiveIndex(defaultActiveIndex);
-  }, [defaultActiveIndex, range]);
+  }
 
   const activePoint = history.hoverPoints[activeIndex] || history.hoverPoints[defaultActiveIndex];
   const displayValue = activePoint?.value ?? history.latestValue;

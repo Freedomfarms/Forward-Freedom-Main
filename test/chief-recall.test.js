@@ -12,7 +12,6 @@ import {
   assembleSystemPrompt,
   conversationRecallGuidance,
 } from "../server/chief/context/assemble.js";
-import { createContextAssembler } from "../server/chief/context/assemble.js";
 import { Capability, CapabilityPolicy } from "../server/chief/core/capabilities.js";
 import { MemoryFactStore } from "../server/chief/memory/facts.js";
 import { PROMPT_RESTORED } from "../server/chief/runtime/compaction.js";
@@ -1008,24 +1007,6 @@ function mockResponse() {
     end() {},
   };
   return { response, chunks };
-}
-
-function textStream(parts) {
-  const text = parts
-    .filter((part) => part.type === "text-delta")
-    .map((part) => part.text)
-    .join("");
-  return {
-    fullStream: (async function* stream() {
-      for (const part of parts) yield part;
-    })(),
-    finalize: async () => ({
-      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
-      content: text,
-      tool_calls: [],
-      finish_reason: "stop",
-    }),
-  };
 }
 
 test("a completed turn can be searched and retrieved without writing facts or the system prompt", async () => {

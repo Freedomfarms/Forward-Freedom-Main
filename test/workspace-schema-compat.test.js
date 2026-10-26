@@ -1,7 +1,7 @@
 import test, { before, mock } from "node:test";
 import assert from "node:assert/strict";
 import crypto from "crypto";
-import { spawnSync } from "node:child_process";
+import { databaseUrlFor, readAdminTarget, runCreatedb, runPsql } from "./pg-admin.js";
 
 // Proves the workspace API works against a database that has NOT received the
 // privacy-encryption migration (the production failure mode after #104).
@@ -9,7 +9,8 @@ import { spawnSync } from "node:child_process";
 
 const HAS_DB = Boolean(process.env.DATABASE_URL);
 const skip = !HAS_DB;
-const DB_NAME = process.env.COMPAT_DB_NAME || "ff_compat";
+const DB_NAME = process.env.COMPAT_DB_NAME || "ff_workspace_compat";
+const admin = readAdminTarget();
 
 let setupError = null;
 let handler;
@@ -38,9 +39,7 @@ function mockRes() {
 }
 
 function psql(...args) {
-  return spawnSync("psql", ["-h", "/tmp", "-p", "5433", "-U", "postgres", "-d", DB_NAME, ...args], {
-    encoding: "utf8",
-  });
+  return runPsql(admin, { database: DB_NAME, args });
 }
 
 before(async () => {
@@ -80,9 +79,8 @@ before(async () => {
   }
 
   // Reset the DB to init-only (no encryption columns).
-  spawnSync("createdb", ["-h", "/tmp", "-p", "5433", "-U", "postgres", DB_NAME], {
-    encoding: "utf8",
-  });
+  runCreatedb(admin, DB_NAME);
+  process.env.DATABASE_URL = databaseUrlFor(admin, DB_NAME);
   const reset = psql("-c", "DROP SCHEMA public CASCADE; CREATE SCHEMA public;");
   if (reset.status !== 0) {
     setupError = new Error(reset.stderr || "failed to reset compat DB");

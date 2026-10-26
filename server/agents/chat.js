@@ -658,7 +658,8 @@ export async function respondToChat({
   }
 
   // Title upgrade after the first exchange — never blocks the reply.
-  if (isFirstExchange) {
+  // A failed generation has no answer worth naming the thread after.
+  if (isFirstExchange && reply !== EMPTY_REPLY_FALLBACK) {
     scheduleConversationTitle({
       userId,
       conversationId: resolvedConversationId,

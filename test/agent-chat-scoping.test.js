@@ -21,6 +21,9 @@ const USER_ID = "user-1";
 const PROFILE_FACT = "PROFILE_FACT_TRAINING_FOR_A_MARATHON";
 
 before(async () => {
+  // Title generation runs only when a platform key is present. CI has none.
+  // The key never leaves this process: the model implementation is replaced.
+  process.env.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "test-key-never-used";
   process.env.FFF_ENCRYPTION_KEYS = `1:${crypto.randomBytes(32).toString("base64")}`;
   process.env.FFF_ENCRYPTION_ACTIVE_VERSION = "1";
   const { resetKeyProviderCache } = await import("../server/security/keyProvider.js");
@@ -43,6 +46,14 @@ before(async () => {
     setupError = error;
   }
 });
+
+function isThreadTitleCall(call) {
+  return /short chat thread titles/i.test(String(call?.system || ""));
+}
+
+function chatModelCalls() {
+  return llmCalls.filter((call) => !isThreadTitleCall(call));
+}
 
 function requireSetup(t) {
   if (setupError) {
@@ -309,14 +320,24 @@ test("the CEO chat reads the team roster, run summaries across all agents, and t
   assert.ok(!payload.includes("A_PRIOR_QUESTION_TOKEN"));
   assert.ok(!payload.includes("B_PRIOR_QUESTION_TOKEN"));
 
-  // The CEO can attach any of the user's runs.
+  // The CEO can attach any of the user's runs. The first exchange also asks
+  // for a thread title; that call must not be mistaken for the run prompt.
   await respondToChat({
     userId: USER_ID,
     ceoAgentConfigId: "ceo-1",
     message: "Show me that research run.",
     relatedRunId: "run-b1",
   });
-  assert.ok(JSON.stringify(llmCalls[1]).includes("AGENT_B_FULL_OUTPUT"));
+  const chatCalls = chatModelCalls();
+  assert.equal(chatCalls.length, 2);
+  assert.ok(JSON.stringify(chatCalls[1]).includes("AGENT_B_FULL_OUTPUT"));
+  assert.equal(llmCalls.filter(isThreadTitleCall).length, 1);
+  assert.equal(
+    llmCalls
+      .filter(isThreadTitleCall)
+      .some((call) => JSON.stringify(call).includes("AGENT_B_FULL_OUTPUT")),
+    false
+  );
 });
 
 test("sub-agent chat does not receive web search tools", async (t) => {
@@ -366,8 +387,13 @@ test("profile ops returned in the chat reply update the living profile without a
     { op: "add", category: "financialGoals", text: "Wants to max out retirement contributions" },
   ]);
 
-  await respondToChat({ userId: USER_ID, ceoAgentConfigId: "ceo-1", message: "I want to max out my retirement contributions." });
-  assert.equal(llmCalls.length, 1, "profile ops must not trigger a second model call");
+  await respondToChat({
+    userId: USER_ID,
+    ceoAgentConfigId: "ceo-1",
+    message: "I want to max out my retirement contributions.",
+  });
+  assert.equal(chatModelCalls().length, 1, "profile ops must not trigger a second model call");
+  assert.equal(llmCalls.filter(isThreadTitleCall).length, 1);
 
   const ceoRow = currentDb.tables.ceoAgentConfig[0];
   const savedProfile = envelope.decryptJson(ceoRow.profileCiphertext);
@@ -386,14 +412,10 @@ test("CEO digestAction set_content updates the Daily Digest body", async (t) => 
   );
   currentDb.tables.ceoAgentConfig[0].lastDigestAt = new Date("2026-07-12T00:00:00Z");
 
-  installLlmMock(
-    "I'll put that on your digest.",
-    [],
-    {
-      type: "set_content",
-      content: "# Status Update\n\nFocus tomorrow: call the lender before noon.",
-    }
-  );
+  installLlmMock("I'll put that on your digest.", [], {
+    type: "set_content",
+    content: "# Status Update\n\nFocus tomorrow: call the lender before noon.",
+  });
 
   const result = await respondToChat({
     userId: USER_ID,
@@ -418,7 +440,10 @@ test("CEO chat retries once on empty structured reply then surfaces a clear erro
   llmCalls = [];
   let attempts = 0;
   setLlmImplementationForTesting({
-    generateObject: async () => ({ object: { reply: "x", profileOps: [], taskAction: null }, usage: null }),
+    generateObject: async () => ({
+      object: { reply: "x", profileOps: [], taskAction: null },
+      usage: null,
+    }),
     generateText: async () => {
       attempts += 1;
       llmCalls.push({ attempt: attempts });
