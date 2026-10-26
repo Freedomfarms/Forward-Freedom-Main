@@ -22,12 +22,15 @@ import {
   productionAgentBody,
   productionEnvironmentBody,
   productionSessionBody,
-  workspaceDocuments,
 } from "./productionAgent.js";
 import { providerErrorFields } from "./redact.js";
 import { createPrismaWorkQueue } from "./workQueue.js";
 import { syncPersonalityMemory } from "../personality/memory.js";
-import { captureWorkspaceSnapshot, restoreWorkspaceWrites } from "./workspaceGuard.js";
+import {
+  restoreWorkspaceWrites,
+  snapshotGuardedMemories,
+  workspaceFileName,
+} from "./workspaceGuard.js";
 import { readChiefPersonality } from "../personality/store.js";
 import {
   fittedPersonalityGuidance,
@@ -40,6 +43,82 @@ import {
 } from "../../../src/utils/chiefPersonality.js";
 import { MISSING_CHIEF_ANSWER } from "../../../src/utils/chiefProtocol.js";
 import { SCHEDULED_TURN_EXCLUDED_TOOLS } from "../tools/inventory.js";
+import { ICM_ARCHITECT_PIN } from "./constants.js";
+import { PrismaFactStore } from "../memory/facts.js";
+import {
+  ACCEPTED_FACTS_PATH,
+  commitGuardedDocuments,
+  createPrismaWorkspaceDocumentStore,
+  guardedMemoryFiles,
+  publishWorkingFile,
+  recoveryDocuments,
+} from "../memory/workspaceDocuments.js";
+import {
+  ensureResource,
+  hasIdentity,
+  metadataMatch as resourceMetadataMatch,
+} from "./resources.js";
+import { buildIcmArchitectZip } from "./skillPackage.js";
+
+const ICM_SKILL_KEY = `skill:icm-architect:${ICM_ARCHITECT_PIN}`;
+const icmResourceRows = new Map();
+const icmResourceStore = {
+  async getResource(key) {
+    return icmResourceRows.get(key) || null;
+  },
+  async saveResource(record) {
+    icmResourceRows.set(record.idempotencyKey, { ...record });
+    return record;
+  },
+};
+
+const productionSkillRows = new Map();
+const productionSkillStore = {
+  async getResource(key) {
+    return productionSkillRows.get(key) || null;
+  },
+  async saveResource(record) {
+    productionSkillRows.set(record.idempotencyKey, { ...record });
+    return record;
+  },
+};
+
+const mockIcmSkill = {
+  id: "skill_icm_architect_local",
+  version: "mock",
+  display_title: `icm-architect ${ICM_ARCHITECT_PIN}`,
+  metadata: { freedom_os_key: ICM_SKILL_KEY },
+};
+
+export async function ensureIcmArchitectSkill({
+  store = icmResourceStore,
+  list = async () => [mockIcmSkill],
+  retrieve = async (id) => (id === mockIcmSkill.id ? mockIcmSkill : null),
+  create = null,
+  now = new Date().toISOString(),
+  buildZip = buildIcmArchitectZip,
+} = {}) {
+  return ensureResource({
+    store,
+    now,
+    spec: {
+      kind: "skill",
+      idempotencyKey: ICM_SKILL_KEY,
+      fingerprint: ICM_ARCHITECT_PIN,
+      matches: (item) =>
+        item?.display_title === `icm-architect ${ICM_ARCHITECT_PIN}` ||
+        resourceMetadataMatch(ICM_SKILL_KEY)(item),
+      identifiable: hasIdentity,
+    },
+    list,
+    retrieve,
+    create: async () => {
+      const zip = await buildZip();
+      if (typeof create === "function") return create(zip);
+      return { id: mockIcmSkill.id, version: mockIcmSkill.version, filename: zip.filename };
+    },
+  });
+}
 
 const LEGACY_MESSAGE =
   "This conversation belongs to the previous CHIEF runtime. Start a new conversation.";
@@ -56,6 +135,52 @@ function delay(ms) {
 
 function metadataMatch(key) {
   return (row) => row?.metadata?.freedom_os_key === key;
+}
+
+function skillsOf(agent) {
+  if (Array.isArray(agent?.skills)) return agent.skills;
+  if (Array.isArray(agent?.body?.skills)) return agent.body.skills;
+  return [];
+}
+
+function agentVersionNumber(agent) {
+  const value = Number(agent?.version ?? agent?.latest_version);
+  return Number.isInteger(value) && value >= 1 ? value : null;
+}
+
+function agentHasPinnedSkill(agent, skillId, skillVersion) {
+  if (!skillId || !skillVersion) return false;
+  return skillsOf(agent).some(
+    (skill) =>
+      skill?.type === "custom" &&
+      skill.skill_id === skillId &&
+      String(skill.version ?? "") === String(skillVersion)
+  );
+}
+
+async function attachPinnedSkill(client, agent, skillId, skillVersion) {
+  if (!agent?.id || !skillId || !skillVersion) return agent;
+  if (agentHasPinnedSkill(agent, skillId, skillVersion)) return agent;
+  if (typeof client.updateAgent !== "function") return agent;
+  const skills = [{ type: "custom", skill_id: skillId, version: String(skillVersion) }];
+  const send = (current) => {
+    const body = { skills };
+    const version = agentVersionNumber(current);
+    if (version) body.version = version;
+    return client.updateAgent(current.id, body);
+  };
+  try {
+    const updated = await send(agent);
+    return updated?.id ? updated : agent;
+  } catch (error) {
+    if (error?.status !== 409) throw error;
+    const current = await client.retrieveAgent(agent.id);
+    if (!current?.id || agentHasPinnedSkill(current, skillId, skillVersion)) {
+      return current || agent;
+    }
+    const updated = await send(current);
+    return updated?.id ? updated : current;
+  }
 }
 
 async function findOrCreate({ cachedId, retrieve, list, create, key }) {
@@ -382,7 +507,21 @@ async function rememberHeldPrompt(store, userId, sessionId, text) {
   return fresh.checkpoint;
 }
 
-async function seedWorkspace(client, memoryStoreId) {
+function quietWorkspaceError(error) {
+  const message = String(error?.message || "");
+  return (
+    error?.code === "P1000" ||
+    error?.code === "P1001" ||
+    error?.code === "P2021" ||
+    error?.code === "P2003" ||
+    message.includes("not configured") ||
+    message.includes("does not exist") ||
+    message.includes("Encryption is not configured") ||
+    message.includes("Cannot read properties")
+  );
+}
+
+async function seedWorkspace(client, memoryStoreId, plan = null) {
   let existing;
   try {
     existing = (await client.listMemories(memoryStoreId)) || [];
@@ -392,7 +531,7 @@ async function seedWorkspace(client, memoryStoreId) {
   const have = new Set(
     (existing || []).map((item) => String(item.path || "").replace(/^\/+/, "")).filter(Boolean)
   );
-  for (const doc of workspaceDocuments()) {
+  for (const doc of guardedMemoryFiles(plan)) {
     if (have.has(doc.path)) continue;
     try {
       await client.createMemory(memoryStoreId, { path: `/${doc.path}`, content: doc.content });
@@ -402,11 +541,65 @@ async function seedWorkspace(client, memoryStoreId) {
   }
 }
 
-async function ensureResources({ client, userId, toolSpecs, bindings, managed }) {
+export async function resolveProductionSkill(client, store = productionSkillStore) {
+  if (typeof client?.listSkills !== "function" || typeof client?.createSkill !== "function") {
+    await ensureIcmArchitectSkill();
+    return {
+      skillId: process.env.CHIEF_MANAGED_SKILL_ID || "",
+      skillVersion: process.env.CHIEF_MANAGED_SKILL_VERSION || "",
+      blocked: false,
+    };
+  }
+  const skill = await ensureIcmArchitectSkill({
+    store,
+    list: () => client.listSkills(),
+    retrieve: (id) => client.retrieveSkill(id),
+    create: async (zip) => {
+      const created = await client.createSkill({
+        filename: zip.filename,
+        zipBytes: zip.bytes,
+        displayTitle: `icm-architect ${ICM_ARCHITECT_PIN}`,
+      });
+      return {
+        id: created?.id,
+        version: created?.version || created?.latest_version || null,
+      };
+    },
+  });
+  if (!skill.blocked && skill.resource?.providerId && skill.resource?.version) {
+    return {
+      skillId: skill.resource.providerId,
+      skillVersion: String(skill.resource.version),
+      blocked: false,
+    };
+  }
+  return {
+    skillId: process.env.CHIEF_MANAGED_SKILL_ID || "",
+    skillVersion: process.env.CHIEF_MANAGED_SKILL_VERSION || "",
+    blocked: Boolean(skill.blocked),
+  };
+}
+
+async function loadWorkspaceAuthority({ userId, documentStore, factStore }) {
+  const documents = await documentStore.list(userId);
+  const facts = await factStore.read({ userId, query: "", limit: 500 });
+  return { available: true, documents, plan: recoveryDocuments({ documents, facts }) };
+}
+
+async function ensureResources({
+  client,
+  userId,
+  toolSpecs,
+  bindings,
+  managed,
+  documentStore,
+  factStore,
+}) {
+  const skill = await resolveProductionSkill(client);
   const agentKey = agentKeyFor(toolSpecs);
-  const skillId = process.env.CHIEF_MANAGED_SKILL_ID || "";
-  const skillVersion = process.env.CHIEF_MANAGED_SKILL_VERSION || "";
-  const agent = await findOrCreate({
+  const skillId = skill.skillId;
+  const skillVersion = skill.skillVersion;
+  const found = await findOrCreate({
     cachedId: managed?.agentKey === agentKey ? managed.agentId : null,
     retrieve: (id) => client.retrieveAgent(id),
     list: () => client.listAgents(),
@@ -421,6 +614,7 @@ async function ensureResources({ client, userId, toolSpecs, bindings, managed })
         })
       ),
   });
+  const agent = await attachPinnedSkill(client, found, skillId, skillVersion);
   const agentVersion = agent?.version || agent?.latest_version;
   if (!agent?.id || !agentVersion) {
     throw new Error("Claude Managed Agents did not return an agent version.");
@@ -446,9 +640,44 @@ async function ensureResources({ client, userId, toolSpecs, bindings, managed })
       }),
   });
   if (!memory?.id) throw new Error("Claude Managed Agents did not return a memory store.");
-  if (!managed?.workspaceSeeded || managed.memoryStoreId !== memory.id) {
-    await seedWorkspace(client, memory.id);
+  let authority = null;
+  if (documentStore && factStore) {
+    try {
+      authority = await loadWorkspaceAuthority({ userId, documentStore, factStore });
+    } catch (error) {
+      if (!quietWorkspaceError(error)) {
+        console.error("[chief/workspace] authority", error?.code || error?.status || "unavailable");
+      }
+    }
   }
+  const newStore = !managed?.workspaceSeeded || managed.memoryStoreId !== memory.id;
+  if (newStore) {
+    if (authority?.available) {
+      for (const path of authority.plan.bootstrap) {
+        const file = authority.plan.files.find((item) => item.path === path);
+        try {
+          await documentStore.insertIfAbsent({ userId, path, content: file.content });
+        } catch (error) {
+          if (!quietWorkspaceError(error)) {
+            console.error("[chief/workspace] bootstrap", error?.code || "failed");
+          }
+        }
+      }
+    }
+    await seedWorkspace(client, memory.id, authority?.available ? authority.plan : null);
+  }
+  let acceptedFactsSha = newStore ? null : managed?.acceptedFactsSha || null;
+  const factsFile = authority?.available
+    ? authority.plan.files.find((item) => item.path === ACCEPTED_FACTS_PATH)
+    : null;
+  const pendingFacts = factsFile
+    ? {
+        path: ACCEPTED_FACTS_PATH,
+        content: factsFile.content,
+        previousSha: acceptedFactsSha,
+        force: newStore || !managed?.providerSessionId,
+      }
+    : null;
   const next = {
     agentId: agent.id,
     agentVersion,
@@ -459,6 +688,8 @@ async function ensureResources({ client, userId, toolSpecs, bindings, managed })
     providerSessionId: managed?.providerSessionId || null,
     personalityDigest: managed?.personalityDigest || null,
     workspaceSeeded: true,
+    acceptedFactsSha,
+    pendingFacts,
   };
   if (bindings) {
     try {
@@ -522,6 +753,7 @@ async function collect({
   caller,
   store,
   memoryStoreId,
+  documentStore = null,
 }) {
   const seen = new Set(checkpoint.context.seenEventIds || []);
   const deadline = Date.now() + budgetMs;
@@ -553,6 +785,33 @@ async function collect({
         checkpoint.context.workspaceRestored = [...done];
       } catch (error) {
         console.error("[chief/workspace] restore", error?.status || error?.code || "failed");
+      }
+      const baseHashes = checkpoint.context.workspaceBaseHashes;
+      if (documentStore && baseHashes && Object.keys(baseHashes).length > 0) {
+        try {
+          const listed = (await client.listMemories(memoryStoreId)) || [];
+          const signature = listed
+            .map((item) => {
+              const name = workspaceFileName(item?.path);
+              return name && typeof item?.content === "string" ? `${name}\0${item.content}` : "";
+            })
+            .filter(Boolean)
+            .sort()
+            .join("\n");
+          if (signature !== checkpoint.context.workspaceCommittedSignature) {
+            await commitGuardedDocuments({
+              store: documentStore,
+              userId,
+              baseHashes,
+              memories: listed,
+            });
+            checkpoint.context.workspaceCommittedSignature = signature;
+          }
+        } catch (error) {
+          if (!quietWorkspaceError(error)) {
+            console.error("[chief/workspace] persist", error?.code || error?.status || "failed");
+          }
+        }
       }
     }
     for (const event of events) {
@@ -731,7 +990,11 @@ export async function runManagedChiefTurn({
   resume = false,
   caller = null,
   readPersonality = readChiefPersonality,
+  documentStore = null,
+  factStore = null,
 } = {}) {
+  const documents = documentStore || createPrismaWorkspaceDocumentStore();
+  const facts = factStore || new PrismaFactStore();
   const parsed = resume ? null : parseSubmission(submission);
   const submissionId = parsed?.id ?? null;
   const emit = (msg) => onEvent?.(makeEvent(msg, submissionId));
@@ -855,6 +1118,8 @@ export async function runManagedChiefTurn({
       toolSpecs: resolvedSpecs,
       bindings: bindingStore,
       managed: checkpoint.context.managed || null,
+      documentStore: documents,
+      factStore: facts,
     });
   } catch (error) {
     throw annotateProviderError(error, {
@@ -873,11 +1138,19 @@ export async function runManagedChiefTurn({
       emit(eventMsg.submissionRejected("That approval is no longer pending."));
       return { sessionId: record.id, status: "rejected", checkpoint };
     }
-    if (decision.type === ReviewDecisionType.ABORT || decision.type === ReviewDecisionType.DENIED) {
+    const sessionCoding =
+      decision.type === ReviewDecisionType.APPROVED_FOR_SESSION &&
+      (pending.calls || []).some((call) => call.name === "coding_task_submit");
+    if (
+      decision.type === ReviewDecisionType.ABORT ||
+      decision.type === ReviewDecisionType.DENIED ||
+      sessionCoding
+    ) {
       resolveToolId = null;
       if (managed.providerSessionId && pending.toolEventId) {
-        const note =
-          decision.type === ReviewDecisionType.DENIED
+        const note = sessionCoding
+          ? "denied: coding requires an explicit execution approval"
+          : decision.type === ReviewDecisionType.DENIED
             ? `denied: ${decision.rejection ?? "rejected"}`
             : "aborted";
         checkpoint.transcript.push({
@@ -1041,8 +1314,39 @@ export async function runManagedChiefTurn({
       : delivery.providerPrompt;
     checkpoint.context.heldPrompts = heldPrompts(checkpoint).filter((item) => item !== text);
     if (managed.memoryStoreId) {
-      const snapshot = await captureWorkspaceSnapshot(client, managed.memoryStoreId);
-      if (snapshot) checkpoint.context.workspaceSnapshot = snapshot;
+      let listed = null;
+      try {
+        listed = (await client.listMemories(managed.memoryStoreId)) || [];
+        checkpoint.context.workspaceSnapshot = snapshotGuardedMemories(listed);
+      } catch {
+        // A failed listing leaves the previous snapshot in place.
+      }
+      if (listed && managed.pendingFacts) {
+        try {
+          const published = await publishWorkingFile(client, managed.memoryStoreId, {
+            ...managed.pendingFacts,
+            listed,
+          });
+          if (!published.preserved && published.sha) managed.acceptedFactsSha = published.sha;
+          managed.pendingFacts = null;
+        } catch (error) {
+          if (!quietWorkspaceError(error)) {
+            console.error("[chief/workspace] facts", error?.status || error?.code || "failed");
+          }
+        }
+      }
+      try {
+        const rows = await documents.list(userId);
+        const hashes = {};
+        for (const row of rows) {
+          if (row.deletedAt || !workspaceFileName(row.path)) continue;
+          hashes[row.path] = row.contentSha256;
+        }
+        checkpoint.context.workspaceBaseHashes = hashes;
+        checkpoint.context.workspaceCommittedSignature = null;
+      } catch {
+        checkpoint.context.workspaceBaseHashes = null;
+      }
     }
     try {
       await openOrContinue({
@@ -1150,6 +1454,7 @@ export async function runManagedChiefTurn({
           caller: scheduleCaller,
           store,
           memoryStoreId: managed.memoryStoreId,
+          documentStore: documents,
         });
         if (status !== "completed" || !heldPrompts(checkpoint).length) break;
         if (Date.now() - startedAt >= budgetMs) {

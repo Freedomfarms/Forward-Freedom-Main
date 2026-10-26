@@ -32,8 +32,20 @@ function projectFact(row, content, userId) {
     confidence: row.confidence,
     expiresAt: row.expiresAt ?? null,
     lastAccessedAt: row.lastAccessedAt ?? null,
+    deletedAt: row.deletedAt ?? null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+  };
+}
+
+function forgottenResult(row, userId) {
+  return {
+    forgotten: true,
+    id: row.id,
+    userId,
+    deletedAt: row.deletedAt,
+    trustTier: row.trustTier,
+    dedupeKey: row.dedupeKey,
   };
 }
 
@@ -67,8 +79,9 @@ export class MemoryFactStore {
   }) {
     const dedupeKey = factDedupeKey(content);
     const existing = this.rows.find((row) => row.userId === userId && row.dedupeKey === dedupeKey);
+    if (existing?.deletedAt) return forgottenResult(existing, userId);
     if (existing) return { ...existing };
-    const owned = this.rows.filter((row) => row.userId === userId).length;
+    const owned = this.rows.filter((row) => row.userId === userId && !row.deletedAt).length;
     if (owned >= MAX_FACTS_PER_USER) {
       const error = new Error("fact cap reached");
       error.code = "FACT_CAP";
@@ -86,6 +99,7 @@ export class MemoryFactStore {
       confidence: confidence ?? 0.5,
       expiresAt: expiresAt ?? null,
       lastAccessedAt: null,
+      deletedAt: null,
       createdAt: now,
       updatedAt: now,
     };
@@ -98,7 +112,7 @@ export class MemoryFactStore {
       .trim()
       .toLowerCase();
     return this.rows
-      .filter((row) => row.userId === userId && !expired(row, now))
+      .filter((row) => row.userId === userId && !row.deletedAt && !expired(row, now))
       .filter((row) => !needle || row.content.toLowerCase().includes(needle))
       .slice(0, limit)
       .map((row) => ({ ...row }));
@@ -106,7 +120,9 @@ export class MemoryFactStore {
 
   async update({ userId, id, content }) {
     const row = this.rows.find((item) => item.id === id && item.userId === userId);
-    if (!row || row.source === "identity") return null;
+    if (!row || row.deletedAt || row.source === "identity" || row.trustTier === "TRUSTED") {
+      return null;
+    }
     const dedupeKey = factDedupeKey(content);
     const clash = this.rows.find(
       (item) => item.userId === userId && item.dedupeKey === dedupeKey && item.id !== id
@@ -123,14 +139,18 @@ export class MemoryFactStore {
       .trim()
       .toLowerCase();
     const key = needle ? factDedupeKey(needle) : null;
-    const before = this.rows.length;
-    this.rows = this.rows.filter((row) => {
-      if (row.userId !== userId || row.source === "identity") return true;
-      if (id) return row.id !== id;
-      if (!needle) return true;
-      return row.dedupeKey !== key && !row.content.toLowerCase().includes(needle);
-    });
-    return { deleted: before - this.rows.length };
+    let deleted = 0;
+    const now = new Date();
+    for (const row of this.rows) {
+      if (row.userId !== userId || row.source === "identity" || row.deletedAt) continue;
+      const matches = id
+        ? row.id === id
+        : Boolean(needle) && (row.dedupeKey === key || row.content.toLowerCase().includes(needle));
+      if (!matches) continue;
+      row.deletedAt = now;
+      deleted += 1;
+    }
+    return { deleted };
   }
 
   async touch({ userId, ids = [], now = new Date() }) {
@@ -146,7 +166,7 @@ export class MemoryFactStore {
   async setTrust({ userId, id, trustTier }) {
     assertTrustTier(trustTier);
     const row = this.rows.find((item) => item.id === id && item.userId === userId);
-    if (!row) return null;
+    if (!row || row.deletedAt) return null;
     row.trustTier = trustTier;
     return { ...row };
   }
@@ -163,12 +183,15 @@ export class MemoryFactStore {
   async forgetDerived({ userId, provider, conversationId }) {
     const prefix = provenancePrefix(provider, conversationId);
     if (!userId || !prefix) return { deleted: 0 };
-    const before = this.rows.length;
-    this.rows = this.rows.filter((row) => {
-      if (row.userId !== userId || row.source === "identity") return true;
-      return !String(row.source ?? "").startsWith(prefix);
-    });
-    return { deleted: before - this.rows.length };
+    let deleted = 0;
+    const now = new Date();
+    for (const row of this.rows) {
+      if (row.userId !== userId || row.source === "identity" || row.deletedAt) continue;
+      if (!String(row.source ?? "").startsWith(prefix)) continue;
+      row.deletedAt = now;
+      deleted += 1;
+    }
+    return { deleted };
   }
 
   async forgetDerivedById({ userId, id }) {
@@ -199,8 +222,9 @@ export class PrismaFactStore {
       const existing = await tx.chiefFact.findUnique({
         where: { userId_dedupeKey: { userId, dedupeKey } },
       });
+      if (existing?.deletedAt) return forgottenResult(existing, userId);
       if (existing) return projectFact(existing, this._decrypt(existing.contentCiphertext), userId);
-      const owned = await tx.chiefFact.count({ where: { userId } });
+      const owned = await tx.chiefFact.count({ where: { userId, deletedAt: null } });
       if (owned >= MAX_FACTS_PER_USER) {
         const error = new Error("fact cap reached");
         error.code = "FACT_CAP";
@@ -230,6 +254,7 @@ export class PrismaFactStore {
       tx.chiefFact.findMany({
         where: {
           userId,
+          deletedAt: null,
           OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
         },
         orderBy: { createdAt: "desc" },
@@ -238,6 +263,7 @@ export class PrismaFactStore {
     );
     const facts = [];
     for (const row of rows) {
+      if (row.deletedAt) continue;
       const content = this._decrypt(row.contentCiphertext);
       if (needle && !String(content).toLowerCase().includes(needle)) continue;
       facts.push(projectFact(row, content, userId));
@@ -250,7 +276,14 @@ export class PrismaFactStore {
     const dedupeKey = factDedupeKey(content);
     return this._withUser(userId, async (tx) => {
       const existing = await tx.chiefFact.findFirst({ where: { id, userId } });
-      if (!existing || existing.source === "identity") return null;
+      if (
+        !existing ||
+        existing.deletedAt ||
+        existing.source === "identity" ||
+        existing.trustTier === "TRUSTED"
+      ) {
+        return null;
+      }
       const clash = await tx.chiefFact.findUnique({
         where: { userId_dedupeKey: { userId, dedupeKey } },
       });
@@ -268,23 +301,28 @@ export class PrismaFactStore {
       .trim()
       .toLowerCase();
     return this._withUser(userId, async (tx) => {
+      const forgottenAt = new Date();
       if (id) {
         const existing = await tx.chiefFact.findFirst({ where: { id, userId } });
-        if (!existing || existing.source === "identity") return { deleted: 0 };
-        await tx.chiefFact.delete({ where: { id } });
+        if (!existing || existing.deletedAt || existing.source === "identity")
+          return { deleted: 0 };
+        await tx.chiefFact.update({ where: { id }, data: { deletedAt: forgottenAt } });
         return { deleted: 1 };
       }
       if (!needle) return { deleted: 0 };
       const key = factDedupeKey(needle);
-      const rows = await tx.chiefFact.findMany({ where: { userId } });
+      const rows = await tx.chiefFact.findMany({ where: { userId, deletedAt: null } });
       const ids = [];
       for (const row of rows) {
-        if (row.source === "identity") continue;
+        if (row.deletedAt || row.source === "identity") continue;
         const text = String(this._decrypt(row.contentCiphertext) ?? "").toLowerCase();
         if (row.dedupeKey === key || text.includes(needle)) ids.push(row.id);
       }
       if (ids.length === 0) return { deleted: 0 };
-      const result = await tx.chiefFact.deleteMany({ where: { userId, id: { in: ids } } });
+      const result = await tx.chiefFact.updateMany({
+        where: { userId, id: { in: ids }, deletedAt: null },
+        data: { deletedAt: forgottenAt },
+      });
       return { deleted: result.count };
     });
   }
@@ -304,7 +342,7 @@ export class PrismaFactStore {
     assertTrustTier(trustTier);
     return this._withUser(userId, async (tx) => {
       const existing = await tx.chiefFact.findFirst({ where: { id, userId } });
-      if (!existing) return null;
+      if (!existing || existing.deletedAt) return null;
       const updated = await tx.chiefFact.update({ where: { id }, data: { trustTier } });
       return { id: updated.id, userId, trustTier: updated.trustTier };
     });
@@ -323,8 +361,9 @@ export class PrismaFactStore {
     const prefix = provenancePrefix(provider, conversationId);
     if (!userId || !prefix) return { deleted: 0 };
     return this._withUser(userId, async (tx) => {
-      const result = await tx.chiefFact.deleteMany({
-        where: { userId, source: { startsWith: prefix } },
+      const result = await tx.chiefFact.updateMany({
+        where: { userId, deletedAt: null, source: { startsWith: prefix } },
+        data: { deletedAt: new Date() },
       });
       return { deleted: result.count };
     });
@@ -333,8 +372,9 @@ export class PrismaFactStore {
   async forgetDerivedById({ userId, id }) {
     return this._withUser(userId, async (tx) => {
       const existing = await tx.chiefFact.findFirst({ where: { id, userId } });
-      if (!existing || !parseProvenance(existing.source)) return { deleted: 0 };
-      await tx.chiefFact.delete({ where: { id } });
+      if (!existing || existing.deletedAt || !parseProvenance(existing.source))
+        return { deleted: 0 };
+      await tx.chiefFact.update({ where: { id }, data: { deletedAt: new Date() } });
       return { deleted: 1 };
     });
   }

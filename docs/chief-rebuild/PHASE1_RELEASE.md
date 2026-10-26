@@ -10,7 +10,7 @@ Merge order: #319, then #320, then #321. Merge the next pull only after the prev
 
 Pushing `main` also starts `.github/workflows/production-migrate.yml`. That job classifies every pending migration, then runs `node scripts/prisma-migrate-deploy.mjs` with `CHIEF_MIGRATE_TARGET=production`. It does not call Vercel and it does not promote a deployment.
 
-The Phase 1 migration only creates `chief_budget_hold`. If the site deploys before that table exists, a coding create returns `budget_unverified` and does not call Cursor. If the table exists before the new site is live, the previous site ignores it. A non-additive file never reaches Prisma. The job prints the directory, the sha256, and the authorization command, then exits non-zero.
+The Phase 1 migration creates `chief_budget_hold`, forces row-level security on it, and grants DML to the runtime roles when they exist. If the site deploys before that table exists, a coding create returns `budget_unverified` and does not call Cursor. If the table exists before the new site is live, the previous site ignores it. A non-additive file never reaches Prisma. The job prints the directory, the sha256, and the authorization command, then exits non-zero.
 
 Confirm in the Vercel project that the build command is `npm run build` (or `vite build`) and that no deploy hook runs `prisma migrate deploy`.
 
@@ -64,7 +64,7 @@ VALUES (
 
 Replace `<the user id>` with that person’s id. `10` is the cap in US dollars for one open coding run. The reserve uses this row, not `spentUsd`. Pick the number you want before you insert it.
 
-`chief_budget_hold` has no row-level policy. The additive classifier rejects `ENABLE ROW LEVEL SECURITY` on a new file, so this migration does not add one. Every reserve, release, and cost update includes that user id. One user cannot reuse, release, or reprice another user’s hold. Do not grant this table to a shared login unless you also add a policy through the separate authorization path.
+`chief_budget_hold` enables and forces row-level security. The only policy is `user_isolation`: `"userId"` must equal `app.current_user_id`. With no setting, a query sees no rows. The migration grants `SELECT`, `INSERT`, `UPDATE`, and `DELETE` to `freedom_app` and `freedom_service` when those roles exist. Every reserve, release, and cost update also includes that user id, so one user cannot reuse, release, or reprice another user’s hold. The table has no foreign key. A missing cap still refuses the spend.
 
 ## Still not run from here
 

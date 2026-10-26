@@ -1,11 +1,6 @@
-// CHIEF review handoff. coding_task_submit calls this client, not
-// createExecutionRuntime. That executor keeps autoCreatePR false and cannot
-// open a pull request. This client sends autoCreatePR true, workOnCurrentBranch
-// false, and never calls merge or deploy.
-// One requirements text maps to one Cursor agent while that run is unfinished.
-// The id is derived from the user, the text, and an attempt number, so a
-// restarted process finds the same agent. A new attempt is created only when
-// the caller asks and the previous run has finished or failed.
+// CHIEF review handoff. coding_task_submit does not create a Cursor agent
+// here. Opening a pull request goes through the execution ledger and
+// cursorCloud, and only for the coding scope. This client reads status.
 
 import { createHash } from "node:crypto";
 
@@ -77,7 +72,8 @@ function cursorKey(env) {
 }
 
 function githubToken(env) {
-  const value = typeof env?.CHIEF_CODE_READ_TOKEN === "string" ? env.CHIEF_CODE_READ_TOKEN.trim() : "";
+  const value =
+    typeof env?.CHIEF_CODE_READ_TOKEN === "string" ? env.CHIEF_CODE_READ_TOKEN.trim() : "";
   return value.length >= 8 ? value : "";
 }
 
@@ -180,7 +176,9 @@ export function createCodingHandoff({
       limitations.push("Cursor finished without a pull request URL.");
     }
     if (!token) {
-      limitations.push("CHIEF_CODE_READ_TOKEN is not configured, so the diff and checks were not read.");
+      limitations.push(
+        "CHIEF_CODE_READ_TOKEN is not configured, so the diff and checks were not read."
+      );
     }
     return {
       available: true,
@@ -209,7 +207,10 @@ export function createCodingHandoff({
     if (!response.ok) {
       return {
         found: false,
-        error: response.status === 401 || response.status === 403 ? "authentication_failed" : "request_rejected",
+        error:
+          response.status === 401 || response.status === 403
+            ? "authentication_failed"
+            : "request_rejected",
       };
     }
     return { found: body?.id === taskId, agent: body };
@@ -350,56 +351,9 @@ export function createCodingHandoff({
     });
   }
 
-  async function create(userId, text, attempt) {
-    const taskId = taskAgentId(userId, text, attempt);
-    if (!AGENT_ID.test(taskId)) return { available: false, error: "task_id_invalid" };
-    const created = await cursor("/v1/agents", {
-      method: "POST",
-      body: {
-        prompt: { text: codingTaskPrompt(text) },
-        repos: [{ url: repositoryUrl, startingRef: "main" }],
-        workOnCurrentBranch: false,
-        autoCreatePR: true,
-        agentId: taskId,
-      },
-    });
-    if (created.response.status === 409) {
-      const again = await inspect(userId, text, attempt);
-      const result = seen(
-        again.found ? again : { taskId, attempt, run: { agentId: taskId, status: "UNKNOWN" } },
-        { duplicate: true, text }
-      );
-      await remember(result);
-      return result;
-    }
-    if (!created.response.ok) {
-      return {
-        available: false,
-        error:
-          created.response.status === 401 || created.response.status === 403
-            ? "authentication_failed"
-            : "request_rejected",
-        taskId,
-        attempt,
-      };
-    }
-    const agentId = created.body?.agent?.id;
-    const runId = created.body?.run?.id;
-    const status = created.body?.run?.status;
-    if (agentId !== taskId || typeof runId !== "string" || typeof status !== "string") {
-      return { available: false, error: "response_invalid", taskId, attempt };
-    }
-    const result = view(
-      { ...created.body.run, agentId, result: created.body.run?.result },
-      { taskId, duplicate: false, requirements: text, attempt }
-    );
-    await remember(result);
-    return result;
-  }
-
   return {
     repositoryUrl,
-    async submit({ userId, requirements, newAttempt = false } = {}) {
+    async submit({ userId, requirements } = {}) {
       const text = normalizeRequirements(requirements);
       if (!userId || !text || text.length > 8000) {
         return { available: false, error: "requirements_invalid" };
@@ -422,26 +376,13 @@ export function createCodingHandoff({
       if (text.includes(key) || (token && text.includes(token))) {
         return { available: false, error: "requirements_invalid" };
       }
-      const latest = await latestAttempt(userId, text);
-      if (latest?.error) return { available: false, error: latest.error, taskId: latest.taskId };
-      if (latest?.found) {
-        const terminal = isTerminalStatus(latest.run?.status);
-        if (!newAttempt || !terminal) {
-          const result = seen(latest, { duplicate: true, text });
-          if (newAttempt && !terminal) {
-            result.limitations.push(
-              "The earlier task is still running, so a new attempt was not started."
-            );
-          }
-          await remember(result);
-          return result;
-        }
-        if (latest.attempt >= MAX_ATTEMPT) {
-          return { available: false, error: "attempt_limit", taskId: latest.taskId };
-        }
-        return create(userId, text, latest.attempt + 1);
-      }
-      return create(userId, text, latest?.attempt || 0);
+      return {
+        available: false,
+        error: "ledger_required",
+        posted: false,
+        merged: false,
+        deployed: false,
+      };
     },
 
     async status({ userId, taskId, requirements } = {}) {
@@ -464,8 +405,10 @@ export function createCodingHandoff({
         inspected = { found: true, taskId, attempt: null, agent: existing.agent, run };
       } else if (text && userId) {
         inspected = await latestAttempt(userId, text);
-        if (inspected?.error) return { available: false, error: inspected.error, taskId: inspected.taskId };
-        if (!inspected?.found) return { available: false, error: "task_not_found", taskId: inspected?.taskId };
+        if (inspected?.error)
+          return { available: false, error: inspected.error, taskId: inspected.taskId };
+        if (!inspected?.found)
+          return { available: false, error: "task_not_found", taskId: inspected?.taskId };
       } else {
         return { available: false, error: "task_id_invalid" };
       }

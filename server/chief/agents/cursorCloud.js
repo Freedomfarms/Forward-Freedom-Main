@@ -4,9 +4,9 @@
 // may carry a client-supplied bc- agentId. Cursor treats a repeat of that
 // id as 409 agent_id_conflict rather than a second agent. This module
 // records that conflict as ambiguous and does not POST again.
-// autoCreatePR stays false here. This path cannot open a pull request.
-// The CHIEF review handoff in codingHandoff.js is a separate client and is
-// the path that sets autoCreatePR true. Do not merge the two.
+// autoCreatePR stays false unless the approval scope is the coding scope:
+// effect execute, workOnCurrentBranch false, autoCreatePR true, merge false,
+// deploy false, startingRef main. No other create body may set it true.
 // Status is read with GET /v1/agents/{id}/runs/{runId}. Cancel is POST on
 // that run. GET /v1/agents/{id} returning 404 does not prove the create
 // never landed. This module does not poll, stream, or call the API while
@@ -20,6 +20,7 @@ import {
   isRunStatus,
   isTerminalStatus,
 } from "./execution.js";
+import { isCodingExecutionScope, isLegacyExecutionScope } from "./ledger.js";
 
 const PROVIDER = "cursor-cloud";
 const BASE_URL = "https://api.cursor.com";
@@ -111,15 +112,8 @@ function approvalCurrent(approval, now) {
   if (typeof approval.id !== "string" || !APPROVAL_ID.test(approval.id)) return false;
   const time = new Date(approval.expiresAt).getTime();
   if (approval.expiresAt == null || !Number.isFinite(time) || time <= now.getTime()) return false;
-  const scope = approval.scope;
-  if (!scope || typeof scope !== "object" || Array.isArray(scope)) return false;
-  const keys = Object.keys(scope);
-  return (
-    keys.length === 3 &&
-    scope.effect === "execute" &&
-    scope.workOnCurrentBranch === false &&
-    scope.autoCreatePR === false
-  );
+  if (isLegacyExecutionScope(approval.scope)) return true;
+  return isCodingExecutionScope(approval.scope) && approval.startingRef === "main";
 }
 
 function constraintsOf(value) {
@@ -183,8 +177,22 @@ function validateCommand(command, actor, allowlist, now) {
   if (command.workOnCurrentBranch != null && command.workOnCurrentBranch !== false) {
     fail("scope_rejected", "Execution cannot work on the current branch");
   }
-  if (command.autoCreatePR != null && command.autoCreatePR !== false) {
+  if (command.merge === true || command.deploy === true) {
+    fail("scope_rejected", "Execution cannot merge or deploy");
+  }
+  const coding = isCodingExecutionScope(command.approval?.scope);
+  if (command.autoCreatePR === true && !coding) {
     fail("scope_rejected", "Execution cannot open a pull request");
+  }
+  if (
+    command.autoCreatePR != null &&
+    command.autoCreatePR !== false &&
+    command.autoCreatePR !== true
+  ) {
+    fail("scope_rejected", "Execution cannot open a pull request");
+  }
+  if (coding && command.startingRef !== "main") {
+    fail("ref_invalid", "Coding execution starts from main");
   }
   if (!approvalCurrent(command.approval, now) || !userIdOf(command.approval.userId)) {
     fail("approval_mismatch", "Approval does not cover this execution scope");
@@ -221,11 +229,19 @@ function validateCommand(command, actor, allowlist, now) {
     repositoryUrl: command.repositoryUrl,
     startingRef: command.startingRef,
     provider: PROVIDER,
-    scope: {
-      effect: "execute",
-      workOnCurrentBranch: false,
-      autoCreatePR: false,
-    },
+    scope: coding
+      ? {
+          effect: "execute",
+          workOnCurrentBranch: false,
+          autoCreatePR: true,
+          merge: false,
+          deploy: false,
+        }
+      : {
+          effect: "execute",
+          workOnCurrentBranch: false,
+          autoCreatePR: false,
+        },
   };
 }
 
@@ -250,11 +266,16 @@ function submissionView(record, duplicate) {
 }
 
 function createBody(command, agentId) {
+  const coding =
+    isCodingExecutionScope(command.scope) &&
+    command.startingRef === "main" &&
+    command.scope.merge !== true &&
+    command.scope.deploy !== true;
   const body = {
     prompt: { text: command.objective },
     repos: [{ url: command.repositoryUrl, startingRef: command.startingRef }],
     workOnCurrentBranch: false,
-    autoCreatePR: false,
+    autoCreatePR: coding,
   };
   if (typeof agentId === "string" && agentId) body.agentId = agentId;
   return body;
@@ -295,6 +316,8 @@ export function createCursorCloudRuntime(options = {}) {
     fail("ledger_required", "Cursor execution requires a durable ledger");
   }
   const ledger = options.ledger;
+  const reserveHold = options.reserveHold;
+  const releaseHold = options.releaseHold;
   const fetchImpl = options.fetch ?? globalThis.fetch;
   const now = options.now ?? (() => new Date());
   const configuredKey = Object.prototype.hasOwnProperty.call(options, "apiKey")
@@ -359,6 +382,155 @@ export function createCursorCloudRuntime(options = {}) {
     return body;
   }
 
+  async function rejectReserved(approved, code) {
+    await ledger.finish(approved.approvalId, "pending", {
+      state: "rejected",
+      agentId: null,
+      runId: null,
+      status: null,
+    });
+    fail(code, "Coding spend could not be reserved");
+  }
+
+  async function postReserved(approved, reservedId, key) {
+    if (isCodingExecutionScope(approved.scope)) {
+      if (typeof reserveHold !== "function") {
+        if (typeof releaseHold === "function") {
+          await releaseHold({
+            userId: approved.userId,
+            operationId: approved.approvalId,
+          }).catch(() => {});
+        }
+        await rejectReserved(approved, "budget_unverified");
+      }
+      let hold;
+      try {
+        hold = await reserveHold({
+          userId: approved.userId,
+          operationId: approved.approvalId,
+          scope: "cursor",
+          periodType: "run",
+          estimateUsd: options.cursorEstimateUsd,
+        });
+      } catch {
+        hold = { ok: false, code: "budget_unverified" };
+      }
+      if (!hold?.ok) await rejectReserved(approved, hold?.code || "budget_unverified");
+      if (!reservedId && typeof releaseHold === "function") {
+        await releaseHold({
+          userId: approved.userId,
+          operationId: approved.approvalId,
+        }).catch(() => {});
+        await rejectReserved(approved, "reconciliation_required");
+      }
+    }
+    let response;
+    try {
+      response = await send("/v1/agents", {
+        method: "POST",
+        body: createBody(approved, reservedId),
+        key,
+      });
+    } catch {
+      await ledger.finish(approved.approvalId, "pending", {
+        state: "ambiguous",
+        agentId: reservedId,
+        runId: null,
+        status: null,
+      });
+      fail(
+        "reconciliation_required",
+        "Cursor submission outcome is ambiguous and needs reconciliation"
+      );
+    }
+
+    if (response.status >= 500 || response.status === 408) {
+      await ledger.finish(approved.approvalId, "pending", {
+        state: "ambiguous",
+        agentId: reservedId,
+        runId: null,
+        status: null,
+      });
+      fail(
+        "reconciliation_required",
+        "Cursor submission outcome is ambiguous and needs reconciliation"
+      );
+    }
+
+    if (!response.ok) {
+      const code = await responseCode(response);
+      if (response.status === 409 && code === "agent_id_conflict") {
+        await ledger.finish(approved.approvalId, "pending", {
+          state: "ambiguous",
+          agentId: reservedId,
+          runId: null,
+          status: null,
+          code: "agent_id_conflict",
+        });
+        fail(
+          "reconciliation_required",
+          "Cursor submission outcome is ambiguous and needs reconciliation"
+        );
+      }
+      await ledger.finish(approved.approvalId, "pending", {
+        state: "rejected",
+        agentId: reservedId,
+        runId: null,
+        status: null,
+      });
+      if (response.status === 401 || response.status === 403) {
+        fail("authentication_failed", "Cursor API authentication failed");
+      }
+      if (response.status === 429) fail("rate_limited", "Cursor API rate limit exceeded");
+      if (response.status === 409 && code === "agent_busy") {
+        fail("agent_busy", "Cursor agent is busy");
+      }
+      fail("request_rejected", "Cursor execution request was rejected");
+    }
+
+    let body;
+    try {
+      body = await response.json();
+    } catch {
+      body = null;
+    }
+    const agentId = body?.agent?.id;
+    const runId = body?.run?.id;
+    const latest = body?.agent?.latestRunId;
+    const status = body?.run?.status;
+    const addressed =
+      AGENT_ID.test(agentId) &&
+      RUN_ID.test(runId) &&
+      (latest == null || latest === runId) &&
+      (reservedId == null || agentId === reservedId) &&
+      isRunStatus(status);
+    if (!addressed) {
+      await ledger.finish(approved.approvalId, "pending", {
+        state: "ambiguous",
+        agentId: reservedId,
+        runId: null,
+        status: null,
+      });
+      fail(
+        "reconciliation_required",
+        "Cursor submission outcome is ambiguous and needs reconciliation"
+      );
+    }
+    const finished = await ledger.finish(approved.approvalId, "pending", {
+      state: "submitted",
+      agentId,
+      runId,
+      status,
+    });
+    if (!finished.ok) {
+      fail(
+        "reconciliation_required",
+        "Cursor submission outcome is ambiguous and needs reconciliation"
+      );
+    }
+    return submissionView(finished.record, false);
+  }
+
   function resultView(record, run) {
     const git = platformGit(run);
     return {
@@ -421,112 +593,37 @@ export function createCursorCloudRuntime(options = {}) {
         );
       }
       const reservedId = begun.record?.agentId ?? null;
+      return postReserved(approved, reservedId, key);
+    },
 
-      let response;
-      try {
-        response = await send("/v1/agents", {
-          method: "POST",
-          body: createBody(approved, reservedId),
-          key,
-        });
-      } catch {
-        await ledger.finish(approved.approvalId, "pending", {
-          state: "ambiguous",
-          agentId: reservedId,
-          runId: null,
-          status: null,
-        });
+    async deliverReserved(record, actor) {
+      if (!record || !userIdOf(actor?.userId) || actor.userId !== record.userId) {
+        fail("unauthorized", "Execution requires the authorized user");
+      }
+      if (record.scope?.autoCreatePR === true && !isCodingExecutionScope(record.scope)) {
+        fail("scope_rejected", "Execution cannot open a pull request");
+      }
+      if (typeof record.agentId !== "string" || record.agentId === "") {
         fail(
           "reconciliation_required",
           "Cursor submission outcome is ambiguous and needs reconciliation"
         );
       }
-
-      if (response.status >= 500 || response.status === 408) {
-        await ledger.finish(approved.approvalId, "pending", {
-          state: "ambiguous",
-          agentId: reservedId,
-          runId: null,
-          status: null,
-        });
-        fail(
-          "reconciliation_required",
-          "Cursor submission outcome is ambiguous and needs reconciliation"
-        );
-      }
-
-      if (!response.ok) {
-        const code = await responseCode(response);
-        if (response.status === 409 && code === "agent_id_conflict") {
-          await ledger.finish(approved.approvalId, "pending", {
-            state: "ambiguous",
-            agentId: reservedId,
-            runId: null,
-            status: null,
-            code: "agent_id_conflict",
-          });
-          fail(
-            "reconciliation_required",
-            "Cursor submission outcome is ambiguous and needs reconciliation"
-          );
-        }
-        await ledger.finish(approved.approvalId, "pending", {
-          state: "rejected",
-          agentId: reservedId,
-          runId: null,
-          status: null,
-        });
-        if (response.status === 401 || response.status === 403) {
-          fail("authentication_failed", "Cursor API authentication failed");
-        }
-        if (response.status === 429) fail("rate_limited", "Cursor API rate limit exceeded");
-        if (response.status === 409 && code === "agent_busy") {
-          fail("agent_busy", "Cursor agent is busy");
-        }
-        fail("request_rejected", "Cursor execution request was rejected");
-      }
-
-      let body;
-      try {
-        body = await response.json();
-      } catch {
-        body = null;
-      }
-      const agentId = body?.agent?.id;
-      const runId = body?.run?.id;
-      const latest = body?.agent?.latestRunId;
-      const status = body?.run?.status;
-      const addressed =
-        AGENT_ID.test(agentId) &&
-        RUN_ID.test(runId) &&
-        (latest == null || latest === runId) &&
-        (reservedId == null || agentId === reservedId) &&
-        isRunStatus(status);
-      if (!addressed) {
-        await ledger.finish(approved.approvalId, "pending", {
-          state: "ambiguous",
-          agentId: reservedId,
-          runId: null,
-          status: null,
-        });
-        fail(
-          "reconciliation_required",
-          "Cursor submission outcome is ambiguous and needs reconciliation"
-        );
-      }
-      const finished = await ledger.finish(approved.approvalId, "pending", {
-        state: "submitted",
-        agentId,
-        runId,
-        status,
-      });
-      if (!finished.ok) {
-        fail(
-          "reconciliation_required",
-          "Cursor submission outcome is ambiguous and needs reconciliation"
-        );
-      }
-      return submissionView(finished.record, false);
+      if (record.runId) return submissionView(record, true);
+      const key = apiKey();
+      if (!key) fail("api_key_missing", "Cursor execution API key is not configured");
+      return postReserved(
+        {
+          approvalId: record.approvalId,
+          userId: record.userId,
+          objective: record.objective,
+          repositoryUrl: record.repositoryUrl,
+          startingRef: record.startingRef,
+          scope: record.scope,
+        },
+        record.agentId,
+        key
+      );
     },
 
     async getStatus(reference, actor) {

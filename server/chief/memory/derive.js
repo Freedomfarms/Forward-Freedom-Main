@@ -232,7 +232,7 @@ export async function retainConversationMemories({
       }
       throw error;
     }
-    if (!written?.id || known.has(written.id)) {
+    if (!written?.id || written.forgotten || written.deletedAt || known.has(written.id)) {
       counts.duplicate += 1;
       continue;
     }

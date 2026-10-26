@@ -39,6 +39,40 @@ export const EXECUTION_SCOPE = Object.freeze({
   autoCreatePR: false,
 });
 
+// The only scope allowed to ask Cursor to open a pull request.
+// merge and deploy stay false. startingRef for this scope is main.
+export const CODING_EXECUTION_SCOPE = Object.freeze({
+  effect: "execute",
+  workOnCurrentBranch: false,
+  autoCreatePR: true,
+  merge: false,
+  deploy: false,
+});
+
+export function isLegacyExecutionScope(scope) {
+  const keys =
+    scope && typeof scope === "object" && !Array.isArray(scope) ? Object.keys(scope) : [];
+  return (
+    keys.length === 3 &&
+    scope.effect === EXECUTION_SCOPE.effect &&
+    scope.workOnCurrentBranch === false &&
+    scope.autoCreatePR === false
+  );
+}
+
+export function isCodingExecutionScope(scope) {
+  const keys =
+    scope && typeof scope === "object" && !Array.isArray(scope) ? Object.keys(scope) : [];
+  return (
+    keys.length === 5 &&
+    scope.effect === CODING_EXECUTION_SCOPE.effect &&
+    scope.workOnCurrentBranch === false &&
+    scope.autoCreatePR === true &&
+    scope.merge === false &&
+    scope.deploy === false
+  );
+}
+
 // Distinct from ReviewDecisionType. Tool decisions cannot satisfy it.
 export const EXECUTION_APPROVAL_ACTION = "execute";
 
@@ -141,6 +175,10 @@ export function executionScopeHash(scope) {
         effect: scope.scope.effect,
         workOnCurrentBranch: scope.scope.workOnCurrentBranch,
         autoCreatePR: scope.scope.autoCreatePR,
+        ...(Object.prototype.hasOwnProperty.call(scope.scope, "merge") ||
+        Object.prototype.hasOwnProperty.call(scope.scope, "deploy")
+          ? { merge: scope.scope.merge, deploy: scope.scope.deploy }
+          : {}),
       })
     )
     .digest("hex");
@@ -221,14 +259,13 @@ function grantInput(input) {
     fail("ref_invalid", "Execution starting ref is invalid");
   }
   const scope = input.scope;
-  const keys = scope && typeof scope === "object" ? Object.keys(scope) : [];
-  if (
-    keys.length !== 3 ||
-    scope.effect !== EXECUTION_SCOPE.effect ||
-    scope.workOnCurrentBranch !== false ||
-    scope.autoCreatePR !== false
-  ) {
+  const coding = isCodingExecutionScope(scope);
+  const legacy = isLegacyExecutionScope(scope);
+  if (!coding && !legacy) {
     fail("scope_rejected", "Execution scope does not match the approved scope");
+  }
+  if (coding && input.startingRef !== "main") {
+    fail("ref_invalid", "Coding execution starts from main");
   }
   if (
     input.intentionId != null &&
@@ -244,11 +281,19 @@ function grantInput(input) {
     constraints,
     repositoryUrl: input.repositoryUrl,
     startingRef: input.startingRef,
-    scope: {
-      effect: EXECUTION_SCOPE.effect,
-      workOnCurrentBranch: false,
-      autoCreatePR: false,
-    },
+    scope: coding
+      ? {
+          effect: CODING_EXECUTION_SCOPE.effect,
+          workOnCurrentBranch: false,
+          autoCreatePR: true,
+          merge: false,
+          deploy: false,
+        }
+      : {
+          effect: EXECUTION_SCOPE.effect,
+          workOnCurrentBranch: false,
+          autoCreatePR: false,
+        },
   };
 }
 
@@ -475,6 +520,37 @@ export function createMemoryExecutionStore({ encrypt, decrypt, now = () => new D
       });
     },
 
+    async findLatestByHash(userId, scopeHash) {
+      let latest = null;
+      for (const row of rows.values()) {
+        if (row.userId !== userId || row.scopeHash !== scopeHash) continue;
+        if (!latest || new Date(row.createdAt) > new Date(latest.createdAt)) latest = row;
+      }
+      return latest ? view(latest) : null;
+    },
+
+    async cancelBeforePost(userId, id) {
+      return exclusive(() => {
+        const row = rows.get(id);
+        if (!row || row.userId !== userId) return null;
+        if (row.runId) return view(row);
+        if (row.state !== ExecutionState.APPROVED && row.state !== ExecutionState.SUBMITTING) {
+          return view(row);
+        }
+        const at = now();
+        row.state = ExecutionState.CANCELLED;
+        row.terminalAt = at;
+        row.updatedAt = at;
+        row.verified = false;
+        write(row);
+        return view(row);
+      });
+    },
+
+    async begin(approvalId, snapshot) {
+      return this.adapter().begin(approvalId, snapshot);
+    },
+
     async get(userId, id) {
       const row = rows.get(id);
       if (!row || row.userId !== userId) return null;
@@ -638,11 +714,20 @@ export function createMemoryExecutionStore({ encrypt, decrypt, now = () => new D
 }
 
 export function commandForGrant(record) {
-  const scope = {
-    effect: "execute",
-    workOnCurrentBranch: false,
-    autoCreatePR: false,
-  };
+  const coding = isCodingExecutionScope(record.scope);
+  const scope = coding
+    ? {
+        effect: "execute",
+        workOnCurrentBranch: false,
+        autoCreatePR: true,
+        merge: false,
+        deploy: false,
+      }
+    : {
+        effect: "execute",
+        workOnCurrentBranch: false,
+        autoCreatePR: false,
+      };
   return {
     userId: record.userId,
     provider: record.provider,
@@ -650,6 +735,7 @@ export function commandForGrant(record) {
     constraints: record.constraints,
     repositoryUrl: record.repositoryUrl,
     startingRef: record.startingRef,
+    ...(coding ? { autoCreatePR: true } : {}),
     approval: {
       id: record.approvalId,
       decision: "approved",
@@ -876,6 +962,38 @@ export class PrismaExecutionStore {
       orderBy: { updatedAt: "asc" },
       take: limit,
     });
+  }
+
+  async findLatestByHash(userId, scopeHash) {
+    return this._withUser(userId, async (tx) => {
+      const row = await tx.workforceExecution.findFirst({
+        where: { userId, scopeHash },
+        orderBy: { createdAt: "desc" },
+      });
+      return this._view(row);
+    });
+  }
+
+  async cancelBeforePost(userId, id) {
+    return this._withUser(userId, async (tx) => {
+      const at = this._now();
+      const { count } = await tx.workforceExecution.updateMany({
+        where: {
+          id,
+          userId,
+          runId: null,
+          state: { in: [ExecutionState.APPROVED, ExecutionState.SUBMITTING] },
+        },
+        data: { state: ExecutionState.CANCELLED, terminalAt: at, verified: false },
+      });
+      const current = await tx.workforceExecution.findFirst({ where: { id, userId } });
+      if (count !== 1) return this._view(current);
+      return this._view(current);
+    });
+  }
+
+  async begin(approvalId, snapshot) {
+    return this.adapter().begin(approvalId, snapshot);
   }
 
   async notePlatformCode(userId, id, code) {

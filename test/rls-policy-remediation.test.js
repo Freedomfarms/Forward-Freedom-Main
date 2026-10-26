@@ -9,10 +9,7 @@ const remediationSql = readFileSync(
   ),
   "utf8"
 );
-const prismaSchema = readFileSync(
-  new URL("../prisma/schema.prisma", import.meta.url),
-  "utf8"
-);
+const prismaSchema = readFileSync(new URL("../prisma/schema.prisma", import.meta.url), "utf8");
 
 const expectedPolicyColumns = {
   User: "id",
@@ -85,6 +82,8 @@ const laterRlsModels = {
   ExternalMessage: "20261013180000_external_conversation_archive",
   ExternalCaptureCredential: "20261013210000_external_capture_credential",
   ChiefPersonality: "20261024180000_chief_personality",
+  ChiefBudgetHold: "20261026180000_chief_budget_hold",
+  ChiefWorkspaceDocument: "20261026203000_chief_workspace_document",
 };
 
 // CHIEF models map to snake_case physical tables via @@map; the RLS
@@ -184,14 +183,10 @@ test("models added after the remediation enable and force RLS in their own migra
 test("remediation atomically enables and forces RLS on every target table", () => {
   const executableSql = withoutComments(remediationSql);
   const enabledTables = [
-    ...executableSql.matchAll(
-      /ALTER TABLE public\."([^"]+)" ENABLE ROW LEVEL SECURITY;/g
-    ),
+    ...executableSql.matchAll(/ALTER TABLE public\."([^"]+)" ENABLE ROW LEVEL SECURITY;/g),
   ].map((match) => match[1]);
   const forcedTables = [
-    ...executableSql.matchAll(
-      /ALTER TABLE public\."([^"]+)" FORCE ROW LEVEL SECURITY;/g
-    ),
+    ...executableSql.matchAll(/ALTER TABLE public\."([^"]+)" FORCE ROW LEVEL SECURITY;/g),
   ].map((match) => match[1]);
 
   assert.match(executableSql.trim(), /^BEGIN;/);
@@ -213,9 +208,7 @@ test("remediation drops every existing policy on exactly the target tables", () 
   )?.[1];
   assert.ok(inventory, "cleanup must be restricted to public and an explicit inventory");
 
-  const cleanupTables = [
-    ...inventory.matchAll(/'([^']+)'/g),
-  ].map((match) => match[1]);
+  const cleanupTables = [...inventory.matchAll(/'([^']+)'/g)].map((match) => match[1]);
   assert.deepEqual(cleanupTables.sort(), expectedTables);
   assert.match(
     cleanupBlock,
