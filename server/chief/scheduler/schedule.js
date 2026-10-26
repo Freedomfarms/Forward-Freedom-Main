@@ -29,6 +29,7 @@ import { CronExpressionParser } from "cron-parser";
 
 export const MIN_INTERVAL_SECONDS = 60;
 export const DEFAULT_TIMEZONE = "UTC";
+export const FALLBACK_TIMEZONE = "America/New_York";
 
 export function isValidTimezone(timezone) {
   if (typeof timezone !== "string" || !timezone.trim()) return false;
@@ -40,9 +41,12 @@ export function isValidTimezone(timezone) {
   }
 }
 
-export function taskTimezone(task) {
-  const timezone = task?.payload?.timezone;
-  return isValidTimezone(timezone) ? timezone : DEFAULT_TIMEZONE;
+export function taskTimezone(task, user) {
+  const taskZone = task?.timezone ?? task?.payload?.timezone;
+  if (isValidTimezone(taskZone)) return taskZone;
+  const userZone = user?.timezone ?? task?.user?.timezone;
+  if (isValidTimezone(userZone)) return userZone;
+  return FALLBACK_TIMEZONE;
 }
 
 function parseCron(expr, { currentDate, timezone }) {
@@ -53,16 +57,20 @@ function parseCron(expr, { currentDate, timezone }) {
   return CronExpressionParser.parse(text, { currentDate, tz: timezone });
 }
 
-export function nextCronAfter(expr, after, timezone = DEFAULT_TIMEZONE) {
+export function nextCronAfter(expr, after, timezone = FALLBACK_TIMEZONE) {
   return parseCron(expr, { currentDate: after, timezone }).next().toDate();
 }
 
 // Throws TypeError when the stored definition cannot be scheduled. The tick
 // pauses such a task instead of retrying it every invocation.
-export function validateTaskSchedule(task) {
-  const timezone = task?.payload?.timezone;
+export function validateTaskSchedule(task, user) {
+  const timezone = task?.timezone ?? task?.payload?.timezone;
   if (timezone != null && !isValidTimezone(timezone)) {
     throw new TypeError(`unknown timezone '${timezone}'`);
+  }
+  const userZone = user?.timezone ?? task?.user?.timezone;
+  if (userZone != null && !isValidTimezone(userZone) && !isValidTimezone(timezone)) {
+    throw new TypeError(`unknown timezone '${userZone}'`);
   }
   switch (task?.kind) {
     case "ONCE": {
@@ -82,28 +90,28 @@ export function validateTaskSchedule(task) {
       return;
     }
     case "CRON":
-      nextCronAfter(task.cronExpr, new Date(), taskTimezone(task));
+      nextCronAfter(task.cronExpr, new Date(), taskTimezone(task, user));
       return;
     default:
       throw new TypeError(`unknown schedule kind '${task?.kind}'`);
   }
 }
 
-export function initialNextRun(task, now = new Date()) {
-  validateTaskSchedule(task);
+export function initialNextRun(task, now = new Date(), user) {
+  validateTaskSchedule(task, user);
   switch (task.kind) {
     case "ONCE":
       return new Date(task.runAt);
     case "INTERVAL":
       return new Date(now.getTime() + Number(task.intervalSeconds) * 1000);
     default:
-      return nextCronAfter(task.cronExpr, now, taskTimezone(task));
+      return nextCronAfter(task.cronExpr, now, taskTimezone(task, user));
   }
 }
 
 // The nextRunAt written at claim time. null means the task has no further
 // occurrence (a once task that is now running).
-export function advanceAtClaim(task, now = new Date()) {
+export function advanceAtClaim(task, now = new Date(), user) {
   switch (task.kind) {
     case "ONCE":
       return null;
@@ -115,7 +123,7 @@ export function advanceAtClaim(task, now = new Date()) {
       return new Date(scheduled + everyMs * (missed + 1));
     }
     case "CRON":
-      return nextCronAfter(task.cronExpr, now, taskTimezone(task));
+      return nextCronAfter(task.cronExpr, now, taskTimezone(task, user));
     default:
       throw new TypeError(`unknown schedule kind '${task?.kind}'`);
   }

@@ -88,7 +88,12 @@ export const CAPABILITY_CATALOG = Object.freeze({
   code_tree: entry("code", Effect.READ, Confirmation.NONE, AuditPolicy.DENY_ONLY),
   code_read: entry("code", Effect.READ, Confirmation.NONE, AuditPolicy.DENY_ONLY),
   code_search: entry("code", Effect.READ, Confirmation.NONE, AuditPolicy.DENY_ONLY),
-  coding_task_submit: entry("workforce", Effect.EXTERNAL, Confirmation.NONE, AuditPolicy.DENY_ONLY),
+  coding_task_submit: entry(
+    "workforce",
+    Effect.EXTERNAL,
+    Confirmation.REQUIRED,
+    AuditPolicy.DENY_ONLY
+  ),
   coding_task_status: entry("workforce", Effect.READ, Confirmation.NONE, AuditPolicy.DENY_ONLY),
   capability_discover: entry("control", Effect.READ, Confirmation.NONE, AuditPolicy.DENY_ONLY),
 });
