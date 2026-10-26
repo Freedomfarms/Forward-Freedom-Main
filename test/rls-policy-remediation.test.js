@@ -83,6 +83,7 @@ const laterRlsModels = {
   ExternalCaptureCredential: "20261013210000_external_capture_credential",
   ChiefPersonality: "20261024180000_chief_personality",
   ChiefBudgetHold: "20261026180000_chief_budget_hold",
+  ChiefWorkspaceDocument: "20261026203000_chief_workspace_document",
 };
 
 // CHIEF models map to snake_case physical tables via @@map; the RLS

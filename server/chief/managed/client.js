@@ -97,6 +97,14 @@ export function createAnthropicManagedClient({
         operation: "retrieveAgent",
       });
     },
+    updateAgent(id, body) {
+      return request(`/v1/agents/${encodeURIComponent(id)}`, {
+        method: "POST",
+        beta: SESSION_BETA,
+        body,
+        operation: "updateAgent",
+      });
+    },
     listSkills() {
       return listPaged("/v1/skills", undefined, "listSkills");
     },
