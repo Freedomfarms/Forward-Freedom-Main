@@ -1,8 +1,8 @@
 # CHIEF capability registry
 
 CHIEF operates Freedom OS by naming a registered capability. The model does not
-receive a handler, a database connection, or a credential. `TurnMachine` and
-`ToolExecutor` remain the execution path. `ApprovalCoordinator` remains the only
+receive a handler, a database connection, or a credential. Interactive chat and
+scheduled ticks both use the managed-agent turn. `ApprovalCoordinator` remains the only
 approval lifecycle.
 
 ## Descriptor

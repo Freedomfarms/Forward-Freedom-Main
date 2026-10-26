@@ -40,6 +40,62 @@ import {
 } from "../../../src/utils/chiefPersonality.js";
 import { MISSING_CHIEF_ANSWER } from "../../../src/utils/chiefProtocol.js";
 import { SCHEDULED_TURN_EXCLUDED_TOOLS } from "../tools/inventory.js";
+import { ICM_ARCHITECT_PIN } from "./constants.js";
+import {
+  ensureResource,
+  hasIdentity,
+  metadataMatch as resourceMetadataMatch,
+} from "./resources.js";
+import { buildIcmArchitectZip } from "./skillPackage.js";
+
+const ICM_SKILL_KEY = `skill:icm-architect:${ICM_ARCHITECT_PIN}`;
+const icmResourceRows = new Map();
+const icmResourceStore = {
+  async getResource(key) {
+    return icmResourceRows.get(key) || null;
+  },
+  async saveResource(record) {
+    icmResourceRows.set(record.idempotencyKey, { ...record });
+    return record;
+  },
+};
+
+const mockIcmSkill = {
+  id: "skill_icm_architect_local",
+  version: "mock",
+  display_title: `icm-architect ${ICM_ARCHITECT_PIN}`,
+  metadata: { freedom_os_key: ICM_SKILL_KEY },
+};
+
+export async function ensureIcmArchitectSkill({
+  store = icmResourceStore,
+  list = async () => [mockIcmSkill],
+  retrieve = async (id) => (id === mockIcmSkill.id ? mockIcmSkill : null),
+  create = null,
+  now = new Date().toISOString(),
+  buildZip = buildIcmArchitectZip,
+} = {}) {
+  return ensureResource({
+    store,
+    now,
+    spec: {
+      kind: "skill",
+      idempotencyKey: ICM_SKILL_KEY,
+      fingerprint: ICM_ARCHITECT_PIN,
+      matches: (item) =>
+        item?.display_title === `icm-architect ${ICM_ARCHITECT_PIN}` ||
+        resourceMetadataMatch(ICM_SKILL_KEY)(item),
+      identifiable: hasIdentity,
+    },
+    list,
+    retrieve,
+    create: async () => {
+      const zip = await buildZip();
+      if (typeof create === "function") return create(zip);
+      return { id: mockIcmSkill.id, version: mockIcmSkill.version, filename: zip.filename };
+    },
+  });
+}
 
 const LEGACY_MESSAGE =
   "This conversation belongs to the previous CHIEF runtime. Start a new conversation.";
@@ -403,6 +459,7 @@ async function seedWorkspace(client, memoryStoreId) {
 }
 
 async function ensureResources({ client, userId, toolSpecs, bindings, managed }) {
+  await ensureIcmArchitectSkill();
   const agentKey = agentKeyFor(toolSpecs);
   const skillId = process.env.CHIEF_MANAGED_SKILL_ID || "";
   const skillVersion = process.env.CHIEF_MANAGED_SKILL_VERSION || "";
@@ -873,11 +930,19 @@ export async function runManagedChiefTurn({
       emit(eventMsg.submissionRejected("That approval is no longer pending."));
       return { sessionId: record.id, status: "rejected", checkpoint };
     }
-    if (decision.type === ReviewDecisionType.ABORT || decision.type === ReviewDecisionType.DENIED) {
+    const sessionCoding =
+      decision.type === ReviewDecisionType.APPROVED_FOR_SESSION &&
+      (pending.calls || []).some((call) => call.name === "coding_task_submit");
+    if (
+      decision.type === ReviewDecisionType.ABORT ||
+      decision.type === ReviewDecisionType.DENIED ||
+      sessionCoding
+    ) {
       resolveToolId = null;
       if (managed.providerSessionId && pending.toolEventId) {
-        const note =
-          decision.type === ReviewDecisionType.DENIED
+        const note = sessionCoding
+          ? "denied: coding requires an explicit execution approval"
+          : decision.type === ReviewDecisionType.DENIED
             ? `denied: ${decision.rejection ?? "rejected"}`
             : "aborted";
         checkpoint.transcript.push({
