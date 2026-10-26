@@ -21,6 +21,9 @@ const USER_ID = "user-1";
 const PROFILE_FACT = "PROFILE_FACT_TRAINING_FOR_A_MARATHON";
 
 before(async () => {
+  // Title generation runs only when a platform key is present. CI has none.
+  // The key never leaves this process: the model implementation is replaced.
+  process.env.ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || "test-key-never-used";
   process.env.FFF_ENCRYPTION_KEYS = `1:${crypto.randomBytes(32).toString("base64")}`;
   process.env.FFF_ENCRYPTION_ACTIVE_VERSION = "1";
   const { resetKeyProviderCache } = await import("../server/security/keyProvider.js");

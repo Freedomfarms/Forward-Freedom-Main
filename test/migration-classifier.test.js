@@ -70,6 +70,48 @@ test("a foreign key inside the create table that introduces it stays additive", 
   assert.equal(result.class, "additive");
 });
 
+test("row security on a table created in the same file is additive", async () => {
+  const result = await classified(`
+    CREATE TABLE "chief_budget_hold" ("id" TEXT PRIMARY KEY, "userId" TEXT NOT NULL DEFAULT '');
+    ALTER TABLE "chief_budget_hold" ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE "chief_budget_hold" FORCE ROW LEVEL SECURITY;
+    CREATE POLICY "user_isolation" ON "chief_budget_hold"
+      FOR ALL
+      USING ("userId" = current_setting('app.current_user_id', true))
+      WITH CHECK ("userId" = current_setting('app.current_user_id', true));
+    DO $$
+    BEGIN
+      IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'freedom_app') THEN
+        GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE "chief_budget_hold" TO freedom_app;
+      END IF;
+      IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'freedom_service') THEN
+        GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE "chief_budget_hold" TO freedom_service;
+      END IF;
+    END
+    $$;
+  `);
+  assert.equal(result.class, "additive");
+});
+
+test("row security on an existing table stays denied", async () => {
+  const enabled = await classified(`ALTER TABLE "User" ENABLE ROW LEVEL SECURITY;`);
+  const openPolicy = await classified(`
+    CREATE TABLE "widget" ("id" TEXT, "userId" TEXT);
+    CREATE POLICY "user_isolation" ON "widget" FOR ALL USING (true) WITH CHECK (true);
+  `);
+  const hiddenDrop = await classified(`
+    CREATE TABLE "widget" ("id" TEXT);
+    DO $$
+    BEGIN
+      DROP TABLE "widget";
+    END
+    $$;
+  `);
+  assert.equal(enabled.class, "denied");
+  assert.equal(openPolicy.class, "denied");
+  assert.equal(hiddenDrop.class, "denied");
+});
+
 test("drop, row level security, and unrecognized statements are denied", async () => {
   const dropFile = fs.readFileSync(
     "prisma/migrations/20260708195911_privacy_field_encryption/migration.sql"

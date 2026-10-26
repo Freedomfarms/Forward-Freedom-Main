@@ -1,7 +1,8 @@
 import test, { before, after } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync } from "node:fs";
-import { spawnSync } from "node:child_process";
+
+import { databaseUrlFor, readAdminTarget, runPsql } from "./pg-admin.js";
 
 // Phase 3 (Freedom OS): proves per-user isolation is enforced BY THE DATABASE
 // (Postgres row-level security), not just by app-level WHERE clauses:
@@ -17,24 +18,17 @@ import { spawnSync } from "node:child_process";
 //     still sees every row.
 //
 // Runs against a REAL Postgres with ALL migrations applied, connected as the
-// RLS-subject app role. Self-skips unless DATABASE_URL is set. Run locally
-// with a superuser named `postgres` reachable via socket /tmp (matching the
-// other DB-backed tests):
-//   DATABASE_URL=postgresql://freedom_app@127.0.0.1:5433/ff_rls \
+// RLS-subject app role. Self-skips unless DATABASE_URL is set. The admin
+// connection is the postgres role on that same server (TCP in CI, or the
+// historical /tmp socket when that is what DATABASE_URL points at):
+//   DATABASE_URL=postgresql://postgres@127.0.0.1:5433/postgres \
 //     node --test test/rls-isolation.test.js
 
 const HAS_DB = Boolean(process.env.DATABASE_URL);
 const skip = !HAS_DB;
 
-function databaseNameFromUrl(fallback) {
-  try {
-    return new URL(process.env.DATABASE_URL).pathname.replace(/^\//, "") || fallback;
-  } catch {
-    return fallback;
-  }
-}
-const DB_NAME = process.env.RLS_DB_NAME || databaseNameFromUrl("ff_rls");
-const PG_PORT = process.env.TEST_PG_PORT || "5433";
+const DB_NAME = process.env.RLS_DB_NAME || "ff_rls";
+const admin = readAdminTarget();
 const GRANT_REMEDIATION_MIGRATION = "20260719010000_runtime_role_grant_remediation";
 const POLICY_REMEDIATION_MIGRATION = "20260719011500_user_isolation_policy_remediation";
 
@@ -51,8 +45,10 @@ let prisma;
 let withUserContext;
 
 function psqlAs(user, db, ...args) {
-  return spawnSync("psql", ["-h", "/tmp", "-p", PG_PORT, "-U", user, "-d", db, "-v", "ON_ERROR_STOP=1", ...args], {
-    encoding: "utf8",
+  return runPsql(admin, {
+    user,
+    database: db,
+    args: ["-v", "ON_ERROR_STOP=1", ...args],
   });
 }
 
@@ -110,7 +106,10 @@ before(async () => {
     // Fresh database owned by the non-superuser owner role, then apply every
     // migration in order AS THAT OWNER (matching production, where migrate
     // deploy runs as the owning role via DIRECT_URL).
-    spawnSync("psql", ["-h", "/tmp", "-p", PG_PORT, "-U", "postgres", "-d", "postgres", "-c", `DROP DATABASE IF EXISTS ${DB_NAME};`], { encoding: "utf8" });
+    runPsql(admin, {
+      database: "postgres",
+      args: ["-c", `DROP DATABASE IF EXISTS ${DB_NAME};`],
+    });
     const created = psqlAs("postgres", "postgres", "-c", `CREATE DATABASE ${DB_NAME} OWNER ${OWNER_ROLE};`);
     if (created.status !== 0) throw new Error(created.stderr || "failed to create RLS test database");
 
@@ -259,6 +258,10 @@ before(async () => {
       }
     }
 
+    process.env.DATABASE_URL = databaseUrlFor(admin, DB_NAME, {
+      user: "freedom_app",
+      password: "",
+    });
     const prismaModule = await import("../server/db/prisma.js");
     prisma = prismaModule.getPrismaClient();
     withUserContext = prismaModule.withUserContext;

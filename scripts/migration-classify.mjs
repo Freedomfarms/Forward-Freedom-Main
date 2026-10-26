@@ -7,6 +7,10 @@
 // CREATE INDEX, CREATE UNIQUE INDEX, and ADD CONSTRAINT … FOREIGN KEY are
 // additive only when that same migration creates the table. The same
 // statements on a table that already exists are authorization-required.
+// ENABLE and FORCE ROW LEVEL SECURITY, the user_isolation policy on "userId",
+// and the conditional freedom_app / freedom_service DML grants are additive
+// only for a table that same migration creates. The same statements on an
+// existing table, or any other policy or DO block, are denied.
 // A history-manifest match may be replayed. A changed byte is denied.
 
 import { createHash } from "node:crypto";
@@ -120,6 +124,55 @@ function relationName(relation) {
   return relation.relname;
 }
 
+function isUserIsolationExpr(expr) {
+  const op = expr?.A_Expr;
+  if (!op || op.kind !== "AEXPR_OP") return false;
+  if (op.name?.[0]?.String?.sval !== "=") return false;
+  const fields = op.lexpr?.ColumnRef?.fields;
+  if (fields?.length !== 1 || fields[0]?.String?.sval !== "userId") return false;
+  const call = op.rexpr?.FuncCall;
+  if (call?.funcname?.[0]?.String?.sval !== "current_setting") return false;
+  const args = call.args || [];
+  if (args.length !== 2) return false;
+  if (args[0]?.A_Const?.sval?.sval !== "app.current_user_id") return false;
+  return args[1]?.A_Const?.boolval?.boolval === true;
+}
+
+function policyOnNewTable(node, context) {
+  const table = relationName(node.table);
+  if (!table || !context.createdTables.has(table)) return result("denied", "policy_existing_table");
+  if (node.policy_name !== "user_isolation") return result("denied", "policy_name");
+  if (node.cmd_name !== "all" || node.permissive !== true) return result("denied", "policy_shape");
+  if (!isUserIsolationExpr(node.qual) || !isUserIsolationExpr(node.with_check)) {
+    return result("denied", "policy_expression");
+  }
+  return result("additive", "user_isolation_on_new_table");
+}
+
+function runtimeGrantsAllowed(body, createdTables) {
+  let text = String(body || "").trim();
+  if (!/^BEGIN\b/.test(text) || !/END\s*$/.test(text)) return false;
+  text = text.replace(/^BEGIN/, "").replace(/END\s*$/, "");
+  const pattern =
+    /\s*IF EXISTS \(SELECT 1 FROM pg_roles WHERE rolname = '(freedom_app|freedom_service)'\) THEN\s+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE "([A-Za-z_][A-Za-z0-9_]*)" TO \1;\s+END IF;\s*/g;
+  let saw = false;
+  text = text.replace(pattern, (full, _role, table) => {
+    if (!createdTables.has(table)) return full;
+    saw = true;
+    return "";
+  });
+  return saw && text.trim() === "";
+}
+
+function doStmtAllowed(node, context) {
+  const body = node.args?.find((entry) => entry?.DefElem?.defname === "as")?.DefElem?.arg?.String
+    ?.sval;
+  if (!runtimeGrantsAllowed(body, context.createdTables)) {
+    return result("denied", "do_block");
+  }
+  return result("additive", "runtime_grants_on_new_table");
+}
+
 function indexOnTable(table, { baseTables, createdTables }) {
   if (!table) return result("denied", "table_unknown");
   if (createdTables.has(table)) return result("additive", "index_on_new_table");
@@ -180,6 +233,8 @@ function classifyNode(stmt, context) {
     if (node.concurrent === true) return result("denied", "create_index_concurrently");
     return indexOnTable(relationName(node.relation), context);
   }
+  if (key === "CreatePolicyStmt") return policyOnNewTable(node, context);
+  if (key === "DoStmt") return doStmtAllowed(node, context);
   if (key === "AlterTableStmt") {
     const table = relationName(node.relation);
     if (!table) return result("denied", "alter_table");
@@ -198,6 +253,13 @@ function classifyNode(stmt, context) {
       }
       if (subtype === "AT_AddConstraint" && alter.def?.Constraint?.contype === "CONSTR_FOREIGN") {
         outcome = worse(outcome, indexOnTable(table, context));
+        continue;
+      }
+      if (
+        (subtype === "AT_EnableRowSecurity" || subtype === "AT_ForceRowSecurity") &&
+        context.createdTables.has(table)
+      ) {
+        outcome = worse(outcome, result("additive", "row_security_on_new_table"));
         continue;
       }
       outcome = worse(outcome, result("denied", subtype || "alter_table"));
