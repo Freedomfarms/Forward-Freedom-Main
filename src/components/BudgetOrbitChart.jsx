@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { budgetMonthNames, budgetMonths } from "../data/constants.jsx";
 import { buildMonthlySpendSnapshot } from "../utils/budgetReview.js";
 import { money, wholeDollars } from "../utils/format.js";
@@ -35,11 +35,12 @@ function describeArc(startDeg, endDeg, radius) {
 
 export function BudgetOrbitChart({ transactions, budgetRows, year, currentMonth }) {
   const [activeMonth, setActiveMonth] = useState(currentMonth);
+  const [trackedMonth, setTrackedMonth] = useState(currentMonth);
   const [flashToken, setFlashToken] = useState(0);
-
-  useEffect(() => {
+  if (currentMonth !== trackedMonth) {
+    setTrackedMonth(currentMonth);
     setActiveMonth(currentMonth);
-  }, [currentMonth]);
+  }
 
   const monthStatuses = useMemo(() => {
     const today = new Date();

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { wholeDollars } from "../utils/format.js";
 
 const SIZE = 240;
@@ -78,11 +78,12 @@ export function SpendingBreakdownOrbit({ categories, activeCategoryId, onSelectC
   }, [segments, activeCategoryId]);
 
   const [activeName, setActiveName] = useState(syncedName);
+  const [trackedName, setTrackedName] = useState(syncedName);
   const [flashToken, setFlashToken] = useState(0);
-
-  useEffect(() => {
+  if (syncedName !== trackedName) {
+    setTrackedName(syncedName);
     setActiveName(syncedName);
-  }, [syncedName]);
+  }
 
   const activeSegment = segments.find((seg) => seg.name === activeName) || segments[0] || null;
   const activeData = activeSegment || {

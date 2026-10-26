@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { wholeDollars } from "../utils/format.js";
 
 const SIZE = 240;
@@ -66,11 +66,12 @@ export function NetWorthOrbitChart({ allocations }) {
   }, [sortedAllocations]);
 
   const [activeName, setActiveName] = useState(defaultActive);
+  const [trackedActive, setTrackedActive] = useState(defaultActive);
   const [flashToken, setFlashToken] = useState(0);
-
-  useEffect(() => {
+  if (defaultActive !== trackedActive) {
+    setTrackedActive(defaultActive);
     setActiveName(defaultActive);
-  }, [defaultActive]);
+  }
 
   const activeSegment =
     segments.find((s) => s.name === activeName) || segments[0] || null;

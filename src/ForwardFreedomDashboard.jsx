@@ -707,7 +707,7 @@ function ForwardFreedomDashboard({
   const [editingUserId, setEditingUserId] = useState(null);
   const [draftUserName, setDraftUserName] = useState("");
   const [pendingManualEditAccountId, setPendingManualEditAccountId] = useState(null);
-  const [plaidStatus, setPlaidStatus] = useState({
+  const [fetchedPlaidStatus, setFetchedPlaidStatus] = useState({
     configured: false,
     environment: "development",
     notes: [],
@@ -887,16 +887,13 @@ function ForwardFreedomDashboard({
   // exact derived array also keeps the generated subscription ids stable
   // across renders. syncAutoDetectedSubscriptions returns the input array
   // untouched when nothing changed, so this converges instead of looping.
-  useEffect(() => {
-    if (!activeUser?.id) return;
-    if (subscriptions === rawSubscriptions) return;
+  if (activeUser?.id && subscriptions !== rawSubscriptions) {
     setSubscriptionsBase((currentSubscriptions) =>
       // Skip the write if another update landed since this render; the next
       // render re-derives from the fresh state and re-syncs if still needed.
       currentSubscriptions === rawSubscriptions ? subscriptions : currentSubscriptions
     );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeUser?.id, rawSubscriptions, subscriptions]);
+  }
 
   const setSubscriptions = (valueOrUpdater) =>
     setSubscriptionsBase((currentSubscriptions) => {
@@ -909,9 +906,7 @@ function ForwardFreedomDashboard({
         : valueOrUpdater;
     });
 
-  useEffect(() => {
-    if (!activeUser?.id) return;
-
+  if (activeUser?.id) {
     const timestamp = new Date().toISOString();
     const completedAtByStepId = onboardingProgress.steps
       .filter((step) => step.derivedComplete && !step.completedAt)
@@ -922,9 +917,7 @@ function ForwardFreedomDashboard({
     const shouldMarkComplete =
       onboardingProgress.isComplete && !onboardingProgress.onboarding.completedAt;
 
-    if (Object.keys(completedAtByStepId).length === 0 && !shouldMarkComplete) return;
-
-    setOnboarding((currentValue) => {
+    if (Object.keys(completedAtByStepId).length > 0 || shouldMarkComplete) setOnboarding((currentValue) => {
       const seed = createOnboardingState();
       const base = {
         ...seed,
@@ -969,7 +962,7 @@ function ForwardFreedomDashboard({
         steps: nextSteps,
       };
     });
-  }, [activeUser?.id, onboardingProgress]);
+  }
 
   const removeSubscription = (subscription) => {
     if (!subscription?.id || !activeUser?.id) return;
@@ -1227,33 +1220,30 @@ function ForwardFreedomDashboard({
     }
   }, [activeUser?.id, onPersistedStateChange, persistLocally, persistedUsers, storageKey]);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    if (
-      !shouldFetchPlaidStatus({
-        currentView,
-        isDemoMode,
-        sessionUser: sessionControls?.user || null,
-      })
-    ) {
-      setPlaidStatus({
+  const plaidStatusRequested = shouldFetchPlaidStatus({
+    currentView,
+    isDemoMode,
+    sessionUser: sessionControls?.user || null,
+  });
+  const plaidStatus = plaidStatusRequested
+    ? fetchedPlaidStatus
+    : {
         configured: false,
         environment: "development",
         notes: [],
-      });
-      return () => {
-        cancelled = true;
       };
-    }
+
+  useEffect(() => {
+    if (!plaidStatusRequested) return undefined;
+    let cancelled = false;
 
     getPlaidStatus({ user: sessionControls?.user || null })
       .then((status) => {
-        if (!cancelled) setPlaidStatus(status);
+        if (!cancelled) setFetchedPlaidStatus(status);
       })
       .catch(() => {
         if (!cancelled) {
-          setPlaidStatus({
+          setFetchedPlaidStatus({
             configured: false,
             environment: "development",
             notes: [],
@@ -1264,24 +1254,29 @@ function ForwardFreedomDashboard({
     return () => {
       cancelled = true;
     };
-  }, [currentView, isDemoMode, sessionControls?.user]);
+  }, [plaidStatusRequested, sessionControls?.user]);
 
   useEffect(() => {
-    if (!plaidStatus.configured || plaidOAuthResumeAttemptedRef.current) return;
-
+    if (!plaidStatus.configured || plaidOAuthResumeAttemptedRef.current) return undefined;
     const pendingLink = loadPendingPlaidLinkState();
     const receivedRedirectUri =
       plaidOAuthRedirectUri || (hasOAuthStateInUrl() ? window.location.href : null);
-    if (!pendingLink?.linkToken || !receivedRedirectUri) return;
-
+    if (!pendingLink?.linkToken || !receivedRedirectUri) return undefined;
     plaidOAuthResumeAttemptedRef.current = true;
-    setPlaidLinkToken(pendingLink.linkToken);
-    setPlaidTargetUserId(pendingLink.targetUserId || activeUser.id);
-    setPlaidTargetItemId(pendingLink.plaidItemId || null);
-    setPlaidOAuthRedirectUri(receivedRedirectUri);
-    setPlaidShouldOpen(true);
-    setPlaidError("");
-    clearOAuthStateFromUrl();
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      setPlaidLinkToken(pendingLink.linkToken);
+      setPlaidTargetUserId(pendingLink.targetUserId || activeUser.id);
+      setPlaidTargetItemId(pendingLink.plaidItemId || null);
+      setPlaidOAuthRedirectUri(receivedRedirectUri);
+      setPlaidShouldOpen(true);
+      setPlaidError("");
+      clearOAuthStateFromUrl();
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [activeUser.id, plaidOAuthRedirectUri, plaidStatus.configured]);
 
   const applyPlaidSyncPayload = (userId, syncPayload) => {
