@@ -69,6 +69,9 @@ jobs:
           EOF
           node scripts/prisma-migrate-deploy.mjs
       - run: npm run lint
-      - run: npm test
+      # Vite boots esbuild inside several test files. Full parallelism on the
+      # runner segfaults one of those processes. Two files at a time still
+      # runs every test.
+      - run: node --test --test-concurrency=2 --experimental-test-module-mocks test/*.test.js
       - name: schema-compat
         run: node scripts/schema-compat.mjs --role=all
