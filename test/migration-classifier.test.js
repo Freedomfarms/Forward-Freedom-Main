@@ -198,16 +198,25 @@ test("the committed manifest pins all 33 migrations at the phase 1 baseline", as
     .readdirSync("prisma/migrations")
     .filter((name) => fs.existsSync(path.join("prisma/migrations", name, "migration.sql")))
     .sort();
-  assert.equal(names.length, 33);
-  assert.deepEqual(Object.keys(manifest.files).sort(), names);
-  for (const name of names) {
+  assert.equal(Object.keys(manifest.files).length, 33);
+  const pinned = names.filter((name) => manifest.files[name]);
+  assert.deepEqual(Object.keys(manifest.files).sort(), pinned);
+  for (const name of pinned) {
     const bytes = fs.readFileSync(path.join("prisma/migrations", name, "migration.sql"));
     assert.equal(manifest.files[name], sha256(bytes), name);
   }
   const tree = await classifyMigrationTree({ manifest });
   assert.equal(tree.blocked, null);
   assert.equal(
-    tree.files.every((file) => file.class === "historical"),
+    tree.files
+      .filter((file) => manifest.files[file.name])
+      .every((file) => file.class === "historical"),
+    true
+  );
+  assert.equal(
+    tree.files
+      .filter((file) => !manifest.files[file.name])
+      .every((file) => file.class === "additive"),
     true
   );
 });

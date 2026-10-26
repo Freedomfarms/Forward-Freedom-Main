@@ -316,6 +316,8 @@ export function createCursorCloudRuntime(options = {}) {
     fail("ledger_required", "Cursor execution requires a durable ledger");
   }
   const ledger = options.ledger;
+  const reserveHold = options.reserveHold;
+  const releaseHold = options.releaseHold;
   const fetchImpl = options.fetch ?? globalThis.fetch;
   const now = options.now ?? (() => new Date());
   const configuredKey = Object.prototype.hasOwnProperty.call(options, "apiKey")
@@ -380,7 +382,48 @@ export function createCursorCloudRuntime(options = {}) {
     return body;
   }
 
+  async function rejectReserved(approved, code) {
+    await ledger.finish(approved.approvalId, "pending", {
+      state: "rejected",
+      agentId: null,
+      runId: null,
+      status: null,
+    });
+    fail(code, "Coding spend could not be reserved");
+  }
+
   async function postReserved(approved, reservedId, key) {
+    if (isCodingExecutionScope(approved.scope)) {
+      if (typeof reserveHold !== "function") {
+        if (typeof releaseHold === "function") {
+          await releaseHold({
+            userId: approved.userId,
+            operationId: approved.approvalId,
+          }).catch(() => {});
+        }
+        await rejectReserved(approved, "budget_unverified");
+      }
+      let hold;
+      try {
+        hold = await reserveHold({
+          userId: approved.userId,
+          operationId: approved.approvalId,
+          scope: "cursor",
+          periodType: "run",
+          estimateUsd: options.cursorEstimateUsd,
+        });
+      } catch {
+        hold = { ok: false, code: "budget_unverified" };
+      }
+      if (!hold?.ok) await rejectReserved(approved, hold?.code || "budget_unverified");
+      if (!reservedId && typeof releaseHold === "function") {
+        await releaseHold({
+          userId: approved.userId,
+          operationId: approved.approvalId,
+        }).catch(() => {});
+        await rejectReserved(approved, "reconciliation_required");
+      }
+    }
     let response;
     try {
       response = await send("/v1/agents", {

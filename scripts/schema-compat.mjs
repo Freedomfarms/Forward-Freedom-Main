@@ -27,6 +27,7 @@ import {
 } from "./migration-classify.mjs";
 import { schemaCompatRoleAllowed } from "./migration-identity.mjs";
 import { deployMigrations } from "./prisma-migrate-deploy.mjs";
+import { reserveHold } from "../server/chief/models/budget.js";
 
 const SCALARS = new Set([
   "String",
@@ -384,6 +385,22 @@ export async function runSchemaCompat({
       let probes;
       try {
         probes = await runApplicationReads(clientFromPool(basePool));
+        probes.budgetHold = await reserveHold({
+          client: basePool,
+          userId: "schema-compat",
+          operationId: `schema-compat-${process.pid}`,
+          scope: "cursor",
+          periodType: "run",
+          estimateUsd: 1,
+        });
+        if (probes.budgetHold?.ok) {
+          return {
+            ok: false,
+            verified: false,
+            reason: "budget_hold_not_closed",
+            currentUser,
+          };
+        }
       } catch (error) {
         return {
           ok: false,

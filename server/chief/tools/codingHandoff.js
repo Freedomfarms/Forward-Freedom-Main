@@ -12,6 +12,7 @@ import {
 import { createCursorCloudRuntime } from "../agents/cursorCloud.js";
 import { isExactRepositoryUrl, isProtectedRepository } from "../agents/execution.js";
 import { CODING_EXECUTION_SCOPE, ExecutionState, executionScopeHash } from "../agents/ledger.js";
+import { createPrismaReleaseHold, createPrismaReserveHold } from "../models/budget.js";
 
 const IGNORED = new Set(["userId", "user_id"]);
 
@@ -50,6 +51,8 @@ export function createCodingHandoffTools({
   fetchImpl = globalThis.fetch,
   handoff = null,
   ledger = null,
+  reserveHold = null,
+  releaseHold = null,
 } = {}) {
   function runtime(context) {
     return (
@@ -214,6 +217,8 @@ export function createCodingHandoffTools({
           allowlist: allowlistFor(env),
           ledger: typeof store.adapter === "function" ? store.adapter() : store,
           fetch: fetchImpl,
+          reserveHold: reserveHold || createPrismaReserveHold(),
+          releaseHold: releaseHold || createPrismaReleaseHold(),
         });
         const delivered = await runtime.deliverReserved(record, { userId });
         return resultOf({
