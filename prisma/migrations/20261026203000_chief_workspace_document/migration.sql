@@ -8,6 +8,8 @@ CREATE TABLE "chief_workspace_document" (
     "revision" INTEGER NOT NULL DEFAULT 0,
     "contentSha256" TEXT NOT NULL DEFAULT '',
     "contentCiphertext" TEXT NOT NULL DEFAULT '',
+    "conflictCiphertext" TEXT,
+    "conflictSha256" TEXT,
     "deletedAt" TIMESTAMP(3),
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,

@@ -26,7 +26,8 @@ function assertGuarded(path) {
 export function acceptedFacts(facts, now = new Date()) {
   return (facts || [])
     .filter((fact) => {
-      if (!fact || (fact.trustTier !== "TRUSTED" && fact.trustTier !== "AUTO")) return false;
+      if (!fact || fact.deletedAt || fact.forgotten) return false;
+      if (fact.trustTier !== "TRUSTED" && fact.trustTier !== "AUTO") return false;
       if (typeof fact.content !== "string" || fact.content.length === 0) return false;
       if (fact.expiresAt && new Date(fact.expiresAt).getTime() <= now.getTime()) return false;
       return true;
@@ -114,13 +115,15 @@ export function decideDocumentWrite({ current = null, op, expectedSha256 = null 
   return { action: "conflict", currentSha256: current?.contentSha256 || null };
 }
 
-function project(row, content) {
+function project(row, content, conflictContent = row.conflictContent ?? null) {
   return {
     path: row.path,
     content,
     contentSha256: row.contentSha256,
     revision: row.revision,
     deletedAt: row.deletedAt || null,
+    conflictContent,
+    conflictSha256: row.conflictSha256 || null,
     userId: row.userId,
   };
 }
@@ -146,6 +149,8 @@ export function createMemoryWorkspaceDocumentStore() {
         contentSha256: sha256Text(content),
         revision: 1,
         deletedAt: null,
+        conflictContent: null,
+        conflictSha256: null,
       };
       rows.set(key, row);
       return { inserted: true, document: project(row, row.content) };
@@ -165,6 +170,8 @@ export function createMemoryWorkspaceDocumentStore() {
           contentSha256: contentSha256 || sha256Text(content),
           revision: 1,
           deletedAt: null,
+          conflictContent: null,
+          conflictSha256: null,
         };
         rows.set(key, row);
         return { ok: true, path, op };
@@ -174,11 +181,25 @@ export function createMemoryWorkspaceDocumentStore() {
         current.contentSha256 = contentSha256 || sha256Text(content);
         current.revision += 1;
         current.deletedAt = null;
+        current.conflictContent = null;
+        current.conflictSha256 = null;
         return { ok: true, path, op };
       }
       current.deletedAt = new Date();
       current.revision += 1;
       return { ok: true, path, op: "delete" };
+    },
+    async preserveConflict({ userId, path, content }) {
+      assertGuarded(path);
+      const current = rows.get(keyFor(userId, path)) || null;
+      if (!current || typeof content !== "string" || content.length === 0) {
+        return { preserved: false, path };
+      }
+      const hash = sha256Text(content);
+      if (current.contentSha256 === hash) return { preserved: false, path };
+      current.conflictContent = content;
+      current.conflictSha256 = hash;
+      return { preserved: true, path, currentSha256: current.contentSha256 };
     },
   };
 }
@@ -193,7 +214,13 @@ export function createPrismaWorkspaceDocumentStore({
       const rows = await withUser(userId, (tx) =>
         tx.chiefWorkspaceDocument.findMany({ where: { userId } })
       );
-      return rows.map((row) => project(row, open(row.contentCiphertext) || ""));
+      return rows.map((row) =>
+        project(
+          row,
+          open(row.contentCiphertext) || "",
+          row.conflictCiphertext ? open(row.conflictCiphertext) || "" : null
+        )
+      );
     },
     async insertIfAbsent({ userId, path, content }) {
       assertGuarded(path);
@@ -247,6 +274,8 @@ export function createPrismaWorkspaceDocumentStore({
             data: {
               contentSha256: hash,
               contentCiphertext: seal(String(content)),
+              conflictCiphertext: null,
+              conflictSha256: null,
               revision: { increment: 1 },
               deletedAt: null,
             },
@@ -258,6 +287,22 @@ export function createPrismaWorkspaceDocumentStore({
           data: { deletedAt: new Date(), revision: { increment: 1 } },
         });
         return { ok: true, path, op: "delete" };
+      });
+    },
+    async preserveConflict({ userId, path, content }) {
+      assertGuarded(path);
+      if (typeof content !== "string" || content.length === 0) return { preserved: false, path };
+      return withUser(userId, async (tx) => {
+        const current = await tx.chiefWorkspaceDocument.findUnique({
+          where: { userId_path: { userId, path } },
+        });
+        const hash = sha256Text(content);
+        if (!current || current.contentSha256 === hash) return { preserved: false, path };
+        await tx.chiefWorkspaceDocument.update({
+          where: { id: current.id },
+          data: { conflictCiphertext: seal(content), conflictSha256: hash },
+        });
+        return { preserved: true, path, currentSha256: current.contentSha256 };
       });
     },
   };
@@ -304,7 +349,18 @@ export async function commitGuardedDocuments({ store, userId, baseHashes = {}, m
       })
     );
   }
-  return { ...plan, applied };
+  const preserved = [];
+  for (const item of plan.conflicts) {
+    if (typeof item.rejectedContent !== "string" || item.rejectedContent.length === 0) continue;
+    preserved.push(
+      await store.preserveConflict({
+        userId,
+        path: item.path,
+        content: item.rejectedContent,
+      })
+    );
+  }
+  return { ...plan, applied, preserved };
 }
 
 export function guardedMemoryFiles(plan) {

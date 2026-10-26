@@ -137,6 +137,52 @@ function metadataMatch(key) {
   return (row) => row?.metadata?.freedom_os_key === key;
 }
 
+function skillsOf(agent) {
+  if (Array.isArray(agent?.skills)) return agent.skills;
+  if (Array.isArray(agent?.body?.skills)) return agent.body.skills;
+  return [];
+}
+
+function agentVersionNumber(agent) {
+  const value = Number(agent?.version ?? agent?.latest_version);
+  return Number.isInteger(value) && value >= 1 ? value : null;
+}
+
+function agentHasPinnedSkill(agent, skillId, skillVersion) {
+  if (!skillId || !skillVersion) return false;
+  return skillsOf(agent).some(
+    (skill) =>
+      skill?.type === "custom" &&
+      skill.skill_id === skillId &&
+      String(skill.version ?? "") === String(skillVersion)
+  );
+}
+
+async function attachPinnedSkill(client, agent, skillId, skillVersion) {
+  if (!agent?.id || !skillId || !skillVersion) return agent;
+  if (agentHasPinnedSkill(agent, skillId, skillVersion)) return agent;
+  if (typeof client.updateAgent !== "function") return agent;
+  const skills = [{ type: "custom", skill_id: skillId, version: String(skillVersion) }];
+  const send = (current) => {
+    const body = { skills };
+    const version = agentVersionNumber(current);
+    if (version) body.version = version;
+    return client.updateAgent(current.id, body);
+  };
+  try {
+    const updated = await send(agent);
+    return updated?.id ? updated : agent;
+  } catch (error) {
+    if (error?.status !== 409) throw error;
+    const current = await client.retrieveAgent(agent.id);
+    if (!current?.id || agentHasPinnedSkill(current, skillId, skillVersion)) {
+      return current || agent;
+    }
+    const updated = await send(current);
+    return updated?.id ? updated : current;
+  }
+}
+
 async function findOrCreate({ cachedId, retrieve, list, create, key }) {
   if (cachedId) {
     const cached = await retrieve(cachedId);
@@ -553,7 +599,7 @@ async function ensureResources({
   const agentKey = agentKeyFor(toolSpecs);
   const skillId = skill.skillId;
   const skillVersion = skill.skillVersion;
-  const agent = await findOrCreate({
+  const found = await findOrCreate({
     cachedId: managed?.agentKey === agentKey ? managed.agentId : null,
     retrieve: (id) => client.retrieveAgent(id),
     list: () => client.listAgents(),
@@ -568,6 +614,7 @@ async function ensureResources({
         })
       ),
   });
+  const agent = await attachPinnedSkill(client, found, skillId, skillVersion);
   const agentVersion = agent?.version || agent?.latest_version;
   if (!agent?.id || !agentVersion) {
     throw new Error("Claude Managed Agents did not return an agent version.");

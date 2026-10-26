@@ -110,8 +110,14 @@ test("a stale workspace write leaves the concurrent edit in place", async () => 
   });
   assert.equal(stale.conflicts.length, 1);
   assert.equal(stale.applied.length, 0);
+  assert.equal(stale.preserved[0].preserved, true);
   const rows = await store.list("user-a");
   assert.equal(rows[0].content, "two");
+  assert.equal(rows[0].contentSha256, sha256Text("two"));
+  assert.equal(rows[0].conflictContent, "three");
+  assert.equal(rows[0].conflictSha256, sha256Text("three"));
+  const recovered = recoveryDocuments({ documents: rows, facts: [] });
+  assert.equal(recovered.files.find((file) => file.path === "decisions.md").content, "two");
   const other = await store.list("user-b");
   assert.equal(other.length, 0);
   const stolen = await store.applyWrite({
@@ -264,7 +270,10 @@ test("the prisma store keeps one user's document and a stale write", async () =>
       memories: [{ path: "/decisions.md", content: "lost" }],
     });
     assert.equal(stale.conflicts.length, 1);
-    assert.equal((await store.list("user-a"))[0].content, "Keep the pin. Updated.");
+    const live = (await store.list("user-a"))[0];
+    assert.equal(live.content, "Keep the pin. Updated.");
+    assert.equal(live.conflictContent, "lost");
+    assert.equal(live.conflictSha256, sha256Text("lost"));
   } finally {
     if (previousUrl == null) delete process.env.DATABASE_URL;
     else process.env.DATABASE_URL = previousUrl;

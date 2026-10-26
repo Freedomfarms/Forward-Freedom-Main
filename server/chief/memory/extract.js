@@ -151,7 +151,8 @@ export async function rememberExchange({
         trustTier,
         source: "auto",
       });
-      if (row?.source === "identity") continue;
+      if (row?.forgotten || row?.deletedAt) continue;
+      if (row?.source === "identity" || row?.trustTier === "TRUSTED") continue;
       if (trustTier === "UNTRUSTED" && trustedForRecall(row) && facts.setTrust) {
         await facts.setTrust({ userId, id: row.id, trustTier: "UNTRUSTED" });
       }

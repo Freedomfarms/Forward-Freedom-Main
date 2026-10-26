@@ -318,24 +318,26 @@ test("prisma fact rows encrypt note text and forget derived rows for that owner 
         async findFirst({ where }) {
           return rows.find((row) => row.id === where.id && row.userId === where.userId) ?? null;
         },
-        async delete({ where }) {
-          const index = rows.findIndex((row) => row.id === where.id);
-          if (index >= 0) rows.splice(index, 1);
+        async update({ where, data }) {
+          const row = rows.find((item) => item.id === where.id);
+          if (!row) return null;
+          Object.assign(row, data);
+          return row;
         },
-        async deleteMany({ where }) {
-          const before = rows.length;
-          for (let index = rows.length - 1; index >= 0; index -= 1) {
-            const row = rows[index];
-            if (row.userId !== where.userId) continue;
+        async updateMany({ where, data }) {
+          let count = 0;
+          for (const row of rows) {
+            if (row.userId !== where.userId || row.deletedAt) continue;
             if (
               where.source?.startsWith &&
-              !String(row.source).startsWith(where.source.startsWith)
+              !String(row.source ?? "").startsWith(where.source.startsWith)
             ) {
               continue;
             }
-            rows.splice(index, 1);
+            Object.assign(row, data);
+            count += 1;
           }
-          return { count: before - rows.length };
+          return { count };
         },
       },
     });
@@ -360,8 +362,10 @@ test("prisma fact rows encrypt note text and forget derived rows for that owner 
     conversationId: "chat-1",
   });
   assert.equal(removed.deleted, 1);
-  assert.equal(rows.length, 1);
-  assert.equal(rows[0].userId, "user-b");
+  assert.equal(rows.length, 2);
+  assert.ok(rows.find((row) => row.userId === "user-a")?.deletedAt);
+  assert.equal((await facts.read({ userId: "user-a", limit: 20 })).length, 0);
+  assert.equal(rows.find((row) => row.userId === "user-b")?.deletedAt ?? null, null);
   const ordinary = await facts.write({
     userId: "user-b",
     content: "I prefer dark mode.",
