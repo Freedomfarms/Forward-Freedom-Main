@@ -20,3 +20,22 @@ CREATE UNIQUE INDEX "chief_budget_hold_operationId_key" ON "chief_budget_hold"("
 
 -- CreateIndex
 CREATE INDEX "chief_budget_hold_user_scope_period_idx" ON "chief_budget_hold"("userId", "scope", "periodType");
+
+ALTER TABLE "chief_budget_hold" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "chief_budget_hold" FORCE ROW LEVEL SECURITY;
+
+CREATE POLICY "user_isolation" ON "chief_budget_hold"
+  FOR ALL
+  USING ("userId" = current_setting('app.current_user_id', true))
+  WITH CHECK ("userId" = current_setting('app.current_user_id', true));
+
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'freedom_app') THEN
+    GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE "chief_budget_hold" TO freedom_app;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'freedom_service') THEN
+    GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE "chief_budget_hold" TO freedom_service;
+  END IF;
+END
+$$;

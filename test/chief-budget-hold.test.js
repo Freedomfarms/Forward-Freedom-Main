@@ -64,7 +64,12 @@ test("the budget hold migration is an additive create table", async () => {
     baseTypes: new Set(),
   });
   assert.equal(classified.class, "additive");
-  assert.equal(/DROP|ROW LEVEL SECURITY|REFERENCES/i.test(sql), false);
+  assert.match(sql, /ENABLE ROW LEVEL SECURITY/);
+  assert.match(sql, /FORCE ROW LEVEL SECURITY/);
+  assert.match(sql, /CREATE POLICY "user_isolation"/);
+  assert.match(sql, /TO freedom_app/);
+  assert.match(sql, /TO freedom_service/);
+  assert.equal(/DROP TABLE|REFERENCES/i.test(sql), false);
 });
 
 test("a missing hold table or a missing cap refuses the spend and stays up", async () => {
@@ -182,6 +187,92 @@ test("one cap cannot fund two reserves, and the same operation reuses its hold",
     });
     assert.equal(afterRelease.ok, true);
   });
+});
+
+test("freedom_app sees only the current user's hold and cannot write another user's row", async () => {
+  const adminUrl = await disposableAdminUrl();
+  const admin = new Client({ connectionString: adminUrl });
+  await admin.connect();
+  const name = `budget_rls_${process.pid}_${Date.now()}`;
+  await admin.query(`
+    DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'freedom_app') THEN
+        CREATE ROLE freedom_app LOGIN;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'freedom_service') THEN
+        CREATE ROLE freedom_service LOGIN BYPASSRLS;
+      END IF;
+    END $$;
+  `);
+  await admin.query(`CREATE DATABASE ${name}`);
+  await admin.end();
+  const url = databaseUrl(adminUrl, name);
+  const owner = new Client({ connectionString: url });
+  await owner.connect();
+  try {
+    await owner.query(readFileSync(MIGRATION, "utf8"));
+    const flags = await owner.query(`
+      SELECT relrowsecurity, relforcerowsecurity
+      FROM pg_class
+      WHERE relname = 'chief_budget_hold'
+    `);
+    assert.equal(flags.rows[0].relrowsecurity, true);
+    assert.equal(flags.rows[0].relforcerowsecurity, true);
+    const grants = await owner.query(`
+      SELECT grantee, privilege_type
+      FROM information_schema.role_table_grants
+      WHERE table_name = 'chief_budget_hold'
+        AND grantee IN ('freedom_app', 'freedom_service')
+    `);
+    const privileges = new Set(grants.rows.map((row) => `${row.grantee}:${row.privilege_type}`));
+    for (const role of ["freedom_app", "freedom_service"]) {
+      for (const privilege of ["SELECT", "INSERT", "UPDATE", "DELETE"]) {
+        assert.equal(privileges.has(`${role}:${privilege}`), true, `${role} ${privilege}`);
+      }
+    }
+    await owner.query(
+      `INSERT INTO "chief_budget_hold" ("id", "userId", "operationId", "estimateUsd")
+       VALUES ('hold-a', 'user-a', 'op-a', 1)`
+    );
+  } finally {
+    await owner.end();
+  }
+
+  const appUrl = new URL(url);
+  appUrl.username = "freedom_app";
+  appUrl.password = "";
+  const bare = new Client({ connectionString: appUrl.toString() });
+  await bare.connect();
+  try {
+    const hidden = await bare.query(`SELECT "operationId" FROM "chief_budget_hold"`);
+    assert.equal(hidden.rowCount, 0);
+  } finally {
+    await bare.end();
+  }
+
+  const app = new Client({ connectionString: appUrl.toString() });
+  await app.connect();
+  try {
+    await app.query(`SELECT set_config('app.current_user_id', 'user-b', false)`);
+    const other = await app.query(`SELECT "operationId" FROM "chief_budget_hold"`);
+    assert.equal(other.rowCount, 0);
+    await assert.rejects(
+      app.query(
+        `INSERT INTO "chief_budget_hold" ("id", "userId", "operationId", "estimateUsd")
+         VALUES ('hold-b', 'user-a', 'op-b', 1)`
+      ),
+      /row-level security|42501/i
+    );
+    await app.query(`SELECT set_config('app.current_user_id', 'user-a', false)`);
+    const own = await app.query(`SELECT "operationId" FROM "chief_budget_hold"`);
+    assert.deepEqual(own.rows.map((row) => row.operationId), ["op-a"]);
+  } finally {
+    await app.end();
+    const cleanup = new Client({ connectionString: adminUrl });
+    await cleanup.connect();
+    await cleanup.query(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`);
+    await cleanup.end();
+  }
 });
 
 test("another user cannot reuse, release, or reprice a hold", async () => {
