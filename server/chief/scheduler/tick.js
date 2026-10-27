@@ -7,9 +7,11 @@
 // request budget ends, the durable work row resumes it on a later cron.
 // A requiresConfirmation tool suspends the run for the signed-in user.
 //
-// Workforce execution polling is not activated here.
+// When an execution ledger is supplied, this tick also reads nonterminal
+// coding runs. That read does not submit, grant, merge, or deploy.
 
 import { runManagedChiefTurn } from "../managed/chatTurn.js";
+import { codingRuntimeFor, pollCodingExecutions } from "./codingFollow.js";
 import { MANAGED_SCHEDULE_ORIGIN } from "../managed/productionAgent.js";
 import {
   lastAssistantText,
@@ -59,6 +61,9 @@ export async function runChiefTick({
   limit = DEFAULT_TICK_LIMIT,
   turnTimeoutMs = DEFAULT_TURN_TIMEOUT_MS,
   tickBudgetMs = DEFAULT_TICK_BUDGET_MS,
+  executionStore = null,
+  codingRuntime = null,
+  documentStore = null,
 } = {}) {
   if (!taskStore || !checkpointStore) {
     throw new TypeError("runChiefTick requires taskStore and checkpointStore");
@@ -102,6 +107,20 @@ export async function runChiefTick({
       });
     } else if (initialized?.nextRunAt) {
       report.initialized += 1;
+    }
+  }
+
+  if (executionStore) {
+    try {
+      report.coding = await pollCodingExecutions({
+        executionStore,
+        runtime: codingRuntime || codingRuntimeFor(process.env, executionStore),
+        documentStore,
+        checkpointStore,
+        jobs,
+      });
+    } catch {
+      report.coding = { polled: 0, skipped: "error", reported: 0, enqueued: 0 };
     }
   }
 

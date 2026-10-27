@@ -49,6 +49,21 @@ function forgottenResult(row, userId) {
   };
 }
 
+function previousFactIds(rows, { previous, exceptId, textOf }) {
+  const needle = String(previous ?? "")
+    .trim()
+    .toLowerCase();
+  if (!needle) return [];
+  const key = factDedupeKey(needle);
+  const ids = [];
+  for (const row of rows) {
+    if (!row || row.id === exceptId || row.deletedAt || row.source === "identity") continue;
+    const text = String(textOf(row) ?? "").toLowerCase();
+    if (row.dedupeKey === key || text.includes(needle)) ids.push(row.id);
+  }
+  return ids;
+}
+
 function assertTrustTier(trustTier) {
   if (!TRUST_TIERS.has(trustTier)) {
     throw new TypeError(`unknown fact trust tier '${trustTier}'`);
@@ -199,6 +214,46 @@ export class MemoryFactStore {
     if (!row || !parseProvenance(row.source)) return { deleted: 0 };
     return this.forget({ userId, id });
   }
+
+  // Writes the replacement first. The previous fact is tombstoned only after
+  // that write exists, and a forgotten replacement is not written again.
+  async replace({
+    userId,
+    previous,
+    content,
+    trustTier,
+    source,
+    importance = 0.8,
+    confidence = 0.9,
+  }) {
+    assertTrustTier(trustTier);
+    const dedupeKey = factDedupeKey(content);
+    const tombstone = this.rows.find(
+      (row) => row.userId === userId && row.dedupeKey === dedupeKey && row.deletedAt
+    );
+    if (tombstone) return forgottenResult(tombstone, userId);
+    const written = await this.write({
+      userId,
+      content,
+      trustTier,
+      source,
+      importance,
+      confidence,
+    });
+    if (written?.forgotten || written?.deletedAt) return written;
+    const ids = previousFactIds(
+      this.rows.filter((row) => row.userId === userId),
+      { previous, exceptId: written.id, textOf: (row) => row.content }
+    );
+    const now = new Date();
+    let removed = 0;
+    for (const row of this.rows) {
+      if (!ids.includes(row.id) || row.deletedAt) continue;
+      row.deletedAt = now;
+      removed += 1;
+    }
+    return { ...written, removed };
+  }
 }
 
 export class PrismaFactStore {
@@ -324,6 +379,65 @@ export class PrismaFactStore {
         data: { deletedAt: forgottenAt },
       });
       return { deleted: result.count };
+    });
+  }
+
+  // One user transaction: a failed insert leaves the previous fact in place,
+  // and a tombstoned replacement is not revived.
+  async replace({
+    userId,
+    previous,
+    content,
+    trustTier,
+    source,
+    importance = 0.8,
+    confidence = 0.9,
+  }) {
+    assertTrustTier(trustTier);
+    const dedupeKey = factDedupeKey(content);
+    return this._withUser(userId, async (tx) => {
+      const existing = await tx.chiefFact.findUnique({
+        where: { userId_dedupeKey: { userId, dedupeKey } },
+      });
+      if (existing?.deletedAt) return forgottenResult(existing, userId);
+      let saved = existing;
+      let savedContent = content;
+      if (!existing) {
+        const owned = await tx.chiefFact.count({ where: { userId, deletedAt: null } });
+        if (owned >= MAX_FACTS_PER_USER) {
+          const error = new Error("fact cap reached");
+          error.code = "FACT_CAP";
+          throw error;
+        }
+        saved = await tx.chiefFact.create({
+          data: {
+            userId,
+            contentCiphertext: this._encrypt(String(content)),
+            dedupeKey,
+            trustTier,
+            source: source ?? null,
+            importance,
+            confidence,
+          },
+        });
+      } else {
+        savedContent = this._decrypt(existing.contentCiphertext);
+      }
+      const rows = await tx.chiefFact.findMany({ where: { userId, deletedAt: null } });
+      const ids = previousFactIds(rows, {
+        previous,
+        exceptId: saved.id,
+        textOf: (row) => this._decrypt(row.contentCiphertext),
+      });
+      let removed = 0;
+      if (ids.length > 0) {
+        const result = await tx.chiefFact.updateMany({
+          where: { userId, id: { in: ids }, deletedAt: null },
+          data: { deletedAt: new Date() },
+        });
+        removed = result.count;
+      }
+      return { ...projectFact(saved, savedContent, userId), removed };
     });
   }
 
