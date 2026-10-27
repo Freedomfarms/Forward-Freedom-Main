@@ -4,6 +4,7 @@ import test from "node:test";
 import { classifySql } from "../scripts/migration-classify.mjs";
 import { schemaCompatRoleAllowed } from "../scripts/migration-identity.mjs";
 import {
+  budgetHoldClosedOnBase,
   clientFromPool,
   compareSchema,
   diffDecision,
@@ -51,6 +52,24 @@ test("old code fails when a base column is gone and ignores an extra nullable co
     retyped.some((item) => item.problem === "type_change"),
     true
   );
+});
+
+test("a budget reserve on the previous schema stays closed unless a hold is left open", () => {
+  assert.equal(budgetHoldClosedOnBase({ ok: false, code: "budget_unverified" }, 0), true);
+  assert.equal(
+    budgetHoldClosedOnBase({ ok: true, enforced: false, reason: "account_limits" }, 0),
+    true
+  );
+  assert.equal(
+    budgetHoldClosedOnBase({ ok: true, enforced: true, hold: { id: "hold-1" } }, 1),
+    false
+  );
+  assert.equal(
+    budgetHoldClosedOnBase({ ok: true, enforced: false, reason: "account_limits" }, 1),
+    false
+  );
+  assert.equal(budgetHoldClosedOnBase({ ok: true, enforced: false }, 0), false);
+  assert.equal(budgetHoldClosedOnBase(null, 0), false);
 });
 
 test("schema compatibility refuses the production and preview migrate roles", () => {

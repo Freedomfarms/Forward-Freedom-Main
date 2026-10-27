@@ -201,14 +201,15 @@ export class PrismaBudgetStore {
   }
 }
 
-// Unknown Cursor cost stays at this estimate. actualUsd is left null until a
-// numeric cost arrives, and it is never stored as 0 to mean "unknown".
-export const CURSOR_RUN_ESTIMATE_USD = 1;
+// A missing cursor/run cap means Cursor's own account limits apply. A present
+// cap is enforced only with a caller-supplied dollar amount. This module does
+// not invent one. actualUsd stays null until a numeric cost arrives, and it
+// is never stored as 0 to mean "unknown".
 
 const UNVERIFIED = Object.freeze({ ok: false, code: "budget_unverified" });
 
 function asEstimate(value) {
-  if (value == null) return CURSOR_RUN_ESTIMATE_USD;
+  if (value == null || value === "") return null;
   const number = Number(value);
   return Number.isFinite(number) && number >= 0 ? number : null;
 }
@@ -237,13 +238,15 @@ async function reserveInside(db, input) {
   const operationId = typeof input.operationId === "string" ? input.operationId.trim() : "";
   const scope = input.scope || "cursor";
   const periodType = input.periodType || "run";
-  const estimate = asEstimate(input.estimateUsd);
-  if (!userId || !operationId || estimate == null) return { ...UNVERIFIED };
+  if (!userId || !operationId) return { ...UNVERIFIED };
   const caps = await db.read(
     `SELECT "id", "capUsd" FROM "chief_budget" WHERE "userId" = $1 AND "scope" = $2 AND "periodType" = $3 FOR UPDATE`,
     [userId, scope, periodType]
   );
+  if (caps.length === 0) return { ok: true, enforced: false, reason: "account_limits" };
   if (caps.length !== 1) return { ...UNVERIFIED };
+  const estimate = asEstimate(input.estimateUsd);
+  if (estimate == null) return { ...UNVERIFIED };
   const existing = await db.read(
     `SELECT "id", "userId", "operationId", "estimateUsd", "actualUsd", "releasedAt" FROM "chief_budget_hold" WHERE "operationId" = $1 FOR UPDATE`,
     [operationId]
@@ -251,7 +254,7 @@ async function reserveInside(db, input) {
   if (existing.length === 1) {
     if (existing[0].userId !== userId) return { ...UNVERIFIED };
     if (existing[0].releasedAt) return { ok: false, code: "hold_released", reused: true };
-    return { ok: true, reused: true, hold: existing[0] };
+    return { ok: true, enforced: true, reused: true, hold: existing[0] };
   }
   const exposureRows = await db.read(EXPOSURE_SQL, [userId, scope, periodType]);
   const exposure = Number(exposureRows[0]?.exposure || 0);
@@ -266,6 +269,7 @@ async function reserveInside(db, input) {
   );
   return {
     ok: true,
+    enforced: true,
     reused: false,
     hold: { id, operationId, estimateUsd: estimate, actualUsd: null },
   };

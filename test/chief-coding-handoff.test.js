@@ -275,7 +275,10 @@ test("a lost coding create keeps one agent id and does not post again", async ()
   const store = newStore();
   const [tool] = createCodingHandoffTools({
     env: { CURSOR_API_KEY: KEY, CHIEF_CODE_REPOSITORY: "Freedomfarms/Forward-Freedom-Main" },
-    fetchImpl: async (_url, init) => {
+    fetchImpl: async (url, init) => {
+      if (String(url).endsWith("/v1/models")) {
+        return json(200, { items: [{ id: "grok-4.7", displayName: "Grok 4.7" }] });
+      }
       calls.push({
         method: init?.method || "GET",
         body: init?.body ? JSON.parse(init.body) : null,
@@ -296,6 +299,7 @@ test("a lost coding create keeps one agent id and does not post again", async ()
   assert.match(row.agentId, /^bc-/);
   assert.equal(calls[0].body.autoCreatePR, true);
   assert.equal(calls[0].body.workOnCurrentBranch, false);
+  assert.deepEqual(calls[0].body.model, { id: "grok-4.7" });
   assert.equal(calls[0].body.agentId, row.agentId);
   assert.equal(calls[0].body.repos[0].startingRef, "main");
 
@@ -404,7 +408,15 @@ test("merge or deploy is rejected and a non-coding create cannot open a pull req
     allowlist: [REPO],
     ledger: store.adapter(),
     reserveHold: async () => ({ ok: true, hold: { id: "hold-test" } }),
-    fetch: async (_url, init) => {
+    fetch: async (url, init) => {
+      if (String(url).endsWith("/v1/models")) {
+        return json(200, {
+          items: [
+            { id: "composer-2", displayName: "Composer 2" },
+            { id: "grok-4.7", displayName: "Grok 4.7" },
+          ],
+        });
+      }
       posted.push(init?.body ? JSON.parse(init.body) : null);
       throw new Error("lost response");
     },
@@ -420,6 +432,9 @@ test("merge or deploy is rejected and a non-coding create cannot open a pull req
   assert.equal(posted.length, 1);
   assert.equal(posted[0].autoCreatePR, true);
   assert.equal(posted[0].workOnCurrentBranch, false);
+  assert.deepEqual(posted[0].model, { id: "grok-4.7" });
+  assert.equal(posted[0].merge, undefined);
+  assert.equal(posted[0].deploy, undefined);
   const ambiguous = store.rows()[0];
   assert.equal(ambiguous.state, ExecutionState.AMBIGUOUS);
   assert.match(ambiguous.agentId, /^bc-/);

@@ -4,7 +4,10 @@ import { readFileSync } from "node:fs";
 
 import { Client } from "pg";
 
-import { createCursorCloudRuntime } from "../server/chief/agents/cursorCloud.js";
+import {
+  createCursorCloudRuntime,
+  selectCursorCodingModel,
+} from "../server/chief/agents/cursorCloud.js";
 import {
   CODING_EXECUTION_SCOPE,
   ExecutionState,
@@ -95,11 +98,43 @@ test("a missing hold table or a missing cap refuses the spend and stays up", asy
       operationId: "op-missing-cap",
       scope: "cursor",
       periodType: "run",
-      estimateUsd: 1,
     });
-    assert.equal(missingCap.ok, false);
-    assert.equal(missingCap.code, "budget_unverified");
+    assert.equal(missingCap.ok, true);
+    assert.equal(missingCap.enforced, false);
+    assert.equal(missingCap.reason, "account_limits");
+    const holds = await client.query(`SELECT "id" FROM "chief_budget_hold"`);
+    assert.equal(holds.rowCount, 0);
+
+    const configuredWithoutCost = await reserveHold({
+      client,
+      userId: "user-a",
+      operationId: "op-no-cost",
+      scope: "cursor",
+      periodType: "run",
+    });
+    assert.equal(configuredWithoutCost.ok, false);
+    assert.equal(configuredWithoutCost.code, "budget_unverified");
+    const stillEmpty = await client.query(`SELECT "id" FROM "chief_budget_hold"`);
+    assert.equal(stillEmpty.rowCount, 0);
   });
+});
+
+test("a database error does not allow a coding reserve", async () => {
+  const client = {
+    query: async () => {
+      throw new Error("connection reset");
+    },
+  };
+  const result = await reserveHold({
+    client,
+    userId: "user-a",
+    operationId: "op-db",
+    scope: "cursor",
+    periodType: "run",
+    estimateUsd: 1,
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "budget_unverified");
 });
 
 test("one cap cannot fund two reserves, and the same operation reuses its hold", async () => {
@@ -450,8 +485,16 @@ test("a coding create without a hold does not post, and an ambiguous post keeps 
       released += 1;
       return { ok: true };
     },
-    fetch: async () => {
-      calls.push("post");
+    fetch: async (url) => {
+      calls.push(String(url));
+      if (String(url).endsWith("/v1/models")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ items: [{ id: "grok-4.7", displayName: "Grok 4.7" }] }),
+          text: async () => "",
+        };
+      }
       throw new Error("lost");
     },
   });
@@ -483,4 +526,272 @@ test("a coding create without a hold does not post, and an ambiguous post keeps 
   assert.equal(holds, 1);
   assert.equal(store2.rows()[0].state, ExecutionState.AMBIGUOUS);
   assert.equal(released, 0);
+});
+
+test("Grok 4.7 is selected only from the Cursor model list", () => {
+  assert.equal(
+    selectCursorCodingModel([
+      { id: "composer-2", displayName: "Composer 2" },
+      { id: "grok-4.7", displayName: "Grok 4.7" },
+      { id: "claude-4.6-sonnet-thinking", displayName: "Claude 4.6 Sonnet (Thinking)" },
+    ]),
+    "grok-4.7"
+  );
+  assert.equal(
+    selectCursorCodingModel([{ id: "grok-4.7-medium", displayName: "Grok 4.7" }]),
+    "grok-4.7-medium"
+  );
+  assert.equal(
+    selectCursorCodingModel([
+      { id: "grok-4.7-high", displayName: "Grok 4.7 High" },
+      { id: "composer-2", displayName: "Composer 2" },
+      { id: "auto", displayName: "Auto" },
+    ]),
+    null
+  );
+  assert.equal(
+    selectCursorCodingModel([
+      { id: "grok-4.7-low", displayName: "Grok 4.7" },
+      { id: "grok-4.7-high", displayName: "Grok 4.7" },
+    ]),
+    null
+  );
+});
+
+function modelResponse(items) {
+  return {
+    ok: true,
+    status: 200,
+    json: async () => ({ items }),
+    text: async () => JSON.stringify({ items }),
+  };
+}
+
+const CODING_REPO = "https://github.com/Freedomfarms/Forward-Freedom-Main";
+
+function codingApproval(approvalId) {
+  return {
+    userId: "user-a",
+    provider: "cursor-cloud",
+    objective: "Add a comment.",
+    constraints: [],
+    repositoryUrl: CODING_REPO,
+    startingRef: "main",
+    approval: {
+      id: approvalId,
+      decision: "approved",
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      userId: "user-a",
+      provider: "cursor-cloud",
+      objective: "Add a comment.",
+      constraints: [],
+      repositoryUrl: CODING_REPO,
+      startingRef: "main",
+      scope: { ...CODING_EXECUTION_SCOPE },
+    },
+  };
+}
+
+async function codingGrant() {
+  const store = createMemoryExecutionStore({ encrypt: seal, decrypt: open });
+  const granted = await store.grant({
+    userId: "user-a",
+    actorUserId: "user-a",
+    approvalAction: "execute",
+    provider: "cursor-cloud",
+    objective: "Add a comment.",
+    constraints: [],
+    repositoryUrl: CODING_REPO,
+    startingRef: "main",
+    scope: { ...CODING_EXECUTION_SCOPE },
+  });
+  return { store, granted };
+}
+
+test("a coding create specifies the Grok 4.7 id from the model list and does not post another model", async () => {
+  const { store, granted } = await codingGrant();
+  const posts = [];
+  const runtime = createCursorCloudRuntime({
+    apiKey: "cursor_test_key_value",
+    allowlist: [CODING_REPO],
+    ledger: store.adapter(),
+    reserveHold: async () => ({ ok: true, enforced: false, reason: "account_limits" }),
+    fetch: async (url, init) => {
+      if (String(url).endsWith("/v1/models")) {
+        return modelResponse([
+          { id: "composer-2", displayName: "Composer 2" },
+          { id: "grok-4.7", displayName: "Grok 4.7" },
+        ]);
+      }
+      const body = JSON.parse(init.body);
+      posts.push(body);
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          agent: { id: body.agentId, latestRunId: "run-00000000-0000-4000-8000-000000000001" },
+          run: {
+            id: "run-00000000-0000-4000-8000-000000000001",
+            agentId: body.agentId,
+            status: "CREATING",
+          },
+        }),
+        text: async () => "",
+      };
+    },
+  });
+  const result = await runtime.submit(codingApproval(granted.approvalId), { userId: "user-a" });
+  assert.equal(posts.length, 1);
+  assert.deepEqual(posts[0].model, { id: "grok-4.7" });
+  assert.equal(posts[0].autoCreatePR, true);
+  assert.equal(posts[0].workOnCurrentBranch, false);
+  assert.equal(posts[0].merge, undefined);
+  assert.equal(posts[0].deploy, undefined);
+  assert.equal(result.status, "CREATING");
+});
+
+test("an unavailable Grok 4.7 model does not launch a coding task", async () => {
+  const { store, granted } = await codingGrant();
+  const posts = [];
+  let released = 0;
+  const runtime = createCursorCloudRuntime({
+    apiKey: "cursor_test_key_value",
+    allowlist: [CODING_REPO],
+    ledger: store.adapter(),
+    reserveHold: async () => ({ ok: true, enforced: true, hold: { id: "hold-1" } }),
+    releaseHold: async () => {
+      released += 1;
+      return { ok: true, released: true };
+    },
+    fetch: async (url, init) => {
+      if (String(url).endsWith("/v1/models")) {
+        return modelResponse([
+          { id: "composer-2", displayName: "Composer 2" },
+          { id: "claude-4.6-sonnet-thinking", displayName: "Claude 4.6 Sonnet (Thinking)" },
+        ]);
+      }
+      posts.push(init?.body || "post");
+      throw new Error("Cursor create was called");
+    },
+  });
+  await assert.rejects(
+    () => runtime.submit(codingApproval(granted.approvalId), { userId: "user-a" }),
+    (error) => error.code === "model_unavailable"
+  );
+  assert.equal(posts.length, 0);
+  assert.equal(released, 1);
+  assert.equal(store.rows()[0].state, ExecutionState.FAILED);
+});
+
+test("a finished coding run releases its hold so the cap can fund the next task", async () => {
+  await withBudgetDb(async (client) => {
+    await client.query(readFileSync(MIGRATION, "utf8"));
+    await client.query(
+      `INSERT INTO "chief_budget" ("id", "userId", "scope", "periodType", "capUsd") VALUES ('cap-1', 'user-a', 'cursor', 'run', 1)`
+    );
+    const { store, granted } = await codingGrant();
+    const runtime = createCursorCloudRuntime({
+      apiKey: "cursor_test_key_value",
+      allowlist: [CODING_REPO],
+      ledger: store.adapter(),
+      cursorEstimateUsd: 1,
+      reserveHold: (input) => reserveHold({ ...input, client }),
+      releaseHold: (input) => releaseHold({ ...input, client }),
+      fetch: async (url, init) => {
+        const href = String(url);
+        if (href.endsWith("/v1/models")) {
+          return modelResponse([{ id: "grok-4.7", displayName: "Grok 4.7" }]);
+        }
+        if (init?.method === "POST") {
+          const body = JSON.parse(init.body);
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              agent: { id: body.agentId, latestRunId: "run-00000000-0000-4000-8000-000000000002" },
+              run: {
+                id: "run-00000000-0000-4000-8000-000000000002",
+                agentId: body.agentId,
+                status: "CREATING",
+              },
+            }),
+            text: async () => "",
+          };
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            id: "run-00000000-0000-4000-8000-000000000002",
+            agentId: store.rows()[0].agentId,
+            status: "FINISHED",
+          }),
+          text: async () => "",
+        };
+      },
+    });
+    const first = await runtime.submit(codingApproval(granted.approvalId), { userId: "user-a" });
+    const open = await client.query(
+      `SELECT count(*)::int AS n FROM "chief_budget_hold" WHERE "releasedAt" IS NULL`
+    );
+    assert.equal(open.rows[0].n, 1);
+    await runtime.getStatus(
+      { agentId: first.agentId, runId: first.runId },
+      { userId: "user-a" }
+    );
+    const closed = await client.query(
+      `SELECT count(*)::int AS n FROM "chief_budget_hold" WHERE "releasedAt" IS NULL`
+    );
+    assert.equal(closed.rows[0].n, 0);
+    const next = await reserveHold({
+      client,
+      userId: "user-a",
+      operationId: "approval-next",
+      scope: "cursor",
+      periodType: "run",
+      estimateUsd: 1,
+    });
+    assert.equal(next.ok, true);
+  });
+});
+
+test("concurrent reserves against one configured cap allow one hold", async () => {
+  await withBudgetDb(async (client, url) => {
+    await client.query(readFileSync(MIGRATION, "utf8"));
+    await client.query(
+      `INSERT INTO "chief_budget" ("id", "userId", "scope", "periodType", "capUsd") VALUES ('cap-1', 'user-a', 'cursor', 'run', 1)`
+    );
+    const left = new Client({ connectionString: url });
+    const right = new Client({ connectionString: url });
+    await left.connect();
+    await right.connect();
+    try {
+      const [one, two] = await Promise.all([
+        reserveHold({
+          client: left,
+          userId: "user-a",
+          operationId: "approval-left",
+          scope: "cursor",
+          periodType: "run",
+          estimateUsd: 1,
+        }),
+        reserveHold({
+          client: right,
+          userId: "user-a",
+          operationId: "approval-right",
+          scope: "cursor",
+          periodType: "run",
+          estimateUsd: 1,
+        }),
+      ]);
+      const outcomes = [one, two];
+      assert.equal(outcomes.filter((item) => item.ok).length, 1);
+      assert.equal(outcomes.filter((item) => item.code === "budget_exceeded").length, 1);
+      const holds = await client.query(`SELECT count(*)::int AS n FROM "chief_budget_hold"`);
+      assert.equal(holds.rows[0].n, 1);
+    } finally {
+      await left.end();
+      await right.end();
+    }
+  });
 });
