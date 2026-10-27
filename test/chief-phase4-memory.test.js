@@ -12,7 +12,7 @@ import {
 } from "../server/chief/managed/productionAgent.js";
 import { planUserMemory, resolveRememberedFact } from "../server/chief/memory/commands.js";
 import { retainConversationMemories } from "../server/chief/memory/derive.js";
-import { MemoryFactStore } from "../server/chief/memory/facts.js";
+import { MemoryFactStore, PrismaFactStore, factDedupeKey } from "../server/chief/memory/facts.js";
 import {
   acceptedFactsDocument,
   createMemoryWorkspaceDocumentStore,
@@ -345,6 +345,293 @@ test("a failed write is reported as not stored", async () => {
   });
   assert.equal(planned.stored, false);
   assert.match(planned.notice, /Persistence failed/);
+});
+
+test("a failed instead-of correction keeps the previous fact and does not revive a forgotten one", async () => {
+  const facts = new MemoryFactStore();
+  await facts.write({
+    userId: "user-a",
+    content: "I prefer short morning reports.",
+    trustTier: "AUTO",
+    source: "preference",
+  });
+  const write = facts.write.bind(facts);
+  facts.write = async () => {
+    throw new Error("database unavailable");
+  };
+  const failed = await planUserMemory({
+    facts,
+    userId: "user-a",
+    userText:
+      "Correct that I prefer long morning reports instead of I prefer short morning reports.",
+  });
+  assert.equal(failed.stored, false);
+  assert.match(failed.notice, /Persistence failed/);
+  const kept = await facts.read({ userId: "user-a", limit: 10 });
+  assert.equal(kept.length, 1);
+  assert.equal(kept[0].content, "I prefer short morning reports.");
+
+  facts.write = write;
+  await facts.write({
+    userId: "user-a",
+    content: "I prefer long morning reports",
+    trustTier: "AUTO",
+    source: "preference",
+  });
+  await facts.forget({ userId: "user-a", content: "I prefer long morning reports" });
+  const blocked = await planUserMemory({
+    facts,
+    userId: "user-a",
+    userText:
+      "Correct that I prefer long morning reports instead of I prefer short morning reports.",
+  });
+  assert.equal(blocked.stored, false);
+  assert.equal(blocked.reason, "forgotten");
+  const still = await facts.read({ userId: "user-a", limit: 10 });
+  assert.equal(still.length, 1);
+  assert.equal(still[0].content, "I prefer short morning reports.");
+  const revived = await facts.write({
+    userId: "user-a",
+    content: "I prefer long morning reports",
+    trustTier: "AUTO",
+    source: "preference",
+  });
+  assert.equal(revived.forgotten, true);
+
+  const narrowed = new MemoryFactStore();
+  await narrowed.write({
+    userId: "user-a",
+    content: "I prefer short morning reports.",
+    trustTier: "AUTO",
+    source: "preference",
+  });
+  const replaced = await planUserMemory({
+    facts: narrowed,
+    userId: "user-a",
+    userText: "Correct that I prefer long morning reports instead of morning reports.",
+  });
+  assert.equal(replaced.action, "correct");
+  const visible = await narrowed.read({ userId: "user-a", limit: 10 });
+  assert.deepEqual(
+    visible.map((row) => row.content),
+    ["I prefer long morning reports"]
+  );
+});
+
+test("a correction without the atomic replace forgets the previous fact only after the write", async () => {
+  const previous = {
+    id: "old",
+    userId: "user-a",
+    content: "I prefer short morning reports.",
+    dedupeKey: factDedupeKey("I prefer short morning reports."),
+    source: "preference",
+    deletedAt: null,
+  };
+  let forgot = false;
+  const failed = await planUserMemory({
+    facts: {
+      async read() {
+        return [previous];
+      },
+      async write() {
+        throw new Error("database unavailable");
+      },
+      async forget() {
+        forgot = true;
+        return { deleted: 1 };
+      },
+    },
+    userId: "user-a",
+    userText:
+      "Correct that I prefer long morning reports instead of I prefer short morning reports.",
+  });
+  assert.equal(forgot, false);
+  assert.match(failed.notice, /Persistence failed/);
+
+  const rows = [previous];
+  const stored = await planUserMemory({
+    facts: {
+      async read() {
+        return rows.filter((row) => !row.deletedAt);
+      },
+      async write({ content }) {
+        const row = {
+          id: "new",
+          userId: "user-a",
+          content,
+          dedupeKey: factDedupeKey(content),
+          source: "preference",
+          deletedAt: null,
+        };
+        rows.push(row);
+        return row;
+      },
+      async forget({ id }) {
+        const row = rows.find((item) => item.id === id && !item.deletedAt);
+        if (!row) return { deleted: 0 };
+        row.deletedAt = new Date();
+        return { deleted: 1 };
+      },
+    },
+    userId: "user-a",
+    userText:
+      "Correct that I prefer long morning reports instead of I prefer short morning reports.",
+  });
+  assert.equal(stored.action, "correct");
+  assert.equal(rows.find((row) => row.id === "new").deletedAt, null);
+  assert.ok(rows.find((row) => row.id === "old").deletedAt);
+});
+
+test("postgres replacement keeps the previous fact when the insert fails", async () => {
+  const rows = [];
+  let seq = 0;
+  const tx = {
+    chiefFact: {
+      async findUnique({ where }) {
+        const key = where.userId_dedupeKey;
+        return (
+          rows.find((row) => row.userId === key.userId && row.dedupeKey === key.dedupeKey) || null
+        );
+      },
+      async findMany({ where }) {
+        return rows.filter((row) => row.userId === where.userId && row.deletedAt == null);
+      },
+      async count({ where }) {
+        return rows.filter((row) => row.userId === where.userId && row.deletedAt == null).length;
+      },
+      async create({ data }) {
+        const row = {
+          id: `fact-${(seq += 1)}`,
+          deletedAt: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          ...data,
+        };
+        rows.push(row);
+        return row;
+      },
+      async updateMany({ where, data }) {
+        let count = 0;
+        for (const row of rows) {
+          if (row.userId !== where.userId || row.deletedAt) continue;
+          if (where.id?.in && !where.id.in.includes(row.id)) continue;
+          Object.assign(row, data);
+          count += 1;
+        }
+        return { count };
+      },
+    },
+  };
+  let transactions = 0;
+  const store = new PrismaFactStore({
+    async withUser(_userId, fn) {
+      transactions += 1;
+      const snapshot = rows.map((row) => ({ ...row }));
+      try {
+        return await fn(tx);
+      } catch (error) {
+        rows.splice(0, rows.length, ...snapshot);
+        throw error;
+      }
+    },
+    encrypt: (value) => `sealed:${value}`,
+    decrypt: (value) => String(value).slice("sealed:".length),
+  });
+  await store.write({
+    userId: "user-a",
+    content: "I prefer short morning reports.",
+    trustTier: "AUTO",
+    source: "preference",
+  });
+  const before = transactions;
+  const create = tx.chiefFact.create.bind(tx.chiefFact);
+  tx.chiefFact.create = async (input) => {
+    await create(input);
+    throw new Error("database unavailable");
+  };
+  const failed = await planUserMemory({
+    facts: store,
+    userId: "user-a",
+    userText:
+      "Correct that I prefer long morning reports instead of I prefer short morning reports.",
+  });
+  assert.equal(failed.stored, false);
+  assert.match(failed.notice, /Persistence failed/);
+  assert.equal(transactions, before + 1);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].deletedAt, null);
+  assert.equal(store._decrypt(rows[0].contentCiphertext), "I prefer short morning reports.");
+});
+
+test("remember this keeps a user fact or a confirmed decision, and drops assistant guesses", async () => {
+  const decision = "I decided the feeder stays manual.";
+  const recommendation = "I recommend keeping the feeder manual.";
+  const guess = "I think the feeder should stay manual.";
+  const confirmed = "We decided the feeder stays manual.";
+
+  const authored = resolveRememberedFact("Remember this.", [
+    { role: "assistant", content: recommendation },
+    { role: "user", content: decision },
+  ]);
+  assert.equal(authored.content, decision);
+
+  const unconfirmed = resolveRememberedFact("Remember this.", [
+    { role: "user", content: decision },
+    { role: "assistant", content: recommendation },
+  ]);
+  assert.equal(unconfirmed.clarify, true);
+  assert.equal(unconfirmed.content, "");
+
+  const guessed = resolveRememberedFact("Remember this.", [
+    { role: "assistant", content: guess },
+    { role: "user", content: "Yes." },
+  ]);
+  assert.equal(guessed.clarify, true);
+
+  const accepted = resolveRememberedFact("Remember this.", [
+    { role: "assistant", content: confirmed },
+    { role: "user", content: "Yes, that's correct." },
+  ]);
+  assert.equal(accepted.content, confirmed);
+
+  const mixed = resolveRememberedFact("Remember this.", [
+    { role: "assistant", content: `${confirmed} ${recommendation}` },
+    { role: "user", content: "Yes." },
+  ]);
+  assert.equal(mixed.clarify, true);
+
+  const facts = new MemoryFactStore();
+  const stored = await planUserMemory({
+    facts,
+    userId: "user-a",
+    userText: "Remember this.",
+    transcript: [
+      { role: "assistant", content: confirmed },
+      { role: "user", content: "Yes, that's correct." },
+      { role: "user", content: "Remember this." },
+    ],
+  });
+  assert.equal(stored.stored, true);
+  assert.equal((await facts.read({ userId: "user-a", limit: 5 }))[0].content, confirmed);
+
+  const rejected = await planUserMemory({
+    facts: new MemoryFactStore(),
+    userId: "user-a",
+    userText: "Remember this.",
+    transcript: [
+      { role: "assistant", content: recommendation },
+      { role: "user", content: "Remember this." },
+    ],
+  });
+  assert.equal(rejected.stored, false);
+  assert.equal(rejected.action, "clarify");
+
+  const live = new MemoryFactStore();
+  const turn = await say(live, "Remember this.", {
+    transcript: [{ role: "assistant", content: `${guess} ${recommendation}` }],
+  });
+  assert.equal((await live.read({ userId: "user-a", limit: 5 })).length, 0);
+  assert.match(sentText(turn.client), /Not stored/);
 });
 
 test("a scheduled turn does not store a remember command", async () => {

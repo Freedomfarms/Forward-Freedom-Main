@@ -18,6 +18,10 @@ const REFERENCE_ONLY =
   /^(?:this|that|it|this decision|that decision|the decision|this preference|that preference|what i (?:just )?said|what we (?:just )?(?:said|decided))(?:\s+for(?:\s+(?:future|later))?\s+conversations)?$/i;
 const DURABLE_START =
   /^(?:i|we)\s+(?:always|never|prefer|decided)\b|^(?:my name is|call me|from now on)\b/i;
+const CONFIRMATION =
+  /^(?:yes|yeah|yep|correct|confirmed|agreed|i agree|i confirm|that(?:'s| is) (?:right|correct))(?:[, ]+(?:that(?:'s| is) )?(?:right|correct|confirmed))?$/i;
+const UNCONFIRMED_ASSISTANT =
+  /\b(?:recommend(?:s|ed)?|suggest(?:s|ed)?|should|could|might|maybe|perhaps|possibly|i think|i guess|not sure)\b/i;
 
 function commandText(pattern, userText) {
   const match = String(userText ?? "")
@@ -71,6 +75,21 @@ function durableSentences(text) {
   );
 }
 
+function explicitConfirmation(text) {
+  const normalized = String(text ?? "")
+    .trim()
+    .replace(/[.!?]+$/g, "")
+    .replace(/\s+/g, " ");
+  return CONFIRMATION.test(normalized);
+}
+
+function confirmedDecision(text) {
+  const found = durableSentences(text);
+  if (found.length !== 1) return "";
+  if (UNCONFIRMED_ASSISTANT.test(found[0])) return "";
+  return found[0];
+}
+
 function priorMessages(transcript, userText) {
   const messages = Array.isArray(transcript) ? [...transcript] : [];
   const last = messages.at(-1);
@@ -87,10 +106,24 @@ export function resolveRememberedFact(userText, transcript = []) {
   const messages = priorMessages(transcript, userText);
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
-    if (message?.role !== "user" && message?.role !== "assistant") continue;
-    const found = durableSentences(messageText(message));
-    if (found.length === 1) return { content: found[0], clarify: false };
+    if (message?.role === "assistant") {
+      if (durableSentences(messageText(message)).length === 0) continue;
+      return { content: "", clarify: true };
+    }
+    if (message?.role !== "user") continue;
+    const text = messageText(message);
+    // A confirmation is not itself a fact. Bind it to the previous assistant
+    // decision, or clarify. Do not store "Yes, that's correct."
+    if (explicitConfirmation(text)) {
+      const prior = messages[index - 1];
+      if (prior?.role !== "assistant") return { content: "", clarify: true };
+      const decision = confirmedDecision(messageText(prior));
+      if (!decision) return { content: "", clarify: true };
+      return { content: decision, clarify: false };
+    }
+    const found = durableSentences(text);
     if (found.length > 1) return { content: "", clarify: true };
+    if (found.length === 1) return { content: found[0], clarify: false };
   }
   return { content: "", clarify: true };
 }
@@ -152,18 +185,7 @@ async function correctFact({ facts, userId, payload }) {
   if (!next || isReferenceOnly(next)) return { action: "clarify", reason: "unresolved" };
   if (fencesOutput(scanInjection(next).threatLevel)) return rejection("injection");
   if (!qualifiesForLongTermMemory(next, { explicit: true })) return rejection("not-durable");
-  if (previous) {
-    let removed = 0;
-    if (typeof facts.forget === "function") {
-      const result = await facts.forget({ userId, content: previous });
-      removed = result?.deleted ?? 0;
-    }
-    const written = await writeExplicit(facts, null, userId, next);
-    if (written.action === "remember" && removed > 0) {
-      return { ...written, action: "correct", superseded: previous };
-    }
-    return written;
-  }
+  if (previous) return replaceFact({ facts, userId, previous, next });
   const rows = typeof facts.read === "function" ? await facts.read({ userId, query: "", limit: 50 }) : [];
   const matches = (rows || []).filter((row) => row?.content && overlap(next, row.content) >= 2);
   if (matches.length > 1) return { action: "clarify", reason: "ambiguous" };
@@ -178,6 +200,48 @@ async function correctFact({ facts, userId, payload }) {
     if (updated?.duplicate) return { action: "remember", id: updated.id, duplicate: true, content: next };
   }
   return writeExplicit(facts, null, userId, next);
+}
+
+async function replaceFact({ facts, userId, previous, next }) {
+  if (typeof facts.replace === "function") {
+    const replaced = await facts.replace({
+      userId,
+      previous,
+      content: next,
+      trustTier: "AUTO",
+      source: personalSource(next),
+      importance: 0.8,
+      confidence: 0.9,
+    });
+    if (replaced?.forgotten || replaced?.deletedAt) {
+      return { action: "rejected", reason: "forgotten", id: replaced.id ?? null, content: next };
+    }
+    if (!replaced?.id) return rejection("not-durable");
+    if ((replaced.removed ?? 0) > 0) {
+      return { action: "correct", id: replaced.id, content: next, superseded: previous };
+    }
+    return { action: "remember", id: replaced.id, duplicate: false, content: next };
+  }
+  const prior = typeof facts.read === "function" ? await facts.read({ userId, query: "", limit: 50 }) : [];
+  const needle = previous.trim().toLowerCase();
+  const key = factDedupeKey(needle);
+  const matches = (prior || []).filter((row) => {
+    if (!row?.id || row.deletedAt || row.source === "identity") return false;
+    const text = String(row.content ?? "").toLowerCase();
+    return row.dedupeKey === key || text.includes(needle);
+  });
+  const written = await writeExplicit(facts, null, userId, next);
+  if (written.action !== "remember") return written;
+  let removed = 0;
+  if (typeof facts.forget === "function") {
+    for (const row of matches) {
+      if (row.id === written.id) continue;
+      const result = await facts.forget({ userId, id: row.id });
+      removed += result?.deleted ?? 0;
+    }
+  }
+  if (removed > 0) return { ...written, action: "correct", superseded: previous };
+  return written;
 }
 
 export async function applyMemoryCommands({
