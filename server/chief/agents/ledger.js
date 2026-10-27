@@ -21,10 +21,14 @@
 // this ledger still does not send that second POST on its own.
 //
 // Polling is not started here. runChiefTick is the host: listNonterminal
-// with the service client, then withUserContext for each owner. It stays
-// inactive until CURSOR_API_KEY and the repository allowlist are configured.
+// uses the service client, then each owner is read with withUserContext.
+// The tick polls only when a Cursor runtime is configured. It does not POST.
 
 import { createHash, randomUUID } from "node:crypto";
+
+import { withUserContext } from "../../db/prisma.js";
+import { getServicePrismaClient } from "../../db/servicePrisma.js";
+import { decryptJson, encryptJson } from "../../security/envelope.js";
 
 import {
   ExecutionError,
@@ -827,6 +831,17 @@ export async function cancelGranted({ store, runtime, userId, executionId, owner
       record: await store.get(actor, executionId),
     };
   }
+}
+
+// listNonterminal is the cross-user read the scheduler tick is allowed to make.
+// Every later read uses withUserContext for the row's owner.
+export function createPrismaExecutionStore() {
+  return new PrismaExecutionStore({
+    withUser: withUserContext,
+    service: () => getServicePrismaClient(),
+    encrypt: encryptJson,
+    decrypt: decryptJson,
+  });
 }
 
 export class PrismaExecutionStore {

@@ -13,7 +13,9 @@
 import crypto from "node:crypto";
 
 import { readBearerToken } from "../../server/auth/verifyAuth.js";
+import { createPrismaExecutionStore } from "../../server/chief/agents/ledger.js";
 import { PrismaFactStore } from "../../server/chief/memory/facts.js";
+import { createPrismaWorkspaceDocumentStore } from "../../server/chief/memory/workspaceDocuments.js";
 import { createManagedClient, drainManagedWork } from "../../server/chief/managed/chatTurn.js";
 import { createPrismaWorkQueue } from "../../server/chief/managed/workQueue.js";
 import { PrismaCheckpointStore } from "../../server/chief/runtime/checkpoint.js";
@@ -41,6 +43,8 @@ function defaultDeps() {
     createClient: () => createManagedClient(),
     createTooling: ({ userId }) => createChiefTooling({ userId, audit, stores: { facts } }),
     audit,
+    executionStore: createPrismaExecutionStore(),
+    documentStore: createPrismaWorkspaceDocumentStore(),
   };
 }
 

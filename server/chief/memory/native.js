@@ -140,6 +140,9 @@ export class NativeMemoryProvider {
       importance: explicit ? 0.8 : 0.5,
       confidence: explicit ? 0.9 : 0.5,
     });
+    if (written?.forgotten || written?.deletedAt) {
+      return { stored: false, reason: "forgotten", id: written.id ?? null };
+    }
     return { stored: true, id: written?.id ?? null };
   }
 

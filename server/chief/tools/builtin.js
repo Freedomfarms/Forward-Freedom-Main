@@ -186,7 +186,13 @@ function memoryWrite(store, { checkpointStore = null, archiveStore = null } = {}
           trustTier,
           source: params.source ?? "tool",
         });
-        return { output: JSON.stringify({ id: stored.id, trustTier: stored.trustTier }) };
+        if (stored?.forgotten || stored?.deletedAt) {
+          return {
+            output: JSON.stringify({ stored: false, reason: "forgotten" }),
+            isError: true,
+          };
+        }
+        return { output: JSON.stringify({ id: stored.id, trustTier: stored.trustTier, stored: true }) };
       } catch (error) {
         return { output: error.message || "memory write failed", isError: true };
       }

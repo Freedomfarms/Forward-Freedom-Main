@@ -11,7 +11,12 @@ import {
 } from "../agents/codingHandoff.js";
 import { createCursorCloudRuntime } from "../agents/cursorCloud.js";
 import { isExactRepositoryUrl, isProtectedRepository } from "../agents/execution.js";
-import { CODING_EXECUTION_SCOPE, ExecutionState, executionScopeHash } from "../agents/ledger.js";
+import {
+  CODING_EXECUTION_SCOPE,
+  ExecutionState,
+  createPrismaExecutionStore,
+  executionScopeHash,
+} from "../agents/ledger.js";
 import { composeCodingObjective } from "../ecc/catalog.js";
 import { createPrismaReleaseHold, createPrismaReserveHold } from "../models/budget.js";
 
@@ -52,6 +57,7 @@ export function createCodingHandoffTools({
   fetchImpl = globalThis.fetch,
   handoff = null,
   ledger = null,
+  resolveLedger = createPrismaExecutionStore,
   reserveHold = null,
   releaseHold = null,
 } = {}) {
@@ -65,6 +71,13 @@ export function createCodingHandoffTools({
         memoryStoreId: context?.memoryStoreId || null,
       })
     );
+  }
+
+  let resolvedLedger = ledger;
+  function executionLedger() {
+    if (resolvedLedger) return resolvedLedger;
+    resolvedLedger = typeof resolveLedger === "function" ? resolveLedger() : null;
+    return resolvedLedger;
   }
 
   const submit = new BaseTool({
@@ -114,7 +127,7 @@ export function createCodingHandoffTools({
       if (context?.mutationApproved !== true) {
         return resultOf({ available: false, error: "confirmation_required", posted: false });
       }
-      const store = context?.ledger || ledger;
+      const store = context?.ledger || executionLedger();
       if (!store || typeof store.grant !== "function" || typeof store.begin !== "function") {
         return resultOf({ available: false, error: "ledger_required", posted: false });
       }
@@ -251,7 +264,7 @@ export function createCodingHandoffTools({
   });
 
   async function releaseTerminalTask(context, body) {
-    const store = context?.ledger || ledger;
+    const store = context?.ledger || executionLedger();
     const adapter = typeof store?.adapter === "function" ? store.adapter() : store;
     const agentId = typeof body?.agentId === "string" && body.agentId ? body.agentId : body?.taskId;
     if (!adapter || typeof adapter.findAgent !== "function" || typeof agentId !== "string") return;

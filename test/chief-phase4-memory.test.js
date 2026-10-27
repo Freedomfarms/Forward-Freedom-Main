@@ -1,0 +1,355 @@
+// Phase 4 memory closure. Explicit commands use the existing fact store.
+// A noticed preference is not written and is not trusted.
+
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+import { runManagedChiefTurn } from "../server/chief/managed/chatTurn.js";
+import {
+  CORE_INSTRUCTION_REVISION,
+  productionAgentBody,
+} from "../server/chief/managed/productionAgent.js";
+import { planUserMemory, resolveRememberedFact } from "../server/chief/memory/commands.js";
+import { retainConversationMemories } from "../server/chief/memory/derive.js";
+import { MemoryFactStore } from "../server/chief/memory/facts.js";
+import {
+  acceptedFactsDocument,
+  createMemoryWorkspaceDocumentStore,
+  recoveryDocuments,
+} from "../server/chief/memory/workspaceDocuments.js";
+import { createMemoryWorkQueue } from "../server/chief/managed/workQueue.js";
+import { MemoryCheckpointStore } from "../server/chief/runtime/checkpoint.js";
+import { createChiefTools } from "../server/chief/tools/builtin.js";
+import { ToolExecutor } from "../server/chief/tools/executor.js";
+import { scriptedManagedClient } from "./chief-managed-client-fixture.js";
+
+function sentText(client) {
+  return JSON.stringify(client.state.sent);
+}
+
+async function say(facts, text, { transcript = null, schedule = false } = {}) {
+  const store = new MemoryCheckpointStore();
+  const documents = createMemoryWorkspaceDocumentStore();
+  const session = await store.createSession({
+    userId: "user-a",
+    context: { origin: schedule ? "managed-schedule" : "managed" },
+  });
+  if (transcript) session.checkpoint.transcript = transcript;
+  if (schedule) session.checkpoint.context.pendingPrompt = text;
+  await store.saveWithEvents("user-a", session.id, { checkpoint: session.checkpoint });
+  const client = scriptedManagedClient([{ text: "Noted." }]);
+  await runManagedChiefTurn({
+    userId: "user-a",
+    sessionId: session.id,
+    submission: schedule
+      ? undefined
+      : { id: "s1", op: { type: "message", message: { text } } },
+    store,
+    client,
+    jobs: createMemoryWorkQueue(),
+    factStore: facts,
+    documentStore: documents,
+    toolExecutor: new ToolExecutor(),
+    resume: schedule,
+    caller: schedule ? { kind: "schedule", trigger: "schedule:task-1" } : null,
+  });
+  return { client, store, documents };
+}
+
+test("production instructions tell CHIEF how to use memory, research, and coding status", () => {
+  assert.equal(CORE_INSTRUCTION_REVISION, "workspace-memory-and-coding-follow-v4");
+  const body = productionAgentBody({ toolSpecs: [], idempotencyKey: "agent:chief:production:test" });
+  assert.match(body.system, /call web_search/);
+  assert.match(body.system, /pinned ICM skill/);
+  assert.match(body.system, /coding_task_submit attaches ECC guidance/);
+  assert.match(body.system, /scheduled run cannot approve a coding task/);
+  assert.match(body.system, /memory\/accepted-facts\.md and next-step\.md/);
+  assert.match(body.system, /application notice says a fact was not stored/);
+  assert.match(body.system, /not stored until memory_write succeeds/);
+  assert.match(body.system, /do not invent a security-hook result/);
+  const chat = readFileSync("server/chief/managed/chatTurn.js", "utf8");
+  assert.equal(chat.includes("rememberExchange"), false);
+});
+
+test("a fully stated remember stores the fact, and a retry does not write it twice", async () => {
+  const facts = new MemoryFactStore();
+  let writes = 0;
+  const write = facts.write.bind(facts);
+  facts.write = async (input) => {
+    writes += 1;
+    return write(input);
+  };
+  const first = await say(facts, "Chief, remember that I prefer short answers.");
+  assert.match(sentText(first.client), /Accepted memory now includes \\"I prefer short answers\\"/);
+  const rows = await facts.read({ userId: "user-a", limit: 10 });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].content, "I prefer short answers");
+  assert.equal(rows[0].trustTier, "AUTO");
+  assert.equal(writes, 1);
+
+  await runManagedChiefTurn({
+    userId: "user-a",
+    sessionId: (await first.store.listOwnedSessions("user-a"))[0].id,
+    submission: {
+      id: "s2",
+      op: { type: "message", message: { text: "Chief, remember that I prefer short answers." } },
+    },
+    store: first.store,
+    client: first.client,
+    jobs: createMemoryWorkQueue(),
+    factStore: facts,
+    documentStore: first.documents,
+    toolExecutor: new ToolExecutor(),
+  });
+  assert.equal(writes, 1);
+  assert.equal((await facts.read({ userId: "user-a", limit: 10 })).length, 1);
+});
+
+test("remember this keeps the referenced decision and does not store the meta phrase", async () => {
+  const decision = "I decided the feeder stays manual.";
+  const resolved = resolveRememberedFact("Chief, remember this decision for future conversations.", [
+    { role: "user", content: decision },
+    { role: "user", content: "Chief, remember this decision for future conversations." },
+  ]);
+  assert.equal(resolved.content, decision);
+  const facts = new MemoryFactStore();
+  const turn = await say(facts, "Chief, remember this decision for future conversations.", {
+    transcript: [{ role: "user", content: decision }],
+  });
+  const rows = await facts.read({ userId: "user-a", limit: 10 });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].content, decision);
+  assert.equal(
+    rows.some((row) => /remember this decision/i.test(row.content)),
+    false
+  );
+  assert.match(sentText(turn.client), /feeder stays manual/);
+});
+
+test("an ambiguous remember is not stored and the model is told to say so", async () => {
+  const facts = new MemoryFactStore();
+  const turn = await say(facts, "Remember this.", {
+    transcript: [
+      {
+        role: "assistant",
+        content: "I decided the feeder stays manual. I prefer short answers.",
+      },
+    ],
+  });
+  assert.equal((await facts.read({ userId: "user-a", limit: 10 })).length, 0);
+  assert.match(sentText(turn.client), /Not stored\. The request did not identify one specific fact/);
+  assert.match(sentText(turn.client), /Do not say it was remembered/);
+
+  const none = await planUserMemory({
+    facts,
+    userId: "user-a",
+    userText: "Remember this.",
+    transcript: [],
+  });
+  assert.equal(none.stored, false);
+  assert.equal(none.action, "clarify");
+});
+
+test("a durable preference is noticed and left unstored until memory_write is approved", async () => {
+  const facts = new MemoryFactStore();
+  const turn = await say(facts, "I prefer brief status notes.");
+  assert.equal((await facts.read({ userId: "user-a", limit: 10 })).length, 0);
+  assert.match(sentText(turn.client), /Not stored/);
+  assert.match(sentText(turn.client), /Call memory_write/);
+  assert.match(sentText(turn.client), /Do not mark it trusted/);
+  const tools = createChiefTools({ facts });
+  const write = tools.find((tool) => tool.spec.name === "memory_write");
+  const trusted = await write.execute(
+    { content: "I prefer brief status notes.", trust: "trusted" },
+    { userId: "user-a" }
+  );
+  assert.equal(trusted.isError, true);
+  assert.match(trusted.output, /cannot be promoted to trusted/);
+  assert.equal((await facts.read({ userId: "user-a", limit: 10 })).length, 0);
+
+  const existing = new MemoryFactStore();
+  await existing.write({
+    userId: "user-a",
+    content: "I prefer short morning reports.",
+    trustTier: "AUTO",
+    source: "preference",
+  });
+  const proposal = await planUserMemory({
+    facts: existing,
+    userId: "user-a",
+    userText: "I prefer long morning reports.",
+  });
+  assert.equal(proposal.stored, false);
+  assert.match(proposal.notice, /only after that approval/);
+  const still = await existing.read({ userId: "user-a", limit: 10 });
+  assert.equal(still.length, 1);
+  assert.equal(still[0].content, "I prefer short morning reports.");
+});
+
+test("a correction supersedes one fact, and an ambiguous correction does not", async () => {
+  const facts = new MemoryFactStore();
+  await facts.write({
+    userId: "user-a",
+    content: "I prefer short morning reports.",
+    trustTier: "AUTO",
+    source: "preference",
+  });
+  await facts.write({
+    userId: "user-b",
+    content: "I prefer short morning reports.",
+    trustTier: "AUTO",
+    source: "preference",
+  });
+  const corrected = await planUserMemory({
+    facts,
+    userId: "user-a",
+    userText:
+      "Correct that I prefer long morning reports instead of I prefer short morning reports.",
+  });
+  assert.equal(corrected.stored, true);
+  assert.equal(corrected.action, "correct");
+  const mine = await facts.read({ userId: "user-a", limit: 10 });
+  assert.equal(mine.length, 1);
+  assert.equal(mine[0].content, "I prefer long morning reports");
+  const theirs = await facts.read({ userId: "user-b", limit: 10 });
+  assert.equal(theirs.length, 1);
+  assert.equal(theirs[0].content, "I prefer short morning reports.");
+
+  const ambiguous = new MemoryFactStore();
+  await ambiguous.write({
+    userId: "user-a",
+    content: "I prefer short morning reports.",
+    trustTier: "AUTO",
+    source: "preference",
+  });
+  await ambiguous.write({
+    userId: "user-a",
+    content: "I prefer short evening reports.",
+    trustTier: "AUTO",
+    source: "preference",
+  });
+  const blocked = await planUserMemory({
+    facts: ambiguous,
+    userId: "user-a",
+    userText: "Correct that I prefer long morning reports.",
+  });
+  assert.equal(blocked.action, "clarify");
+  assert.equal(blocked.stored, false);
+  const unchanged = await ambiguous.read({ userId: "user-a", limit: 10 });
+  assert.equal(unchanged.length, 2);
+});
+
+test("a forgotten fact stays forgotten across recovery and a later import", async () => {
+  const facts = new MemoryFactStore();
+  const remembered = await planUserMemory({
+    facts,
+    userId: "user-a",
+    userText: "Remember that I prefer short answers.",
+  });
+  assert.equal(remembered.stored, true);
+  const forgotten = await planUserMemory({
+    facts,
+    userId: "user-a",
+    userText: "Forget that I prefer short answers.",
+  });
+  assert.equal(forgotten.action, "forget");
+  assert.equal(forgotten.deleted, 1);
+  const visible = await facts.read({ userId: "user-a", limit: 10 });
+  assert.equal(visible.length, 0);
+  const recovered = recoveryDocuments({ documents: [], facts: visible });
+  const file = recovered.files.find((item) => item.path === "memory/accepted-facts.md");
+  assert.equal(file.content.includes("I prefer short answers"), false);
+  assert.equal(acceptedFactsDocument(visible).includes("I prefer short answers"), false);
+
+  const again = await facts.write({
+    userId: "user-a",
+    content: "I prefer short answers",
+    trustTier: "AUTO",
+    source: "preference",
+  });
+  assert.equal(again.forgotten, true);
+  const imported = await retainConversationMemories({
+    facts,
+    userId: "user-a",
+    provider: "chief",
+    conversationId: "session-1",
+    messages: [{ role: "user", content: "I prefer short answers" }],
+  });
+  assert.equal(imported.retained, 0);
+  assert.equal(imported.duplicate, 1);
+  assert.equal((await facts.read({ userId: "user-a", limit: 10 })).length, 0);
+
+  const tools = createChiefTools({ facts });
+  const write = tools.find((tool) => tool.spec.name === "memory_write");
+  const toolResult = await write.execute(
+    { content: "I prefer short answers" },
+    { userId: "user-a" }
+  );
+  assert.equal(toolResult.isError, true);
+  assert.match(toolResult.output, /forgotten/);
+});
+
+test("a stored fact is available in a later session, and another user's fact is not", async () => {
+  const facts = new MemoryFactStore();
+  await say(facts, "Chief, remember that I prefer short answers.");
+  await facts.write({
+    userId: "user-b",
+    content: "I prefer long board reports.",
+    trustTier: "AUTO",
+    source: "preference",
+  });
+  const documents = createMemoryWorkspaceDocumentStore();
+  const store = new MemoryCheckpointStore();
+  const client = scriptedManagedClient([{ text: "Short answer." }]);
+  await runManagedChiefTurn({
+    userId: "user-a",
+    submission: { id: "s3", op: { type: "message", message: { text: "What should the update look like?" } } },
+    store,
+    client,
+    jobs: createMemoryWorkQueue(),
+    factStore: facts,
+    documentStore: documents,
+    toolExecutor: new ToolExecutor(),
+  });
+  const mounted = JSON.stringify(client.state.memories);
+  assert.match(mounted, /I prefer short answers/);
+  assert.equal(mounted.includes("long board reports"), false);
+  const recovered = recoveryDocuments({
+    documents: await documents.list("user-a"),
+    facts: await facts.read({ userId: "user-a", limit: 20 }),
+  });
+  const accepted = recovered.files.find((item) => item.path === "memory/accepted-facts.md");
+  assert.match(accepted.content, /I prefer short answers/);
+  assert.equal(accepted.content.includes("long board reports"), false);
+});
+
+test("a failed write is reported as not stored", async () => {
+  const facts = new MemoryFactStore();
+  facts.write = async () => {
+    throw new Error("database unavailable");
+  };
+  const turn = await say(facts, "Chief, remember that I prefer short answers.");
+  assert.match(sentText(turn.client), /Not stored\. Persistence failed/);
+  assert.match(sentText(turn.client), /Do not tell the user this was remembered/);
+  assert.equal(facts.rows.length, 0);
+
+  const planned = await planUserMemory({
+    facts: {
+      async read() {
+        throw new Error("database unavailable");
+      },
+    },
+    userId: "user-a",
+    userText: "I prefer brief status notes.",
+  });
+  assert.equal(planned.stored, false);
+  assert.match(planned.notice, /Persistence failed/);
+});
+
+test("a scheduled turn does not store a remember command", async () => {
+  const facts = new MemoryFactStore();
+  const turn = await say(facts, "Chief, remember that I prefer short answers.", { schedule: true });
+  assert.equal((await facts.read({ userId: "user-a", limit: 10 })).length, 0);
+  assert.equal(sentText(turn.client).includes("Stored."), false);
+});

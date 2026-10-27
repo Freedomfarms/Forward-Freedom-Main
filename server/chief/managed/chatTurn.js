@@ -34,9 +34,11 @@ import {
 import { readChiefPersonality } from "../personality/store.js";
 import {
   fittedPersonalityGuidance,
+  memoryTurnPrompt,
   personalityDelivery,
   undeliveredTurnPrompt,
 } from "./personalityDelivery.js";
+import { planUserMemory } from "../memory/commands.js";
 import {
   normalizeChiefPersonality,
   personalityDigest,
@@ -44,9 +46,10 @@ import {
 import { MISSING_CHIEF_ANSWER } from "../../../src/utils/chiefProtocol.js";
 import { SCHEDULED_TURN_EXCLUDED_TOOLS } from "../tools/inventory.js";
 import { ICM_ARCHITECT_PIN } from "./constants.js";
-import { PrismaFactStore } from "../memory/facts.js";
+import { factDedupeKey, PrismaFactStore } from "../memory/facts.js";
 import {
   ACCEPTED_FACTS_PATH,
+  acceptedFactsDocument,
   commitGuardedDocuments,
   createPrismaWorkspaceDocumentStore,
   guardedMemoryFiles,
@@ -1307,11 +1310,46 @@ export async function runManagedChiefTurn({
       userText: text,
       guidance: personalityState.guidance,
     });
+    let memoryNotice = "";
+    if (scheduleCaller?.kind !== "schedule") {
+      const appliedKey = checkpoint.context.memoryAppliedKey;
+      const textKey = factDedupeKey(text);
+      if (appliedKey === textKey && typeof checkpoint.context.memoryNotice === "string") {
+        memoryNotice = checkpoint.context.memoryNotice;
+      } else {
+        try {
+          const planned = await planUserMemory({
+            facts,
+            userId,
+            userText: text,
+            transcript: checkpoint.transcript,
+          });
+          memoryNotice = planned.notice || "";
+          checkpoint.context.memoryAppliedKey = textKey;
+          checkpoint.context.memoryNotice = memoryNotice;
+          if (planned.stored) {
+            const rows = await facts.read({ userId, query: "", limit: 500 });
+            managed.pendingFacts = {
+              path: ACCEPTED_FACTS_PATH,
+              content: acceptedFactsDocument(rows),
+              previousSha: managed.acceptedFactsSha || null,
+              force: true,
+            };
+          }
+        } catch {
+          memoryNotice =
+            "Not stored. Persistence failed. Do not tell the user this was remembered.";
+          checkpoint.context.memoryAppliedKey = textKey;
+          checkpoint.context.memoryNotice = memoryNotice;
+        }
+      }
+    }
     const priorError =
       typeof checkpoint.context.turnError === "string" ? checkpoint.context.turnError.trim() : "";
-    const providerPrompt = priorError
+    const delivered = priorError
       ? undeliveredTurnPrompt(delivery.providerPrompt, priorError)
       : delivery.providerPrompt;
+    const providerPrompt = memoryTurnPrompt(delivered, memoryNotice);
     checkpoint.context.heldPrompts = heldPrompts(checkpoint).filter((item) => item !== text);
     if (managed.memoryStoreId) {
       let listed = null;

@@ -158,6 +158,7 @@ test("the handoff client does not post, and a submit without a ledger does not p
   const [tool] = createCodingHandoffTools({
     env: { CURSOR_API_KEY: KEY, CHIEF_CODE_REPOSITORY: "Freedomfarms/Forward-Freedom-Main" },
     fetchImpl,
+    resolveLedger: () => null,
   });
   const declined = await tool.execute({ requirements: REQUIREMENTS }, { userId: "user-a" });
   assert.equal(declined.isError, true);
