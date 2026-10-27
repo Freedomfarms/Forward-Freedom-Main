@@ -54,6 +54,16 @@ const COMPATIBLE = {
   enum: new Set(["USER-DEFINED"]),
 };
 
+// New code is applied to the previous schema. A refused reserve is closed.
+// Account limits are closed only when no hold was opened. An enforced hold,
+// an unexpected success, or any unreleased row is not closed.
+export function budgetHoldClosedOnBase(result, openRows = 0) {
+  const rows = Number(openRows);
+  if (!Number.isInteger(rows) || rows !== 0) return false;
+  if (!result || result.ok !== true) return result?.ok === false;
+  return result.enforced === false && result.reason === "account_limits" && !result.hold;
+}
+
 export function diffDecision(changedFiles) {
   const files = changedFiles || [];
   const schema = files.some((file) => file === "prisma/schema.prisma");
@@ -385,15 +395,25 @@ export async function runSchemaCompat({
       let probes;
       try {
         probes = await runApplicationReads(clientFromPool(basePool));
+        const operationId = `schema-compat-${process.pid}`;
         probes.budgetHold = await reserveHold({
           client: basePool,
           userId: "schema-compat",
-          operationId: `schema-compat-${process.pid}`,
+          operationId,
           scope: "cursor",
           periodType: "run",
           estimateUsd: 1,
         });
-        if (probes.budgetHold?.ok) {
+        const table = await basePool.query(`SELECT to_regclass('public.chief_budget_hold') AS rel`);
+        let openRows = 0;
+        if (table.rows[0]?.rel) {
+          const counted = await basePool.query(
+            `SELECT COUNT(*)::int AS n FROM "chief_budget_hold" WHERE "operationId" = $1 AND "releasedAt" IS NULL`,
+            [operationId]
+          );
+          openRows = Number(counted.rows[0]?.n ?? 0);
+        }
+        if (!budgetHoldClosedOnBase(probes.budgetHold, openRows)) {
           return {
             ok: false,
             verified: false,
