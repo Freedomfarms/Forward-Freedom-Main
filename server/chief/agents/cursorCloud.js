@@ -28,6 +28,24 @@ const AGENT_ID = /^bc-[A-Za-z0-9-]{8,200}$/;
 const RUN_ID = /^run-[A-Za-z0-9-]{8,200}$/;
 const APPROVAL_ID = /^[A-Za-z0-9_-]{8,200}$/;
 const API_KEY = /^[^\s]{8,512}$/;
+const CODING_MODEL_ID = "grok-4.7";
+const CODING_MODEL_NAME = "Grok 4.7";
+
+// The id sent to Create An Agent must be one returned by GET /v1/models.
+// Prefer the canonical grok-4.7 id. A single item whose display name is
+// exactly "Grok 4.7" may use that item's id. Effort variants and other
+// models are not substitutes.
+export function selectCursorCodingModel(items) {
+  if (!Array.isArray(items)) return null;
+  const models = items.filter(
+    (item) => item && typeof item.id === "string" && item.id.trim() !== "" && item.id === item.id.trim()
+  );
+  const exact = models.find((item) => item.id === CODING_MODEL_ID);
+  if (exact) return exact.id;
+  const named = models.filter((item) => item.displayName === CODING_MODEL_NAME);
+  if (named.length === 1) return named[0].id;
+  return null;
+}
 
 function fail(code, message) {
   throw new ExecutionError(code, message);
@@ -265,7 +283,7 @@ function submissionView(record, duplicate) {
   };
 }
 
-function createBody(command, agentId) {
+function createBody(command, agentId, modelId) {
   const coding =
     isCodingExecutionScope(command.scope) &&
     command.startingRef === "main" &&
@@ -277,6 +295,7 @@ function createBody(command, agentId) {
     workOnCurrentBranch: false,
     autoCreatePR: coding,
   };
+  if (coding) body.model = { id: modelId };
   if (typeof agentId === "string" && agentId) body.agentId = agentId;
   return body;
 }
@@ -379,7 +398,38 @@ export function createCursorCloudRuntime(options = {}) {
     }
     if (!isRunStatus(body.status)) fail("unknown_status", "Cursor returned an unknown run status");
     await ledger.markStatus(record.approvalId, body.status, body);
+    if (isTerminalStatus(body.status)) await releaseObserved(record);
     return body;
+  }
+
+  async function releaseObserved(record) {
+    if (typeof releaseHold !== "function" || !record?.approvalId || !record?.userId) return;
+    await releaseHold({
+      userId: record.userId,
+      operationId: record.approvalId,
+    }).catch(() => {});
+  }
+
+  async function resolveCodingModel(key) {
+    let response;
+    try {
+      response = await send("/v1/models", { method: "GET", key });
+    } catch {
+      return { ok: false, code: "model_unavailable" };
+    }
+    if (response.status === 401 || response.status === 403) {
+      return { ok: false, code: "authentication_failed" };
+    }
+    if (!response.ok) return { ok: false, code: "model_unavailable" };
+    let body;
+    try {
+      body = await response.json();
+    } catch {
+      return { ok: false, code: "model_unavailable" };
+    }
+    const id = selectCursorCodingModel(body?.items);
+    if (!id) return { ok: false, code: "model_unavailable" };
+    return { ok: true, id };
   }
 
   async function rejectReserved(approved, code) {
@@ -389,10 +439,27 @@ export function createCursorCloudRuntime(options = {}) {
       runId: null,
       status: null,
     });
-    fail(code, "Coding spend could not be reserved");
+    const message =
+      code === "model_unavailable"
+        ? "Grok 4.7 is not available for this Cursor account"
+        : code === "authentication_failed"
+          ? "Cursor API authentication failed"
+          : code === "reconciliation_required"
+            ? "Cursor submission outcome is ambiguous and needs reconciliation"
+            : "Coding spend could not be reserved";
+    fail(code, message);
   }
 
   async function postReserved(approved, reservedId, key) {
+    let held = false;
+    let modelId = null;
+    async function releaseHeld() {
+      if (!held || typeof releaseHold !== "function") return;
+      await releaseHold({
+        userId: approved.userId,
+        operationId: approved.approvalId,
+      }).catch(() => {});
+    }
     if (isCodingExecutionScope(approved.scope)) {
       if (typeof reserveHold !== "function") {
         if (typeof releaseHold === "function") {
@@ -416,6 +483,7 @@ export function createCursorCloudRuntime(options = {}) {
         hold = { ok: false, code: "budget_unverified" };
       }
       if (!hold?.ok) await rejectReserved(approved, hold?.code || "budget_unverified");
+      held = hold.enforced === true;
       if (!reservedId && typeof releaseHold === "function") {
         await releaseHold({
           userId: approved.userId,
@@ -423,12 +491,18 @@ export function createCursorCloudRuntime(options = {}) {
         }).catch(() => {});
         await rejectReserved(approved, "reconciliation_required");
       }
+      const model = await resolveCodingModel(key);
+      if (!model.ok) {
+        await releaseHeld();
+        await rejectReserved(approved, model.code);
+      }
+      modelId = model.id;
     }
     let response;
     try {
       response = await send("/v1/agents", {
         method: "POST",
-        body: createBody(approved, reservedId),
+        body: createBody(approved, reservedId, modelId),
         key,
       });
     } catch {
@@ -472,6 +546,7 @@ export function createCursorCloudRuntime(options = {}) {
           "Cursor submission outcome is ambiguous and needs reconciliation"
         );
       }
+      await releaseHeld();
       await ledger.finish(approved.approvalId, "pending", {
         state: "rejected",
         agentId: reservedId,
@@ -528,6 +603,7 @@ export function createCursorCloudRuntime(options = {}) {
         "Cursor submission outcome is ambiguous and needs reconciliation"
       );
     }
+    if (isTerminalStatus(status)) await releaseObserved(finished.record);
     return submissionView(finished.record, false);
   }
 
@@ -715,6 +791,7 @@ export function createCursorCloudRuntime(options = {}) {
         fail("response_invalid", "Cursor run response did not match the stored reference");
       }
       await ledger.markStatus(record.approvalId, "CANCELLED");
+      await releaseObserved(record);
       return {
         provider: PROVIDER,
         agentId: record.agentId,

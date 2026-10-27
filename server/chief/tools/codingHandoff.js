@@ -232,6 +232,21 @@ export function createCodingHandoffTools({
     },
   });
 
+  async function releaseTerminalTask(context, body) {
+    const store = context?.ledger || ledger;
+    const adapter = typeof store?.adapter === "function" ? store.adapter() : store;
+    const agentId = typeof body?.agentId === "string" && body.agentId ? body.agentId : body?.taskId;
+    if (!adapter || typeof adapter.findAgent !== "function" || typeof agentId !== "string") return;
+    try {
+      const record = await adapter.findAgent(agentId);
+      if (!record || record.userId !== context.userId || typeof record.approvalId !== "string") return;
+      const releaser = releaseHold || createPrismaReleaseHold();
+      await releaser({ userId: record.userId, operationId: record.approvalId });
+    } catch {
+      // Status still returns. A later read retries the release.
+    }
+  }
+
   const status = new BaseTool({
     isLocal: true,
     spec: {
@@ -261,13 +276,13 @@ export function createCodingHandoffTools({
         return resultOf({ available: false, error: "task_id_invalid" });
       }
       try {
-        return resultOf(
-          await runtime(context).status({
-            userId: context.userId,
-            taskId: params?.task_id,
-            requirements: params?.requirements,
-          })
-        );
+        const body = await runtime(context).status({
+          userId: context.userId,
+          taskId: params?.task_id,
+          requirements: params?.requirements,
+        });
+        if (body?.terminal === true) await releaseTerminalTask(context, body);
+        return resultOf(body);
       } catch {
         return resultOf({ available: false, error: "request_rejected" });
       }
