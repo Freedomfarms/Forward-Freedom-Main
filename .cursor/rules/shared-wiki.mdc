@@ -12,4 +12,8 @@ alwaysApply: true
   `wiki/projects/forward-freedom-financial/`, and the shared standards under `wiki/shared/` first.
 - Wiki updates go through pull requests in `ai-development-wiki` only. Never push to its `main`,
   never copy wiki content into this repo, and never commit credentials for it.
+- On every pull request, run `node scripts/wiki-sync.mjs classify` (same command Codex uses; do not
+  start a second agent for documentation impact). Follow the marker contract in `AGENTS.md`.
+  A `no-update-required` marker cannot waive a `wiki-required` result. If wiki write access is
+  unavailable, the documentation-sync check fails closed.
 - Full setup and troubleshooting: `docs/SHARED_WIKI.md`.

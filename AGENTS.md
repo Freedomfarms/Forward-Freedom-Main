@@ -9,11 +9,13 @@ For all edits, verify with direct terminal commands only — `npm run lint`, `np
 Do NOT use screen recording, browser automation, or simulated UI clicking to verify changes. The only exception is a change that specifically touches UI behavior that cannot be confirmed any other way — and even then, ask the user first before doing that kind of verification, since it is slow and token-heavy.
 
 Do not (unless explicitly requested):
+
 - Do manual/browser testing or computer-use/GUI-driven testing.
 - Record videos, take screenshots, or produce walkthroughs.
 - Re-test unrelated areas or narrate validation.
 
 Keep responses concise:
+
 - What changed (one or two lines).
 - Brief verification result (e.g. "lint and build pass"), nothing more.
 
@@ -32,9 +34,36 @@ Read before work:
    `wiki/projects/freedom-os/` and `wiki/projects/forward-freedom-financial/` (architecture pages
    for this repo) and the shared standards under `wiki/shared/`, before changing code.
 
-Knowledge updates are PR-only:
+Knowledge updates are PR-only. Cursor and Codex use the same check; do not start a second agent
+to decide documentation impact.
 
 - Never commit or push directly to the wiki's `main`, and never copy wiki content into this repo.
-- Propose wiki changes as a branch + pull request in `ai-development-wiki`. If you cannot open one
-  from the session, list the proposed entries under a "Wiki updates" heading in this repo's PR
-  description so they can be filed separately.
+- On every pull request, run `node scripts/wiki-sync.mjs classify`. The path rules and the CI
+  contract are in `docs/SHARED_WIKI.md`.
+- A `neutral` result means the CI check records `no-update-required`. Leave routine bug fixes
+  without a wiki edit.
+- A `wiki-required` result means this diff changes architecture, integrations, agent capabilities,
+  database or memory design, security or permissions, or development workflow. Update the shared
+  wiki from the code you changed, preserve unrelated pages, and open or update a pull request in
+  `ai-development-wiki`. Put this block in the project pull request body:
+
+  ```markdown
+  <!-- wiki-sync -->
+
+  result: update-required
+  wiki_pr: https://github.com/Freedomfarms/ai-development-wiki/pull/<number>
+  reason: <which wiki pages changed and why>
+
+  <!-- /wiki-sync -->
+  ```
+
+  The wiki pull request must name this project pull request
+  (`Freedomfarms/Forward-Freedom-Main#<number>`) or this branch. Documentation is complete only
+  after that wiki pull request has an approving review from someone other than its author and is
+  merged, or its head is already on the wiki default branch.
+
+- If the classifier says `neutral` but the change is still something a future session would get
+  wrong without a wiki note, use `result: update-required` anyway. That can raise the requirement.
+  A `no-update-required` marker cannot lower it.
+- If wiki write access is unavailable, do not claim the wiki was updated and do not treat a
+  "Wiki updates" note as success. The documentation-sync check fails closed.
