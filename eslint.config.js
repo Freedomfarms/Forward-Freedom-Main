@@ -203,7 +203,7 @@ export default [
   {
     // design-references/ holds supplied visual prototypes (reference material,
     // not application code); it is preserved verbatim and not linted.
-    ignores: ["dist/", "node_modules/", "design-references/"],
+    ignores: ["dist/", "node_modules/", "design-references/", "third_party/ecc/**"],
   },
   js.configs.recommended,
   {
