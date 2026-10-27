@@ -12,6 +12,7 @@ import {
 import { createCursorCloudRuntime } from "../agents/cursorCloud.js";
 import { isExactRepositoryUrl, isProtectedRepository } from "../agents/execution.js";
 import { CODING_EXECUTION_SCOPE, ExecutionState, executionScopeHash } from "../agents/ledger.js";
+import { composeCodingObjective } from "../ecc/catalog.js";
 import { createPrismaReleaseHold, createPrismaReserveHold } from "../models/budget.js";
 
 const IGNORED = new Set(["userId", "user_id"]);
@@ -121,6 +122,9 @@ export function createCodingHandoffTools({
       if (!text || text.length > 8000) {
         return resultOf({ available: false, error: "requirements_invalid", posted: false });
       }
+      const composed = composeCodingObjective(text);
+      const objective = composed.objective;
+      const skills = composed.report;
       const repositoryUrl = repositoryUrlFor(env);
       if (
         !isExactRepositoryUrl(repositoryUrl) ||
@@ -129,7 +133,7 @@ export function createCodingHandoffTools({
       ) {
         return resultOf({ available: false, error: "repository_not_allowed", posted: false });
       }
-      const snapshot = codingSnapshot(context.userId, text, repositoryUrl);
+      const snapshot = codingSnapshot(context.userId, objective, repositoryUrl);
       try {
         const hash = executionScopeHash(snapshot);
         const latest =
@@ -144,6 +148,8 @@ export function createCodingHandoffTools({
               error: begun.action || "approval_mismatch",
               posted: false,
               agentId: begun.record?.agentId || latest.agentId || null,
+              skills,
+              verified: false,
             });
           }
           return await deliver(store, begun.record, context.userId);
@@ -155,6 +161,8 @@ export function createCodingHandoffTools({
             posted: false,
             agentId: latest.agentId,
             approvalId: latest.approvalId,
+            skills,
+            verified: false,
             merged: false,
             deployed: false,
           });
@@ -166,6 +174,8 @@ export function createCodingHandoffTools({
             posted: false,
             agentId: latest.agentId,
             error: "attempt_closed",
+            skills,
+            verified: false,
             merged: false,
             deployed: false,
           });
@@ -175,7 +185,7 @@ export function createCodingHandoffTools({
           actorUserId: context.userId,
           approvalAction: "execute",
           provider: "cursor-cloud",
-          objective: text,
+          objective,
           constraints: snapshot.constraints,
           repositoryUrl,
           startingRef: "main",
@@ -188,6 +198,8 @@ export function createCodingHandoffTools({
             error: begun.action || "approval_mismatch",
             posted: false,
             agentId: begun.record?.agentId || null,
+            skills,
+            verified: false,
           });
         }
         return await deliver(store, begun.record, context.userId);
@@ -196,6 +208,8 @@ export function createCodingHandoffTools({
           available: false,
           error: error?.code || "request_rejected",
           posted: false,
+          skills,
+          verified: false,
         });
       }
 
@@ -208,6 +222,8 @@ export function createCodingHandoffTools({
             reserved: true,
             agentId: record?.agentId || null,
             approvalId: record?.approvalId || null,
+            skills,
+            verified: false,
             merged: false,
             deployed: false,
           });
@@ -225,6 +241,8 @@ export function createCodingHandoffTools({
           ...delivered,
           available: true,
           posted: true,
+          skills,
+          verified: false,
           merged: false,
           deployed: false,
         });

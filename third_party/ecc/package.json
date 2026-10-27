@@ -1,0 +1,5 @@
+{
+  "private": true,
+  "type": "commonjs",
+  "description": "Freedom OS marker so the unchanged ECC hook scripts keep CommonJS require()."
+}

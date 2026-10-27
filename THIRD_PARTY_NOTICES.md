@@ -368,6 +368,14 @@ plan is explicit:
 | `three`, `react-force-graph-3d`, `react-force-graph-2d` | MIT        | Planned — cortex-map runtime dependencies (Phase 7)                                              |
 | `jarvis-ai-web-animation` (`0.1.2`)                     | MIT        | **Installed** — published `JarvisOrb` on the CHIEF homepage                                      |
 
+## Everything Claude Code (vendored engineering library)
+
+- Repository: https://github.com/affaan-m/ECC
+- Pin: `f3904009440af24f00617343910ee89714df8be3`
+- Version: `2.2.3`
+- License: MIT, Copyright (c) 2026 Affaan Mustafa. Text: `third_party/ecc/LICENSE`.
+- Use: unchanged hook scripts `block-no-verify.js` and `config-protection.js`, their required `shell-scan.js` dependency, the common and TypeScript rules, and the skill files named in `third_party/ecc/catalog.json`. The catalog and `.cursor/hooks.json` are Freedom OS files. The upstream hook set, `src/llm`, Hermes, and the ECC state store are not included.
+
 ## icm-architect (vendored skill)
 
 - Repository: https://github.com/RinDig/icm-architect

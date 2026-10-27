@@ -5,6 +5,7 @@
 import { createHash } from "node:crypto";
 
 import { containsObviousSecret } from "../codeintel/policy.js";
+import { assessVerification, reviewChangedPaths } from "../ecc/review.js";
 import { isExactRepositoryUrl, isProtectedRepository, isTerminalStatus } from "./execution.js";
 
 const BASE_URL = "https://api.cursor.com";
@@ -268,11 +269,16 @@ export function createCodingHandoff({
       };
     }
     const base = "main";
+    const commit = await github(
+      `/repos/${repo.owner}/${repo.repo}/commits/${encodeURIComponent(branch)}`
+    );
+    const headSha =
+      commit.available && /^[0-9a-f]{40}$/.test(commit.body?.sha || "") ? commit.body.sha : null;
     const compare = await github(
       `/repos/${repo.owner}/${repo.repo}/compare/${encodeURIComponent(base)}...${encodeURIComponent(branch)}`
     );
     const checks = await github(
-      `/repos/${repo.owner}/${repo.repo}/commits/${encodeURIComponent(branch)}/check-runs?per_page=20`
+      `/repos/${repo.owner}/${repo.repo}/commits/${encodeURIComponent(headSha || branch)}/check-runs?per_page=100`
     );
     let diff = { available: false, missing: compare.missing || "request_rejected" };
     if (compare.available) {
@@ -296,6 +302,7 @@ export function createCodingHandoff({
         behindBy: compare.body?.behind_by ?? null,
         truncated: files.length > listed.length || excerpt.length >= 4000,
         files: listed,
+        paths: files.map((file) => file?.filename).filter((name) => typeof name === "string"),
         excerpt: excerpt.slice(0, 4000),
       };
     }
@@ -305,14 +312,16 @@ export function createCodingHandoff({
       checkView = {
         available: true,
         total: checks.body?.total_count ?? runs.length,
-        runs: runs.slice(0, 20).map((run) => ({
+        complete: runs.length >= (checks.body?.total_count ?? runs.length),
+        runs: runs.slice(0, 100).map((run) => ({
           name: run?.name || "",
           status: run?.status || "",
           conclusion: run?.conclusion || null,
+          headSha: typeof run?.head_sha === "string" ? run.head_sha : null,
         })),
       };
     }
-    return { diff, checks: checkView };
+    return { diff, checks: checkView, headSha };
   }
 
   async function inspect(userId, text, attempt) {
@@ -426,6 +435,31 @@ export function createCodingHandoff({
         );
         if (failing.length) result.limitations.push("One or more checks did not succeed.");
       }
+      let configProtection = { ran: false, exitCode: null, reason: "diff_unavailable" };
+      if (reviewed.diff?.available) {
+        try {
+          configProtection = reviewChangedPaths(reviewed.diff.paths || []);
+        } catch {
+          configProtection = { ran: false, exitCode: null, reason: "gate_error" };
+        }
+      }
+      const blockNoVerify = {
+        ran: false,
+        exitCode: null,
+        boundary: "cursor_beforeShellExecution",
+        reason: "hook_result_not_returned",
+      };
+      result.verification = assessVerification({
+        cursorStatus: result.status,
+        headSha: reviewed.headSha,
+        checksHeadSha: reviewed.headSha,
+        checks: reviewed.checks?.runs || [],
+        configProtection,
+        blockNoVerify,
+      });
+      result.verified = result.verification.verified === true;
+      result.merged = false;
+      result.deployed = false;
       await remember(result);
       return result;
     },
