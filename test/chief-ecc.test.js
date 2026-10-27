@@ -16,7 +16,11 @@ import {
   selectEngineeringSkills,
 } from "../server/chief/ecc/catalog.js";
 import { ECC_PIN } from "../server/chief/ecc/pin.js";
-import { assessVerification, reviewChangedPaths } from "../server/chief/ecc/review.js";
+import {
+  assessVerification,
+  HOOK_EXECUTION_UNCONFIRMED,
+  reviewCommitChanges,
+} from "../server/chief/ecc/review.js";
 import { readHookConfig, runAllowlisted, runCursorEvent } from "../server/chief/ecc/wrapper.js";
 import { productionAgentBody } from "../server/chief/managed/productionAgent.js";
 import { createCodingHandoffTools } from "../server/chief/tools/codingHandoff.js";
@@ -102,15 +106,57 @@ test("block-no-verify blocks a hook bypass and allows an ordinary command", () =
   assert.equal(allowed.ran, true);
 });
 
-test("config-protection blocks an existing lint config and allows source", () => {
-  const blocked = reviewChangedPaths(["eslint.config.js"]);
+test("config-protection uses the commit's changed files, not the server checkout", () => {
+  const blocked = reviewCommitChanges(
+    [{ path: "eslint.config.js", status: "modified" }],
+    { headSha: SHA }
+  );
   assert.equal(blocked.exitCode, 2);
   assert.equal(blocked.ran, true);
-  const allowed = reviewChangedPaths(["server/chief/ecc/pin.js"]);
-  assert.equal(allowed.exitCode, 0);
-  assert.equal(allowed.ran, true);
-  const rejected = reviewChangedPaths(["../package.json"]);
+  assert.equal(blocked.headSha, SHA);
+  assert.equal(blocked.source, "commit_diff");
+
+  const created = reviewCommitChanges(
+    [{ path: "eslint.config.js", status: "added" }],
+    { headSha: SHA }
+  );
+  assert.equal(created.exitCode, 0);
+  assert.equal(created.ran, true);
+
+  const source = reviewCommitChanges(
+    [{ path: "server/chief/ecc/pin.js", status: "modified" }],
+    { headSha: SHA }
+  );
+  assert.equal(source.exitCode, 0);
+  assert.equal(source.file, null);
+
+  const renamed = reviewCommitChanges(
+    [{ path: "other.js", status: "renamed", previousPath: "eslint.config.js" }],
+    { headSha: SHA }
+  );
+  assert.equal(renamed.exitCode, 2);
+  assert.equal(renamed.file, "eslint.config.js");
+
+  const rejected = reviewCommitChanges(
+    [{ path: "../package.json", status: "modified" }],
+    { headSha: SHA }
+  );
   assert.equal(rejected.exitCode, 2);
+  assert.equal(rejected.reason, "path_rejected");
+
+  const unknown = reviewCommitChanges(
+    [{ path: "eslint.config.js", status: "" }],
+    { headSha: SHA }
+  );
+  assert.equal(unknown.ran, false);
+  assert.equal(unknown.reason, "change_status_missing");
+
+  const incomplete = reviewCommitChanges(
+    [{ path: "server/chief/ecc/pin.js", status: "modified" }],
+    { headSha: SHA, incomplete: true }
+  );
+  assert.equal(incomplete.ran, false);
+  assert.equal(incomplete.reason, "diff_incomplete");
 });
 
 test("the wrapper fail-closes on a missing status, a timeout, and an unknown script", () => {
@@ -270,7 +316,7 @@ test("verification stays false unless every required piece matches", () => {
     headSha: SHA,
     checksHeadSha: SHA,
     checks: [{ name: "verify", status: "completed", conclusion: "success", headSha: SHA }],
-    configProtection: { ran: true, exitCode: 0 },
+    configProtection: { ran: true, exitCode: 0, headSha: SHA },
     blockNoVerify: { ran: true, exitCode: 0 },
   };
   assert.equal(assessVerification(passing).verified, true);
@@ -304,6 +350,19 @@ test("verification stays false unless every required piece matches", () => {
   );
   assert.equal(assessVerification({ ...passing, blockNoVerify: { ran: false } }).verified, false);
   assert.equal(
+    assessVerification({ ...passing, blockNoVerify: { ran: false } }).hookExecutionConfirmed,
+    false
+  );
+  assert.equal(
+    assessVerification({ ...passing, blockNoVerify: { ran: false } }).automatedChecksPassed,
+    true
+  );
+  assert.equal(
+    assessVerification({ ...passing, configProtection: { ran: true, exitCode: 0, headSha: OTHER_SHA } })
+      .verified,
+    false
+  );
+  assert.equal(
     assessVerification({ ...passing, blockNoVerify: { ran: true, exitCode: 2 } }).verified,
     false
   );
@@ -311,7 +370,64 @@ test("verification stays false unless every required piece matches", () => {
   assert.equal(store.rows().every((row) => row.verified !== true), true);
 });
 
-test("a finished Cursor run is not verified without hook evidence", async () => {
+test("observed script results can verify a finished run", () => {
+  const shell = runAllowlisted({
+    script: "block-no-verify.js",
+    stdin: JSON.stringify({ command: "git status" }),
+  });
+  const config = reviewCommitChanges(
+    [{ path: "server/chief/ecc/pin.js", status: "modified" }],
+    { headSha: SHA }
+  );
+  const evidence = {
+    cursorStatus: "FINISHED",
+    headSha: SHA,
+    checksHeadSha: SHA,
+    checks: [{ name: "ci / verify", status: "completed", conclusion: "success", headSha: SHA }],
+    configProtection: config,
+    blockNoVerify: shell,
+  };
+  const verified = assessVerification(evidence);
+  assert.equal(shell.ran, true);
+  assert.equal(shell.exitCode, 0);
+  assert.equal(config.ran, true);
+  assert.equal(config.exitCode, 0);
+  assert.equal(verified.verified, true);
+  assert.equal(verified.automatedChecksPassed, true);
+  assert.equal(verified.hookExecutionConfirmed, true);
+  assert.equal(verified.limitation, null);
+  assert.equal(verified.merge, false);
+  assert.equal(verified.deploy, false);
+
+  const unconfirmed = assessVerification({
+    ...evidence,
+    blockNoVerify: { ran: false, exitCode: null, reason: "hook_result_not_returned" },
+  });
+  assert.equal(unconfirmed.verified, false);
+  assert.equal(unconfirmed.automatedChecksPassed, true);
+  assert.equal(unconfirmed.hookExecutionConfirmed, false);
+  assert.equal(unconfirmed.limitation, HOOK_EXECUTION_UNCONFIRMED);
+  assert.equal(unconfirmed.failures.includes("hook_execution_unconfirmed"), true);
+
+  const failedCheck = assessVerification({
+    ...evidence,
+    checks: [{ name: "verify", status: "completed", conclusion: "failure", headSha: SHA }],
+  });
+  assert.equal(failedCheck.verified, false);
+  assert.equal(failedCheck.automatedChecksPassed, false);
+  assert.equal(failedCheck.failures.includes("check_failed:verify"), true);
+
+  const mismatched = assessVerification({
+    ...evidence,
+    checksHeadSha: OTHER_SHA,
+  });
+  assert.equal(mismatched.verified, false);
+  assert.equal(mismatched.automatedChecksPassed, false);
+  assert.equal(mismatched.failures.includes("head_sha_mismatch"), true);
+});
+
+test("a finished Cursor run separates checks from an unconfirmed hook", async () => {
+  const calls = [];
   const handoff = createCodingHandoff({
     env: {
       CURSOR_API_KEY: KEY,
@@ -320,6 +436,7 @@ test("a finished Cursor run is not verified without hook evidence", async () => 
     },
     fetchImpl: async (url) => {
       const href = String(url);
+      calls.push(href);
       if (href.endsWith("/v1/agents/bc-01234567-89ab-4cde-8fab-0123456789ab")) {
         return json(200, {
           id: "bc-01234567-89ab-4cde-8fab-0123456789ab",
@@ -338,6 +455,8 @@ test("a finished Cursor run is not verified without hook evidence", async () => 
       }
       if (href.includes("/compare/")) {
         return json(200, {
+          total_commits: 1,
+          commits: [{ sha: SHA }],
           files: [{ filename: "server/chief/ecc/pin.js", status: "modified", patch: "+pin\n" }],
         });
       }
@@ -361,10 +480,20 @@ test("a finished Cursor run is not verified without hook evidence", async () => 
     userId: "user-a",
     taskId: "bc-01234567-89ab-4cde-8fab-0123456789ab",
   });
+  assert.equal(calls.some((href) => href.includes(`/compare/main...${SHA}`)), true);
+  assert.match(readHookConfig(), /beforeShellExecution/);
   assert.equal(status.verified, false);
   assert.equal(status.verification.executionCompleted, true);
-  assert.equal(status.verification.failures.includes("block_no_verify_missing"), true);
+  assert.equal(status.verification.automatedChecksPassed, true);
+  assert.equal(status.verification.hookExecutionConfirmed, false);
+  assert.equal(status.verification.gates.blockNoVerify.reason, "hook_result_not_returned");
+  assert.equal(status.verification.gates.configProtection.exitCode, 0);
+  assert.equal(status.verification.gates.configProtection.headSha, SHA);
+  assert.equal(status.verification.gates.configProtection.source, "commit_diff");
+  assert.equal(status.verification.failures.includes("hook_execution_unconfirmed"), true);
   assert.equal(status.verification.failures.includes("check_failed:verify"), false);
+  assert.equal(status.verification.limitation, HOOK_EXECUTION_UNCONFIRMED);
+  assert.equal(status.limitations.includes(HOOK_EXECUTION_UNCONFIRMED), true);
   assert.equal(status.merged, false);
   assert.equal(status.deployed, false);
 
@@ -378,6 +507,88 @@ test("a finished Cursor run is not verified without hook evidence", async () => 
     blockNoVerify: { ran: true, exitCode: 0 },
   });
   assert.equal(stale.verified, false);
+});
+
+test("the head commit's config change is judged on its own, and a mismatched compare is not a pass", async () => {
+  async function statusFor({ compare, checks }) {
+    const handoff = createCodingHandoff({
+      env: {
+        CURSOR_API_KEY: KEY,
+        CHIEF_CODE_READ_TOKEN: "github_read_token_value",
+        CHIEF_CODE_REPOSITORY: "Freedomfarms/Forward-Freedom-Main",
+      },
+      fetchImpl: async (url) => {
+        const href = String(url);
+        if (href.endsWith("/v1/agents/bc-01234567-89ab-4cde-8fab-0123456789ab")) {
+          return json(200, {
+            id: "bc-01234567-89ab-4cde-8fab-0123456789ab",
+            latestRunId: "run-1234567890",
+          });
+        }
+        if (href.includes("/runs/run-1234567890")) {
+          return json(200, {
+            id: "run-1234567890",
+            status: "FINISHED",
+            git: {
+              branches: [
+                {
+                  branch: "cursor/ecc-test",
+                  prUrl: "https://github.com/Freedomfarms/Forward-Freedom-Main/pull/9",
+                },
+              ],
+            },
+          });
+        }
+        if (href.endsWith("/commits/cursor%2Fecc-test") || href.endsWith("/commits/cursor/ecc-test")) {
+          return json(200, { sha: SHA });
+        }
+        if (href.includes("/compare/")) return json(200, compare);
+        if (href.includes("/check-runs")) return json(200, checks);
+        return json(404, {});
+      },
+    });
+    return handoff.status({
+      userId: "user-a",
+      taskId: "bc-01234567-89ab-4cde-8fab-0123456789ab",
+    });
+  }
+
+  const blocked = await statusFor({
+    compare: {
+      total_commits: 1,
+      commits: [{ sha: SHA }],
+      files: [{ filename: "eslint.config.js", status: "modified", patch: "+rule\n" }],
+    },
+    checks: {
+      total_count: 1,
+      check_runs: [{ name: "verify", status: "completed", conclusion: "success", head_sha: SHA }],
+    },
+  });
+  assert.equal(blocked.verification.gates.configProtection.exitCode, 2);
+  assert.equal(blocked.verification.gates.configProtection.file, "eslint.config.js");
+  assert.equal(blocked.verification.automatedChecksPassed, true);
+  assert.equal(blocked.verification.hookExecutionConfirmed, false);
+  assert.equal(blocked.verified, false);
+  assert.equal(blocked.verification.failures.includes("config_protection_blocked"), true);
+
+  const unbound = await statusFor({
+    compare: {
+      total_commits: 1,
+      commits: [{ sha: OTHER_SHA }],
+      files: [{ filename: "server/chief/ecc/pin.js", status: "modified" }],
+    },
+    checks: {
+      total_count: 1,
+      check_runs: [{ name: "verify", status: "completed", conclusion: "failure", head_sha: SHA }],
+    },
+  });
+  assert.equal(unbound.diff.boundToHead, false);
+  assert.equal(unbound.verification.gates.configProtection.ran, false);
+  assert.equal(unbound.verification.gates.configProtection.reason, "head_unbound");
+  assert.equal(unbound.verification.automatedChecksPassed, false);
+  assert.equal(unbound.verification.failures.includes("check_failed:verify"), true);
+  assert.equal(unbound.verified, false);
+  assert.equal(unbound.verification.hookExecutionConfirmed, false);
 });
 
 test("coding submit keeps Grok 4.7 and puts selected skills in the Cursor prompt", async () => {

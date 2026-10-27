@@ -5,7 +5,12 @@
 import { createHash } from "node:crypto";
 
 import { containsObviousSecret } from "../codeintel/policy.js";
-import { assessVerification, reviewChangedPaths } from "../ecc/review.js";
+import {
+  assessVerification,
+  compareTip,
+  HOOK_EXECUTION_UNCONFIRMED,
+  reviewCommitChanges,
+} from "../ecc/review.js";
 import { isExactRepositoryUrl, isProtectedRepository, isTerminalStatus } from "./execution.js";
 
 const BASE_URL = "https://api.cursor.com";
@@ -274,17 +279,19 @@ export function createCodingHandoff({
     );
     const headSha =
       commit.available && /^[0-9a-f]{40}$/.test(commit.body?.sha || "") ? commit.body.sha : null;
+    const compareTarget = headSha || branch;
     const compare = await github(
-      `/repos/${repo.owner}/${repo.repo}/compare/${encodeURIComponent(base)}...${encodeURIComponent(branch)}`
+      `/repos/${repo.owner}/${repo.repo}/compare/${encodeURIComponent(base)}...${encodeURIComponent(compareTarget)}`
     );
     const checks = await github(
       `/repos/${repo.owner}/${repo.repo}/commits/${encodeURIComponent(headSha || branch)}/check-runs?per_page=100`
     );
-    let diff = { available: false, missing: compare.missing || "request_rejected" };
+    let diff = { available: false, missing: compare.missing || "request_rejected", boundToHead: false };
     if (compare.available) {
-      const files = Array.isArray(compare.body?.files) ? compare.body.files : [];
+      const files = Array.isArray(compare.body?.files) ? compare.body.files : null;
+      const listedFiles = files || [];
       let excerpt = "";
-      const listed = files.slice(0, 40).map((file) => {
+      const listed = listedFiles.slice(0, 40).map((file) => {
         const patch = typeof file?.patch === "string" ? file.patch : "";
         if (excerpt.length < 4000 && patch && !containsObviousSecret(patch, token)) {
           excerpt += `${file.filename}\n${patch.slice(0, 800)}\n`;
@@ -296,13 +303,26 @@ export function createCodingHandoff({
           deletions: file?.deletions ?? null,
         };
       });
+      const boundToHead = Boolean(headSha) && compareTip(compare.body, headSha);
+      const changes = files
+        ? files.map((file) => ({
+            path: typeof file?.filename === "string" ? file.filename : "",
+            status: typeof file?.status === "string" ? file.status : "",
+            previousPath:
+              typeof file?.previous_filename === "string" ? file.previous_filename : null,
+          }))
+        : null;
+      const unnamed = Array.isArray(changes) && changes.some((file) => file.path === "");
       diff = {
         available: true,
+        boundToHead,
+        headSha: boundToHead ? headSha : null,
         aheadBy: compare.body?.ahead_by ?? null,
         behindBy: compare.body?.behind_by ?? null,
-        truncated: files.length > listed.length || excerpt.length >= 4000,
+        truncated: listedFiles.length > listed.length || excerpt.length >= 4000,
+        filesIncomplete: !files || unnamed || listedFiles.length >= 300,
         files: listed,
-        paths: files.map((file) => file?.filename).filter((name) => typeof name === "string"),
+        changes,
         excerpt: excerpt.slice(0, 4000),
       };
     }
@@ -435,13 +455,36 @@ export function createCodingHandoff({
         );
         if (failing.length) result.limitations.push("One or more checks did not succeed.");
       }
-      let configProtection = { ran: false, exitCode: null, reason: "diff_unavailable" };
-      if (reviewed.diff?.available) {
+      let configProtection = {
+        ran: false,
+        exitCode: null,
+        reason: "diff_unavailable",
+        headSha: reviewed.headSha || null,
+        source: "commit_diff",
+      };
+      if (reviewed.diff?.boundToHead === true && reviewed.headSha) {
         try {
-          configProtection = reviewChangedPaths(reviewed.diff.paths || []);
+          configProtection = reviewCommitChanges(reviewed.diff.changes, {
+            headSha: reviewed.headSha,
+            incomplete: reviewed.diff.filesIncomplete === true,
+          });
         } catch {
-          configProtection = { ran: false, exitCode: null, reason: "gate_error" };
+          configProtection = {
+            ran: false,
+            exitCode: null,
+            reason: "gate_error",
+            headSha: reviewed.headSha,
+            source: "commit_diff",
+          };
         }
+      } else if (reviewed.diff?.available) {
+        configProtection = {
+          ran: false,
+          exitCode: null,
+          reason: "head_unbound",
+          headSha: reviewed.headSha || null,
+          source: "commit_diff",
+        };
       }
       const blockNoVerify = {
         ran: false,
@@ -458,6 +501,9 @@ export function createCodingHandoff({
         blockNoVerify,
       });
       result.verified = result.verification.verified === true;
+      if (result.verification.hookExecutionConfirmed !== true) {
+        result.limitations.push(HOOK_EXECUTION_UNCONFIRMED);
+      }
       result.merged = false;
       result.deployed = false;
       await remember(result);
