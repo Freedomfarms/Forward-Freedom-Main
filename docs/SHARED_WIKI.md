@@ -123,12 +123,16 @@ The linked wiki pull request must mention `Freedomfarms/Forward-Freedom-Main#<nu
 head branch name. Completion also requires an approving review from a GitHub user other than the
 wiki pull request author. Direct pushes to the wiki default branch are not a substitute.
 
-`GITHUB_TOKEN` for this repository cannot read the private wiki. The job reads the Actions secret
-`AI_DEV_WIKI_TOKEN`. When a wiki update is required and that secret is missing, or the token
-cannot read the linked pull request, the job fails closed. Neutral pull requests still pass.
-Agents that must open the wiki pull request need a token that can push to
-`Freedomfarms/ai-development-wiki`. A read-only token is enough for the Actions job to verify a
-pull request that already exists.
+`GITHUB_TOKEN` for this repository cannot read the private wiki (the installation token receives
+404). The job reads the Actions secret `AI_DEV_WIKI_TOKEN`. Repository role flags on the GitHub
+API are not token scopes: a contents-read token for an owner still reports `push: true`. The job
+therefore treats the token as able to verify a wiki pull request only after a pull-request list
+call succeeds. Contents read alone fails closed.
+
+When a wiki update is required and that secret is missing, or the token cannot read the linked
+pull request, the job fails closed. Neutral pull requests still pass. Opening the wiki pull
+request needs contents write and pull-request write on `Freedomfarms/ai-development-wiki`.
+Pull-request read is enough for Actions to verify a pull request that already exists.
 
 The session helper `scripts/cloud-agent-wiki.sh check` still warns instead of failing when the
 checkout is missing. That is separate from this pull request gate.

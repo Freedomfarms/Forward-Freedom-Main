@@ -396,10 +396,16 @@ export function accessFromRepoPayload(status, body) {
       reason: `GitHub returned ${status} for ${WIKI_REPO}. Wiki access is unavailable.`,
     };
   }
+  // `permissions` here is the user or app role, not a fine-grained token's scopes.
+  // A contents-read token for an owner still reports `push: true`, so this
+  // function never reports write. Pull-request reads are probed separately.
   const permissions = body.permissions || {};
-  if (permissions.push) return { level: "write", reason: "Token can push to the wiki." };
-  if (permissions.pull)
-    return { level: "read", reason: "Token can read the wiki but cannot push." };
+  if (permissions.pull || permissions.push) {
+    return {
+      level: "read",
+      reason: "Token can see the wiki repository. Pull request access is checked separately.",
+    };
+  }
   return { level: "none", reason: "Token has no pull or push permission on the wiki." };
 }
 
@@ -523,6 +529,20 @@ export async function runCheck({
     try {
       const repoResponse = await github(`/repos/${WIKI_REPO}`, token);
       access = accessFromRepoPayload(repoResponse.status, repoResponse.body);
+      if (access.level !== "none") {
+        const pullsResponse = await github(`/repos/${WIKI_REPO}/pulls?per_page=1&state=all`, token);
+        if (pullsResponse.status === 200) {
+          access = {
+            level: "read",
+            reason: "Token can read wiki pull requests but has not proven it can push.",
+          };
+        } else {
+          access = {
+            level: "none",
+            reason: `Token cannot read wiki pull requests (HTTP ${pullsResponse.status}). Wiki write access is unavailable.`,
+          };
+        }
+      }
       const parsed = marker?.result === "update-required" ? parseWikiPrUrl(marker.wikiPr) : null;
       if (parsed && access.level !== "none") {
         wikiPullRequest = await loadWikiPullRequest(

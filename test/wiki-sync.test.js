@@ -324,6 +324,36 @@ test("a rejected wiki API fails closed and a neutral diff does not call it", asy
     accessFromRepoPayload(200, { permissions: { pull: true, push: false } }).level,
     "read"
   );
+  assert.equal(
+    accessFromRepoPayload(200, { permissions: { admin: true, push: true, pull: true } }).level,
+    "read"
+  );
+});
+
+test("a contents-read token that cannot list pull requests fails closed", async () => {
+  const outcome = await runCheck({
+    changes: [{ path: "docs/adr/0099-example.md", status: "A" }],
+    body: marker("update-required", `wiki_pr: ${WIKI_PR}\n`),
+    token: "present",
+    github: async (pathname) => {
+      if (pathname === "/repos/Freedomfarms/ai-development-wiki") {
+        return {
+          status: 200,
+          body: { permissions: { admin: true, push: true, pull: true }, default_branch: "main" },
+        };
+      }
+      if (pathname.startsWith("/repos/Freedomfarms/ai-development-wiki/pulls")) {
+        return {
+          status: 403,
+          body: { message: "Resource not accessible by personal access token" },
+        };
+      }
+      throw new Error(`unexpected ${pathname}`);
+    },
+  });
+  assert.equal(outcome.ok, false);
+  assert.equal(outcome.documentationComplete, false);
+  assert.match(outcome.reason, /unavailable|failed closed/);
 });
 
 test("runCheck records a synchronized wiki pull request", async () => {
@@ -347,6 +377,9 @@ test("runCheck records a synchronized wiki pull request", async () => {
           status: 200,
           body: { permissions: { push: true, pull: true }, default_branch: "main" },
         };
+      }
+      if (pathname.startsWith("/repos/Freedomfarms/ai-development-wiki/pulls?")) {
+        return { status: 200, body: [] };
       }
       if (pathname === "/repos/Freedomfarms/ai-development-wiki/pulls/7") {
         return {
