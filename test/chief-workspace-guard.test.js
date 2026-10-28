@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  confirmManagedWorkspaceTool,
   planWorkspaceRestore,
   restoreWorkspaceWrites,
   snapshotGuardedMemories,
@@ -185,4 +186,38 @@ test("a restore puts back only the unsafe write and keeps a concurrent edit", as
   });
   assert.equal(conflict[0].conflict, true);
   assert.equal(calls, 1);
+});
+
+test("workspace confirmation allows mounted reads and refuses protected or host writes", () => {
+  assert.equal(confirmManagedWorkspaceTool("read", { path: "/notes.md" }), "allow");
+  assert.equal(
+    confirmManagedWorkspaceTool("read", { file_path: "/mnt/memory/chief/decisions.md" }),
+    "allow"
+  );
+  assert.equal(confirmManagedWorkspaceTool("grep", { pattern: "priority" }), "allow");
+  assert.equal(confirmManagedWorkspaceTool("write", { path: "skills/note.md", content: "ok" }), "allow");
+  assert.equal(confirmManagedWorkspaceTool("edit", { path: "./skills/note.md" }), "allow");
+
+  for (const target of [
+    "/etc/passwd",
+    "/workspace/.env",
+    "../.ssh/id_rsa",
+    "C:/Windows/system32",
+    "https://github.com/Freedomfarms/Forward-Freedom-Main",
+    "/mnt/memory/../../etc/passwd",
+  ]) {
+    assert.equal(confirmManagedWorkspaceTool("write", { path: target, content: "x" }), "deny", target);
+    assert.equal(confirmManagedWorkspaceTool("read", { path: target }), "deny", target);
+  }
+  for (const file of ["decisions.md", "requirements.md", "open-questions.md", "next-step.md"]) {
+    assert.equal(
+      confirmManagedWorkspaceTool("write", { file_path: `/mnt/memory/chief/${file}`, content: "x" }),
+      "deny",
+      file
+    );
+    assert.equal(confirmManagedWorkspaceTool("edit", { path: file }), "deny", file);
+  }
+  assert.equal(confirmManagedWorkspaceTool("bash", { command: "ls" }), "deny");
+  assert.equal(confirmManagedWorkspaceTool("web_search", { query: "x" }), "deny");
+  assert.equal(confirmManagedWorkspaceTool("write", {}), "deny");
 });

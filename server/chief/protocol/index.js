@@ -220,14 +220,27 @@ export const eventMsg = Object.freeze({
     reason,
   }),
   warning: (message) => ({ type: EventMsgType.WARNING, message }),
-  error: ({ kind, message, retryable = false, status = null, retryAfter = null }) => ({
-    type: EventMsgType.ERROR,
+  error: ({
     kind,
     message,
-    retryable,
-    status,
-    retry_after: retryAfter,
-  }),
+    retryable = false,
+    status = null,
+    retryAfter = null,
+    category = "",
+    duration = "",
+  }) => {
+    const event = {
+      type: EventMsgType.ERROR,
+      kind,
+      message,
+      retryable,
+      status,
+      retry_after: retryAfter,
+    };
+    if (category) event.category = category;
+    if (duration) event.duration = duration;
+    return event;
+  },
   submissionRejected: (message) => ({
     type: EventMsgType.SUBMISSION_REJECTED,
     message,

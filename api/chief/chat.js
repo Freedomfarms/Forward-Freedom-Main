@@ -6,6 +6,7 @@
 
 import { authenticateRequest } from "../../server/auth/verifyAuth.js";
 import { createManagedClient, runManagedChiefTurn } from "../../server/chief/managed/chatTurn.js";
+import { classifyChiefFailure } from "../../src/utils/chiefErrors.js";
 import { providerErrorFields } from "../../server/chief/managed/redact.js";
 import { MANAGED_SCHEDULE_ORIGIN } from "../../server/chief/managed/productionAgent.js";
 import { encodeSseEvent, eventMsg, makeEvent } from "../../server/chief/protocol/index.js";
@@ -169,13 +170,23 @@ export async function handleChiefChat(request, response, deps = {}) {
   }
   if (turnError) {
     const configured = configurationFailure(turnError);
+    const reported = classifyChiefFailure({
+      message: turnError?.message,
+      status: turnError?.status,
+      name: turnError?.name,
+      code: turnError?.code,
+      operation: turnError?.operation,
+      component: turnError?.component || "managed_agent",
+    });
     response.write(
       encodeSseEvent(
         makeEvent(
           eventMsg.error({
             kind: "internal",
-            message: configured ? turnError.message : "The turn could not be completed.",
-            retryable: !configured,
+            message: reported.known ? reported.message : "The turn could not be completed.",
+            retryable: reported.known ? reported.duration === "temporary" : !configured,
+            category: reported.category,
+            duration: reported.duration,
           })
         )
       )
@@ -184,7 +195,10 @@ export async function handleChiefChat(request, response, deps = {}) {
       turnError.submissionId = body.submission.id;
     }
     if (!turnError.sessionId && result?.sessionId) turnError.sessionId = result.sessionId;
-    const logged = providerErrorFields(turnError);
+    const logged = providerErrorFields(turnError, {
+      component: reported.component,
+      correlationId: turnError.submissionId,
+    });
     console.error(
       "[chief/chat]",
       logged.operation,
@@ -194,6 +208,9 @@ export async function handleChiefChat(request, response, deps = {}) {
       logged.turnId,
       logged.sessionId,
       logged.providerStatus,
+      logged.category,
+      logged.component,
+      logged.correlationId,
       logged.message
     );
   } else {

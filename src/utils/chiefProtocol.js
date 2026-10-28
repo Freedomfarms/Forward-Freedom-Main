@@ -1,3 +1,5 @@
+import { classifyChiefFailure } from "./chiefErrors.js";
+
 // Pure CHIEF conversation helpers. No network, no Firebase.
 //
 // The chat route speaks the existing submission envelope:
@@ -260,24 +262,56 @@ export function applyChiefEvent(state, event) {
                 ? CHIEF_STATUS.RESPONDING
                 : CHIEF_STATUS.WORKING
               : CHIEF_STATUS.READY,
-        error: missing ? state.error || MISSING_CHIEF_ANSWER : state.error,
+        error: missing
+          ? state.error || MISSING_CHIEF_ANSWER
+          : turnStatus === "completed"
+            ? ""
+            : state.error,
         finished: !suspended && !active,
         approval: suspended ? state.approval : null,
       };
     }
     case "error":
-    case "submission_rejected":
+    case "submission_rejected": {
+      if (msg.category === "elevenlabs" || msg.category === "microphone") return state;
+      if (msg.category === "approval" || msg.duration === "approval") {
+        return {
+          ...state,
+          status: CHIEF_STATUS.APPROVAL,
+          error: "",
+          finished: false,
+          turnStatus: "suspended",
+        };
+      }
+      const message = chiefUserMessage(
+        typeof msg.message === "string" && msg.message.trim()
+          ? msg.message.trim()
+          : "CHIEF could not finish that turn."
+      );
+      // A retryable stream error means the same session is still finishing.
+      // The text already on screen stays, and speech waits for the real settle.
+      // A known connection drop names itself without closing the turn.
+      if (msg.type === "error" && msg.retryable === true) {
+        const temporary =
+          msg.duration === "temporary" && msg.category === "managed_agent" && message
+            ? message
+            : "";
+        return {
+          ...state,
+          status: state.streamText ? CHIEF_STATUS.RESPONDING : CHIEF_STATUS.WORKING,
+          error: temporary,
+          finished: false,
+          turnStatus: "continuing",
+        };
+      }
       return {
         ...state,
         status: CHIEF_STATUS.ERROR,
-        error: chiefUserMessage(
-          typeof msg.message === "string" && msg.message.trim()
-            ? msg.message.trim()
-            : "CHIEF could not finish that turn."
-        ),
+        error: message,
         finished: true,
         turnStatus: "rejected",
       };
+    }
     case "turn_aborted":
       return { ...state, status: CHIEF_STATUS.READY, finished: true, turnStatus: "aborted" };
     case "model_changed":
@@ -314,6 +348,8 @@ export function chiefUserMessage(message) {
   if (message === "Missing bearer token." || message === "Unauthorized") {
     return "Sign in to talk with CHIEF.";
   }
+  const classified = classifyChiefFailure({ message: typeof message === "string" ? message : "" });
+  if (classified.known && classified.message) return classified.message;
   if (typeof message === "string") {
     const trimmed = message.trim();
     if (

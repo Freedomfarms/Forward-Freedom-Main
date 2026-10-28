@@ -671,7 +671,7 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
           writeStoredSessionId(turn.sessionId);
         }
         if (turn.approval) setApproval(turn.approval);
-        if (turn.error) setTurnError(turn.error);
+        setTurnError(turn.error || "");
       };
       const stillThisTurn = () => !controller.signal.aborted && abortRef.current === controller;
       const followed = await followManagedTurn({
