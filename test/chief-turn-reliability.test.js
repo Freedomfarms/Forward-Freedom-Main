@@ -5,6 +5,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { handleChiefChat } from "../api/chief/chat.js";
+import { managedTurnGuidance } from "../server/chief/context/assemble.js";
 import { MemoryCheckpointStore } from "../server/chief/runtime/checkpoint.js";
 import { projectInteractiveHistory } from "../server/chief/runtime/history.js";
 import { scriptedManagedClient } from "./chief-managed-client-fixture.js";
@@ -16,7 +17,10 @@ import {
 } from "../src/utils/chiefProtocol.js";
 import { normalizeChiefPreferences } from "../src/utils/chiefPreferences.js";
 import { classifySettledDelivery, replySpeechText } from "../src/utils/chiefReplySpeech.js";
-import { frontierStatusCopy, chiefLiveActivity } from "../src/components/chief/frontier/frontierActivity.js";
+import {
+  frontierStatusCopy,
+  chiefLiveActivity,
+} from "../src/components/chief/frontier/frontierActivity.js";
 import { playPcmStream } from "../src/utils/chiefSpeech.js";
 
 const GENERIC = "The turn could not be completed.";
@@ -161,7 +165,11 @@ function chatDeps(store, client, extra = {}) {
     store,
     client,
     authenticate: auth,
-    toolExecutor: extra.toolExecutor || { async execute() { return { output: "ok" }; } },
+    toolExecutor: extra.toolExecutor || {
+      async execute() {
+        return { output: "ok" };
+      },
+    },
     toolSpecs: extra.toolSpecs || [],
     sleepFn: async () => {},
     budgetMs: extra.budgetMs ?? 1000,
@@ -170,7 +178,9 @@ function chatDeps(store, client, extra = {}) {
 }
 
 function confirmations(client) {
-  return client.sent.flatMap((item) => item.events || []).filter((event) => event.type === "user.tool_confirmation");
+  return client.sent
+    .flatMap((item) => item.events || [])
+    .filter((event) => event.type === "user.tool_confirmation");
 }
 
 test("a greeting that is already streaming survives a later provider fault", async () => {
@@ -200,7 +210,11 @@ test("a greeting that is already streaming survives a later provider fault", asy
     return client.session.events;
   };
   const first = mockResponse();
-  await handleChiefChat(request(messageBody("q1", "How is your day?")), first.response, chatDeps(store, client));
+  await handleChiefChat(
+    request(messageBody("q1", "How is your day?")),
+    first.response,
+    chatDeps(store, client)
+  );
   const opening = frames(first.chunks);
   const body = first.chunks.join("");
   assert.equal(body.includes(GENERIC), false);
@@ -221,7 +235,11 @@ test("a greeting that is already streaming survives a later provider fault", asy
   });
   client.session.status = "idle";
   const resumed = mockResponse();
-  await handleChiefChat(request(resumeBody(sessionId, "resume-1")), resumed.response, chatDeps(store, client));
+  await handleChiefChat(
+    request(resumeBody(sessionId, "resume-1")),
+    resumed.response,
+    chatDeps(store, client)
+  );
   const recovered = frames(resumed.chunks);
   assert.equal(resumed.chunks.join("").includes(GENERIC), false);
   assert.equal(recovered.at(-1).msg.status, "completed");
@@ -411,7 +429,11 @@ test("unauthorized writes, protected files, and approval tools are not granted",
       name: "write",
       input: { file_path: "/mnt/memory/chief/decisions.md", content: "replace" },
     },
-    { id: "edit-guarded", name: "edit", input: { path: "next-step.md", old_string: "a", new_string: "b" } },
+    {
+      id: "edit-guarded",
+      name: "edit",
+      input: { path: "next-step.md", old_string: "a", new_string: "b" },
+    },
   ];
   for (const item of cases) {
     const store = new MemoryCheckpointStore();
@@ -470,19 +492,23 @@ test("unauthorized writes, protected files, and approval tools are not granted",
     });
   };
   const http = mockResponse();
-  await handleChiefChat(request(messageBody("approve-1", "Ship it and remember it.")), http.response, {
-    ...chatDeps(store, client),
-    toolExecutor: {
-      async execute() {
-        ran = true;
-        return { output: "ran" };
+  await handleChiefChat(
+    request(messageBody("approve-1", "Ship it and remember it.")),
+    http.response,
+    {
+      ...chatDeps(store, client),
+      toolExecutor: {
+        async execute() {
+          ran = true;
+          return { output: "ran" };
+        },
       },
-    },
-    toolSpecs: [
-      { name: "coding_task_submit", requiresConfirmation: true },
-      { name: "memory_write", requiresConfirmation: true },
-    ],
-  });
+      toolSpecs: [
+        { name: "coding_task_submit", requiresConfirmation: true },
+        { name: "memory_write", requiresConfirmation: true },
+      ],
+    }
+  );
   assert.equal(ran, false);
   assert.equal(confirmations(client).length, 0);
   assert.equal(frames(http.chunks).at(-1).msg.status, "suspended");
@@ -521,7 +547,11 @@ test("bash and already-allowed file tools are not auto-confirmed", async () => {
     });
   };
   const http = mockResponse();
-  await handleChiefChat(request(messageBody("q1", "Run a command.")), http.response, chatDeps(store, client));
+  await handleChiefChat(
+    request(messageBody("q1", "Run a command.")),
+    http.response,
+    chatDeps(store, client)
+  );
   assert.equal(confirmations(client).length, 0);
   assert.equal(http.chunks.join("").includes(GENERIC), false);
   assert.equal(frames(http.chunks).at(-1).msg.status, "continuing");
@@ -573,7 +603,9 @@ test("a tool error still lets the model answer the user", async () => {
     session.events.push({
       id: "after-tool",
       type: "agent.message",
-      content: [{ type: "text", text: "I could not read that memory, so I am answering directly." }],
+      content: [
+        { type: "text", text: "I could not read that memory, so I am answering directly." },
+      ],
     });
     session.events.push({
       id: "idle-after",
@@ -659,7 +691,11 @@ test("a checkpoint write failure does not erase a completed answer", async () =>
   };
   const client = scriptedManagedClient([{ text: `Quiet day.\u0000` }]);
   const http = mockResponse();
-  await handleChiefChat(request(messageBody("q1", "Hello")), http.response, chatDeps(store, client));
+  await handleChiefChat(
+    request(messageBody("q1", "Hello")),
+    http.response,
+    chatDeps(store, client)
+  );
   const events = frames(http.chunks);
   assert.equal(http.chunks.join("").includes(GENERIC), false);
   assert.equal(events.at(-1).msg.status, "completed");
@@ -678,7 +714,11 @@ test("a failed provider stop settles the watch so the next message can send", as
     });
   };
   const failed = mockResponse();
-  await handleChiefChat(request(messageBody("q1", "First")), failed.response, chatDeps(store, client));
+  await handleChiefChat(
+    request(messageBody("q1", "First")),
+    failed.response,
+    chatDeps(store, client)
+  );
   const first = frames(failed.chunks);
   assert.equal(failed.chunks.join("").includes(GENERIC), false);
   assert.equal(first.at(-1).msg.status, "failed");
@@ -812,5 +852,204 @@ test("pcm playback uses the device sample rate", async () => {
   });
   await playPcmStream(body, { audioContext, sampleRate: 24000 });
   assert.ok(rates.length >= 1);
-  assert.equal(rates.every((rate) => rate === 48000), true);
+  assert.equal(
+    rates.every((rate) => rate === 48000),
+    true
+  );
+});
+
+test("project guidance is attached beside the user text when code tools are registered", async () => {
+  assert.equal(managedTurnGuidance([]), "");
+  assert.match(
+    managedTurnGuidance(["code_search", "memory_read"]),
+    /empty note is not the Freedom OS architecture/
+  );
+  assert.match(managedTurnGuidance(["code_search"]), /call code_search or code_read/);
+  const store = new MemoryCheckpointStore();
+  const client = resourceClient();
+  client.hooks.onCreate = (session) => {
+    session.status = "idle";
+    session.events.push({
+      id: "orient",
+      type: "agent.message",
+      content: [{ type: "text", text: "Freedom OS keeps CHIEF on one managed agent." }],
+    });
+    session.events.push({
+      id: "idle-orient",
+      type: "session.status_idle",
+      stop_reason: { type: "end_turn" },
+    });
+  };
+  const http = mockResponse();
+  await handleChiefChat(
+    request(messageBody("q1", "What is saved about Freedom OS?")),
+    http.response,
+    chatDeps(store, client, {
+      toolSpecs: [
+        { name: "code_search", requiresConfirmation: false },
+        { name: "memory_read", requiresConfirmation: false },
+      ],
+    })
+  );
+  const content = client.sent[0].initial_events[0].content;
+  assert.equal(content[0].text, "What is saved about Freedom OS?");
+  assert.match(content[1].text, /empty note is not the Freedom OS architecture/);
+  assert.equal(frames(http.chunks).at(-1).msg.status, "completed");
+});
+
+test("a finished tool answer stays complete when the provider then terminates", async () => {
+  const store = new MemoryCheckpointStore();
+  const client = resourceClient();
+  client.hooks.onCreate = (session) => {
+    session.status = "running";
+    session.events.push({
+      id: "finance-1",
+      type: "agent.custom_tool_use",
+      name: "finance_summary",
+      input: {},
+    });
+  };
+  client.hooks.onSend = (session, events) => {
+    if (!(events || []).some((event) => event.type === "user.custom_tool_result")) return;
+    session.events.push({
+      id: "equity",
+      type: "agent.message",
+      content: [{ type: "text", text: "Home equity is about $321K." }],
+    });
+    session.events.push({
+      id: "fault-term",
+      type: "session.status_terminated",
+    });
+    session.events.push({
+      id: "fault-error",
+      type: "session.error",
+      error: { retry_status: "terminal" },
+    });
+    session.status = "terminated";
+  };
+  const http = mockResponse();
+  await handleChiefChat(
+    request(messageBody("q1", "What is my home equity?")),
+    http.response,
+    chatDeps(store, client, {
+      toolSpecs: [{ name: "finance_summary", requiresConfirmation: false }],
+      toolExecutor: {
+        async execute() {
+          return { output: JSON.stringify({ loans: [{ balance: 240000 }] }), isError: false };
+        },
+      },
+    })
+  );
+  const events = frames(http.chunks);
+  assert.equal(http.chunks.join("").includes(GENERIC), false);
+  assert.equal(events.at(-1).msg.status, "completed");
+  assert.equal(deltas(events), "Home equity is about $321K.");
+  const history = projectInteractiveHistory(
+    await store.load("user-1", events.at(-1).msg.session_id)
+  );
+  assert.equal(history.turnStatus, "completed");
+  assert.equal(history.turnError, null);
+  assert.equal(isSpeakableTurn(history.turnStatus), true);
+});
+
+test("a provider error after a finished tool answer does not fail the turn", async () => {
+  const store = new MemoryCheckpointStore();
+  const client = resourceClient();
+  let lists = 0;
+  client.hooks.onCreate = (session) => {
+    session.status = "running";
+    session.events.push({
+      id: "finance-2",
+      type: "agent.custom_tool_use",
+      name: "finance_summary",
+      input: {},
+    });
+  };
+  client.hooks.onSend = (session, events) => {
+    if (!(events || []).some((event) => event.type === "user.custom_tool_result")) return;
+    session.events.push({
+      id: "equity-2",
+      type: "agent.message",
+      content: [{ type: "text", text: "Home equity is about $321K." }],
+    });
+    session.status = "running";
+  };
+  const listEvents = client.listEvents.bind(client);
+  client.listEvents = async () => {
+    lists += 1;
+    if (lists >= 3) {
+      const error = new Error("listEvents dropped");
+      error.status = 500;
+      error.operation = "listEvents";
+      throw error;
+    }
+    return listEvents();
+  };
+  const http = mockResponse();
+  await handleChiefChat(
+    request(messageBody("q1", "What is my home equity?")),
+    http.response,
+    chatDeps(store, client, {
+      toolSpecs: [{ name: "finance_summary", requiresConfirmation: false }],
+    })
+  );
+  const events = frames(http.chunks);
+  assert.equal(events.at(-1).msg.status, "completed");
+  assert.equal(deltas(events), "Home equity is about $321K.");
+  assert.equal(http.chunks.join("").includes("could not complete"), false);
+});
+
+test("a closed session with a full answer completes without end_turn", async () => {
+  const store = new MemoryCheckpointStore();
+  const client = resourceClient();
+  client.hooks.onCreate = (session) => {
+    session.status = "terminated";
+    session.events.push({
+      id: "hello",
+      type: "agent.message",
+      content: [{ type: "text", text: GREETING }],
+    });
+    session.events.push({ id: "term-hello", type: "session.status_terminated" });
+  };
+  const http = mockResponse();
+  await handleChiefChat(
+    request(messageBody("q1", "Hello")),
+    http.response,
+    chatDeps(store, client)
+  );
+  const events = frames(http.chunks);
+  assert.equal(events.at(-1).msg.status, "completed");
+  assert.equal(deltas(events), GREETING);
+  assert.equal(isSpeakableTurn("completed"), true);
+});
+
+test("a workspace read that never answers stays failed when the session terminates", async () => {
+  const store = new MemoryCheckpointStore();
+  const client = resourceClient();
+  client.hooks.onCreate = (session) => {
+    session.status = "terminated";
+    session.events.push({
+      id: "preamble-term",
+      type: "agent.message",
+      content: [{ type: "text", text: PREAMBLE }],
+    });
+    session.events.push({
+      id: "read-term",
+      type: "agent.tool_use",
+      name: "read",
+      input: { path: "/notes.md" },
+      evaluated_permission: "ask",
+    });
+    session.events.push({ id: "term-read", type: "session.status_terminated" });
+  };
+  const http = mockResponse();
+  await handleChiefChat(
+    request(messageBody("q1", "Read the workspace and tell me the plan.")),
+    http.response,
+    chatDeps(store, client)
+  );
+  const events = frames(http.chunks);
+  assert.equal(events.at(-1).msg.status, "failed");
+  assert.match(http.chunks.join(""), /could not complete that request/);
+  assert.equal(isSpeakableTurn("failed"), false);
 });

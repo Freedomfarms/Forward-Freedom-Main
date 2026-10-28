@@ -57,7 +57,7 @@ export function toolFingerprint(toolSpecs) {
 
 // Bump only when the protected system text changes. Personality presets do not
 // change this key, so they do not create another agent.
-export const CORE_INSTRUCTION_REVISION = "workspace-memory-and-coding-follow-v4";
+export const CORE_INSTRUCTION_REVISION = "operator-context-and-settled-turns-v5";
 
 export function agentKeyFor(toolSpecs) {
   const digest = createHash("sha256")
@@ -126,6 +126,7 @@ export function productionAgentBody({
       "You are CHIEF for Forward Freedom Financial.",
       "Reason and plan in this session. You are the only reasoning agent. Do not invent a swarm.",
       "Read the mounted memory store before answering. Project files and skills live there.",
+      "requirements.md, decisions.md, open-questions.md, and next-step.md are this user's notes. An empty note is not the Freedom OS architecture. Before saying you have nothing saved about Freedom OS, CHIEF, or the current implementation, use code_search or code_read. If code access is not enabled, say that and do not invent the architecture. Do not copy the repository into personal memory.",
       "Use the workspace tools for files and the custom tools for this user's accounts, schedule, and other CHIEF actions.",
       "A code explanation, a search, or a question about how the site works is not a decision. Do not write decisions.md, requirements.md, open-questions.md, or next-step.md for it.",
       "Read a workspace file in this turn before changing it. An unread replacement is restored afterward to the previous text. A concurrent edit that is not that replacement is kept.",
@@ -176,6 +177,7 @@ export function productionSessionBody({
   memoryStoreId,
   sessionId,
   prompt,
+  content = null,
   instructions,
 }) {
   if (!agentVersion) {
@@ -196,7 +198,13 @@ export function productionSessionBody({
       },
     ],
     initial_events: prompt
-      ? [{ type: "user.message", content: [{ type: "text", text: prompt }] }]
+      ? [
+          {
+            type: "user.message",
+            content:
+              Array.isArray(content) && content.length ? content : [{ type: "text", text: prompt }],
+          },
+        ]
       : undefined,
     metadata: { freedom_os_key: `session:${sessionId}` },
   };
