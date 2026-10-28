@@ -242,19 +242,37 @@ function wait(ms, signal) {
   });
 }
 
+function resampleLinear(samples, fromRate, toRate) {
+  if (!fromRate || !toRate || fromRate === toRate || !samples.length) return samples;
+  const length = Math.max(1, Math.round((samples.length * toRate) / fromRate));
+  const output = new Float32Array(length);
+  const scale = fromRate / toRate;
+  const last = samples.length - 1;
+  for (let index = 0; index < length; index += 1) {
+    const position = index * scale;
+    const left = Math.min(last, Math.floor(position));
+    const right = Math.min(last, left + 1);
+    const weight = position - left;
+    output[index] = samples[left] + (samples[right] - samples[left]) * weight;
+  }
+  return output;
+}
+
 function schedulePcm(audioContext, samples, sampleRate, when) {
   const floats = new Float32Array(samples.length);
   for (let index = 0; index < samples.length; index += 1) {
     floats[index] = samples[index] / 32768;
   }
-  const buffer = audioContext.createBuffer(1, floats.length, sampleRate);
-  buffer.copyToChannel(floats, 0);
+  const contextRate = audioContext.sampleRate || sampleRate;
+  const played = resampleLinear(floats, sampleRate, contextRate);
+  const buffer = audioContext.createBuffer(1, played.length, contextRate);
+  buffer.copyToChannel(played, 0);
   const source = audioContext.createBufferSource();
   source.buffer = buffer;
   source.connect(audioContext.destination);
   const startAt = Math.max(when, audioContext.currentTime + 0.02);
   source.start(startAt);
-  return { source, nextTime: startAt + samples.length / sampleRate };
+  return { source, nextTime: startAt + played.length / contextRate };
 }
 
 function mergeSamples(parts) {

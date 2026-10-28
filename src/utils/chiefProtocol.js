@@ -260,24 +260,41 @@ export function applyChiefEvent(state, event) {
                 ? CHIEF_STATUS.RESPONDING
                 : CHIEF_STATUS.WORKING
               : CHIEF_STATUS.READY,
-        error: missing ? state.error || MISSING_CHIEF_ANSWER : state.error,
+        error: missing
+          ? state.error || MISSING_CHIEF_ANSWER
+          : turnStatus === "completed"
+            ? ""
+            : state.error,
         finished: !suspended && !active,
         approval: suspended ? state.approval : null,
       };
     }
     case "error":
-    case "submission_rejected":
+    case "submission_rejected": {
+      const message = chiefUserMessage(
+        typeof msg.message === "string" && msg.message.trim()
+          ? msg.message.trim()
+          : "CHIEF could not finish that turn."
+      );
+      // A retryable stream error means the same session is still finishing.
+      // The text already on screen stays, and speech waits for the real settle.
+      if (msg.type === "error" && msg.retryable === true) {
+        return {
+          ...state,
+          status: state.streamText ? CHIEF_STATUS.RESPONDING : CHIEF_STATUS.WORKING,
+          error: "",
+          finished: false,
+          turnStatus: "continuing",
+        };
+      }
       return {
         ...state,
         status: CHIEF_STATUS.ERROR,
-        error: chiefUserMessage(
-          typeof msg.message === "string" && msg.message.trim()
-            ? msg.message.trim()
-            : "CHIEF could not finish that turn."
-        ),
+        error: message,
         finished: true,
         turnStatus: "rejected",
       };
+    }
     case "turn_aborted":
       return { ...state, status: CHIEF_STATUS.READY, finished: true, turnStatus: "aborted" };
     case "model_changed":
