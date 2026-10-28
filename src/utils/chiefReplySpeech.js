@@ -2,6 +2,7 @@
 // Text rendering stays with the transcript. This module only chooses the
 // string passed to voice.speakAnswer(), once. Typed and spoken input share it.
 
+import { classifyChiefFailure } from "./chiefErrors.js";
 import { CHIEF_STATUS, isSpeakableTurn, MISSING_CHIEF_ANSWER } from "./chiefProtocol.js";
 import { shouldSpeakReply } from "./chiefPreferences.js";
 
@@ -25,18 +26,28 @@ export function classifySettledDelivery({
   if (playback.ok === true) return { action: "spoken", text };
   if (playback.reason === "aborted") return { action: "stopped", text };
   const blocked = playback.code === "playback_blocked" || playback.reason === "blocked";
+  const raw = typeof playback.error === "string" ? playback.error.trim() : "";
+  const classified = classifyChiefFailure({
+    component: "elevenlabs",
+    code: blocked ? "playback_blocked" : playback.code || playback.reason || "",
+    message: raw,
+    operation: "speak",
+  });
   if (blocked) {
-    const message =
-      typeof playback.error === "string" && playback.error.trim()
-        ? playback.error.trim()
-        : PLAYBACK_BLOCKED_MESSAGE;
-    return { action: "blocked", text, message };
+    return {
+      action: "blocked",
+      text,
+      message: classified.known ? classified.message : raw || PLAYBACK_BLOCKED_MESSAGE,
+      category: "elevenlabs",
+    };
   }
-  const message =
-    typeof playback.error === "string" && playback.error.trim()
-      ? playback.error.trim()
-      : "CHIEF could not speak that response.";
-  return { action: "tts_failed", text, message };
+  const fallback = raw || "CHIEF could not speak that response.";
+  return {
+    action: "tts_failed",
+    text,
+    message: classified.known ? classified.message : fallback,
+    category: "elevenlabs",
+  };
 }
 
 export function replySpeechText({

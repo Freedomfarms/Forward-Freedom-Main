@@ -1,3 +1,5 @@
+import { classifyChiefFailure } from "../../../utils/chiefErrors.js";
+
 // CHIEF voice lifecycle. This is the peripheral around the existing session.
 // It does not start a turn, choose a model, or store a transcript.
 
@@ -54,29 +56,16 @@ export function spokenText(text) {
   return (sentence > 2000 ? slice.slice(0, sentence + 1) : slice).trim();
 }
 
+const MICROPHONE_CODES = new Set(["unsupported", "permission_denied", "mic_unavailable"]);
+
 export function voiceErrorMessage(code) {
-  switch (code) {
-    case "unsupported":
-      return "This browser cannot hear speech. Type to CHIEF instead.";
-    case "permission_denied":
-      return "Microphone permission is off.";
-    case "mic_unavailable":
-      return "No microphone is available.";
-    case "not_configured":
-      return "Spoken voice is not configured.";
-    case "voice_required":
-      return "Choose a voice before CHIEF can speak.";
-    case "authentication_failed":
-      return "Spoken voice could not sign in.";
-    case "rate_limited":
-      return "Spoken voice is busy. Try again in a moment.";
-    case "playback_failed":
-      return "CHIEF could not play that response.";
-    case "network":
-      return "CHIEF could not reach voice.";
-    default:
-      return "CHIEF voice stopped.";
-  }
+  const classified = classifyChiefFailure({
+    component: MICROPHONE_CODES.has(code) ? "microphone" : "voice",
+    code: code || "",
+    operation: "voice",
+  });
+  if (classified.known && classified.message) return classified.message;
+  return "CHIEF voice stopped.";
 }
 
 export function recognitionErrorCode(error) {

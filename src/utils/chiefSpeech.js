@@ -1,3 +1,5 @@
+import { classifyChiefFailure } from "./chiefErrors.js";
+
 // Browser speech capture and ElevenLabs playback.
 // Typed and spoken turns both become plain text for the existing chat route.
 // This module does not know about sessions or TurnMachine.
@@ -85,13 +87,12 @@ export async function ensureAudioRunning(audioContext) {
 }
 
 export function speechErrorMessage(code) {
-  if (code === "unsupported") return "Speech recognition is not available in this browser.";
-  if (code === "not-allowed" || code === "service-not-allowed") {
-    return "Microphone permission was denied.";
-  }
-  if (code === "audio-capture") return "No microphone was found.";
-  if (code === "network") return "Speech recognition needs a network connection.";
-  if (code === "aborted" || code === "no-speech") return "";
+  const classified = classifyChiefFailure({
+    component: "speech",
+    code: code || "",
+    operation: "recognize",
+  });
+  if (classified.known) return classified.message;
   return `Speech recognition failed (${code || "unknown"}).`;
 }
 

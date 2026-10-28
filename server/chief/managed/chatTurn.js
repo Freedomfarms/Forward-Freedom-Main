@@ -44,6 +44,7 @@ import {
   normalizeChiefPersonality,
   personalityDigest,
 } from "../../../src/utils/chiefPersonality.js";
+import { classifyChiefFailure, UNFINISHED_TURN_MESSAGE } from "../../../src/utils/chiefErrors.js";
 import { MISSING_CHIEF_ANSWER } from "../../../src/utils/chiefProtocol.js";
 import { SCHEDULED_TURN_EXCLUDED_TOOLS } from "../tools/inventory.js";
 import { ICM_ARCHITECT_PIN } from "./constants.js";
@@ -438,7 +439,32 @@ const TERMINAL_STOP_MESSAGE = Object.freeze({
   retries_exhausted: "CHIEF could not finish that response.",
   budget_reached: "CHIEF stopped because the response budget was reached.",
 });
-const UNFINISHED_TURN_MESSAGE = "CHIEF could not complete that request.";
+function quietWorkspaceError(error) {
+  const message = String(error?.message || "");
+  return (
+    error?.code === "P1000" ||
+    error?.code === "P1001" ||
+    error?.code === "P2021" ||
+    error?.code === "P2003" ||
+    message.includes("not configured") ||
+    message.includes("does not exist") ||
+    message.includes("Encryption is not configured") ||
+    message.includes("Cannot read properties")
+  );
+}
+
+function logHandledFailure(scope, error, extras = {}) {
+  const logged = providerErrorFields(error, extras);
+  if (quietWorkspaceError(error) && logged.category === "unknown") return;
+  console.error(
+    scope,
+    logged.component,
+    logged.category,
+    logged.operation,
+    logged.correlationId,
+    logged.status || error?.code || "failed"
+  );
+}
 
 // A turn is done when the provider is idle for this turn's own end_turn.
 // listEvents returns the whole session, so an older session.status_idle must
@@ -563,7 +589,10 @@ async function sendCustomToolResult(client, providerSessionId, call, executed) {
     await client.sendEvents(providerSessionId, payload(text, executed.isError === true));
   } catch (error) {
     if (error?.status !== 400) throw error;
-    await client.sendEvents(providerSessionId, payload("Tool result could not be delivered.", true));
+    await client.sendEvents(
+      providerSessionId,
+      payload("Tool result could not be delivered.", true)
+    );
   }
 }
 
@@ -680,20 +709,6 @@ async function rememberHeldPrompt(store, userId, sessionId, text) {
   queueHeldPrompt(fresh.checkpoint, text);
   await saveTurnCheckpoint(store, userId, sessionId, fresh.checkpoint);
   return fresh.checkpoint;
-}
-
-function quietWorkspaceError(error) {
-  const message = String(error?.message || "");
-  return (
-    error?.code === "P1000" ||
-    error?.code === "P1001" ||
-    error?.code === "P2021" ||
-    error?.code === "P2003" ||
-    message.includes("not configured") ||
-    message.includes("does not exist") ||
-    message.includes("Encryption is not configured") ||
-    message.includes("Cannot read properties")
-  );
 }
 
 async function seedWorkspace(client, memoryStoreId, plan = null) {
@@ -820,9 +835,10 @@ async function ensureResources({
     try {
       authority = await loadWorkspaceAuthority({ userId, documentStore, factStore });
     } catch (error) {
-      if (!quietWorkspaceError(error)) {
-        console.error("[chief/workspace] authority", error?.code || error?.status || "unavailable");
-      }
+      logHandledFailure("[chief/workspace] authority", error, {
+        component: "workspace",
+        operation: "authority",
+      });
     }
   }
   const newStore = !managed?.workspaceSeeded || managed.memoryStoreId !== memory.id;
@@ -833,9 +849,10 @@ async function ensureResources({
         try {
           await documentStore.insertIfAbsent({ userId, path, content: file.content });
         } catch (error) {
-          if (!quietWorkspaceError(error)) {
-            console.error("[chief/workspace] bootstrap", error?.code || "failed");
-          }
+          logHandledFailure("[chief/workspace] bootstrap", error, {
+            component: "workspace",
+            operation: "bootstrap",
+          });
         }
       }
     }
@@ -984,9 +1001,10 @@ async function collect({
             checkpoint.context.workspaceCommittedSignature = signature;
           }
         } catch (error) {
-          if (!quietWorkspaceError(error)) {
-            console.error("[chief/workspace] persist", error?.code || error?.status || "failed");
-          }
+          logHandledFailure("[chief/workspace] persist", error, {
+            component: "workspace",
+            operation: "persist",
+          });
         }
       }
     }
@@ -1048,11 +1066,7 @@ async function collect({
       checkpoint.context.seenEventIds = [...seen];
       const faultStop = freshStop(events, watch, session, seen);
       const faultOpen = unresolvedToolUse(fresh, seen);
-      if (
-        faultStop?.kind === "end_turn" &&
-        turnHasAssistantAnswer(checkpoint) &&
-        !faultOpen
-      ) {
+      if (faultStop?.kind === "end_turn" && turnHasAssistantAnswer(checkpoint) && !faultOpen) {
         watch.settled = true;
         checkpoint.context.turnFaults = 0;
         checkpoint.context.awaitingTool = false;
@@ -1078,6 +1092,17 @@ async function collect({
         })
       );
       const allowed = builtinCall.decision === "allow";
+      if (!allowed) {
+        logHandledFailure(
+          "[chief/workspace] deny",
+          {
+            message: "workspace tool denied",
+            code: "workspace_denied",
+            operation: builtinCall.name,
+          },
+          { component: "workspace", operation: builtinCall.name, turnId, sessionId }
+        );
+      }
       await client.sendEvents(providerSessionId, [
         {
           type: "user.tool_confirmation",
@@ -1644,8 +1669,13 @@ export async function runManagedChiefTurn({
       try {
         listed = (await client.listMemories(managed.memoryStoreId)) || [];
         checkpoint.context.workspaceSnapshot = snapshotGuardedMemories(listed);
-      } catch {
-        // A failed listing leaves the previous snapshot in place.
+      } catch (error) {
+        logHandledFailure("[chief/memory]", error, {
+          component: "memory",
+          operation: "listMemories",
+          turnId,
+          sessionId,
+        });
       }
       if (listed && managed.pendingFacts) {
         try {
@@ -1656,9 +1686,12 @@ export async function runManagedChiefTurn({
           if (!published.preserved && published.sha) managed.acceptedFactsSha = published.sha;
           managed.pendingFacts = null;
         } catch (error) {
-          if (!quietWorkspaceError(error)) {
-            console.error("[chief/workspace] facts", error?.status || error?.code || "failed");
-          }
+          logHandledFailure("[chief/memory]", error, {
+            component: "memory",
+            operation: "facts",
+            turnId,
+            sessionId,
+          });
         }
       }
       try {
@@ -1808,12 +1841,15 @@ export async function runManagedChiefTurn({
       } else if (dispatched && scheduleCaller?.kind !== "schedule") {
         const faults = Number(checkpoint.context.turnFaults || 0) + 1;
         checkpoint.context.turnFaults = faults;
-        const logged = providerErrorFields(error);
+        const logged = providerErrorFields(error, { component: "managed_agent" });
         console.error(
           "[chief/turn]",
           logged.operation,
           logged.status,
           logged.stage,
+          logged.category,
+          logged.component,
+          logged.correlationId,
           logged.message
         );
         const watch = turnWatchOf(checkpoint);
@@ -1863,11 +1899,19 @@ export async function runManagedChiefTurn({
     if (status === "completed") {
       emit(eventMsg.turnComplete(turnWatchOf(checkpoint)?.turnId || turnId));
     } else if (status === "empty" || status === "failed") {
+      const failure = classifyChiefFailure({
+        message: checkpoint.context.turnError,
+        turnStatus: status,
+        component: "turn",
+        operation: "turn",
+      });
       emit(
         eventMsg.error({
           kind: status,
-          message: checkpoint.context.turnError,
+          message: failure.known ? failure.message : checkpoint.context.turnError,
           retryable: false,
+          category: failure.category,
+          duration: failure.duration,
         })
       );
     }
