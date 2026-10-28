@@ -19,6 +19,23 @@ export function moneyWebLine(money, web) {
   return `Money ${accessWord(money)} · Web ${accessWord(web)}`;
 }
 
+// Dock count for actions the access API already classified. Gated actions are
+// limited, not ready. A missing state stays in the ready count.
+export function toolDockLabel(actions) {
+  if (!Array.isArray(actions)) return null;
+  let ready = 0;
+  let limited = 0;
+  for (const row of actions) {
+    if (!row || typeof row.id !== "string" || !row.id.trim()) continue;
+    if (row.state === "gated") limited += 1;
+    else ready += 1;
+  }
+  if (ready === 0 && limited === 0) return "0 ready";
+  if (limited === 0) return `${ready} ready`;
+  if (ready === 0) return `${limited} limited`;
+  return `${ready} ready, ${limited} limited`;
+}
+
 export function conversationAccessWords(payload, { readable = true } = {}) {
   if (readable === false || !payload || typeof payload !== "object") {
     return {

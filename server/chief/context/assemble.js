@@ -19,6 +19,7 @@
 import { CHIEF_RESPONSE_CONTRACT } from "./behavior.js";
 import { discoverCapabilities, renderCapabilityContext } from "../capabilities/discover.js";
 import { fencesOutput, scanInjection } from "../security/injection.js";
+import { CHIEF_OPERATING_BRIEF } from "../managed/productionAgent.js";
 import { bundledSkills } from "../skills/catalog.js";
 import { renderSkillsIndex } from "../skills/index.js";
 import { ContextConfig, injectContext, trustedForRecall } from "./inject.js";
@@ -332,6 +333,7 @@ export function managedTurnGuidance(availableTools, { freedomFinancialRead = nul
         ? "Do not assume Freedom Financial read access is on or off. Call freedom_financial_access_status before answering whether it is enabled. Do not invent balances. There is no tool that edits Freedom Financial records."
         : "";
   return [
+    CHIEF_OPERATING_BRIEF,
     projectKnowledgeGuidance(tools),
     governanceLine(),
     webSearchGuidance(tools),
@@ -355,9 +357,9 @@ function projectKnowledgeGuidance(tools) {
   ];
   if (code) {
     lines.push(
-      "Before saying you have nothing saved about Freedom OS, CHIEF, or the current implementation, call code_search or code_read.",
+      "Call code_search or code_read when the question needs a file, route, or implementation detail.",
       "Those tools read the configured repository. They do not grant edits, commits, or deploys.",
-      "If a code tool says code access is not enabled, say that and do not invent the architecture."
+      "If a code tool says code access is not enabled, say the repository was not read. Answer from the operating orientation. Do not invent source."
     );
   }
   if (tools.has("capability_discover")) {

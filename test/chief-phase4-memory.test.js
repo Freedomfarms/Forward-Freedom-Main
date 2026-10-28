@@ -58,9 +58,10 @@ async function say(facts, text, { transcript = null, schedule = false } = {}) {
 }
 
 test("production instructions tell CHIEF how to use memory, research, and coding status", () => {
-  assert.equal(CORE_INSTRUCTION_REVISION, "operator-context-and-settled-turns-v5");
+  assert.equal(CORE_INSTRUCTION_REVISION, "operator-context-and-settled-turns-v6");
   const body = productionAgentBody({ toolSpecs: [], idempotencyKey: "agent:chief:production:test" });
-  assert.match(body.system, /empty note is not the Freedom OS architecture/);
+  assert.match(body.system, /operating orientation on the turn/);
+  assert.match(body.system, /repository was not read/);
   assert.match(body.system, /call web_search/);
   assert.match(body.system, /pinned ICM skill/);
   assert.match(body.system, /coding_task_submit attaches ECC guidance/);

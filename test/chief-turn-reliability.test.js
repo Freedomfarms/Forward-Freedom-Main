@@ -860,11 +860,13 @@ test("pcm playback uses the device sample rate", async () => {
 
 test("project guidance is attached beside the user text when code tools are registered", async () => {
   assert.equal(managedTurnGuidance([]), "");
+  assert.match(managedTurnGuidance(["code_search", "memory_read"]), /Operating orientation/);
   assert.match(
     managedTurnGuidance(["code_search", "memory_read"]),
     /empty note is not the Freedom OS architecture/
   );
-  assert.match(managedTurnGuidance(["code_search"]), /call code_search or code_read/);
+  assert.match(managedTurnGuidance(["code_search"]), /repository was not read/);
+  assert.match(managedTurnGuidance(["memory_read"]), /One Claude Managed Agent/);
   const store = new MemoryCheckpointStore();
   const client = resourceClient();
   client.hooks.onCreate = (session) => {
