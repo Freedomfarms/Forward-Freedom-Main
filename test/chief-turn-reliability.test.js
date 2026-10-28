@@ -229,6 +229,18 @@ test("a greeting that is already streaming survives a later provider fault", asy
   assert.equal(history.turnStatus, "completed");
   assert.equal(history.turnError, null);
   assert.equal(history.messages.at(-1).text, GREETING);
+  assert.equal(isSpeakableTurn("completed"), true);
+  const preferences = normalizeChiefPreferences({ conversation: { responseMode: "voice" } });
+  assert.equal(
+    replySpeechText({
+      historyAnswer: GREETING,
+      finished: true,
+      status: CHIEF_STATUS.READY,
+      turnStatus: "completed",
+      preferences,
+    }),
+    GREETING
+  );
 
   client.hooks.onSend = (session, events) => {
     const text = (events || []).find((event) => event.type === "user.message")?.content?.[0]?.text;
@@ -315,6 +327,169 @@ test("a workspace read pause is confirmed and the strategy answer completes", as
   const history = projectInteractiveHistory(await store.load("user-1", sessionId));
   assert.equal(history.messages.at(-1).text, STRATEGY);
   assert.equal(history.turnError, null);
+});
+
+test("an unfinished reply stays visible and is not spoken when recovery fails", async () => {
+  const store = new MemoryCheckpointStore();
+  const client = resourceClient();
+  let lists = 0;
+  client.hooks.onCreate = (session) => {
+    session.status = "running";
+  };
+  client.listEvents = async () => {
+    lists += 1;
+    if (lists === 1) {
+      return [
+        {
+          id: "preamble",
+          type: "agent.message",
+          content: [{ type: "text", text: PREAMBLE }],
+        },
+      ];
+    }
+    const error = new Error("listEvents rejected the cursor");
+    error.status = 400;
+    error.operation = "listEvents";
+    throw error;
+  };
+  let sessionId = null;
+  let last = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const http = mockResponse();
+    const body =
+      attempt === 0
+        ? messageBody("q1", "Assess Freedom OS and name three priorities.")
+        : resumeBody(sessionId, `resume-${attempt}`);
+    await handleChiefChat(request(body), http.response, chatDeps(store, client));
+    last = http;
+    const events = frames(http.chunks);
+    sessionId = sessionId || events.find((event) => event.msg?.session_id)?.msg.session_id;
+    assert.equal(http.chunks.join("").includes(GENERIC), false);
+  }
+  const failed = frames(last.chunks);
+  assert.equal(failed.at(-1).msg.status, "failed");
+  assert.match(last.chunks.join(""), /CHIEF could not complete that request/);
+  const history = projectInteractiveHistory(await store.load("user-1", sessionId));
+  assert.equal(history.turnStatus, "failed");
+  assert.match(history.turnError, /could not complete that request/);
+  assert.equal(
+    history.messages.some((message) => message.text === PREAMBLE),
+    true
+  );
+  assert.equal(isSpeakableTurn(history.turnStatus), false);
+  const preferences = normalizeChiefPreferences({ conversation: { responseMode: "both" } });
+  assert.equal(
+    replySpeechText({
+      streamText: PREAMBLE,
+      finished: true,
+      status: CHIEF_STATUS.ERROR,
+      error: history.turnError,
+      turnStatus: "failed",
+      preferences,
+    }),
+    ""
+  );
+  let state = applyChiefEvent(initialTurnState(sessionId), {
+    msg: { type: "assistant_content_delta", phase: "final_answer", delta: PREAMBLE },
+  });
+  state = applyChiefEvent(state, {
+    msg: { type: "error", message: history.turnError, retryable: false },
+  });
+  state = applyChiefEvent(state, {
+    msg: { type: "session_configured", session_id: sessionId, status: "failed" },
+  });
+  assert.equal(state.streamText, PREAMBLE);
+  assert.match(state.error, /could not complete that request/);
+  assert.equal(isSpeakableTurn(state.turnStatus), false);
+});
+
+test("unauthorized writes, protected files, and approval tools are not granted", async () => {
+  const cases = [
+    { id: "write-host", name: "write", input: { path: "/etc/passwd", content: "x" } },
+    {
+      id: "write-guarded",
+      name: "write",
+      input: { file_path: "/mnt/memory/chief/decisions.md", content: "replace" },
+    },
+    { id: "edit-guarded", name: "edit", input: { path: "next-step.md", old_string: "a", new_string: "b" } },
+  ];
+  for (const item of cases) {
+    const store = new MemoryCheckpointStore();
+    const client = resourceClient();
+    client.hooks.onCreate = (session) => {
+      session.status = "idle";
+      session.events.push({
+        id: "note",
+        type: "agent.message",
+        content: [{ type: "text", text: "I need to change a file." }],
+      });
+      session.events.push({
+        id: item.id,
+        type: "agent.tool_use",
+        name: item.name,
+        input: item.input,
+        evaluated_permission: "ask",
+      });
+      session.events.push({
+        id: `idle-${item.id}`,
+        type: "session.status_idle",
+        stop_reason: { type: "requires_action", event_ids: [item.id] },
+      });
+    };
+    const http = mockResponse();
+    await handleChiefChat(
+      request(messageBody(item.id, "Update production.")),
+      http.response,
+      chatDeps(store, client)
+    );
+    assert.deepEqual(
+      confirmations(client).map((event) => [event.tool_use_id, event.result]),
+      [[item.id, "deny"]],
+      item.id
+    );
+    assert.equal(http.chunks.join("").includes(GENERIC), false);
+    assert.notEqual(frames(http.chunks).at(-1).msg.status, "completed");
+  }
+
+  const store = new MemoryCheckpointStore();
+  const client = resourceClient();
+  let ran = false;
+  client.hooks.onCreate = (session) => {
+    session.status = "running";
+    session.events.push({
+      id: "coding-1",
+      type: "agent.custom_tool_use",
+      name: "coding_task_submit",
+      input: { summary: "deploy the change" },
+    });
+    session.events.push({
+      id: "memory-1",
+      type: "agent.custom_tool_use",
+      name: "memory_write",
+      input: { content: "remember this" },
+    });
+  };
+  const http = mockResponse();
+  await handleChiefChat(request(messageBody("approve-1", "Ship it and remember it.")), http.response, {
+    ...chatDeps(store, client),
+    toolExecutor: {
+      async execute() {
+        ran = true;
+        return { output: "ran" };
+      },
+    },
+    toolSpecs: [
+      { name: "coding_task_submit", requiresConfirmation: true },
+      { name: "memory_write", requiresConfirmation: true },
+    ],
+  });
+  assert.equal(ran, false);
+  assert.equal(confirmations(client).length, 0);
+  assert.equal(frames(http.chunks).at(-1).msg.status, "suspended");
+  assert.equal(
+    frames(http.chunks).some((event) => event.msg?.type === "exec_approval_request"),
+    true
+  );
 });
 
 test("bash and already-allowed file tools are not auto-confirmed", async () => {

@@ -18,6 +18,76 @@ const REPLACE_INTENT = Object.freeze({
   "next-step.md": /\bnext step\b/i,
 });
 
+const BLOCKED_ROOTS = new Set([
+  "applications",
+  "bin",
+  "boot",
+  "dev",
+  "etc",
+  "github",
+  "home",
+  "lib",
+  "lib64",
+  "opt",
+  "private",
+  "proc",
+  "root",
+  "run",
+  "sys",
+  "system",
+  "tmp",
+  "usr",
+  "users",
+  "var",
+  "workspace",
+]);
+
+// A provider ask is not permission. Only a path inside the mounted memory
+// workspace can be confirmed, and guarded project files are not writable
+// through that confirmation.
+export function confirmManagedWorkspaceTool(name, input) {
+  if (name !== "read" && name !== "write" && name !== "edit" && name !== "glob" && name !== "grep") {
+    return "deny";
+  }
+  const data = input && typeof input === "object" ? input : {};
+  const targets = [];
+  for (const key of ["path", "file_path", "directory"]) {
+    if (typeof data[key] === "string" && data[key].trim()) targets.push(data[key]);
+  }
+  if ((name === "glob" || name === "grep") && typeof data.pattern === "string" && data.pattern.trim()) {
+    targets.push(data.pattern);
+  }
+  if ((name === "glob" || name === "grep") && typeof data.glob === "string" && data.glob.trim()) {
+    targets.push(data.glob);
+  }
+  if (!targets.length) return name === "write" || name === "edit" ? "deny" : "allow";
+  if (targets.some((target) => !workspaceTargetAllowed(target))) return "deny";
+  if (name === "write" || name === "edit") {
+    const guarded = targets.some((target) => workspaceFileName(target));
+    if (guarded) return "deny";
+  }
+  return "allow";
+}
+
+function workspaceTargetAllowed(value) {
+  const raw = String(value || "")
+    .replace(/\\/g, "/")
+    .replaceAll("\u0000", "")
+    .trim();
+  if (!raw || raw.includes("://") || /[\0\r\n]/.test(raw)) return false;
+  if (/^[A-Za-z]:/.test(raw)) return false;
+  const parts = raw.split("/");
+  if (parts.some((part) => part === "..")) return false;
+  const segments = parts.filter((part) => part && part !== ".");
+  if (!segments.length) return false;
+  if (segments.some((part) => part === ".git" || part === ".ssh" || part.startsWith(".env"))) {
+    return false;
+  }
+  if (segments[0] === "mnt") return segments[1] === "memory" && segments.length > 2;
+  if (raw.startsWith("/")) return !BLOCKED_ROOTS.has(segments[0].toLowerCase());
+  return true;
+}
+
 export function workspaceFileName(value) {
   const path = String(value || "")
     .replace(/\\/g, "/")

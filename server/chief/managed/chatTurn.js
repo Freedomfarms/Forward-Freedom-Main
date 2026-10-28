@@ -27,6 +27,7 @@ import { providerErrorFields } from "./redact.js";
 import { createPrismaWorkQueue } from "./workQueue.js";
 import { syncPersonalityMemory } from "../personality/memory.js";
 import {
+  confirmManagedWorkspaceTool,
   restoreWorkspaceWrites,
   snapshotGuardedMemories,
   workspaceFileName,
@@ -437,6 +438,7 @@ const TERMINAL_STOP_MESSAGE = Object.freeze({
   retries_exhausted: "CHIEF could not finish that response.",
   budget_reached: "CHIEF stopped because the response budget was reached.",
 });
+const UNFINISHED_TURN_MESSAGE = "CHIEF could not complete that request.";
 
 // A turn is done when the provider is idle for this turn's own end_turn.
 // listEvents returns the whole session, so an older session.status_idle must
@@ -529,8 +531,9 @@ function toolEventResolved(events, id) {
 }
 
 // Cloud file tools are configured always_allow. A session that still pauses
-// with ask/auto (or a bare requires_action id) needs user.tool_confirmation.
-// bash, web, and MCP tools stay on their own permission path.
+// with ask/auto (or a bare requires_action id) is confirmed only when the
+// path stays inside the memory workspace. A guarded file, a host path, or
+// any other tool is not granted by that ask.
 function confirmableBuiltinTool(event, events) {
   if (event?.type !== "agent.tool_use" || typeof event.id !== "string" || !event.id) return null;
   const name = typeof event.name === "string" && event.name ? event.name : event.tool_name;
@@ -541,7 +544,9 @@ function confirmableBuiltinTool(event, events) {
   const ask = permission === "ask" || permission === "always_ask" || permission === "auto";
   if (!ask && !(permission === "" && blockingIds(events).has(event.id))) return null;
   const input = event.input && typeof event.input === "object" ? event.input : {};
-  return { id: event.id, name, input };
+  const decision = confirmManagedWorkspaceTool(name, input);
+  if (decision !== "allow" && decision !== "deny") return null;
+  return { id: event.id, name, input, decision };
 }
 
 async function sendCustomToolResult(client, providerSessionId, call, executed) {
@@ -1041,14 +1046,20 @@ async function collect({
       const kind = faultEvent.type === "session.status_terminated" ? "terminated" : "terminal";
       seen.add(faultEvent.id || `session-fault:${kind}`);
       checkpoint.context.seenEventIds = [...seen];
-      if (turnHasAssistantAnswer(checkpoint) && checkpoint.context.awaitingTool !== true) {
+      const faultStop = freshStop(events, watch, session, seen);
+      const faultOpen = unresolvedToolUse(fresh, seen);
+      if (
+        faultStop?.kind === "end_turn" &&
+        turnHasAssistantAnswer(checkpoint) &&
+        !faultOpen
+      ) {
         watch.settled = true;
         checkpoint.context.turnFaults = 0;
         checkpoint.context.awaitingTool = false;
         return "completed";
       }
       watch.settled = true;
-      checkpoint.context.turnFailureMessage = "CHIEF could not finish that response.";
+      checkpoint.context.turnFailureMessage = UNFINISHED_TURN_MESSAGE;
       return "failed";
     }
     const builtin = fresh.find((event) => {
@@ -1066,11 +1077,12 @@ async function collect({
           args: builtinCall.input,
         })
       );
+      const allowed = builtinCall.decision === "allow";
       await client.sendEvents(providerSessionId, [
         {
           type: "user.tool_confirmation",
           tool_use_id: builtinCall.id,
-          result: "allow",
+          result: allowed ? "allow" : "deny",
         },
       ]);
       seen.add(builtinCall.id);
@@ -1080,8 +1092,8 @@ async function collect({
           turnId,
           callId: builtinCall.id,
           name: builtinCall.name,
-          output: "Allowed.",
-          isError: false,
+          output: allowed ? "Allowed." : "Not permitted.",
+          isError: !allowed,
         })
       );
       checkpoint.context.seenEventIds = [...seen];
@@ -1807,16 +1819,10 @@ export async function runManagedChiefTurn({
         const watch = turnWatchOf(checkpoint);
         if (faults >= TURN_FAULT_LIMIT) {
           if (watch) watch.settled = true;
-          if (checkpoint.context.awaitingTool !== true && turnHasAssistantAnswer(checkpoint)) {
-            checkpoint.context.turnError = "";
-            checkpoint.context.turnFailureMessage = "";
-            checkpoint.context.turnFaults = 0;
-            checkpoint.context.awaitingTool = false;
-            status = "completed";
-          } else {
-            checkpoint.context.turnFailureMessage = "CHIEF could not finish that response.";
-            status = "failed";
-          }
+          // Streamed text is not a finished answer. The transcript keeps the
+          // partial reply, and the turn stays failed so it is not spoken.
+          checkpoint.context.turnFailureMessage = UNFINISHED_TURN_MESSAGE;
+          status = "failed";
         } else {
           rememberTurnStatus(checkpoint, "continuing");
           status = "continuing";
