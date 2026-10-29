@@ -1138,14 +1138,15 @@
   margin-left: 12px;
 }
 .chief-frontier .response-card {
-  position: relative;
+  position: absolute;
   z-index: 5;
-  flex: 0 1 auto;
-  min-height: 0;
-  margin-top: 10px;
-  max-height: min(24vh, 200px);
+  left: 0;
+  right: 0;
+  top: 91%;
+  bottom: 0;
+  margin: 0;
   overflow: auto;
-  padding: 16px 22px 17px;
+  padding: 8px 14px;
   border: 1px solid #a4d9ff60;
   border-radius: 8px;
   background: linear-gradient(120deg, #102a3ef2, #061320f5);
@@ -2574,9 +2575,15 @@
 }
 
 .chief-frontier .response-card {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 91%;
+  bottom: 0;
+  margin: 0;
   display: flex;
   flex-direction: column;
-  max-height: min(24vh, 200px);
+  max-height: none;
 }
 
 .chief-frontier .response-card .assistant-message {
