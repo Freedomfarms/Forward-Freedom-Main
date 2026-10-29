@@ -1138,11 +1138,13 @@
   margin-left: 12px;
 }
 .chief-frontier .response-card {
-  position: absolute;
+  position: relative;
   z-index: 5;
-  left: 5%;
-  right: 5%;
-  bottom: 7%;
+  flex: 0 1 auto;
+  min-height: 0;
+  margin-top: 10px;
+  max-height: min(24vh, 200px);
+  overflow: auto;
   padding: 16px 22px 17px;
   border: 1px solid #a4d9ff60;
   border-radius: 8px;
@@ -1215,6 +1217,9 @@
 }
 .chief-frontier .has-response .core-caption {
   opacity: 0.35;
+}
+.chief-frontier.has-response .core-anchor {
+  top: 46%;
 }
 .chief-frontier #toast {
   position: absolute;
@@ -1697,9 +1702,8 @@
     font-size: 12px;
   }
   .chief-frontier .response-card {
-    left: 0;
-    right: 0;
-    bottom: 6%;
+    margin-top: 8px;
+    padding: 12px 16px;
   }
   .chief-frontier .response-foot {
     font-size: 4px;
@@ -2186,7 +2190,7 @@
     display: none;
   }
   .chief-frontier .response-card {
-    bottom: 3%;
+    margin-top: 6px;
     padding: 10px 15px;
   }
   .chief-frontier .assistant-message {
@@ -2265,7 +2269,7 @@
     display: none;
   }
   .chief-frontier .response-card {
-    bottom: 3%;
+    margin-top: 6px;
     padding: 10px 15px;
   }
   .chief-frontier .assistant-message {
@@ -2323,9 +2327,7 @@
     top: 53%;
   }
   .chief-frontier .response-card {
-    bottom: 4%;
-    left: 6%;
-    right: 6%;
+    margin-top: 6px;
   }
   .chief-frontier .assistant-message {
     max-height: 65px;
@@ -2395,9 +2397,7 @@
     top: 53%;
   }
   .chief-frontier .response-card {
-    bottom: 4%;
-    left: 6%;
-    right: 6%;
+    margin-top: 6px;
   }
   .chief-frontier .assistant-message {
     max-height: 65px;
@@ -2586,13 +2586,14 @@
 .chief-frontier .response-card {
   display: flex;
   flex-direction: column;
-  max-height: min(46%, 340px);
+  max-height: min(24vh, 200px);
 }
 
 .chief-frontier .response-card .assistant-message {
   max-height: none;
   min-height: 0;
   flex: 1 1 auto;
+  margin-bottom: 0;
 }
 
 .chief-frontier .response-card .chief-turn {
@@ -2600,8 +2601,8 @@
   margin: 0;
   justify-items: start;
   text-align: left;
-  max-height: min(30vh, 240px);
-  overflow: auto;
+  max-height: none;
+  overflow: visible;
 }
 
 .chief-frontier .chief-turn-block {

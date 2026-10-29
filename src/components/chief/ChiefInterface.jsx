@@ -414,19 +414,20 @@ export function ChiefInterface({
                 <span>{copy.label}</span>
                 <span>{copy.presence}</span>
               </div>
-              {conversation ? (
-                <article className="response-card">
-                  <div className="response-head">
-                    <span>
-                      CHIEF
-                      <small>{status}</small>
-                    </span>
-                  </div>
-                  <div className="assistant-message">{conversation}</div>
-                </article>
-              ) : null}
               {workspace ? <div className="chief-workspace-slot">{workspace}</div> : null}
             </div>
+
+            {conversation ? (
+              <article className="response-card">
+                <div className="response-head">
+                  <span>
+                    CHIEF
+                    <small>{status}</small>
+                  </span>
+                </div>
+                <div className="assistant-message">{conversation}</div>
+              </article>
+            ) : null}
 
             <div className="conversation-dock">
               <div className="dock-topline">

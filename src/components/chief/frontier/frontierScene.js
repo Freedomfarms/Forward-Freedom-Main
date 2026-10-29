@@ -152,10 +152,13 @@ export function createFrontierScene({
     if (ctx) ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const rect = anchor.getBoundingClientRect();
     const scene = stage.getBoundingClientRect();
+    const centerY = rect.y - bounds.y + rect.height * 0.5;
+    const roomBelow = scene.bottom - bounds.top - centerY;
     corePosition = {
       x: rect.x - bounds.x + rect.width * 0.5,
-      y: rect.y - bounds.y + rect.height * 0.5,
-      r: Math.max(24, Math.min(rect.width * 0.5, scene.height * 0.31)),
+      y: centerY,
+      // Stay inside the stage. The transcript card begins at the stage's bottom edge.
+      r: Math.max(24, Math.min(rect.width * 0.5, scene.height * 0.31, roomBelow * 0.9)),
     };
     stageBox = {
       left: scene.left - bounds.left,
@@ -543,6 +546,9 @@ export function createFrontierScene({
   if (typeof ResizeObserver === "function") {
     observer = new ResizeObserver(onResize);
     observer.observe(root);
+    // The transcript card changes the stage height without resizing the shell.
+    observer.observe(stage);
+    observer.observe(anchor);
   }
 
   function setActivity(next) {

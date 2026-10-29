@@ -61,6 +61,14 @@ test("CHIEF home mounts the supplied interface on the existing conversation path
   assert.match(face, /prefers-reduced-motion|is-reduced-motion/);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
   assert.match(css, /\.chief-frontier \.composer/);
+  const stageStart = face.indexOf("className={`core-stage");
+  const stageMarkup = face.slice(stageStart, face.indexOf("{conversation ? (", stageStart));
+  assert.equal(stageMarkup.includes("response-card"), false);
+  assert.match(stageMarkup, /chief-workspace-slot/);
+  assert.match(face, /className="response-card"/);
+  assert.match(css, /\.chief-frontier \.response-card \{[^}]*position:\s*relative/);
+  assert.doesNotMatch(css, /\.chief-frontier \.response-card \{[^}]*position:\s*absolute/);
+  assert.doesNotMatch(css, /\.chief-frontier \.response-card \{[^}]*bottom:\s*\d/);
   assert.doesNotMatch(css, /^\.chief-composer \{/m);
   assert.match(css, /\.chief-frontier \.workspace\s*\{[^}]*display:\s*grid/);
   assert.doesNotMatch(css, /margin-top:\s*-/);

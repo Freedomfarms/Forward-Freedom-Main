@@ -94,19 +94,28 @@ test("the frontier scene draws a frame and cancels its loop", () => {
   globalThis.cancelAnimationFrame = () => {
     cancelled += 1;
   };
+  const observed = [];
   globalThis.ResizeObserver = class {
-    observe() {}
+    observe(node) {
+      observed.push(node);
+    }
     disconnect() {}
   };
+  const anchor = box();
+  const stage = box();
+  const root = box();
   try {
     const scene = createFrontierScene({
       canvas,
-      anchor: box(),
-      stage: box(),
-      root: box(),
+      anchor,
+      stage,
+      root,
       reduced: false,
       paused: false,
     });
+    assert.equal(observed.includes(root), true);
+    assert.equal(observed.includes(stage), true);
+    assert.equal(observed.includes(anchor), true);
     assert.equal(queued.length, 1);
     queued[0](32);
     scene.setActivity("listening");
