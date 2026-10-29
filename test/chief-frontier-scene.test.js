@@ -24,6 +24,8 @@ test("Frontier geometry keeps the reference seed, sphere, and bolt", () => {
   assert.equal(reference.split("requestAnimationFrame").length - 1, 2);
   assert.match(scene, /cancelAnimationFrame/);
   assert.match(scene, /prefers-reduced-motion/);
+  assert.match(scene, /Math\.min\(rect\.width \* 0\.5, scene\.height \* 0\.31\)/);
+  assert.doesNotMatch(scene, /roomBelow/);
 
   const first = createFrontierGeometry();
   const second = createFrontierGeometry();
@@ -94,19 +96,28 @@ test("the frontier scene draws a frame and cancels its loop", () => {
   globalThis.cancelAnimationFrame = () => {
     cancelled += 1;
   };
+  const observed = [];
   globalThis.ResizeObserver = class {
-    observe() {}
+    observe(node) {
+      observed.push(node);
+    }
     disconnect() {}
   };
+  const anchor = box();
+  const stage = box();
+  const root = box();
   try {
     const scene = createFrontierScene({
       canvas,
-      anchor: box(),
-      stage: box(),
-      root: box(),
+      anchor,
+      stage,
+      root,
       reduced: false,
       paused: false,
     });
+    assert.equal(observed.includes(root), true);
+    assert.equal(observed.includes(stage), true);
+    assert.equal(observed.includes(anchor), true);
     assert.equal(queued.length, 1);
     queued[0](32);
     scene.setActivity("listening");

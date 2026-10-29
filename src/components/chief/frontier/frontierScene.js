@@ -543,6 +543,9 @@ export function createFrontierScene({
   if (typeof ResizeObserver === "function") {
     observer = new ResizeObserver(onResize);
     observer.observe(root);
+    // The transcript card changes the stage height without resizing the shell.
+    observer.observe(stage);
+    observer.observe(anchor);
   }
 
   function setActivity(next) {
