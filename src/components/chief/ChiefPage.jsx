@@ -19,7 +19,7 @@ import {
   setChiefSessionArchived,
   streamChiefChat,
 } from "../../utils/chiefApi.js";
-import { currentTurn, emptyRoomAccess, moneyWebLine } from "../../utils/chiefRoom.js";
+import { currentTurn, emptyRoomAccess, moneyWebLine, toolDockLabel } from "../../utils/chiefRoom.js";
 import {
   discardLegacyChiefActiveSessionKey,
   readChiefActiveSessionId,
@@ -1077,7 +1077,7 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
     cpu: null,
     memory: null,
     agents: null,
-    tools: Array.isArray(toolActions) ? `${toolActions.length} ready` : null,
+    tools: toolDockLabel(toolActions),
     network: access?.web === "on" ? "ON" : access?.web === "off" ? "OFF" : null,
   };
   const motionReduced =

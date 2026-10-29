@@ -168,7 +168,11 @@ test("discovery reports granted reads, approval, and disconnected connectors", a
   const inventory = projectAccessInventory(snapshot);
   assert.equal(inventory.connected.length, 0);
   assert.ok(inventory.read.some((row) => row.id === "code:read"));
-  assert.ok(inventory.actions.some((row) => row.id === "memory:write" && row.approval === true));
+  assert.ok(
+    inventory.actions.some(
+      (row) => row.id === "memory:write" && row.approval === true && row.state === "ready"
+    )
+  );
   assert.ok(inventory.unavailable.some((row) => row.id === "email:read"));
 });
 

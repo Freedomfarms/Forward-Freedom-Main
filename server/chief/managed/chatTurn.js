@@ -37,8 +37,11 @@ import {
   fittedPersonalityGuidance,
   memoryTurnPrompt,
   personalityDelivery,
+  providerUserContent,
   undeliveredTurnPrompt,
 } from "./personalityDelivery.js";
+import { managedTurnGuidance } from "../context/assemble.js";
+import { PrismaModuleAccess } from "../security/module-access.js";
 import { planUserMemory } from "../memory/commands.js";
 import {
   normalizeChiefPersonality,
@@ -432,6 +435,34 @@ function turnHasAssistantAnswer(checkpoint) {
     if (message?.role === "assistant" && String(message.content || "").trim()) return true;
   }
   return false;
+}
+
+// A preamble before tools stays on an earlier round. Text written after the
+// current tool round is the answer those tools were for.
+function postToolAnswerSettled(checkpoint, openTools = false) {
+  if (openTools || checkpoint?.context?.awaitingTool === true) return false;
+  const round = Number(checkpoint?.context?.toolRound || 0);
+  const answered = Number(checkpoint?.context?.answeredRound || 0);
+  if (round <= 0 || answered < round) return false;
+  return turnHasAssistantAnswer(checkpoint);
+}
+
+// The provider closed the session after writing the answer. An open tool or a
+// still-running session is not that close.
+function providerClosedAnswer(checkpoint, session, openTools = false) {
+  if (openTools || sessionIsActive(session) || checkpoint?.context?.awaitingTool === true) {
+    return false;
+  }
+  return turnHasAssistantAnswer(checkpoint);
+}
+
+function settleFinishedAnswer(checkpoint) {
+  const watch = turnWatchOf(checkpoint);
+  if (watch) watch.settled = true;
+  if (!checkpoint.context || typeof checkpoint.context !== "object") checkpoint.context = {};
+  checkpoint.context.turnFaults = 0;
+  checkpoint.context.awaitingTool = false;
+  checkpoint.context.turnFailureMessage = "";
 }
 
 const TERMINAL_STOP_MESSAGE = Object.freeze({
@@ -1066,10 +1097,19 @@ async function collect({
       checkpoint.context.seenEventIds = [...seen];
       const faultStop = freshStop(events, watch, session, seen);
       const faultOpen = unresolvedToolUse(fresh, seen);
-      if (faultStop?.kind === "end_turn" && turnHasAssistantAnswer(checkpoint) && !faultOpen) {
-        watch.settled = true;
-        checkpoint.context.turnFaults = 0;
-        checkpoint.context.awaitingTool = false;
+      if (
+        (faultStop?.kind === "end_turn" && turnHasAssistantAnswer(checkpoint) && !faultOpen) ||
+        postToolAnswerSettled(checkpoint, faultOpen) ||
+        providerClosedAnswer(checkpoint, session, faultOpen)
+      ) {
+        if (faultStop?.kind !== "end_turn") {
+          logHandledFailure(
+            "[chief/turn] supporting-fault",
+            { message: kind, code: kind, operation: "session_fault" },
+            { component: "managed_agent", operation: "session_fault" }
+          );
+        }
+        settleFinishedAnswer(checkpoint);
         return "completed";
       }
       watch.settled = true;
@@ -1307,6 +1347,7 @@ export async function runManagedChiefTurn({
   readPersonality = readChiefPersonality,
   documentStore = null,
   factStore = null,
+  moduleAccess = null,
 } = {}) {
   const documents = documentStore || createPrismaWorkspaceDocumentStore();
   const facts = factStore || new PrismaFactStore();
@@ -1707,6 +1748,7 @@ export async function runManagedChiefTurn({
         checkpoint.context.workspaceBaseHashes = null;
       }
     }
+    const guidance = await turnGuidance(userId, resolvedSpecs, moduleAccess);
     try {
       await openOrContinue({
         client,
@@ -1714,6 +1756,7 @@ export async function runManagedChiefTurn({
         checkpoint,
         sessionId: record.id,
         prompt: providerPrompt,
+        guidance,
         instructions: personalityState.instructions,
       });
     } catch (error) {
@@ -1834,7 +1877,14 @@ export async function runManagedChiefTurn({
       }
       const soft = retryableProviderError(error) || error?.name === "AbortError";
       const dispatched = turnWatchOf(checkpoint)?.dispatched === true;
-      if (soft) {
+      if (dispatched && postToolAnswerSettled(checkpoint)) {
+        logHandledFailure("[chief/turn] supporting-fault", error, {
+          component: "managed_agent",
+          operation: "collect",
+        });
+        settleFinishedAnswer(checkpoint);
+        status = "completed";
+      } else if (soft) {
         rememberTurnStatus(checkpoint, "continuing");
         await saveTurnCheckpoint(store, userId, record.id, checkpoint);
         status = "continuing";
@@ -1940,7 +1990,43 @@ async function loadTurnPersonality(userId, readPersonality) {
   };
 }
 
-async function openOrContinue({ client, managed, checkpoint, sessionId, prompt, instructions }) {
+async function freedomFinancialReadState(userId, moduleAccess) {
+  const reader = moduleAccess?.isFreedomFinancialReadEnabled
+    ? moduleAccess
+    : process.env.DATABASE_URL
+      ? new PrismaModuleAccess()
+      : null;
+  if (!reader) return null;
+  try {
+    return (await reader.isFreedomFinancialReadEnabled(userId)) === true;
+  } catch {
+    return null;
+  }
+}
+
+async function turnGuidance(userId, toolSpecs, moduleAccess) {
+  const names = (toolSpecs || []).map((spec) => spec?.name).filter(Boolean);
+  const needsFinance = names.some((name) =>
+    ["finance_summary", "freedom_financial_access_status", "freedom_financial_access_set"].includes(
+      name
+    )
+  );
+  const freedomFinancialRead = needsFinance
+    ? await freedomFinancialReadState(userId, moduleAccess)
+    : null;
+  return managedTurnGuidance(names, { freedomFinancialRead });
+}
+
+async function openOrContinue({
+  client,
+  managed,
+  checkpoint,
+  sessionId,
+  prompt,
+  guidance = "",
+  instructions,
+}) {
+  const content = providerUserContent(prompt, guidance);
   if (!managed.providerSessionId) {
     const opened = await client.createSession(
       productionSessionBody({
@@ -1950,6 +2036,7 @@ async function openOrContinue({ client, managed, checkpoint, sessionId, prompt, 
         memoryStoreId: managed.memoryStoreId,
         sessionId,
         prompt,
+        content,
         instructions,
       })
     );
@@ -1961,9 +2048,7 @@ async function openOrContinue({ client, managed, checkpoint, sessionId, prompt, 
     };
     return;
   }
-  await client.sendEvents(managed.providerSessionId, [
-    { type: "user.message", content: [{ type: "text", text: prompt }] },
-  ]);
+  await client.sendEvents(managed.providerSessionId, [{ type: "user.message", content }]);
 }
 
 export async function drainManagedWork({

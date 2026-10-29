@@ -31,6 +31,7 @@ import {
   currentTurn,
   fieldKindForStatus,
   moneyWebLine,
+  toolDockLabel,
 } from "../src/utils/chiefRoom.js";
 
 function apiRequest(method) {
@@ -69,6 +70,15 @@ test("money and web stay distinct and a failed read is unavailable", () => {
   assert.equal(projectWebAccess({ granted: false, credentialPresent: true }), "off");
   assert.equal(projectWebAccess({ granted: true, credentialPresent: false }), "unavailable");
   assert.equal(projectWebAccess({ readable: false }), "unavailable");
+  assert.equal(toolDockLabel(null), null);
+  assert.equal(
+    toolDockLabel([
+      { id: "memory:write", state: "ready" },
+      { id: "finance:write", state: "gated" },
+    ]),
+    "1 ready, 1 limited"
+  );
+  assert.equal(toolDockLabel([{ id: "schedule:create", state: "gated" }]), "1 limited");
   assert.equal(moneyWebLine("off", "on"), "Money off · Web on");
   assert.equal(moneyWebLine("nope", undefined), "Money unavailable · Web unavailable");
 });

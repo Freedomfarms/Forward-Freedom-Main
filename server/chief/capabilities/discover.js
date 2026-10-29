@@ -276,6 +276,7 @@ export function projectAccessInventory(snapshot) {
       .filter((row) => row.kind === "action" && usable(row))
       .map((row) => ({
         id: row.id,
+        state: row.availability,
         approval: row.confirmation === "required",
         detail: row.reason || "",
       })),
