@@ -206,6 +206,23 @@ test("text, voice, and text-plus-voice map onto the four sphere activities", () 
     frontierActivity({ listening: true, playback: "playing", status: CHIEF_STATUS.RESPONDING }),
     "listening"
   );
+  assert.equal(
+    frontierActivity({ status: "On it.", turnStatus: "running", playback: "playing" }),
+    "responding"
+  );
+  assert.equal(
+    frontierActivity({ status: "On it.", turnStatus: "running", playback: "idle" }),
+    "thinking"
+  );
+  assert.equal(frontierActivity({ status: "On it.", turnStatus: "", playback: "idle" }), "idle");
+  assert.equal(
+    frontierActivity({
+      status: "I've got a result. I'm reading it.",
+      turnStatus: "running",
+      playback: "idle",
+    }),
+    "thinking"
+  );
 });
 
 test("idle breath is exactly five seconds and listening follows the microphone", () => {

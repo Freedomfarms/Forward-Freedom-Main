@@ -135,6 +135,29 @@ export function isPersonalityPreset(value) {
   return Object.hasOwn(CHIEF_PERSONALITY_PRESETS, value);
 }
 
+export const CHIEF_PERSONALITY_PRESET_KEY = "chief.personalityPreset";
+
+export function readPersonalityPreset(storage) {
+  try {
+    const bin = storage || globalThis.localStorage;
+    const value = bin?.getItem?.(CHIEF_PERSONALITY_PRESET_KEY);
+    if (isPersonalityPreset(value)) return value;
+  } catch {
+    // Storage can be blocked. The spoken cue falls back to JARVIS.
+  }
+  return "jarvis";
+}
+
+export function writePersonalityPreset(preset, storage) {
+  try {
+    if (!isPersonalityPreset(preset)) return;
+    const bin = storage || globalThis.localStorage;
+    bin?.setItem?.(CHIEF_PERSONALITY_PRESET_KEY, preset);
+  } catch {
+    // The saved personality on the server still applies to the next reply.
+  }
+}
+
 export function isResponseLength(value) {
   return CHIEF_RESPONSE_LENGTHS.includes(value);
 }

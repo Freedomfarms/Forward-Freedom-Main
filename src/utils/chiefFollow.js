@@ -1,6 +1,7 @@
 // Follows one open CHIEF conversation until the Managed Agents turn settles.
-// The loop has no time cap: a long reply stays in Reasoning or Responding and
-// is spoken once by the caller after this returns settled. A dropped connection
+// The loop has no time cap: a long reply stays in Reasoning or Responding.
+// The caller may speak stable sentences during the turn and speaks any
+// unspoken tail after this returns settled. A dropped connection
 // retries the same session. Stop, switch, and a new message leave isCurrent().
 
 import { isActiveChiefTurn } from "./chiefProtocol.js";

@@ -7,6 +7,7 @@ import {
   defaultChiefPersonality,
   normalizeChiefPersonality,
   presetPackage,
+  writePersonalityPreset,
 } from "../../utils/chiefPersonality.js";
 
 const LENGTH_LABEL = Object.freeze({
@@ -60,7 +61,9 @@ export function ChiefPersonalitySettings({ user, active = false }) {
     fetchChiefPersonality(user)
       .then((row) => {
         if (cancelled) return;
-        setDraft(normalizeChiefPersonality(row));
+        const next = normalizeChiefPersonality(row);
+        writePersonalityPreset(next.preset);
+        setDraft(next);
         setError("");
         setNotice("");
         setLoaded(true);
@@ -99,7 +102,9 @@ export function ChiefPersonalitySettings({ user, active = false }) {
         proactiveness: draft.proactiveness,
         customInstructions: draft.customInstructions,
       });
-      setDraft(normalizeChiefPersonality(saved));
+      const next = normalizeChiefPersonality(saved);
+      writePersonalityPreset(next.preset);
+      setDraft(next);
       setNotice("Saved. The next reply follows this personality.");
     } catch (saveError) {
       setError(saveError?.message || "Personality could not be saved.");

@@ -1,6 +1,7 @@
 // Decides whether a finished CHIEF turn is spoken on the home conversation path.
-// Text rendering stays with the transcript. This module only chooses the
-// string passed to voice.speakAnswer(), once. Typed and spoken input share it.
+// Text rendering stays with the transcript. The string is the unspoken tail.
+// enqueueSpeech keeps that tail behind sentences already queued. speakAnswer
+// remains the interrupt path for a voice that has no queue.
 
 import { classifyChiefFailure } from "./chiefErrors.js";
 import { CHIEF_STATUS, isSpeakableTurn, MISSING_CHIEF_ANSWER } from "./chiefProtocol.js";
@@ -74,7 +75,14 @@ export function replySpeechText({
 
 export function speakCompletedReply(voice, input) {
   const spoken = replySpeechText(input);
-  if (!spoken || typeof voice?.speakAnswer !== "function") return null;
+  if (!spoken) return null;
+  if (typeof voice?.enqueueSpeech === "function") {
+    return {
+      spoken,
+      pending: Promise.resolve(voice.enqueueSpeech(spoken)),
+    };
+  }
+  if (typeof voice?.speakAnswer !== "function") return null;
   return {
     spoken,
     pending: Promise.resolve(voice.speakAnswer(spoken)),

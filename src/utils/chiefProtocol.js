@@ -128,8 +128,9 @@ export function restoredChiefTurn({
   };
 }
 
-// Speech waits until the Managed Agents turn has actually settled. A budget
-// handoff ("continuing") and a suspension are not finished replies.
+// The settled tail of a reply. A budget handoff ("continuing") and a suspension
+// are not finished replies. Live sentences use a separate cursor and may speak
+// earlier; this check does not mean the whole answer waits.
 export function isSpeakableTurn(turnStatus) {
   return (
     turnStatus !== "continuing" &&
@@ -176,6 +177,26 @@ export function initialTurnState(sessionId = null) {
 
 function sessionIdFrom(msg, fallback) {
   return typeof msg?.session_id === "string" && msg.session_id ? msg.session_id : fallback;
+}
+
+// Join a visible answer chunk onto text already on screen.
+// A replayed prefix, a replayed suffix, or a longer snapshot of the same
+// answer must not duplicate. A real continuation is appended.
+export function appendVisibleDelta(current, delta) {
+  const base = typeof current === "string" ? current : "";
+  const next = typeof delta === "string" ? delta : "";
+  if (!next) return base;
+  if (!base) return next;
+  if (next.startsWith(base)) {
+    const boundary = next[base.length];
+    if (!boundary || /[\s.,!?;:]/.test(boundary)) return next;
+  }
+  if (base.endsWith(next) || (next.length < base.length && base.startsWith(next))) return base;
+  const limit = Math.min(base.length, next.length);
+  for (let size = limit; size >= 16; size -= 1) {
+    if (base.slice(-size) === next.slice(0, size)) return base + next.slice(size);
+  }
+  return base + next;
 }
 
 export function applyChiefEvent(state, event) {
@@ -246,7 +267,7 @@ export function applyChiefEvent(state, event) {
         ...state,
         sessionId,
         status: CHIEF_STATUS.RESPONDING,
-        streamText: `${state.streamText}${msg.delta}`,
+        streamText: appendVisibleDelta(state.streamText, msg.delta),
       };
     }
     case "tool_call_begin":
