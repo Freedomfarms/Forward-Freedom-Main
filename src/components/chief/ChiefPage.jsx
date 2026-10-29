@@ -19,7 +19,12 @@ import {
   setChiefSessionArchived,
   streamChiefChat,
 } from "../../utils/chiefApi.js";
-import { currentTurn, emptyRoomAccess, moneyWebLine, toolDockLabel } from "../../utils/chiefRoom.js";
+import {
+  currentTurn,
+  emptyRoomAccess,
+  moneyWebLine,
+  toolDockLabel,
+} from "../../utils/chiefRoom.js";
 import {
   discardLegacyChiefActiveSessionKey,
   readChiefActiveSessionId,
@@ -41,7 +46,7 @@ import {
   writeChiefPreferences,
 } from "../../utils/chiefPreferences.js";
 import { classifySettledDelivery, speakCompletedReply } from "../../utils/chiefReplySpeech.js";
-import { isSpeakableTurn } from "../../utils/chiefProtocol.js";
+import { isSpeakableTurn, statusForOpenTurn } from "../../utils/chiefProtocol.js";
 import {
   CHIEF_FOLLOW_CONNECTION,
   canAutoSpeak,
@@ -423,7 +428,7 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
         if (cancelled || activeSessionIdRef.current !== sessionAtStart) return;
         setHistoryError(info?.connectionError ? CHIEF_FOLLOW_CONNECTION : "");
         setTurnStatus(isActiveChiefTurn(turn.turnStatus) ? turn.turnStatus : "continuing");
-        setStatus(turn.streamText ? CHIEF_STATUS.RESPONDING : CHIEF_STATUS.WORKING);
+        setStatus(statusForOpenTurn(turn));
         if (turn.streamText) setStreamText(turn.streamText);
       },
       stream: async () => {
@@ -444,9 +449,7 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
             if (turn.streamText) setStreamText(turn.streamText);
             if (!isActiveChiefTurn(turn.turnStatus)) return;
             setTurnStatus(turn.turnStatus);
-            setStatus(
-              turn.streamText ? CHIEF_STATUS.RESPONDING : turn.status || CHIEF_STATUS.WORKING
-            );
+            setStatus(statusForOpenTurn(turn));
           },
         });
         return turn;
@@ -683,7 +686,7 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
           turn = next;
           setHistoryError(info?.connectionError ? CHIEF_FOLLOW_CONNECTION : "");
           setTurnStatus(isActiveChiefTurn(next.turnStatus) ? next.turnStatus : "continuing");
-          setStatus(next.streamText ? CHIEF_STATUS.RESPONDING : CHIEF_STATUS.WORKING);
+          setStatus(statusForOpenTurn(next));
           if (next.streamText) setStreamText(next.streamText);
         },
         stream: async ({ resume, sessionId: streamSession }) => {
@@ -752,7 +755,7 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
       } else if (isActiveChiefTurn(turn.turnStatus)) {
         setApproval(null);
         setTurnStatus(turn.turnStatus);
-        setStatus(turn.streamText ? CHIEF_STATUS.RESPONDING : CHIEF_STATUS.WORKING);
+        setStatus(statusForOpenTurn(turn));
         releaseBusy();
         return;
       } else if (turn.status === CHIEF_STATUS.ERROR) {
@@ -1329,6 +1332,7 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
           onMic={toggleMicrophone}
           listening={voice.listening}
           playback={voice.playback}
+          audioLevelRef={voice.audioLevelRef}
           turnStatus={turnStatus}
           composerDisabled={busy || turnStillRunning || historyLoading || notFound}
           enterToSend={preferences.conversation.enterToSend}

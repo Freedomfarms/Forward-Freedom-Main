@@ -142,6 +142,26 @@ export function isSpeakableTurn(turnStatus) {
   );
 }
 
+const OPEN_TURN_THINKING = new Set([
+  CHIEF_STATUS.WORKING,
+  CHIEF_STATUS.TOOL,
+  CHIEF_STATUS.FINANCE,
+  CHIEF_STATUS.WEB_SEARCH,
+  CHIEF_STATUS.MODULE_ACCESS,
+  CHIEF_STATUS.MODULE_ACCESS_SET,
+]);
+
+// A reconnect, retry, or budget handoff keeps the last real activity.
+// Answer text already on screen does not turn tool work or reasoning into Responding.
+export function statusForOpenTurn(state = {}) {
+  const status = typeof state.status === "string" ? state.status : "";
+  if (status === CHIEF_STATUS.RESPONDING) return CHIEF_STATUS.RESPONDING;
+  if (OPEN_TURN_THINKING.has(status)) return status;
+  if (status === CHIEF_STATUS.APPROVAL) return CHIEF_STATUS.APPROVAL;
+  const text = typeof state.streamText === "string" ? state.streamText : "";
+  return text ? CHIEF_STATUS.RESPONDING : CHIEF_STATUS.WORKING;
+}
+
 export function initialTurnState(sessionId = null) {
   return {
     status: CHIEF_STATUS.WORKING,
@@ -180,7 +200,7 @@ export function applyChiefEvent(state, event) {
         boundTurnId: nextTurnId || state.boundTurnId || null,
         turnId: nextTurnId || state.turnId || null,
         streamText: switching ? "" : state.streamText,
-        status: !switching && state.streamText ? CHIEF_STATUS.RESPONDING : CHIEF_STATUS.WORKING,
+        status: !switching && state.streamText ? statusForOpenTurn(state) : CHIEF_STATUS.WORKING,
         finished: false,
         turnStatus: "running",
       };
@@ -258,9 +278,7 @@ export function applyChiefEvent(state, event) {
           : suspended
             ? CHIEF_STATUS.APPROVAL
             : active
-              ? state.streamText
-                ? CHIEF_STATUS.RESPONDING
-                : CHIEF_STATUS.WORKING
+              ? statusForOpenTurn(state)
               : CHIEF_STATUS.READY,
         error: missing
           ? state.error || MISSING_CHIEF_ANSWER
@@ -298,7 +316,7 @@ export function applyChiefEvent(state, event) {
             : "";
         return {
           ...state,
-          status: state.streamText ? CHIEF_STATUS.RESPONDING : CHIEF_STATUS.WORKING,
+          status: statusForOpenTurn(state),
           error: temporary,
           finished: false,
           turnStatus: "continuing",

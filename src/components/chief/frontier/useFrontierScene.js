@@ -9,6 +9,7 @@ export function useFrontierScene({
   activity,
   paused,
   reduced,
+  levelRef = null,
 }) {
   const sceneRef = useRef(null);
 
@@ -25,8 +26,10 @@ export function useFrontierScene({
       root,
       reduced,
       paused,
+      levelRef,
     });
     scene.setActivity(activity);
+    scene.setLevelRef(levelRef);
     sceneRef.current = scene;
     return () => {
       scene.destroy();
@@ -48,4 +51,8 @@ export function useFrontierScene({
   useEffect(() => {
     sceneRef.current?.setReduced(reduced);
   }, [reduced]);
+
+  useEffect(() => {
+    sceneRef.current?.setLevelRef(levelRef);
+  }, [levelRef]);
 }
