@@ -69,6 +69,10 @@ test("CHIEF home mounts the supplied interface on the existing conversation path
   assert.match(css, /\.chief-frontier \.response-card \{[^}]*position:\s*relative/);
   assert.doesNotMatch(css, /\.chief-frontier \.response-card \{[^}]*position:\s*absolute/);
   assert.doesNotMatch(css, /\.chief-frontier \.response-card \{[^}]*bottom:\s*\d/);
+  assert.doesNotMatch(face, /dock-foot|statusbar|ENTER TO SEND|CLICK SEND/);
+  assert.doesNotMatch(css, /\.has-response \.core-anchor|\.has-response\.core-anchor/);
+  assert.match(css, /\.chief-frontier \.core-anchor \{[^}]*top:\s*56%/);
+  assert.match(css, /\.context-grid > button \{[^}]*padding:\s*6px 7px/);
   assert.doesNotMatch(css, /^\.chief-composer \{/m);
   assert.match(css, /\.chief-frontier \.workspace\s*\{[^}]*display:\s*grid/);
   assert.doesNotMatch(css, /margin-top:\s*-/);

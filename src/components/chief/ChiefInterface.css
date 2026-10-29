@@ -122,7 +122,7 @@
   height: 100vh;
   height: 100dvh;
   display: grid;
-  grid-template-rows: minmax(0, 1fr) 34px;
+  grid-template-rows: minmax(0, 1fr);
   padding: 0 34px;
   isolation: isolate;
 }
@@ -1211,16 +1211,6 @@
   letter-spacing: 1px;
   color: #7298b4;
 }
-.chief-frontier .has-response .core-coordinate,
-.chief-frontier .has-response .presence {
-  opacity: 0;
-}
-.chief-frontier .has-response .core-caption {
-  opacity: 0.35;
-}
-.chief-frontier.has-response .core-anchor {
-  top: 46%;
-}
 .chief-frontier #toast {
   position: absolute;
   z-index: 20;
@@ -1351,7 +1341,7 @@
 @media (min-width: 1600px) {
   .chief-frontier .os-shell {
     padding: 0 48px;
-    grid-template-rows: minmax(0, 1fr) 40px;
+    grid-template-rows: minmax(0, 1fr);
   }
   .chief-frontier .workspace {
     grid-template-columns: 240px minmax(0, 1fr) 280px;
@@ -1442,7 +1432,7 @@
 @media (max-width: 1200px) {
   .chief-frontier .os-shell {
     padding: 0 24px;
-    grid-template-rows: minmax(0, 1fr) 30px;
+    grid-template-rows: minmax(0, 1fr);
   }
   .chief-frontier .workspace {
     grid-template-columns: 184px minmax(0, 1fr) 212px;
@@ -1605,7 +1595,7 @@
 @media (max-width: 780px) {
   .chief-frontier .os-shell {
     padding: 0 20px;
-    grid-template-rows: minmax(0, 1fr) 30px;
+    grid-template-rows: minmax(0, 1fr);
   }
   .chief-frontier .workspace {
     grid-template-columns: 1fr;
@@ -1722,7 +1712,7 @@
 @media (max-width: 480px) {
   .chief-frontier .os-shell {
     padding: 0 15px;
-    grid-template-rows: minmax(0, 1fr) 28px;
+    grid-template-rows: minmax(0, 1fr);
   }
   .chief-frontier .central {
     padding: 21px 0 14px;
@@ -1889,7 +1879,7 @@
 }
 @media (max-height: 800px) and (min-width: 781px) {
   .chief-frontier .os-shell {
-    grid-template-rows: minmax(0, 1fr) 28px;
+    grid-template-rows: minmax(0, 1fr);
   }
   .chief-frontier .sidebar,
   .chief-frontier .inspector {
@@ -2011,7 +2001,7 @@
 }
 @container chief (max-height:800px) and (min-width:781px) {
   .chief-frontier .os-shell {
-    grid-template-rows: minmax(0, 1fr) 28px;
+    grid-template-rows: minmax(0, 1fr);
   }
   .chief-frontier .sidebar,
   .chief-frontier .inspector {
@@ -2291,7 +2281,7 @@
 }
 @media (max-height: 540px) {
   .chief-frontier .os-shell {
-    grid-template-rows: minmax(0, 1fr) 22px;
+    grid-template-rows: minmax(0, 1fr);
   }
   .chief-frontier .welcome {
     display: none;
@@ -2361,7 +2351,7 @@
 }
 @container chief (max-height:540px) {
   .chief-frontier .os-shell {
-    grid-template-rows: minmax(0, 1fr) 22px;
+    grid-template-rows: minmax(0, 1fr);
   }
   .chief-frontier .welcome {
     display: none;
@@ -2652,12 +2642,20 @@
   box-shadow: none;
 }
 
+.chief-frontier .context-grid {
+  gap: 5px;
+}
+
+.chief-frontier .context-panel .panel-description {
+  margin: 6px 0 8px;
+}
+
 .chief-frontier .context-grid > button {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 2px;
   min-width: 0;
-  padding: 12px 9px;
+  padding: 6px 7px;
   border: 1px solid #88bce024;
   border-radius: 4px;
   background: #0a1d2c60;
@@ -2666,21 +2664,27 @@
 }
 
 .chief-frontier .context-grid > button .icon {
-  width: 16px;
-  height: 16px;
+  width: 12px;
+  height: 12px;
   color: #97c7e9;
-  margin-bottom: 3px;
+  margin-bottom: 1px;
 }
 
 .chief-frontier .context-grid > button > span {
-  font-size: 9px;
+  font-size: 8px;
+  line-height: 1.25;
   color: #b1cfe4;
+  overflow-wrap: anywhere;
 }
 
 .chief-frontier .context-grid > button small {
   font: 4.5px var(--mono, Consolas, monospace);
   color: #6f96b3;
-  letter-spacing: 0.6px;
+  letter-spacing: 0.4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 .chief-frontier .context-foot {

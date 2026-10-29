@@ -24,6 +24,8 @@ test("Frontier geometry keeps the reference seed, sphere, and bolt", () => {
   assert.equal(reference.split("requestAnimationFrame").length - 1, 2);
   assert.match(scene, /cancelAnimationFrame/);
   assert.match(scene, /prefers-reduced-motion/);
+  assert.match(scene, /Math\.min\(rect\.width \* 0\.5, scene\.height \* 0\.31\)/);
+  assert.doesNotMatch(scene, /roomBelow/);
 
   const first = createFrontierGeometry();
   const second = createFrontierGeometry();
