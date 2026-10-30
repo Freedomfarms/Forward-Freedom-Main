@@ -120,20 +120,20 @@ reason: <which wiki pages changed and why>
 ```
 
 The linked wiki pull request must mention `Freedomfarms/Forward-Freedom-Main#<number>` or the
-head branch name. Completion also requires the wiki pull request to be merged, or its head to
-already be on the wiki default branch, plus an approving GitHub review recorded on that exact
-head commit. Either of these reviews qualifies:
+head branch name. Completion requires either of these, both checked from the GitHub API:
 
-- An approval from a GitHub user other than the wiki pull request author.
-- An approval from the wiki repository owner, or from a login in the Actions repository variable
-  `WIKI_SYNC_MAINTAINERS` who has admin or maintain permission on the wiki. The owner performs
-  this by opening the wiki pull request, choosing Review changes, and submitting Approve. If
-  another commit is pushed, Approve again.
+- An approving review from a GitHub user other than the wiki pull request author, recorded on
+  that exact head commit, plus a merge or a head that is already on the wiki default branch.
+- A merge performed by the wiki repository owner, with that same head commit incorporated into
+  the wiki default branch. The owner is `owner.login` on the repository, and the merger is
+  `merged_by.login` on the pull request. For `Freedomfarms/ai-development-wiki` that owner is
+  Freedomfarms. GitHub does not let the author approve their own pull request, so the owner
+  merge is the owner path.
 
-The check reads reviews from the GitHub API. Text in either pull request body is not
-authorization. Direct pushes to the wiki default branch are not a substitute. The workflow
-event is `pull_request`, not `pull_request_target`, so a fork pull request does not receive
-`AI_DEV_WIKI_TOKEN`.
+Text in either pull request body is not authorization. A direct push that does not record
+`merged_by` as the repository owner is not a substitute. A newer wiki commit needs a new review
+or a new owner merge of that commit. The workflow event is `pull_request`, not
+`pull_request_target`, so a fork pull request does not receive `AI_DEV_WIKI_TOKEN`.
 
 `GITHUB_TOKEN` for this repository cannot read the private wiki (the installation token receives
 404). The job reads the Actions secret `AI_DEV_WIKI_TOKEN`. Repository role flags on the GitHub

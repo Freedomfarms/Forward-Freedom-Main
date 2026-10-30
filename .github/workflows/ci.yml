@@ -93,7 +93,6 @@ jobs:
       - name: Assess shared wiki documentation impact
         env:
           AI_DEV_WIKI_TOKEN: ${{ secrets.AI_DEV_WIKI_TOKEN }}
-          WIKI_SYNC_MAINTAINERS: ${{ vars.WIKI_SYNC_MAINTAINERS }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}

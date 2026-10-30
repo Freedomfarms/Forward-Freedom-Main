@@ -15,7 +15,8 @@ alwaysApply: true
 - On every pull request, run `node scripts/wiki-sync.mjs classify` (same command Codex uses; do not
   start a second agent for documentation impact). Follow the marker contract in `AGENTS.md`.
   A `no-update-required` marker cannot waive a `wiki-required` result. If wiki write access is
-  unavailable, the documentation-sync check fails closed. Owner authorization is an Approve
-  review on the wiki pull request's current head, verified from the GitHub API, not a sentence
-  in the pull request body.
+  unavailable, the documentation-sync check fails closed. Owner authorization is a merge by the
+  repository owner, recorded by the GitHub API, of that exact wiki head into the default branch.
+  Another user's Approve review on that head also qualifies. A sentence in the pull request body
+  is not authorization.
 - Full setup and troubleshooting: `docs/SHARED_WIKI.md`.
