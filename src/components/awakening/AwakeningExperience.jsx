@@ -49,11 +49,8 @@ const AwakeningStage = memo(function AwakeningStage({ slotRef, pending, optionsR
               </p>
               <h1 id="hero-title" className="product-title" tabIndex={-1}>
                 <span className="hero-line">
-                  <span data-intro="freedom">Freedom</span>
-                </span>
-                <span className="hero-line">
-                  <span data-intro="os">
-                    <em>OS</em>
+                  <span data-intro="freedom">
+                    Freedom <em>OS</em>
                   </span>
                 </span>
               </h1>
@@ -113,9 +110,7 @@ const AwakeningStage = memo(function AwakeningStage({ slotRef, pending, optionsR
           <div className="scene">
             <div className="section-title">
               <p className="eyebrow">02 / MEET YOUR SECOND MIND</p>
-              <h2 id="mind-title">
-                Clarity. Context. <em>Command.</em>
-              </h2>
+              <h2 id="mind-title">CHIEF</h2>
               <p>Six capabilities. One intelligence. Yours.</p>
             </div>
             <div id="panels" />
@@ -139,12 +134,12 @@ const AwakeningStage = memo(function AwakeningStage({ slotRef, pending, optionsR
               <p className="eyebrow">
                 <span className="stars">★ ★ ★ ★ ★</span> 03 / THE SPIRIT THAT MOVES US
               </p>
-              <h2 id="freedom-title" className="product-tagline">
-                Freedom
+              <h2 id="freedom-title">
+                FREEDOM
                 <br />
-                to think
+                TO THINK
                 <br />
-                <em>bigger.</em>
+                <em>BIGGER.</em>
               </h2>
               <p>
                 Inspired by the American spirit of independence.

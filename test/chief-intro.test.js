@@ -380,7 +380,9 @@ test("the public intro stays scoped and leaves authentication intact", () => {
   assert.match(home, />Chief</);
   assert.match(home, />Freedom</);
   assert.match(home, />Launch</);
-  assert.match(home, /to think/);
+  assert.match(home, /TO THINK/);
+  assert.match(home, /Freedom <em>OS<\/em>/);
+  assert.match(home, />CHIEF</);
   assert.doesNotMatch(home, /<header>/);
   assert.doesNotMatch(home, /ENTER FREEDOM OS/);
   assert.doesNotMatch(home, /YOUR LIFE/);

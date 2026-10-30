@@ -4,5 +4,9 @@
 .fos-awaken .reset-link{display:inline-block;margin:-4px 0 18px;padding:0;background:none;border:0;font:8px var(--mono);letter-spacing:1.2px;color:#9ebed4;text-decoration:underline;text-underline-offset:3px}
 .fos-awaken .reset-link:hover{color:#d6efff}
 .fos-awaken .form-status.is-error{color:#ffd5d5}
-.fos-awaken .hero h1.product-title{letter-spacing:-0.04em}
-.fos-awaken .freedom-copy h2.product-tagline{letter-spacing:-0.03em}
+.fos-awaken .hero h1.product-title{letter-spacing:-0.04em;white-space:nowrap}
+.fos-awaken .hero h1.product-title .hero-line{overflow:visible}
+.fos-awaken .core-label small,.fos-awaken .orb-note{font-size:21px}
+.fos-awaken .mind-label small{font-size:19px}
+.fos-awaken .section-title .eyebrow{font-size:13px;letter-spacing:2.2px}
+@media(max-width:760px){.fos-awaken .hero h1.product-title{font-size:clamp(34px,10.5vw,56px);letter-spacing:-0.04em}.fos-awaken .core-label small{font-size:14px}.fos-awaken .mind-label small{font-size:13px}.fos-awaken .section-title .eyebrow{font-size:10px;letter-spacing:1.4px}}
