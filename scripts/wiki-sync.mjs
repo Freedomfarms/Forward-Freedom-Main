@@ -274,13 +274,37 @@ function blocked(fields, reason) {
   };
 }
 
-function hasIndependentApproval(pullRequest) {
-  return (pullRequest.reviews || []).some(
-    (review) =>
-      review.state === "APPROVED" &&
-      review.user &&
-      review.user.toLowerCase() !== String(pullRequest.author || "").toLowerCase()
+export function parseMaintainerLogins(value) {
+  return String(value || "")
+    .split(",")
+    .map((login) => login.trim())
+    .filter(Boolean);
+}
+
+// Authorization comes only from GitHub pull request reviews. A sentence in the
+// pull request body is not evidence. A review counts only when GitHub recorded
+// it against the current head commit.
+export function wikiReviewAuthorizes(pullRequest) {
+  const headSha = pullRequest?.headSha || "";
+  const author = String(pullRequest?.author || "").toLowerCase();
+  const owner = String(pullRequest?.owner || "").toLowerCase();
+  const maintainers = new Set(
+    (pullRequest?.maintainers || []).map((login) => String(login).toLowerCase()).filter(Boolean)
   );
+  const approvals = (pullRequest?.reviews || []).filter(
+    (review) =>
+      review?.state === "APPROVED" &&
+      review.user &&
+      review.commitId &&
+      headSha &&
+      review.commitId === headSha
+  );
+  const independent = approvals.some((review) => review.user.toLowerCase() !== author);
+  const ownerAuthorized = approvals.some((review) => {
+    const login = review.user.toLowerCase();
+    return (owner && login === owner) || maintainers.has(login);
+  });
+  return { independent, ownerAuthorized, authorized: independent || ownerAuthorized };
 }
 
 export function evaluateWikiSync({ classification, marker, access, wikiPullRequest, sourcePr }) {
@@ -367,15 +391,25 @@ export function evaluateWikiSync({ classification, marker, access, wikiPullReque
     );
   }
 
-  const approved = hasIndependentApproval(wikiPullRequest);
+  const authorization = wikiReviewAuthorizes(wikiPullRequest);
   const synchronized = wikiPullRequest.merged === true || wikiPullRequest.synchronized === true;
-  if (!approved || !synchronized) {
-    return blocked(
-      fields,
-      `Wiki pull request #${wikiPullRequest.number} needs an approving review from someone other than its author and must be merged or otherwise synchronized before documentation is complete.`
-    );
+  if (!authorization.authorized || !synchronized) {
+    const head = wikiPullRequest.headSha || "the current head";
+    const sentences = [];
+    if (!authorization.authorized) {
+      sentences.push(
+        `Wiki pull request #${wikiPullRequest.number} has no approving review on ${head} from another user and no owner authorization on that commit.`
+      );
+    }
+    if (!synchronized) {
+      sentences.push(
+        `Wiki pull request #${wikiPullRequest.number} is not merged or otherwise synchronized.`
+      );
+    }
+    return blocked(fields, `${sentences.join(" ")} Documentation is not complete.`);
   }
 
+  const how = authorization.ownerAuthorized ? "owner authorization" : "an independent approval";
   return {
     ok: true,
     result: "synchronized",
@@ -384,7 +418,7 @@ export function evaluateWikiSync({ classification, marker, access, wikiPullReque
     categories,
     matches,
     agentAssessed,
-    reason: `Wiki pull request #${wikiPullRequest.number} is reviewed and synchronized.`,
+    reason: `Wiki pull request #${wikiPullRequest.number} has ${how} on ${wikiPullRequest.headSha} and is synchronized.`,
     wikiPr: parsed.url,
   };
 }
@@ -451,6 +485,7 @@ async function loadWikiPullRequest(github, token, parsed, defaultBranch) {
       ? reviewsResponse.body.map((review) => ({
           user: review.user?.login || "",
           state: review.state,
+          commitId: review.commit_id || "",
         }))
       : null;
 
@@ -477,8 +512,26 @@ async function loadWikiPullRequest(github, token, parsed, defaultBranch) {
     synchronized,
     author: pr.user?.login || "",
     body: pr.body || "",
+    headSha: pr.head?.sha || "",
+    owner: "",
+    maintainers: [],
     reviews,
   };
+}
+
+const MAINTAINER_PERMISSIONS = new Set(["admin", "maintain"]);
+
+async function verifiedMaintainerLogins(github, token, logins) {
+  const verified = [];
+  for (const login of logins) {
+    const response = await github(
+      `/repos/${WIKI_REPO}/collaborators/${encodeURIComponent(login)}/permission`,
+      token
+    );
+    const permission = response.status === 200 ? response.body?.permission : "";
+    if (MAINTAINER_PERMISSIONS.has(permission)) verified.push(login);
+  }
+  return verified;
 }
 
 function summaryMarkdown(record) {
@@ -508,6 +561,7 @@ export async function runCheck({
   github = defaultGithub,
   resultPath = null,
   summaryPath = null,
+  maintainerLogins = null,
 } = {}) {
   const marker = parseWikiMarker(body);
   const classification = classifyChanges(changes);
@@ -551,6 +605,12 @@ export async function runCheck({
           parsed,
           repoResponse.body?.default_branch || "main"
         );
+        if (wikiPullRequest && !wikiPullRequest.unreadable) {
+          wikiPullRequest.owner = repoResponse.body?.owner?.login || "";
+          const configured =
+            maintainerLogins ?? parseMaintainerLogins(process.env.WIKI_SYNC_MAINTAINERS);
+          wikiPullRequest.maintainers = await verifiedMaintainerLogins(github, token, configured);
+        }
       }
     } catch {
       access = {

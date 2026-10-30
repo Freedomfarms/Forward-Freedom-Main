@@ -76,9 +76,13 @@ jobs:
       - name: schema-compat
         run: node scripts/schema-compat.mjs --role=all
 
+  # pull_request, not pull_request_target. Fork pull requests do not receive
+  # AI_DEV_WIKI_TOKEN, so untrusted PR code cannot read that secret.
   wiki-sync:
     name: wiki-sync
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -89,6 +93,7 @@ jobs:
       - name: Assess shared wiki documentation impact
         env:
           AI_DEV_WIKI_TOKEN: ${{ secrets.AI_DEV_WIKI_TOKEN }}
+          WIKI_SYNC_MAINTAINERS: ${{ vars.WIKI_SYNC_MAINTAINERS }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}

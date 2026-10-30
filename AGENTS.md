@@ -59,8 +59,11 @@ to decide documentation impact.
 
   The wiki pull request must name this project pull request
   (`Freedomfarms/Forward-Freedom-Main#<number>`) or this branch. Documentation is complete only
-  after that wiki pull request has an approving review from someone other than its author and is
-  merged, or its head is already on the wiki default branch.
+  after that wiki pull request is merged, or its head is already on the wiki default branch, and
+  GitHub has an approving review on that exact head commit. The review can be from another user,
+  or from the wiki repository owner (or a maintainer listed in the `WIKI_SYNC_MAINTAINERS`
+  repository variable) submitting Approve on the wiki pull request. A sentence in the pull request
+  body is not authorization. A new wiki commit needs a new review.
 
 - If the classifier says `neutral` but the change is still something a future session would get
   wrong without a wiki note, use `result: update-required` anyway. That can raise the requirement.

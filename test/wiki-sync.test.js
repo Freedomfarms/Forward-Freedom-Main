@@ -17,6 +17,7 @@ import {
   parseWikiPrUrl,
   runCheck,
   wikiBodyReferencesSource,
+  wikiReviewAuthorizes,
 } from "../scripts/wiki-sync.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -35,8 +36,11 @@ function reviewedMerge(overrides = {}) {
     merged: true,
     synchronized: false,
     author: "agent",
+    headSha: "abc",
+    owner: "Freedomfarms",
+    maintainers: [],
     body: "Source: Freedomfarms/Forward-Freedom-Main#400",
-    reviews: [{ user: "reviewer", state: "APPROVED" }],
+    reviews: [{ user: "reviewer", state: "APPROVED", commitId: "abc" }],
     ...overrides,
   };
 }
@@ -183,7 +187,9 @@ test("documentation stays incomplete until the wiki pull request is approved and
     classification,
     marker: markerValue,
     access,
-    wikiPullRequest: reviewedMerge({ reviews: [{ user: "agent", state: "APPROVED" }] }),
+    wikiPullRequest: reviewedMerge({
+      reviews: [{ user: "agent", state: "APPROVED", commitId: "abc" }],
+    }),
     sourcePr,
   });
   assert.equal(selfApproved.ok, false);
@@ -375,7 +381,11 @@ test("runCheck records a synchronized wiki pull request", async () => {
       if (pathname === "/repos/Freedomfarms/ai-development-wiki") {
         return {
           status: 200,
-          body: { permissions: { push: true, pull: true }, default_branch: "main" },
+          body: {
+            permissions: { push: true, pull: true },
+            default_branch: "main",
+            owner: { login: "Freedomfarms" },
+          },
         };
       }
       if (pathname.startsWith("/repos/Freedomfarms/ai-development-wiki/pulls?")) {
@@ -396,7 +406,10 @@ test("runCheck records a synchronized wiki pull request", async () => {
         };
       }
       if (pathname.startsWith("/repos/Freedomfarms/ai-development-wiki/pulls/7/reviews")) {
-        return { status: 200, body: [{ user: { login: "reviewer" }, state: "APPROVED" }] };
+        return {
+          status: 200,
+          body: [{ user: { login: "reviewer" }, state: "APPROVED", commit_id: "abc" }],
+        };
       }
       throw new Error(`unexpected ${pathname}`);
     },
@@ -408,17 +421,259 @@ test("runCheck records a synchronized wiki pull request", async () => {
   assert.match(fs.readFileSync(summaryPath, "utf8"), /synchronized/);
 });
 
+const sourcePr = {
+  repo: "Freedomfarms/Forward-Freedom-Main",
+  number: 400,
+  branch: "cursor/example-baac",
+};
+
+function requiredClassification() {
+  return classifyChanges([{ path: "docs/adr/0099-example.md", status: "A" }]);
+}
+
+function updateMarker(extra = "") {
+  return parseWikiMarker(
+    marker("update-required", `wiki_pr: ${WIKI_PR}\nreason: ADR added.\n${extra}`)
+  );
+}
+
+test("the wiki owner can authorize the current head, and a body sentence cannot", () => {
+  const classification = requiredClassification();
+  const markerValue = updateMarker("Owner authorization: approved by Freedomfarms.\n");
+  const ownerReview = reviewedMerge({
+    author: "Freedomfarms",
+    owner: "Freedomfarms",
+    reviews: [{ user: "Freedomfarms", state: "APPROVED", commitId: "abc" }],
+  });
+
+  const authorized = evaluateWikiSync({
+    classification,
+    marker: markerValue,
+    access: { level: "read" },
+    wikiPullRequest: ownerReview,
+    sourcePr,
+  });
+  assert.equal(authorized.ok, true);
+  assert.equal(authorized.result, "synchronized");
+  assert.match(authorized.reason, /owner authorization on abc/);
+  assert.equal(wikiReviewAuthorizes(ownerReview).ownerAuthorized, true);
+
+  const forgedBody = evaluateWikiSync({
+    classification,
+    marker: markerValue,
+    access: { level: "read" },
+    wikiPullRequest: reviewedMerge({
+      author: "Freedomfarms",
+      owner: "Freedomfarms",
+      body: "Source: Freedomfarms/Forward-Freedom-Main#400\nOwner authorization granted.",
+      reviews: [],
+    }),
+    sourcePr,
+  });
+  assert.equal(forgedBody.ok, false);
+  assert.match(forgedBody.reason, /no owner authorization/);
+
+  const forgedActor = evaluateWikiSync({
+    classification,
+    marker: markerValue,
+    access: { level: "read" },
+    wikiPullRequest: reviewedMerge({
+      author: "contributor",
+      owner: "Freedomfarms",
+      reviews: [{ user: "contributor", state: "APPROVED", commitId: "abc" }],
+    }),
+    sourcePr,
+  });
+  assert.equal(forgedActor.ok, false);
+  assert.equal(
+    wikiReviewAuthorizes({
+      author: "contributor",
+      owner: "Freedomfarms",
+      headSha: "abc",
+      reviews: [{ user: "contributor", state: "APPROVED", commitId: "abc" }],
+    }).authorized,
+    false
+  );
+  assert.match(forgedActor.reason, /no owner authorization/);
+
+  const dismissed = evaluateWikiSync({
+    classification,
+    marker: markerValue,
+    access: { level: "read" },
+    wikiPullRequest: reviewedMerge({
+      author: "Freedomfarms",
+      reviews: [{ user: "Freedomfarms", state: "DISMISSED", commitId: "abc" }],
+    }),
+    sourcePr,
+  });
+  assert.equal(dismissed.ok, false);
+});
+
+test("owner authorization is bound to the wiki head and a newer commit invalidates it", () => {
+  const stale = evaluateWikiSync({
+    classification: requiredClassification(),
+    marker: updateMarker(),
+    access: { level: "read" },
+    wikiPullRequest: reviewedMerge({
+      author: "Freedomfarms",
+      owner: "Freedomfarms",
+      headSha: "def",
+      merged: true,
+      reviews: [{ user: "Freedomfarms", state: "APPROVED", commitId: "abc" }],
+    }),
+    sourcePr,
+  });
+  assert.equal(stale.ok, false);
+  assert.equal(stale.documentationComplete, false);
+  assert.match(stale.reason, /no owner authorization on that commit/);
+  assert.match(stale.reason, /def/);
+
+  const missingReview = evaluateWikiSync({
+    classification: requiredClassification(),
+    marker: updateMarker(),
+    access: { level: "read" },
+    wikiPullRequest: reviewedMerge({
+      author: "Freedomfarms",
+      owner: "Freedomfarms",
+      reviews: [],
+    }),
+    sourcePr,
+  });
+  assert.equal(missingReview.ok, false);
+  assert.match(missingReview.reason, /no approving review/);
+});
+
+test("a verified maintainer can authorize, and an unverified login cannot", async () => {
+  function github(permission) {
+    return async (pathname) => {
+      if (pathname === "/repos/Freedomfarms/ai-development-wiki") {
+        return {
+          status: 200,
+          body: {
+            permissions: { push: true, pull: true },
+            default_branch: "main",
+            owner: { login: "Freedomfarms" },
+          },
+        };
+      }
+      if (pathname.startsWith("/repos/Freedomfarms/ai-development-wiki/pulls?")) {
+        return { status: 200, body: [] };
+      }
+      if (pathname === "/repos/Freedomfarms/ai-development-wiki/pulls/7") {
+        return {
+          status: 200,
+          body: {
+            number: 7,
+            html_url: WIKI_PR,
+            state: "closed",
+            merged: true,
+            user: { login: "helper" },
+            body: "Updates Freedomfarms/Forward-Freedom-Main#400",
+            head: { sha: "abc" },
+          },
+        };
+      }
+      if (pathname.startsWith("/repos/Freedomfarms/ai-development-wiki/pulls/7/reviews")) {
+        return {
+          status: 200,
+          body: [{ user: { login: "helper" }, state: "APPROVED", commit_id: "abc" }],
+        };
+      }
+      if (pathname === "/repos/Freedomfarms/ai-development-wiki/collaborators/helper/permission") {
+        return { status: permission ? 200 : 404, body: { permission } };
+      }
+      throw new Error(`unexpected ${pathname}`);
+    };
+  }
+
+  const maintained = await runCheck({
+    changes: [{ path: "docs/adr/0099-example.md", status: "A" }],
+    body: marker("update-required", `wiki_pr: ${WIKI_PR}\nreason: ADR added.\n`),
+    token: "present",
+    sourcePr,
+    maintainerLogins: ["helper"],
+    github: github("maintain"),
+  });
+  assert.equal(maintained.ok, true);
+  assert.match(maintained.reason, /owner authorization on abc/);
+
+  const forgedMaintainer = await runCheck({
+    changes: [{ path: "docs/adr/0099-example.md", status: "A" }],
+    body: marker("update-required", `wiki_pr: ${WIKI_PR}\nreason: ADR added.\n`),
+    token: "present",
+    sourcePr,
+    maintainerLogins: ["helper"],
+    github: github("write"),
+  });
+  assert.equal(forgedMaintainer.ok, false);
+  assert.match(forgedMaintainer.reason, /no owner authorization/);
+});
+
+test("a missing or invalid wiki token fails closed and a linked wiki pull request still has to match", async () => {
+  const missingToken = await runCheck({
+    changes: [{ path: "docs/adr/0099-example.md", status: "A" }],
+    body: marker("update-required", `wiki_pr: ${WIKI_PR}\n`),
+    token: "",
+    sourcePr,
+    github: async () => {
+      throw new Error("token must not be used");
+    },
+  });
+  assert.equal(missingToken.ok, false);
+  assert.match(missingToken.reason, /cannot be verified|failed closed/);
+
+  const invalidToken = await runCheck({
+    changes: [{ path: "docs/adr/0099-example.md", status: "A" }],
+    body: marker("update-required", `wiki_pr: ${WIKI_PR}\n`),
+    token: "invalid",
+    sourcePr,
+    github: async (pathname) => {
+      if (pathname === "/repos/Freedomfarms/ai-development-wiki") {
+        return { status: 401, body: { message: "Bad credentials" } };
+      }
+      throw new Error(`unexpected ${pathname}`);
+    },
+  });
+  assert.equal(invalidToken.ok, false);
+  assert.match(invalidToken.reason, /failed closed|unavailable/);
+
+  const linked = evaluateWikiSync({
+    classification: requiredClassification(),
+    marker: updateMarker(),
+    access: { level: "read" },
+    wikiPullRequest: reviewedMerge(),
+    sourcePr,
+  });
+  assert.equal(linked.ok, true);
+  assert.equal(linked.wikiPr, WIKI_PR);
+
+  const wrongRepo = evaluateWikiSync({
+    classification: requiredClassification(),
+    marker: updateMarker(),
+    access: { level: "read" },
+    wikiPullRequest: reviewedMerge({ repo: "Freedomfarms/Forward-Freedom-Main" }),
+    sourcePr,
+  });
+  assert.equal(wrongRepo.ok, false);
+  assert.match(wrongRepo.reason, /not in Freedomfarms\/ai-development-wiki/);
+});
+
 test("ci runs the wiki sync check and cannot continue on error", () => {
   const workflow = fs.readFileSync(path.join(root, ".github/workflows/ci.yml"), "utf8");
   assert.match(workflow, /wiki-sync:/);
   assert.match(workflow, /node scripts\/wiki-sync\.mjs check/);
   assert.match(workflow, /secrets\.AI_DEV_WIKI_TOKEN/);
+  assert.match(workflow, /vars\.WIKI_SYNC_MAINTAINERS/);
+  assert.match(workflow, /contents: read/);
+  assert.doesNotMatch(workflow, /^\s*pull_request_target:/m);
   assert.doesNotMatch(workflow, /continue-on-error/);
 
   const agents = fs.readFileSync(path.join(root, "AGENTS.md"), "utf8");
   assert.match(agents, /scripts\/wiki-sync\.mjs classify/);
   assert.match(agents, /no-update-required/);
   assert.match(agents, /failed closed|fails closed/);
+  assert.match(agents, /repository owner/);
+  assert.match(agents, /not authorization/);
 
   const rule = fs.readFileSync(path.join(root, ".cursor/rules/shared-wiki.mdc"), "utf8");
   assert.match(rule, /wiki-sync\.mjs/);
