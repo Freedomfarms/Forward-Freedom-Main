@@ -10,6 +10,7 @@ import {
   CHIEF_STATUS,
   applyChiefEvent,
   approvalSubmission,
+  statusForOpenTurn,
   conversationLabel,
   consumeSseBuffer,
   formatChiefTime,
@@ -120,6 +121,68 @@ test("a continuing Managed Agents handoff stays unfinished", () => {
   assert.equal(state.streamText, "Partial");
   assert.equal(state.status, CHIEF_STATUS.RESPONDING);
   assert.equal(state.finished, false);
+});
+
+test("leftover answer text does not force Responding during tools or reasoning", () => {
+  assert.equal(
+    statusForOpenTurn({ status: CHIEF_STATUS.TOOL, streamText: "Partial" }),
+    CHIEF_STATUS.TOOL
+  );
+  assert.equal(
+    statusForOpenTurn({ status: CHIEF_STATUS.WORKING, streamText: "Partial" }),
+    CHIEF_STATUS.WORKING
+  );
+  assert.equal(
+    statusForOpenTurn({ status: CHIEF_STATUS.RESPONDING, streamText: "Partial" }),
+    CHIEF_STATUS.RESPONDING
+  );
+  assert.equal(statusForOpenTurn({ status: "", streamText: "" }), CHIEF_STATUS.WORKING);
+
+  let state = applyChiefEvent(initialTurnState("sess-1"), {
+    msg: { type: "turn_started", turn_id: "turn-1" },
+  });
+  state = applyChiefEvent(state, {
+    msg: {
+      type: "assistant_content_delta",
+      turn_id: "turn-1",
+      phase: "final_answer",
+      delta: "Partial",
+    },
+  });
+  state = applyChiefEvent(state, {
+    msg: { type: "tool_call_begin", turn_id: "turn-1", name: "web_search" },
+  });
+  assert.equal(state.status, CHIEF_STATUS.WEB_SEARCH);
+  state = applyChiefEvent(state, {
+    msg: {
+      type: "assistant_content_delta",
+      turn_id: "turn-1",
+      phase: "reasoning",
+      delta: "checking",
+    },
+  });
+  assert.equal(state.streamText, "Partial");
+  assert.equal(state.status, CHIEF_STATUS.WEB_SEARCH);
+  state = applyChiefEvent(state, {
+    msg: { type: "error", message: "dropped", retryable: true },
+  });
+  assert.equal(state.turnStatus, "continuing");
+  assert.equal(state.streamText, "Partial");
+  assert.equal(state.status, CHIEF_STATUS.WEB_SEARCH);
+  state = applyChiefEvent(state, {
+    msg: { type: "session_configured", session_id: "sess-1", status: "continuing" },
+  });
+  assert.equal(state.status, CHIEF_STATUS.WEB_SEARCH);
+  assert.equal(state.finished, false);
+  state = applyChiefEvent(state, {
+    msg: { type: "tool_call_end", turn_id: "turn-1" },
+  });
+  assert.equal(state.status, CHIEF_STATUS.WORKING);
+  state = applyChiefEvent(state, {
+    msg: { type: "turn_started", turn_id: "turn-1" },
+  });
+  assert.equal(state.streamText, "Partial");
+  assert.equal(state.status, CHIEF_STATUS.WORKING);
 });
 
 test("tool status stays in natural language and drops arguments", () => {

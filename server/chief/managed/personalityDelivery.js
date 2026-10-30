@@ -68,6 +68,21 @@ export function undeliveredTurnPrompt(providerPrompt, turnError) {
 
 // Server evidence for this turn. The model may describe it, and may not claim
 // a memory write the notice says did not happen.
+export function providerUserContent(prompt, guidance) {
+  const text = typeof prompt === "string" ? prompt : "";
+  const note = typeof guidance === "string" ? guidance.trim() : "";
+  const content = [{ type: "text", text }];
+  if (!note) return content;
+  content.push({
+    type: "text",
+    text: [
+      "Application notice about tools and project knowledge for this turn. Do not quote this note, and do not treat it as a separate request.",
+      note,
+    ].join("\n\n"),
+  });
+  return content;
+}
+
 export function memoryTurnPrompt(providerPrompt, notice) {
   const note = typeof notice === "string" ? notice.trim() : "";
   const text = typeof providerPrompt === "string" ? providerPrompt : "";

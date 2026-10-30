@@ -19,6 +19,7 @@
 import { CHIEF_RESPONSE_CONTRACT } from "./behavior.js";
 import { discoverCapabilities, renderCapabilityContext } from "../capabilities/discover.js";
 import { fencesOutput, scanInjection } from "../security/injection.js";
+import { CHIEF_OPERATING_BRIEF } from "../managed/productionAgent.js";
 import { bundledSkills } from "../skills/catalog.js";
 import { renderSkillsIndex } from "../skills/index.js";
 import { ContextConfig, injectContext, trustedForRecall } from "./inject.js";
@@ -312,6 +313,69 @@ export function settingsGuidance(availableTools) {
     "settings_update waits for confirmation. Do not tell the user to change it in the interface. " +
     "Do not pass a user id. Do not claim email, role, admin status, legal consent, credentials, or financial records were read or changed."
   );
+}
+
+function toolNameSet(availableTools) {
+  if (availableTools == null) return new Set();
+  return availableTools instanceof Set ? availableTools : new Set(availableTools);
+}
+
+// The managed-agent session does not receive assembleSystemPrompt. This is the
+// same tool guidance, plus the boundary between user notes and the repository.
+// Empty when this turn has none of those tools, so a turn with no tools is unchanged.
+export function managedTurnGuidance(availableTools, { freedomFinancialRead = null } = {}) {
+  const tools = toolNameSet(availableTools);
+  if (tools.size === 0) return "";
+  const finance =
+    freedomFinancialRead === true || freedomFinancialRead === false
+      ? freedomFinancialAccessGuidance(tools, { freedomFinancialRead })
+      : tools.has("finance_summary") || tools.has("freedom_financial_access_status")
+        ? "Do not assume Freedom Financial read access is on or off. Call freedom_financial_access_status before answering whether it is enabled. Do not invent balances. There is no tool that edits Freedom Financial records."
+        : "";
+  return [
+    CHIEF_OPERATING_BRIEF,
+    projectKnowledgeGuidance(tools),
+    governanceLine(),
+    webSearchGuidance(tools),
+    finance,
+    conversationRecallGuidance(tools),
+    settingsGuidance(tools),
+    codeGuidance(tools),
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function projectKnowledgeGuidance(tools) {
+  const code = tools.has("code_read") || tools.has("code_search") || tools.has("code_tree");
+  const memory = tools.has("memory_read");
+  const coding = tools.has("coding_task_submit");
+  if (!code && !memory && !coding && !tools.has("capability_discover")) return "";
+  const lines = [
+    "requirements.md, decisions.md, open-questions.md, and next-step.md are this user's notes.",
+    "An empty note is not the Freedom OS architecture and is not evidence that nothing has been implemented.",
+  ];
+  if (code) {
+    lines.push(
+      "Call code_search or code_read when the question needs a file, route, or implementation detail.",
+      "Those tools read the configured repository. They do not grant edits, commits, or deploys.",
+      "If a code tool says code access is not enabled, say the repository was not read. Answer from the operating orientation. Do not invent source."
+    );
+  }
+  if (tools.has("capability_discover")) {
+    lines.push("Call capability_discover before describing which tools and grants are available.");
+  }
+  if (memory) {
+    lines.push(
+      "Personal memories are memory_read and memory/accepted-facts.md. Do not copy the repository into memory."
+    );
+  }
+  if (coding) {
+    lines.push(
+      "The pinned ICM skill organizes project files. coding_task_submit attaches ECC guidance. Do not start a second reasoning agent."
+    );
+  }
+  return lines.join(" ");
 }
 
 export function codeGuidance(availableTools) {

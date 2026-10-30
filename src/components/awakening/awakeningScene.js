@@ -48,6 +48,7 @@ export function openingAt(ms) {
     backdrop: at(0.01, 0.5),
     eyebrow: at(0.065, 0.18),
     freedom: at(0.14, 0.19),
+    os: at(0.32, 0.24),
     think: at(0.29, 0.2),
     bigger: at(0.46, 0.23),
     description: at(0.66, 0.16),
@@ -162,7 +163,7 @@ function syncDocument(lock){
   const html=document.documentElement;
   const body=document.body;
   html.style.scrollBehavior=reduced?'auto':'smooth';
-  html.style.scrollPaddingTop='85px';
+  html.style.scrollPaddingTop='0px';
   html.style.scrollbarGutter='stable';
   html.style.overflowY=lock?'hidden':savedDoc.htmlOverflow;
   body.style.overflowY=lock?'hidden':savedDoc.bodyOverflow;
@@ -171,11 +172,11 @@ function syncDocument(lock){
 function paintOpening(){
 opening=openingAt(introElapsed);
 introNodes.forEach(el=>{el.style.setProperty('--enter',opening[el.dataset.intro]);if(el.matches('a,button'))el.inert=opening[el.dataset.intro]<.98});
-$('.topnav').style.opacity=opening.controls;$('.topnav').inert=opening.controls<.98;
+const topnav=$('.topnav');if(topnav){topnav.style.opacity=opening.controls;topnav.inert=opening.controls<.98}
 $('.rail').style.opacity=opening.controls;$('.rail').inert=!introDone;
 openingProgress.style.transform=`scaleX(${opening.p})`;
 openingSecond.textContent=String(Math.floor(opening.p*6)).padStart(2,'0');
-const phase=opening.p<.18?'AWAKENING':opening.p<.55?'INTELLIGENCE TAKING SHAPE':opening.p<.88?'FREEDOM TO THINK BIGGER.':'YOUR WORLD, READY.';
+const phase=opening.p<.18?'AWAKENING':opening.p<.55?'INTELLIGENCE TAKING SHAPE':opening.p<.88?'FREEDOM OS':'YOUR WORLD, READY.';
 if(phase!==lastOpeningPhase){openingPhase.textContent=phase;lastOpeningPhase=phase}
 openingRoot.style.opacity=1-smooth((opening.p-.92)/.08);
 root.dataset.opening=introDone?'complete':'playing';
@@ -211,7 +212,7 @@ const freedomCore={x:w*(mobile?.88:.885),y:freedom.scene*(mobile?.185:.215),r:mo
 const entryCore={x:entryRect.x,y:entryRect.top-y+entryRect.height*.5,r:mobile?Math.min(w*.24,112):Math.min(entryRect.width*.34,175),alpha:1};
 let core=blend(heroCore,capCore,toCap);core=blend(core,freedomCore,toFreedom);core=blend(core,entryCore,toEntry);
 state={core,cp,capAlpha,active,freedom:toFreedom*(1-toEntry),flag:.17*(1-toCap)+.83*toFreedom*(1-toEntry)};
-$('.progress i').style.transform=`scaleX(${clamp(y/pageHeight)})`;
+const progress=$('.progress i');if(progress)progress.style.transform=`scaleX(${clamp(y/pageHeight)})`;
 $('.hero-copy').style.opacity=heroAlpha;$('.hero-copy').style.transform=`translateY(${reduced?0:-80*(1-heroAlpha)}px)`;$('.hero-copy').inert=heroAlpha<.05;
 $('.hero-index').style.opacity=heroAlpha*opening.frame;
 $('.orb-note').style.opacity=heroAlpha*opening.note;
@@ -288,9 +289,11 @@ function schedule(){if(!destroyed&&!raf&&!document.hidden)raf=window.requestAnim
 
 function motionUI(){
   const motion=$('#motion');
-  motion.textContent=paused?'▶':'Ⅱ';
-  motion.setAttribute('aria-pressed',String(paused));
-  motion.setAttribute('aria-label',paused?'Resume animation':introDone?'Pause ambient animation':'Pause opening animation');
+  if(motion){
+    motion.textContent=paused?'▶':'Ⅱ';
+    motion.setAttribute('aria-pressed',String(paused));
+    motion.setAttribute('aria-label',paused?'Resume animation':introDone?'Pause ambient animation':'Pause opening animation');
+  }
   root.classList.toggle('paused',paused);
 }
 const listeners=[];

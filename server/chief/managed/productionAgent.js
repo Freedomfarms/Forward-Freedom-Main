@@ -57,7 +57,20 @@ export function toolFingerprint(toolSpecs) {
 
 // Bump only when the protected system text changes. Personality presets do not
 // change this key, so they do not create another agent.
-export const CORE_INSTRUCTION_REVISION = "workspace-memory-and-coding-follow-v4";
+export const CORE_INSTRUCTION_REVISION = "operator-context-and-settled-turns-v6";
+
+// Product contract carried on the managed turn. It is not a repository listing
+// and it does not claim which credentials are configured or what is deployed.
+export const CHIEF_OPERATING_BRIEF = [
+  "Operating orientation. This is the product contract, not a file listing and not proof of which credentials are set or what is currently deployed.",
+  "Freedom OS is the signed-in application. CHIEF is its assistant. One Claude Managed Agent reasons for chat and for scheduled work. There is no second reasoning agent.",
+  "Durable user memory is Postgres: accepted facts and the notes requirements.md, decisions.md, open-questions.md, and next-step.md. The mounted store is a working copy. An empty note means the user has not stored a decision there. It is not the Freedom OS architecture.",
+  "Live account figures come from finance_summary only when Freedom Financial read access is on. Historical spending is a different field. No tool edits financial records.",
+  "Public facts come from web_search. File-level repository detail comes from code_tree, code_read, and code_search. Those reads cannot edit, commit, push, or deploy.",
+  "A code change is coding_task_submit. It asks Cursor to open a pull request and attaches ECC guidance. The pinned ICM skill organizes project files. Confirmation is required. CHIEF does not merge or deploy.",
+  "capability_discover and settings_read report grants, connectors, timezone, and voice configuration. Do not guess that a connector, token, or check is present.",
+  "Spoken audio is a separate delivery of the written answer. A speech failure leaves the written answer in place.",
+].join(" ");
 
 export function agentKeyFor(toolSpecs) {
   const digest = createHash("sha256")
@@ -126,6 +139,7 @@ export function productionAgentBody({
       "You are CHIEF for Forward Freedom Financial.",
       "Reason and plan in this session. You are the only reasoning agent. Do not invent a swarm.",
       "Read the mounted memory store before answering. Project files and skills live there.",
+      "Answer questions about what CHIEF is and how Freedom OS is operated from the operating orientation on the turn. Use code_search or code_read for a file or implementation detail. If code access is not enabled, say the repository was not read and stay with the orientation. Do not invent files, endpoints, balances, or deployment state. Do not copy the repository into personal memory.",
       "Use the workspace tools for files and the custom tools for this user's accounts, schedule, and other CHIEF actions.",
       "A code explanation, a search, or a question about how the site works is not a decision. Do not write decisions.md, requirements.md, open-questions.md, or next-step.md for it.",
       "Read a workspace file in this turn before changing it. An unread replacement is restored afterward to the previous text. A concurrent edit that is not that replacement is kept.",
@@ -176,6 +190,7 @@ export function productionSessionBody({
   memoryStoreId,
   sessionId,
   prompt,
+  content = null,
   instructions,
 }) {
   if (!agentVersion) {
@@ -196,7 +211,13 @@ export function productionSessionBody({
       },
     ],
     initial_events: prompt
-      ? [{ type: "user.message", content: [{ type: "text", text: prompt }] }]
+      ? [
+          {
+            type: "user.message",
+            content:
+              Array.isArray(content) && content.length ? content : [{ type: "text", text: prompt }],
+          },
+        ]
       : undefined,
     metadata: { freedom_os_key: `session:${sessionId}` },
   };

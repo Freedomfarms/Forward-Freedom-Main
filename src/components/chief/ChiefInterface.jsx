@@ -135,6 +135,7 @@ export function ChiefInterface({
   onSend,
   onMic,
   listening = false,
+  audioLevelRef = null,
   composerDisabled = false,
   generating = false,
   onStopTurn,
@@ -144,7 +145,6 @@ export function ChiefInterface({
   onAttach,
   reducedMotion = false,
   showSystemStatus = true,
-  systemStatus = {},
   quickActions = [],
   conversation = null,
   workspace = null,
@@ -186,12 +186,6 @@ export function ChiefInterface({
   const trimmed = typeof message === "string" ? message.trim() : "";
   const stopping = Boolean(generating && onStopTurn);
   const newConversation = quickActions.find((item) => item.id === "new-conversation");
-  const metricBits = [
-    ["Tools", systemStatus.tools],
-    ["Web", systemStatus.network],
-  ].flatMap(([label, value]) =>
-    typeof value === "string" && value.trim() ? [`${label} ${value.trim()}`] : []
-  );
 
   useFrontierScene({
     rootRef,
@@ -201,6 +195,7 @@ export function ChiefInterface({
     activity,
     paused: paused || reduced,
     reduced,
+    levelRef: audioLevelRef,
   });
 
   useEffect(() => {
@@ -530,13 +525,6 @@ export function ChiefInterface({
                   )}
                 </div>
               ) : null}
-              <div className="dock-foot">
-                <span>
-                  <Icon name="core" />
-                  {enterToSend ? "ENTER TO SEND" : "CLICK SEND"}
-                </span>
-                <span>{metricBits.join("  ·  ") || status}</span>
-              </div>
             </div>
           </section>
 
@@ -640,18 +628,6 @@ export function ChiefInterface({
             </div>
           </aside>
         </div>
-
-        <footer className="statusbar">
-          <span>
-            <i className="small-light" />
-            {status}
-          </span>
-          <span className="footer-center">FREEDOM OS</span>
-          <span>
-            {accessLine || "CHIEF"}
-            <span className="footer-cross">+</span>
-          </span>
-        </footer>
       </div>
       <p className="chief-sr" aria-live="polite">
         {String(assistantState || "idle")}

@@ -61,6 +61,16 @@ test("CHIEF home mounts the supplied interface on the existing conversation path
   assert.match(face, /prefers-reduced-motion|is-reduced-motion/);
   assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
   assert.match(css, /\.chief-frontier \.composer/);
+  const stageStart = face.indexOf("className={`core-stage");
+  const stageMarkup = face.slice(stageStart, face.indexOf('className="conversation-dock"'));
+  assert.match(stageMarkup, /response-card/);
+  assert.match(stageMarkup, /chief-workspace-slot/);
+  assert.match(css, /\.chief-frontier \.response-card \{[^}]*position:\s*absolute/);
+  assert.match(css, /\.chief-frontier \.response-card \{[^}]*top:\s*91%/);
+  assert.doesNotMatch(face, /dock-foot|statusbar|ENTER TO SEND|CLICK SEND/);
+  assert.doesNotMatch(css, /\.has-response \.core-anchor|\.has-response\.core-anchor/);
+  assert.match(css, /\.chief-frontier \.core-anchor \{[^}]*top:\s*56%/);
+  assert.match(css, /\.context-grid > button \{[^}]*padding:\s*6px 7px/);
   assert.doesNotMatch(css, /^\.chief-composer \{/m);
   assert.match(css, /\.chief-frontier \.workspace\s*\{[^}]*display:\s*grid/);
   assert.doesNotMatch(css, /margin-top:\s*-/);

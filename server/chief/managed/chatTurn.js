@@ -27,6 +27,7 @@ import { providerErrorFields } from "./redact.js";
 import { createPrismaWorkQueue } from "./workQueue.js";
 import { syncPersonalityMemory } from "../personality/memory.js";
 import {
+  confirmManagedWorkspaceTool,
   restoreWorkspaceWrites,
   snapshotGuardedMemories,
   workspaceFileName,
@@ -36,13 +37,17 @@ import {
   fittedPersonalityGuidance,
   memoryTurnPrompt,
   personalityDelivery,
+  providerUserContent,
   undeliveredTurnPrompt,
 } from "./personalityDelivery.js";
+import { managedTurnGuidance } from "../context/assemble.js";
+import { PrismaModuleAccess } from "../security/module-access.js";
 import { planUserMemory } from "../memory/commands.js";
 import {
   normalizeChiefPersonality,
   personalityDigest,
 } from "../../../src/utils/chiefPersonality.js";
+import { classifyChiefFailure, UNFINISHED_TURN_MESSAGE } from "../../../src/utils/chiefErrors.js";
 import { MISSING_CHIEF_ANSWER } from "../../../src/utils/chiefProtocol.js";
 import { SCHEDULED_TURN_EXCLUDED_TOOLS } from "../tools/inventory.js";
 import { ICM_ARCHITECT_PIN } from "./constants.js";
@@ -263,8 +268,26 @@ function appendAssistant(checkpoint, text) {
   if (!text) return;
   const transcript = checkpoint.transcript;
   const last = transcript[transcript.length - 1];
-  if (last?.role === "assistant" && last.content === text) return;
-  transcript.push({ role: "assistant", content: text });
+  if (!(last?.role === "assistant" && last.content === text)) {
+    transcript.push({ role: "assistant", content: text });
+  }
+  if (!checkpoint.context || typeof checkpoint.context !== "object") checkpoint.context = {};
+  // Text that arrives after a tool belongs to that tool round. A preamble that
+  // arrived earlier stays behind toolRound, so a later fault cannot treat it
+  // as the finished answer.
+  checkpoint.context.answeredRound = Number(checkpoint.context.toolRound || 0);
+}
+
+function syncToolWait(checkpoint, fresh, seen = null) {
+  if (!checkpoint.context || typeof checkpoint.context !== "object") checkpoint.context = {};
+  const open = unresolvedToolUse(fresh, seen);
+  if (open && checkpoint.context.sawOpenTool !== true) {
+    checkpoint.context.toolRound = Number(checkpoint.context.toolRound || 0) + 1;
+    checkpoint.context.sawOpenTool = true;
+  }
+  if (!open) checkpoint.context.sawOpenTool = false;
+  checkpoint.context.awaitingTool =
+    Number(checkpoint.context.toolRound || 0) > Number(checkpoint.context.answeredRound || 0);
 }
 
 const ACTIVE_PROVIDER = new Set(["running", "rescheduling", "working", "in_progress"]);
@@ -414,11 +437,65 @@ function turnHasAssistantAnswer(checkpoint) {
   return false;
 }
 
+// A preamble before tools stays on an earlier round. Text written after the
+// current tool round is the answer those tools were for.
+function postToolAnswerSettled(checkpoint, openTools = false) {
+  if (openTools || checkpoint?.context?.awaitingTool === true) return false;
+  const round = Number(checkpoint?.context?.toolRound || 0);
+  const answered = Number(checkpoint?.context?.answeredRound || 0);
+  if (round <= 0 || answered < round) return false;
+  return turnHasAssistantAnswer(checkpoint);
+}
+
+// The provider closed the session after writing the answer. An open tool or a
+// still-running session is not that close.
+function providerClosedAnswer(checkpoint, session, openTools = false) {
+  if (openTools || sessionIsActive(session) || checkpoint?.context?.awaitingTool === true) {
+    return false;
+  }
+  return turnHasAssistantAnswer(checkpoint);
+}
+
+function settleFinishedAnswer(checkpoint) {
+  const watch = turnWatchOf(checkpoint);
+  if (watch) watch.settled = true;
+  if (!checkpoint.context || typeof checkpoint.context !== "object") checkpoint.context = {};
+  checkpoint.context.turnFaults = 0;
+  checkpoint.context.awaitingTool = false;
+  checkpoint.context.turnFailureMessage = "";
+}
+
 const TERMINAL_STOP_MESSAGE = Object.freeze({
   refusal: "CHIEF declined that request.",
   retries_exhausted: "CHIEF could not finish that response.",
   budget_reached: "CHIEF stopped because the response budget was reached.",
 });
+function quietWorkspaceError(error) {
+  const message = String(error?.message || "");
+  return (
+    error?.code === "P1000" ||
+    error?.code === "P1001" ||
+    error?.code === "P2021" ||
+    error?.code === "P2003" ||
+    message.includes("not configured") ||
+    message.includes("does not exist") ||
+    message.includes("Encryption is not configured") ||
+    message.includes("Cannot read properties")
+  );
+}
+
+function logHandledFailure(scope, error, extras = {}) {
+  const logged = providerErrorFields(error, extras);
+  if (quietWorkspaceError(error) && logged.category === "unknown") return;
+  console.error(
+    scope,
+    logged.component,
+    logged.category,
+    logged.operation,
+    logged.correlationId,
+    logged.status || error?.code || "failed"
+  );
+}
 
 // A turn is done when the provider is idle for this turn's own end_turn.
 // listEvents returns the whole session, so an older session.status_idle must
@@ -426,7 +503,131 @@ const TERMINAL_STOP_MESSAGE = Object.freeze({
 // session with stop_reason requires_action; that idle is not the answer, even
 // after the session has already been seen running. refusal, retries_exhausted,
 // and budget_reached are terminal failures, not a cue to keep polling.
-function freshStop(events, watch, session) {
+const CONFIRMABLE_AGENT_TOOLS = new Set(["read", "write", "edit", "glob", "grep"]);
+const TURN_FAULT_LIMIT = 3;
+
+function permissionOf(event) {
+  const value = event?.evaluated_permission ?? event?.evaluatedPermission;
+  if (typeof value === "string") return value;
+  if (value && typeof value === "object" && typeof value.type === "string") return value.type;
+  return "";
+}
+
+function retryStatusOf(event) {
+  const value = event?.error?.retry_status ?? event?.error?.retryStatus;
+  if (typeof value === "string") return value;
+  if (value && typeof value === "object" && typeof value.type === "string") return value.type;
+  return "";
+}
+
+// A built-in or custom tool still waiting on this turn is not an answer.
+// An older session's resolved calls are ignored by the caller, which passes
+// only the events that belong to the current turn.
+function hasSeen(seen, id) {
+  if (!seen || !id) return false;
+  if (typeof seen.has === "function") return seen.has(id);
+  return Array.isArray(seen) && seen.includes(id);
+}
+
+function unresolvedToolUse(events, seen = null) {
+  const done = new Set();
+  for (const event of events || []) {
+    const id = event?.tool_use_id || event?.custom_tool_use_id || event?.mcp_tool_use_id;
+    if (!id) continue;
+    if (
+      event?.type === "agent.tool_result" ||
+      event?.type === "agent.mcp_tool_result" ||
+      event?.type === "user.tool_confirmation" ||
+      event?.type === "user.custom_tool_result" ||
+      event?.type === "user.tool_result"
+    ) {
+      done.add(id);
+    }
+  }
+  return (events || []).some((event) => {
+    if (
+      event?.type !== "agent.tool_use" &&
+      event?.type !== "agent.custom_tool_use" &&
+      event?.type !== "agent.mcp_tool_use"
+    ) {
+      return false;
+    }
+    if (permissionOf(event) === "deny") return false;
+    // A confirmation or custom result we already sent is not still open,
+    // even when the provider has not echoed it back into the event list.
+    if (hasSeen(seen, event.id)) return false;
+    return Boolean(event.id) && !done.has(event.id);
+  });
+}
+
+function blockingIds(events) {
+  const idle = latestIdleEvent(events);
+  const ids = idle?.stop_reason?.event_ids;
+  if (!Array.isArray(ids)) return new Set();
+  return new Set(ids.filter((id) => typeof id === "string" && id));
+}
+
+function toolResultText(output) {
+  const text = typeof output === "string" ? output : "";
+  if (!text.trim()) return "Tool returned no output.";
+  return text.slice(0, 20_000);
+}
+
+function toolEventResolved(events, id) {
+  return (events || []).some((event) => {
+    const matched = event?.tool_use_id || event?.custom_tool_use_id || event?.mcp_tool_use_id;
+    if (matched !== id) return false;
+    return (
+      event?.type === "agent.tool_result" ||
+      event?.type === "agent.mcp_tool_result" ||
+      event?.type === "user.tool_confirmation" ||
+      event?.type === "user.custom_tool_result" ||
+      event?.type === "user.tool_result"
+    );
+  });
+}
+
+// Cloud file tools are configured always_allow. A session that still pauses
+// with ask/auto (or a bare requires_action id) is confirmed only when the
+// path stays inside the memory workspace. A guarded file, a host path, or
+// any other tool is not granted by that ask.
+function confirmableBuiltinTool(event, events) {
+  if (event?.type !== "agent.tool_use" || typeof event.id !== "string" || !event.id) return null;
+  const name = typeof event.name === "string" && event.name ? event.name : event.tool_name;
+  if (typeof name !== "string" || !CONFIRMABLE_AGENT_TOOLS.has(name)) return null;
+  if (toolEventResolved(events, event.id)) return null;
+  const permission = permissionOf(event);
+  if (permission === "allow" || permission === "always_allow" || permission === "deny") return null;
+  const ask = permission === "ask" || permission === "always_ask" || permission === "auto";
+  if (!ask && !(permission === "" && blockingIds(events).has(event.id))) return null;
+  const input = event.input && typeof event.input === "object" ? event.input : {};
+  const decision = confirmManagedWorkspaceTool(name, input);
+  if (decision !== "allow" && decision !== "deny") return null;
+  return { id: event.id, name, input, decision };
+}
+
+async function sendCustomToolResult(client, providerSessionId, call, executed) {
+  const payload = (text, isError) => [
+    {
+      type: "user.custom_tool_result",
+      custom_tool_use_id: call.id,
+      content: [{ type: "text", text }],
+      is_error: isError,
+    },
+  ];
+  const text = toolResultText(executed.output);
+  try {
+    await client.sendEvents(providerSessionId, payload(text, executed.isError === true));
+  } catch (error) {
+    if (error?.status !== 400) throw error;
+    await client.sendEvents(
+      providerSessionId,
+      payload("Tool result could not be delivered.", true)
+    );
+  }
+}
+
+function freshStop(events, watch, session, seen = null) {
   if (!sessionIsIdle(session)) return null;
   const fresh = freshProviderEvents(events, watch?.baselineIds);
   const idle = latestIdleEvent(fresh);
@@ -438,14 +639,18 @@ function freshStop(events, watch, session) {
     return { kind: "failed", message: TERMINAL_STOP_MESSAGE[reason] };
   }
   if (reason !== "") return null;
+  // No stop reason yet, and a tool from this turn is still open. The preamble
+  // already streamed is not the answer. Tools this turn already confirmed or
+  // answered are not still open.
+  if (unresolvedToolUse(fresh, seen || watch?.handledToolIds)) return null;
   if (watch?.sawRunning === true || fresh.some((event) => event?.type === "agent.message")) {
     return { kind: "end_turn" };
   }
   return null;
 }
 
-function currentTurnSettled(events, watch, session) {
-  return freshStop(events, watch, session)?.kind === "end_turn";
+function currentTurnSettled(events, watch, session, seen = null) {
+  return freshStop(events, watch, session, seen)?.kind === "end_turn";
 }
 
 function previousTurnInFlight(checkpoint) {
@@ -478,6 +683,22 @@ function annotateProviderError(error, fields) {
   return error;
 }
 
+function jsonSafe(value) {
+  try {
+    return JSON.parse(
+      JSON.stringify(value ?? null, (_key, item) => {
+        if (typeof item === "string") return item.replaceAll("\u0000", "");
+        if (typeof item === "bigint") return item.toString();
+        if (typeof item === "number" && !Number.isFinite(item)) return null;
+        if (typeof item === "function" || typeof item === "symbol") return undefined;
+        return item;
+      })
+    );
+  } catch {
+    return value;
+  }
+}
+
 async function persistCheckpoint(store, userId, sessionId, checkpoint) {
   const fresh = await store.load(userId, sessionId);
   const disk = fresh?.checkpoint;
@@ -499,29 +720,26 @@ async function persistCheckpoint(store, userId, sessionId, checkpoint) {
     ]);
     checkpoint.context.seenEventIds = [...seen];
   }
-  await store.saveWithEvents(userId, sessionId, { checkpoint });
+  await store.saveWithEvents(userId, sessionId, { checkpoint: jsonSafe(checkpoint) });
+}
+
+// A checkpoint write must not erase a turn the user has already seen.
+async function saveTurnCheckpoint(store, userId, sessionId, checkpoint) {
+  try {
+    await persistCheckpoint(store, userId, sessionId, checkpoint);
+    return true;
+  } catch (error) {
+    console.error("[chief/checkpoint]", error?.code || error?.name || "failed");
+    return false;
+  }
 }
 
 async function rememberHeldPrompt(store, userId, sessionId, text) {
   const fresh = await store.load(userId, sessionId);
   if (!fresh?.checkpoint) return null;
   queueHeldPrompt(fresh.checkpoint, text);
-  await store.saveWithEvents(userId, sessionId, { checkpoint: fresh.checkpoint });
+  await saveTurnCheckpoint(store, userId, sessionId, fresh.checkpoint);
   return fresh.checkpoint;
-}
-
-function quietWorkspaceError(error) {
-  const message = String(error?.message || "");
-  return (
-    error?.code === "P1000" ||
-    error?.code === "P1001" ||
-    error?.code === "P2021" ||
-    error?.code === "P2003" ||
-    message.includes("not configured") ||
-    message.includes("does not exist") ||
-    message.includes("Encryption is not configured") ||
-    message.includes("Cannot read properties")
-  );
 }
 
 async function seedWorkspace(client, memoryStoreId, plan = null) {
@@ -648,9 +866,10 @@ async function ensureResources({
     try {
       authority = await loadWorkspaceAuthority({ userId, documentStore, factStore });
     } catch (error) {
-      if (!quietWorkspaceError(error)) {
-        console.error("[chief/workspace] authority", error?.code || error?.status || "unavailable");
-      }
+      logHandledFailure("[chief/workspace] authority", error, {
+        component: "workspace",
+        operation: "authority",
+      });
     }
   }
   const newStore = !managed?.workspaceSeeded || managed.memoryStoreId !== memory.id;
@@ -661,9 +880,10 @@ async function ensureResources({
         try {
           await documentStore.insertIfAbsent({ userId, path, content: file.content });
         } catch (error) {
-          if (!quietWorkspaceError(error)) {
-            console.error("[chief/workspace] bootstrap", error?.code || "failed");
-          }
+          logHandledFailure("[chief/workspace] bootstrap", error, {
+            component: "workspace",
+            operation: "bootstrap",
+          });
         }
       }
     }
@@ -761,6 +981,7 @@ async function collect({
   const seen = new Set(checkpoint.context.seenEventIds || []);
   const deadline = Date.now() + budgetMs;
   let spins = 0;
+  let pausedOnConfirmed = false;
   while (spins < 70 && Date.now() <= deadline) {
     spins += 1;
     if (signal?.aborted) {
@@ -811,9 +1032,10 @@ async function collect({
             checkpoint.context.workspaceCommittedSignature = signature;
           }
         } catch (error) {
-          if (!quietWorkspaceError(error)) {
-            console.error("[chief/workspace] persist", error?.code || error?.status || "failed");
-          }
+          logHandledFailure("[chief/workspace] persist", error, {
+            component: "workspace",
+            operation: "persist",
+          });
         }
       }
     }
@@ -840,6 +1062,108 @@ async function collect({
       }
       appendAssistant(checkpoint, answer);
       seen.add(eventId);
+    }
+    const watch = turnWatchOf(checkpoint) || {
+      baselineIds: [],
+      sawRunning: false,
+      settled: false,
+    };
+    if (!checkpoint.context.turnWatch) checkpoint.context.turnWatch = watch;
+    if (sessionIsActive(session)) watch.sawRunning = true;
+    const liveStatus = providerStatus(session);
+    if (liveStatus) checkpoint.context.providerStatus = liveStatus;
+    const fresh = freshProviderEvents(events, watch.baselineIds);
+    if (!Array.isArray(watch.handledToolIds)) watch.handledToolIds = [];
+    syncToolWait(checkpoint, fresh, seen);
+    for (const event of fresh) {
+      if (event?.type !== "session.error") continue;
+      const retry = retryStatusOf(event);
+      if (retry !== "retrying" && retry !== "exhausted") continue;
+      seen.add(event.id || `session-error:${retry}`);
+    }
+    const faultEvent = fresh.find((event) => {
+      const kind =
+        event?.type === "session.status_terminated"
+          ? "terminated"
+          : event?.type === "session.error" && retryStatusOf(event) === "terminal"
+            ? "terminal"
+            : "";
+      if (!kind) return false;
+      return !seen.has(event.id || `session-fault:${kind}`);
+    });
+    if (faultEvent) {
+      const kind = faultEvent.type === "session.status_terminated" ? "terminated" : "terminal";
+      seen.add(faultEvent.id || `session-fault:${kind}`);
+      checkpoint.context.seenEventIds = [...seen];
+      const faultStop = freshStop(events, watch, session, seen);
+      const faultOpen = unresolvedToolUse(fresh, seen);
+      if (
+        (faultStop?.kind === "end_turn" && turnHasAssistantAnswer(checkpoint) && !faultOpen) ||
+        postToolAnswerSettled(checkpoint, faultOpen) ||
+        providerClosedAnswer(checkpoint, session, faultOpen)
+      ) {
+        if (faultStop?.kind !== "end_turn") {
+          logHandledFailure(
+            "[chief/turn] supporting-fault",
+            { message: kind, code: kind, operation: "session_fault" },
+            { component: "managed_agent", operation: "session_fault" }
+          );
+        }
+        settleFinishedAnswer(checkpoint);
+        return "completed";
+      }
+      watch.settled = true;
+      checkpoint.context.turnFailureMessage = UNFINISHED_TURN_MESSAGE;
+      return "failed";
+    }
+    const builtin = fresh.find((event) => {
+      const tool = confirmableBuiltinTool(event, events);
+      return tool && !seen.has(tool.id);
+    });
+    const builtinCall = builtin ? confirmableBuiltinTool(builtin, events) : null;
+    if (builtinCall) {
+      checkpoint.context.awaitingTool = true;
+      onEmit(
+        eventMsg.toolCallBegin({
+          turnId,
+          callId: builtinCall.id,
+          name: builtinCall.name,
+          args: builtinCall.input,
+        })
+      );
+      const allowed = builtinCall.decision === "allow";
+      if (!allowed) {
+        logHandledFailure(
+          "[chief/workspace] deny",
+          {
+            message: "workspace tool denied",
+            code: "workspace_denied",
+            operation: builtinCall.name,
+          },
+          { component: "workspace", operation: builtinCall.name, turnId, sessionId }
+        );
+      }
+      await client.sendEvents(providerSessionId, [
+        {
+          type: "user.tool_confirmation",
+          tool_use_id: builtinCall.id,
+          result: allowed ? "allow" : "deny",
+        },
+      ]);
+      seen.add(builtinCall.id);
+      if (!watch.handledToolIds.includes(builtinCall.id)) watch.handledToolIds.push(builtinCall.id);
+      onEmit(
+        eventMsg.toolCallEnd({
+          turnId,
+          callId: builtinCall.id,
+          name: builtinCall.name,
+          output: allowed ? "Allowed." : "Not permitted.",
+          isError: !allowed,
+        })
+      );
+      checkpoint.context.seenEventIds = [...seen];
+      if (store) await saveTurnCheckpoint(store, userId, sessionId, checkpoint);
+      continue;
     }
     const toolEvent = events.find((event) => {
       const call = toolCallOf(event);
@@ -900,42 +1224,60 @@ async function collect({
           isError: executed.isError,
         })
       );
-      await client.sendEvents(providerSessionId, [
-        {
-          type: "user.custom_tool_result",
-          custom_tool_use_id: call.id,
-          content: [{ type: "text", text: executed.output }],
-          is_error: executed.isError,
-        },
-      ]);
+      await sendCustomToolResult(client, providerSessionId, call, executed);
       seen.add(call.id);
+      if (!watch.handledToolIds) watch.handledToolIds = [];
+      if (!watch.handledToolIds.includes(call.id)) watch.handledToolIds.push(call.id);
       checkpoint.pendingApproval = null;
       checkpoint.context.seenEventIds = [...seen];
       checkpoint.executionStats = {
         modelSteps: checkpoint.executionStats?.modelSteps ?? 0,
         toolCalls: (checkpoint.executionStats?.toolCalls ?? 0) + (excluded ? 0 : 1),
       };
-      if (store) await persistCheckpoint(store, userId, sessionId, checkpoint);
+      if (store) await saveTurnCheckpoint(store, userId, sessionId, checkpoint);
       continue;
     }
-    const watch = turnWatchOf(checkpoint) || {
-      baselineIds: [],
-      sawRunning: false,
-      settled: false,
-    };
-    if (!checkpoint.context.turnWatch) checkpoint.context.turnWatch = watch;
-    if (sessionIsActive(session)) watch.sawRunning = true;
-    const liveStatus = providerStatus(session);
-    if (liveStatus) checkpoint.context.providerStatus = liveStatus;
-    const stop = freshStop(events, watch, session);
-    if (stop?.kind === "end_turn" || stop?.kind === "failed") {
+    const openTools = unresolvedToolUse(fresh, seen);
+    syncToolWait(checkpoint, fresh, seen);
+    const stop = freshStop(events, watch, session, seen);
+    if (stop?.kind === "pause") {
+      const ids = blockingIds(fresh);
+      const pending = [...ids].filter((id) => !seen.has(id));
+      pausedOnConfirmed = ids.size > 0 && pending.length === 0;
+    } else {
+      pausedOnConfirmed = false;
+    }
+    if (stop?.kind === "failed" && openTools) {
       watch.settled = true;
       checkpoint.context.seenEventIds = [...seen];
+      checkpoint.context.turnFailureMessage = stop.message;
       checkpoint.executionStats = {
         modelSteps: (checkpoint.executionStats?.modelSteps ?? 0) + 1,
         toolCalls: checkpoint.executionStats?.toolCalls ?? 0,
       };
-      if (turnHasAssistantAnswer(checkpoint)) return "completed";
+      return "failed";
+    }
+    if (stop?.kind === "end_turn" || stop?.kind === "failed") {
+      if (stop.kind === "end_turn" && !turnHasAssistantAnswer(checkpoint) && openTools) {
+        if (Date.now() >= deadline) {
+          checkpoint.context.seenEventIds = [...seen];
+          return "continuing";
+        }
+        await sleepFn(400);
+        continue;
+      }
+      watch.settled = true;
+      checkpoint.context.seenEventIds = [...seen];
+      checkpoint.context.confirmWaits = 0;
+      checkpoint.executionStats = {
+        modelSteps: (checkpoint.executionStats?.modelSteps ?? 0) + 1,
+        toolCalls: checkpoint.executionStats?.toolCalls ?? 0,
+      };
+      if (turnHasAssistantAnswer(checkpoint)) {
+        checkpoint.context.awaitingTool = false;
+        checkpoint.context.turnFaults = 0;
+        return "completed";
+      }
       if (stop.kind === "failed") {
         checkpoint.context.turnFailureMessage = stop.message;
         return "failed";
@@ -946,6 +1288,16 @@ async function collect({
     await sleepFn(400);
   }
   checkpoint.context.seenEventIds = [...seen];
+  if (pausedOnConfirmed) {
+    const waits = Number(checkpoint.context.confirmWaits || 0) + 1;
+    checkpoint.context.confirmWaits = waits;
+    if (waits >= TURN_FAULT_LIMIT) {
+      const watch = turnWatchOf(checkpoint);
+      if (watch) watch.settled = true;
+      checkpoint.context.turnFailureMessage = "CHIEF could not finish that response.";
+      return "failed";
+    }
+  }
   return "continuing";
 }
 
@@ -995,6 +1347,7 @@ export async function runManagedChiefTurn({
   readPersonality = readChiefPersonality,
   documentStore = null,
   factStore = null,
+  moduleAccess = null,
 } = {}) {
   const documents = documentStore || createPrismaWorkspaceDocumentStore();
   const facts = factStore || new PrismaFactStore();
@@ -1267,7 +1620,7 @@ export async function runManagedChiefTurn({
         watch &&
         previousTurnInFlight(checkpoint) &&
         sessionIsIdle(session) &&
-        currentTurnSettled(priorEvents, watch, session)
+        currentTurnSettled(priorEvents, watch, session, checkpoint.context.seenEventIds)
       ) {
         watch.settled = true;
       }
@@ -1293,6 +1646,7 @@ export async function runManagedChiefTurn({
       sawRunning: false,
       dispatched: false,
       settled: false,
+      handledToolIds: [],
     };
     turnId = nextTurnId;
     ensureUserMessage(checkpoint, text);
@@ -1356,8 +1710,13 @@ export async function runManagedChiefTurn({
       try {
         listed = (await client.listMemories(managed.memoryStoreId)) || [];
         checkpoint.context.workspaceSnapshot = snapshotGuardedMemories(listed);
-      } catch {
-        // A failed listing leaves the previous snapshot in place.
+      } catch (error) {
+        logHandledFailure("[chief/memory]", error, {
+          component: "memory",
+          operation: "listMemories",
+          turnId,
+          sessionId,
+        });
       }
       if (listed && managed.pendingFacts) {
         try {
@@ -1368,9 +1727,12 @@ export async function runManagedChiefTurn({
           if (!published.preserved && published.sha) managed.acceptedFactsSha = published.sha;
           managed.pendingFacts = null;
         } catch (error) {
-          if (!quietWorkspaceError(error)) {
-            console.error("[chief/workspace] facts", error?.status || error?.code || "failed");
-          }
+          logHandledFailure("[chief/memory]", error, {
+            component: "memory",
+            operation: "facts",
+            turnId,
+            sessionId,
+          });
         }
       }
       try {
@@ -1386,6 +1748,7 @@ export async function runManagedChiefTurn({
         checkpoint.context.workspaceBaseHashes = null;
       }
     }
+    const guidance = await turnGuidance(userId, resolvedSpecs, moduleAccess);
     try {
       await openOrContinue({
         client,
@@ -1393,6 +1756,7 @@ export async function runManagedChiefTurn({
         checkpoint,
         sessionId: record.id,
         prompt: providerPrompt,
+        guidance,
         instructions: personalityState.instructions,
       });
     } catch (error) {
@@ -1411,10 +1775,10 @@ export async function runManagedChiefTurn({
         );
         return "held";
       }
-      if (retryableProviderError(error)) {
+      if (retryableProviderError(error) || error?.name === "AbortError") {
         rememberTurnStatus(checkpoint, "continuing");
         checkpoint.context.managed = managed;
-        await persistCheckpoint(store, userId, record.id, checkpoint);
+        await saveTurnCheckpoint(store, userId, record.id, checkpoint);
         return "stop";
       }
       throw error;
@@ -1506,18 +1870,53 @@ export async function runManagedChiefTurn({
       checkpoint.context.managed = managed;
       if (reason) {
         rememberTurnStatus(checkpoint, "aborted");
-        await persistCheckpoint(store, userId, record.id, checkpoint);
+        await saveTurnCheckpoint(store, userId, record.id, checkpoint);
         leaseStatus = "aborted";
         emit(eventMsg.turnAborted(turnWatchOf(checkpoint)?.turnId || turnId, reason));
         return { sessionId: record.id, status: "aborted", abortReason: reason, checkpoint };
       }
-      if (retryableProviderError(error)) {
+      const soft = retryableProviderError(error) || error?.name === "AbortError";
+      const dispatched = turnWatchOf(checkpoint)?.dispatched === true;
+      if (dispatched && postToolAnswerSettled(checkpoint)) {
+        logHandledFailure("[chief/turn] supporting-fault", error, {
+          component: "managed_agent",
+          operation: "collect",
+        });
+        settleFinishedAnswer(checkpoint);
+        status = "completed";
+      } else if (soft) {
         rememberTurnStatus(checkpoint, "continuing");
-        await persistCheckpoint(store, userId, record.id, checkpoint);
+        await saveTurnCheckpoint(store, userId, record.id, checkpoint);
         status = "continuing";
+      } else if (dispatched && scheduleCaller?.kind !== "schedule") {
+        const faults = Number(checkpoint.context.turnFaults || 0) + 1;
+        checkpoint.context.turnFaults = faults;
+        const logged = providerErrorFields(error, { component: "managed_agent" });
+        console.error(
+          "[chief/turn]",
+          logged.operation,
+          logged.status,
+          logged.stage,
+          logged.category,
+          logged.component,
+          logged.correlationId,
+          logged.message
+        );
+        const watch = turnWatchOf(checkpoint);
+        if (faults >= TURN_FAULT_LIMIT) {
+          if (watch) watch.settled = true;
+          // Streamed text is not a finished answer. The transcript keeps the
+          // partial reply, and the turn stays failed so it is not spoken.
+          checkpoint.context.turnFailureMessage = UNFINISHED_TURN_MESSAGE;
+          status = "failed";
+        } else {
+          rememberTurnStatus(checkpoint, "continuing");
+          status = "continuing";
+        }
+        await saveTurnCheckpoint(store, userId, record.id, checkpoint);
       } else {
         rememberTurnStatus(checkpoint, checkpoint.context.turnStatus || "running");
-        await persistCheckpoint(store, userId, record.id, checkpoint);
+        await saveTurnCheckpoint(store, userId, record.id, checkpoint);
         throw error;
       }
     }
@@ -1525,15 +1924,18 @@ export async function runManagedChiefTurn({
     checkpoint.context.managed = managed;
     rememberTurnStatus(checkpoint, status);
     if (status === "completed") {
-      if (checkpoint.context.turnError) checkpoint.context.turnError = "";
+      checkpoint.context.turnError = "";
       checkpoint.context.turnFailureMessage = "";
+      checkpoint.context.turnFaults = 0;
+      checkpoint.context.awaitingTool = false;
+      checkpoint.context.confirmWaits = 0;
     } else if (status === "empty") {
       checkpoint.context.turnError = MISSING_CHIEF_ANSWER;
     } else if (status === "failed") {
       checkpoint.context.turnError =
         checkpoint.context.turnFailureMessage || TERMINAL_STOP_MESSAGE.retries_exhausted;
     }
-    await persistCheckpoint(store, userId, record.id, checkpoint);
+    await saveTurnCheckpoint(store, userId, record.id, checkpoint);
     await persistThread(threadStore, userId, record.id, managed, status);
     leaseStatus = status;
     if (status === "continuing") {
@@ -1547,11 +1949,19 @@ export async function runManagedChiefTurn({
     if (status === "completed") {
       emit(eventMsg.turnComplete(turnWatchOf(checkpoint)?.turnId || turnId));
     } else if (status === "empty" || status === "failed") {
+      const failure = classifyChiefFailure({
+        message: checkpoint.context.turnError,
+        turnStatus: status,
+        component: "turn",
+        operation: "turn",
+      });
       emit(
         eventMsg.error({
           kind: status,
-          message: checkpoint.context.turnError,
+          message: failure.known ? failure.message : checkpoint.context.turnError,
           retryable: false,
+          category: failure.category,
+          duration: failure.duration,
         })
       );
     }
@@ -1580,7 +1990,43 @@ async function loadTurnPersonality(userId, readPersonality) {
   };
 }
 
-async function openOrContinue({ client, managed, checkpoint, sessionId, prompt, instructions }) {
+async function freedomFinancialReadState(userId, moduleAccess) {
+  const reader = moduleAccess?.isFreedomFinancialReadEnabled
+    ? moduleAccess
+    : process.env.DATABASE_URL
+      ? new PrismaModuleAccess()
+      : null;
+  if (!reader) return null;
+  try {
+    return (await reader.isFreedomFinancialReadEnabled(userId)) === true;
+  } catch {
+    return null;
+  }
+}
+
+async function turnGuidance(userId, toolSpecs, moduleAccess) {
+  const names = (toolSpecs || []).map((spec) => spec?.name).filter(Boolean);
+  const needsFinance = names.some((name) =>
+    ["finance_summary", "freedom_financial_access_status", "freedom_financial_access_set"].includes(
+      name
+    )
+  );
+  const freedomFinancialRead = needsFinance
+    ? await freedomFinancialReadState(userId, moduleAccess)
+    : null;
+  return managedTurnGuidance(names, { freedomFinancialRead });
+}
+
+async function openOrContinue({
+  client,
+  managed,
+  checkpoint,
+  sessionId,
+  prompt,
+  guidance = "",
+  instructions,
+}) {
+  const content = providerUserContent(prompt, guidance);
   if (!managed.providerSessionId) {
     const opened = await client.createSession(
       productionSessionBody({
@@ -1590,6 +2036,7 @@ async function openOrContinue({ client, managed, checkpoint, sessionId, prompt, 
         memoryStoreId: managed.memoryStoreId,
         sessionId,
         prompt,
+        content,
         instructions,
       })
     );
@@ -1601,9 +2048,7 @@ async function openOrContinue({ client, managed, checkpoint, sessionId, prompt, 
     };
     return;
   }
-  await client.sendEvents(managed.providerSessionId, [
-    { type: "user.message", content: [{ type: "text", text: prompt }] },
-  ]);
+  await client.sendEvents(managed.providerSessionId, [{ type: "user.message", content }]);
 }
 
 export async function drainManagedWork({

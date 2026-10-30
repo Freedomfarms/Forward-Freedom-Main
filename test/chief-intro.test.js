@@ -374,7 +374,18 @@ test("the public intro stays scoped and leaves authentication intact", () => {
   assert.match(backdrop, /controller\.destroy\(\)/);
 
   // The public page is the awakening journey and calls no CHIEF API.
-  assert.match(home, /ENTER FREEDOM OS/);
+  assert.match(home, /PERSONAL INTELLIGENCE/);
+  assert.match(home, /Freedom/);
+  assert.match(home, />Homepage</);
+  assert.match(home, />Chief</);
+  assert.match(home, />Freedom</);
+  assert.match(home, />Launch</);
+  assert.match(home, /TO THINK/);
+  assert.match(home, /Freedom <em>OS<\/em>/);
+  assert.match(home, />CHIEF</);
+  assert.doesNotMatch(home, /<header>/);
+  assert.doesNotMatch(home, /ENTER FREEDOM OS/);
+  assert.doesNotMatch(home, /YOUR LIFE/);
   assert.match(home, /href="#entry"/);
   assert.match(home, /SKIP INTRO/);
   assert.match(home, /INTELLIGENCE, AT YOUR COMMAND/);
