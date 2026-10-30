@@ -231,7 +231,11 @@ function buildPage() {
   const rail = add(root, "nav", "rail");
   for (let index = 0; index < 4; index += 1) add(rail, "a");
 
-  const hero = add(root, "section", "chapter hero", { id: "home", offsetTop: 0, offsetHeight: 1600 });
+  const hero = add(root, "section", "chapter hero", {
+    id: "home",
+    offsetTop: 0,
+    offsetHeight: 1600,
+  });
   add(hero, "div", "scene", { offsetHeight: 800 });
   const copy = add(hero, "div", "hero-copy");
   add(copy, "span", "", { dataset: { intro: "eyebrow" } });
@@ -503,5 +507,22 @@ test("skip, pause, hidden tabs, reduced motion, and login deep links stay immedi
   } finally {
     resetAwakeningSessionForTests();
     deepLink.restore();
+  }
+});
+
+test("the public page still opens after the top header is removed", () => {
+  const env = installGlobals();
+  try {
+    const root = buildPage();
+    root.children = root.children.filter((child) => child.tagName !== "HEADER");
+    const scene = mountAwakeningScene(root, { skipIntro: true });
+    assert.equal(scene.inspect().introDone, true);
+    assert.equal(root.querySelector("#motion"), null);
+    assert.equal(root.querySelector(".topnav"), null);
+    env.step(32);
+    assert.equal(scene.inspect().paused, false);
+  } finally {
+    resetAwakeningSessionForTests();
+    env.restore();
   }
 });
