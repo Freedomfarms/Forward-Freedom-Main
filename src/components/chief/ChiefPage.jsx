@@ -19,7 +19,12 @@ import {
   setChiefSessionArchived,
   streamChiefChat,
 } from "../../utils/chiefApi.js";
-import { currentTurn, emptyRoomAccess, moneyWebLine, toolDockLabel } from "../../utils/chiefRoom.js";
+import {
+  currentTurn,
+  emptyRoomAccess,
+  moneyWebLine,
+  toolDockLabel,
+} from "../../utils/chiefRoom.js";
 import {
   discardLegacyChiefActiveSessionKey,
   readChiefActiveSessionId,
@@ -41,7 +46,17 @@ import {
   writeChiefPreferences,
 } from "../../utils/chiefPreferences.js";
 import { classifySettledDelivery, speakCompletedReply } from "../../utils/chiefReplySpeech.js";
-import { isSpeakableTurn } from "../../utils/chiefProtocol.js";
+import {
+  appendVisibleDelta,
+  isSpeakableTurn,
+  statusForOpenTurn,
+} from "../../utils/chiefProtocol.js";
+import {
+  createLiveDelivery,
+  isLiveToolStatus,
+  speechSourceForTail,
+} from "../../utils/chiefLiveConversation.js";
+import { readPersonalityPreset } from "../../utils/chiefPersonality.js";
 import {
   CHIEF_FOLLOW_CONNECTION,
   canAutoSpeak,
@@ -138,6 +153,7 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
   const turnStatusRef = useRef("");
   const answerTextRef = useRef("");
   const preferencesRef = useRef(preferences);
+  const playbackRef = useRef("idle");
   const voice = useChiefVoice({
     user,
     sessionUid,
@@ -166,6 +182,7 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
   useEffect(() => {
     preferencesRef.current = preferences;
     answerTextRef.current = turnView.answer;
+    playbackRef.current = voice.playback;
   });
 
   const revealScopeKey = `${sessionUid}:${activeSessionId || ""}`;
@@ -423,8 +440,10 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
         if (cancelled || activeSessionIdRef.current !== sessionAtStart) return;
         setHistoryError(info?.connectionError ? CHIEF_FOLLOW_CONNECTION : "");
         setTurnStatus(isActiveChiefTurn(turn.turnStatus) ? turn.turnStatus : "continuing");
-        setStatus(turn.streamText ? CHIEF_STATUS.RESPONDING : CHIEF_STATUS.WORKING);
-        if (turn.streamText) setStreamText(turn.streamText);
+        setStatus(statusForOpenTurn(turn));
+        if (turn.streamText) {
+          setStreamText((current) => appendVisibleDelta(current, turn.streamText));
+        }
       },
       stream: async () => {
         let turn = {
@@ -441,12 +460,12 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
             if (controller.signal.aborted) return;
             turn = commitAcceptedUser(applyChiefEvent(turn, event));
             if (activeSessionIdRef.current !== sessionAtStart) return;
-            if (turn.streamText) setStreamText(turn.streamText);
+            if (turn.streamText) {
+              setStreamText((current) => appendVisibleDelta(current, turn.streamText));
+            }
             if (!isActiveChiefTurn(turn.turnStatus)) return;
             setTurnStatus(turn.turnStatus);
-            setStatus(
-              turn.streamText ? CHIEF_STATUS.RESPONDING : turn.status || CHIEF_STATUS.WORKING
-            );
+            setStatus(statusForOpenTurn(turn));
           },
         });
         return turn;
@@ -626,6 +645,8 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
     voice.stopListening();
     voice.stopSpeaking({ preserveHold: true });
     voice.ensureAudio();
+    let live = null;
+    let cueTimer = 0;
     try {
       if (archivedSessions.some((session) => session.sessionId === sessionId)) {
         setTurnError("This conversation is archived. Restore it before sending.");
@@ -653,6 +674,47 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
         setMessages((current) => [...current, { role: "user", text: trimmed }]);
       }
       let turn = initialTurnState(sessionId);
+      let lastSpeech = null;
+      let lastPlayback = null;
+      const stillThisTurn = () => !controller.signal.aborted && abortRef.current === controller;
+      const rememberSpeech = (pending) => {
+        if (pending && typeof pending.then === "function") {
+          lastSpeech = pending.then((result) => {
+            lastPlayback = result;
+            return result;
+          });
+        }
+      };
+      const noteActivity = () => {
+        if (!live || live.stopped) return;
+        live.observe(turn);
+        if (turn.error || turn.status === CHIEF_STATUS.ERROR) return;
+        if (speechEpoch.current !== epoch || !speakOnSettleRef.current) return;
+        if (!shouldSpeakReply({ preferences: turnPreferences })) return;
+        const parts = live.segments(turn.streamText, { settled: false });
+        for (const part of parts) rememberSpeech(voice.enqueueSpeech(part));
+      };
+      live = createLiveDelivery();
+      live.start(Date.now());
+      cueTimer = setInterval(() => {
+        if (!live || live.stopped || !stillThisTurn()) return;
+        if (!speakOnSettleRef.current || speechEpoch.current !== epoch) return;
+        if (turn.finished || turn.streamText || turn.approval) return;
+        live.observe(turn);
+        const cue = live.cue({
+          now: Date.now(),
+          preset: readPersonalityPreset(),
+          speak: shouldSpeakReply({ preferences: turnPreferences }),
+          visibleChars: turn.streamText.length,
+          speaking: playbackRef.current === "playing" || playbackRef.current === "preparing",
+          finished: turn.finished === true,
+          status: turn.status,
+        });
+        if (!cue || !stillThisTurn() || speechEpoch.current !== epoch) return;
+        if (!speakOnSettleRef.current) return;
+        if (!isLiveToolStatus(turn.status)) setStatus(cue.text);
+        if (cue.speak) rememberSpeech(voice.enqueueSpeech(cue.text));
+      }, 1000);
       const applyEvent = (event) => {
         if (controller.signal.aborted) return;
         turn = commitAcceptedUser(applyChiefEvent(turn, event));
@@ -672,8 +734,8 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
         }
         if (turn.approval) setApproval(turn.approval);
         setTurnError(turn.error || "");
+        noteActivity();
       };
-      const stillThisTurn = () => !controller.signal.aborted && abortRef.current === controller;
       const followed = await followManagedTurn({
         sessionId,
         isCurrent: stillThisTurn,
@@ -683,8 +745,9 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
           turn = next;
           setHistoryError(info?.connectionError ? CHIEF_FOLLOW_CONNECTION : "");
           setTurnStatus(isActiveChiefTurn(next.turnStatus) ? next.turnStatus : "continuing");
-          setStatus(next.streamText ? CHIEF_STATUS.RESPONDING : CHIEF_STATUS.WORKING);
+          setStatus(statusForOpenTurn(next));
           if (next.streamText) setStreamText(next.streamText);
+          noteActivity();
         },
         stream: async ({ resume, sessionId: streamSession }) => {
           await streamTurn({
@@ -750,9 +813,16 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
           if (pending) setApproval(pending);
         }
       } else if (isActiveChiefTurn(turn.turnStatus)) {
+        live?.stop();
+        if (cueTimer) {
+          clearInterval(cueTimer);
+          cueTimer = 0;
+        }
         setApproval(null);
         setTurnStatus(turn.turnStatus);
-        setStatus(turn.streamText ? CHIEF_STATUS.RESPONDING : CHIEF_STATUS.WORKING);
+        setStatus(statusForOpenTurn(turn));
+        if (speechEpoch.current === epoch) await voice.whenIdle?.();
+        if (abortRef.current !== controller) return;
         releaseBusy();
         return;
       } else if (turn.status === CHIEF_STATUS.ERROR) {
@@ -773,17 +843,8 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
         sessionId: sessionIdNow,
         activeSessionId: activeSessionIdRef.current,
       });
-      const speechInput = {
-        streamText: turn.streamText,
-        historyAnswer,
-        finished: maySpeak && turn.finished === true,
-        status: turn.status,
-        error: turn.error,
-        aborted: !maySpeak,
-        source,
-        turnStatus: turn.turnStatus,
-        preferences: turnPreferences,
-      };
+      const wantsSpeech = maySpeak && shouldSpeakReply({ preferences: turnPreferences });
+      const tracked = speechSourceForTail(turn.streamText, historyAnswer);
       const settled =
         turn.finished === true &&
         !turn.error &&
@@ -792,28 +853,55 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
         turn.turnStatus !== "suspended" &&
         !isActiveChiefTurn(turn.turnStatus) &&
         isSpeakableTurn(turn.turnStatus);
+      const tail = live && wantsSpeech && settled ? live.segments(tracked, { settled: true }) : [];
+      live?.stop();
+      if (cueTimer) {
+        clearInterval(cueTimer);
+        cueTimer = 0;
+      }
+      const speechInput = {
+        streamText: tail.join(" "),
+        historyAnswer: "",
+        finished: maySpeak && turn.finished === true,
+        status: turn.status,
+        error: turn.error,
+        aborted: !maySpeak,
+        source,
+        turnStatus: turn.turnStatus,
+        preferences: turnPreferences,
+      };
       const plan = classifySettledDelivery({
         answer: answerForReveal,
-        speak: settled && maySpeak && shouldSpeakReply({ preferences: turnPreferences }),
+        speak: settled && wantsSpeech,
         settled,
       });
       if (plan.action === "missing_answer") {
+        if (speechEpoch.current === epoch) await voice.whenIdle?.();
+        if (speechEpoch.current !== epoch || abortRef.current !== controller) return;
         setTurnError(plan.message);
         setStatus(CHIEF_STATUS.ERROR);
         voice.clearSpeechError();
         releaseBusy();
         return;
       }
-      const delivery = plan.action === "speak" ? speakCompletedReply(voice, speechInput) : null;
-      if (!delivery?.pending) {
+      const delivery =
+        plan.action === "speak" && tail.length ? speakCompletedReply(voice, speechInput) : null;
+      const pendingSpeech = settled && wantsSpeech ? delivery?.pending || lastSpeech : null;
+      if (!pendingSpeech) {
         if (!isActiveChiefTurn(turn.turnStatus) && turn.status !== CHIEF_STATUS.ERROR) {
           if (turn.turnStatus !== "suspended" && !turn.approval) setStatus(CHIEF_STATUS.READY);
         }
         releaseBusy();
         return;
       }
-      setStatus(CHIEF_STATUS.RESPONDING);
-      const result = await delivery.pending;
+      if (
+        delivery?.pending ||
+        playbackRef.current === "playing" ||
+        playbackRef.current === "preparing"
+      ) {
+        setStatus(CHIEF_STATUS.RESPONDING);
+      }
+      const result = (await pendingSpeech) || lastPlayback;
       if (speechEpoch.current !== epoch || activeSessionIdRef.current !== sessionIdNow) {
         if (!isActiveChiefTurn(turnStatusRef.current)) setStatus(CHIEF_STATUS.READY);
         releaseBusy();
@@ -832,6 +920,8 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
       if (played.action === "stopped") setSpeechStopped(true);
       else if (played.message) voice.reportSpeechError(played.message);
     } finally {
+      if (cueTimer) clearInterval(cueTimer);
+      live?.stop();
       if (speechEpoch.current === epoch) voice.releaseAudioHold?.();
     }
   }
@@ -996,6 +1086,8 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
   }
 
   function stopSpeech() {
+    speechEpoch.current += 1;
+    speakOnSettleRef.current = false;
     voice.stopSpeaking();
     const answer = typeof answerTextRef.current === "string" ? answerTextRef.current.trim() : "";
     if (answer) revealStoredAnswer(answer);
@@ -1329,6 +1421,7 @@ export function ChiefPage({ user, embedded = false, onOpenFinancial, onOpenAgent
           onMic={toggleMicrophone}
           listening={voice.listening}
           playback={voice.playback}
+          audioLevelRef={voice.audioLevelRef}
           turnStatus={turnStatus}
           composerDisabled={busy || turnStillRunning || historyLoading || notFound}
           enterToSend={preferences.conversation.enterToSend}

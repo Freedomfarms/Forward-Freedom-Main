@@ -135,6 +135,7 @@ export function ChiefInterface({
   onSend,
   onMic,
   listening = false,
+  audioLevelRef = null,
   composerDisabled = false,
   generating = false,
   onStopTurn,
@@ -194,6 +195,7 @@ export function ChiefInterface({
     activity,
     paused: paused || reduced,
     reduced,
+    levelRef: audioLevelRef,
   });
 
   useEffect(() => {

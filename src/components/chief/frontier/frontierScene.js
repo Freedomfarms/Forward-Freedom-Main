@@ -71,6 +71,72 @@ function mix(a, b, p) {
   return a + (b - a) * p;
 }
 
+export const IDLE_BREATH_PERIOD_MS = 5000;
+
+export const SHELL_ICE = Object.freeze([153, 228, 255]);
+export const SHELL_BLUE = Object.freeze([62, 157, 250]);
+export const INNER_VIOLET = Object.freeze([176, 92, 255]);
+export const CORE_VIOLET = Object.freeze([206, 140, 255]);
+export const THINKING_RING = Object.freeze([120, 210, 255]);
+
+export function mixRgb(from, to, amount) {
+  const t = clamp(amount);
+  return [
+    Math.round(from[0] + (to[0] - from[0]) * t),
+    Math.round(from[1] + (to[1] - from[1]) * t),
+    Math.round(from[2] + (to[2] - from[2]) * t),
+  ];
+}
+
+export function rgba(rgb, alpha) {
+  return `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${alpha})`;
+}
+
+// Idle is one gentle 5.000s cycle. Other states keep that cycle and add a
+// smaller secondary sway so the handoff stays smooth.
+export function breathScale(timeMs, { activity = "idle", energy = 0, reduced = false } = {}) {
+  if (reduced) return 1;
+  const cycle = ((timeMs % IDLE_BREATH_PERIOD_MS) / IDLE_BREATH_PERIOD_MS) * Math.PI * 2;
+  const gentle = Math.sin(cycle) * 0.008;
+  if (activity === "idle") return 1 + gentle;
+  return 1 + gentle + energy * 0.008 * Math.sin(timeMs * 0.0021);
+}
+
+export function dampMotion(current, target, dtMs, lambda = 4) {
+  const step = Math.min(Math.max(dtMs, 0), 60) / 1000;
+  return target + (current - target) * Math.exp(-lambda * step);
+}
+
+export function interiorTint(shell, innerAmount, respondMix) {
+  return mixRgb(shell, INNER_VIOLET, clamp(innerAmount) * clamp(respondMix));
+}
+
+function strokeInterior(ctx, points, cx, cy, limit, color, width) {
+  ctx.strokeStyle = color;
+  ctx.lineWidth = width;
+  ctx.beginPath();
+  let drawing = false;
+  for (let i = 0; i < points.length; i += 1) {
+    const point = points[i];
+    const inside = Math.hypot(point[0] - cx, point[1] - cy) <= limit;
+    if (!inside) {
+      if (drawing) {
+        ctx.stroke();
+        ctx.beginPath();
+        drawing = false;
+      }
+      continue;
+    }
+    if (!drawing) {
+      ctx.moveTo(point[0], point[1]);
+      drawing = true;
+    } else {
+      ctx.lineTo(point[0], point[1]);
+    }
+  }
+  if (drawing) ctx.stroke();
+}
+
 export function createFrontierGeometry() {
   let seed = 81;
   const rand = () => {
@@ -110,6 +176,7 @@ export function createFrontierScene({
   root,
   reduced = false,
   paused = false,
+  levelRef = null,
 }) {
   const ctx = canvas.getContext("2d", { alpha: false });
   const geometry = createFrontierGeometry();
@@ -139,7 +206,17 @@ export function createFrontierScene({
   let activity = "idle";
   let energy = ENERGY.idle;
   let targetEnergy = ENERGY.idle;
+  let listenLevel = 0;
+  let ringMix = 0;
+  let respondMix = 0;
+  let shownBreath = 1;
   let destroyed = false;
+  let micLevel = levelRef;
+
+  function readMicLevel() {
+    const value = Number(micLevel?.current);
+    return Number.isFinite(value) ? clamp(value) : 0;
+  }
 
   function measure() {
     const bounds = root.getBoundingClientRect();
@@ -290,7 +367,10 @@ export function createFrontierScene({
     const c = corePosition;
     const cx = c.x + drift.x;
     const cy = c.y + drift.y;
-    const breath = 1 + Math.sin(t * 0.0011) * 0.008 + energy * 0.012 * Math.sin(t * 0.0034);
+    const listenRadius = reducedMotion || isPaused ? 0 : listenLevel * 0.014;
+    shownBreath =
+      breathScale(t, { activity, energy, reduced: reducedMotion || isPaused }) + listenRadius;
+    const breath = shownBreath;
     const r = c.r * breath;
     const rotation = spinPhase;
     const scale = clamp(r / 151, 0.4, 1.9);
@@ -298,7 +378,8 @@ export function createFrontierScene({
     ctx.globalAlpha = boot;
     ctx.globalCompositeOperation = "lighter";
     const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r * 1.8);
-    g.addColorStop(0, `rgba(63,154,220,${0.2 + energy * 0.1})`);
+    const halo = mixRgb([63, 154, 220], [140, 70, 210], respondMix);
+    g.addColorStop(0, rgba(halo, 0.2 + energy * 0.1));
     g.addColorStop(0.4, "rgba(31,85,132,.11)");
     g.addColorStop(1, "rgba(3,8,14,0)");
     ctx.fillStyle = g;
@@ -323,12 +404,32 @@ export function createFrontierScene({
         else ctx.moveTo(sx, sy);
       }
       const alpha =
-        ((j % 4 === 0 ? 0.65 : 0.22) + clamp(front / pts.length) * 0.16) * (1 + energy * 0.17);
-      ctx.strokeStyle = `rgba(${j % 3 === 0 ? "153,228,255" : "62,157,250"},${alpha})`;
+        ((j % 4 === 0 ? 0.65 : 0.22) + clamp(front / pts.length) * 0.16) *
+        (1 + energy * 0.17) *
+        (1 + listenLevel * 0.22);
+      const shell = j % 3 === 0 ? SHELL_ICE : SHELL_BLUE;
+      ctx.strokeStyle = rgba(shell, alpha);
       ctx.lineWidth = (j % 4 === 0 ? 0.8 : 0.55) * scale;
       ctx.stroke();
-      if (j % 3 === 0) {
-        const index = Math.floor(((t * (0.00012 + energy * 0.00004) + j * 0.618) % 1) * 37);
+      if (respondMix > 0.04) {
+        strokeInterior(
+          ctx,
+          screen,
+          cx,
+          cy,
+          sr * 0.56,
+          rgba(interiorTint(shell, 1, respondMix), alpha * respondMix),
+          (j % 4 === 0 ? 0.95 : 0.7) * scale
+        );
+      }
+      const sparkEvery = activity === "thinking" ? 2 : 3;
+      const sparkSpeed =
+        0.00012 +
+        energy * 0.00004 +
+        (activity === "thinking" ? 0.00009 : 0) +
+        listenLevel * 0.00006;
+      if (j % sparkEvery === 0) {
+        const index = Math.floor(((t * sparkSpeed + j * 0.618) % 1) * 37);
         ctx.beginPath();
         for (let k = index; k < index + 5; k += 1) {
           const point = screen[k];
@@ -341,11 +442,13 @@ export function createFrontierScene({
         ctx.stroke();
       }
     }
+    const corePulse = reducedMotion || isPaused ? 1 : 0.86 + 0.14 * Math.sin(t * 0.0018);
+    const coreDot = mixRgb([222, 249, 255], CORE_VIOLET, respondMix * 0.85);
     ctx.beginPath();
-    ctx.arc(cx, cy, 2.8 * (0.86 + 0.14 * Math.sin(t * 0.0018)) * scale, 0, Math.PI * 2);
-    ctx.fillStyle = "#def9ff";
+    ctx.arc(cx, cy, 2.8 * corePulse * scale, 0, Math.PI * 2);
+    ctx.fillStyle = rgba(coreDot, 0.96);
     ctx.shadowBlur = 18;
-    ctx.shadowColor = "#69cfff";
+    ctx.shadowColor = rgba(mixRgb([105, 207, 255], CORE_VIOLET, respondMix), 0.95);
     ctx.fill();
     ctx.shadowBlur = 0;
     for (let i = 0; i < 2; i += 1) {
@@ -365,26 +468,31 @@ export function createFrontierScene({
     }
     const br = r * 0.71;
     const bp = bolt.map((p) => [cx + p[0] * br, cy + p[1] * br]);
-    const pulse = 0.9 + 0.1 * Math.sin(t * 0.0018);
+    const boltPulse = reducedMotion || isPaused ? 1 : 0.9 + 0.1 * Math.sin(t * 0.0018);
     const reveal = reducedMotion || isPaused ? 1 : smooth(clock / 1700);
+    const boltShadow = mixRgb([80, 160, 240], [120, 70, 210], respondMix);
+    const boltWide = mixRgb([62, 164, 247], [150, 80, 230], respondMix);
+    const boltMid = mixRgb([119, 194, 255], [186, 130, 255], respondMix);
+    const boltHot = mixRgb([223, 241, 255], [244, 226, 255], respondMix * 0.45);
+    const branchTint = mixRgb([123, 190, 244], [176, 120, 245], respondMix);
     ctx.lineJoin = "round";
     ctx.lineCap = "round";
     path(
       bp.map((p) => [p[0] + 4, p[1] + 2]),
       reveal,
-      "rgba(80,160,240,.25)",
+      rgba(boltShadow, 0.25),
       2 * scale,
       10
     );
-    path(bp, reveal, `rgba(62,164,247,${0.18 * pulse})`, 16 * scale, 25);
-    path(bp, reveal, `rgba(119,194,255,${0.58 * pulse})`, 6 * scale, 17);
-    path(bp, reveal, `rgba(223,241,255,${0.95 * pulse})`, 2.1 * scale, 7);
+    path(bp, reveal, rgba(boltWide, 0.18 * boltPulse), 16 * scale, 25);
+    path(bp, reveal, rgba(boltMid, 0.58 * boltPulse), 6 * scale, 17);
+    path(bp, reveal, rgba(boltHot, 0.95 * boltPulse), 2.1 * scale, 7);
     path(bp, reveal, "rgba(255,252,255,.94)", 0.8 * scale);
     for (const b of branches) {
       path(
         b.p.map((p) => [cx + p[0] * br, cy + p[1] * br]),
         smooth((reveal - b.at) * 3),
-        `rgba(123,190,244,${0.32 + 0.1 * Math.sin(t * 0.0015 + b.at * 8)})`,
+        rgba(branchTint, 0.32 + 0.1 * Math.sin(t * 0.0015 + b.at * 8)),
         scale * 0.7,
         4
       );
@@ -430,17 +538,20 @@ export function createFrontierScene({
       ctx.lineTo(cx + Math.cos(a) * (rr + len), cy + Math.sin(a) * (rr + len));
       ctx.stroke();
     }
-    if (activity === "listening" || activity === "responding") {
-      const amplitude = activity === "listening" ? 0.08 : 0.05;
-      for (let i = 0; i < 2; i += 1) {
-        const p = (t * 0.00024 + i * 0.5) % 1;
-        const rr = r * (1.05 + p * 0.38);
-        ctx.beginPath();
-        ctx.arc(cx, cy, rr, 0, Math.PI * 2);
-        ctx.strokeStyle = `rgba(133,211,255,${amplitude * (1 - p)})`;
-        ctx.lineWidth = 1;
-        ctx.stroke();
-      }
+    if (ringMix > 0.02) {
+      const wave =
+        reducedMotion || isPaused ? 0.55 : 0.5 + 0.5 * Math.sin((t * Math.PI * 2) / 2600);
+      const rr = r * (1.2 + 0.028 * wave);
+      ctx.beginPath();
+      ctx.arc(cx, cy, rr, 0, Math.PI * 2);
+      ctx.strokeStyle = rgba(THINKING_RING, (0.14 + 0.4 * wave) * ringMix);
+      ctx.lineWidth = (1.15 + 0.45 * wave) * scale;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(cx, cy, rr + 4 * scale, 0, Math.PI * 2);
+      ctx.strokeStyle = rgba(THINKING_RING, 0.08 * wave * ringMix);
+      ctx.lineWidth = 0.55 * scale;
+      ctx.stroke();
     }
     ctx.restore();
   }
@@ -449,7 +560,7 @@ export function createFrontierScene({
     raf = 0;
     if (destroyed || document.hidden) return;
     const raw = lastTime ? now - lastTime : 16;
-    const dt = Math.min(raw, 60);
+    const dt = Math.min(Math.max(raw, 0), 60);
     lastTime = now;
     if (!isPaused) {
       clock += dt;
@@ -458,14 +569,23 @@ export function createFrontierScene({
     if (resizePending) measure();
     if (dirty || now - lastDraw >= 30) {
       boot = reducedMotion || isPaused ? 1 : smooth(clock / 1100);
+      const ringTarget = activity === "thinking" ? 1 : 0;
+      const respondTarget = activity === "responding" ? 1 : 0;
+      const levelTarget = activity === "listening" ? readMicLevel() : 0;
       if (isPaused) {
         drift.x = 0;
         drift.y = 0;
         energy = targetEnergy;
+        listenLevel = levelTarget;
+        ringMix = ringTarget;
+        respondMix = respondTarget;
       } else {
         drift.x += (pointer.x - drift.x) * 0.055;
         drift.y += (pointer.y - drift.y) * 0.055;
         energy += (targetEnergy - energy) * 0.05;
+        listenLevel = dampMotion(listenLevel, levelTarget, dt, 7);
+        ringMix = dampMotion(ringMix, ringTarget, dt, 4.2);
+        respondMix = dampMotion(respondMix, respondTarget, dt, 3.4);
       }
       if (ctx) {
         environment(clock);
@@ -555,6 +675,12 @@ export function createFrontierScene({
     schedule();
   }
 
+  function setLevelRef(next) {
+    micLevel = next || null;
+    dirty = true;
+    schedule();
+  }
+
   function setPaused(next) {
     const value = Boolean(next);
     if (value && !isPaused) clock = Math.max(clock, 1800);
@@ -578,6 +704,19 @@ export function createFrontierScene({
     setActivity,
     setPaused,
     setReduced,
+    setLevelRef,
+    inspect() {
+      return {
+        activity,
+        energy,
+        listenLevel,
+        ringMix,
+        respondMix,
+        breath: shownBreath,
+        reducedMotion,
+        paused: isPaused,
+      };
+    },
     destroy() {
       destroyed = true;
       cancelAnimationFrame(raf);

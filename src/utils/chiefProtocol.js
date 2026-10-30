@@ -128,8 +128,9 @@ export function restoredChiefTurn({
   };
 }
 
-// Speech waits until the Managed Agents turn has actually settled. A budget
-// handoff ("continuing") and a suspension are not finished replies.
+// The settled tail of a reply. A budget handoff ("continuing") and a suspension
+// are not finished replies. Live sentences use a separate cursor and may speak
+// earlier; this check does not mean the whole answer waits.
 export function isSpeakableTurn(turnStatus) {
   return (
     turnStatus !== "continuing" &&
@@ -140,6 +141,26 @@ export function isSpeakableTurn(turnStatus) {
     turnStatus !== "empty" &&
     turnStatus !== "failed"
   );
+}
+
+const OPEN_TURN_THINKING = new Set([
+  CHIEF_STATUS.WORKING,
+  CHIEF_STATUS.TOOL,
+  CHIEF_STATUS.FINANCE,
+  CHIEF_STATUS.WEB_SEARCH,
+  CHIEF_STATUS.MODULE_ACCESS,
+  CHIEF_STATUS.MODULE_ACCESS_SET,
+]);
+
+// A reconnect, retry, or budget handoff keeps the last real activity.
+// Answer text already on screen does not turn tool work or reasoning into Responding.
+export function statusForOpenTurn(state = {}) {
+  const status = typeof state.status === "string" ? state.status : "";
+  if (status === CHIEF_STATUS.RESPONDING) return CHIEF_STATUS.RESPONDING;
+  if (OPEN_TURN_THINKING.has(status)) return status;
+  if (status === CHIEF_STATUS.APPROVAL) return CHIEF_STATUS.APPROVAL;
+  const text = typeof state.streamText === "string" ? state.streamText : "";
+  return text ? CHIEF_STATUS.RESPONDING : CHIEF_STATUS.WORKING;
 }
 
 export function initialTurnState(sessionId = null) {
@@ -156,6 +177,26 @@ export function initialTurnState(sessionId = null) {
 
 function sessionIdFrom(msg, fallback) {
   return typeof msg?.session_id === "string" && msg.session_id ? msg.session_id : fallback;
+}
+
+// Join a visible answer chunk onto text already on screen.
+// A replayed prefix, a replayed suffix, or a longer snapshot of the same
+// answer must not duplicate. A real continuation is appended.
+export function appendVisibleDelta(current, delta) {
+  const base = typeof current === "string" ? current : "";
+  const next = typeof delta === "string" ? delta : "";
+  if (!next) return base;
+  if (!base) return next;
+  if (next.startsWith(base)) {
+    const boundary = next[base.length];
+    if (!boundary || /[\s.,!?;:]/.test(boundary)) return next;
+  }
+  if (base.endsWith(next) || (next.length < base.length && base.startsWith(next))) return base;
+  const limit = Math.min(base.length, next.length);
+  for (let size = limit; size >= 16; size -= 1) {
+    if (base.slice(-size) === next.slice(0, size)) return base + next.slice(size);
+  }
+  return base + next;
 }
 
 export function applyChiefEvent(state, event) {
@@ -180,7 +221,7 @@ export function applyChiefEvent(state, event) {
         boundTurnId: nextTurnId || state.boundTurnId || null,
         turnId: nextTurnId || state.turnId || null,
         streamText: switching ? "" : state.streamText,
-        status: !switching && state.streamText ? CHIEF_STATUS.RESPONDING : CHIEF_STATUS.WORKING,
+        status: !switching && state.streamText ? statusForOpenTurn(state) : CHIEF_STATUS.WORKING,
         finished: false,
         turnStatus: "running",
       };
@@ -226,7 +267,7 @@ export function applyChiefEvent(state, event) {
         ...state,
         sessionId,
         status: CHIEF_STATUS.RESPONDING,
-        streamText: `${state.streamText}${msg.delta}`,
+        streamText: appendVisibleDelta(state.streamText, msg.delta),
       };
     }
     case "tool_call_begin":
@@ -258,9 +299,7 @@ export function applyChiefEvent(state, event) {
           : suspended
             ? CHIEF_STATUS.APPROVAL
             : active
-              ? state.streamText
-                ? CHIEF_STATUS.RESPONDING
-                : CHIEF_STATUS.WORKING
+              ? statusForOpenTurn(state)
               : CHIEF_STATUS.READY,
         error: missing
           ? state.error || MISSING_CHIEF_ANSWER
@@ -298,7 +337,7 @@ export function applyChiefEvent(state, event) {
             : "";
         return {
           ...state,
-          status: state.streamText ? CHIEF_STATUS.RESPONDING : CHIEF_STATUS.WORKING,
+          status: statusForOpenTurn(state),
           error: temporary,
           finished: false,
           turnStatus: "continuing",

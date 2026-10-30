@@ -98,6 +98,24 @@ test("empty, failed, and muted replies do not speak", () => {
   assert.deepEqual(voice.calls, []);
 });
 
+test("a completed reply prefers the speech queue when one is attached", async () => {
+  const calls = [];
+  const voice = {
+    enqueueSpeech(text) {
+      calls.push(["enqueue", text]);
+      return { ok: true };
+    },
+    speakAnswer(text) {
+      calls.push(["speak", text]);
+      return { ok: true };
+    },
+  };
+  const delivery = speakCompletedReply(voice, finished);
+  assert.equal(delivery.spoken, "Everything is operational.");
+  await delivery.pending;
+  assert.deepEqual(calls, [["enqueue", "Everything is operational."]]);
+});
+
 test("a stored answer is spoken once when the stream text is empty", async () => {
   const voice = voiceDouble();
   const delivery = speakCompletedReply(voice, {
