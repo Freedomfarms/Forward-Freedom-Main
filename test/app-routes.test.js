@@ -42,7 +42,9 @@ test("signed-out / is the public homepage", () => {
   assert.equal(resolveAppRoute("/").kind, "public-home");
   assert.match(homeSource, /export function PublicFreedomOsHome/);
   assert.match(homeSource, /AwakeningExperience/);
-  assert.match(experienceSource, /ENTER FREEDOM OS/);
+  assert.match(experienceSource, /Freedom/);
+  assert.match(experienceSource, />Launch</);
+  assert.doesNotMatch(experienceSource, /<header>/);
   assert.match(experienceSource, /href="#entry"/);
   assert.doesNotMatch(experienceSource, /Cinematic/);
   assert.doesNotMatch(experienceSource, /Replay/);

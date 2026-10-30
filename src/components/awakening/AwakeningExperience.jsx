@@ -4,14 +4,6 @@ import { AuthScreen } from "../AuthScreen.jsx";
 import { mountAwakeningScene } from "./awakeningScene.js";
 import "./awakening.css";
 
-function BoltMark() {
-  return (
-    <svg className="bolt-mark" viewBox="0 0 30 42" aria-hidden="true">
-      <path d="M19 1 3 24h11l-5 17 19-26H16z" />
-    </svg>
-  );
-}
-
 const AwakeningStage = memo(function AwakeningStage({ slotRef, pending, optionsRef }) {
   const rootRef = useRef(null);
 
@@ -29,45 +21,21 @@ const AwakeningStage = memo(function AwakeningStage({ slotRef, pending, optionsR
       </a>
       <canvas id="universe" aria-hidden="true" />
       <div className="vignette" aria-hidden="true" />
-      <header>
-        <a className="brand" href="#home" aria-label="Freedom OS home">
-          <BoltMark />
-          <span>
-            FREEDOM <b>OS</b>
-            <small>PERSONAL INTELLIGENCE</small>
-          </span>
-        </a>
-        <nav className="topnav" aria-label="Main navigation">
-          <a href="#intelligence">Meet CHIEF</a>
-          <a href="#freedom">The spirit</a>
-        </nav>
-        <div className="actions">
-          <button className="motion" id="motion" aria-label="Pause ambient animation" aria-pressed="false">
-            Ⅱ
-          </button>
-          <a className="enter-link" href="#entry">
-            ENTER FREEDOM OS <span aria-hidden="true">↗</span>
-          </a>
-        </div>
-        <div className="progress" aria-hidden="true">
-          <i />
-        </div>
-      </header>
       <nav className="rail" aria-label="Journey chapters">
-        <a href="#home" className="active" aria-label="The beginning">
-          <span>01</span>
+        <a href="#home" className="active" aria-label="Homepage">
+          <span>Homepage</span>
           <i />
         </a>
-        <a href="#intelligence" aria-label="The intelligence">
-          <span>02</span>
+        <a href="#intelligence" aria-label="Chief">
+          <span>Chief</span>
           <i />
         </a>
-        <a href="#freedom" aria-label="The spirit">
-          <span>03</span>
+        <a href="#freedom" aria-label="Freedom">
+          <span>Freedom</span>
           <i />
         </a>
-        <a href="#entry" aria-label="Your world">
-          <span>04</span>
+        <a href="#entry" aria-label="Launch">
+          <span>Launch</span>
           <i />
         </a>
       </nav>
@@ -77,18 +45,15 @@ const AwakeningStage = memo(function AwakeningStage({ slotRef, pending, optionsR
             <div className="hero-index">01 / A NEW FRONTIER</div>
             <div className="hero-copy">
               <p className="eyebrow" data-intro="eyebrow">
-                <i className="dot" /> INDEPENDENT BY NATURE.
+                <i className="dot" /> PERSONAL INTELLIGENCE.
               </p>
-              <h1 id="hero-title" tabIndex={-1}>
+              <h1 id="hero-title" className="product-title" tabIndex={-1}>
                 <span className="hero-line">
-                  <span data-intro="freedom">FREEDOM</span>
+                  <span data-intro="freedom">Freedom</span>
                 </span>
                 <span className="hero-line">
-                  <span data-intro="think">TO THINK</span>
-                </span>
-                <span className="hero-line">
-                  <span data-intro="bigger">
-                    <em>BIGGER.</em>
+                  <span data-intro="os">
+                    <em>OS</em>
                   </span>
                 </span>
               </h1>
@@ -174,12 +139,12 @@ const AwakeningStage = memo(function AwakeningStage({ slotRef, pending, optionsR
               <p className="eyebrow">
                 <span className="stars">★ ★ ★ ★ ★</span> 03 / THE SPIRIT THAT MOVES US
               </p>
-              <h2 id="freedom-title">
-                YOUR LIFE.
+              <h2 id="freedom-title" className="product-tagline">
+                Freedom
                 <br />
-                YOUR MIND.
+                to think
                 <br />
-                <em>YOUR TERMS.</em>
+                <em>bigger.</em>
               </h2>
               <p>
                 Inspired by the American spirit of independence.
@@ -233,7 +198,7 @@ const AwakeningStage = memo(function AwakeningStage({ slotRef, pending, optionsR
             </div>
           </div>
           <footer>
-            <a href="#home">FREEDOM TO THINK BIGGER.</a>
+            <a href="#home">Freedom OS</a>
             <span>FRONTIER / A FREEDOM OS CONCEPT</span>
             <a href="#home">
               BACK TO THE BEGINNING <span aria-hidden="true">↑</span>
@@ -279,16 +244,16 @@ export function AwakeningExperience({
   return (
     <>
       <AwakeningStage slotRef={slotRef} pending={pending} optionsRef={optionsRef} />
-      {slot ? (
-        createPortal(
-          <AuthScreen
-            initialMode={initialMode}
-            initialForm={initialForm}
-            onModeChange={onModeChange}
-          />,
-          slot
-        )
-      ) : null}
+      {slot
+        ? createPortal(
+            <AuthScreen
+              initialMode={initialMode}
+              initialForm={initialForm}
+              onModeChange={onModeChange}
+            />,
+            slot
+          )
+        : null}
     </>
   );
 }
