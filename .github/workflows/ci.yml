@@ -75,3 +75,32 @@ jobs:
       - run: node --test --test-concurrency=2 --experimental-test-module-mocks test/*.test.js
       - name: schema-compat
         run: node scripts/schema-compat.mjs --role=all
+
+  # pull_request, not pull_request_target. Fork pull requests do not receive
+  # AI_DEV_WIKI_TOKEN, so untrusted PR code cannot read that secret.
+  wiki-sync:
+    name: wiki-sync
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Assess shared wiki documentation impact
+        env:
+          AI_DEV_WIKI_TOKEN: ${{ secrets.AI_DEV_WIKI_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/wiki-sync.mjs check
+      - name: Record wiki sync result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wiki-sync-result
+          path: wiki-sync-result.json
+          if-no-files-found: warn

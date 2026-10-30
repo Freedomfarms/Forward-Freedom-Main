@@ -8,3 +8,4 @@ npm-debug.log*
 .env.local
 .env.*.local
 .plaid-store.json
+wiki-sync-result.json

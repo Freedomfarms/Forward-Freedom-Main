@@ -74,5 +74,77 @@ so rather than pretend the shared memory was loaded.
 ## Updating the wiki
 
 Knowledge flows back through pull requests only: branch in `ai-development-wiki`, open a PR, never
-push to `main`. If a session cannot open that PR itself, it lists the proposed entries under a
-"Wiki updates" heading in the application PR description.
+push to `main`.
+
+## Automatic documentation sync
+
+Every project pull request is assessed by `scripts/wiki-sync.mjs`. Cursor and Codex run the same
+command. The script does not call a model and does not start another coding agent. The session
+that changed the code writes the wiki pull request when one is required. GitHub Actions job
+`wiki-sync` records the result in the step summary and in the `wiki-sync-result` artifact.
+
+| Classifier result | What CI records                                                                                                           | Wiki pull request                                          |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `neutral`         | `no-update-required`                                                                                                      | Not required. Routine bug fixes stay lightweight.          |
+| `wiki-required`   | `blocked` until the wiki PR is reviewed and merged or its head is already on the wiki default branch, then `synchronized` | Required. A `no-update-required` marker cannot waive this. |
+
+Categories and the kind of diff that trips them (the patterns themselves live in
+`scripts/wiki-sync.mjs`):
+
+| Category                 | Requires a wiki update                                                                                                               | Stays neutral                          |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------- |
+| Architecture             | `docs/adr/**`, routing, `vercel.json`, the architecture docs named in the script                                                     | UI components and copy                 |
+| Integrations             | Plaid client, connector registry, agent connection modules, added or deleted files under `server/plaid/`                             | Edits inside an existing Plaid handler |
+| Agent capabilities       | Capability registries, tool spec, inventory, and builtin catalog; added or deleted tool or skill files                               | Edits inside an existing tool module   |
+| Database or memory       | Anything under `prisma/`, schema capability module, added or deleted memory modules                                                  | Edits inside an existing memory module |
+| Security and permissions | `docs/SECURITY.md`, `docs/RLS_ROLLOUT.md`, grants and access-boundary modules, added or deleted files under `server/chief/security/` | Edits to rate limiting                 |
+| Workflows and decisions  | `AGENTS.md`, `.cursor/rules/**`, `.github/workflows/**`, this document, the wiki scripts                                             | Tests                                  |
+
+Paths under `test/`, `third_party/`, and `design-references/` are neutral. Adding or removing a
+dependency name in `package.json` counts as an integration change. A version bump does not.
+
+If a design change sits inside a file the classifier treats as neutral, the session sets
+`result: update-required` in the project pull request body. That raises the gate. Nothing in the
+pull request body can lower a `wiki-required` classification.
+
+The project pull request body carries:
+
+```markdown
+<!-- wiki-sync -->
+
+result: update-required
+wiki_pr: https://github.com/Freedomfarms/ai-development-wiki/pull/<number>
+reason: <which wiki pages changed and why>
+
+<!-- /wiki-sync -->
+```
+
+The linked wiki pull request must mention `Freedomfarms/Forward-Freedom-Main#<number>` or the
+head branch name. Completion requires either of these, both checked from the GitHub API:
+
+- An approving review from a GitHub user other than the wiki pull request author, recorded on
+  that exact head commit, plus a merge or a head that is already on the wiki default branch.
+- A merge performed by the wiki repository owner, with that same head commit incorporated into
+  the wiki default branch. The owner is `owner.login` on the repository, and the merger is
+  `merged_by.login` on the pull request. For `Freedomfarms/ai-development-wiki` that owner is
+  Freedomfarms. GitHub does not let the author approve their own pull request, so the owner
+  merge is the owner path.
+
+Text in either pull request body is not authorization. A direct push that does not record
+`merged_by` as the repository owner is not a substitute. A newer wiki commit needs a new review
+or a new owner merge of that commit. The workflow event is `pull_request`, not
+`pull_request_target`, so a fork pull request does not receive `AI_DEV_WIKI_TOKEN`.
+
+`GITHUB_TOKEN` for this repository cannot read the private wiki (the installation token receives
+404). The job reads the Actions secret `AI_DEV_WIKI_TOKEN`. Repository role flags on the GitHub
+API are not token scopes: a contents-read token for an owner still reports `push: true`. The job
+therefore treats the token as able to verify a wiki pull request only after a pull-request list
+call succeeds. Contents read alone fails closed.
+
+When a wiki update is required and that secret is missing, or the token cannot read the linked
+pull request, the job fails closed. Neutral pull requests still pass. Opening the wiki pull
+request needs contents write and pull-request write on `Freedomfarms/ai-development-wiki`.
+Pull-request read is enough for Actions to verify a pull request that already exists.
+
+The session helper `scripts/cloud-agent-wiki.sh check` still warns instead of failing when the
+checkout is missing. That is separate from this pull request gate.
